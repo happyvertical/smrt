@@ -1,7 +1,4 @@
-import type { FormRetryStatus } from '@happyvertical/smrt-ui/form-retry';
-import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
-import type { InvoiceDraftCalculationOptions } from './calculations.js';
 import type { MoneyEditorProps } from './money-editor.js';
 
 export type {
@@ -70,11 +67,6 @@ export interface InvoicePreparationHiddenField {
   value: string;
 }
 
-/** Invoice draft types shared with the Svelte-free exact calculator. */
-export type { InvoiceDraftValues, InvoiceLineDraft } from './calculations.js';
-
-import type { InvoiceDraftValues, InvoiceLineDraft } from './calculations.js';
-
 /** Optional allocation fields, rendered without an enclosing form. */
 export interface InvoiceAllocationFieldsProps {
   /** Currency for allocation presentation. */
@@ -97,120 +89,26 @@ export interface InvoiceAllocationFieldsProps {
   id?: string;
 }
 
-/** Editable line field names repeat in displayed order. */
-export interface InvoiceLineFieldNames {
-  /** Stable line identity. */
-  key: string;
-  /** Description text. */
-  description: string;
-  /** Product/SKU reference text. */
-  sku: string;
-  /** Fractional quantity text. */
-  quantity: string;
-  /** Currency-unit price text. */
-  unitPrice: string;
-  /** Flat or percentage discount selection. */
-  discountType: string;
-  /** Currency-unit or percent discount text. */
-  discountValue: string;
-  /** Inherited or explicit tax selection. */
-  taxMode: string;
-  /** Explicit percentage tax text, including zero. */
-  taxRate: string;
-}
-
-/** Invoice header and submitter name adapters. */
-export interface InvoiceFieldNames {
-  /** Customer reference. */
-  customerId: string;
-  /** Invoice date text. */
-  issuedOn: string;
-  /** Due date text. */
-  dueOn: string;
-  /** Currency code. */
-  currency: string;
-  /** Payment terms text. */
-  paymentTerms: string;
-  /** Default tax percentage text. */
-  taxRate: string;
-  /** Clicked submitter name. */
-  intent: string;
-}
-
-/** General invoice line fields; never renders a nested form. */
-export interface InvoiceLineEditorProps extends InvoiceDraftCalculationOptions {
-  /** Lossless caller-owned line values. */
-  line: InvoiceLineDraft;
-  /** Current currency code for shared calculation. */
-  currency: string;
-  /** External default tax percentage; explicit line override remains distinct. */
-  inheritedTaxRate: string;
-  /** One-based display position. */
-  number?: number;
-  /** Stable control-label prefix. */
-  id?: string;
-  /** Native field-name adapters. */
-  fields?: Partial<InvoiceLineFieldNames>;
-  /** Caller errors keyed by canonical line field name. */
-  errors?: Partial<Record<keyof InvoiceLineFieldNames, string>>;
-  /** Presentation capability. */
-  canEdit?: boolean;
-  /** Disable structural actions while pending. */
-  pending?: boolean;
-  /** Native submitter name. */
-  intentField?: string;
-  /** Remove intent prefix, followed by caller line key. */
-  removePrefix?: string;
-  /** Optional notification with a new lossless draft; the supplied line is never mutated. */
-  onchange?: (line: InvoiceLineDraft) => void;
-}
-
-/** General native invoice editor with optional domain extensions. */
-export interface InvoiceEditorProps extends InvoiceDraftCalculationOptions {
-  /** Caller native endpoint. */
+/** The invoice editor: the v2 money surface is its only model. */
+export interface InvoiceEditorProps {
+  /** Native form action owned by the caller's invoice route. */
   action: string;
-  /** Native method, default POST. */
+  /** Native HTTP method retained for progressive enhancement. */
   method?: 'post' | 'get';
-  /** Stable form identity. */
-  id?: string;
-  /** Caller-localized title. */
-  title?: string;
-  /** Retained editable strings; never reconstructed from model numbers. */
-  values?: InvoiceDraftValues;
-  /** Authorized customer projections; retained unknown references stay visible. */
-  customers?: readonly { id: string; label: string }[];
-  /** Caller field errors: header name or lineKey.fieldName. */
-  errors?: Record<string, string>;
-  /** Header and submitter field adapters. */
-  fields?: Partial<InvoiceFieldNames>;
-  /** Repeated line field adapters. */
-  lineFields?: Partial<InvoiceLineFieldNames>;
-  /** Presentation capability only; server reauthorizes all mutations. */
+  /** Typed v2 money draft, tax-code choices, and stored issued snapshot. */
+  money: MoneyEditorProps;
+  /** Presentation capability; the server remains the authority for writes. */
   canEdit?: boolean;
-  /** Disable submission while a request is pending. */
+  /** Caller transport state that disables edits and the save submitter. */
   pending?: boolean;
-  /** Caller-owned retry-controller status. */
-  retryStatus?: FormRetryStatus;
-  /** Caller error or uncertain-outcome message. */
-  message?: string;
-  /** Server-authoritative review snapshot. */
-  review?: InvoicePreparationReview;
-  /** Exact caller tokens/context; repeated names preserved. */
+  /** Caller-owned request identity and route fields submitted unchanged. */
   hiddenFields?: readonly InvoicePreparationHiddenField[];
-  /** Save intent, default save. */
+  /** Native submitter field name expected by the caller, default intent. */
+  intentField?: string;
+  /** Submitter value that requests a draft save, default save. */
   saveIntent?: string;
-  /** Add-line intent, default addLine. */
-  addIntent?: string;
-  /** Remove-line intent prefix, default removeLine:. */
-  removePrefix?: string;
-  /** Caller-localized save label. */
+  /** Caller-visible label for the save submitter. */
   saveLabel?: string;
-  /** Optional cancel navigation URL. */
-  cancelHref?: string;
-  /** Domain fields inside the single form; receives current draft for currency-aware extensions. */
-  children?: Snippet<[InvoiceDraftValues]>;
-  /** Optional enhancement; native submission remains the default. */
+  /** Optional native form enhancement; omitted submissions stay native. */
   onsubmit?: HTMLFormAttributes['onsubmit'];
-  /** Explicit v2 money surface. Omit to retain the legacy invoice editor API. */
-  money?: MoneyEditorProps;
 }

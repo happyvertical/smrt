@@ -18,6 +18,7 @@ import {
   type DocumentMoneyReadRebindCapability,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
+import { MoneyValidationError } from '../money.js';
 import type {
   ContractLineItemOptions,
   ContractTaxComponentSnapshot,
@@ -167,23 +168,14 @@ export class ContractLineItem extends SmrtObject {
   @field({ ui: { format: 'money' } })
   taxAmount = 0;
 
-  /**
-   * @internal Pre-v2 amount preserved only by the migration path for
-   * rollback; not a user-facing amount, so it carries no money hint.
-   */
-  @field({ nullable: true })
-  legacyAmount: number | null = null;
-
   /** Stable issue/freeze identity, independent of lifecycle updated_at. */
   moneySnapshotId = '';
 
   /**
-   * Calculated line amount, in integer minor units. Under money v2 it is net
-   * of discount and before tax for `exclusive` / `none` documents, and
-   * tax-inclusive for `inclusive` ones; {@link taxAmount} holds the tax. The
-   * legacy model stores qty * price - discount + tax, derived by
-   * {@link ContractLineItem.calculateAmount}, which rounds the fractional tax
-   * to a whole minor unit (#2401).
+   * Line amount in integer minor units: net of discount and before tax for
+   * `exclusive` / `none` documents, and tax-inclusive for `inclusive` ones;
+   * {@link taxAmount} holds the tax. Derived by the Contract money aggregate
+   * on every save.
    */
   @field({
     description:
@@ -251,8 +243,6 @@ export class ContractLineItem extends SmrtObject {
     if (options.taxComponents !== undefined)
       this.taxComponents = structuredClone(options.taxComponents);
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
-    if (options.legacyAmount !== undefined)
-      this.legacyAmount = options.legacyAmount;
     if (options.moneySnapshotId !== undefined)
       this.moneySnapshotId = options.moneySnapshotId;
     if (options.amount !== undefined) this.amount = options.amount;
@@ -265,19 +255,16 @@ export class ContractLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /**
-   * Calculate the line amount, in integer minor units.
-   *
-   * `quantity` is decimal and `taxRate` is a fraction, so the product is not
-   * generally a whole number of minor units. Rounding happens here — at the
-   * one boundary where a rate meets money — so that every value that reaches a
-   * money column is already exact and every downstream comparison can be a
-   * plain `===` instead of an epsilon tolerance (#2401).
-   */
-  calculateAmount(): number {
-    const subtotal = this.quantity * this.unitPrice - this.discount;
-    const tax = subtotal * this.taxRate;
-    return Math.round(subtotal + tax);
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
+    }
+    return this;
   }
 
   override async save(): Promise<this> {
@@ -286,13 +273,20 @@ export class ContractLineItem extends SmrtObject {
   }
 
   /** @internal Contract aggregate persistence only. */
-  async saveDerived(
-    capability: DocumentMoneyWriteCapability,
-    legacy: boolean,
-  ): Promise<this> {
+  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Contract line money write capability is required');
-    if (legacy) this.amount = this.calculateAmount();
+    // Money is integer minor units: refuse a major-unit price before it can
+    // reach the database (#2401), ahead of the aggregate recompute.
+    for (const [field, value] of [
+      ['unitPrice', this.unitPrice],
+      ['discount', this.discount],
+    ] as const)
+      if (!Number.isSafeInteger(value))
+        throw new MoneyValidationError(
+          'UNSAFE_MONEY',
+          `Contract line ${field} ${value} must be a safe integer number of minor units`,
+        );
     return (await super.save()) as this;
   }
 

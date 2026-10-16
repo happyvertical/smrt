@@ -35,6 +35,7 @@ import {
   collectRegistryConflictTargets,
   formatParityReport,
 } from './db-parity.js';
+import { checkCommerceMoneyPreconditions } from './db-upgrade-commerce-money.js';
 import { assessFailedMigrations } from './migration-failure-analysis.js';
 import {
   evaluateSchemaContract,
@@ -634,6 +635,8 @@ export const dbStatusCommand: CLICommand = {
           // Tenant-owned tables whose live unique index is still the global
           // natural key (the Ludis cross-tenant takeover shape).
           ...checkTenantNaturalKeyUniques(comparer.getLiveSchemaSnapshot()),
+          // Commerce money data written by an earlier version (#4021).
+          ...(await checkCommerceMoneyPreconditions(db)),
         ];
         status.failedMigrations = summarizeFailedMigrations(
           failed,

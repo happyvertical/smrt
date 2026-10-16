@@ -12,13 +12,16 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
 import { Order, PurchaseOrder } from '../models/Contract.js';
 import { ContractLineItem } from '../models/ContractLineItem.js';
 import { ContractStatus, ContractType } from '../types/index.js';
+import { seedV2Tenant, tenantIt, V2_TENANT } from './helpers/v2-tenant.js';
+
+const it = tenantIt();
 
 describe('Contract', () => {
   let dbPath: string;
@@ -88,7 +91,6 @@ describe('Contract', () => {
         shipTo: 'Dock 2\nEdmonton',
         reference: 'PO-7',
         notes: 'Call first',
-        totalAmount: 1200,
       });
       await order.save();
       const loaded = (await contracts.get({ id: order.id })) as PurchaseOrder;
@@ -96,13 +98,20 @@ describe('Contract', () => {
       expect(loaded.shipTo).toBe('Dock 2\nEdmonton');
       expect(loaded.reference).toBe('PO-7');
       expect(loaded.notes).toBe('Call first');
-      expect(loaded.totalAmount).toBe(1200);
+      // Header totals are derived from lines (#4021); a header-only edit
+      // leaves them where they were.
+      const totals = {
+        subtotal: loaded.subtotal,
+        taxAmount: loaded.taxAmount,
+        totalAmount: loaded.totalAmount,
+      };
       loaded.expectedDate = '';
       loaded.shipTo = '';
       await loaded.save();
       const cleared = (await contracts.get({ id: order.id })) as PurchaseOrder;
       expect(cleared.expectedDate).toBe('');
       expect(cleared.shipTo).toBe('');
+      expect(cleared).toMatchObject(totals);
     });
   });
 
@@ -114,13 +123,12 @@ describe('Contract', () => {
       const contract = await contracts.create({
         _meta_type: 'Order',
         customerId: customer.id,
-        totalAmount: 1500.0,
         currency: 'USD',
       });
 
       expect(contract.id).toBeDefined();
       expect(contract.customerId).toBe(customer.id);
-      expect(contract.totalAmount).toBe(1500.0);
+      expect(contract.currency).toBe('USD');
       expect(contract.status).toBe(ContractStatus.DRAFT);
     });
 
@@ -141,9 +149,11 @@ describe('Contract', () => {
 
       const loaded = await contracts.get({ id: contract.id });
       expect(loaded).toBeDefined();
-      expect(loaded?.subtotal).toBe(1000.0);
-      expect(loaded?.taxAmount).toBe(80.0);
-      expect(loaded?.totalAmount).toBe(1080.0);
+      // Caller-supplied header totals are ignored: a draft with no lines
+      // totals zero (#4021).
+      expect(loaded?.subtotal).toBe(0);
+      expect(loaded?.taxAmount).toBe(0);
+      expect(loaded?.totalAmount).toBe(0);
       expect(loaded?.reference).toBe('INV-2024-001');
       expect(loaded?.notes).toBe('Test order');
     });
@@ -395,7 +405,8 @@ describe('ContractLineItem', () => {
   });
 
   describe('Line Item Calculations', () => {
-    it('should calculate line amount', async () => {
+    it('derives line tax from the tenant default code and recomputes the contract', async () => {
+      await seedV2Tenant(contracts.db, V2_TENANT, { percent: '8' });
       const customer = await customers.create({ profileId: 'calc-test' });
       await customer.save();
 
@@ -411,17 +422,25 @@ describe('ContractLineItem', () => {
         quantity: 10,
         unitPrice: 4999, // $49.99 in cents
         discount: 1000, // $10.00 in cents
-        taxRate: 0.08,
+        discountType: 'amount',
       });
+      await item.save();
 
-      // (10 * 4999 - 1000) * 1.08 = 48990 * 1.08 = 52909.2 → 52909 cents.
-      // Exact equality, not toBeCloseTo: the fractional tax is rounded to a
-      // whole minor unit inside calculateAmount (#2401).
-      const amount = item.calculateAmount();
-      expect(amount).toBe(52909);
+      // Exclusive line amount: 10 * 4999 - 1000 = 48990 net; 8% tax is
+      // 3919.2, rounded to a whole minor unit.
+      const loaded = await lineItems.get({ id: item.id });
+      expect(loaded?.amount).toBe(48990);
+      expect(loaded?.taxAmount).toBe(3919);
+      const header = await contracts.get({ id: contract.id });
+      expect(header).toMatchObject({
+        subtotal: 48990,
+        taxAmount: 3919,
+        totalAmount: 52909,
+      });
     });
 
-    it('should update amount manually before save', async () => {
+    it('ignores a caller-supplied line amount and recomputes it on save', async () => {
+      await seedV2Tenant(contracts.db, V2_TENANT, { percent: '10' });
       const customer = await customers.create({ profileId: 'autocalc-test' });
       await customer.save();
 
@@ -435,14 +454,16 @@ describe('ContractLineItem', () => {
         contractId: contract.id,
         quantity: 5,
         unitPrice: 10000, // $100.00 in cents
-        taxRate: 0.1,
+        amount: 1,
       });
-      // Manually calculate amount before save (SMRT doesn't auto-call beforeSave)
-      item.amount = item.calculateAmount();
       await item.save();
 
       const loaded = await lineItems.get({ id: item.id });
-      expect(loaded?.amount).toBe(55000); // 5 * 10000 * 1.1, in cents
+      expect(loaded?.amount).toBe(50000);
+      expect(loaded?.taxAmount).toBe(5000);
+      expect((await contracts.get({ id: contract.id }))?.totalAmount).toBe(
+        55000,
+      );
     });
   });
 

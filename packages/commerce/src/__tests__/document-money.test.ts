@@ -27,7 +27,7 @@ import { DocumentTax } from '../models/DocumentTax';
 import { Invoice } from '../models/Invoice';
 import { InvoiceLineItem } from '../models/InvoiceLineItem';
 import { MoneyValidationError } from '../money';
-import { ensureTenantTaxCodes } from '../tax/legacy';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types';
 
 function gateFieldForTest(
@@ -88,10 +88,7 @@ describe('invoice money persistence (#3933)', () => {
         { taxComponentId: gst.id, number: 'GST-123', label: 'GST' },
       ];
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
       expect(await settings.getForTenant(tenantId)).toMatchObject({
-        moneyModel: 'v2',
         taxRoundingScope: 'document',
       });
       return code.id;
@@ -540,64 +537,6 @@ describe('invoice money persistence (#3933)', () => {
         taxCodeCode: 'pst',
         taxAmount: 7,
       });
-    });
-  });
-
-  it('blocks runtime money writes for the persisted migration owner window', async () => {
-    const seeded = await ensureTenantTaxCodes(db, 'tenant-b');
-    const outOfScopeId = seeded.find(
-      (code) => code.code === 'out-of-scope',
-    )?.id;
-    if (!outOfScopeId) throw new Error('Expected out-of-scope seed');
-    await withTenant({ tenantId: 'tenant-b' }, async () => {
-      const customers = await CustomerCollection.create({ db });
-      const customer = await customers.create({
-        defaultTaxCodeId: outOfScopeId,
-      });
-      const invoices = await InvoiceCollection.create({ db });
-      const invoice = await invoices.create({
-        customerId: customer.id,
-        invoiceNumber: 'LEGACY',
-      });
-      await expect(serializeInvoiceMcpGet(invoice)).resolves.not.toHaveProperty(
-        'money',
-      );
-      const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration('tenant-b');
-      await expect(serializeInvoiceMcpGet(invoice)).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      } satisfies Partial<MoneyValidationError>);
-      const mcp = await new MCPGenerator(
-        { classNames: ['@happyvertical/smrt-commerce:Invoice'] },
-        {
-          db,
-          user: { id: 'invoice-reader' },
-          tenantId: 'tenant-b',
-        },
-      ).handleToolCall({
-        method: 'tools/call',
-        params: { name: 'invoice_get', arguments: { id: invoice.id } },
-      });
-      expect(mcp).toMatchObject({
-        isError: true,
-        structuredContent: {
-          error: { code: 'FROZEN_DOCUMENT' },
-        },
-      });
-      const forged = await settings.getForTenant('tenant-b');
-      if (!forged) throw new Error('Expected settings');
-      forged.moneyModel = 'legacy';
-      forged.moneyMigrationId = '';
-      await expect(forged.save()).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      } satisfies Partial<MoneyValidationError>);
-      invoice.notes = 'blocked';
-      await expect(invoice.save()).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      } satisfies Partial<MoneyValidationError>);
-      await settings.restoreLegacyMoneyModel('tenant-b', migrationId);
-      await invoice.save();
-      expect(invoice.notes).toBe('blocked');
     });
   });
 

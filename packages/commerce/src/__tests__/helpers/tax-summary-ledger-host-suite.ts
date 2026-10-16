@@ -17,8 +17,6 @@ const to = new Date('2026-09-30T23:59:59.999Z');
 
 async function activateV2(db: DatabaseInterface, tenantId: string) {
   const settings = await TaxSettingsCollection.create({ db });
-  const migrationId = await settings.beginMoneyMigration(tenantId);
-  await settings.activateMoneyV2(tenantId, migrationId);
 }
 
 /** Contract shared by the SQLite and PostgreSQL real ledger source lanes. */

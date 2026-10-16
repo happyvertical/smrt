@@ -4,10 +4,6 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import type {
-  InvoiceCalculationContext,
-  InvoiceLineDraft,
-} from '../svelte/invoices/calculations.js';
 
 // ============================================================================
 // Customer/Vendor Types
@@ -310,18 +306,21 @@ export interface RecordPaymentOptions {
 export interface RecognizeRevenueOptions {
   /** Account ID for accounts receivable (debit side) */
   arAccountId: string;
-  /** Account ID for revenue (credit side) */
+  /** Revenue account for lines that do not name their own (credit side). */
   revenueAccountId: string;
-  /** Account ID for tax payable (credit side, optional) */
+  /**
+   * Tax payable account for tax components without a liability account and
+   * for provider tax (credit side).
+   */
   taxAccountId?: string;
-  /** Explicit ledger book currency. Required when the tenant uses money v2. */
-  bookCurrency?: string;
+  /** ISO 4217 ledger book currency; must equal the invoice currency. */
+  bookCurrency: string;
 }
 
-/** Options for atomically cancelling a posted money-v2 invoice. */
+/** Options for atomically cancelling a posted invoice. */
 export interface CancelRevenueOptions {
-  /** Explicit ledger book currency; required for money-v2 cancellation. */
-  bookCurrency?: string;
+  /** ISO 4217 ledger book currency; must equal the invoice currency. */
+  bookCurrency: string;
 }
 
 // ============================================================================
@@ -464,8 +463,6 @@ export interface TaxSettingsOptions extends SmrtObjectOptions {
   defaultLineAmountType?: 'exclusive' | 'inclusive' | 'none';
   taxRoundingScope?: 'line' | 'document';
   taxRegistrations?: TaxRegistrationOptions[];
-  moneyModel?: 'legacy' | 'migrating' | 'v2';
-  moneyMigrationId?: string;
 }
 
 /**
@@ -553,7 +550,6 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
   taxComponents?: ContractTaxComponentSnapshot[];
   taxComponentsJson?: string | null;
   taxAmount?: number;
-  legacyAmount?: number | null;
   moneySnapshotId?: string;
   amount?: number;
   productId?: string;
@@ -659,23 +655,11 @@ export interface InvoiceTaxComponentSnapshot {
   taxMinor: number;
 }
 
-/** Retained editing modes, validated against resolved model fields before reuse. */
-export interface InvoiceLineEditorState {
-  /** Lossless editor draft; never authoritative for ordinary model saves. */
-  draft: InvoiceLineDraft;
-  /** Context used to resolve that draft; caller authority must still match on reload. */
-  context: InvoiceCalculationContext;
-}
-
 /** Constructor options for {@link InvoiceLineItem}. */
 export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   creditedLineId?: string | null;
   creditCalculationBasis?: InvoiceCreditCalculationBasis | null;
   creditCalculationBasisJson?: string;
-  /** Optional retained editor modes and their original calculation context. */
-  invoiceEditorState?: InvoiceLineEditorState | null;
-  /** Serialized editor state loaded from persistence; malformed JSON is ignored. */
-  invoiceEditorStateJson?: string;
   tenantId?: string | null;
   invoiceId?: string;
   description?: string;
@@ -694,7 +678,6 @@ export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   taxComponents?: InvoiceTaxComponentSnapshot[];
   taxComponentsJson?: string | null;
   taxAmount?: number;
-  legacyAmount?: number | null;
   moneySnapshotId?: string;
   amount?: number;
   sourceType?: string;

@@ -386,6 +386,13 @@ export class Contract extends SmrtObject {
    */
   override async initialize(): Promise<this> {
     await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
+    }
     if (await this.isSaved()) {
       loadedContractStatus.set(this, this.status);
     }

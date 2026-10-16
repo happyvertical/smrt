@@ -1,324 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  calculateInvoiceDraft,
-  calculateInvoiceLine,
-  calculateInvoiceMinorLine,
-  type InvoiceDraftValues,
-  type InvoiceLineDraft,
-  resolveInvoiceLineDraft,
-} from '../invoices.js';
+import { calculateInvoiceMinorLine } from '../invoices.js';
 
-const line: InvoiceLineDraft = {
-  key: 'one',
-  description: 'Consulting',
-  sku: 'HOUR',
-  quantity: '1.5',
-  unitPrice: '19.99',
-  discountType: 'flat',
-  discountValue: '0',
-  taxMode: 'inherit',
-  taxRate: '',
-};
-const context = { currency: 'USD', inheritedTaxRate: '5' };
-const invoice: InvoiceDraftValues = {
-  customerId: 'customer',
-  issuedOn: '2026-10-03',
-  dueOn: '2026-11-03',
-  currency: 'USD',
-  paymentTerms: 'Net 30',
-  taxRate: '5',
-  lines: [line],
-};
-
-describe('exact general invoice calculations', () => {
-  it('accepts exact trailing zeroes when changing currency without rewriting the draft', () => {
-    const draft = {
-      ...line,
-      quantity: '1',
-      unitPrice: '100.00',
-      discountValue: '5.000',
-      taxMode: 'override',
-      taxRate: '0',
-    };
-    expect(
-      calculateInvoiceLine(draft, { ...context, currency: 'JPY' }),
-    ).toMatchObject({
-      valid: true,
-      grossMinor: 100,
-      discountMinor: 5,
-      totalMinor: 95,
-    });
-    expect(draft.unitPrice).toBe('100.00');
-    expect(
-      calculateInvoiceLine(
-        { ...draft, unitPrice: '100.01' },
-        { ...context, currency: 'JPY' },
-      ),
-    ).toMatchObject({ valid: false, errors: { unitPrice: 'precision' } });
-  });
-  it('rounds fractional quantities then tax to exact minor units', () => {
-    expect(calculateInvoiceLine(line, context)).toEqual({
-      valid: true,
-      effectiveTaxRate: '5',
-      grossMinor: 2999,
-      discountMinor: 0,
-      subtotalMinor: 2999,
-      taxMinor: 150,
-      totalMinor: 3149,
-    });
-  });
-  it('distinguishes a flat discount from a percentage discount before tax', () => {
-    expect(
-      calculateInvoiceLine({ ...line, discountValue: '5' }, context),
-    ).toMatchObject({
-      valid: true,
-      discountMinor: 500,
-      subtotalMinor: 2499,
-      taxMinor: 125,
-      totalMinor: 2624,
-    });
-    expect(
-      calculateInvoiceLine(
-        { ...line, discountType: 'percent', discountValue: '5' },
-        context,
-      ),
-    ).toMatchObject({
-      valid: true,
-      discountMinor: 150,
-      subtotalMinor: 2849,
-      taxMinor: 142,
-      totalMinor: 2991,
-    });
-  });
-  it('preserves an explicit zero override and rejects a blank override', () => {
-    expect(
-      calculateInvoiceLine(
-        { ...line, taxMode: 'override', taxRate: '0' },
-        context,
-      ),
-    ).toMatchObject({
-      valid: true,
-      effectiveTaxRate: '0',
-      taxMinor: 0,
-      totalMinor: 2999,
-    });
-    expect(
-      calculateInvoiceLine(
-        { ...line, taxMode: 'override', taxRate: '' },
-        context,
-      ),
-    ).toMatchObject({ valid: false, errors: { taxRate: 'invalid-decimal' } });
-    expect(
-      calculateInvoiceLine(
-        { ...line, taxMode: 'inherit', taxRate: 'garbage' },
-        context,
-      ),
-    ).toMatchObject({ valid: true, effectiveTaxRate: '5' });
-  });
-  it.each([
-    ['JPY', '1', 1, 2],
-    ['USD', '0.01', 1, 2],
-    ['BHD', '0.001', 1, 2],
-    ['CLF', '0.0001', 1, 2],
-  ])('uses currency exponent for %s rather than display locale', (currency, unitPrice, _unit, grossMinor) => {
-    expect(
-      calculateInvoiceLine(
-        { ...line, unitPrice, taxMode: 'override', taxRate: '0' },
-        { ...context, currency },
-      ),
-    ).toMatchObject({ valid: true, grossMinor, totalMinor: grossMinor });
-  });
-  it('handles decimal rates exactly at half-cent boundaries', () => {
-    expect(
-      calculateInvoiceLine(
-        {
-          ...line,
-          quantity: '1',
-          unitPrice: '0.50',
-          taxMode: 'override',
-          taxRate: '1',
-        },
-        context,
-      ),
-    ).toMatchObject({ valid: true, taxMinor: 1, totalMinor: 51 });
-    expect(
-      calculateInvoiceLine(
-        {
-          ...line,
-          quantity: '1',
-          unitPrice: '100',
-          discountType: 'percent',
-          discountValue: '12.3456',
-          taxMode: 'override',
-          taxRate: '7.125',
-        },
-        context,
-      ),
-    ).toMatchObject({
-      valid: true,
-      discountMinor: 1235,
-      subtotalMinor: 8765,
-      taxMinor: 625,
-      totalMinor: 9390,
-    });
-  });
-  it('does not lose a cent at the safe integer boundary', () => {
-    expect(
-      calculateInvoiceLine(
-        {
-          ...line,
-          quantity: '1',
-          unitPrice: '90071992547409.91',
-          taxMode: 'override',
-          taxRate: '0',
-        },
-        context,
-      ),
-    ).toMatchObject({
-      valid: true,
-      grossMinor: Number.MAX_SAFE_INTEGER,
-      totalMinor: Number.MAX_SAFE_INTEGER,
-    });
-    expect(
-      calculateInvoiceLine(
-        { ...line, quantity: '1', unitPrice: '90071992547409.92' },
-        context,
-      ),
-    ).toMatchObject({ valid: false, errors: { unitPrice: 'range' } });
-  });
-  it.each([
-    '',
-    '-1',
-    '1e2',
-    'Infinity',
-    'NaN',
-    ' 1',
-    '1 ',
-    '1..5',
-    '0.0000001',
-  ])('retains and rejects invalid quantity %j', (quantity) => {
-    const draft = { ...line, quantity };
-    expect(calculateInvoiceLine(draft, context).valid).toBe(false);
-    expect(draft.quantity).toBe(quantity);
-  });
-  it.each([
-    { unitPrice: '1.001' },
-    { discountValue: '30' },
-    { discountType: 'other' },
-    { taxMode: 'other' },
-    { discountType: 'percent', discountValue: '100.000001' },
-    { taxMode: 'override', taxRate: '-1' },
-    { taxMode: 'override', taxRate: '101' },
-    { unitPrice: '90071992547409.91', quantity: '2' },
-  ])('invalidates unsafe or unsupported drafts %j', (patch) => {
-    expect(calculateInvoiceLine({ ...line, ...patch }, context).valid).toBe(
-      false,
-    );
-  });
-  it('allows zero quantity and a full discount without manufacturing tax', () => {
-    expect(
-      calculateInvoiceLine({ ...line, quantity: '0' }, context),
-    ).toMatchObject({ valid: true, totalMinor: 0 });
-    expect(
-      calculateInvoiceLine(
-        { ...line, discountType: 'percent', discountValue: '100' },
-        context,
-      ),
-    ).toMatchObject({
-      valid: true,
-      subtotalMinor: 0,
-      taxMinor: 0,
-      totalMinor: 0,
-    });
-  });
-  it('adds exact line amounts and never trusts extra client totals', () => {
-    expect(
-      calculateInvoiceDraft({
-        ...invoice,
-        lines: [line, { ...line, key: 'two' }],
-        totalMinor: 1,
-      } as InvoiceDraftValues),
-    ).toMatchObject({
-      valid: true,
-      grossMinor: 5998,
-      subtotalMinor: 5998,
-      taxMinor: 300,
-      totalMinor: 6298,
-    });
-  });
-  it.each([
-    { customerId: '' },
-    { issuedOn: '2026-02-30' },
-    { dueOn: '2026-01-01' },
-    { currency: 'usd' },
-    { taxRate: '' },
-    { lines: [] },
-    { lines: [line, line] },
-    { lines: [{ ...line, quantity: 'invalid' }] },
-  ])('rejects invalid header or line membership %j', (patch) => {
-    const result = calculateInvoiceDraft({ ...invoice, ...patch });
-    expect(result.valid).toBe(false);
-    expect(result).not.toHaveProperty('totalMinor');
-  });
-  it('rejects aggregate overflow even when each individual line is safe', () => {
-    const large = {
-      ...line,
-      quantity: '1',
-      unitPrice: '45035996273704.96',
-      taxMode: 'override',
-      taxRate: '0',
-    };
-    expect(
-      calculateInvoiceDraft({
-        ...invoice,
-        lines: [large, { ...large, key: 'two' }],
-      }),
-    ).toMatchObject({ valid: false, errors: { total: 'range' } });
-  });
-  it('resolves discount and inherited tax to model fields without changing totals', () => {
-    const draft = { ...line, discountType: 'percent', discountValue: '5' };
-    const resolved = resolveInvoiceLineDraft(draft, context);
-    expect(resolved).toEqual({
-      description: 'Consulting',
-      sku: 'HOUR',
-      quantity: 1.5,
-      unitPrice: 1999,
-      discount: 150,
-      taxRate: 0.05,
-      amount: 2991,
-    });
-    expect(calculateInvoiceMinorLine(resolved)).toMatchObject({
-      subtotalMinor: 2849,
-      taxMinor: 142,
-      totalMinor: 2991,
-    });
-    expect(
-      resolveInvoiceLineDraft(
-        { ...line, taxMode: 'override', taxRate: '0.000001' },
-        context,
-      ).taxRate,
-    ).toBe(0.00000001);
-    expect(
-      resolveInvoiceLineDraft(
-        { ...line, taxMode: 'override', taxRate: '1.234567' },
-        context,
-      ).taxRate,
-    ).toBe(0.01234567);
-  });
-  it('refuses quantities that numeric persistence cannot represent exactly', () => {
-    expect(
-      calculateInvoiceLine(
-        { ...line, quantity: '9007199254740990.1', unitPrice: '0' },
-        context,
-      ),
-    ).toMatchObject({ valid: false, errors: { quantity: 'precision' } });
-    expect(() =>
-      resolveInvoiceLineDraft(
-        { ...line, quantity: '9007199254740990.1', unitPrice: '0' },
-        context,
-      ),
-    ).toThrow('Invalid invoice line');
-  });
+describe('exact invoice minor-unit line calculation', () => {
   it('preserves canonical large fractional quantities without toFixed rounding', () => {
     const input = {
       quantity: 10000000000.12345,
@@ -329,27 +12,7 @@ describe('exact general invoice calculations', () => {
     expect(calculateInvoiceMinorLine(input).totalMinor).toBe(900000000011111);
     expect(
       calculateInvoiceMinorLine({ ...input, unitPrice: -90000 }).totalMinor,
-    ).toBe(-900000000011110);
-    expect(
-      resolveInvoiceLineDraft(
-        {
-          ...line,
-          quantity: '10000000000.12345',
-          unitPrice: '900.00',
-          discountValue: '0',
-          taxMode: 'override',
-          taxRate: '0',
-        },
-        context,
-      ).amount,
-    ).toBe(900000000011111);
-    // This distinct source decimal is lost before a Number reaches the model.
-    expect(
-      calculateInvoiceLine(
-        { ...line, quantity: '100000000000.12345', unitPrice: '0' },
-        context,
-      ),
-    ).toMatchObject({ valid: false, errors: { quantity: 'precision' } });
+    ).toBe(-900000000011111);
   });
   it('expands supported canonical exponent rates and retains precision limits', () => {
     expect(
@@ -395,7 +58,7 @@ describe('exact general invoice calculations', () => {
         }),
       ).toThrow(RangeError);
   });
-  it('preserves legacy credit ties until callers select money v2', () => {
+  it('rounds credit ties symmetrically with their positive counterparts', () => {
     expect(
       calculateInvoiceMinorLine({
         quantity: 1.5,
@@ -403,7 +66,7 @@ describe('exact general invoice calculations', () => {
         discount: 0,
         taxRate: 0,
       }),
-    ).toMatchObject({ grossMinor: -1, totalMinor: -1 });
+    ).toMatchObject({ grossMinor: -2, totalMinor: -2 });
     expect(
       calculateInvoiceMinorLine({
         quantity: 1,
@@ -411,29 +74,21 @@ describe('exact general invoice calculations', () => {
         discount: 0,
         taxRate: 0.01,
       }),
-    ).toMatchObject({ taxMinor: 0, totalMinor: -50 });
-    expect(
-      calculateInvoiceMinorLine(
-        { quantity: 1.5, unitPrice: -1, discount: 0, taxRate: 0 },
-        { moneyModel: 'v2' },
-      ),
-    ).toMatchObject({ grossMinor: -2, totalMinor: -2 });
-    expect(
-      calculateInvoiceMinorLine(
-        { quantity: 1, unitPrice: -50, discount: 0, taxRate: 0.01 },
-        { moneyModel: 'v2' },
-      ),
     ).toMatchObject({ taxMinor: -1, totalMinor: -51 });
   });
-  it('passes stored signed amount discounts through the v2 adapter symmetrically', () => {
-    const positive = calculateInvoiceMinorLine(
-      { quantity: 1, unitPrice: 100, discount: 10, taxRate: 0.05 },
-      { moneyModel: 'v2' },
-    );
-    const negative = calculateInvoiceMinorLine(
-      { quantity: 1, unitPrice: -100, discount: -10, taxRate: 0.05 },
-      { moneyModel: 'v2' },
-    );
+  it('applies a signed amount discount that carries the gross sign', () => {
+    const positive = calculateInvoiceMinorLine({
+      quantity: 1,
+      unitPrice: 100,
+      discount: 10,
+      taxRate: 0.05,
+    });
+    const negative = calculateInvoiceMinorLine({
+      quantity: 1,
+      unitPrice: -100,
+      discount: -10,
+      taxRate: 0.05,
+    });
     expect(positive).toMatchObject({
       grossMinor: 100,
       discountMinor: 10,
@@ -465,106 +120,5 @@ describe('exact general invoice calculations', () => {
     },
   ])('rejects invalid model inputs before persistence %j', (input) => {
     expect(() => calculateInvoiceMinorLine(input)).toThrow(RangeError);
-  });
-});
-
-describe('invoice tax rounding scope', () => {
-  const small = {
-    ...invoice,
-    taxRate: '5',
-    lines: ['first', 'second'].map((key) => ({
-      ...line,
-      key,
-      quantity: '1',
-      unitPrice: '0.10',
-      discountValue: '0',
-    })),
-  };
-  it('normalizes equivalent rates and keeps overrides and discounts exact', () => {
-    const draft = {
-      ...small,
-      lines: [
-        {
-          ...small.lines[0],
-          unitPrice: '0.20',
-          discountType: 'percent',
-          discountValue: '50',
-        },
-        { ...small.lines[1], taxMode: 'override', taxRate: '005.000000' },
-        { ...small.lines[0], key: 'zero', taxMode: 'override', taxRate: '0' },
-        { ...small.lines[0], key: 'other', taxMode: 'override', taxRate: '10' },
-      ],
-    };
-    expect(
-      calculateInvoiceDraft(draft, { roundingScope: 'invoice' }),
-    ).toMatchObject({
-      valid: true,
-      grossMinor: 50,
-      discountMinor: 10,
-      subtotalMinor: 40,
-      taxMinor: 2,
-      totalMinor: 42,
-    });
-  });
-  it.each([
-    { quantity: '-1' },
-    { unitPrice: '-0.10' },
-    { unitPrice: '0.001' },
-    { discountValue: '0.11' },
-    { taxMode: 'override', taxRate: '5.0000001' },
-    { taxMode: 'override', taxRate: '101' },
-    { taxMode: 'override', taxRate: '' },
-  ])('keeps invalid line input invalid under invoice rounding: %j', (patch) => {
-    const result = calculateInvoiceDraft(
-      { ...small, lines: [{ ...small.lines[0], ...patch }] },
-      { roundingScope: 'invoice' },
-    );
-    expect(result.valid).toBe(false);
-    expect(result).not.toHaveProperty('totalMinor');
-  });
-  it('rejects unsupported scope and unsafe aggregates without plausible totals', () => {
-    // Runtime callers can supply unsupported values even though TS restricts them.
-    const invalid = calculateInvoiceDraft(small, {
-      roundingScope: 'future' as 'invoice',
-    });
-    expect(invalid).toMatchObject({
-      valid: false,
-      errors: { roundingScope: 'invalid-mode' },
-    });
-    const overflow = calculateInvoiceDraft(
-      {
-        ...small,
-        taxRate: '0',
-        lines: small.lines.map((row) => ({
-          ...row,
-          unitPrice: '90071992547409.91',
-        })),
-      },
-      { roundingScope: 'invoice' },
-    );
-    expect(overflow).toMatchObject({
-      valid: false,
-      errors: { total: 'range' },
-    });
-    expect(overflow).not.toHaveProperty('totalMinor');
-  });
-  it('rounds a shared tax once across the invoice without changing the line default', () => {
-    expect(calculateInvoiceDraft(small)).toMatchObject({
-      valid: true,
-      subtotalMinor: 20,
-      taxMinor: 2,
-      totalMinor: 22,
-    });
-    expect(calculateInvoiceDraft(small, { roundingScope: 'line' })).toEqual(
-      calculateInvoiceDraft(small),
-    );
-    expect(
-      calculateInvoiceDraft(small, { roundingScope: 'invoice' }),
-    ).toMatchObject({
-      valid: true,
-      subtotalMinor: 20,
-      taxMinor: 1,
-      totalMinor: 21,
-    });
   });
 });

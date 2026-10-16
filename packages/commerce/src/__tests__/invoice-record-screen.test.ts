@@ -39,8 +39,6 @@ async function activateV2(
     current.defaultSalesTaxCodeId = code.id;
     current.defaultLineAmountType = 'exclusive';
     current.taxRoundingScope = 'document';
-    const migrationId = await settings.beginMoneyMigration(tenantId);
-    await settings.activateMoneyV2(tenantId, migrationId);
     return code.id;
   });
 }

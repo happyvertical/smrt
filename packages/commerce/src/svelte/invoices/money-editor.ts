@@ -102,7 +102,7 @@ export const moneyEditorFieldNames: MoneyEditorFieldNames = {
 };
 
 export interface MoneyEditorProps {
-  /** Explicit opt-in: existing invoice-editor consumers continue using legacy UI. */
+  /** Money model discriminator; v2 is the only invoice money model. */
   mode: 'v2';
   draft: MoneyEditorDraft;
   taxCodes: readonly MoneyEditorTaxCode[];

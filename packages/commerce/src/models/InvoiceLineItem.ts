@@ -12,7 +12,6 @@ import {
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { minorToMajorUnits } from '../billing/units.js';
 import {
   DOCUMENT_MONEY_READ_REBIND,
   DOCUMENT_MONEY_WRITE,
@@ -20,16 +19,8 @@ import {
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
 import { MoneyValidationError } from '../money.js';
-import {
-  calculateInvoiceMinorLine,
-  type InvoiceCalculationContext,
-  type InvoiceLineDraft,
-  resolveInvoiceLineDraft,
-} from '../svelte/invoices/calculations.js';
 import type {
-  AccountingLineItemInput,
   InvoiceCreditCalculationBasis,
-  InvoiceLineEditorState,
   InvoiceLineItemOptions,
   InvoiceTaxComponentSnapshot,
 } from '../types/index.js';
@@ -169,35 +160,6 @@ export class InvoiceLineItem extends SmrtObject {
   @field({ description: 'How many.' })
   quantity: number = 1.0;
 
-  /** Raw editor modes retained only while they resolve to the authoritative model fields. */
-  invoiceEditorStateJson: string = '';
-
-  /** Guarded editor metadata view; malformed stored JSON is treated as absent. */
-  get invoiceEditorState(): InvoiceLineEditorState | null {
-    try {
-      const value: unknown = JSON.parse(this.invoiceEditorStateJson);
-      if (
-        !value ||
-        typeof value !== 'object' ||
-        !('draft' in value) ||
-        !('context' in value) ||
-        !value.draft ||
-        typeof value.draft !== 'object' ||
-        !value.context ||
-        typeof value.context !== 'object'
-      )
-        return null;
-      return value as InvoiceLineEditorState;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Store only this model's editor state, preserving unrelated metadata. */
-  set invoiceEditorState(value: InvoiceLineEditorState | null) {
-    this.invoiceEditorStateJson = value ? JSON.stringify(value) : '';
-  }
-
   /**
    * Unit price before discount, in **integer minor units** (cents, satoshis),
    * in the document's pricing mode: tax-inclusive when its `lineAmountType`
@@ -277,21 +239,13 @@ export class InvoiceLineItem extends SmrtObject {
   @field({ ui: { format: 'money' } })
   taxAmount = 0;
 
-  /**
-   * @internal Pre-v2 line amount preserved only by the line-amount migration
-   * for rollback; not a user-facing amount, so it carries no money hint.
-   */
-  @field({ nullable: true })
-  legacyAmount: number | null = null;
-
   /** Stable document snapshot identity; ordinary lifecycle saves do not change it. */
   moneySnapshotId = '';
 
   /**
-   * Calculated line amount, in integer minor units (#2361). Under money v2 it
-   * is net of discount and before tax for `exclusive` / `none` documents, and
-   * tax-inclusive for `inclusive` ones; {@link taxAmount} holds the tax. A
-   * legacy-model tenant still stores qty * price - discount + tax.
+   * Calculated line amount, in integer minor units (#2361): net of discount
+   * and before tax for `exclusive` / `none` documents, and tax-inclusive for
+   * `inclusive` ones; {@link taxAmount} holds the tax.
    */
   @field({
     description:
@@ -342,10 +296,6 @@ export class InvoiceLineItem extends SmrtObject {
 
   constructor(options: InvoiceLineItemOptions = {}) {
     super(options);
-    if (options.invoiceEditorStateJson !== undefined)
-      this.invoiceEditorStateJson = options.invoiceEditorStateJson;
-    if (options.invoiceEditorState !== undefined)
-      this.invoiceEditorState = structuredClone(options.invoiceEditorState);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.invoiceId !== undefined) this.invoiceId = options.invoiceId;
     if (options.creditedLineId !== undefined)
@@ -379,8 +329,6 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.taxComponents !== undefined)
       this.taxComponents = structuredClone(options.taxComponents);
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
-    if (options.legacyAmount !== undefined)
-      this.legacyAmount = options.legacyAmount;
     if (options.moneySnapshotId !== undefined)
       this.moneySnapshotId = options.moneySnapshotId;
     if (options.amount !== undefined) this.amount = options.amount;
@@ -394,88 +342,40 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /** Calculate exact safe integer-minor totals, rounding gross and tax ties toward positive infinity. */
-  calculateAmount(): number {
-    return calculateInvoiceMinorLine(this).totalMinor;
-  }
-
-  /** Rounded quantity times price, less the resolved flat minor-unit discount. */
-  getSubtotal(): number {
-    return calculateInvoiceMinorLine(this).subtotalMinor;
-  }
-
-  /** Tax on the rounded discounted subtotal, in safe integer minor units. */
-  getTaxAmount(): number {
-    return calculateInvoiceMinorLine(this).taxMinor;
-  }
-
-  /** Apply a server-validated draft without saving; authorization and transaction stay caller-owned. */
-  applyEditorDraft(
-    draft: InvoiceLineDraft,
-    context: InvoiceCalculationContext,
-  ): void {
-    const resolved = resolveInvoiceLineDraft(draft, context);
-    Object.assign(this, resolved);
-    this.invoiceEditorState = structuredClone({ draft, context });
-  }
-
-  /** Recover original editing modes only when current authority and resolved model fields agree. */
-  getEditorDraft(
-    authorizedContext: InvoiceCalculationContext,
-  ): InvoiceLineDraft | null {
-    const state = this.invoiceEditorState;
-    if (
-      !state ||
-      !authorizedContext ||
-      state.context?.currency !== authorizedContext.currency ||
-      state.context?.inheritedTaxRate !== authorizedContext.inheritedTaxRate
-    )
-      return null;
-    try {
-      const resolved = resolveInvoiceLineDraft(state.draft, authorizedContext);
-      if (
-        resolved.description !== this.description ||
-        resolved.sku !== this.sku ||
-        resolved.quantity !== this.quantity ||
-        resolved.unitPrice !== this.unitPrice ||
-        resolved.discount !== this.discount ||
-        resolved.taxRate !== this.taxRate
-      )
-        return null;
-      return structuredClone(state.draft);
-    } catch {
-      return null;
+  /** Refuse an old-format row read from the database. */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
     }
+    return this;
   }
 
-  /** Validate resolved fields and recompute amount before persistence; editor metadata never determines money. */
+  /** Persist through the invoice money aggregate. */
   override async save(): Promise<this> {
-    try {
-      void this.db;
-    } catch (error) {
-      // Preserve the legacy validation contract for detached model instances:
-      // invalid arithmetic is reported before the ordinary initialization error.
-      this.calculateAmount();
-      throw error;
-    }
     const { saveInvoiceLineItem } = await import('../document-money.js');
     return (await saveInvoiceLineItem(this)) as this;
   }
 
   /** @internal Aggregate persistence only. */
-  async saveDerived(
-    capability: DocumentMoneyWriteCapability,
-    legacy: boolean,
-  ): Promise<this> {
+  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Invoice line money write capability is required');
-    if (legacy) this.amount = this.calculateAmount();
-    const state = this.invoiceEditorState;
-    if (
-      this.invoiceEditorStateJson &&
-      (!state || !this.getEditorDraft(state.context))
-    )
-      this.invoiceEditorState = null;
+    // Money is integer minor units: refuse a major-unit price before it can
+    // reach the database (#2401), ahead of the aggregate recompute.
+    for (const [field, value] of [
+      ['unitPrice', this.unitPrice],
+      ['discount', this.discount],
+    ] as const)
+      if (!Number.isSafeInteger(value))
+        throw new MoneyValidationError(
+          'UNSAFE_MONEY',
+          `Invoice line ${field} ${value} must be a safe integer number of minor units`,
+        );
     return (await super.save()) as this;
   }
 
@@ -508,29 +408,6 @@ export class InvoiceLineItem extends SmrtObject {
    */
   hasPeriod(): boolean {
     return !!this.periodStart && !!this.periodEnd;
-  }
-
-  /**
-   * Convert to line item format for SDK accounting provider.
-   *
-   * `@happyvertical/accounting` takes currency **major** units. Pass the
-   * invoice currency to convert (as {@link Invoice.toAccountingInput} does);
-   * without it, money stays in this package's integer minor units.
-   */
-  toAccountingLineItem(currency?: string): AccountingLineItemInput {
-    const money = (value: number) =>
-      currency ? minorToMajorUnits(value, currency) : value;
-    return {
-      description: this.description,
-      sku: this.sku || undefined,
-      quantity: this.quantity,
-      unitPrice: money(this.unitPrice),
-      discount: this.discount ? money(this.discount) : undefined,
-      taxRate: this.taxRate,
-      amount: money(this.amount),
-      periodStart: this.periodStart || undefined,
-      periodEnd: this.periodEnd || undefined,
-    };
   }
 }
 

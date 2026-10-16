@@ -370,6 +370,11 @@ async function applyInvoiceEvent(
       invoice.status === InvoiceStatus.PARTIAL ||
       invoice.status === InvoiceStatus.OVERDUE
     ) {
+      // Leaving DRAFT freezes the invoice, so a parked close's invoice takes
+      // the provider's tax in the same save; its total then matches the
+      // provider's, and a later recovery payment of that total fits.
+      if (invoice.status === InvoiceStatus.DRAFT)
+        invoice.providerTaxAmount = state.taxAmount;
       invoice.status = InvoiceStatus.WRITTEN_OFF;
       await invoice.save();
       standing = 'uncollectible';

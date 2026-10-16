@@ -18,11 +18,15 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { LicenseSale } from '../models/Contract.js';
 import { ContractStatus, ContractType } from '../types/index.js';
 import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 describe('LicenseSale STI subtype', () => {
   let dbPath: string;
@@ -141,7 +145,8 @@ describe('LicenseSale STI subtype', () => {
     expect(loaded?.pdfHash).toBe(
       '4cb2e2d8b9e7f5a3c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3',
     );
-    expect(loaded?.totalAmount).toBe(199.0);
+    // Contract totals derive from its lines, never from the caller (#4021).
+    expect(loaded?.totalAmount).toBe(0);
     expect(loaded?.channelId).toBe('marketplace-direct');
   });
 

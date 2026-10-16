@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { AssetCollection } from '@happyvertical/smrt-assets';
 import {
   ContractCollection,
+  ContractLineItemCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
 import { getTestDatabase } from '@happyvertical/smrt-core';
@@ -52,10 +53,18 @@ describe('README examples', () => {
         .create({
           _meta_type: 'PurchaseOrder',
           vendorId: vendor.id,
-          totalAmount: 460000,
           currency: 'USD',
         } as never)
         .then(async (po) => po.save());
+      // The committed total comes from the order's lines (#4021).
+      await (await ContractLineItemCollection.create({ db }))
+        .create({
+          contractId: purchaseOrder.id,
+          description: 'Framing package',
+          quantity: 1,
+          unitPrice: 460000,
+        })
+        .then(async (line) => line.save());
       const asset = await (await AssetCollection.create({ db }))
         .create({ name: 'lumber.pdf', mimeType: 'application/pdf' })
         .then(async (a) => a.save());

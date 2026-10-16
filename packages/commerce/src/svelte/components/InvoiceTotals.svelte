@@ -2,7 +2,7 @@
 /**
  * InvoiceTotals - Totals section for invoices/estimates
  *
- * Displays subtotal, tax, total, and optional amount paid/balance due.
+ * Displays stored subtotal, discount, tax lines, total, paid and payable facts.
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -15,31 +15,7 @@ import {
 
 const { t } = useI18n();
 
-/** Props for InvoiceTotals component */
-export interface LegacyInvoiceTotalsProps {
-  /** Subtotal in decimal dollars */
-  subtotal: number;
-  /** Tax rate as percentage (e.g., 5 for 5%) */
-  taxRate?: number;
-  /** Tax amount in decimal dollars (calculated from rate if not provided) */
-  taxAmount?: number;
-  /** Total in decimal dollars */
-  total: number;
-  /** Amount already paid in decimal dollars */
-  amountPaid?: number;
-  /** Currency code */
-  currency?: 'CAD' | 'USD';
-  /** Show tax breakdown */
-  showTax?: boolean;
-  /** Show payment status */
-  showPaid?: boolean;
-  /** Tax label */
-  taxLabel?: string;
-  /** Size variant */
-  size?: 'sm' | 'md' | 'lg';
-}
-
-/** Exact retained totals branch. */
+/** Exact stored totals; the component never derives tax from a rate. */
 export interface RetainedInvoiceTotalsProps {
   /** Caller-authoritative totals; omitted facts remain omitted. */
   retained: RetainedInvoiceTotalsView;
@@ -49,91 +25,21 @@ export interface RetainedInvoiceTotalsProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
-/** Legacy decimal-major totals or exact retained totals. */
-export type Props = LegacyInvoiceTotalsProps | RetainedInvoiceTotalsProps;
+/** Stored invoice totals, displayed exactly as supplied in integer minor units. */
+export type Props = RetainedInvoiceTotalsProps;
 
-const props: Props = $props();
-const retained = $derived('retained' in props ? props.retained : null);
-const details = $derived('details' in props ? props.details : undefined);
-const legacy = $derived(retained ? null : (props as LegacyInvoiceTotalsProps));
-const subtotal = $derived(legacy?.subtotal ?? 0);
-const taxRate = $derived(legacy?.taxRate ?? 0);
-const taxAmount = $derived(legacy?.taxAmount);
-const total = $derived(legacy?.total ?? 0);
-const amountPaid = $derived(legacy?.amountPaid ?? 0);
-const currency = $derived(legacy?.currency ?? 'CAD');
-const showTax = $derived(legacy?.showTax ?? true);
-const showPaid = $derived(legacy?.showPaid ?? false);
-const taxLabel = $derived(legacy?.taxLabel ?? 'GST');
-const size = $derived(props.size ?? 'md');
-
-// Calculate tax if not provided. `taxRate` is a percentage (e.g. 5 for 5%), so
-// the `/ 100` converts percent → fraction — it is NOT a cents conversion. The
-// result is decimal dollars and must not be rounded to whole units.
-const calculatedTax = $derived(taxAmount ?? subtotal * (taxRate / 100));
-
-// Calculate balance due
-const balanceDue = $derived(total - amountPaid);
-
-// This legacy branch receives decimal-major values from its historical API.
-// Exact retained views above use integer minor units through formatInvoiceMinorUnits.
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
+const { retained, details, size = 'md' }: Props = $props();
 </script>
 
 <div class="invoice-totals" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="InvoiceTotals">
-  {#if retained}
-    <div class="totals-row"><span class="totals-label">Subtotal</span><span class="totals-value">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</span></div>
-    {#if retained.discountMinor !== undefined}<div class="totals-row"><span class="totals-label">Discount</span><span class="totals-value">{formatInvoiceMinorUnits(retained.discountMinor, retained.currency)}</span></div>{/if}
-    {#each retained.taxes ?? [] as tax (tax.id)}<div class="totals-row"><span class="totals-label">{tax.label}</span><span class="totals-value">{formatInvoiceMinorUnits(tax.amountMinor, retained.currency)}</span></div>{/each}
-    {#if retained.holdbackMinor !== undefined}<div class="totals-row"><span class="totals-label">{retained.holdbackLabel ?? 'Holdback'}</span><span class="totals-value">{formatInvoiceMinorUnits(retained.holdbackMinor, retained.currency)}</span></div>{/if}
-    <div class="totals-row total"><span class="totals-label">Total</span><span class="totals-value">{formatInvoiceMinorUnits(retained.totalMinor, retained.currency)}</span></div>
-    {#if retained.paidMinor !== undefined}<div class="totals-row paid"><span class="totals-label">{t(M['commerce.invoice_totals.amount_paid'])}</span><span class="totals-value">{formatInvoiceMinorUnits(retained.paidMinor, retained.currency)}</span></div>{/if}
-    {#if retained.payableMinor !== undefined}<div class="totals-row balance"><span class="totals-label">Payable</span><span class="totals-value">{formatInvoiceMinorUnits(retained.payableMinor, retained.currency)}</span></div>{/if}
-    {@render details?.(retained)}
-  {:else}
-  <div class="totals-row">
-    <span class="totals-label">Subtotal</span>
-    <span class="totals-value">{formatMoney(subtotal)}</span>
-  </div>
-
-  {#if showTax && (taxRate > 0 || calculatedTax > 0)}
-    <div class="totals-row">
-      <span class="totals-label">{taxLabel} ({taxRate}%)</span>
-      <span class="totals-value">{formatMoney(calculatedTax)}</span>
-    </div>
-  {/if}
-
-  <div class="totals-row total">
-    <span class="totals-label">Total</span>
-    <span class="totals-value">{formatMoney(total)}</span>
-  </div>
-
-  {#if showPaid && amountPaid > 0}
-    <div class="totals-row paid">
-      <span class="totals-label">{t(M['commerce.invoice_totals.amount_paid'])}</span>
-      <span class="totals-value">-{formatMoney(amountPaid)}</span>
-    </div>
-
-    <div class="totals-row balance" class:due={balanceDue > 0} class:credit={balanceDue < 0}>
-      <span class="totals-label">
-        {#if balanceDue > 0}
-          {t(M['commerce.invoice_totals.balance_due'])}
-        {:else if balanceDue < 0}
-          {t(M['commerce.invoice_totals.credit'])}
-        {:else}
-          {t(M['commerce.invoice_totals.paid_in_full'])}
-        {/if}
-      </span>
-      <span class="totals-value">{formatMoney(Math.abs(balanceDue))}</span>
-    </div>
-  {/if}
-  {/if}
+  <div class="totals-row"><span class="totals-label">Subtotal</span><span class="totals-value">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</span></div>
+  {#if retained.discountMinor !== undefined}<div class="totals-row"><span class="totals-label">Discount</span><span class="totals-value">{formatInvoiceMinorUnits(retained.discountMinor, retained.currency)}</span></div>{/if}
+  {#each retained.taxes ?? [] as tax (tax.id)}<div class="totals-row"><span class="totals-label">{tax.label}</span><span class="totals-value">{formatInvoiceMinorUnits(tax.amountMinor, retained.currency)}</span></div>{/each}
+  {#if retained.holdbackMinor !== undefined}<div class="totals-row"><span class="totals-label">{retained.holdbackLabel ?? 'Holdback'}</span><span class="totals-value">{formatInvoiceMinorUnits(retained.holdbackMinor, retained.currency)}</span></div>{/if}
+  <div class="totals-row total"><span class="totals-label">Total</span><span class="totals-value">{formatInvoiceMinorUnits(retained.totalMinor, retained.currency)}</span></div>
+  {#if retained.paidMinor !== undefined}<div class="totals-row paid"><span class="totals-label">{t(M['commerce.invoice_totals.amount_paid'])}</span><span class="totals-value">{formatInvoiceMinorUnits(retained.paidMinor, retained.currency)}</span></div>{/if}
+  {#if retained.payableMinor !== undefined}<div class="totals-row balance"><span class="totals-label">Payable</span><span class="totals-value">{formatInvoiceMinorUnits(retained.payableMinor, retained.currency)}</span></div>{/if}
+  {@render details?.(retained)}
 </div>
 
 <style>
@@ -213,16 +119,6 @@ function formatMoney(amount: number): string {
     padding-top: var(--smrt-spacing-2, 0.5rem);
     border-top: var(--smrt-hairline);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .totals-row.balance.due .totals-label,
-  .totals-row.balance.due .totals-value {
-    color: var(--smrt-color-error);
-  }
-
-  .totals-row.balance.credit .totals-label,
-  .totals-row.balance.credit .totals-value {
-    color: var(--smrt-color-tertiary);
   }
 }
 </style>

@@ -11,70 +11,80 @@ pnpm add @happyvertical/smrt-commerce
 ## Usage
 
 ```typescript
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
-  Customer, CustomerCollection,
-  Order, ContractCollection,
-  Invoice, InvoiceCollection,
-  Payment, PaymentCollection,
-  ContractStatus, InvoiceStatus, PaymentMethod
+  CustomerCollection,
+  ContractCollection,
+  InvoiceCollection,
+  InvoiceLineItemCollection,
+  PaymentCollection,
+  PaymentMethod,
+  ensureCommerceTenant,
 } from '@happyvertical/smrt-commerce';
 
-// Create a customer linked to a profile
-const customers = await CustomerCollection.create({ db });
-const customer = await customers.create({
-  profileId: 'profile-uuid',
-  creditLimit: 1000000, // $10,000.00 — money is integer minor units
-  paymentTerms: 'Net 30',
-});
-await customer.save();
+// Once per tenant, after the host creates it: tax settings and standard codes.
+await ensureCommerceTenant(db, tenantId);
 
-// Create an order (STI contract type)
-const contracts = await ContractCollection.create({ db });
-const order = await contracts.create({
-  _meta_type: 'Order',
-  customerId: customer.id,
-  subtotal: 100000, // $1,000.00
-  taxAmount: 5000, // $50.00
-  totalAmount: 105000, // $1,050.00
-  currency: 'CAD',
-});
-await order.save();
+// Money documents (invoices, contracts, and their lines) belong to a tenant.
+await withTenant({ tenantId }, async () => {
+  // Create a customer linked to a profile
+  const customers = await CustomerCollection.create({ db });
+  const customer = await customers.create({
+    profileId: 'profile-uuid',
+    creditLimit: 1000000, // $10,000.00 — money is integer minor units
+    paymentTerms: 'Net 30',
+  });
 
-// Create an invoice for the order
-const invoices = await InvoiceCollection.create({ db });
-const invoiceNumber = await invoices.generateInvoiceNumber();
-const invoice = await invoices.create({
-  customerId: customer.id,
-  contractId: order.id,
-  invoiceNumber,
-  subtotal: 100000, // $1,000.00
-  taxAmount: 5000, // $50.00
-  totalAmount: 105000, // $1,050.00
-});
-await invoice.save();
+  // Create an order (STI contract type)
+  const contracts = await ContractCollection.create({ db });
+  const order = await contracts.create({
+    _meta_type: 'Order',
+    customerId: customer.id,
+    currency: 'CAD',
+  });
 
-// Recognize revenue (creates balanced journal in smrt-ledgers)
-await invoice.recognizeRevenue({
-  arAccountId: 'ar-account-id',
-  revenueAccountId: 'revenue-account-id',
-  taxAccountId: 'tax-account-id',
-});
+  // Create an invoice. The server resolves each line's tax code and computes
+  // line tax and the header totals; header amounts are never inputs.
+  const invoices = await InvoiceCollection.create({ db });
+  const invoice = await invoices.create({
+    customerId: customer.id,
+    contractId: order.id,
+    invoiceNumber: await invoices.generateInvoiceNumber(),
+    currency: 'CAD',
+  });
+  const lines = await InvoiceLineItemCollection.create({ db });
+  await lines.create({
+    invoiceId: invoice.id,
+    description: 'Consulting',
+    quantity: 10,
+    unitPrice: 10000, // $100.00
+  });
 
-// Record a payment
-const payments = await PaymentCollection.create({ db });
-const payment = await payments.create({
-  contractId: order.id,
-  customerId: customer.id,
-  amount: 105000,
-  method: PaymentMethod.CREDIT_CARD,
-});
-await payment.save();
+  // Issuing freezes the money snapshot; then recognize revenue (creates a
+  // balanced journal in smrt-ledgers from the frozen facts).
+  const issued = await invoices.get({ id: invoice.id }, { cache: false });
+  issued.markSent();
+  await issued.save();
+  await issued.recognizeRevenue({
+    arAccountId: 'ar-account-id',
+    revenueAccountId: 'revenue-account-id',
+    taxAccountId: 'tax-account-id',
+    bookCurrency: 'CAD', // must equal the invoice currency
+  });
 
-// Record payment with ledger integration
-await payment.recordPayment({
-  ledgerId: 'ledger-id',
-  receivablesAccountId: 'ar-account-id',
-  cashAccountId: 'bank-account-id',
+  // Record a payment with ledger integration
+  const payments = await PaymentCollection.create({ db });
+  const payment = await payments.create({
+    contractId: order.id,
+    customerId: customer.id,
+    amount: issued.totalAmount,
+    method: PaymentMethod.CREDIT_CARD,
+  });
+  await payment.recordPayment({
+    ledgerId: 'ledger-id',
+    receivablesAccountId: 'ar-account-id',
+    cashAccountId: 'bank-account-id',
+  });
 });
 ```
 
@@ -104,7 +114,7 @@ const totals = calculateMoneyDocument({
 ```
 
 `resolveLineTaxCode()` resolves caller-loaded codes without I/O, and the
-Svelte `InvoiceEditor` opts into the v2 money controls through its `money`
+Svelte `InvoiceEditor` renders the money controls from its required `money`
 prop. Frozen editor documents render a supplied stored snapshot without
 recalculation. See the [commerce money calculator guide](../../docs/content/commerce-money.md)
 for pricing modes, rounding, input and result types, the native-form editor
@@ -119,40 +129,68 @@ one settings row per tenant supplies sales/purchase defaults, amount mode,
 rounding scope, and labelled registration numbers. A referenced component rate
 is immutable: archive it and create a replacement for a rate change.
 
-`ensureTenantTaxCodes(db, tenantId)` idempotently creates the baseline
-non-taxable codes. `applyTaxCodeExamplePack(db, tenantId)` installs illustrative
+`ensureTenantTaxCodes(db, tenantId)` idempotently creates the standard
+non-taxable codes, `exempt`, `zero-rated`, and `out-of-scope`
+(`STANDARD_TAX_CODES`). `applyTaxCodeExamplePack(db, tenantId)` installs illustrative
 regional examples for review, and `applyCommerceCookbookSettings(db, tenantId,
 cookbook)` explicitly materializes a validated cookbook's defaults after schema
 setup and authentication establish the tenant. See the [commerce money
 calculator guide](../../docs/content/commerce-money.md#tenant-tax-catalogue) for
 the supported kinds, seed behavior, and cookbook rate units.
 
-### Persisted Invoice v2
+### Persisted Invoice money
 
-The public `Invoice` and `InvoiceLineItem` save paths use the server-owned
-`TaxSettings.moneyModel` gate. Missing settings and `legacy` preserve the
-existing behavior; `migrating` rejects Invoice money writes; `v2` atomically
-recalculates the draft Invoice aggregate from its lines and current tax inputs.
-The marker is not writable through generated surfaces or ordinary saves of
-an existing settings row.
+Commerce has one money model. Tax codes resolve each line's tax: the line's
+override, else `exempt` for an exempt customer, else the product's code, the
+customer's code, then the tenant default. The server computes line
+`taxAmount` and the header totals and ignores any client total. Every Invoice
+and Contract money write needs a tenant; without one it fails with
+`MoneyValidationError` `INVALID_MONEY_INPUT`.
+`ensureCommerceTenant(db, tenantId, { cookbook })` is the one bootstrap call a
+host makes after creating a tenant. It seeds the tenant's tax settings, the
+standard codes, and the cookbook's defaults, and returns `{ tenantId }`.
 
 Issuing an Invoice (leaving `DRAFT`) or assigning `arJournalId` freezes its
 money snapshot. Header and line money changes then fail with `FROZEN_DOCUMENT`,
 while later lifecycle and payment updates retain the snapshot. Provider tax
 stays separate in `providerTaxAmount` and contributes to the Invoice headers
-without creating an application tax code. In v2,
+without creating an application tax code.
 `InvoiceLineItemCollection.getTotalForInvoice()` sums line amounts for
-compatibility; use persisted `Invoice.totalAmount` for the amount due. The
+compatibility; use persisted `Invoice.totalAmount` for the amount due.
+`recognizeRevenue()` and `cancelWithRevenueReversal()` require a `bookCurrency`
+equal to the invoice currency, and `toAccountingInput({ mapping })` requires
+explicit QuickBooks realm mapping. The
 [commerce money calculator guide](../../docs/content/commerce-money.md#persisted-invoice-money)
-and [document-money contract](agents/document-money.md) cover persisted Invoice-v2
+and [document-money contract](agents/document-money.md) cover persisted Invoice
 semantics, credits, refunds, and posting. The materialized Invoice tax-report
 descriptor and tenant-safe drilldown are documented in
-[tax-summary contract](agents/tax-summary.md). Tenant migration commands,
-Contract money persistence, PurchaseContract tax contributors, and the
-materialized tax-summary host and drilldown are available. Applications opt in
-by registering `createTaxSummaryMaterializedReportHost()` in their server-only
-report-host registry; the route binds the authenticated tenant and read
-permission. See the tax-summary contract for registration and migration details.
+[tax-summary contract](agents/tax-summary.md). Contract money persistence,
+PurchaseContract tax contributors, and the materialized tax-summary host and
+drilldown are available. Applications opt in by registering
+`createTaxSummaryMaterializedReportHost()` in their server-only report-host
+registry; the route binds the authenticated tenant and read permission. See the
+tax-summary contract for registration details.
+
+### Upgrading money data from an earlier version
+
+Commerce refuses money data written by an earlier version with
+`COMMERCE_DATA_NEEDS_UPGRADE` instead of reading it. That is a schema that
+still has the earlier money columns or the `commerce_money_migration_documents` table,
+an invoice or contract without a tenant, or a tenant with invoices or contracts but no tax settings row or with
+documents in the earlier format. `smrt db:status`
+reports it, so `smrt app doctor` reports `migration-required`. Run the normal
+schema migration, then upgrade once:
+
+```sh
+smrt db:upgrade-commerce-money --check   # report only
+smrt db:upgrade-commerce-money           # every tenant
+```
+
+Each tenant converts in its own transaction. Stored rates become tax codes,
+issued documents keep every stored total, and drafts are recomputed. The
+earlier columns are dropped once no tenant needs the upgrade. See
+[money data upgrade](agents/money-upgrade.md) and the
+[CLI guide](../cli/agents/commerce-money-upgrade.md).
 
 ## API
 
@@ -318,6 +356,7 @@ const billing = await BillingRuntime.create({
   provider: createStripeBillingProvider({ stripe, webhookSecret }),
   billingRelationships, // smrt-tenancy BillingRelationshipService
   ledger: {
+    bookCurrency: 'USD', // ISO 4217; must equal the billing currency
     arAccountId,
     revenueAccountId,
     taxAccountId,
@@ -465,7 +504,13 @@ const evaluator = await SpendingPolicyEvaluator.create({
   upgrade (`<subscriptionId>:<periodStart>`, number 0) count as billed
   coverage, so nothing is billed again after it.
 - **Tax** comes from the provider (Stripe Tax) using the account customer's
-  `defaultBillingAddress`; the invoice records it as `providerTaxAmount`.
+  `defaultBillingAddress`; the invoice records it as `providerTaxAmount` in the
+  save that issues it. Billing invoices are ordinary money-model invoices in
+  the seller's tenant; period close seeds its standard codes if needed. Every
+  billing line is an explicit override to the seller's `out-of-scope` code, so
+  the seller's default code never taxes it a second time. Charges are written
+  before credits, so the running subtotal never goes negative. Revenue posting
+  uses `ledger.bookCurrency` and is idempotent.
 - **Events** are verified, stored in smrt-jobs' durable delivery inbox, and
   applied against current provider state: paid invoices record a payment and
   allocation; failures and overdue notices mark the payer `past_due` and its
@@ -751,14 +796,17 @@ The same models carry `@field({ ui: { widget } })` hints in the manifest:
 
 ## Invoice preparation UI
 
-`InvoiceLineEditor` and `InvoiceEditor` from `@happyvertical/smrt-commerce/svelte`
-provide editable descriptions/SKUs, fractional quantities, unit prices, flat or
-percentage discounts, explicit or inherited tax, customer, dates, currency and
-terms. Calculated previews use the same exact minor-unit arithmetic exported
-for server handlers from `@happyvertical/smrt-commerce/invoices`.
-`InvoiceAllocationFields` and `InvoiceReview` extend this foundation with
-caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
-[calculation rules](agents/invoice-calculations.md), and the required
+`InvoiceEditor` from `@happyvertical/smrt-commerce/svelte` is the invoice form,
+built on the commercial money model, v2, which is the only invoice money model.
+It requires a `money` prop (`MoneyEditorProps`): a lossless draft with
+descriptions, fractional quantities, unit prices, percentage or amount
+discounts and a tax code per line (inherited or overridden), plus the
+authorized tax codes. Its previews run the same exact calculator the server
+uses, and the server re-resolves tax codes and recomputes every stored amount.
+An issued document renders only its frozen stored snapshot.
+`InvoiceAllocationFields` and `InvoiceReview` add caller-owned sources and
+approvals. See [the editor contract](agents/invoice-preparation.md), the
+[line calculation helper](agents/invoice-calculations.md), and the
 [existing-database storage migration](agents/invoice-quantity.md).
 
 ## Exact cost billing

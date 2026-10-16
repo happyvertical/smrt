@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   aggregateTaxSummary,
   createTaxSummaryMaterializedReportHost,
-  TaxSettingsCollection,
+  ensureCommerceTenant,
   TaxSummaryReportCollection,
 } from '@happyvertical/smrt-commerce';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -159,17 +159,10 @@ export function defineReviewedTaxFactsSuite(getDb: () => DatabaseInterface) {
         await expense.review({ reviewerProfileId: randomUUID() });
       });
 
-      const settings = await TaxSettingsCollection.create({ db: world.db });
-      await world.inTenant(async () => {
-        const migrationId = await settings.beginMoneyMigration(world.tenantId);
-        await settings.activateMoneyV2(world.tenantId, migrationId);
-      });
-      await foreign.inTenant(async () => {
-        const migrationId = await settings.beginMoneyMigration(
-          foreign.tenantId,
-        );
-        await settings.activateMoneyV2(foreign.tenantId, migrationId);
-      });
+      // Money v2 is the only model (#4021): bootstrapping the commerce
+      // tenant is all a report needs.
+      await ensureCommerceTenant(world.db, world.tenantId);
+      await ensureCommerceTenant(foreign.db, foreign.tenantId);
 
       const reports = await TaxSummaryReportCollection.create({ db: world.db });
       await reports.refreshTaxSummary({

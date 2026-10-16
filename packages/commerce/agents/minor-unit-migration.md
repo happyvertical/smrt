@@ -1,8 +1,8 @@
-# Legacy major-unit to minor-unit migration
+# Major-unit to minor-unit migration
 
-This guide covers the existing numeric-column rescale only. It is not the
-Invoice-v2 tenant money-model migration: it does not change `TaxSettings`,
-calculate tax, create snapshots, or activate v2.
+This guide covers the numeric-column rescale only. It is not the
+[money data upgrade](money-upgrade.md): it does not change `TaxSettings`,
+calculate tax, or create snapshots.
 
 `preflightCommerceMoneyMinorUnits(db)` reports whether known commerce columns
 still contain major units, rows that would round, and values outside JavaScript

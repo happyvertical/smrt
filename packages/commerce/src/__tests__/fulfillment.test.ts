@@ -10,11 +10,15 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { FulfillmentCollection } from '../collections/FulfillmentCollection.js';
 import { FulfillmentStatus, FulfillmentType } from '../types/index.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 describe('Fulfillment', () => {
   let dbPath: string;

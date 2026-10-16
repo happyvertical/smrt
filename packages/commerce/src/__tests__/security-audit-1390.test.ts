@@ -3,9 +3,10 @@
  *
  * Each `describe` block maps to a finding from the audit:
  *
- *  1. Invoice totals are recomputed from line items / arithmetic-validated on
- *     save; forged totals, negative amounts, and an amountPaid above the total
- *     are rejected; amountPaid is derived from PaymentAllocations.
+ *  1. Invoice totals are recomputed from line items on save (money v2,
+ *     #4021: caller-supplied header totals are always ignored); negative
+ *     line amounts and an amountPaid above the total are rejected; amountPaid
+ *     is derived from PaymentAllocations.
  *  2. Financial mutations (`send`, `recognizeRevenue`, `recordPayment`) are not
  *     exposed over MCP — asserted against the generated manifest.
  *  3. PaymentIntent cannot persist a PAID status unless backed by a real,
@@ -22,7 +23,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..', '..');
@@ -60,6 +61,18 @@ import {
   PayoutStatus,
 } from '../types/index.js';
 import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
+import {
+  createV2Invoice,
+  seedV2Tenant,
+  tenantIt,
+  useTenancy,
+  V2_TENANT,
+} from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021); payments and
+// allocations are stamped with it so they match the invoices they settle.
+const it = tenantIt();
+useTenancy();
 
 function tmpDb(tag: string): string {
   return join(
@@ -162,6 +175,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
   });
 
   it('recomputes subtotal/tax/total from line items, overriding caller totals', async () => {
+    await seedV2Tenant(invoices.db, V2_TENANT, { percent: '5' });
     const invoice = await invoices.create({
       currency: 'USD',
       invoiceNumber: 'INV-RECOMPUTE',
@@ -169,25 +183,25 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       taxAmount: 0,
       totalAmount: 0,
     });
-    await invoice.save();
 
-    // 2 units @ $100, 5% tax => subtotal 200, tax 10, total 210
+    // 2 units @ $1.00 net, tenant default 5% code => subtotal 200, tax 10,
+    // total 210. Tax comes from the resolved code, not a caller rate.
     const li = await lineItems.create({
       invoiceId: invoice.id,
       description: 'Widgets',
       quantity: 2,
       unitPrice: 100,
-      taxRate: 0.05,
     });
-    li.amount = li.calculateAmount();
     await li.save();
 
-    // Caller submits the *correct* total — accepted and snapped to line items.
-    invoice.totalAmount = 210;
-    await invoice.save();
-    expect(invoice.subtotal).toBe(200);
-    expect(invoice.taxAmount).toBe(10);
-    expect(invoice.totalAmount).toBe(210);
+    // Caller submits a total; the draft is recomputed from its lines.
+    const reloaded = await invoices.get({ id: invoice.id }, { cache: false });
+    if (!reloaded) throw new Error('invoice did not reload');
+    reloaded.totalAmount = 210;
+    await reloaded.save();
+    expect(reloaded.subtotal).toBe(200);
+    expect(reloaded.taxAmount).toBe(10);
+    expect(reloaded.totalAmount).toBe(210);
   });
 
   it('overwrites a forged total with the authoritative line-item total (no throw, self-heals)', async () => {
@@ -196,7 +210,6 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       invoiceNumber: 'INV-FORGED',
       totalAmount: 0,
     });
-    await invoice.save();
 
     const li = await lineItems.create({
       invoiceId: invoice.id,
@@ -204,29 +217,29 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       quantity: 10,
       unitPrice: 100, // line total 1000
     });
-    li.amount = li.calculateAmount();
     await li.save();
 
     // Attacker claims the invoice is only worth $1 despite $1000 of line items.
     // Totals are authoritative from line items: the forged value is ignored and
     // overwritten rather than throwing (which also self-heals stale totals).
-    invoice.totalAmount = 1;
-    await invoice.save();
-    expect(invoice.totalAmount).toBe(1000);
-    expect(invoice.subtotal).toBe(1000);
+    const forged = await invoices.get({ id: invoice.id }, { cache: false });
+    if (!forged) throw new Error('invoice did not reload');
+    forged.totalAmount = 1;
+    await forged.save();
+    expect(forged.totalAmount).toBe(1000);
+    expect(forged.subtotal).toBe(1000);
 
     // And the persisted row reflects the authoritative total, not the forgery.
-    const reloaded = await invoices.get({ id: invoice.id });
+    const reloaded = await invoices.get({ id: invoice.id }, { cache: false });
     expect(reloaded?.totalAmount).toBe(1000);
   });
 
-  it('self-heals a stale stored total when a line item changes (no throw)', async () => {
+  it('self-heals the stored total when a line item changes (no throw)', async () => {
     const invoice = await invoices.create({
       currency: 'USD',
       invoiceNumber: 'INV-SELFHEAL',
       totalAmount: 0,
     });
-    await invoice.save();
 
     const li = await lineItems.create({
       invoiceId: invoice.id,
@@ -234,59 +247,58 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       quantity: 1,
       unitPrice: 100,
     });
-    li.amount = li.calculateAmount();
     await li.save();
+    expect(
+      (await invoices.get({ id: invoice.id }, { cache: false }))?.totalAmount,
+    ).toBe(100);
 
-    // First save snaps the total to the current line-item sum (100).
-    await invoice.save();
-    expect(invoice.totalAmount).toBe(100);
-
-    // The line item is revised upward; the invoice still carries the old 100.
+    // The line item is revised upward; saving the line recomputes the
+    // invoice aggregate atomically, so the stored total never goes stale.
     li.unitPrice = 250;
-    li.amount = li.calculateAmount();
     await li.save();
+    const current = await invoices.get({ id: invoice.id }, { cache: false });
+    expect(current?.totalAmount).toBe(250);
 
-    // Re-saving the (legitimately) stale invoice must NOT throw — it recomputes
-    // and overwrites to the new authoritative total.
-    await invoice.save();
-    expect(invoice.totalAmount).toBe(250);
+    // Re-saving the current invoice must NOT throw and keeps the total.
+    if (!current) throw new Error('invoice did not reload');
+    await current.save();
+    expect(current.totalAmount).toBe(250);
   });
 
-  it('rejects negative amounts', async () => {
-    // `collection.create()` persists (calls save internally), so the guard
-    // fires there.
+  it('rejects negative line amounts and ignores negative caller totals', async () => {
+    // Caller-supplied header totals never reach the row (#4021): a draft
+    // without lines totals zero whatever the caller claimed.
+    const invoice = await invoices.create({
+      currency: 'USD',
+      invoiceNumber: 'INV-NEG',
+      subtotal: -100,
+      taxAmount: 0,
+      totalAmount: -100,
+    });
+    const stored = await invoices.get({ id: invoice.id }, { cache: false });
+    expect(stored).toMatchObject({ subtotal: 0, taxAmount: 0, totalAmount: 0 });
+
+    // A negative line cannot drive the authoritative total below zero.
     await expect(
-      invoices.create({
-        currency: 'USD',
-        invoiceNumber: 'INV-NEG',
-        subtotal: -100,
-        taxAmount: 0,
-        totalAmount: -100,
-      }),
+      (async () => {
+        const li = await lineItems.create({
+          invoiceId: invoice.id,
+          quantity: 1,
+          unitPrice: -100,
+        });
+        await li.save();
+      })(),
     ).rejects.toThrow(/non-negative/);
-  });
-
-  it('enforces totalAmount === subtotal + taxAmount when there are no line items', async () => {
-    await expect(
-      invoices.create({
-        currency: 'USD',
-        invoiceNumber: 'INV-ARITH',
-        subtotal: 100,
-        taxAmount: 5,
-        totalAmount: 9999, // does not equal 105
-      }),
-    ).rejects.toThrow(/must equal subtotal/);
+    expect(
+      (await invoices.get({ id: invoice.id }, { cache: false }))?.totalAmount,
+    ).toBe(0);
   });
 
   it('derives amountPaid from PaymentAllocations rather than trusting the caller', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-PAID',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
 
     const payment = await payments.create({ amount: 40, currency: 'USD' });
     await payment.save();
@@ -307,15 +319,12 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
   });
 
   it('rejects an unbacked paid status done via raw assignment', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-STATUS',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
-      status: InvoiceStatus.DRAFT,
+      lines: [100],
+      draft: true,
     });
-    await invoice.save();
+    expect(invoice.status).toBe(InvoiceStatus.DRAFT);
 
     // DRAFT → PAID requires covering allocations even though the edge is legal.
     invoice.status = InvoiceStatus.PAID;
@@ -327,16 +336,11 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // consistency guard must additionally require the derived amountPaid (from
     // PaymentAllocations) to COVER totalAmount. A zero-allocation invoice flipped
     // to PAID must be rejected.
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-PAID-NOALLOC',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
-    invoice.markSent();
-    await invoice.save();
+    expect(invoice.status).toBe(InvoiceStatus.SENT);
 
     // No PaymentAllocations exist → derived amountPaid is 0, which does not
     // cover the 100 total.
@@ -345,16 +349,10 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
   });
 
   it('rejects SENT → PAID when allocations only partially cover the total (#1390)', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-PAID-PARTIAL',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
-    invoice.markSent();
-    await invoice.save();
 
     const payment = await payments.create({ amount: 40, currency: 'USD' });
     await payment.save();
@@ -372,16 +370,10 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
   });
 
   it('accepts PAID once allocations fully cover the total (#1390)', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-PAID-FULL',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
-    invoice.markSent();
-    await invoice.save();
 
     const payment = await payments.create({ amount: 100, currency: 'USD' });
     await payment.save();
@@ -400,14 +392,11 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
   });
 
   it('allows the guarded markSent transition (DRAFT → SENT)', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-SENT',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
+      draft: true,
     });
-    await invoice.save();
 
     invoice.markSent();
     await expect(invoice.save()).resolves.toBeDefined();
@@ -651,14 +640,12 @@ describe('PaymentAllocation integrity guard (#1390)', () => {
   async function seedPaymentAndInvoice(amount: number) {
     const payment = await payments.create({ amount, currency: 'USD' });
     await payment.save();
-    const invoice = await invoices.create({
-      currency: 'USD',
+    // The invoice owes twice the payment, so only the per-payment cap can
+    // reject an over-application.
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: `INV-ALLOC-${Math.random()}`,
-      subtotal: amount,
-      taxAmount: 0,
-      totalAmount: amount,
+      lines: [amount * 2],
     });
-    await invoice.save();
     return { payment, invoice };
   }
 
@@ -825,7 +812,6 @@ describe('Contract status-transition guard (#1390)', () => {
     const contract = await contracts.create({
       contractType: ContractType.ORDER,
       status: ContractStatus.DRAFT,
-      totalAmount: 100,
     });
     await contract.save();
 
@@ -843,7 +829,6 @@ describe('Contract status-transition guard (#1390)', () => {
     const contract = await contracts.create({
       contractType: ContractType.ORDER,
       status: ContractStatus.ACCEPTED,
-      totalAmount: 100,
     });
     await contract.save();
 
@@ -858,7 +843,6 @@ describe('Contract status-transition guard (#1390)', () => {
     const contract = await contracts.create({
       contractType: ContractType.ORDER,
       status: ContractStatus.DRAFT,
-      totalAmount: 100,
     });
     await contract.save();
 
@@ -877,7 +861,6 @@ describe('Contract status-transition guard (#1390)', () => {
     const contract = await contracts.create({
       contractType: ContractType.ORDER,
       status: ContractStatus.DRAFT,
-      totalAmount: 100,
     });
     await contract.save();
     contract.status = ContractStatus.ACCEPTED;
@@ -896,10 +879,11 @@ describe('Contract status-transition guard (#1390)', () => {
         id: contract.id,
         contractType: ContractType.ORDER,
         status: ContractStatus.DRAFT,
-        totalAmount: 100,
         _skipLoad: true,
       } as any),
-    ).rejects.toThrow(/illegal status transition/);
+      // The issued contract's frozen money identity (#4021) may reject the
+      // upsert before the transition guard does; either way it cannot land.
+    ).rejects.toThrow(/illegal status transition|is frozen/);
 
     const reloaded = await contracts.get({ id: contract.id });
     expect(reloaded?.status).toBe(ContractStatus.COMPLETED);
@@ -1159,16 +1143,11 @@ describe('Invoice payment-status reconciliation (#1390 round 2)', () => {
   });
 
   it('rejects a raw SENT → PAID flip with no allocations (amountPaid stays 0)', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-SENT-PAID',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
-    invoice.markSent();
-    await invoice.save();
+    expect(invoice.status).toBe(InvoiceStatus.SENT);
 
     // No PaymentAllocations exist, so derived amountPaid is 0 — claiming PAID
     // is inconsistent and must be rejected.
@@ -1183,22 +1162,16 @@ describe('Invoice payment-status reconciliation (#1390 round 2)', () => {
       invoices.create({
         currency: 'USD',
         invoiceNumber: 'INV-NEW-PAID',
-        subtotal: 100,
-        taxAmount: 0,
-        totalAmount: 100,
         amountPaid: 100,
         status: InvoiceStatus.PAID,
       }),
-    ).rejects.toThrow(/a new invoice cannot start/);
+    ).rejects.toThrow(/cannot start in status 'PAID'|PAID/i);
   });
 
   it('forces a new invoice to start with amountPaid = 0', async () => {
     const invoice = await invoices.create({
       currency: 'USD',
       invoiceNumber: 'INV-NEW-UNPAID',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
       amountPaid: 75, // caller-supplied — must be ignored on create
     });
     expect(invoice.amountPaid).toBe(0);
@@ -1372,14 +1345,10 @@ describe('PaymentAllocation missing-Payment hard error (#1390 round 2)', () => {
 describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => {
   let dbPath: string;
   let invoices: InvoiceCollection;
-  let lineItems: InvoiceLineItemCollection;
 
   beforeEach(async () => {
     dbPath = tmpDb('recognize');
     invoices = await InvoiceCollection.create({
-      db: { type: 'sqlite', url: dbPath },
-    });
-    lineItems = await InvoiceLineItemCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -1394,25 +1363,17 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
     }
   });
 
-  it('recognizes revenue off the authoritative line-item total, not a forged in-memory total', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+  it('recognizes revenue off the frozen line-item total, not a forged in-memory total', async () => {
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-REV-FORGED',
-      totalAmount: 0,
+      lines: [1000],
     });
-    await invoice.save();
-
-    const li = await lineItems.create({
-      invoiceId: invoice.id,
-      description: 'Service',
-      quantity: 10,
-      unitPrice: 100, // line total 1000
-    });
-    li.amount = li.calculateAmount();
-    await li.save();
+    expect(invoice.totalAmount).toBe(1000);
 
     // Set up real ledger accounts so revenue recognition can actually post.
-    const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
+    const { AccountCollection, JournalEntryCollection } = await import(
+      '@happyvertical/smrt-ledgers'
+    );
     const accounts = await AccountCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
@@ -1429,24 +1390,23 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
     });
     await revAcct.save();
 
-    // Forge a tiny total in memory, then recognize revenue. The pre-journal
-    // recompute is authoritative: it overwrites the forged total with the
-    // line-item sum BEFORE any journal is built, so the books can never receive
-    // the forged figure.
+    // Forge a tiny total in memory, then recognize revenue. Posting reads the
+    // issued invoice's frozen money facts (#4021), so the books can never
+    // receive the forged figure.
     invoice.totalAmount = 1;
     const journal = await invoice.recognizeRevenue({
       arAccountId: arAcct.id!,
       revenueAccountId: revAcct.id!,
-    } as any);
+      bookCurrency: 'USD',
+    });
 
-    // The forged total was overwritten to the authoritative line-item total,
-    // and the posted journal reflects 1000 — never the forged 1.
-    expect(invoice.totalAmount).toBe(1000);
-    const entries = await journal.getEntries();
+    const entries = await (
+      await JournalEntryCollection.create({ db: invoices.db })
+    ).findByJournal(journal.id!);
     const arEntry = entries.find((e: any) => e.debit > 0);
     expect(arEntry?.debit).toBe(1000);
 
-    const reloaded = await invoices.get({ id: invoice.id });
+    const reloaded = await invoices.get({ id: invoice.id }, { cache: false });
     expect(reloaded?.totalAmount).toBe(1000);
   });
 });

@@ -1,4 +1,4 @@
-/** Atomic money-v2 revenue posting and cancellation reversal. */
+/** Atomic revenue posting and cancellation reversal. */
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
@@ -31,7 +31,6 @@ type PostingMetadata = {
   invoiceId: string;
   moneySnapshotId: string;
   originalJournalId?: string;
-  warnings?: unknown[];
 };
 
 function required(value: string | null | undefined, label: string): string {
@@ -52,7 +51,7 @@ function bookCurrency(value: string | undefined): string {
   )
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
-      'Money-v2 posting requires a supported ISO 4217 bookCurrency',
+      'Revenue posting requires a supported ISO 4217 bookCurrency',
     );
   return value;
 }
@@ -180,18 +179,35 @@ async function createOrReadPostedJournal(
   return journal;
 }
 
-/** Return null for legacy tenants so Invoice can preserve its old path. */
-export async function recognizeInvoiceRevenueV2(
+/**
+ * Reload a journal posted inside a money transaction on `db`, so the caller
+ * gets an instance whose reads do not run on the finished transaction.
+ */
+export async function rebindJournal(
+  db: DatabaseInterface,
+  journal: Journal,
+): Promise<Journal> {
+  const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
+  return (
+    (await (
+      await JournalCollection.create({ db })
+    ).get({ id: required(journal.id, 'Journal ID') }, { cache: false })) ??
+    journal
+  );
+}
+
+/** Post an issued invoice's revenue journal from its frozen money facts. */
+export async function recognizeInvoiceRevenue(
   input: Invoice,
   options: RecognizeRevenueOptions,
-): Promise<Journal | null> {
+): Promise<Journal> {
   return withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (callerInvoice) => {
       const candidateTenantId = getTenantId() ?? callerInvoice.tenantId;
-      const settings = candidateTenantId
-        ? (await lockTenantMoneyRuntime(tx, candidateTenantId)).settings
-        : null;
-      if (settings?.moneyModel !== 'v2') return null;
+      await lockTenantMoneyRuntime(
+        tx,
+        required(candidateTenantId, 'Invoice tenant ID'),
+      );
       const invoiceId = required(callerInvoice.id, 'Invoice ID');
       const tenantId = required(candidateTenantId, 'Invoice tenant ID');
       assertTenantAuthority(tenantId);
@@ -200,7 +216,7 @@ export async function recognizeInvoiceRevenueV2(
       if (invoice.status === InvoiceStatus.DRAFT || !invoice.moneySnapshotId)
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
-          'Money-v2 revenue recognition requires an issued frozen invoice',
+          'Revenue recognition requires an issued frozen invoice',
         );
       if (invoice.currency !== currency)
         throw new MoneyValidationError(
@@ -266,7 +282,6 @@ export async function recognizeInvoiceRevenueV2(
         kind: postingKind,
         invoiceId,
         moneySnapshotId: invoice.moneySnapshotId,
-        warnings: built.warnings,
       };
       const journal = await createOrReadPostedJournal(tx, {
         id: journalId,
@@ -283,9 +298,7 @@ export async function recognizeInvoiceRevenueV2(
           'Invoice already links a different revenue journal',
         );
       invoice.arJournalId = journalId;
-      await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-        recomputeLegacy: false,
-      });
+      await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
       callerInvoice.arJournalId = journalId;
       return journal;
     }),
@@ -319,24 +332,18 @@ function reverseEntries(
   });
 }
 
-/** Atomically reverse a posted v2 invoice and move it to CANCELLED. */
+/** Atomically reverse a posted invoice and move it to CANCELLED. */
 export async function cancelInvoiceWithRevenueReversal(
   input: Invoice,
   options: CancelRevenueOptions,
-): Promise<Journal | null> {
+): Promise<Journal> {
   return withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (callerInvoice) => {
       const candidateTenantId = getTenantId() ?? callerInvoice.tenantId;
-      const settings = candidateTenantId
-        ? (await lockTenantMoneyRuntime(tx, candidateTenantId)).settings
-        : null;
-      if (settings?.moneyModel !== 'v2') {
-        callerInvoice.cancel();
-        await callerInvoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-          recomputeLegacy: true,
-        });
-        return null;
-      }
+      await lockTenantMoneyRuntime(
+        tx,
+        required(candidateTenantId, 'Invoice tenant ID'),
+      );
       const invoiceId = required(callerInvoice.id, 'Invoice ID');
       const tenantId = required(candidateTenantId, 'Invoice tenant ID');
       assertTenantAuthority(tenantId);
@@ -433,9 +440,7 @@ export async function cancelInvoiceWithRevenueReversal(
         );
       invoice.arReversalJournalId = reversalId;
       if (invoice.status !== InvoiceStatus.CANCELLED) invoice.cancel();
-      await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-        recomputeLegacy: false,
-      });
+      await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
       callerInvoice.arReversalJournalId = reversalId;
       callerInvoice.status = InvoiceStatus.CANCELLED;
       return reversal;

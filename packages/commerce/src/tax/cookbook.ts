@@ -5,7 +5,7 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { createOrLoadTaxSeed, deterministicTaxId } from './identity.js';
-import { ensureTenantTaxCodes } from './legacy.js';
+import { ensureTenantTaxCodes } from './standard-codes.js';
 
 /** The tax subset emitted by core's cookbook engine, expressed as a percent. */
 export interface CookbookTaxSettingsInput {
@@ -114,7 +114,7 @@ export async function applyCookbookTaxSettings(
       if (input.taxRate === 0) {
         await ensureTenantTaxCodes(tx, tenantId);
         const codes = await TaxCodeCollection.create({ db: tx });
-        const outOfScope = await codes.findByCode('out-of-scope');
+        const outOfScope = await codes.findByCode('out-of-scope', tenantId);
         const current = await settings.getOrCreateForTenant(tenantId);
         current.defaultSalesTaxCodeId = outOfScope?.id ?? '';
         current.defaultPurchaseTaxCodeId = outOfScope?.id ?? '';
@@ -151,7 +151,7 @@ export async function applyCookbookTaxSettings(
         throw new Error('Cookbook tax component did not persist');
       const componentId = component.id;
       const codeName = `default-${percent.replace('.', '_')}`;
-      let code = await codes.findByCode(codeName);
+      let code = await codes.findByCode(codeName, tenantId);
       if (!code) {
         const id = await deterministicTaxId(tenantId, 'code', codeName);
         code = await createOrLoadTaxSeed(
@@ -164,7 +164,7 @@ export async function applyCookbookTaxSettings(
               kind: 'taxable',
               components: [{ taxComponentId: componentId, compound: false }],
             }),
-          () => codes.findByCode(codeName),
+          () => codes.findByCode(codeName, tenantId),
         );
       }
       if (!code.id) throw new Error('Cookbook tax code did not persist');

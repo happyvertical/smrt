@@ -21,6 +21,7 @@ import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
 import { Invoice } from '../models/Invoice.js';
 import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import { InvoiceStatus } from '../types/index.js';
+import { assertCommerceMoneySchemaCurrent } from '../upgrade/detect.js';
 
 /**
  * Statuses that indicate an invoice has outstanding balance.
@@ -49,7 +50,11 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
   private async withMoneyRead<T>(operation: () => Promise<T>): Promise<T> {
     const rootDb = this.db;
     const tenantId = getTenantId();
-    if (!tenantId) return operation();
+    if (!tenantId) {
+      // Without a tenant, still refuse a database with old money storage.
+      await assertCommerceMoneySchemaCurrent(rootDb);
+      return operation();
+    }
     const result = await withTenantMoneyCollectionRead(
       rootDb,
       tenantId,

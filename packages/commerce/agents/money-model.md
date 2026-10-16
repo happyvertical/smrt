@@ -5,9 +5,9 @@ shapes, validation codes, and worked calculator examples live in the
 [calculator guide](money-calculator.md) and
 [package documentation](../../../docs/content/commerce-money.md). Money values
 are signed safe-integer minor units; calculator tax percentages are exact text,
-so `'5'` means 5%. The retained `InvoiceLineItem.taxRate` and
-`ContractLineItem.taxRate` fields are different legacy persisted fractions:
-`0.05` means 5%.
+so `'5'` means 5%. The `InvoiceLineItem.taxRate` and
+`ContractLineItem.taxRate` fields are server-derived fractions of the resolved
+components (`0.05` means 5%); they are never tax inputs.
 
 ## Calculation contract
 
@@ -39,10 +39,10 @@ catalogue, seeds, registrations, and cookbook boundary are documented in
 
 ## Stored Invoice facts
 
-`TaxSettings.moneyModel` selects the Invoice write behavior. `legacy` keeps the
-compatibility path; `migrating` rejects money writes; `v2` resolves a draft's
-current settings once and atomically writes the header, line snapshots, and
-`DocumentTax` rows. The detailed persistence, freeze, preview, credit-note, and
+There is one money model. Saving a draft resolves its current tax settings
+once and atomically writes the header, line snapshots, and `DocumentTax` rows.
+Every money document needs a tenant, and data written by an earlier version is
+refused until it is upgraded ([money data upgrade](money-upgrade.md)). The detailed persistence, freeze, preview, credit-note, and
 refund contracts are in [document money](document-money.md).
 
 Once an Invoice leaves `DRAFT`, or receives an AR journal, its money snapshot
@@ -55,7 +55,7 @@ not invent a taxable component.
 
 A credit note is an `Invoice` with `kind: 'credit_note'`. It stores positive
 amounts; posting, reporting, and accounting adapters apply that direction once.
-Issued-credit capacity and refunds are stable Invoice-v2 behavior. A refund is
+Issued-credit capacity and refunds are stable Invoice behavior. A refund is
 a positive `Payment` of kind `refund`, allocated only to a credit note. See
 [document money](document-money.md) before presenting either balance as an
 ordinary incoming payment.
@@ -63,15 +63,13 @@ ordinary incoming payment.
 ## Invoice MCP `get` projection
 
 The standard Invoice MCP `get` tool uses `serializeInvoiceMcpGet`. For a
-legacy tenant, or when tenant settings are absent, it returns the ordinary
-public Invoice projection and omits the `money` alias. For a v2 tenant, the
-optional `money` value is the stored `InvoiceMoneyFacts` projection: its
-header, line snapshots, and `DocumentTax` facts are read from the issued
-snapshot and are never recalculated.
+tenant invoice, the optional `money` value is the stored `InvoiceMoneyFacts`
+projection: its header, line snapshots, and `DocumentTax` facts are read from
+the stored snapshot and are never recalculated. An invoice without an id or
+tenant returns the ordinary public Invoice projection.
 
-A tenant in the `migrating` gate refuses this read with the stable
-`FROZEN_DOCUMENT` code and the public message `Tenant money migration is in
-progress`. If the caller's `PublicJsonOptions` hide any Invoice,
+A tenant whose data needs the upgrade refuses this read with
+`COMMERCE_DATA_NEEDS_UPGRADE`. If the caller's `PublicJsonOptions` hide any Invoice,
 `InvoiceLineItem`, or `DocumentTax` field needed by the money projection, the
 serializer returns the base Invoice and omits the entire `money` alias. It does
 not expose restricted values through a partial plain-object alias.
@@ -84,7 +82,7 @@ serializers](../../core/agents/generators.md#mcp-get-serializers).
 ## Reporting and integrations
 
 The materialized `TaxSummaryReport` and its public descriptor/drilldown bridge
-read stored Invoice `DocumentTax` facts under the tenant v2 gate. See
+read stored Invoice `DocumentTax` facts under the tenant money lock. See
 [tax summary aggregation](tax-summary.md). Commerce exports
 `createTaxSummaryMaterializedReportHost()` for an application-owned,
 server-only host; register that host in the app's fixed report-host registry to
@@ -104,10 +102,8 @@ mapper](accounting-snapshot-mapper.md).
 
 ## Deliberate boundaries
 
-The tenant migration and rollback contract is documented in
-[tenant line-amount migration](line-amount-migration.md).
-The marker is a maintenance gate, not a customer-controlled setting. Contract
-money persistence remains a separate aggregate contract; production report
+Upgrading data written by an earlier version is documented in
+[money data upgrade](money-upgrade.md). Contract money persistence remains a separate aggregate contract; production report
 hosting is an application opt-in over the public host described above. The
 model also does not provide currency conversion, cash-basis/deposit accounting,
 partial recoverability, period locking, or compound tax.

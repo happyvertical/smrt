@@ -12,7 +12,7 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 - **LicenseSale**: industry-neutral licensing primitive. Carries an *immutable* rights snapshot (`rightsMedium`, `rightsDistributionScope`, `rightsExclusivity`, `rightsDuration`, `rightsTerritory`, `rightsSublicensing`, `rightsDerivatives` — typed `Meta<T>` fields), licensee identity (`licenseeEmail`, optional `licenseeLegalEntity` / `licenseeJurisdiction`), and a signed-PDF reference (`pdfUrl`, `pdfHash`, optional `onChainHashRegistryRef`). Once saved at `ContractStatus.ACCEPTED`, the rights snapshot is frozen — mutating any of the seven rights fields and re-saving throws. The only legal transition out of ACCEPTED is `revoke()` (moves to CANCELLED without touching rights). Useful for stock media, music licensing, code-asset marketplaces, license keys, anywhere rights are sold for a fee.
 - **ContractLineItem**: items on contracts.
 - **Invoice**: status machine `DRAFT → SENT → VIEWED → PARTIAL → PAID` (also OVERDUE, CANCELLED, WRITTEN_OFF). `recognizeRevenue()` creates balanced AR journal entry (DR: Accounts Receivable, CR: Revenue, CR: Tax Payable).
-- **InvoiceLineItem**: fractional-quantity line items with safe minor-unit validation/recalculation on save; editor-mode recovery and existing-column migration are documented in [invoice quantity persistence](agents/invoice-quantity.md).
+- **InvoiceLineItem**: fractional-quantity line items with safe minor-unit validation/recalculation on save; the existing-column migration is documented in [invoice quantity persistence](agents/invoice-quantity.md).
 - **Payment** / **PaymentAllocation**: tracks payments against invoices (status: see Gotchas). Carries optional backend-adapter fields for PaymentBackend-routed flows: `backendId` (rail adapter id — `base-usdc`, `btc`, `stripe`, distinct from `externalProvider` which names an accounting sync destination), `backendTxRef` (chain tx hash or gateway settlement id), `nativeAmount` / `nativeCurrency` (what actually arrived), `usdAtQuote` / `usdAtConfirmation` (drift accounting for volatile-currency rails). `Payment.usdDrift()` returns the confirmation - quote delta, or `0` when either side is unset.
 - **PaymentInstrument**: reusable saved payment method ("card on file"). Stores only provider references and non-sensitive display metadata (`providerCustomerId`, `providerPaymentMethodId`, brand / last4 / expiry), never raw card data. `isDefault` is domain-managed, not API-writable: `PaymentInstrumentCollection.setDefaultForCustomer(customerId, instrumentId)` validates the target and clears the customer's other defaults (one per customer).
 - **PaymentIntent**: short-lived pre-payment commitment with multi-option semantics. Locks a USD price for a fixed window (default 15 minutes) and lists one or more `PaymentOption`s describing different rails (`backendId`, `currency`, `payTo`, `nativeAmount`, optional `chain` / `memo` / `x402Capable` / `expiresAt`). First option to receive payment wins; the others are implicitly retired. State machine `awaiting_payment → paid → (issued | retired)` plus `expired` and `cancelled`. Mutate via dedicated `markPaid` / `markIssued` / `expire` / `cancel` / `retire` helpers — direct status assignment bypasses the invariant checks. Idempotency: see the natural-key Gotcha.
@@ -34,11 +34,16 @@ language for end users and update them when a recipe's fields change. See
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
 retry identity, parent corrections and supported dialects.
 See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default codes,
-and legacy-rate migration.
-See [document money persistence](agents/document-money.md) for the per-tenant
-legacy/v2 gate, atomic aggregate writes, issued snapshots, and frozen fields.
+and the standard codes every tenant gets.
+See [document money persistence](agents/document-money.md) for the one money
+model: tax-code resolution, atomic aggregate writes, issued snapshots, and
+frozen fields. Every Invoice and Contract money write needs a tenant. Host
+bootstrap is `ensureCommerceTenant(db, tenantId, { cookbook })`, which returns
+`{ tenantId }`. Money data written by an earlier version is refused with
+`COMMERCE_DATA_NEEDS_UPGRADE` until `smrt db:upgrade-commerce-money` converts
+it; see [money data upgrade](agents/money-upgrade.md).
 See [Contract money persistence](agents/contract-money.md) for the Contract
-aggregate, purchase recoverability, and migration-only materialization boundary.
+aggregate and purchase recoverability.
 
 ## Ledger Integration
 
@@ -128,8 +133,14 @@ for usage.
   `WRITTEN_OFF` (a later payment, by card or on a rail (#3188), is recorded
   and reinstates the payer; the status stays, so "paid in full" for a
   written-off invoice is read from its allocations).
-- **`Invoice.providerTaxAmount`** is added to line-item tax; it is
-  server-managed (not API-writable). `toAccountingInput()` emits major units.
+- **Billing invoices are money-model invoices.** The provider taxes them
+  (`providerTaxAmount`, server-managed, not API-writable, added to line tax),
+  so every billing line is an explicit `taxMode: 'override'` to the seller's
+  `out-of-scope` code. Charges are written before credits so the running
+  subtotal never goes negative, and provider tax is written in the save that
+  issues the invoice. Revenue posting is idempotent. `ledger.bookCurrency` is
+  required (ISO 4217, validated by `BillingRuntime`) and must equal the
+  billing currency. `toAccountingInput({ mapping })` emits major units.
 - **Payment rails (#3138).** A runtime has one issuing `provider` and any
   number of `paymentProviders` (unique names, one inbox namespace each; a
   provider with `capabilities.issuesInvoices === false` can never issue).
@@ -167,11 +178,13 @@ for usage.
 ## Gotchas
 
 - **Optional tenancy**: all models `@TenantScoped({ mode: 'optional' })` + nullable tenantId
-- **Money units and arithmetic**: money fields use signed integer minor units; rates and quantities remain decimal where their contracts require them. Exact rounding, tax-code resolution, legacy adapters, safe-integer validation, and journal units are defined in the [commercial money model](agents/money-model.md) and [money calculator](agents/money-calculator.md). Do not reintroduce floating-point tolerances on money paths.
-- **Tenant money migration**: the [tenant line-amount migration](agents/line-amount-migration.md) is authoritative for preflight, the durable journal, tenant barrier, marker activation, issued snapshots, verification, and checksum-guarded rollback. It is distinct from the compatibility behavior described in [document money](agents/document-money.md).
-- **Asset-native amounts stay outside line migration**: `Payment.nativeAmount` and `PaymentIntent.paymentOptions[].nativeAmount` are per-asset values identified by `nativeCurrency`; normalize each asset to its own minor unit before any type conversion, and never apply the commerce ×100 line-money rescale to them.
+- **Money units and arithmetic**: money fields use signed integer minor units; rates and quantities remain decimal where their contracts require them. Exact rounding, tax-code resolution, safe-integer validation, and journal units are defined in the [commercial money model](agents/money-model.md) and [money calculator](agents/money-calculator.md). Do not reintroduce floating-point tolerances on money paths.
+- **Money documents need a tenant**: models are optionally tenant-scoped, but every Invoice and Contract money write requires one (`MoneyValidationError` `INVALID_MONEY_INPUT`, `Commerce money documents require a tenant`).
+- **Earlier-version money data is refused**: never add a read or conversion path for it. Detection and the one-shot upgrade are in [money data upgrade](agents/money-upgrade.md).
+- **Book currency is required**: `recognizeRevenue()` and `cancelWithRevenueReversal()` take a required `bookCurrency`, which must equal the invoice currency.
+- **Asset-native amounts stay outside line rescales**: `Payment.nativeAmount` and `PaymentIntent.paymentOptions[].nativeAmount` are per-asset values identified by `nativeCurrency`; normalize each asset to its own minor unit before any type conversion, and never apply the commerce ×100 line-money rescale to them.
 - **Invoice controls payment status**: not the Payment model — use `Invoice.updatePaymentStatus()`
-- **Tax rate is external**: no tax rate field on Invoice — rate must be calculated externally
+- **Tax comes from tax codes**: the server resolves each line's code and computes line tax and header totals; client totals and a line's stored `taxRate` are never inputs
 - **Profile linking**: separate `ProfileCollection.create()` needed to fetch actual Profile object
 - **PaymentIntent natural key**: `conflictColumns: ['tenant_id', 'offering_ref', 'licensee_email', 'idempotency_key']` — a retried `create` with the same tuple upserts the existing row. Use `PaymentIntentCollection.getOrCreateByIdempotencyKey()` to branch on `{ intent, created }`. Empty natural-key inputs (e.g. blank `idempotencyKey`) disable dedup by design.
 - **Payout state-machine guards**: `markSent` requires a non-empty `backendTxRef`; `markConfirmed` only valid from `SENT`; `markFailed` only valid from `PENDING` / `SENT` (a confirmed payout can't fail — that path is a refund). `resetFromFailed()` is the dedicated escape hatch from `FAILED` back to `PENDING` after an operator fixes the underlying problem; it clears `backendTxRef` so the next attempt picks up a fresh one.

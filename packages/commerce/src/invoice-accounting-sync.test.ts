@@ -26,7 +26,7 @@ import {
   toFrozenInvoiceAccountingInput,
 } from './invoice-accounting-sync.js';
 import type { Invoice } from './models/Invoice.js';
-import { ensureTenantTaxCodes } from './tax/legacy.js';
+import { ensureTenantTaxCodes } from './tax/standard-codes.js';
 import { InvoiceStatus } from './types/index.js';
 
 describe('frozen invoice accounting sync (#3937)', () => {
@@ -70,8 +70,6 @@ describe('frozen invoice accounting sync (#3937)', () => {
       current.defaultLineAmountType = options.lineAmountType ?? 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
 
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
@@ -723,37 +721,6 @@ describe('frozen invoice accounting sync (#3937)', () => {
         request: {
           creditedInvoiceExternalId: 'qbo-source-invoice',
         },
-      });
-    });
-  });
-
-  it('preserves the legacy Invoice.toAccountingInput path without realm options', async () => {
-    await withTenant({ tenantId: 'tenant-legacy' }, async () => {
-      const customer = await (await CustomerCollection.create({ db })).create(
-        {},
-      );
-      const invoices = await InvoiceCollection.create({ db });
-      const invoice = await invoices.create({
-        customerId: customer.id,
-        invoiceNumber: 'LEGACY-1',
-        currency: 'CAD',
-      });
-      await (await InvoiceLineItemCollection.create({ db })).create({
-        invoiceId: invoice.id,
-        description: 'Legacy line',
-        quantity: 2,
-        unitPrice: 100,
-        taxRate: 0.05,
-      });
-      const stored = await invoices.get({ id: invoice.id }, { cache: false });
-      if (!stored) throw new Error('Expected legacy invoice');
-      // Lock the pre-v2 contract: legacy lines carry tax-inclusive amount and
-      // the caller's persisted header values are passed through unchanged.
-      await expect(stored.toAccountingInput()).resolves.toMatchObject({
-        subtotal: 0,
-        taxAmount: 0,
-        totalAmount: 0,
-        lineItems: [{ amount: 2.1, taxRate: 0.05 }],
       });
     });
   });

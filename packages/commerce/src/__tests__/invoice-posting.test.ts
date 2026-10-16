@@ -21,7 +21,7 @@ import { TaxComponentCollection } from '../collections/TaxComponentCollection.js
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { Invoice } from '../models/Invoice.js';
 import { MoneyValidationError } from '../money.js';
-import { ensureTenantTaxCodes } from '../tax/legacy.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types/index.js';
 
 describe('money-v2 invoice posting integration (#3935)', () => {
@@ -92,8 +92,6 @@ describe('money-v2 invoice posting integration (#3935)', () => {
       const current = await settings.getOrCreateForTenant(tenantId);
       current.defaultSalesTaxCodeId = gstCode.id;
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: gstCode.id,
       });

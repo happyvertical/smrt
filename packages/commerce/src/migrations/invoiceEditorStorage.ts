@@ -1,4 +1,4 @@
-/** Explicit invoice quantity widening and additive editor-state storage migration. */
+/** Explicit invoice line quantity widening migration. */
 import {
   type DatabaseInterface,
   planSqliteTableRebuilds,
@@ -16,8 +16,6 @@ export interface InvoiceEditorStoragePreflight {
   declaredType: string | null;
   /** All existing quantities satisfy numeric persistence and precision constraints. */
   ok: boolean;
-  /** Whether the dedicated TEXT editor-state column already exists. */
-  editorStateColumnPresent: boolean;
   /** Rows examined. */
   inspectedRows: number;
   /** Invalid row identifiers; no data is modified while findings remain. */
@@ -27,7 +25,7 @@ export interface InvoiceEditorStoragePreflight {
 export interface InvoiceEditorStorageMigrationResult {
   /** Preflight used to guard this migration. */
   preflight: InvoiceEditorStoragePreflight;
-  /** True if quantity was widened or the editor-state column was added. */
+  /** True if quantity was widened. */
   changed: boolean;
 }
 type QueryExecutor = Pick<DatabaseInterface, 'query'>;
@@ -85,9 +83,6 @@ export async function preflightInvoiceEditorStorage(
     engine,
     declaredType: column?.type ?? null,
     ok: true,
-    editorStateColumnPresent: (columns.rows as { name: string }[]).some(
-      (row) => row.name === 'invoice_editor_state_json',
-    ),
     inspectedRows: 0,
     invalidRowIds: [],
   };
@@ -184,15 +179,6 @@ export async function migrateInvoiceEditorStorage(
       const type = engine === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
       await tx.query(
         `ALTER TABLE "invoice_line_items" ALTER COLUMN "quantity" TYPE ${type} USING CAST("quantity" AS ${type})`,
-      );
-      result.changed = true;
-    }
-    if (
-      preflight.declaredType !== null &&
-      !preflight.editorStateColumnPresent
-    ) {
-      await tx.query(
-        "ALTER TABLE invoice_line_items ADD COLUMN invoice_editor_state_json TEXT DEFAULT ''",
       );
       result.changed = true;
     }

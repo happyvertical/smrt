@@ -89,12 +89,13 @@
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-products": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-subscriptions": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
-    "@happyvertical/smrt-reports": "workspace:*",
-    "@happyvertical/smrt-svelte": "workspace:*"
+    "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

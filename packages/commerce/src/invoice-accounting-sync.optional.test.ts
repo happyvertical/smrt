@@ -26,7 +26,7 @@ import {
   reconcileFrozenInvoiceAccountingSync,
   syncFrozenInvoiceToAccounting,
 } from './invoice-accounting-sync.js';
-import { ensureTenantTaxCodes } from './tax/legacy.js';
+import { ensureTenantTaxCodes } from './tax/standard-codes.js';
 import { InvoiceStatus } from './types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
@@ -66,8 +66,6 @@ describePostgres('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
       current.defaultLineAmountType = 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
 
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,

@@ -1,8 +1,13 @@
-/** Exact fractional invoice persistence and explicit legacy-column migration on supported engines. */
+/** Exact fractional invoice persistence and explicit quantity-column migration on supported engines. */
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
@@ -12,93 +17,7 @@ import {
   migrateInvoiceEditorStorage,
   preflightInvoiceEditorStorage,
 } from '../migrations/invoiceEditorStorage.js';
-import { InvoiceLineItem } from '../models/InvoiceLineItem.js';
-import type { InvoiceLineDraft } from '../svelte/invoices/calculations.js';
-
-const context = { currency: 'CAD', inheritedTaxRate: '5' };
-const draft: InvoiceLineDraft = {
-  key: 'line-1',
-  description: 'Consulting',
-  sku: 'HOUR',
-  quantity: '1.25',
-  unitPrice: '100.00',
-  discountType: 'percent',
-  discountValue: '10',
-  taxMode: 'inherit',
-  taxRate: '',
-};
-
-describe('invoice quantity arithmetic and validation', () => {
-  it('keeps an explicit zero tax rate at the accounting boundary', () => {
-    const item = new InvoiceLineItem();
-    item.applyEditorDraft(
-      { ...draft, taxMode: 'override', taxRate: '0' },
-      context,
-    );
-    expect(item.toAccountingLineItem('CAD')).toMatchObject({
-      taxRate: 0,
-      amount: 112.5,
-    });
-    expect(item.toAccountingLineItem()).toMatchObject({
-      taxRate: 0,
-      amount: 11250,
-    });
-  });
-  it('preserves legacy model rounding until the tenant money-v2 gate', () => {
-    const item = new InvoiceLineItem({
-      quantity: 0.5,
-      unitPrice: 3,
-      taxRate: 0.5,
-    });
-    expect([
-      item.getSubtotal(),
-      item.getTaxAmount(),
-      item.calculateAmount(),
-    ]).toEqual([2, 1, 3]);
-    item.unitPrice = -3;
-    expect([
-      item.getSubtotal(),
-      item.getTaxAmount(),
-      item.calculateAmount(),
-    ]).toEqual([-1, 0, -1]);
-  });
-  it.each([
-    { quantity: -1 },
-    { quantity: Number.NaN },
-    { quantity: 0.0000001 },
-    { unitPrice: 0.5 },
-    { unitPrice: Number.MAX_SAFE_INTEGER + 1 },
-    { discount: -1 },
-    { discount: 0.5 },
-    { taxRate: 1.01 },
-    { taxRate: Number.NaN },
-    { quantity: 2, unitPrice: Number.MAX_SAFE_INTEGER },
-  ])('refuses invalid fields before any persistence: %j', async (fields) => {
-    const item = new InvoiceLineItem({
-      quantity: 1,
-      unitPrice: 100,
-      ...fields,
-    });
-    expect(() => item.calculateAmount()).toThrow(RangeError);
-    await expect(item.save()).rejects.toThrow(RangeError);
-  });
-  it('clones editor state and rejects stale authority/source fields', () => {
-    const item = new InvoiceLineItem();
-    const input = structuredClone(draft);
-    item.applyEditorDraft(input, context);
-    input.discountValue = '99';
-    expect(item.getEditorDraft(context)?.discountValue).toBe('10');
-    expect(item.getEditorDraft({ ...context, currency: 'USD' })).toBeNull();
-    expect(
-      item.getEditorDraft({ ...context, inheritedTaxRate: '6' }),
-    ).toBeNull();
-    const reopened = item.getEditorDraft(context)!;
-    reopened.quantity = '9';
-    expect(item.quantity).toBe(1.25);
-    item.quantity = 2;
-    expect(item.getEditorDraft(context)).toBeNull();
-  });
-});
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 
 /** Each PostgreSQL test owns a unique schema, including all DDL and committed writes. */
 async function createInvoiceTestDatabase(
@@ -187,71 +106,50 @@ for (const engine of engines) {
           'InvoiceLineItem',
           'Payment',
           'PaymentAllocation',
+          'TaxSettings',
+          'TaxCode',
+          'TaxComponent',
+          'DocumentTax',
         ]);
         db = isolated.db;
         cleanup = isolated.cleanup;
-        const invoices = await InvoiceCollection.create({ db });
-        const invoice = await invoices.create({
-          invoiceNumber: 'CANONICAL-QUANTITY',
-        });
-        const lines = await InvoiceLineItemCollection.create({ db });
-        const item = await lines.create({
-          invoiceId: invoice.id,
-          quantity: 10000000000.12345,
-          unitPrice: 90000,
-          discount: 0,
-          taxRate: 0,
-          amount: 1,
-        });
-        expect(item.amount).toBe(900000000011111);
-        const loaded = await lines.get(item.id);
-        expect(loaded?.quantity).toBe(10000000000.12345);
-        expect(loaded?.amount).toBe(900000000011111);
-        expect(loaded?.calculateAmount()).toBe(900000000011111);
-      });
-      it('roundtrips fractional quantity and editor modes, ignores forged amount and clears stale draft', async () => {
-        const isolated = await createInvoiceTestDatabase(engine, [
-          'Customer',
-          'Vendor',
-          'Contract',
-          'ContractLineItem',
-          'Invoice',
-          'InvoiceLineItem',
-          'Payment',
-          'PaymentAllocation',
-        ]);
-        db = isolated.db;
-        cleanup = isolated.cleanup;
-        const invoices = await InvoiceCollection.create({ db });
-        const invoice = await invoices.create({ invoiceNumber: 'FRACTIONAL' });
-        const lines = await InvoiceLineItemCollection.create({ db });
-        const item = await lines.create({
-          invoiceId: invoice.id,
-          quantity: 1.25,
-          unitPrice: 10000,
-          amount: 999,
-        });
-        expect(item.amount).toBe(12500);
-        item.applyEditorDraft(draft, context);
-        await item.save();
-        const loaded = await lines.get(item.id);
-        expect(loaded?.quantity).toBe(1.25);
-        expect(loaded?.amount).toBe(11813);
-        expect(loaded?.getEditorDraft(context)).toEqual(draft);
-        loaded!.amount = 1;
-        loaded!.quantity = 2.5;
-        await loaded!.save();
-        const updated = await lines.get(item.id);
-        expect(updated?.amount).toBe(24938);
-        expect(updated?.invoiceEditorState).toBeNull();
-        updated!.invoiceEditorStateJson = '{invalid';
-        expect(updated!.getEditorDraft(context)).toBeNull();
-        await updated!.save();
-        expect(updated!.invoiceEditorStateJson).toBe('');
-        expect(updated!.amount).toBe(24938);
+        const database = db;
+        enableTenancy();
+        try {
+          await ensureTenantTaxCodes(
+            database,
+            '00000000-0000-4000-8000-00000000a771',
+          );
+          await withTenant(
+            { tenantId: '00000000-0000-4000-8000-00000000a771' },
+            async () => {
+              const invoices = await InvoiceCollection.create({ db: database });
+              const invoice = await invoices.create({
+                invoiceNumber: 'CANONICAL-QUANTITY',
+              });
+              const lines = await InvoiceLineItemCollection.create({
+                db: database,
+              });
+              const item = await lines.create({
+                invoiceId: invoice.id,
+                quantity: 10000000000.12345,
+                unitPrice: 90000,
+                discount: 0,
+                amount: 1,
+              });
+              // The server recomputes the net amount; a forged amount is ignored.
+              expect(item.amount).toBe(900000000011111);
+              const loaded = await lines.get(item.id);
+              expect(loaded?.quantity).toBe(10000000000.12345);
+              expect(loaded?.amount).toBe(900000000011111);
+            },
+          );
+        } finally {
+          disableTenancy();
+        }
       });
     });
-  describe(`legacy quantity migration on ${engine}`, () => {
+  describe(`integer quantity migration on ${engine}`, () => {
     let db: DatabaseInterface | undefined;
     let cleanup: (() => Promise<void>) | undefined;
     afterEach(async () => {
@@ -283,7 +181,6 @@ for (const engine of engines) {
             ? 'double precision'
             : 'double',
       );
-      expect(after.editorStateColumnPresent).toBe(true);
       expect(
         (
           await database.query(

@@ -179,8 +179,7 @@ money-v2 fields (#4011): line `taxAmount`, `discountTotal` on Invoice and
 Contract, `Invoice.creditedAmount`, and `DocumentTax` `taxableMinor` /
 `taxMinor` / `recoverableMinor`; the test asserts every integer named
 `*Amount`, `*Total`, `*Minor` or `subtotal` on those models (and Contract's
-STI subtypes) is hinted. `legacyAmount` is `@internal` migration-rollback
-state, not a user-facing amount, and stays unhinted. Payout and Payment's
+STI subtypes) is hinted. Payout and Payment's
 native/USD drift amounts are not hinted: their currency is a payout rail or
 fixed USD, not the record's `currency`. The line-item FKs
 (`ContractLineItem.contractId`, `InvoiceLineItem.invoiceId`,
