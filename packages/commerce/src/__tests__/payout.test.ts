@@ -22,6 +22,7 @@ import { PayoutCollection } from '../collections/PayoutCollection.js';
 import type { Payout } from '../models/Payout.js';
 import { PayoutStatus } from '../types/index.js';
 import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
+import { inTenant } from './helpers/v2-tenant.js';
 
 describe('Payout', () => {
   let dbPath: string;
@@ -36,10 +37,11 @@ describe('Payout', () => {
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
-    await seedCommerceForeignKeyFixtures({
+    // Fixture contracts are money documents and need a tenant (#4021).
+    await inTenant(seedCommerceForeignKeyFixtures)({
       db: { type: 'sqlite', url: dbPath },
-      customerIds: ['customer-1', 'customer-tenant', 'customer-fiat'],
-      contractIds: ['contract-1', 'contract-tenant', 'contract-fiat'],
+      customerIds: ['customer-1', 'customer-fiat'],
+      contractIds: ['contract-1', 'contract-fiat'],
       vendorIds: [
         'vendor-1',
         'vendor-tenant',
@@ -60,6 +62,16 @@ describe('Payout', () => {
         'v-q',
         'v-sum',
       ],
+    });
+    // The tenant-carry test's payment belongs to tenant-A, so its contract
+    // must too.
+    await inTenant(
+      seedCommerceForeignKeyFixtures,
+      'tenant-A',
+    )({
+      db: { type: 'sqlite', url: dbPath },
+      customerIds: ['customer-tenant'],
+      contractIds: ['contract-tenant'],
     });
   }, 30_000);
 

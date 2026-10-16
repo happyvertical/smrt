@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { PaymentMethod, PaymentStatus } from '../types/index.js';
 import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
+import { inTenant } from './helpers/v2-tenant.js';
 
 describe('Payment backend identity and USD-drift fields', () => {
   let dbPath: string;
@@ -38,7 +39,8 @@ describe('Payment backend identity and USD-drift fields', () => {
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
-    await seedCommerceForeignKeyFixtures({
+    // Fixture contracts are money documents and need a tenant (#4021).
+    await inTenant(seedCommerceForeignKeyFixtures)({
       db: { type: 'sqlite', url: dbPath },
       customerIds: [
         'customer-bc-1',

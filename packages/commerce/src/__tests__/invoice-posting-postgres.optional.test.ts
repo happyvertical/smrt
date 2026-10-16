@@ -88,8 +88,6 @@ describePostgres('money-v2 invoice posting on PostgreSQL (#3935)', () => {
       const setting = await settings.getOrCreateForTenant(tenantId);
       setting.defaultSalesTaxCodeId = code.id;
       await setting.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
       });

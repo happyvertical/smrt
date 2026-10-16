@@ -216,15 +216,17 @@ describe('buildRevenueJournalEntries worked examples', () => {
 });
 
 describe('buildRevenueJournalEntries snapshot and direction invariants', () => {
-  it('uses stored component accounts, falls back for legacy tax, and posts provider tax once', () => {
+  it('uses stored component accounts, falls back for an unmapped component, and posts provider tax once', () => {
     const liveCode = { liabilityAccountId: 'tax-gst' };
     const storedRows: RevenueJournalTaxInput[] = [
       { ...tax('gst', 5), liabilityAccountId: liveCode.liabilityAccountId },
+      // A component frozen without a liability account posts to the
+      // caller's fallback tax account.
       {
         currency: 'CAD',
-        taxCodeId: 'legacy-code',
-        taxCodeCode: 'legacy-0.07',
-        taxComponentId: 'legacy-pst',
+        taxCodeId: 'pst-code',
+        taxCodeCode: 'pst',
+        taxComponentId: 'pst',
         liabilityAccountId: null,
         taxMinor: 7,
       },
@@ -246,15 +248,13 @@ describe('buildRevenueJournalEntries snapshot and direction invariants', () => {
         memo: 'Provider tax: INV-1',
       },
     ]);
-    expect(result.warnings).toEqual([
-      {
-        code: 'LEGACY_TAX_ACCOUNT_FALLBACK',
-        taxCodeId: 'legacy-code',
-        taxCodeCode: 'legacy-0.07',
-        taxComponentId: 'legacy-pst',
-        accountId: 'tax-fallback',
-      },
-    ]);
+    // The unmapped component (7) and the provider tax (3) both land on the
+    // fallback account.
+    expect(
+      result.entries
+        .filter((row) => row.accountId === 'tax-fallback')
+        .reduce((sum, row) => sum + (row.credit ?? 0), 0),
+    ).toBe(10);
     expect(result.entries.some((row) => row.accountId === 'tax-gst')).toBe(
       true,
     );

@@ -4,6 +4,21 @@ import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { MoneyValidationError } from './money.js';
 
 const activeMoneyTransactions = new WeakSet<object>();
+/** Each open money transaction executor and the root database it came from. */
+const transactionRoots = new WeakMap<object, DatabaseInterface>();
+
+/** @internal Whether `db` is an executor opened by a money transaction. */
+export function isMoneyTransaction(db: DatabaseInterface): boolean {
+  return activeMoneyTransactions.has(db as object);
+}
+
+/**
+ * @internal The root database behind a money transaction executor, or `db`
+ * itself. Lets per-database caches survive the per-transaction executor.
+ */
+export function rootMoneyDatabase(db: DatabaseInterface): DatabaseInterface {
+  return transactionRoots.get(db as object) ?? db;
+}
 
 /**
  * Capability required by derived money rows. This module is intentionally not
@@ -12,11 +27,6 @@ const activeMoneyTransactions = new WeakSet<object>();
 export const DOCUMENT_MONEY_WRITE = Symbol('commerce.documentMoneyWrite');
 
 export type DocumentMoneyWriteCapability = typeof DOCUMENT_MONEY_WRITE;
-
-/** Internal capability for the server-owned tenant money migration marker. */
-export const MONEY_MIGRATION_WRITE = Symbol('commerce.moneyMigrationWrite');
-
-export type MoneyMigrationWriteCapability = typeof MONEY_MIGRATION_WRITE;
 
 /** Internal capability for returning a locked snapshot on its root executor. */
 export const DOCUMENT_MONEY_READ_REBIND = Symbol(
@@ -80,6 +90,7 @@ export async function withDocumentMoneyTransaction<T>(
   }
   return db.transaction(async (tx) => {
     activeMoneyTransactions.add(tx as object);
+    transactionRoots.set(tx as object, rootMoneyDatabase(db));
     try {
       return await operation(tx);
     } finally {
@@ -107,9 +118,11 @@ export async function withDocumentMoneyObjectTransaction<
   if (activeMoneyTransactions.has(input.db as object)) {
     return operation(input, input.db);
   }
+  const root = rootMoneyDatabase(input.db);
   return input.withTransaction(async (bound) => {
     const tx = bound.db;
     activeMoneyTransactions.add(tx as object);
+    if (tx !== root) transactionRoots.set(tx as object, root);
     try {
       return await operation(bound as TObject, tx);
     } finally {

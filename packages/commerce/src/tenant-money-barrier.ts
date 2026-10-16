@@ -1,51 +1,21 @@
-/** Shared tenant serialization barrier for commerce money runtime and migration. */
+/** Tenant serialization point for commerce money runtime work. */
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { TaxSettingsCollection } from './collections/TaxSettingsCollection.js';
 import { withDocumentMoneyTransaction } from './document-money-internal.js';
 import type { TaxSettings } from './models/TaxSettings.js';
 import { MoneyValidationError } from './money.js';
-
-export type TenantMoneyRuntimeRequirement = 'legacy-or-v2' | 'v2';
-
-export type TenantMoneyRuntimeBarrier =
-  | {
-      readonly moneyModel: 'legacy';
-      readonly settings: null;
-      readonly persistedBarrier: false;
-    }
-  | {
-      readonly moneyModel: 'legacy';
-      readonly settings: TaxSettings;
-      readonly persistedBarrier: true;
-    }
-  | {
-      readonly moneyModel: 'v2';
-      readonly settings: TaxSettings;
-      readonly persistedBarrier: true;
-    };
+import { assertTenantMoneyCurrent } from './upgrade/detect.js';
 
 declare const tenantMoneyScopeBrand: unique symbol;
 
-/** Transaction-affine proof that a tenant marker is locked on `db`. */
+/** Transaction-affine proof that a tenant's settings row is locked on `db`. */
 export interface TenantMoneyRuntimeScope {
   readonly db: DatabaseInterface;
   readonly tenantId: string;
-  readonly barrier: TenantMoneyRuntimeBarrier;
+  readonly settings: TaxSettings;
   readonly phase: 'runtime';
   readonly [tenantMoneyScopeBrand]: true;
-}
-
-declare const tenantMoneyMigrationScopeBrand: unique symbol;
-
-/** Transaction-affine proof held only by the active migration owner. */
-export interface TenantMoneyMigrationScope {
-  readonly db: DatabaseInterface;
-  readonly tenantId: string;
-  readonly migrationId: string;
-  readonly settings: TaxSettings;
-  readonly phase: 'migration';
-  readonly [tenantMoneyMigrationScopeBrand]: true;
 }
 
 function requiredText(value: string, label: string): string {
@@ -57,81 +27,30 @@ function requiredText(value: string, label: string): string {
   return value;
 }
 
-async function hasSettingsStorage(db: DatabaseInterface): Promise<boolean> {
-  return !db.tableExists || (await db.tableExists('tax_settings'));
-}
-
 const activeRuntimeScopes = new WeakMap<
   object,
   Map<string, TenantMoneyRuntimeScope>
 >();
-const activeMigrationScopes = new WeakMap<
-  object,
-  Map<string, TenantMoneyMigrationScope>
->();
-
-function runtimeScope(
-  db: DatabaseInterface,
-  tenantId: string,
-  barrier: TenantMoneyRuntimeBarrier,
-): TenantMoneyRuntimeScope {
-  return {
-    db,
-    tenantId,
-    barrier,
-    phase: 'runtime',
-  } as TenantMoneyRuntimeScope;
-}
 
 /**
- * Lock and re-read the tenant money marker before any runtime money work.
- *
- * Older schemas without TaxSettings stay byte-compatible legacy and are never
- * modified. Once the table exists, a missing deterministic legacy row is
- * materialized solely to provide the serialization point shared by migration.
+ * Lock and re-read the tenant's tax settings row before runtime money work,
+ * creating it once when missing. Old-format money data is refused first with
+ * `COMMERCE_DATA_NEEDS_UPGRADE`.
  */
 export async function lockTenantMoneyRuntime(
   tx: DatabaseInterface,
   tenantId: string,
-  requirement: TenantMoneyRuntimeRequirement = 'legacy-or-v2',
-): Promise<TenantMoneyRuntimeBarrier> {
+): Promise<TaxSettings> {
   requiredText(tenantId, 'Money tenant');
-  if (!(await hasSettingsStorage(tx))) {
-    if (requirement === 'v2')
-      throw new MoneyValidationError(
-        'INVALID_MONEY_INPUT',
-        'Money v2 requires tenant tax settings storage',
-      );
-    return {
-      moneyModel: 'legacy',
-      settings: null,
-      persistedBarrier: false,
-    };
-  }
-  const collection = await TaxSettingsCollection.create({ db: tx });
-  const settings = await collection.lockForTenant(tenantId);
-  if (!settings)
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Tenant money settings could not be materialized',
-    );
-  if (settings.moneyModel === 'migrating')
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money migration is in progress',
-    );
-  if (settings.moneyModel === 'v2')
-    return { moneyModel: 'v2', settings, persistedBarrier: true };
-  if (requirement === 'v2')
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Money v2 is not active for this tenant',
-    );
-  return { moneyModel: 'legacy', settings, persistedBarrier: true };
+  await assertTenantMoneyCurrent(tx, tenantId);
+  return (await TaxSettingsCollection.create({ db: tx })).lockForTenant(
+    tenantId,
+  );
 }
 
 /**
- * Run tenant money work under the shared marker lock on exactly one executor.
+ * Run tenant money work under the tenant settings lock on exactly one
+ * executor.
  *
  * Supplying an existing scope proves re-entry on the same executor. Calls made
  * through the owning transaction wrapper also reuse its exact registered
@@ -140,7 +59,6 @@ export async function lockTenantMoneyRuntime(
 export async function withTenantMoneyRuntime<T>(
   db: DatabaseInterface,
   tenantId: string,
-  requirement: TenantMoneyRuntimeRequirement,
   operation: (scope: TenantMoneyRuntimeScope) => Promise<T>,
   existingScope?: TenantMoneyRuntimeScope,
 ): Promise<T> {
@@ -149,8 +67,7 @@ export async function withTenantMoneyRuntime<T>(
     if (
       existingScope.phase !== 'runtime' ||
       existingScope.db !== db ||
-      existingScope.tenantId !== tenantId ||
-      (requirement === 'v2' && existingScope.barrier.moneyModel !== 'v2')
+      existingScope.tenantId !== tenantId
     )
       throw new MoneyValidationError(
         'INVALID_MONEY_INPUT',
@@ -160,16 +77,14 @@ export async function withTenantMoneyRuntime<T>(
   }
   return withDocumentMoneyTransaction(db, async (tx) => {
     const active = activeRuntimeScopes.get(tx as object)?.get(tenantId);
-    if (active) {
-      if (requirement === 'v2' && active.barrier.moneyModel !== 'v2')
-        throw new MoneyValidationError(
-          'INVALID_MONEY_INPUT',
-          'Money v2 is not active for this tenant',
-        );
-      return operation(active);
-    }
-    const barrier = await lockTenantMoneyRuntime(tx, tenantId, requirement);
-    const scope = runtimeScope(tx, tenantId, barrier);
+    if (active) return operation(active);
+    const settings = await lockTenantMoneyRuntime(tx, tenantId);
+    const scope = {
+      db: tx,
+      tenantId,
+      settings,
+      phase: 'runtime',
+    } as TenantMoneyRuntimeScope;
     const scopes = activeRuntimeScopes.get(tx as object) ?? new Map();
     scopes.set(tenantId, scope);
     activeRuntimeScopes.set(tx as object, scopes);
@@ -183,132 +98,14 @@ export async function withTenantMoneyRuntime<T>(
 }
 
 /**
- * Run migration work under the exact owner marker and transaction executor.
- * This is the only scope that lets guarded collections read while the marker
- * is `migrating`; possession cannot be inferred from adapter shape.
+ * @internal Guard a generated money-document collection read: a tenant whose
+ * data predates the current money model is refused before any row is read.
  */
-export async function withTenantMoneyMigration<T>(
-  db: DatabaseInterface,
-  tenantId: string,
-  migrationId: string,
-  operation: (scope: TenantMoneyMigrationScope) => Promise<T>,
-  existingScope?: TenantMoneyMigrationScope,
-): Promise<T> {
-  requiredText(tenantId, 'Money migration tenant');
-  requiredText(migrationId, 'Money migration owner');
-  if (existingScope) {
-    if (
-      existingScope.phase !== 'migration' ||
-      existingScope.db !== db ||
-      existingScope.tenantId !== tenantId ||
-      existingScope.migrationId !== migrationId
-    )
-      throw new MoneyValidationError(
-        'INVALID_MONEY_INPUT',
-        'Tenant money migration scope does not match the requested executor',
-      );
-    return operation(existingScope);
-  }
-  return withDocumentMoneyTransaction(db, async (tx) => {
-    const active = activeMigrationScopes.get(tx as object)?.get(tenantId);
-    if (active) {
-      if (active.migrationId !== migrationId)
-        throw new MoneyValidationError(
-          'FROZEN_DOCUMENT',
-          'Tenant money migration owner does not match',
-        );
-      return operation(active);
-    }
-    const settings = await lockTenantMoneyMigrationOwner(
-      tx,
-      tenantId,
-      migrationId,
-    );
-    const scope = {
-      db: tx,
-      tenantId,
-      migrationId,
-      settings,
-      phase: 'migration',
-    } as TenantMoneyMigrationScope;
-    const scopes = activeMigrationScopes.get(tx as object) ?? new Map();
-    scopes.set(tenantId, scope);
-    activeMigrationScopes.set(tx as object, scopes);
-    try {
-      return await operation(scope);
-    } finally {
-      scopes.delete(tenantId);
-      if (scopes.size === 0) activeMigrationScopes.delete(tx as object);
-    }
-  });
-}
-
-/** @internal Guard a generated collection read for runtime or migration. */
 export async function withTenantMoneyCollectionRead<T>(
   db: DatabaseInterface,
   tenantId: string,
   operation: (boundDb: DatabaseInterface) => Promise<T>,
 ): Promise<T> {
-  const migration = activeMigrationScopes.get(db as object)?.get(tenantId);
-  if (migration) return operation(migration.db);
-  return withTenantMoneyRuntime(db, tenantId, 'legacy-or-v2', (scope) =>
-    operation(scope.db),
-  );
-}
-
-/** Lock a tenant at the legacy marker before the caller claims migration. */
-export async function lockTenantMoneyMigrationClaim(
-  tx: DatabaseInterface,
-  tenantId: string,
-): Promise<TaxSettings> {
-  requiredText(tenantId, 'Money migration tenant');
-  if (!(await hasSettingsStorage(tx)))
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Money migration requires installed tax settings storage',
-    );
-  const collection = await TaxSettingsCollection.create({ db: tx });
-  const settings = await collection.lockForTenant(tenantId);
-  if (!settings)
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Tenant money settings could not be materialized',
-    );
-  if (settings.moneyModel === 'v2')
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money model is already v2',
-    );
-  if (settings.moneyModel === 'migrating')
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money migration is already in progress',
-    );
-  return settings;
-}
-
-/** Lock and verify the exact owner of an active tenant migration. */
-export async function lockTenantMoneyMigrationOwner(
-  tx: DatabaseInterface,
-  tenantId: string,
-  migrationId: string,
-): Promise<TaxSettings> {
-  requiredText(tenantId, 'Money migration tenant');
-  requiredText(migrationId, 'Money migration owner');
-  if (!(await hasSettingsStorage(tx)))
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Money migration requires installed tax settings storage',
-    );
-  const collection = await TaxSettingsCollection.create({ db: tx });
-  const settings = await collection.lockForTenant(tenantId, false);
-  if (
-    settings?.moneyModel !== 'migrating' ||
-    settings.moneyMigrationId !== migrationId
-  )
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money migration owner does not match',
-    );
-  return settings;
+  await assertTenantMoneyCurrent(db, tenantId);
+  return operation(db);
 }

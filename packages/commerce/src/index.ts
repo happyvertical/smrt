@@ -83,7 +83,6 @@ export {
   type InvoiceNumberOptions,
   type InvoiceTaxReportFact,
   type InvoiceTaxReportFactsOptions,
-  MoneyMigrationDocumentCollection,
   PaymentAllocationCollection,
   PaymentCollection,
   PaymentInstrumentCollection,
@@ -167,24 +166,6 @@ export {
   loadInvoiceRecordScreenData,
 } from './invoice-record-screen.js';
 export {
-  type CommerceLineAmountDocumentReport,
-  type CommerceLineAmountReasonCode,
-  type CommerceLineAmountsMigrationResult,
-  type CommerceLineAmountsReport,
-  type CommerceLineAmountsReportOutput,
-  type CommerceLineAmountsRollbackResult,
-  type CommerceLineAmountTenantSummary,
-  type CommerceMoneyTotals,
-  type MigrateCommerceLineAmountsOptions,
-  migrateCommerceLineAmounts,
-  type PreflightCommerceLineAmountsOptions,
-  preflightCommerceLineAmounts,
-  type RollbackCommerceLineAmountsOptions,
-  rollbackCommerceLineAmounts,
-  serializeCommerceLineAmountsReportCsv,
-  serializeCommerceLineAmountsReportJson,
-} from './migrations/commerceLineAmounts.js';
-export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
   type InvoiceEditorStoragePreflight,
@@ -234,10 +215,6 @@ export {
   Lease,
   type LicenseRightsSnapshot,
   LicenseSale,
-  MoneyMigrationDocument,
-  type MoneyMigrationDocumentOptions,
-  type MoneyMigrationDocumentState,
-  type MoneyMigrationDocumentType,
   Order,
   Payment,
   PaymentAllocation,
@@ -322,21 +299,19 @@ export {
   type RevenueJournalOptions,
   type RevenueJournalResult,
   type RevenueJournalTaxInput,
-  type RevenueJournalWarning,
 } from './revenue-journal.js';
 export {
   applyCommerceCookbookSettings,
   applyCookbookTaxSettings,
   applyTaxCodeExamplePack,
   COMMON_TAX_CODE_EXAMPLE_PACK,
+  type CommerceTenantBootstrap,
   type CookbookTaxSettingsInput,
   cookbookTaxSettings,
+  type EnsureCommerceTenantOptions,
+  ensureCommerceTenant,
   ensureTenantTaxCodes,
-  type LegacyTaxMapReport,
-  type LegacyTaxRateRow,
-  type MapLegacyTaxRatesOptions,
-  mapLegacyTaxRates,
-  mapLegacyTaxRatesInTransaction,
+  STANDARD_TAX_CODES,
   type TaxCodeExamplePack,
 } from './tax/index.js';
 export {
@@ -363,7 +338,6 @@ export {
   type TaxSummaryMaterializedReportDrilldownSources,
   type TaxSummaryMaterializedReportHostOptions,
 } from './tax-summary-report-adapter.js';
-
 // Types
 export {
   type Address,
@@ -393,6 +367,22 @@ export {
   type SalesContractOptions,
   VendorStatus,
 } from './types/index.js';
-
 // UI metadata (no Svelte dependency - import ./svelte for components)
 export { COMMERCE_MODULE_META, COMMERCE_UI_SLOTS } from './ui.js';
+export {
+  assertCommerceMoneySchemaCurrent,
+  assertTenantMoneyCurrent,
+  COMMERCE_DATA_NEEDS_UPGRADE,
+  CommerceDataNeedsUpgradeError,
+  type CommerceMoneyUpgradeStatus,
+  commerceMoneyUpgradeCommand,
+  findCommerceMoneyUpgradeNeeds,
+  type TenantlessMoneyDocument,
+  type TenantMoneyUpgradeNeed,
+} from './upgrade/detect.js';
+export {
+  type CommerceMoneyUpgradeFailure,
+  type CommerceMoneyUpgradeResult,
+  type UpgradeCommerceMoneyOptions,
+  upgradeCommerceMoney,
+} from './upgrade/money-v2.js';

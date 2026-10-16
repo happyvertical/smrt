@@ -12,7 +12,7 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { applyCookbookTaxSettings } from '../tax/cookbook.js';
-import { ensureTenantTaxCodes } from '../tax/legacy.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 
 /** PostgreSQL regression coverage, run through scripts/run-with-ci-postgres.mjs. */
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
@@ -90,18 +90,12 @@ describePostgres('tax codes on PostgreSQL', () => {
         const codes = await TaxCodeCollection.create({ db });
         const settings = await TaxSettingsCollection.create({ db });
         expect(
-          await components.list({
-            where: { name: 'Legacy unreconciled residual' },
-          }),
-        ).toHaveLength(1);
-        expect(
           await components.list({ where: { name: 'Cookbook 7.125%' } }),
         ).toHaveLength(1);
         for (const code of [
           'exempt',
           'zero-rated',
           'out-of-scope',
-          'legacy-unreconciled',
           'default-7_125',
         ]) {
           expect(await codes.list({ where: { code } }), code).toHaveLength(1);

@@ -32,8 +32,9 @@ movement to every component.
 ## Materialized document report path
 
 `TaxSummaryReport` is a tenant-scoped, manual materialized report. Its owner,
-`TaxSummaryReportCollection.refreshTaxSummary()`, refuses tenants whose
-`TaxSettings.moneyModel` is not `v2`: legacy and migrating documents are not a
+`TaxSummaryReportCollection.refreshTaxSummary()`, requires a tenant and refuses
+one whose money data needs the upgrade (`COMMERCE_DATA_NEEDS_UPGRADE`, see
+[money data upgrade](money-upgrade.md)): earlier-version documents are not a
 complete stored-tax source. The caller injects the public Expense and Journal
 source adapters because commerce cannot depend on expenses; omitting either
 adapter is a refusal, never a zero-ITC fallback.
@@ -68,13 +69,14 @@ matching `DocumentTax.documentType` pairs: `invoice`/`invoice` or
 `credit_note`/`credit_note`. Credit rows retain positive stored values and pass
 through the aggregation's single credit sign step.
 
-Refresh holds the tenant `TaxSettings` parent lock through the v2 gate, all
-source reads, aggregation, and replacement. Every source-adapter call receives
+Refresh holds the tenant `TaxSettings` parent lock through the upgrade check,
+all source reads, aggregation, and replacement. Every source-adapter call receives
 the same transaction-bound database executor. Replacement rows use a stable
 UUID derived from tenant, period, currency, row kind, and dimension, so retry
 and concurrent same-period refreshes converge to one row set. Materialized
-`list`, `get`, `count`, and Invoice drilldowns all recheck the tenant's marker;
-`legacy` and `migrating` refuse even existing report rows.
+`list`, `get`, `count`, and Invoice drilldowns all require a tenant context and
+recheck it; a tenant that needs the upgrade is refused even for existing report
+rows.
 
 Each document drilldown fact carries its printed invoice number or Contract
 reference, tenant-scoped customer/vendor party id, issue date, stored taxable

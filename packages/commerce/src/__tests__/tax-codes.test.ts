@@ -23,7 +23,7 @@ import {
   applyTaxCodeExamplePack,
   COMMON_TAX_CODE_EXAMPLE_PACK,
 } from '../tax/example-pack';
-import { ensureTenantTaxCodes, mapLegacyTaxRates } from '../tax/legacy';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 
 describe('tax codes (#3934)', () => {
   let db: DatabaseInterface;
@@ -167,7 +167,6 @@ describe('tax codes (#3934)', () => {
     const second = await ensureTenantTaxCodes(db, 'tenant-a');
     expect(first.map((code) => code.code).sort()).toEqual([
       'exempt',
-      'legacy-unreconciled',
       'out-of-scope',
       'zero-rated',
     ]);
@@ -338,57 +337,6 @@ describe('tax codes (#3934)', () => {
       expect(
         await codes.list({ where: { tenantId: 'tenant-a' } }),
       ).toHaveLength(COMMON_TAX_CODE_EXAMPLE_PACK.codes.length);
-    });
-  });
-
-  it('maps legacy zero to out-of-scope unless the party was exempt and retries idempotently', async () => {
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
-      const customers = await CustomerCollection.create({ db });
-      const invoices = await InvoiceCollection.create({ db });
-      const lines = await InvoiceLineItemCollection.create({ db });
-      const normal = await customers.create({ profileId: 'normal' });
-      const exempt = await customers.create({
-        profileId: 'exempt',
-        taxExempt: true,
-      });
-      await normal.save();
-      await exempt.save();
-      const normalInvoice = await invoices.create({ customerId: normal.id });
-      const exemptInvoice = await invoices.create({ customerId: exempt.id });
-      await normalInvoice.save();
-      await exemptInvoice.save();
-      const taxed = await lines.create({
-        invoiceId: normalInvoice.id,
-        taxRate: 0.05,
-      });
-      const untaxed = await lines.create({
-        invoiceId: normalInvoice.id,
-        taxRate: 0.0,
-      });
-      const exemptLine = await lines.create({
-        invoiceId: exemptInvoice.id,
-        taxRate: 0.0,
-      });
-      await taxed.save();
-      await untaxed.save();
-      await exemptLine.save();
-    });
-
-    const first = await mapLegacyTaxRates(db, { tenantId: 'tenant-a' });
-    const second = await mapLegacyTaxRates(db, { tenantId: 'tenant-a' });
-    expect(first).toMatchObject([
-      { tenantId: 'tenant-a', createdComponents: 1, createdCodes: 1 },
-    ]);
-    expect(second).toMatchObject([
-      { tenantId: 'tenant-a', createdComponents: 0, createdCodes: 0 },
-    ]);
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
-      const codes = await TaxCodeCollection.create({ db });
-      expect((await codes.findByCode('legacy-5'))?.components).toHaveLength(1);
-      expect((await codes.findByCode('out-of-scope'))?.kind).toBe(
-        'out-of-scope',
-      );
-      expect((await codes.findByCode('exempt'))?.kind).toBe('exempt');
     });
   });
 });

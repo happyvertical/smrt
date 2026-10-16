@@ -24,6 +24,7 @@ import {
 } from '../models/Contract.js';
 import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import { ContractStatus, ContractType } from '../types/index.js';
+import { assertCommerceMoneySchemaCurrent } from '../upgrade/detect.js';
 import { PurchaseContractCollection } from './PurchaseContractCollection.js';
 import { SalesContractCollection } from './SalesContractCollection.js';
 
@@ -33,7 +34,11 @@ export class ContractCollection extends SmrtCollection<Contract> {
   private async withMoneyRead<T>(operation: () => Promise<T>): Promise<T> {
     const rootDb = this.db;
     const tenantId = getTenantId();
-    if (!tenantId) return operation();
+    if (!tenantId) {
+      // Without a tenant, still refuse a database with old money storage.
+      await assertCommerceMoneySchemaCurrent(rootDb);
+      return operation();
+    }
     const result = await withTenantMoneyCollectionRead(
       rootDb,
       tenantId,

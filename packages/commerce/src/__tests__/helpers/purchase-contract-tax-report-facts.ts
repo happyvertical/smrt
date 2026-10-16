@@ -49,10 +49,6 @@ export async function seedReviewedPurchaseContract(
   current.defaultLineAmountType = 'exclusive';
   current.taxRoundingScope = 'document';
   await current.save();
-  if (current.moneyModel !== 'v2') {
-    const migrationId = await settings.beginMoneyMigration(tenantId);
-    await settings.activateMoneyV2(tenantId, migrationId);
-  }
 
   const vendors = await VendorCollection.create({ db });
   const vendor = await vendors.create({ id: randomUUID() });

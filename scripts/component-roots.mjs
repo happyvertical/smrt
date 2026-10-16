@@ -53,6 +53,7 @@ export const NO_ROOT_ELEMENT = {
   'packages/ingestion/src/svelte/components/IntakeInbox.svelte': CHILD,
   'packages/ingestion/src/svelte/components/IntakeReview.svelte': CHILD,
   'packages/commerce/src/svelte/components/CustomerSelect.svelte': CHILD,
+  'packages/commerce/src/svelte/components/InvoiceEditor.svelte': CHILD,
   'packages/commerce/src/svelte/components/InvoiceRecordScreen.svelte': CHILD,
   'packages/commerce/src/svelte/components/VendorSelect.svelte': CHILD,
   'packages/chat/src/svelte/components/shared/Avatar.svelte': CHILD,

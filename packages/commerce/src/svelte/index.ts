@@ -264,14 +264,12 @@ ModuleUIRegistry.register(
 
 import InvoiceAllocationFields from './components/InvoiceAllocationFields.svelte';
 import InvoiceEditor from './components/InvoiceEditor.svelte';
-import InvoiceLineEditor from './components/InvoiceLineEditor.svelte';
 import InvoiceReview from './components/InvoiceReview.svelte';
 import MoneyInvoiceEditor from './components/MoneyInvoiceEditor.svelte';
 
 export {
   InvoiceAllocationFields,
   InvoiceEditor,
-  InvoiceLineEditor,
   InvoiceReview,
   MoneyInvoiceEditor,
 };
@@ -284,12 +282,7 @@ export {
 export type {
   InvoiceAllocationDraft,
   InvoiceAllocationFieldsProps,
-  InvoiceDraftValues,
   InvoiceEditorProps,
-  InvoiceFieldNames,
-  InvoiceLineDraft,
-  InvoiceLineEditorProps,
-  InvoiceLineFieldNames,
   InvoicePreparationFields,
   InvoicePreparationHiddenField,
   InvoicePreparationReview,

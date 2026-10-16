@@ -134,6 +134,7 @@ export async function createBillingWorld(
         ).id,
       );
     return {
+      bookCurrency: 'USD',
       arAccountId: await make('1200', 'Accounts receivable', 'asset'),
       cashAccountId: await make('1000', 'Stripe clearing', 'asset'),
       revenueAccountId: await make('4000', 'Revenue', 'revenue'),
@@ -155,6 +156,7 @@ export async function createBillingWorld(
         ).id,
       );
     return {
+      bookCurrency: 'USD',
       arAccountId: await make('1200', 'AR', 'asset'),
       cashAccountId: await make('1000', 'Cash', 'asset'),
       revenueAccountId: await make('4000', 'Revenue', 'revenue'),

@@ -13,8 +13,8 @@ debit receivables and credit revenue/tax; signed credits naturally swap sides, a
 For inclusive documents, stored line net is `amountMinor - taxMinor`; for exclusive
 and no-tax pricing it is `amountMinor`. Revenue is grouped by each line's stored
 account, falling back to the caller's revenue account. Component tax uses the
-stored liability account and falls back to `taxAccountId`. A `legacy-*` code that
-needs this fallback returns a structured warning. Provider tax is posted once as
+stored liability account and falls back to `taxAccountId`. The result has only
+`entries`; there are no warnings. Provider tax is posted once as
 its own entry to `taxAccountId`. Zero-tax and null-component reporting rows do not
 produce entries.
 

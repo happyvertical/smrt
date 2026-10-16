@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.57.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - remove the legacy money model; v2 is the only model (#4021) (#4043) (commerce)
+  
+  ### Bug Fixes
+  
+  - release owned test and packaging resources (#4026)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.57.0
+  - @happyvertical/smrt-scanner@0.57.0
+  - @happyvertical/smrt-types@0.57.0
+
 ## 0.56.2
 
 ### Patch Changes

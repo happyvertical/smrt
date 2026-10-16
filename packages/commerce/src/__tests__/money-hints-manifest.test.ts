@@ -65,11 +65,7 @@ describe('commerce manifest money hints', () => {
   // money field cannot miss it.
   const MONEY_NAME = /(?:Amount|Total|Minor)$|^subtotal$/;
   /** Integers that match MONEY_NAME but are deliberately unhinted. */
-  const NOT_MONEY: Record<string, string> = {
-    // @internal migration rollback state, not a user-facing amount.
-    'InvoiceLineItem.legacyAmount': 'internal',
-    'ContractLineItem.legacyAmount': 'internal',
-  };
+  const NOT_MONEY: Record<string, string> = {};
   const DOCUMENT_MONEY = new Set([
     'Invoice',
     'InvoiceLineItem',

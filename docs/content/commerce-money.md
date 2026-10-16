@@ -215,9 +215,8 @@ that their code and registration references belong to the tenant.
 ## Seeding and defaults
 
 Run `ensureTenantTaxCodes(db, tenantId)` during tenant setup to idempotently
-provide `exempt`, `zero-rated`, and `out-of-scope`. It also creates the inactive
-`legacy-unreconciled` code and its zero-percent component so historical
-migration data remains visible without being selectable for new work.
+provide `exempt`, `zero-rated`, and `out-of-scope`, the codes listed in
+`STANDARD_TAX_CODES`.
 
 `COMMON_TAX_CODE_EXAMPLE_PACK` contains illustrative Canada GST, BC GST + PST,
 Ontario HST, UK VAT, Australian GST, and New Zealand GST components and codes.
@@ -234,6 +233,20 @@ import { applyCommerceCookbookSettings } from '@happyvertical/smrt-commerce';
 await applyCommerceCookbookSettings(db, session.tenantId, cookbook);
 ```
 
+For a newly created tenant, prefer the one bootstrap call, which wraps the
+cookbook activation:
+
+```ts
+import { ensureCommerceTenant } from '@happyvertical/smrt-commerce';
+
+await ensureCommerceTenant(db, session.tenantId, { cookbook });
+```
+
+It creates the tenant's tax settings row, seeds the standard codes, and applies
+the cookbook (omit it to seed codes only). It returns `{ tenantId }`. Every step
+is idempotent; re-running it with a cookbook re-applies the cookbook defaults. The SvelteKit template calls
+it from its owner setup claim when the app installs commerce.
+
 `applyCommerceCookbookSettings()` reads core's portable cookbook policy and
 creates or reuses the component, code, and tenant settings in a transaction.
 Cookbook `taxRate` is a fraction (`0.05` means 5%); the commerce API
@@ -245,11 +258,11 @@ tax records because it has neither a database nor authoritative tenant context.
 
 `@happyvertical/smrt-commerce/svelte` exports `InvoiceEditor`,
 `MoneyInvoiceEditor`, `MoneyEditorProps`, `calculateMoneyEditorDraft`, and
-`moneyEditorSubmission`. Passing `money: { mode: 'v2', ... }` to
-`InvoiceEditor` opts into the money editor; omitting it preserves the existing
-legacy invoice editor contract.
+`moneyEditorSubmission`. `InvoiceEditor` requires a `money` prop
+(`MoneyEditorProps`, with the fixed discriminator `mode: 'v2'`) and renders
+`MoneyInvoiceEditor`. There is no rate-based editor.
 
-The v2 editor uses native controls and posts a calculation-free shape from
+The editor uses native controls and posts a calculation-free shape from
 `moneyEditorSubmission()`. An application owns validation, authorization,
 persistence, and the form action. For a draft, the editor recalculates only
 from the supplied `MoneyEditorDraft` and tax-code inputs. For a frozen document,
@@ -260,22 +273,23 @@ changes.
 
 ## Persisted Invoice money
 
-The public `Invoice` and `InvoiceLineItem` save paths select their behavior
-from the server-owned `TaxSettings.moneyModel` marker. Missing settings and
-`legacy` retain the existing line-save behavior. `migrating` is a maintenance
-guard: Invoice money writes fail until its owner restores `legacy` or activates
-`v2`. Generated surfaces and ordinary `TaxSettings.save()` calls cannot change
-the marker or its owner token on an existing settings row.
+Commerce has one money model. Every Invoice and Contract money write needs a
+tenant; without one it fails with `MoneyValidationError` `INVALID_MONEY_INPUT`
+(`Commerce money documents require a tenant`). A tenant's tax settings row is
+created once, by the bootstrap above, a settings save, or the first money
+document, and concurrent first writers agree on one row.
 
-With `moneyModel: 'v2'`, saving a draft Invoice or Invoice line locks and
-reloads the parent and siblings, resolves the current tax inputs, runs the pure
-calculator once, and atomically persists the resolved line values and Invoice
-headers. Invoice tax selection uses the line override when present; otherwise a
-customer exemption selects the exempt code, followed by product, customer, and
-tenant default. `none` mode selects the tenant's out-of-scope code. The
-persisted `InvoiceLineItem.amount` is post-discount amount in the document's
-mode: it is tax-exclusive net for `exclusive`, and includes tax for `inclusive`.
-`taxAmount` stays separate in both cases.
+Saving a draft Invoice or Invoice line locks and reloads the parent and
+siblings, resolves the current tax inputs, runs the pure calculator once, and
+atomically persists the resolved line values and Invoice headers. Invoice tax
+selection uses the line override (`taxMode: 'override'` with a `taxCodeId`)
+when present; otherwise a customer exemption selects the exempt code, followed
+by product, customer, and tenant default. `none` mode selects the tenant's
+out-of-scope code. The server computes line `taxAmount` and the header totals
+and ignores any client total. The persisted `InvoiceLineItem.amount` is
+post-discount amount in the document's mode: it is tax-exclusive net for
+`exclusive`, and includes tax for `inclusive`. `taxAmount` stays separate in
+both cases.
 
 The first transition away from `DRAFT`, or setting `arJournalId`, freezes the
 money document. The Invoice and each line receive the same stable
@@ -294,8 +308,8 @@ Invoice `providerTaxAmount`; it contributes to header `taxAmount` and
 `totalAmount`, but never creates an application tax code or component.
 
 `InvoiceLineItemCollection.getTotalForInvoice()` remains a public compatibility
-helper that sums stored line `amount` values. It is not the Invoice amount due
-in v2: use the persisted `Invoice.totalAmount`, which includes resolved tax and
+helper that sums stored line `amount` values. It is not the Invoice amount
+due: use the persisted `Invoice.totalAmount`, which includes resolved tax and
 `providerTaxAmount`, for the document total.
 
 Credit notes are `Invoice` rows with `kind: 'credit_note'` and a frozen
@@ -307,18 +321,42 @@ credits prorate flat discounts, while the final credit across every remaining
 source line consumes the exact stored document-tax residual. Free-form credit
 lines require an explicit tax code.
 
+Posting reads only the frozen facts. `recognizeRevenue()` and
+`cancelWithRevenueReversal()` take a required `bookCurrency`, which must equal
+the invoice currency, and `toAccountingInput({ mapping })` requires explicit
+QuickBooks realm mapping.
+
+Billing period close writes ordinary invoices in the seller's tenant. The
+payment provider taxes them, so every billing line is an explicit override to
+the seller's `out-of-scope` code and the provider's tax is stored in
+`providerTaxAmount` in the save that issues the invoice. Charges are written
+before credits, so the running subtotal never goes negative, and revenue
+posting is idempotent.
+
 Use `previewInvoiceMoney()` to calculate a proposed draft overlay without
 writing. It requires the active tenant and rejects frozen documents. Use
 `getInvoiceMoneyFacts()` when a tool or integration needs the authoritative
 stored header, line snapshots, stable `moneySnapshotId`, and `DocumentTax`
 rows without recomputation.
 
+## Data from an earlier version
+
+Commerce does not read money data written by an earlier version. A schema that
+still has the earlier money columns or the `commerce_money_migration_documents` table,
+or an invoice or contract without a tenant, refuses the whole database; a tenant with invoices or contracts but no tax
+settings row, or with documents in the earlier format, is refused on its own. Reads, writes, money tools, and the tax
+summary fail with `COMMERCE_DATA_NEEDS_UPGRADE` and name the command, and
+`smrt db:status` and `smrt app doctor` report it. Run the normal schema
+migration, then `smrt db:upgrade-commerce-money` once. Each tenant converts in
+its own transaction: stored rates become tax codes, issued documents keep every
+stored total, and drafts are recomputed. See the
+[upgrade command guide](../../packages/cli/agents/commerce-money-upgrade.md).
+
 ## Not part of this guide
 
-This guide does not define the tenant migration or marker-transition procedure,
-reports, or currency conversion. Contract v2 persistence uses the same
-tenant-money runtime gate, writes Contract headers, line snapshots, and
-DocumentTax rows atomically, and freezes each persisted non-draft snapshot.
-See [Contract money persistence](../../packages/commerce/agents/contract-money.md)
-for the Contract-specific lifecycle, purchase recoverability, and
-migration-only materialization boundary.
+This guide does not define reports or currency conversion. Contract
+persistence uses the same tenant-money runtime lock, writes Contract headers,
+line snapshots, and DocumentTax rows atomically, and freezes each persisted
+non-draft snapshot. See
+[Contract money persistence](../../packages/commerce/agents/contract-money.md)
+for the Contract-specific lifecycle and purchase recoverability.

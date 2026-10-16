@@ -34,6 +34,7 @@ import type {
   BillingPeriodClose,
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types/index.js';
 import { defaultCardFor } from './cards.js';
 import {
@@ -1322,6 +1323,14 @@ async function collectAndInvoice(
 
   const invoiceId = await deterministicId(['billing-invoice', closeId]);
   await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
+    // The payment provider taxes billing invoices (providerTaxAmount), so
+    // every billing line is explicitly out of scope: the seller's default tax
+    // code must not tax a line a second time.
+    const outOfScope = (
+      await ensureTenantTaxCodes(runtime.db, runtime.sellerTenantId)
+    ).find((code) => code.code === 'out-of-scope');
+    if (!outOfScope?.id)
+      throw new Error('The seller tenant has no out-of-scope tax code.');
     let invoice = await runtime.invoices.get(invoiceId);
     if (!invoice) {
       const issueDate = close.issuedAt;
@@ -1351,7 +1360,16 @@ async function collectAndInvoice(
     if (invoice.status !== InvoiceStatus.DRAFT) {
       throw new Error(`Invoice ${invoice.invoiceNumber} is no longer a draft.`);
     }
-    for (const [index, line] of lines.entries()) {
+    // Each line save recomputes the invoice aggregate, whose subtotal may
+    // never go negative. The close's net is not negative (a net credit is
+    // carried forward above), so writing charges before credits keeps every
+    // intermediate subtotal at or above zero. sortOrder keeps display order.
+    const ordered = [...lines.entries()].sort(
+      ([, left], [, right]) =>
+        Number(left.amount - left.discount < 0) -
+        Number(right.amount - right.discount < 0),
+    );
+    for (const [index, line] of ordered) {
       await runtime.lineItems.create({
         id: await deterministicId(['billing-invoice-line', closeId, line.key]),
         tenantId: runtime.sellerTenantId,
@@ -1360,8 +1378,8 @@ async function collectAndInvoice(
         quantity: 1,
         unitPrice: line.amount,
         discount: line.discount,
-        taxRate: 0.0,
-        amount: line.amount - line.discount,
+        taxMode: 'override',
+        taxCodeId: outOfScope.id,
         sourceType: 'billing_period_close',
         sourceId: closeId,
         periodStart: line.periodStart ?? close.periodStart,
@@ -1369,7 +1387,6 @@ async function collectAndInvoice(
         sortOrder: index,
       });
     }
-    await invoice.save();
   });
 
   close.invoiceId = invoiceId;
@@ -1537,6 +1554,13 @@ async function sendAndReconcile(
     await runtime.provider.sendInvoice(providerInvoiceId);
     state = await runtime.provider.getInvoice(providerInvoiceId);
   }
+  if (state.status === 'void' && invoice.status === InvoiceStatus.CANCELLED) {
+    // Voided at the provider and cancelled here while this close was parked:
+    // nothing was sent or earned, so the close completes without posting.
+    close.status = 'sent';
+    await close.save();
+    return;
+  }
   if (state.status === 'draft' || state.status === 'void') {
     throw new Error(
       `Provider invoice ${providerInvoiceId} is ${state.status}; expected it to be sent.`,
@@ -1553,12 +1577,21 @@ async function sendAndReconcile(
         `local subtotal ${invoice.subtotal} ${close.currency}.`,
     );
   }
-  await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    invoice.providerTaxAmount = state.taxAmount;
-    if (invoice.status === InvoiceStatus.DRAFT) invoice.markSent();
-    await invoice.save();
-  });
-  if (invoice.totalAmount !== state.total) {
+  // Provider tax is written while the invoice is a draft, in the same save
+  // that issues (freezes) it. An invoice written off or cancelled while this
+  // close was parked is already frozen: it keeps its stored facts, and the
+  // close only records that the provider sent it.
+  const settledWhileParked =
+    invoice.status === InvoiceStatus.WRITTEN_OFF ||
+    invoice.status === InvoiceStatus.CANCELLED;
+  if (invoice.status === InvoiceStatus.DRAFT) {
+    await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
+      invoice.providerTaxAmount = state.taxAmount;
+      invoice.markSent();
+      await invoice.save();
+    });
+  }
+  if (!settledWhileParked && invoice.totalAmount !== state.total) {
     throw new Error(
       `Invoice ${invoice.invoiceNumber} total ${invoice.totalAmount} does not match provider total ${state.total}.`,
     );
@@ -1568,33 +1601,27 @@ async function sendAndReconcile(
 }
 
 /**
- * Recognize revenue once. A journal posted by an attempt that died before
- * linking it is adopted instead of posting a second one.
+ * Recognize revenue once. Posting is idempotent: a journal posted by an
+ * attempt that died before linking it is adopted instead of posting another.
  */
 async function postRevenue(
   runtime: BillingRuntime,
   invoice: Invoice,
 ): Promise<void> {
-  if (invoice.totalAmount <= 0 || invoice.arJournalId) return;
-  await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    const posted = await runtime.journals.list({
-      where: {
-        sourceModule: 'smrt-commerce',
-        sourceRef: String(invoice.id),
-        status: 'posted',
-      },
-      limit: 1,
-    });
-    if (posted[0]?.id) {
-      invoice.arJournalId = String(posted[0].id);
-      await invoice.save();
-      return;
-    }
-    await invoice.recognizeRevenue({
+  // An invoice the provider voided while its close was parked never earned
+  // revenue: the close completes without posting.
+  if (
+    invoice.totalAmount <= 0 ||
+    invoice.arJournalId ||
+    invoice.status === InvoiceStatus.CANCELLED
+  )
+    return;
+  await withTenant({ tenantId: runtime.sellerTenantId }, () =>
+    invoice.recognizeRevenue({
       arAccountId: runtime.ledger.arAccountId,
       revenueAccountId: runtime.ledger.revenueAccountId,
       taxAccountId: runtime.ledger.taxAccountId,
       bookCurrency: runtime.ledger.bookCurrency,
-    });
-  });
+    }),
+  );
 }

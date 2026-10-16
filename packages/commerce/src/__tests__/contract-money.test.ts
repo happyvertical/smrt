@@ -54,8 +54,6 @@ describe('Contract money persistence (#3933)', () => {
       current.defaultLineAmountType = 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
       return code.id;
     });
   }
@@ -100,8 +98,6 @@ describe('Contract money persistence (#3933)', () => {
       current.defaultLineAmountType = lineAmountType;
       current.taxRoundingScope = taxRoundingScope;
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
       return { gst: gstCode.id, gstPst: gstPstCode.id, exempt: exemptCode.id };
     });
   }
@@ -366,41 +362,6 @@ describe('Contract money persistence (#3933)', () => {
       line.unitPrice = 101;
       await expect(line.save()).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',
-      });
-    });
-  });
-
-  it('blocks Contract and line reads while its tenant is migrating', async () => {
-    const tenantId = 'contract-read-migration';
-    await withTenant({ tenantId }, async () => {
-      const contracts = await ContractCollection.create({ db });
-      const contract = await contracts.create({ currency: 'CAD' });
-      const lines = await ContractLineItemCollection.create({ db });
-      const line = await lines.create({
-        contractId: contract.id,
-        description: 'Read barrier',
-        quantity: 1,
-        unitPrice: 100,
-      });
-      const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-
-      await expect(contracts.get({ id: contract.id })).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-      await expect(contracts.list()).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-      await expect(lines.get({ id: line.id })).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-      await expect(lines.list()).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-
-      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
-      await expect(contracts.get({ id: contract.id })).resolves.toMatchObject({
-        id: contract.id,
       });
     });
   });

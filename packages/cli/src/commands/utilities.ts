@@ -39,11 +39,6 @@ import {
   quoteIdentifier,
   redactDatabaseUrlsInText,
 } from './db-command-utils.js';
-import {
-  dbMigrateCommerceMoneyCommand,
-  dbPreflightCommerceMoneyCommand,
-  dbRollbackCommerceMoneyCommand,
-} from './db-commerce-money.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -90,6 +85,7 @@ import {
 } from './db-qualified-names.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
+import { dbUpgradeCommerceMoneyCommand } from './db-upgrade-commerce-money.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { devRuntimeCommands } from './dev-runtime.js';
 import { exportCommand } from './export.js';
@@ -3938,9 +3934,7 @@ export default testManifest;
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
   'db:migrate-ledger-accounts': dbMigrateLedgerAccountsCommand,
-  'db:preflight-commerce-money': dbPreflightCommerceMoneyCommand,
-  'db:migrate-commerce-money': dbMigrateCommerceMoneyCommand,
-  'db:rollback-commerce-money': dbRollbackCommerceMoneyCommand,
+  'db:upgrade-commerce-money': dbUpgradeCommerceMoneyCommand,
   'db:migrate-qualified-names': dbMigrateQualifiedNamesCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,

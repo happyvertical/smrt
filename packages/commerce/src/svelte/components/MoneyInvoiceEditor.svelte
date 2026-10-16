@@ -3,36 +3,16 @@ import { CurrencyDisplay } from '@happyvertical/smrt-ui';
 import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import type { HTMLFormAttributes } from 'svelte/elements';
 import { M } from '../i18n.js';
 import {
   calculateMoneyEditorDraft,
   type MoneyEditorProps,
   moneyEditorFieldNames,
 } from '../invoices/money-editor.js';
+import type { InvoiceEditorProps } from '../invoices/types.js';
 
-export interface Props {
-  /** Native form action owned by the caller's invoice route. */
-  action: string;
-  /** Native HTTP method retained for progressive enhancement. */
-  method?: 'post' | 'get';
-  /** Typed v2 money draft, tax-code choices, and stored issued snapshot. */
-  money: MoneyEditorProps;
-  /** Presentation capability; the server remains the authority for writes. */
-  canEdit?: boolean;
-  /** Caller transport state that disables edits and the save submitter. */
-  pending?: boolean;
-  /** Caller-owned request identity and route fields submitted unchanged. */
-  hiddenFields?: readonly { name: string; value: string }[];
-  /** Native submitter field name expected by the caller. */
-  intentField?: string;
-  /** Submitter value that requests a draft save. */
-  saveIntent?: string;
-  /** Caller-visible label for the save submitter. */
-  saveLabel?: string;
-  /** Optional native form enhancement; omitted submissions stay native. */
-  onsubmit?: HTMLFormAttributes['onsubmit'];
-}
+/** The invoice editor's form; the v2 money model is the only invoice model. */
+export interface Props extends InvoiceEditorProps {}
 
 let {
   action,

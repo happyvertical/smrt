@@ -72,8 +72,6 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
     setting.defaultLineAmountType = 'exclusive';
     setting.taxRoundingScope = 'document';
     await setting.save();
-    const migrationId = await settings.beginMoneyMigration(tenantId);
-    await settings.activateMoneyV2(tenantId, migrationId);
     return code.id;
   }
 
