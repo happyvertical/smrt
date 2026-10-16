@@ -1,4 +1,8 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from './i18n.js';
+
+const { t } = useI18n();
 /**
  * Serializable plan shape accepted by PlanPicker. `SubscriptionPlan` model
  * instances satisfy it structurally, but it can also be plain data returned
@@ -95,12 +99,12 @@ let {
       <span class="smrt-plan-picker__name">{plan.name}</span>
       <span class="smrt-plan-picker__price">
         {#if plan.pricingMode === 'free'}
-          Free
+          {t(M['subscriptions.picker.free'])}
         {:else if plan.pricingMode === 'pay_what_you_can'}
-          Pay what you can
-          <small>Minimum {formatPrice(plan, plan.minimumAmount ?? 0)} / {plan.billingInterval}</small>
+          {t(M['subscriptions.picker.pay_what_you_can'])}
+          <small>{t(M['subscriptions.picker.minimum'], { amount: formatPrice(plan, plan.minimumAmount ?? 0), interval: plan.billingInterval })}</small>
           {#if plan.suggestedAmount}
-            <small>Suggested {formatPrice(plan, plan.suggestedAmount)} / {plan.billingInterval}</small>
+            <small>{t(M['subscriptions.picker.suggested'], { amount: formatPrice(plan, plan.suggestedAmount), interval: plan.billingInterval })}</small>
           {/if}
         {:else}
           {formatPrice(plan)}

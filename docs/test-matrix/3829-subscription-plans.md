@@ -40,3 +40,7 @@ Tier amendment/renewal/cancellation continuity is deliberately covered by #4032;
 - Reader and supplied-context entitlement paths reject foreign-owned plans, accept own/global plans, and preserve explicit trusted system-context seller-to-child resolution (`subscription-resolver.test.ts`).
 - SQLite/PostgreSQL upgrade fixtures prove legacy Stripe lookup fallback and reject that fallback for explicit other-provider bindings.
 - PlanPicker SSR tests and browser QA verify free/PWYC minimum/suggestion labels while existing fixed-price/currency rendering remains covered.
+
+## CI i18n correction (approved round 7)
+
+- PlanPicker pricing labels use the existing subscription message catalog and host i18n snapshot. A French-context SSR regression proves all four labels interpolate translated templates; English fallback and browser selection remain covered. The strict hardcoded-string gate is executed explicitly alongside affected checks.
