@@ -300,6 +300,12 @@ export function createResourceListHandler(
       // wrote. See #1311 review (codex P2).
       if (isCollectionClass(def)) continue;
 
+      // Skip an STI child that shares its ancestor's collection. The route
+      // generator folds such a child into its base model (one route per
+      // collection), so the base's resource already serves it; listing the
+      // child as well would collide on the slug.
+      if (sharesAncestorCollection(def, registeredClasses)) continue;
+
       // Resolve included method set per v4 rules.
       // resolveApiActionSet only reads decoratorConfig + methods; cast is safe.
       const apiActionSet = resolveApiActionSet(
@@ -537,6 +543,41 @@ function synthesizeDefinition(
     extendsTypeArg: registered.extendsTypeArg,
     constructor: registered.constructor,
   };
+}
+
+/**
+ * Whether a registered ancestor of `def` (walked through `extends`, preferring
+ * the class's own package) has the same collection: an STI child the route
+ * generator folds into its base model.
+ */
+function sharesAncestorCollection(
+  def: ReturnType<typeof synthesizeDefinition>,
+  registeredClasses: Array<[string, unknown]>,
+): boolean {
+  const byName = new Map<string, [string, RegisteredClassLike]>();
+  for (const [name, entry] of registeredClasses) {
+    const registered = entry as RegisteredClassLike;
+    byName.set(name, [name, registered]);
+    if (registered.qualifiedName) {
+      byName.set(registered.qualifiedName, [name, registered]);
+    }
+  }
+  const seen = new Set<string>();
+  let packageName = def.packageName;
+  let parentName = def.extends;
+  while (parentName && !seen.has(parentName)) {
+    seen.add(parentName);
+    const parent =
+      (!parentName.includes(':') && packageName
+        ? byName.get(`${packageName}:${parentName}`)
+        : undefined) ?? byName.get(parentName);
+    if (!parent) return false;
+    const parentDef = synthesizeDefinition(parent[0], parent[1]);
+    if (parentDef.collection === def.collection) return true;
+    packageName = parentDef.packageName;
+    parentName = parentDef.extends;
+  }
+  return false;
 }
 
 /**
