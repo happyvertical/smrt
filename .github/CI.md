@@ -457,8 +457,8 @@ build and typecheck with every `@happyvertical` package overridden to the
 release tarballs. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
 `publish-release` needs it to succeed. When the generated app fails, the gate
-repeats the apply as the published release generates it (published manifests
-and packages) as a control; if that fails too, it reports upstream drift (the
+repeats the apply as the published release generates it (the published CLI,
+manifests and packages) as a control; if that fails too, it reports upstream drift (the
 smrt-start template or a third-party release) instead of blaming the
 framework. A control that cannot be built (a package new in this release) is
 inconclusive and the failure stays the framework's. The gate fails either way.

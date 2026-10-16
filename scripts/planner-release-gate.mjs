@@ -23,8 +23,8 @@
  * (its own suites) or the framework (a release package rejects a cookbook or
  * a generated app no longer builds against the release). When the generated
  * app fails, a control repeats the apply as the published release generates
- * it (published manifests, every release package pinned to the latest
- * published version): if that fails too, the cause is upstream drift (the
+ * it (the published CLI and manifests, every release package pinned to the
+ * latest published version): if that fails too, the cause is upstream drift (the
  * smrt-start template or a third-party release), not this release, and the
  * failure says so. When the control cannot be built from published packages
  * (one the app uses is new in this release), it is inconclusive and the
@@ -49,7 +49,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { OWN_REGISTRY, registryArgs } from './release-registry.mjs';
+import { OWN_REGISTRY, RELEASE_SCOPE, registryArgs } from './release-registry.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PLANNER = join(ROOT, 'packages/planner');
@@ -184,6 +184,22 @@ function publishedVersion() {
   return version;
 }
 
+/** `npm exec` of the published smrt CLI at `version`, as a command prefix. */
+function publishedCli(version) {
+  return [
+    'npm',
+    'exec',
+    '--yes',
+    `--package=@happyvertical/smrt-cli@${version}`,
+    // Scope mapping only, deliberately not registryArgs(): --registry would
+    // send the CLI's third-party dependencies to our registry, which serves
+    // only @happyvertical (401 for the rest).
+    `--${RELEASE_SCOPE}:registry=${OWN_REGISTRY}`,
+    '--',
+    'smrt',
+  ];
+}
+
 const errorText = (error) => (error instanceof Error ? error.message : String(error));
 
 /** The `@happyvertical/smrt-*` packages a generated app's package.json names. */
@@ -266,12 +282,15 @@ function frameworkChecks(tarballs, options, scratch) {
    * resolves from its tarball; the template's lockfile is kept so everything
    * else stays at the versions the template was tested with.
    */
-  const generateApp = (dir, overrides, { published = false } = {}) => {
+  const generateApp = (dir, overrides, { published } = {}) => {
     rmSync(dir, { recursive: true, force: true });
+    // The release app uses this release's CLI; the control the published
+    // release's CLI, so nothing of this release takes part in it.
+    const [command, ...prefix] = published ? publishedCli(published) : [process.execPath, CLI];
     run(
-      process.execPath,
+      command,
       [
-        CLI,
+        ...prefix,
         'cookbook',
         'apply',
         files.get(options.cookbook),
@@ -336,11 +355,23 @@ function frameworkChecks(tarballs, options, scratch) {
           console.log(`control inconclusive (${errorText(error)}): reporting the framework`);
           return 'framework';
         }
-        const used = appSmrtDependencies(app);
+        // The published CLI runs the control apply, so it must exist too.
+        const used = [...new Set([...appSmrtDependencies(app), '@happyvertical/smrt-cli'])];
         const unpublished = used.filter((name) => !isPublished(name, published));
         if (unpublished.length > 0) {
           console.log(
             `control inconclusive: ${unpublished.join(', ')} not published at ${published}; reporting the framework`,
+          );
+          return 'framework';
+        }
+        const [cliCommand, ...cliArgs] = publishedCli(published);
+        const cli = spawnSync(cliCommand, [...cliArgs, '--version'], {
+          cwd: scratch,
+          encoding: 'utf8',
+        });
+        if (cli.status !== 0) {
+          console.log(
+            `control inconclusive: the published smrt CLI ${published} could not be run; reporting the framework`,
           );
           return 'framework';
         }
@@ -349,7 +380,7 @@ function frameworkChecks(tarballs, options, scratch) {
           generateApp(
             `${app}-control`,
             new Map([...tarballs.keys()].map((name) => [name, published])),
-            { published: true },
+            { published },
           );
           console.log('✓ control passed: the release tarballs broke the app');
           return 'framework';
