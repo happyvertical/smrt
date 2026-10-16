@@ -951,7 +951,7 @@ describe('smrt kitchen mcp over stdio', () => {
     expect(Object.keys(pkg.dependencies)).toContain(
       '@happyvertical/smrt-inventory',
     );
-    expect(pkg.name).toBe('lotus');
+    expect(pkg.name).toBe('@smrt-app/lotus');
     expect(existsSync(join(dir, 'node_modules'))).toBe(false);
 
     // Re-applying the same plan changes nothing.
