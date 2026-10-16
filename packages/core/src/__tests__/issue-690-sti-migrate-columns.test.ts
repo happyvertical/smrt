@@ -25,6 +25,7 @@ import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 /**
  * STI base class - Event
@@ -79,9 +80,7 @@ describe('Issue #690: STI Migrate Columns', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('getAllSchemas() with STI subclasses', () => {

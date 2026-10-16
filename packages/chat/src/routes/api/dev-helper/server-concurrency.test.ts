@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -8,10 +9,12 @@ import {
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEV_HELPER_PREFERENCES_METAFIELD } from '../../../dev-helper-server.js';
 
 const state = vi.hoisted(() => ({ config: null as any }));
+let activeDb: Awaited<ReturnType<typeof getDatabase>> | undefined;
+let activeDbFile: string | undefined;
 vi.mock('$app/environment', () => ({ dev: true }));
 vi.mock('../dev-character-persistence/config.js', () => ({
   resolveDevCharacterPersistenceConfig: () => state.config,
@@ -36,8 +39,10 @@ const preferences = (name: string) => ({
 });
 
 async function seed() {
-  const databaseUrl = `file:${join(tmpdir(), `dev-helper-concurrency-${randomUUID()}.db`)}`;
+  activeDbFile = join(tmpdir(), `dev-helper-concurrency-${randomUUID()}.db`);
+  const databaseUrl = `file:${activeDbFile}`;
   const db = await getDatabase({ type: 'sqlite', url: databaseUrl });
+  activeDb = db;
   const types = await ProfileTypeCollection.create({ db });
   const type = await types.create({ name: 'Person' });
   await type.save();
@@ -69,6 +74,25 @@ async function seed() {
 describe('dev helper route concurrent first save', () => {
   beforeEach(() => {
     state.config = null;
+  });
+
+  afterEach(async () => {
+    await activeDb?.close?.();
+    if (activeDbFile) {
+      await Promise.all(
+        [
+          activeDbFile,
+          `${activeDbFile}-wal`,
+          `${activeDbFile}-shm`,
+          `${activeDbFile}-journal`,
+        ].map((path) => rm(path, { force: true })),
+      );
+    }
+    if (state.config?.assetDirectory) {
+      await rm(state.config.assetDirectory, { recursive: true, force: true });
+    }
+    activeDb = undefined;
+    activeDbFile = undefined;
   });
 
   it('serializes concurrent initial POST writes and retains one complete value', async () => {
@@ -114,6 +138,5 @@ describe('dev helper route concurrent first save', () => {
       name: 'Happy',
       offeringId: 'happy',
     });
-    await db.close?.();
   });
 });

@@ -17,9 +17,9 @@ import { smrt } from './registry';
 
 // Utility functions (must be defined BEFORE classes that use them in decorators)
 const TMP_DIR = path.resolve(`${os.tmpdir()}/.have-sdk-perf-tests`);
-fs.mkdirSync(TMP_DIR, { recursive: true });
 
 function getTestDbUrl(): string {
+  fs.mkdirSync(TMP_DIR, { recursive: true });
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(7);
   return `file:${TMP_DIR}/perf-test-${timestamp}-${random}.db`;

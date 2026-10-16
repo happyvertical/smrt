@@ -16,11 +16,12 @@ import {
 
 let context: CliConfigContext;
 let cfgBackup: string | undefined;
+let configDir: string | undefined;
 
 beforeEach(async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-discovery-'));
+  configDir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-discovery-'));
   cfgBackup = process.env.DISCO_CLI_CONFIG;
-  process.env.DISCO_CLI_CONFIG = join(dir, 'config.json');
+  process.env.DISCO_CLI_CONFIG = join(configDir, 'config.json');
   context = {
     envPrefix: 'DISCO',
     appSlug: 'disco',
@@ -29,9 +30,10 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  if (process.env.DISCO_CLI_CONFIG) {
-    await rm(process.env.DISCO_CLI_CONFIG, { force: true }).catch(() => {});
+  if (configDir) {
+    await rm(configDir, { recursive: true, force: true });
   }
+  configDir = undefined;
   process.env.DISCO_CLI_CONFIG = cfgBackup;
 });
 

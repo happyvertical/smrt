@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -8,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class';
 import { SMRT_SCHEMA_VERSION } from '../system/schema';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 class BootstrapProbe extends SmrtClass {
   async ready() {
@@ -21,7 +21,8 @@ const paths: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const db of databases.splice(0)) await db.close?.();
-  for (const path of paths.splice(0)) await rm(path, { force: true });
+  for (const path of paths.splice(0))
+    await cleanupFileDatabase(undefined, path);
 });
 
 function observeBootstrap(db: DatabaseInterface) {

@@ -12,6 +12,9 @@
  * review D-3 + D-4.)
  */
 
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { createResourceListHandler } from '@happyvertical/smrt-users/sveltekit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,13 +54,19 @@ function makeEvent() {
 
 const cfgEnv = 'INTEGRATION_CLI_CONFIG';
 let cfgBackup: string | undefined;
+let configDir: string | undefined;
 
 beforeEach(async () => {
   cfgBackup = process.env[cfgEnv];
-  process.env[cfgEnv] = `/tmp/smrt-app-cli-integration-${Date.now()}.json`;
+  configDir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-integration-'));
+  process.env[cfgEnv] = join(configDir, 'config.json');
 });
 
-afterEach(() => {
+afterEach(async () => {
+  if (configDir) {
+    await rm(configDir, { recursive: true, force: true });
+  }
+  configDir = undefined;
   process.env[cfgEnv] = cfgBackup;
   vi.restoreAllMocks();
 });

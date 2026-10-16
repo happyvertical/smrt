@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { manyToMany, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Target class — "Tag"
 @smrt()
@@ -72,9 +73,7 @@ describe('@manyToMany lazy + batch loading (R6)', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Lazy load via loadRelatedMany / getRelated', () => {

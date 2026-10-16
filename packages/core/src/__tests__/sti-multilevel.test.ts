@@ -17,6 +17,7 @@ import { crossPackageRef, field, foreignKey, oneToMany } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Simulate multi-level inheritance like Council → Organization → Profile → SmrtObject
 // Using unique class names to avoid collisions with @happyvertical/smrt-profiles (see issue #543)
@@ -142,9 +143,7 @@ describe('Multi-Level STI Save Operations', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Save operations', () => {

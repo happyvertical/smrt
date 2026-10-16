@@ -15,6 +15,7 @@ import { oneToMany } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Parent model with @oneToMany relationships
 @smrt()
@@ -55,9 +56,7 @@ describe('CRUD Operations with @oneToMany Relationships', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('CREATE operations', () => {

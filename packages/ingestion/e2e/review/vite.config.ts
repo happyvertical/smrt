@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 import type {
   ReferenceReviewHost,
   ReviewSession,
 } from '../../reference/review-host.js';
+import { createReviewFixture, type OwnedReviewFixture } from './fixture.js';
+
+let fixture: OwnedReviewFixture | undefined;
 
 export default defineConfig({
   oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
@@ -22,20 +22,19 @@ export default defineConfig({
         >();
         // Provision the fixture schema before installing any request handler.
         const module = await server.ssrLoadModule('/reference/review-host.ts');
-        const app: ReferenceReviewHost =
-          await module.ReferenceReviewHost.provision(
-            await mkdtemp(join(tmpdir(), 'review-')),
-            {
-              feedback: {
-                version: 'browser-feedback1',
-                maxExamples: 5,
-                maxScan: 50,
-                maxBytes: 8000,
-                minimumSimilarity: 0.2,
-                authorize: async () => true,
-              },
+        fixture = await createReviewFixture((root) =>
+          module.ReferenceReviewHost.provision(root, {
+            feedback: {
+              version: 'browser-feedback1',
+              maxExamples: 5,
+              maxScan: 50,
+              maxBytes: 8000,
+              minimumSimilarity: 0.2,
+              authorize: async () => true,
             },
-          );
+          }),
+        );
+        const app: ReferenceReviewHost = fixture.app;
         const host = async () => app;
         server.middlewares.use(async (req, res, next) => {
           if (!req.url?.startsWith('/api/')) return next();
@@ -295,9 +294,10 @@ export default defineConfig({
             });
           }
         });
-        server.httpServer?.once('close', () => {
-          void app.db.close?.();
-        });
+      },
+      async closeBundle() {
+        await fixture?.close();
+        fixture = undefined;
       },
     },
   ],

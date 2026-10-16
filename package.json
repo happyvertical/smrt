@@ -14,6 +14,7 @@
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install --force || echo 'Skipping lefthook install (not in a git repository)'",
     "test": "turbo test --concurrency=4 && pnpm run test:ci-scripts",
     "test:ci-scripts": "node --test scripts/*.test.mjs",
+    "test:resource-cleanup": "node scripts/check-test-resource-cleanup.mjs",
     "test:watch": "turbo test:watch",
     "test:coverage": "npx vitest run --coverage",
     "test:ui": "npx vitest --ui",

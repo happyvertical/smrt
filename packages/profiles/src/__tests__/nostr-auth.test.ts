@@ -14,9 +14,7 @@
  * - Tests read like executable examples
  */
 
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   computeEventId,
   createAuthEvent,
@@ -47,8 +45,41 @@ import {
   verifyAuthEvent,
   verifyNostrSignature,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
 
 const TEST_MASTER_SECRET = 'test-master-secret-32-bytes-long';
+const fixtures = createOwnedSqliteFixtures();
+let trackedCreates = 0;
+
+const trackedCollectionClasses = [
+  ProfileTypeCollection,
+  ProfileCollection,
+  NostrIdentityCollection,
+  MagicLinkTokenCollection,
+] as const;
+
+beforeEach(() => {
+  for (const collectionClass of trackedCollectionClasses) {
+    const create = collectionClass.create.bind(collectionClass);
+    vi.spyOn(collectionClass, 'create').mockImplementation(async (...args) => {
+      const collection = await create(...args);
+      trackedCreates++;
+      fixtures.track(collection.db);
+      return collection;
+    });
+  }
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  const cleanup = await fixtures.cleanup();
+  if (process.env.SMRT_TEST_RESOURCE_DIAGNOSTICS === '1') {
+    process.stdout.write(
+      `[nostr-auth] created=${trackedCreates} closed=${cleanup.closed} removed=${cleanup.removed}\n`,
+    );
+  }
+  trackedCreates = 0;
+});
 
 describe('Nostr Crypto Utilities', () => {
   describe('Keypair Generation', () => {
@@ -358,7 +389,7 @@ describe('NostrIdentity Model', () => {
   let dbUrl: string;
 
   beforeEach(async () => {
-    dbUrl = join(tmpdir(), `nostr-test-${Date.now()}.db`);
+    dbUrl = fixtures.url('nostr-test');
   });
 
   describe('CRUD Operations', () => {
@@ -563,7 +594,7 @@ describe('MagicLinkToken Model', () => {
   let dbUrl: string;
 
   beforeEach(async () => {
-    dbUrl = join(tmpdir(), `magic-test-${Date.now()}.db`);
+    dbUrl = fixtures.url('magic-test');
   });
 
   describe('Token Generation', () => {
@@ -684,7 +715,7 @@ describe('NIP-05 Handler', () => {
   let dbUrl: string;
 
   beforeEach(async () => {
-    dbUrl = join(tmpdir(), `nip05-test-${Date.now()}.db`);
+    dbUrl = fixtures.url('nip05-test');
   });
 
   it('should return NIP-05 response for known user', async () => {
@@ -816,7 +847,7 @@ describe('NostrIdentityCollection', () => {
   let dbUrl: string;
 
   beforeEach(async () => {
-    dbUrl = join(tmpdir(), `collection-test-${Date.now()}.db`);
+    dbUrl = fixtures.url('collection-test');
   });
 
   it('should create identity for profile', async () => {
@@ -899,7 +930,7 @@ describe('MagicLinkTokenCollection', () => {
   let dbUrl: string;
 
   beforeEach(async () => {
-    dbUrl = join(tmpdir(), `rate-limit-test-${Date.now()}.db`);
+    dbUrl = fixtures.url('rate-limit-test');
   });
 
   it('should count recent tokens by email', async () => {

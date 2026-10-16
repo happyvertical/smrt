@@ -774,16 +774,20 @@ describe('CLIGenerator - handlers (in-memory collection)', () => {
     const coll = makeMemoryCollection();
     vi.spyOn(cli as any, 'getCollection').mockResolvedValue(coll as any);
     // Use a real temp file (node:fs/promises readFile cannot be spied in ESM).
-    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const dir = await mkdtemp(join(tmpdir(), 'smrt-cli-'));
-    const filePath = join(dir, 'x.json');
-    await writeFile(filePath, JSON.stringify({ title: 'FromFile' }));
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    await (cli as any).handleCreate('Widget', { fromFile: filePath });
-    const created = Array.from(coll.store.values())[0];
-    expect(created.title).toBe('FromFile');
+    try {
+      const filePath = join(dir, 'x.json');
+      await writeFile(filePath, JSON.stringify({ title: 'FromFile' }));
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      await (cli as any).handleCreate('Widget', { fromFile: filePath });
+      const created = Array.from(coll.store.values())[0];
+      expect(created.title).toBe('FromFile');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('handleUpdate merges fields into an existing object', async () => {
@@ -896,77 +900,85 @@ describe('CLIGenerator - CRUD options via parseCliArgs (regression #1385)', () =
     vi.spyOn(ObjectRegistry, 'getFields').mockReturnValue(new Map());
     const createCmd = await commandFor('Widget', 'create');
 
-    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const dir = await mkdtemp(join(tmpdir(), 'smrt-cli-ff-'));
-    const filePath = join(dir, 'data.json');
-    await writeFile(filePath, JSON.stringify({ title: 'FromKebabFile' }));
+    try {
+      const filePath = join(dir, 'data.json');
+      await writeFile(filePath, JSON.stringify({ title: 'FromKebabFile' }));
 
-    const created: any[] = [];
-    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
-      create: async (data: any) => {
-        const row = { ...data, id: 'x1' };
-        created.push(row);
-        return row;
-      },
-    } as any);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+      const created: any[] = [];
+      vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+        create: async (data: any) => {
+          const row = { ...data, id: 'x1' };
+          created.push(row);
+          return row;
+        },
+      } as any);
+      vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const parsed = parseCliArgs(
-      ['widget:create', '--from-file', filePath],
-      [createCmd],
-      {},
-    );
-    expect(parsed.options['from-file']).toBe(filePath);
-    expect((parsed.options as any).fromFile).toBeUndefined();
+      const parsed = parseCliArgs(
+        ['widget:create', '--from-file', filePath],
+        [createCmd],
+        {},
+      );
+      expect(parsed.options['from-file']).toBe(filePath);
+      expect((parsed.options as any).fromFile).toBeUndefined();
 
-    await createCmd.handler(parsed.args, parsed.options);
+      await createCmd.handler(parsed.args, parsed.options);
 
-    expect(created).toHaveLength(1);
-    expect(created[0].title).toBe('FromKebabFile');
+      expect(created).toHaveLength(1);
+      expect(created[0].title).toBe('FromKebabFile');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('honors --from-file on update routed through parseCliArgs', async () => {
     vi.spyOn(ObjectRegistry, 'getFields').mockReturnValue(new Map());
     const updateCmd = await commandFor('Widget', 'update');
 
-    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const dir = await mkdtemp(join(tmpdir(), 'smrt-cli-ffu-'));
-    const filePath = join(dir, 'data.json');
-    await writeFile(filePath, JSON.stringify({ title: 'UpdatedFromFile' }));
+    try {
+      const filePath = join(dir, 'data.json');
+      await writeFile(filePath, JSON.stringify({ title: 'UpdatedFromFile' }));
 
-    const saved: any[] = [];
-    const existing: any = {
-      id: '1',
-      title: 'Old',
-      async save() {
-        saved.push(this);
-      },
-    };
-    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
-      get: async () => existing,
-      withAuditMutation: async (
-        row: any,
-        _action: string,
-        mutate: (row: any) => Promise<unknown>,
-      ) => await mutate(row),
-    } as any);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+      const saved: any[] = [];
+      const existing: any = {
+        id: '1',
+        title: 'Old',
+        async save() {
+          saved.push(this);
+        },
+      };
+      vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+        get: async () => existing,
+        withAuditMutation: async (
+          row: any,
+          _action: string,
+          mutate: (row: any) => Promise<unknown>,
+        ) => await mutate(row),
+      } as any);
+      vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const parsed = parseCliArgs(
-      ['widget:update', '1', '--from-file', filePath],
-      [updateCmd],
-      {},
-    );
-    expect(parsed.options['from-file']).toBe(filePath);
+      const parsed = parseCliArgs(
+        ['widget:update', '1', '--from-file', filePath],
+        [updateCmd],
+        {},
+      );
+      expect(parsed.options['from-file']).toBe(filePath);
 
-    await updateCmd.handler(parsed.args, parsed.options);
+      await updateCmd.handler(parsed.args, parsed.options);
 
-    expect(saved).toHaveLength(1);
-    expect(existing.title).toBe('UpdatedFromFile');
+      expect(saved).toHaveLength(1);
+      expect(existing.title).toBe('UpdatedFromFile');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

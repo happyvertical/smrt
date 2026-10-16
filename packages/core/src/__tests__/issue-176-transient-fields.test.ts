@@ -16,6 +16,7 @@ import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { generateSchema } from '../schema/utils';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Test class with various transient field patterns
 @smrt({ tableName: 'transient_test' })
@@ -62,9 +63,7 @@ describe('Issue #176: Transient fields', () => {
   }, 120000);
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   it('should mark function types as transient in manifest', async () => {
