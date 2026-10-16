@@ -1,3 +1,11 @@
+import {
+  ParticipationBanCollection,
+  ParticipationPolicyCollection,
+} from './collections/ParticipationCollection.js';
+import { ParticipationService } from './services/ParticipationService.js';
+import './models/ParticipationPolicy.js';
+import './models/ParticipationBan.js';
+import './models/ParticipationRateBucket.js';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { UserNotificationService } from '@happyvertical/smrt-messages';
 import { withTenant } from '@happyvertical/smrt-tenancy';
@@ -41,7 +49,12 @@ describe.each([
     });
     try {
       const db = await getTestDatabase({
-        classes: ['Comment'],
+        classes: [
+          'ParticipationPolicy',
+          'ParticipationBan',
+          'ParticipationRateBucket',
+          'Comment',
+        ],
         type: dialect as 'sqlite' | 'duckdb' | 'postgres',
         url:
           dialect === 'postgres'
@@ -97,7 +110,14 @@ describe.each([
   });
   it('uses the shared participation gate, preserves snapshots, and retains moderation history', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'CommentRevision', 'CommentReport'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'CommentRevision',
+        'CommentReport',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -160,7 +180,12 @@ describe.each([
   });
   it('denies a participation decision before inserting a comment', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -192,7 +217,12 @@ describe.each([
     'primary-key',
   ])('ignores injected %s identity instead of replacing an unauthorized record comment', async (attack) => {
     const db = await getTestDatabase({
-      classes: ['Comment'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -258,7 +288,12 @@ describe.each([
   });
   it('ignores forged database and constructor options at the service boundary', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -302,7 +337,13 @@ describe.each([
   });
   it('persists a record comment and notifies each distinct non-author mention', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'UserNotification'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'UserNotification',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -334,7 +375,13 @@ describe.each([
   });
   it('denies unauthorized records and forged actor context before writing or notifying', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'UserNotification'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'UserNotification',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -378,7 +425,13 @@ describe.each([
   });
   it('composes real mention notifications with recipient authorization and replay dedupe', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'UserNotification'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'UserNotification',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -425,13 +478,28 @@ describe.each([
     ).toEqual([]);
     expect(RecordCommentsRecipe.id).toBe('comments.records');
     expect(RecordCommentsRecipe.models).toContain(Comment);
+    expect(RecordCommentsRecipe.models.map((model) => model.name)).toEqual(
+      expect.arrayContaining([
+        'CommentRevision',
+        'CommentReport',
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+      ]),
+    );
   });
   it.each([
     'malformed',
     'over-limit',
   ])('rejects %s mentions without leaving a saved row', async (invalid) => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'UserNotification'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'UserNotification',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -459,7 +527,13 @@ describe.each([
 
   it("does not expose another tenant's record comments", async () => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'UserNotification'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'UserNotification',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -498,7 +572,13 @@ describe.each([
 
   it('keeps a persisted comment when mention delivery fails', async () => {
     const db = await getTestDatabase({
-      classes: ['Comment', 'UserNotification'],
+      classes: [
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'Comment',
+        'UserNotification',
+      ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
         dialect === 'postgres'
@@ -544,7 +624,13 @@ describe.each([
         authorizeRecord: async () => true,
       };
       const db = await getTestDatabase({
-        classes: ['Comment', 'UserNotification'],
+        classes: [
+          'ParticipationPolicy',
+          'ParticipationBan',
+          'ParticipationRateBucket',
+          'Comment',
+          'UserNotification',
+        ],
         type: dialect as 'sqlite' | 'duckdb' | 'postgres',
         url:
           dialect === 'postgres'
@@ -991,11 +1077,18 @@ describe.each([
         service.create(input),
         next.create(nextInput),
       ]);
-      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(
-        kind === 'same' ? 2 : 1,
-      );
+      expect(
+        results.filter((r) => r.status === 'fulfilled'),
+        results
+          .filter((r) => r.status === 'rejected')
+          .map((r) => String(r.reason))
+          .join(' | '),
+      ).toHaveLength(kind === 'same' ? 2 : 1);
       if (kind !== 'same')
-        expect(results.find((r) => r.status === 'rejected')).toMatchObject({
+        expect(
+          results.find((r) => r.status === 'rejected'),
+          String(results.find((r) => r.status === 'rejected')?.reason),
+        ).toMatchObject({
           reason: { code: 'COMMENT_REQUEST_CONFLICT' },
         });
       expect(
@@ -1198,5 +1291,346 @@ describe.each([
           await service.listForRecord(input.metaType, input.metaId),
         ).toHaveLength(1);
       });
+  });
+});
+
+describe.each([
+  'sqlite',
+  'duckdb',
+  ...(process.env.SMRT_TEST_POSTGRES_URL ? ['postgres'] : []),
+] as const)('Generic worker-coop participation %s', (dialect) => {
+  const dbs: Array<{ close?: () => Promise<void> }> = [];
+  afterEach(async () => {
+    await Promise.all(dbs.splice(0).map((db) => db.close?.()));
+  });
+  async function fixture() {
+    const db = await getTestDatabase({
+      classes: [
+        'Comment',
+        'ParticipationPolicy',
+        'ParticipationBan',
+        'ParticipationRateBucket',
+        'CommentRevision',
+      ],
+      type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+      url:
+        dialect === 'postgres'
+          ? process.env.SMRT_TEST_POSTGRES_URL
+          : ':memory:',
+    });
+    dbs.push(db);
+    const tenantId = crypto.randomUUID();
+    const request = {
+      tenantId,
+      actorUserId: crypto.randomUUID(),
+      action: 'comment' as const,
+      recordType: 'WorkerProject',
+      recordId: crypto.randomUUID(),
+    };
+    const policies = await withTenant({ tenantId }, () =>
+      ParticipationPolicyCollection.create({ db }),
+    );
+    const bans = await withTenant({ tenantId }, () =>
+      ParticipationBanCollection.create({ db }),
+    );
+    const policy = (values: Record<string, unknown>) =>
+      withTenant({ tenantId }, () =>
+        policies.create({ tenantId, action: 'comment', ...values }),
+      );
+    const ban = (values: Record<string, unknown>) =>
+      withTenant({ tenantId }, () =>
+        bans.create({
+          tenantId,
+          actorUserId: request.actorUserId,
+          reason: 'moderator decision',
+          ...values,
+        }),
+      );
+    return { db, tenantId, request, policy, ban };
+  }
+  it('rejects unauthorized moderation, edits and cross-record replies and rolls back failed revisions', async () => {
+    const { db, tenantId, request, ban, policy } = await fixture();
+    const service = new CommentService({
+      db,
+      actor: { tenantId, userId: request.actorUserId },
+      authorizeRecord: async () => true,
+    });
+    const input = {
+      tenantId,
+      authorUserId: request.actorUserId,
+      metaType: request.recordType,
+      metaId: request.recordId,
+      body: 'original',
+    };
+    const original = await service.create(input);
+    const id = original.id ?? '';
+    const denied = new CommentService({
+      db,
+      actor: { tenantId, userId: crypto.randomUUID() },
+      authorizeRecord: async (access) => access.action !== 'moderate',
+    });
+    await expect(denied.edit(id, 'forged')).rejects.toThrow('edit denied');
+    await expect(denied.moderate(id, 'visible')).rejects.toThrow(
+      'access denied',
+    );
+    const otherTenant = new CommentService({
+      db,
+      actor: { tenantId: crypto.randomUUID(), userId: request.actorUserId },
+      authorizeRecord: async () => true,
+    });
+    await expect(otherTenant.moderate(id, 'deleted')).rejects.toThrow(
+      'not found',
+    );
+    await expect(
+      service.create({
+        ...input,
+        metaId: crypto.randomUUID(),
+        parentCommentId: id,
+      }),
+    ).rejects.toThrow('parent does not belong');
+    const save = vi
+      .spyOn(Comment.prototype, 'save')
+      .mockRejectedValueOnce(new Error('storage failed'));
+    try {
+      await expect(service.edit(id, 'changed')).rejects.toThrow(
+        'storage failed',
+      );
+    } finally {
+      save.mockRestore();
+    }
+    const revisions = await withTenant({ tenantId }, () =>
+      CommentRevisionCollection.create({ db }),
+    );
+    expect(
+      await withTenant({ tenantId }, () =>
+        revisions.list({ where: { commentId: id } }),
+      ),
+    ).toHaveLength(0);
+    expect(
+      (await service.listForRecord(request.recordType, request.recordId))[0]
+        ?.body,
+    ).toBe('original');
+    await service.edit(id, 'changed');
+    const upperActor = new CommentService({
+      db,
+      actor: { tenantId, userId: request.actorUserId.toUpperCase() },
+      authorizeRecord: async () => true,
+    });
+    await expect(upperActor.edit(id, 'same owner')).resolves.toMatchObject({
+      body: 'same owner',
+    });
+    expect(
+      (
+        await withTenant({ tenantId }, () =>
+          revisions.list({ where: { commentId: id } }),
+        )
+      )[0]?.body,
+    ).toBe('original');
+    await policy({ moderationMode: 'pre_moderated' });
+    await expect(service.edit(id, 'review this edit')).resolves.toMatchObject({
+      status: 'pending',
+    });
+    await service.moderate(id, 'hidden');
+    await expect(service.edit(id, 'still hidden')).resolves.toMatchObject({
+      status: 'hidden',
+    });
+    await ban({});
+    await expect(service.edit(id, 'banned edit')).rejects.toThrow('banned');
+  });
+  it('enforces tenant defaults, target override, membership and immutable snapshot facts', async () => {
+    const { db, tenantId, request, policy } = await fixture();
+    await policy({ moderationMode: 'closed' });
+    const service = new ParticipationService({
+      db,
+      entitlement: {
+        authorize: async () => ({
+          allowed: true,
+          member: true,
+          snapshot: { class: 'worker-owner' },
+        }),
+      },
+    });
+    await expect(service.authorize(request)).rejects.toThrow('closed');
+    await policy({
+      recordType: request.recordType,
+      recordId: request.recordId,
+      moderationMode: 'members_only',
+    });
+    await expect(
+      withTenant({ tenantId: crypto.randomUUID() }, () =>
+        service.authorize(request),
+      ),
+    ).resolves.toMatchObject({
+      allowed: true,
+      snapshot: { class: 'worker-owner' },
+    });
+    await expect(
+      new ParticipationService({ db }).authorize(request),
+    ).rejects.toThrow('Membership');
+    await expect(
+      service.authorize({ ...request, tenantId: crypto.randomUUID() }),
+    ).resolves.toMatchObject({ allowed: true });
+    expect(tenantId).toBe(request.tenantId);
+  });
+  it('enforces tenant and target bans while ignoring expired and differently scoped bans', async () => {
+    const { db, request, ban } = await fixture();
+    const service = new ParticipationService({ db });
+    await ban({
+      recordType: request.recordType,
+      recordId: crypto.randomUUID(),
+    });
+    await ban({ expiresAt: new Date(0) });
+    await expect(service.authorize(request)).resolves.toMatchObject({
+      allowed: true,
+    });
+    await ban({ recordType: request.recordType, recordId: request.recordId });
+    await expect(service.authorize(request)).rejects.toThrow('banned');
+    await expect(
+      service.authorize({
+        ...request,
+        recordId: request.recordId.toUpperCase(),
+      }),
+    ).rejects.toThrow('banned');
+    await expect(
+      service.authorize({ ...request, actorUserId: crypto.randomUUID() }),
+    ).resolves.toMatchObject({ allowed: true });
+    await expect(
+      service.authorize({ ...request, tenantId: crypto.randomUUID() }),
+    ).resolves.toMatchObject({ allowed: true });
+    await ban({});
+    await expect(
+      service.authorize({ ...request, recordId: crypto.randomUUID() }),
+    ).rejects.toThrow('banned');
+  });
+  it('atomically bounds concurrent mutations across instances, scopes actors/tenants and renews windows', async () => {
+    const { db, request, policy } = await fixture();
+    await policy({ maxActions: 2, windowSeconds: 60 });
+    let now = new Date('2026-10-15T12:00:01Z');
+    const run = (input = request) =>
+      new ParticipationService({ db, now: () => now }).execute(
+        input,
+        async () => 'accepted',
+      );
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, () => run()),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+    for (const result of results)
+      if (result.status === 'rejected')
+        expect(result.reason.message).toContain('Rate limit');
+    await expect(
+      run({ ...request, recordId: crypto.randomUUID() }),
+    ).rejects.toThrow('Rate limit');
+    await expect(
+      run({ ...request, actorUserId: crypto.randomUUID() }),
+    ).resolves.toBe('accepted');
+    const otherTenantId = crypto.randomUUID();
+    await withTenant({ tenantId: otherTenantId }, async () => {
+      await (await ParticipationPolicyCollection.create({ db })).create({
+        tenantId: otherTenantId,
+        action: 'comment',
+        maxActions: 2,
+        windowSeconds: 60,
+      });
+    });
+    await expect(run({ ...request, tenantId: otherTenantId })).resolves.toBe(
+      'accepted',
+    );
+    await expect(run({ ...request, tenantId: otherTenantId })).resolves.toBe(
+      'accepted',
+    );
+    await expect(run({ ...request, tenantId: otherTenantId })).rejects.toThrow(
+      'Rate limit',
+    );
+    now = new Date('2026-10-15T12:01:00Z');
+    await expect(run()).resolves.toBe('accepted');
+  });
+  it('rolls back quota and mutation together, then charges keyed comment retries only once', async () => {
+    const { db, tenantId, request, policy } = await fixture();
+    await policy({
+      maxActions: 1,
+      windowSeconds: 3600,
+      moderationMode: 'pre_moderated',
+    });
+    const participation = new ParticipationService({ db });
+    await expect(
+      participation.execute(request, async (tx) => {
+        await (await CommentCollection.create({ db: tx })).create({
+          tenantId,
+          authorUserId: request.actorUserId,
+          metaType: request.recordType,
+          metaId: request.recordId,
+          body: 'rolled back',
+        });
+        throw new Error('write failed');
+      }),
+    ).rejects.toThrow('write failed');
+    const comments = new CommentService({
+      db,
+      actor: { tenantId, userId: request.actorUserId },
+      authorizeRecord: async () => true,
+    });
+    expect(
+      await comments.listForRecord(request.recordType, request.recordId),
+    ).toHaveLength(0);
+    const input = {
+      tenantId,
+      authorUserId: request.actorUserId,
+      metaType: request.recordType,
+      metaId: request.recordId,
+      body: 'worker schedule',
+      idempotencyKey: crypto.randomUUID(),
+    };
+    const first = await comments.create(input);
+    expect(first.status).toBe('pending');
+    await expect(
+      comments.edit(first.id ?? '', 'rate-bypassing edit'),
+    ).rejects.toThrow('Rate limit');
+    expect((await comments.create(input)).id).toBe(first.id);
+    await expect(
+      comments.create({ ...input, body: 'changed' }),
+    ).rejects.toThrow('different content');
+    await expect(
+      comments.create({ ...input, idempotencyKey: crypto.randomUUID() }),
+    ).rejects.toThrow('Rate limit');
+    expect(
+      await comments.listForRecord(request.recordType, request.recordId),
+    ).toHaveLength(1);
+  });
+  it('fails closed for malformed policies, unknown actions, denied entitlement and upstream failures', async () => {
+    const { db, request, policy } = await fixture();
+    await expect(
+      new ParticipationService({
+        db,
+        entitlement: { authorize: async () => ({ allowed: false }) },
+      }).execute(request, async () => 'never'),
+    ).rejects.toThrow('Participation denied');
+    await expect(
+      new ParticipationService({
+        db,
+        entitlement: {
+          authorize: async () => {
+            throw new Error('provider unavailable');
+          },
+        },
+      }).authorize(request),
+    ).rejects.toThrow('provider unavailable');
+    // Deliberately invalid external runtime input, not a typed consumer.
+    await expect(
+      new ParticipationService({ db }).authorize(
+        JSON.parse(JSON.stringify({ ...request, action: 'unknown' })),
+      ),
+    ).rejects.toThrow('Invalid participation request');
+    await expect(policy({ maxActions: -1 })).rejects.toThrow();
+    await expect(policy({ action: 'unknown' })).rejects.toThrow();
+    await expect(policy({ moderationMode: 'unknown' })).rejects.toThrow();
+    const stored = await policy({ maxActions: 1, windowSeconds: 60 });
+    await db.query(
+      'UPDATE participation_policies SET max_actions = -1 WHERE id = ?',
+      stored.id,
+    );
+    await expect(
+      new ParticipationService({ db }).authorize(request),
+    ).rejects.toThrow('Invalid participation policy');
   });
 });

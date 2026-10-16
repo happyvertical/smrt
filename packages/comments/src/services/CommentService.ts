@@ -8,11 +8,10 @@ import { CommentCollection } from '../collections/CommentCollection.js';
 import { CommentReportCollection } from '../collections/CommentReportCollection.js';
 import { CommentRevisionCollection } from '../collections/CommentRevisionCollection.js';
 import { Comment } from '../models/Comment.js';
-import {
-  type ParticipationAuthorizer,
-  type ParticipationDecision,
-  ParticipationDeniedError,
-} from '../participation.js';
+import type {
+  ParticipationAuthorizer,
+  ParticipationDecision,
+} from '../participation-contract.js';
 import type {
   CommentActorContext,
   CommentMentionNotificationAdapter,
@@ -20,6 +19,7 @@ import type {
   CommentStatus,
   CreateCommentInput,
 } from '../types.js';
+import { ParticipationService } from './ParticipationService.js';
 
 // Native UUID columns canonicalize case; identity and digests must agree with them.
 const canonicalUuid = (value: string) =>
@@ -82,7 +82,7 @@ export class CommentService {
     const comment = await withTenant({ tenantId }, async () =>
       (await CommentCollection.create({ db: this.options.db })).get(commentId),
     );
-    if (!comment || comment.tenantId !== tenantId)
+    if (!comment || canonicalUuid(comment.tenantId) !== canonicalUuid(tenantId))
       throw new Error('Comment not found.');
     await this.authorize(comment.metaType, comment.metaId, action);
     return comment;
@@ -92,23 +92,71 @@ export class CommentService {
   async edit(commentId: string, body: string): Promise<Comment> {
     if (!body.trim()) throw new TypeError('Comment body is required.');
     const comment = await this.getAuthorizedComment(commentId, 'read');
-    if (comment.authorUserId !== this.options.actor.userId)
+    if (
+      canonicalUuid(comment.authorUserId) !==
+      canonicalUuid(this.options.actor.userId)
+    )
       throw new Error('Comment edit denied.');
+    await this.authorize(comment.metaType, comment.metaId, 'comment');
     const tenantId = this.options.actor.tenantId;
     return withTenant({ tenantId }, async () => {
-      const revisions = await CommentRevisionCollection.create({
+      const collection = await CommentCollection.create({
         db: this.options.db,
       });
-      await revisions.create({
-        tenantId,
-        commentId: comment.id ?? commentId,
-        editorUserId: this.options.actor.userId,
-        body: comment.body,
+      if (!collection.db.transaction)
+        throw new Error('Comment edits require transactions.');
+      return collection.db.transaction(async (tx) => {
+        const scoped = await CommentCollection.create({ db: tx });
+        // Acquire the row's write lock before reading the body retained as history.
+        const table = `"${scoped.tableName.replace(/"/g, '""')}"`;
+        await tx.query(
+          `UPDATE ${table} SET body = body WHERE id = ? AND tenant_id = ?`,
+          commentId,
+          tenantId,
+        );
+        const current = await scoped.get(commentId);
+        if (
+          !current ||
+          canonicalUuid(current.authorUserId) !==
+            canonicalUuid(this.options.actor.userId)
+        )
+          throw new Error('Comment edit denied.');
+        const participation = new ParticipationService({
+          db: tx,
+          entitlement: this.options.participation,
+        });
+        return participation.executeInTransaction(
+          tx,
+          {
+            tenantId,
+            actorUserId: this.options.actor.userId,
+            action: 'comment',
+            recordType: current.metaType,
+            recordId: current.metaId,
+          },
+          async (guardedTx, decision) => {
+            const revisions = await CommentRevisionCollection.create({
+              db: guardedTx,
+            });
+            await revisions.create({
+              tenantId,
+              commentId,
+              editorUserId: this.options.actor.userId,
+              body: current.body,
+            });
+            if (
+              current.status === 'visible' &&
+              decision.initialCommentStatus === 'pending'
+            ) {
+              current.status = 'pending';
+            }
+            current.body = body;
+            current.editedAt = new Date();
+            await current.save();
+            return current;
+          },
+        );
       });
-      comment.body = body;
-      comment.editedAt = new Date();
-      await comment.save();
-      return comment;
     });
   }
 
@@ -118,9 +166,19 @@ export class CommentService {
     if (!['visible', 'hidden', 'pending', 'deleted'].includes(status))
       throw new TypeError('Invalid comment moderation status.');
     return withTenant({ tenantId: this.options.actor.tenantId }, async () => {
-      comment.status = status;
-      await comment.save();
-      return comment;
+      const collection = await CommentCollection.create({
+        db: this.options.db,
+      });
+      const table = `"${collection.tableName.replace(/"/g, '""')}"`;
+      await collection.db.query(
+        `UPDATE ${table} SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?`,
+        status,
+        commentId,
+        this.options.actor.tenantId,
+      );
+      const updated = await collection.get(commentId);
+      if (!updated) throw new Error('Comment not found.');
+      return updated;
     });
   }
 
@@ -239,17 +297,17 @@ export class CommentService {
     const tenantId = this.options.actor.tenantId;
     const authorUserId = this.options.actor.userId;
     await this.authorize(metaType ?? '', metaId ?? '', 'comment');
-    const participation: ParticipationDecision = this.options.participation
-      ? await this.options.participation.authorize({
-          tenantId,
-          actorUserId: authorUserId,
-          action: 'comment',
-          recordType: metaType ?? '',
-          recordId: metaId ?? '',
-        })
-      : { allowed: true as const };
-    if (!participation.allowed)
-      throw new ParticipationDeniedError(participation.reason);
+    const participationRequest = {
+      tenantId,
+      actorUserId: authorUserId,
+      action: 'comment' as const,
+      recordType: metaType ?? '',
+      recordId: metaId ?? '',
+    };
+    await new ParticipationService({
+      db: this.options.db,
+      entitlement: this.options.participation,
+    }).authorize(participationRequest);
     if (!body?.trim()) throw new TypeError('Comment body is required.');
     // Validate through the model's public setter before collection.create()
     // persists. Supply its normalized JSON in that single insert.
@@ -280,40 +338,56 @@ export class CommentService {
       const collection = await CommentCollection.create({
         db: this.options.db,
       });
-      const insert = async (target: CommentCollection) => {
-        if (parentCommentId) {
-          const parent = await target.get(parentCommentId);
-          if (
-            !parent ||
-            parent.tenantId !== tenantId ||
-            parent.metaType !== metaType ||
-            parent.metaId !== metaId
-          ) {
-            throw new Error('Comment parent does not belong to this record.');
-          }
-        }
-        const id = crypto.randomUUID();
-        return target.create({
-          tenantId,
-          authorUserId,
-          metaType,
-          metaId,
-          body,
-          id,
-          slug: id,
-          context: '',
-          _insertOnly: true,
-          mentions: prepared.mentions,
-          idempotencyKey: idempotencyKey ?? null,
-          requestDigest: idempotencyKey === undefined ? null : requestDigest,
-          retryTenantId:
-            idempotencyKey === undefined ? null : canonicalUuid(tenantId),
-          parentCommentId: parentCommentId ?? null,
-          status: participation.initialCommentStatus ?? 'visible',
-          participationSnapshot: participation.snapshot
-            ? JSON.stringify(participation.snapshot)
-            : null,
+      const insert = async (
+        target: CommentCollection,
+        inTransaction = false,
+      ) => {
+        const guard = new ParticipationService({
+          db: target.db,
+          entitlement: this.options.participation,
         });
+        const work = async (
+          tx: CommentCollection['db'],
+          participation: ParticipationDecision,
+        ) => {
+          target = await CommentCollection.create({ db: tx });
+          if (parentCommentId) {
+            const parent = await target.get(parentCommentId);
+            if (
+              !parent ||
+              canonicalUuid(parent.tenantId) !== canonicalUuid(tenantId) ||
+              parent.metaType !== metaType ||
+              parent.metaId !== metaId
+            ) {
+              throw new Error('Comment parent does not belong to this record.');
+            }
+          }
+          const id = crypto.randomUUID();
+          return target.create({
+            tenantId,
+            authorUserId,
+            metaType,
+            metaId,
+            body,
+            id,
+            slug: id,
+            context: '',
+            _insertOnly: true,
+            mentions: prepared.mentions,
+            idempotencyKey: idempotencyKey ?? null,
+            requestDigest: idempotencyKey === undefined ? null : requestDigest,
+            retryTenantId:
+              idempotencyKey === undefined ? null : canonicalUuid(tenantId),
+            parentCommentId: parentCommentId ?? null,
+            status: participation.initialCommentStatus ?? 'visible',
+            participationSnapshot: participation.snapshot
+              ? JSON.stringify(participation.snapshot)
+              : null,
+          });
+        };
+        return inTransaction
+          ? guard.executeInTransaction(target.db, participationRequest, work)
+          : guard.execute(participationRequest, work);
       };
       if (idempotencyKey === undefined) return insert(collection);
       // The internal actor is an arbitration namespace, NOT the authenticated
@@ -343,7 +417,7 @@ export class CommentService {
                 matches.rows[0],
                 canonicalUuid(tenantId),
               )
-            : await insert(scoped);
+            : await insert(scoped, true);
           return {
             id: row.id,
             digest: row.requestDigest,

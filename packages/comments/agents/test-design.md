@@ -54,3 +54,32 @@ Real SQLite/DuckDB/PostgreSQL baselines fail these assertions; the service now
 allowlists CreateCommentInput and generates identity with insert-only persistence.
 Hydration options remain available only on the trusted model path. Full package,
 three-dialect, type/Svelte, build and Biome evidence: `3714-round6-*` logs.
+
+## #3836 generic participation enforcement
+
+| Behavior/invariant | Reachable trigger; positive / negative | Actor/context; executor/transaction | Runtime/dialect; external edge | Test level / validation |
+| --- | --- | --- | --- | --- |
+| Policy selection | Tenant default and exact target override; closed/unknown policy denies | Trusted actor × own/other tenant × mismatched ambient tenant; supplied database | Node SQLite/DuckDB/PostgreSQL; missing policy defaults open | Integration `test`, `test:postgres` |
+| Membership and snapshots | Member allowed with frozen evidence; absent/false/malformed entitlement and upstream rejection deny | Host trusted identity/entitlement, no subscription coupling | All three dialects; optional snapshot and unknown decision values | Integration `test`, `test:postgres` |
+| Ban enforcement | Tenant/target ban denies; expired/other tenant/other target permits | Tenant-bound query independent of ambient context | All three dialects; malformed expiry fails closed | Integration `test`, `test:postgres` |
+| Persisted quota | Concurrent requests never exceed fixed-window quota; actors/tenants isolated, next window permits | Reservation and mutation on same transaction; failure rolls both back | All three dialects; independent service instances sharing DB | Integration `test`, `test:postgres` |
+| Retry identity | Keyed comment replay consumes no additional quota, changed payload denied | Comment runOnce transaction and nested participation transaction use same executor | All three dialects; retained comment retry binding | Integration `test`, `test:postgres` |
+| UI moderation | Pending/reported rows and callback transitions | Authorized host projections; no browser authorization | Browser Svelte; callback errors and parent-specific reply callback | Component `test`, Svelte `check` |
+
+The generic fixture is a worker co-op project task. New feature: base failure
+comparison is N/A. Rate windows are fixed UTC epoch windows, per actor/action
+and selected tenant-default or exact-target scope. Policy changes take effect
+on subsequent evaluations; concurrent administrative changes are not retroactive.
+
+Author edits serialize on a database row write lock and retain the prior body in
+the same transaction. The failed-save regression proves both history and body
+roll back; foreign-author edits, foreign-tenant moderation and cross-record replies
+are rejected in all three dialects. Models in the recipe include every service
+storage dependency. Built participation subpath is imported by a standalone Node
+consumer to verify the runtime export, alongside package typechecking.
+
+Author edits also reauthorize participation and spend the comment-action quota;
+banned and rate-limited edits fail before changing the retained body/history.
+
+Visible edits under pre-moderation return to pending; editing hidden comments
+preserves hidden status. The three-dialect edit test proves both transitions.

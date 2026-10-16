@@ -22,8 +22,8 @@ const comments = new CommentService({
   actor: { tenantId: session.tenantId, userId: session.userId },
   authorizeRecord: access => records.authorize(access),
   participation: {
-    // Atomically checks entitlement, tenant ban and posting-rate budget.
-    authorize: request => participation.authorize(request),
+    // Supplies trusted membership and entitlement facts.
+    authorize: request => entitlements.authorize(request),
   },
   mentionNotifications: createCommentMentionNotifications({
     notifications: new UserNotificationService({ db }), // smrt-messages
@@ -32,14 +32,46 @@ const comments = new CommentService({
 });
 ```
 
-`participation` is an optional server-side boundary for hosts that gate
-discussion by membership or other participation policy. It receives the trusted
-tenant, actor, record and `comment` action before any row is written, returns a
-fail-closed allow/deny decision, and may retain an immutable entitlement snapshot
-on the comment. The host owns subscription integration, tenant bans and atomic
-rate-limit reservation. Reactions and polls use this same neutral public contract
-from `@happyvertical/smrt-comments/participation`; neither surface has a local
-membership or anti-abuse model.
+`participation` is an optional server-side entitlement adapter. It receives trusted
+identity and record/action inputs and returns `{ allowed, member?, snapshot? }`.
+Only literal `allowed: true` permits participation; `members_only` also requires
+`member: true`. The immutable JSON snapshot is retained on each new comment.
+
+`ParticipationService` owns reusable tenant/target policy selection, bans and
+atomic fixed-window rate reservations. All CommentService creates invoke it,
+even without an entitlement adapter. Configure `ParticipationPolicyCollection`
+and `ParticipationBanCollection` on trusted administrative server paths under
+`withTenant`; these models expose no automatic API/CLI/MCP operations. Migrate
+all comments package models before deploying. A missing policy defaults to open;
+an exact `(recordType, recordId, action)` policy replaces the tenant default
+(blank record pair). Modes are `open`, `pre_moderated`, `members_only`, `closed`.
+A duplicate applicable policy fails closed. Ban targets may be blank (tenant-wide)
+or exact; a null expiry means indefinite. Ban decisions do not expose reasons.
+
+`maxActions: 0` disables quota; otherwise set a positive integer `windowSeconds`.
+Quota is per tenant, actor, action and selected policy scope in fixed UTC epoch
+windows. A tenant policy shares quota across records. The persisted counter uses
+one bounded atomic upsert; reservation and protected mutation commit or roll back
+together. Never delete active rate buckets. Policy edits affect subsequent
+checks, not transactions already authorized; changing a window length starts a
+new quota namespace. Trusted administrators own policy and bucket retention.
+
+Reactions/polls import `ParticipationService` and neutral types from
+`@happyvertical/smrt-comments/participation`. Use `execute(request, (tx, decision)
+=> mutationUsing(tx))` for a new mutation. Within an existing transaction use
+`executeInTransaction(tx, request, callback)` and propagate errors so the owner
+rolls back. `authorize` checks current permission without spending quota. The
+consumer owns its durable idempotency binding: replay retained mutations after
+reauthorization, and call `execute` only for a genuinely new mutation. Comments
+already implement this composition. No subscription or journalism rules live here.
+
+`CommentService.edit` retains prior bodies and rechecks record/participation permission,
+bans and the comment-action quota in the same transaction. Edits spend quota and
+retain the original post-time snapshot. `report` appends a moderation report,
+and `moderate` checks the host's record-level moderation permission before changing
+visibility. Readers receive authorized projections; hosts filter non-visible rows
+for their audience. `ModerationQueue` accepts pending/reported projections and an
+`onmoderate` callback; the browser cannot grant moderation authority.
 
 The messages service is composed through a structural interface; there is no
 runtime dependency on messages. `canNotify` must check recipient membership and
@@ -84,3 +116,11 @@ tenant and author references. UUID casing changes across trusted actor contexts
 reuse the same comment, including after generic receipt retention. Unkeyed legacy SQLite
 listing remains scoped to its original tenant spelling; keyed rows are merged
 by equivalent UUID tenant without folding arbitrary textual tenant IDs.
+
+Use lowercase UUIDs for administrative policy/ban tenant, actor and target identities;
+request UUIDs are canonicalized before enforcement. Text identifiers retain case.
+Thread projections may include `parentCommentId`; supply `onreply(parentId, body)`
+to enable the reply composer. Host callbacks persist replies with that parent ID.
+
+Edits to visible comments return to pending when current policy or entitlement
+requires pre-moderation; edits never restore hidden or deleted comments.
