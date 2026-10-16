@@ -199,7 +199,7 @@ knowledge index; documentation snapshots use lightweight package discovery.
 | `smrt export` | Export data in various formats |
 | `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
 | `smrt cookbook validate <file\|url>` | Check a cookbook against cookbook/v1 and the recipe manifests |
-| `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template (`--into`, `--template`, `--dry-run`, `--no-install`) |
+| `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template, its smrt packages pinned to this CLI's release (`--into`, `--template`, `--dry-run`, `--no-install`) |
 | `smrt kitchen [dir]` | Serve the planner on localhost, chat to a cookbook, **Send to kitchen** applies it into `dir` (`--planner`, `--template`, `--no-open`, `--no-install`) |
 | `smrt kitchen apply <url\|file> [dir]` | `cookbook apply` that also takes a plan URL |
 

@@ -93,6 +93,7 @@ export function createCookbookApplier(
         dryRun: options.dryRun,
         cliVersion: cliVersion(),
       });
+      for (const warning of result.warnings) log(`warning: ${warning}`);
       return {
         ok: true,
         status: 200,

@@ -47,10 +47,23 @@ object that is not in its package's manifest, or a policy field the object lacks
   directory, from it).
 - **Existing project**: `--into [dir]`, or re-running on a directory that already holds `smrt.cookbook.json`.
 - **Writes**: missing packages (from the recipes, features and policies) into `dependencies`,
-  sorted; `smrt.cookbook.json` (the validated, normalized cookbook). Nothing else. No sample data.
-- **Versions**: the cookbook carries none (epic #3747). A new dependency takes the range the project already
-  uses for `@happyvertical/smrt-core` (smrt packages release as one group), else `^<this CLI's version>`.
-  Already-declared packages are never changed. Removing a recipe does not remove its package.
+  sorted; `smrt.cookbook.json` (the validated, normalized cookbook); for a new project, the smrt pin
+  below. Nothing else. No sample data.
+- **Versions**: the cookbook carries none (epic #3747). smrt releases in lockstep, so a **new project**
+  runs this CLI's release, not the template's (#4055; the default template pinned the 0.55 line that
+  GHSA-gq3p-p48q-9q54 covers): every `@happyvertical/smrt-*` registry range in the template's
+  `dependencies`/`devDependencies`/`optionalDependencies`, and every package a recipe adds, is set to
+  exactly the CLI's version (`cliVersion()` in `cookbook/shared.ts`). Non-smrt dependencies, peer ranges and
+  protocol/path specs (`workspace:`, `link:`, `file:`, `npm:` aliases, git) are left alone. When anything
+  was repinned, the template's lockfile (`pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`,
+  `yarn.lock`, `bun.lock[b]`) is dropped so neither this install nor a later frozen one restores the old
+  versions; the package manager is still chosen from it. A CLI whose version is not a plain `x.y.z`
+  release (a prerelease, or `0.0.0` from an unresolved dev build) keeps the template's ranges and lockfile
+  and prints a warning (`warnings[]` in `--json`). The plan reports `smrtVersion`, `repinnedDependencies`
+  and `removedLockfiles`.
+  An **existing project** (`--into`, re-apply) is never repinned: a new dependency takes the range the
+  project already uses for `@happyvertical/smrt-core`, else the CLI's version (exact for a release).
+  Already-declared packages are never changed there. Removing a recipe does not remove its package.
 - **Idempotent**: re-applying leaves an identical project untouched; an edited cookbook updates the
   config file and adds packages without rewriting anything else.
 - `--dry-run` prints the plan (no writes; a remote template is still fetched to a temp dir).

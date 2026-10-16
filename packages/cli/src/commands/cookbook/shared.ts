@@ -94,7 +94,9 @@ export function printApplyResult(
   log: (line: string) => void = console.log,
   warn: (line: string) => void = console.warn,
 ): void {
-  for (const warning of warnings) warn(`warning: ${warning}`);
+  for (const warning of [...warnings, ...result.warnings]) {
+    warn(`warning: ${warning}`);
+  }
   const { plan } = result;
   log(
     `${result.dryRun ? 'Plan (dry run)' : 'Applied'}: ${plan.mode === 'new' ? 'new project' : 'update'} in ${plan.targetDir}`,
@@ -105,6 +107,17 @@ export function printApplyResult(
     );
   }
   if (plan.projectName) log(`  project name: ${plan.projectName}`);
+  if (plan.smrtVersion) {
+    log(`  smrt packages pinned to ${plan.smrtVersion} (this CLI's release)`);
+  }
+  for (const [name, { from, to }] of Object.entries(
+    plan.repinnedDependencies,
+  )) {
+    log(`  ~ ${name}@${to} (template had ${from})`);
+  }
+  for (const file of plan.removedLockfiles) {
+    log(`  - ${file} (resolved the template's pins; the install re-resolves)`);
+  }
   for (const [name, range] of Object.entries(plan.addDependencies)) {
     log(`  + ${name}@${range}`);
   }
