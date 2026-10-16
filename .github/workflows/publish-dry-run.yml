@@ -267,6 +267,8 @@ jobs:
           path: ${{ runner.temp }}/release-packs
           merge-multiple: true
 
+      # The same setup as publish.yml's gate: no registry-url, so the
+      # generated app's installs keep the public default registry.
       - name: Setup Environment
         id: setup-environment
         uses: ./.github/actions/setup-environment
@@ -274,8 +276,7 @@ jobs:
           node-version: '26.9.0'
           install-deps: 'true'
           setup-playwright: 'true'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Playwright system dependencies after a browser cache hit
         if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
