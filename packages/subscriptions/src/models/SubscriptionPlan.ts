@@ -153,6 +153,9 @@ export class SubscriptionPlan extends SmrtObject {
         this.tenantId ?? getTenantId() ?? null,
         this.planKey,
       ));
+    // A concurrently created natural-key row must never be adopted after this
+    // validation: its pricing terms may differ from the terms checked here.
+    if (!persisted) this.requireInsertOnSave();
     if (
       persisted &&
       (persisted.pricingMode !== this.pricingMode ||

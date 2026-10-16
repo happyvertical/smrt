@@ -30,3 +30,7 @@ Tier amendment/renewal/cancellation continuity is deliberately covered by #4032;
 
 - Enabled-tenancy SQLite/PostgreSQL tests create both plans and subscriptions without explicit tenant IDs, verify context population, and reject explicit foreign tenant bindings.
 - Pricing mode and minimum are immutable once persisted, including natural-key upserts. SQLite/PostgreSQL tests reject a stale free-to-fixed editor before and after signup and confirm the persisted free plan still has zero price. This avoids check-then-save subscriber-count races; full price/entitlement version snapshots remain #4032.
+
+## Round 4 correction
+
+- A coordinated SQLite/PostgreSQL natural-key race holds both first-create lookups before either insert. Exactly one write succeeds; the losing create cannot reprice the winner. Matching-term retries retain one identity; different mode/minimum remains rejected. Initial writes use core's existing strict-insert API, with no framework workaround or dependency on another unreleased branch.

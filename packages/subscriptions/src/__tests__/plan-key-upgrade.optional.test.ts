@@ -87,6 +87,69 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
   expect(
     await plans.list({ where: { tenantId: null, planKey: 'global' } }),
   ).toHaveLength(1);
+  // Coordinate both reads before either insert; the unique key must choose a
+  // winner rather than letting the second create silently reprice that row.
+  const find = SubscriptionPlanCollection.prototype.findByPlanKey;
+  let arrivals = 0;
+  let release!: () => void;
+  const bothRead = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const lookup = vi
+    .spyOn(SubscriptionPlanCollection.prototype, 'findByPlanKey')
+    .mockImplementation(async function (owner, key) {
+      const result = await find.call(this, owner, key);
+      if (key === 'racing' && result === null) {
+        arrivals += 1;
+        if (arrivals === 2) release();
+        await bothRead;
+      }
+      return result;
+    });
+  let outcomes: PromiseSettledResult<SubscriptionPlan>[];
+  try {
+    outcomes = await Promise.allSettled([
+      plans.create({
+        tenantId: tenant,
+        planKey: 'racing',
+        name: 'Race free',
+        pricingMode: 'free',
+      }),
+      plans.create({
+        tenantId: tenant,
+        planKey: 'racing',
+        name: 'Race fixed',
+        pricingMode: 'fixed',
+        priceAmount: 500,
+      }),
+    ]);
+  } finally {
+    lookup.mockRestore();
+  }
+  expect(
+    outcomes.filter((result) => result.status === 'fulfilled'),
+  ).toHaveLength(1);
+  expect(
+    outcomes.filter((result) => result.status === 'rejected'),
+  ).toHaveLength(1);
+  const winner = outcomes.find((result) => result.status === 'fulfilled');
+  if (!winner || winner.status !== 'fulfilled')
+    throw new Error('Missing race winner');
+  const retained = await plans.findByPlanKey(tenant, 'racing');
+  expect(retained?.id).toBe(winner.value.id);
+  expect(retained?.pricingMode).toBe(winner.value.pricingMode);
+  expect(retained?.priceAmount).toBe(winner.value.priceAmount);
+  const retry = await plans.create({
+    tenantId: tenant,
+    planKey: 'racing',
+    name: 'Retry winner',
+    pricingMode: winner.value.pricingMode,
+    priceAmount: winner.value.priceAmount,
+  });
+  expect(retry.id).toBe(winner.value.id);
+  expect(
+    await plans.list({ where: { tenantId: tenant, planKey: 'racing' } }),
+  ).toHaveLength(1);
   await getTestDatabase({ db, classes: ['TenantSubscription'] });
   const subscriptions = await TenantSubscriptionCollection.create({ db });
   const selectedPlan = await plans.create({

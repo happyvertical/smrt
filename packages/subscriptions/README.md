@@ -85,7 +85,11 @@ single-argument signature. Pricing mode and minimum cannot be edited after
 persistence, even before the first subscriber, so a concurrent signup cannot
 observe terms that change mode underneath it. Existing fixed-price edits and
 current-period entitlement versioning remain separate work in #4032; this
-foundation does not provide immutable period snapshots.
+foundation does not provide immutable period snapshots. Concurrent first creates
+for one `(tenantId, planKey)` use a strict insert: one succeeds and a collision
+fails without changing the winner. Retry by reading the existing plan; a
+sequential create with matching mode/minimum retains natural-key upsert behavior.
+Retrying different pricing mode/minimum is rejected.
 
 Existing databases created before #3829 may retain the global
 `_smrt_subscription_plans_plan_key_idx` on older migration runners. Run
