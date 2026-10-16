@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "declarationMap": true,
     "rewriteRelativeImportExtensions": true
   },
   "include": ["src/lib/**/*.ts", "src/lib/**/*.svelte"]
