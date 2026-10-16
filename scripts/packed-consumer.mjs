@@ -27,6 +27,20 @@ function hasCleanAncestors(directory) {
     if (dirname(current) === current) return true;
   }
 }
+/** Preserve project-reference resolution without adding unselected runtime packages. */
+export function copyWorkspaceTypeScriptConfigs(root, producer) {
+  for (const entry of readdirSync(resolve(root, 'packages'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const source = resolve(root, 'packages', entry.name);
+    for (const file of readdirSync(source, { withFileTypes: true })) {
+      if (!file.isFile() || !/^tsconfig.*\.json$/.test(file.name)) continue;
+      const destination = resolve(producer, 'packages', entry.name);
+      mkdirSync(destination, { recursive: true });
+      copyFileSync(resolve(source, file.name), resolve(destination, file.name));
+    }
+  }
+}
+
 /** Install real workspace tarballs in a consumer that cannot borrow producer types. */
 export function createPackedConsumer({ root, packageNames, evidence, consumerDependencies = {}, overrides = {} }) {
   const workspace = readJson(resolve(root, 'package.json'));
@@ -119,6 +133,7 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
       if (entry.isFile() && (entry.name === 'package.json' || entry.name === 'pnpm-workspace.yaml' || entry.name === 'pnpm-lock.yaml' || entry.name === 'AGENTS.md' || /^(tsconfig.*\.json|vite\.config\..+)$/.test(entry.name)))
         copyFileSync(resolve(root, entry.name), resolve(producer, entry.name));
     }
+    copyWorkspaceTypeScriptConfigs(root, producer);
     cpSync(resolve(root, 'scripts'), resolve(producer, 'scripts'), { recursive: true });
     const linkDependencies = (source, destination) => {
       mkdirSync(destination, { recursive: true });
