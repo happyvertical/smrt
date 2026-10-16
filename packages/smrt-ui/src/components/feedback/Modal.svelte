@@ -365,6 +365,22 @@ const placementClass = $derived(`modal--${placement}`);
     color: var(--smrt-color-on-surface);
   }
 
+  /* A form's action bar in the body (a dialog that is one form, such as a
+     widget's options) stays in view at the foot of the scrolling body, as a
+     footer does, however long the form. Phones already pin it to the screen. */
+  @media (width > 48rem) {
+    .modal__body :global([data-form-action-bar]) {
+      position: sticky;
+      inset-block-end: calc(-1 * var(--smrt-spacing-5, 1.25rem));
+      z-index: 1;
+      margin-inline: calc(-1 * var(--smrt-spacing-5, 1.25rem));
+      margin-block-end: calc(-1 * var(--smrt-spacing-5, 1.25rem));
+      padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+      background: var(--smrt-glass-surface-strong);
+      backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    }
+  }
+
   /* Footer */
   .modal__footer {
     display: flex;
