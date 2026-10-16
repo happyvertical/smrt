@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import {
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -11,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { chromeExecutable } from './chrome.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packageJson = JSON.parse(
@@ -35,13 +37,6 @@ if (!existsSync(tarball)) {
 
 const consumer = mkdtempSync(resolve(tmpdir(), 'smrt-planner-consumer-'));
 
-const chromePaths = [
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-  '/usr/bin/google-chrome-stable',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-];
 
 const contentType = (file) =>
   file.endsWith('.html')
@@ -57,8 +52,7 @@ const contentType = (file) =>
             : 'application/octet-stream';
 
 async function browserContract(site) {
-  const executablePath = chromePaths.find(existsSync);
-  if (!executablePath) throw new Error('Chrome/Chromium is required for test:package');
+  const executablePath = chromeExecutable('test:package');
   const providerRequests = [];
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -288,6 +282,27 @@ try {
     resolve(consumer, '.npmrc'),
     '@happyvertical:registry=https://npm.happyvertical.com/\n',
   );
+  // The release gate packs the planner beside its unpublished siblings: resolve
+  // every @happyvertical package from those tarballs instead of the registry.
+  const siblings = process.env.PLANNER_PACKED_DEPS_DIR;
+  if (siblings) {
+    const overrides = readdirSync(siblings)
+      .filter((file) => file.endsWith('.tgz'))
+      .map((file) => {
+        const path = resolve(siblings, file);
+        const manifest = JSON.parse(
+          execFileSync('tar', ['-xOf', path, 'package/package.json'], {
+            encoding: 'utf8',
+          }),
+        );
+        return `  '${manifest.name}': 'file:${path}'`;
+      })
+      .sort();
+    writeFileSync(
+      resolve(consumer, 'pnpm-workspace.yaml'),
+      `overrides:\n${overrides.join('\n')}\n`,
+    );
+  }
   writeFileSync(
     resolve(consumer, 'verify.mjs'),
     `

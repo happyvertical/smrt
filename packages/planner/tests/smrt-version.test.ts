@@ -1,6 +1,6 @@
 /**
  * `src/lib/smrt-version.ts` is generated from the installed smrt-core
- * (`pnpm version:smrt`, also the first step of `pnpm package`); the Export
+ * (`pnpm version:smrt`, also the first step of `pnpm build`); the Export
  * page names that version in its CLI commands.
  */
 import { readFileSync } from 'node:fs';

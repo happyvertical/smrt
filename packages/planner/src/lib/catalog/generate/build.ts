@@ -14,8 +14,8 @@ import { discoverPackageNames, fetchPackage } from './registry.ts';
 export interface BuildOptions {
   registry: string;
   /**
-   * Path to a smrt checkout: read its built `packages/*\/dist/manifest.json`
-   * instead of the registry, to preview unreleased manifests. Opt-in.
+   * Path to a smrt checkout: read its built manifests instead of the
+   * registry. The planner's build passes its own workspace.
    */
   source?: string;
   log?: (message: string) => void;
@@ -140,11 +140,10 @@ export function dropUnrenderableRecipes(
 export async function buildCatalog(options: BuildOptions): Promise<Catalog> {
   const log = options.log ?? (() => {});
   if (options.source) {
+    // The registry the packages are released to, not the checkout's path:
+    // the catalog is byte-identical wherever the workspace is built.
     const raws = await readLocalPackages(options.source);
-    return renderable(
-      assembleCatalog(raws, `file://${options.source}`, log),
-      log,
-    );
+    return renderable(assembleCatalog(raws, options.registry, log), log);
   }
   const names = await discoverPackageNames(options.registry);
   // Excluded packages are fetched too: one that declares recipes stays, and

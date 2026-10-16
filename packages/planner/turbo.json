@@ -1,0 +1,47 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!src/lib/catalog/catalog.json",
+        "!src/lib/smrt-version.ts",
+        "!app/**",
+        "!build/**",
+        "!dist/**",
+        "!.svelte-kit/**"
+      ],
+      "outputs": [
+        "dist/**",
+        "app/**",
+        "src/lib/catalog/catalog.json",
+        "src/lib/smrt-version.ts"
+      ]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!src/lib/catalog/catalog.json",
+        "!src/lib/smrt-version.ts",
+        "!app/**",
+        "!build/**",
+        "!dist/**",
+        "!.svelte-kit/**"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!src/lib/catalog/catalog.json",
+        "!src/lib/smrt-version.ts",
+        "!app/**",
+        "!build/**",
+        "!dist/**",
+        "!.svelte-kit/**"
+      ]
+    }
+  }
+}

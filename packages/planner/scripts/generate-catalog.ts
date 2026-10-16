@@ -1,36 +1,36 @@
 /**
- * Regenerate `src/lib/catalog/catalog.json` from the published
- * `@happyvertical/smrt-*` packages. Run with `pnpm catalog:generate`.
+ * Write `src/lib/catalog/catalog.json`, the package catalog the planner ships.
+ * `pnpm build` runs this; the file is generated, never committed.
  *
- * The registry is the one `.npmrc` maps the `@happyvertical` scope to (the
- * same one `pnpm install` uses); `SMRT_PLANNER_REGISTRY` overrides it.
+ * By default it reads the smrt workspace this package lives in: every public
+ * `@happyvertical/smrt-*` package's built `./manifest.json` export (plus the
+ * `smrt-knowledge.json` beside it). Turbo builds those first, because each one
+ * is a devDependency of the planner, so the catalog always describes exactly
+ * the packages released beside it. A declared but unbuilt manifest fails.
  *
- * `CATALOG_SOURCE=<path to a smrt checkout>` reads that checkout's built
- * `packages/*\/dist/manifest.json` instead, to preview unreleased manifests.
+ * `CATALOG_SOURCE=<path>` reads another smrt checkout instead;
+ * `CATALOG_SOURCE=registry` reads the published packages from the registry
+ * (`SMRT_PLANNER_REGISTRY`, default npm.happyvertical.com), to compare a
+ * build against what is released.
  */
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { buildCatalog } from '../src/lib/catalog/generate/build.ts';
 import { DEFAULT_REGISTRY } from '../src/lib/catalog/generate/registry.ts';
 
 const root = new URL('../', import.meta.url);
-
-async function registryFromNpmrc(): Promise<string> {
-  const npmrc = await readFile(new URL('.npmrc', root), 'utf8');
-  const match = npmrc.match(/^@happyvertical:registry=(\S+)$/m);
-  return (match?.[1] ?? DEFAULT_REGISTRY).replace(/\/+$/, '');
-}
-
-const source = process.env.CATALOG_SOURCE || undefined;
-const registry = source
-  ? ''
-  : (process.env.SMRT_PLANNER_REGISTRY?.replace(/\/+$/, '') ??
-    (await registryFromNpmrc()));
+const workspace = fileURLToPath(new URL('../../', root));
+const requested = process.env.CATALOG_SOURCE || workspace;
+const fromRegistry = requested === 'registry';
+const registry =
+  process.env.SMRT_PLANNER_REGISTRY?.replace(/\/+$/, '') ?? DEFAULT_REGISTRY;
 const catalog = await buildCatalog({
   registry,
-  source,
+  source: fromRegistry ? undefined : requested,
   log: (message) => console.error(message),
 });
 const out = fileURLToPath(new URL('src/lib/catalog/catalog.json', root));
 await writeFile(out, `${JSON.stringify(catalog, null, 2)}\n`);
-console.error(`wrote ${catalog.packages.length} packages to ${out}`);
+console.error(
+  `wrote ${catalog.packages.length} packages from ${fromRegistry ? registry : requested} to ${out}`,
+);

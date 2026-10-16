@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { chromium } from 'playwright-core';
+import { chromeExecutable } from './chrome.mjs';
 import { createServer as createViteServer } from 'vite';
 
 const planId = 'plan-12345678';
@@ -54,12 +54,7 @@ const previewPort = preview.address().port;
 const vite = await createViteServer({ server: { host: '127.0.0.1', port: 0 } });
 await vite.listen();
 origin = `http://127.0.0.1:${vite.httpServer.address().port}`;
-const executablePath = [
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-  '/usr/bin/chromium',
-].find(existsSync);
-if (!executablePath) throw Error('Chrome/Chromium is required for the live preview browser test');
+const executablePath = chromeExecutable('the live preview browser test');
 const browser = await chromium.launch({ executablePath, headless: true });
 try {
   const page = await browser.newPage();

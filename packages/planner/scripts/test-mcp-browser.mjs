@@ -1,10 +1,9 @@
-import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { chromeExecutable } from './chrome.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium'].find(existsSync);
-if (!chrome) throw Error('Chrome/Chromium is required for the MCP browser test');
+const chrome = chromeExecutable('the MCP browser test');
 const browser = await chromium.launch({headless:true,executablePath:chrome});
 const page=await browser.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));

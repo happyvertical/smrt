@@ -5,8 +5,10 @@
  * (`npx -y @happyvertical/smrt-cli@<version> …`). Every smrt package is
  * released in lockstep, so the installed smrt-core version is the CLI version
  * the planner was built against. No smrt package exports its `package.json`,
- * so the version is copied into a constant here; `pnpm package` runs this
- * first and `tests/smrt-version.test.ts` fails when the constant drifts.
+ * so the version is copied into a constant here; `pnpm build` runs this
+ * first (in the monorepo the installed smrt-core is the workspace's, so the
+ * release's own version), the file is gitignored, and
+ * `tests/smrt-version.test.ts` fails when the constant drifts.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 

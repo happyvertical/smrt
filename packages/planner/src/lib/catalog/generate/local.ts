@@ -15,20 +15,38 @@ interface PackageJson {
   name?: string;
   version?: string;
   description?: string;
+  private?: boolean;
   exports?: Record<string, unknown>;
 }
 
-/** The manifest path a package publishes as `./manifest`, else `dist/manifest.json`. */
-function manifestPath(pkg: PackageJson): string {
-  const target = pkg.exports?.['./manifest'];
-  return typeof target === 'string' ? target : './dist/manifest.json';
+/**
+ * The manifest a package publishes, as the registry path reads it: the
+ * `./manifest.json` export (a path, or a condition map's `default`), else a
+ * string `./manifest` export. A package with neither ships no manifest and is
+ * not a catalog source (tooling, runtime and UI libraries).
+ */
+function manifestPath(pkg: PackageJson): string | undefined {
+  for (const key of ['./manifest.json', './manifest']) {
+    const target = pkg.exports?.[key];
+    if (typeof target === 'string' && target.endsWith('.json')) return target;
+    const fallback = (target as { default?: unknown } | undefined)?.default;
+    if (typeof fallback === 'string' && fallback.endsWith('.json')) {
+      return fallback;
+    }
+  }
+  return undefined;
 }
 
 /**
- * Read every `@happyvertical/smrt-*` package of a local smrt checkout that has
- * been built (the file its `./manifest` export names, usually
- * `dist/manifest.json`, plus the `smrt-knowledge.json` beside it). Packages that are not built are skipped.
- * This is the opt-in `CATALOG_SOURCE` path for previewing unreleased manifests.
+ * Read every public `@happyvertical/smrt-*` package of a smrt workspace that
+ * publishes a manifest: the file its `./manifest.json` export names, plus the
+ * `smrt-knowledge.json` beside it. This is how the planner's build generates
+ * its catalog from the packages released beside it.
+ *
+ * A package that declares a manifest but has not been built is an error, not
+ * a silent gap: a catalog missing a package would validate library cookbooks
+ * against less than the release ships. Build the workspace first
+ * (`pnpm build`, or Turbo's `^build` through the planner's devDependencies).
  */
 export async function readLocalPackages(
   checkout: string,
@@ -36,13 +54,19 @@ export async function readLocalPackages(
   const packagesDir = join(resolve(checkout), 'packages');
   const dirs = (await readdir(packagesDir)).sort();
   const raws: RawPackage[] = [];
+  const unbuilt: string[] = [];
   for (const dir of dirs) {
     const pkgDir = join(packagesDir, dir);
     const pkg = await readJson<PackageJson>(join(pkgDir, 'package.json'));
-    if (!pkg?.name?.startsWith(PACKAGE_PREFIX)) continue;
-    const manifestFile = join(pkgDir, manifestPath(pkg));
+    if (!pkg?.name?.startsWith(PACKAGE_PREFIX) || pkg.private) continue;
+    const declared = manifestPath(pkg);
+    if (!declared) continue;
+    const manifestFile = join(pkgDir, declared);
     const manifest = await readJson<RawManifest>(manifestFile);
-    if (!manifest) continue;
+    if (!manifest) {
+      unbuilt.push(`${pkg.name} (${declared})`);
+      continue;
+    }
     raws.push({
       packageName: pkg.name,
       version: pkg.version ?? '0.0.0',
@@ -52,6 +76,11 @@ export async function readLocalPackages(
         join(dirname(manifestFile), 'smrt-knowledge.json'),
       ),
     });
+  }
+  if (unbuilt.length > 0) {
+    throw new Error(
+      `${unbuilt.length} workspace package(s) declare a manifest that is not built:\n  ${unbuilt.join('\n  ')}\nBuild the workspace first (pnpm build).`,
+    );
   }
   return raws;
 }

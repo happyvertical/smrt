@@ -273,6 +273,7 @@ describe('catalog assembly and local sources', () => {
           name: '@happyvertical/smrt-chat',
           version: '2.0.0',
           description: 'Chat',
+          exports: { './manifest.json': './dist/manifest.json' },
         }),
       );
       const { manifest } = raw([assistant], {
@@ -287,6 +288,33 @@ describe('catalog assembly and local sources', () => {
       ]);
       expect(pkg.recipes?.[0].demo?.mode).toBe('server');
       expect(pkg.browser?.status).toBe('server-only');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a workspace package that declares an unbuilt manifest', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'planner-recipe-metadata-'));
+    try {
+      const pkgDir = join(root, 'packages', 'tags');
+      await mkdir(pkgDir, { recursive: true });
+      await writeFile(
+        join(pkgDir, 'package.json'),
+        JSON.stringify({
+          name: '@happyvertical/smrt-tags',
+          version: '2.0.0',
+          exports: { './manifest.json': './dist/manifest.json' },
+        }),
+      );
+      // No manifest export: tooling, skipped as the registry path skips it.
+      await mkdir(join(root, 'packages', 'cli'), { recursive: true });
+      await writeFile(
+        join(root, 'packages', 'cli', 'package.json'),
+        JSON.stringify({ name: '@happyvertical/smrt-cli', version: '2.0.0' }),
+      );
+      await expect(readLocalPackages(root)).rejects.toThrow(
+        /@happyvertical\/smrt-tags \(\.\/dist\/manifest\.json\)/,
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
