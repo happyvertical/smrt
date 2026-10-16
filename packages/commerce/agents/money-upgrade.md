@@ -25,7 +25,11 @@ and names the upgrade command. The operator steps are in the CLI guide,
 
 `assertCommerceMoneySchemaCurrent(db)` checks the schema.
 `assertTenantMoneyCurrent(db, tenantId)` checks the schema, then the tenant.
-Both cache a passing result per database (keyed by its connection URL, so
+On PostgreSQL every cross-tenant scan runs on a connection of its own (opened
+from the database URL), in a transaction that raises `smrt.system_context`,
+so the caller's connection and row policies are never touched; concurrent
+checks for one database and tenant share a single scan. Both cache a passing
+result per database (keyed by its connection URL, so
 request executors share it) and tenant, so the check runs once per process.
 Invoice, Contract and line models also run the check from `initialize()` on
 every row hydrated from the database, which covers unscoped reads and every

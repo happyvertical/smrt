@@ -31,11 +31,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
-import {
-  isMoneyTransaction,
-  rootMoneyDatabase,
-  withDocumentMoneyTransaction,
-} from '../document-money-internal.js';
+import { rootMoneyDatabase } from '../document-money-internal.js';
 
 /** The stable code on {@link CommerceDataNeedsUpgradeError}. */
 export const COMMERCE_DATA_NEEDS_UPGRADE = 'COMMERCE_DATA_NEEDS_UPGRADE';
@@ -142,38 +138,38 @@ export async function findOldMoneySchema(
  *
  * Under the PostgreSQL permission policies a principal sees only the rows it
  * may read, so a caller without invoice access would find no documents. On
- * PostgreSQL the scan raises the transaction-local `smrt.system_context` for
- * its own statements and restores the caller's value afterwards. Callers
- * return booleans or tenant ids from the scan, never row data.
+ * PostgreSQL the scan therefore runs on a connection of its own, in a
+ * transaction of its own that raises `smrt.system_context`: the caller's
+ * connection and settings are never touched, so concurrent statements on the
+ * caller's transaction keep their row policies. It sees committed rows only.
+ * Callers return booleans or ids from the scan, never row data. SQLite and
+ * other engines have no row policies and scan on `db` directly.
  */
 async function withPermissionIndependentScan<T>(
   db: DatabaseInterface,
   scan: (db: DatabaseInterface) => Promise<T>,
 ): Promise<T> {
   if (!isPostgresDatabase(db)) return scan(db);
-  const run = async (tx: DatabaseInterface): Promise<T> => {
-    const prior = String(
-      (
-        await tx.query(
-          "SELECT COALESCE(current_setting('smrt.system_context', true), '') AS value",
-        )
-      ).rows[0]?.value ?? '',
+  const url = (rootMoneyDatabase(db) as { url?: unknown }).url;
+  if (typeof url !== 'string' || !url)
+    throw new Error(
+      'Commerce money detection on PostgreSQL needs a database with a connection URL, to scan on a connection of its own.',
     );
-    await tx.query("SELECT set_config('smrt.system_context', 'true', true)");
-    try {
-      return await scan(tx);
-    } finally {
-      await tx.query(
-        "SELECT set_config('smrt.system_context', ?, true)",
-        prior,
-      );
-    }
-  };
-  // A transaction-local setting outlives one statement only inside a
-  // transaction; open one when the caller has not.
-  return isMoneyTransaction(db) || !db.transaction
-    ? run(db)
-    : withDocumentMoneyTransaction(db, run);
+  const { getDatabase } = await import('@happyvertical/sql');
+  const own = (await getDatabase({
+    type: 'postgres',
+    url,
+  })) as unknown as DatabaseInterface & { close?: () => Promise<void> };
+  try {
+    if (!own.transaction)
+      throw new Error('Commerce money detection needs transaction support.');
+    return await own.transaction(async (tx) => {
+      await tx.query("SELECT set_config('smrt.system_context', 'true', true)");
+      return scan(tx);
+    });
+  } finally {
+    await own.close?.();
+  }
 }
 
 /** Whether any Invoice or Contract row, header or line, exists for a tenant. */
@@ -360,6 +356,37 @@ const currentByObject = new WeakMap<
   object,
   { schema: boolean; tenants: Set<string> }
 >();
+/**
+ * Checks in flight, by database key and tenant (`''` for the schema check):
+ * concurrent callers share one scan instead of racing their own.
+ */
+const inFlight = new Map<string, Promise<void>>();
+const objectKeys = new WeakMap<object, string>();
+let nextObjectKey = 0;
+
+function inFlightKey(db: DatabaseInterface, tenantId: string): string {
+  const root = rootMoneyDatabase(db);
+  const url = (root as { url?: unknown }).url;
+  let base: string;
+  if (typeof url === 'string' && url && !url.includes(':memory:'))
+    base = `url:${url}`;
+  else {
+    base = objectKeys.get(root as object) ?? `object:${nextObjectKey++}`;
+    objectKeys.set(root as object, base);
+  }
+  return `${base}\0${tenantId}`;
+}
+
+async function shareInFlight(
+  key: string,
+  check: () => Promise<void>,
+): Promise<void> {
+  const running = inFlight.get(key);
+  if (running) return running;
+  const started = check().finally(() => inFlight.delete(key));
+  inFlight.set(key, started);
+  return started;
+}
 
 function currentState(db: DatabaseInterface): {
   schema: boolean;
@@ -418,6 +445,15 @@ export async function assertCommerceMoneySchemaCurrent(
   if (upgradeScope.getStore()) return;
   const state = currentState(db);
   if (state.schema) return;
+  await shareInFlight(inFlightKey(db, ''), () =>
+    checkCommerceMoneySchema(db, state),
+  );
+}
+
+async function checkCommerceMoneySchema(
+  db: DatabaseInterface,
+  state: { schema: boolean },
+): Promise<void> {
   const old = await findOldMoneySchema(db);
   if (old.length > 0)
     throw new CommerceDataNeedsUpgradeError(
@@ -446,6 +482,17 @@ export async function assertTenantMoneyCurrent(
   const state = currentState(db);
   if (state.tenants.has(tenantId)) return;
   await assertCommerceMoneySchemaCurrent(db);
+  await shareInFlight(inFlightKey(db, tenantId), () =>
+    checkTenantMoney(db, tenantId, state),
+  );
+}
+
+async function checkTenantMoney(
+  db: DatabaseInterface,
+  tenantId: string,
+  state: { tenants: Set<string> },
+): Promise<void> {
+  if (state.tenants.has(tenantId)) return;
   const stale = await withPermissionIndependentScan(db, async (scanDb) => {
     const settings = (await tableExists(scanDb, 'tax_settings'))
       ? await scanDb.query(

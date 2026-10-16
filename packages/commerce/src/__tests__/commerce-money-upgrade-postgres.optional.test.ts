@@ -246,4 +246,50 @@ describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
     ).rows[0] as Record<string, unknown>;
     expect([Number(line.amount), Number(line.tax_amount)]).toEqual([200, 10]);
   });
+
+  it('leaves a concurrent caller transaction in its own row-policy context', async () => {
+    const tenantId = randomUUID();
+    await ensureCommerceTenant(db, tenantId);
+    const ids: string[] = [];
+    for (let n = 0; n < 3; n++)
+      ids.push((await oldInvoice(tenantId, false)).invoiceId);
+    // Make the rows current again: this tenant has nothing to upgrade.
+    await db.query(
+      "UPDATE invoice_line_items SET tax_components_json = '[]' WHERE CAST(tenant_id AS TEXT) = ?",
+      tenantId,
+    );
+    await db.query(
+      'UPDATE invoices SET status = ? WHERE CAST(tenant_id AS TEXT) = ?',
+      InvoiceStatus.DRAFT,
+      tenantId,
+    );
+    await systemOnly(db, 'invoices');
+    await restart();
+    const request = await (
+      db as DatabaseInterface & {
+        beginTransaction(): Promise<
+          DatabaseInterface & { rollback(): Promise<void> }
+        >;
+      }
+    ).beginTransaction();
+    try {
+      await withTenant({ tenantId }, async () => {
+        const invoices = await InvoiceCollection.create({ db: request });
+        // Cold cache: three concurrent reads race their detection checks.
+        await Promise.all(ids.map((id) => invoices.get({ id })));
+      });
+      const setting = await request.query(
+        "SELECT COALESCE(current_setting('smrt.system_context', true), '') AS value",
+      );
+      expect(setting.rows[0]?.value).not.toBe('true');
+      // The caller's own policies still hide every invoice from it.
+      const visible = await request.query(
+        'SELECT count(*) AS n FROM invoices WHERE CAST(tenant_id AS TEXT) = ?',
+        tenantId,
+      );
+      expect(Number(visible.rows[0]?.n)).toBe(0);
+    } finally {
+      await request.rollback();
+    }
+  });
 });

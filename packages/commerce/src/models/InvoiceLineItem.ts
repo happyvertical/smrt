@@ -342,7 +342,7 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /** Persist through the invoice money aggregate. */
+  /** Refuse an old-format row read from the database. */
   override async initialize(): Promise<this> {
     await super.initialize();
     // A row read from the database must not be old-format money data.
@@ -355,6 +355,7 @@ export class InvoiceLineItem extends SmrtObject {
     return this;
   }
 
+  /** Persist through the invoice money aggregate. */
   override async save(): Promise<this> {
     const { saveInvoiceLineItem } = await import('../document-money.js');
     return (await saveInvoiceLineItem(this)) as this;
