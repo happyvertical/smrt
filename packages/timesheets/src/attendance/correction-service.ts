@@ -513,6 +513,7 @@ export class AttendanceCorrectionService {
         Object.assign(target, {
           tenantId: subject.tenantId,
           punchId: punch.id ?? undefined,
+          profileId: punch.profileId,
           workRefType: input.work!.workRefType,
           workRefId: input.work!.workRefId,
           taskRefType: input.work!.taskRefType ?? '',
@@ -778,6 +779,7 @@ export class AttendanceCorrectionService {
         Object.assign(row, {
           tenantId: subject.tenantId,
           punchId: punch.id ?? undefined,
+          profileId: punch.profileId,
           workRefType: g.work.workRefType,
           workRefId: g.work.workRefId,
           taskRefType: g.work.taskRefType ?? '',
