@@ -1,5 +1,47 @@
 # @happyvertical/smrt-core
 
+## 0.57.3
+
+### Patch Changes
+
+- ### Features
+  
+  - integrate co-op foundations (#4060) (#4064) (release)
+  
+  ### Bug Fixes
+  
+  - ship declaration maps (#4075) (#4077) (planner)
+  
+  ### Other Changes
+  
+  - ci: apply the public smrt-start template in the release gate (#4071) (planner)
+- @happyvertical/smrt-config@0.57.3
+  - @happyvertical/smrt-scanner@0.57.3
+  - @happyvertical/smrt-types@0.57.3
+
+## 0.57.2
+
+### Patch Changes
+
+- ### Features
+  
+  - move smrt-planner into the monorepo as a lockstep package (#4058) (planner)
+  
+  ### Bug Fixes
+  
+  - make the release gate pass in the release environment (#4062) (planner)
+  - pin a new cookbook app's smrt packages to the CLI's release (#4057) (cli)
+  - fold STI children into their base in the CLI resource listing (users)
+  - declare the REST writes message subtypes open beyond Message (messages)
+  - subclass models inherit their parent's generated surface (core)
+  
+  ### Other Changes
+  
+  - test: gate subclass model surfaces across packages (bundle-gate)
+- @happyvertical/smrt-config@0.57.2
+  - @happyvertical/smrt-scanner@0.57.2
+  - @happyvertical/smrt-types@0.57.2
+
 ## 0.57.1
 
 ### Patch Changes

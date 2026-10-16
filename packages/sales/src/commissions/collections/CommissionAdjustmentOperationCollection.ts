@@ -48,11 +48,14 @@ export class CommissionAdjustmentOperationCollection extends SmrtCollection<Comm
       throw new Error('CommissionAdjustment operation tenant mismatch');
     }
 
+    // Both the primary UUID and tenant/slug/context index can arbitrate a
+    // concurrent insert. Handle either without aborting the transaction; the
+    // tenant-scoped UUID read below remains the only authority for replay.
     const inserted = await this.query(
       `INSERT INTO ${this.tableName} (
          id, slug, context, tenant_id, adjustment_id
        ) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO NOTHING
+       ON CONFLICT DO NOTHING
        RETURNING id`,
       [
         input.operationId,

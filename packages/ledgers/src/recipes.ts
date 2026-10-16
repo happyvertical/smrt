@@ -60,6 +60,8 @@ export class BookkeepingRecipe extends SmrtRecipe {
       fields: {
         sourceModule: { visibility: 'hidden' },
         sourceRef: { visibility: 'hidden' },
+        idempotencyKey: { visibility: 'hidden' },
+        requestDigest: { visibility: 'hidden' },
         voidedAt: { visibility: 'hidden' },
         voidReason: { visibility: 'hidden' },
         metadata: { visibility: 'hidden' },
@@ -68,6 +70,7 @@ export class BookkeepingRecipe extends SmrtRecipe {
     JournalEntry: {
       fields: {
         exchangeRate: { visibility: 'hidden' },
+        settlesSourceRef: { visibility: 'hidden' },
         metadata: { visibility: 'hidden' },
       },
     },

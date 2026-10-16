@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-comments",
-  "version": "0.57.1",
+  "version": "0.57.3",
   "description": "Record comments and mention hooks for SMRT applications",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,6 +19,10 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./participation": {
+      "types": "./dist/participation.d.ts",
+      "import": "./dist/participation.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"

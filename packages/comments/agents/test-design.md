@@ -9,6 +9,8 @@
 | UI submission | Trim/post; empty body and rejected callback keep actionable feedback | Host authorized projections | Browser Svelte; async callback | Component, `test` |
 | Actor/record switch during submission | Reset draft; stale success/error cannot mutate new draft | Changed composite contextKey | Browser Svelte; async completion | Component, `test` |
 | Recipe/schema | Recipe includes Comment; generated schema used by real persistence | Registry/test migrator | All three SQL dialects | Integration, `test` / `test:postgres`; `build` |
+| Participation gate | Authorized post persists its immutable snapshot and pre-moderation status | Trusted actor; host-injected authorizer | All three SQL dialects; deny/banned/rate-limited decision writes no row | Integration, `test` / `test:postgres` |
+| Reply, edit and moderation | Same-record reply, immutable prior-body revision, moderator status transition/report queue | Author or authorized moderator; supplied DB | All three SQL dialects; cross-record reply and another author's edit denied | Integration, `test` / `test:postgres` |
 
 New feature, so a base-regression comparison is N/A. Comment insertion is one
 save on the provided executor, with validation/authorization before mutation.
@@ -52,3 +54,64 @@ Real SQLite/DuckDB/PostgreSQL baselines fail these assertions; the service now
 allowlists CreateCommentInput and generates identity with insert-only persistence.
 Hydration options remain available only on the trusted model path. Full package,
 three-dialect, type/Svelte, build and Biome evidence: `3714-round6-*` logs.
+
+## #3836 generic participation enforcement
+
+| Behavior/invariant | Reachable trigger; positive / negative | Actor/context; executor/transaction | Runtime/dialect; external edge | Test level / validation |
+| --- | --- | --- | --- | --- |
+| Policy selection | Tenant default and exact target override; closed/unknown policy denies | Trusted actor × own/other tenant × mismatched ambient tenant; supplied database | Node SQLite/DuckDB/PostgreSQL; missing policy defaults open | Integration `test`, `test:postgres` |
+| Membership and snapshots | Member allowed with frozen evidence; absent/false/malformed entitlement and upstream rejection deny | Host trusted identity/entitlement, no subscription coupling | All three dialects; optional snapshot and unknown decision values | Integration `test`, `test:postgres` |
+| Ban enforcement | Tenant/target ban denies; expired/other tenant/other target permits | Tenant-bound query independent of ambient context | All three dialects; malformed expiry fails closed | Integration `test`, `test:postgres` |
+| Persisted quota | Concurrent requests never exceed fixed-window quota; actors/tenants isolated, next window permits | Reservation and mutation on same transaction; failure rolls both back | All three dialects; independent service instances sharing DB | Integration `test`, `test:postgres` |
+| Retry identity | Keyed comment replay consumes no additional quota, changed payload denied | Comment runOnce transaction and nested participation transaction use same executor | All three dialects; retained comment retry binding | Integration `test`, `test:postgres` |
+| UI moderation | Pending/reported rows and callback transitions | Authorized host projections; no browser authorization | Browser Svelte; callback errors and parent-specific reply callback | Component `test`, Svelte `check` |
+
+The generic fixture is a worker co-op project task. New feature: base failure
+comparison is N/A. Rate windows are fixed UTC epoch windows, per actor/action
+and selected tenant-default or exact-target scope. Policy changes take effect
+on subsequent evaluations; concurrent administrative changes are not retroactive.
+
+Author edits serialize on a database row write lock and retain the prior body in
+the same transaction. The failed-save regression proves both history and body
+roll back; foreign-author edits, foreign-tenant moderation and cross-record replies
+are rejected in all three dialects. Models in the recipe include every service
+storage dependency. Built participation subpath is imported by a standalone Node
+consumer to verify the runtime export, alongside package typechecking.
+
+Author edits also reauthorize participation and spend the comment-action quota;
+banned and rate-limited edits fail before changing the retained body/history.
+
+Visible edits under pre-moderation return to pending; editing hidden comments
+preserves hidden status. The three-dialect edit test proves both transitions.
+
+## Review6204625041 round 1 accepted regressions
+
+- F1: seed a pre-upgrade parentless request digest, replay with retained receipt,
+  remove receipt, replay again; same comment identity in all three dialects.
+- F2: create with key, edit twice, replay original before/after receipt retention;
+  return current body and reject edited body as a changed create payload.
+- F3: concurrent duplicate reports retain one actor/comment row and one quota unit;
+  receipt cleanup preserves deduplication, excess quota and banned retries deny,
+  hidden/pending/deleted targets deny. SQLite/DuckDB/restricted PostgreSQL.
+- Full comments test/test:postgres plus types, Svelte, build and Biome. Public
+  contract adds report action so quota policy can be configured independently.
+
+## Review6204625041 round 2 R1 regression
+
+With tenancy interception enabled, create and edit a keyed comment under each
+UUID casing, replay from the opposite casing before/after receipt cleanup.
+The baseline rejects both original-spelling writes under the canonical guard
+context and revision reads under the replay context. Mutation callbacks and
+history reads use the stored comment tenant spelling; quota/policy scope remains
+canonical. The full SQLite/DuckDB/PostgreSQL suite validates the correction.
+
+## PR4039 accepted external feedback / round4
+
+- Canonical parent UUID: keyed reply with uppercase parent succeeds and replays
+  lowercase/uppercase before and after receipt cleanup on all SQL dialects.
+- Notification visibility: pending create and hidden/deleted replay never call
+  the adapter; explicit visible replay can deliver. Approval alone does not notify.
+- Moderation lifecycle: real `_smrt_changes` update exists after moderation save;
+  transaction locks and reloads before save to preserve concurrent body edits.
+- Reply-only component has no root composer before selection, after success or
+  after cancel. Baseline regression run fails five SQLite/DuckDB/component cases.

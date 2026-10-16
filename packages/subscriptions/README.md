@@ -41,9 +41,28 @@ subscription and plan.
 
 ## Core model
 
-- `SubscriptionPlan` stores versioned feature grants and thresholds.
+- `SubscriptionPlan` is tenant-scoped by `(tenantId, planKey)` and stores
+  feature grants, thresholds, and a `free`, `fixed`, or `pay_what_you_can`
+  pricing mode. Amounts (`priceAmount`, `minimumAmount`, and
+  `suggestedAmount`) are integer minor units. Provider bindings are optional
+  metadata (`externalProvider`, `providerProductId`, `providerPriceId`).
 - `TenantSubscription` binds a tenant or external subscriber to a plan over an
-  effective period.
+  effective period and records its chosen `agreedAmount` in integer minor
+  units for pay-what-you-can plans. Such subscriptions require an amount at
+  least the plan minimum; free/fixed subscriptions must leave it null.
+  Free and pay-what-you-can plans require `priceAmount: 0`; fixed plans use
+  `priceAmount`. Monthly commerce period-close bills tenant subscribers using
+  their agreed amount for pay-what-you-can, never the suggested amount, and
+  skips free plans. External subscriber invoice routing remains host-owned. Pricing
+  mode and minimum are immutable after the plan is saved; create a
+  new plan instead (effective-dated transitions are tracked in #4032).
+  Invalid legacy pricing fails only its payer group at period close and reports
+  the subscription ID while other payer groups continue. Ordinary subscription
+  writes resolve only their own tenant's plans or legacy global plans; trusted
+  system-context billing can link a seller's plan to its child tenant.
+  Entitlement resolution validates plan ownership on both reader and supplied
+  context paths; trusted seller-to-child resolution requires explicit system
+  context too.
 - `TenantUsageMetric` is immutable, idempotent usage evidence.
 - `SubscriptionResolver` combines current subscription, plan, and batched usage
   summaries into one entitlement decision.
@@ -60,6 +79,31 @@ Subscribers are polymorphic: tenant subscribers use a tenant ID, while external
 subscribers add a stable external discriminator. Utilities such as
 `normalizeSubscriber()` and `assertSubscriberInvariant()` keep that identity
 coherent.
+
+## Upgrade note
+
+`SubscriptionPlanCollection.findByPlanKey` now requires `(tenantId, planKey)`;
+pass `null` explicitly for legacy global plans. Update callers from the old
+single-argument signature. Pricing mode and minimum cannot be edited after
+persistence, even before the first subscriber, so a concurrent signup cannot
+observe terms that change mode underneath it. Existing fixed-price edits and
+current-period entitlement versioning remain separate work in #4032; this
+foundation does not provide immutable period snapshots. Concurrent first creates
+for one `(tenantId, planKey)` use a strict insert: one succeeds and a collision
+fails without changing the winner. Retry by reading the existing plan; a
+sequential create with matching mode/minimum retains natural-key upsert behavior.
+Retrying different pricing mode/minimum is rejected. The provider-neutral price
+lookup falls back to legacy Stripe IDs when the binding is Stripe or unspecified;
+explicit bindings to other providers do not use that fallback. PlanPicker accepts
+optional pricing mode, minimum and suggested amounts, labeling free plans and
+PWYC terms explicitly instead of displaying them as zero fixed-price plans.
+
+Existing databases created before #3829 may retain the global
+`_smrt_subscription_plans_plan_key_idx` on older migration runners. Run
+`scripts/migrate-3829-drop-legacy-plan-key-index.ts` after the ordinary manifest
+migration so different tenants can reuse a plan key. The script supports SQLite
+and PostgreSQL and refuses DuckDB, whose inline unique constraint needs a
+reviewed table rebuild.
 
 ## Thresholds and spending
 

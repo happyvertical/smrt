@@ -1,11 +1,12 @@
 import {
   crossPackageRef,
   field,
+  foreignKey,
   SmrtPolymorphicAssociation,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { CommentOptions } from '../types.js';
+import type { CommentOptions, CommentStatus } from '../types.js';
 
 const MAX_MENTIONS = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,6 +26,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     {
       name: 'record_comments_record_created_idx',
       columns: ['tenantId', 'metaType', 'metaId', 'createdAt'],
+    },
+    {
+      name: 'record_comments_parent_created_idx',
+      columns: ['tenantId', 'parentCommentId', 'createdAt'],
+    },
+    {
+      name: 'record_comments_moderation_idx',
+      columns: ['tenantId', 'status', 'createdAt'],
     },
   ],
 })
@@ -53,6 +62,22 @@ export class Comment extends SmrtPolymorphicAssociation {
   @field({ type: 'text', nullable: true, readonly: true })
   requestDigest: string | null = null;
 
+  /** A reply stays within this comment's already-authorized record thread. */
+  // DuckDB cannot safely insert self-referential FKs; CommentService binds it.
+  @foreignKey('Comment', { nullable: true, constraint: false })
+  parentCommentId: string | null = null;
+
+  /** Visible comments are public to the host's authorized record readers. */
+  @field({ required: true })
+  status: CommentStatus = 'visible';
+
+  /** JSON retained from the host participation decision at post time. */
+  @field({ type: 'text', nullable: true, readonly: true })
+  participationSnapshot: string | null = null;
+
+  @field({ type: 'datetime', nullable: true, readonly: true })
+  editedAt: Date | null = null;
+
   constructor(options: CommentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -65,6 +90,11 @@ export class Comment extends SmrtPolymorphicAssociation {
       this.retryTenantId = options.retryTenantId;
     if (options.requestDigest !== undefined)
       this.requestDigest = options.requestDigest;
+    if (options.parentCommentId !== undefined)
+      this.parentCommentId = options.parentCommentId;
+    if (options.status !== undefined) this.status = options.status;
+    if (options.participationSnapshot !== undefined)
+      this.participationSnapshot = options.participationSnapshot;
     const mentions = options.mentions as unknown;
     if (Array.isArray(mentions)) this.mentionUserIds = mentions;
     else if (typeof mentions === 'string') this.mentions = mentions;

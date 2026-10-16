@@ -45,7 +45,8 @@ export type QualificationRefusalReason =
   | 'existing_client_ineligible'
   | 'self_referral_ineligible'
   | 'no_active_agreement'
-  | 'no_active_plan';
+  | 'no_active_plan'
+  | 'unsupported_plan_engine';
 
 /** Input for {@link ReferralQualificationService.qualify}. */
 export interface QualifyReferralInput {
@@ -90,7 +91,7 @@ export interface RequalifyReferralResult {
   /** The previously governing snapshot's id (kept as history). */
   previousSnapshotId: string;
   /** Why requalification was refused, when it was. */
-  reason?: 'no_active_agreement' | 'no_active_plan';
+  reason?: 'no_active_agreement' | 'no_active_plan' | 'unsupported_plan_engine';
 }
 
 export class ReferralQualificationService {
@@ -127,7 +128,8 @@ export class ReferralQualificationService {
    *    (`reason: 'no_active_agreement'` when none).
    * 4. **Plan** — the agreement's pinned `commissionPlanVersion`, or the
    *    latest active version when the pin is `0`; the resolved version must
-   *    be ACTIVE (`reason: 'no_active_plan'` otherwise).
+   *    be ACTIVE (`reason: 'no_active_plan'` otherwise) and use v1
+   *    components (`reason: 'unsupported_plan_engine'` for waterfall terms).
    * 5. **Snapshot** — mint the immutable ReferralTermSnapshot (frozen
    *    component copy, currency, clearingDays, approvalMode, agreement +
    *    plan + policy version refs), point `referral.snapshotId` at it, and
@@ -216,6 +218,16 @@ export class ReferralQualificationService {
       };
     }
 
+    if (plan.getWaterfallPlan() !== null) {
+      return {
+        qualified: false,
+        created: false,
+        snapshot: null,
+        referral,
+        reason: 'unsupported_plan_engine',
+      };
+    }
+
     const snapshot = await this.mintSnapshot(referral, agreement, plan);
     referral.snapshotId = snapshot.id ?? '';
     referral.markQualified(now);
@@ -276,6 +288,15 @@ export class ReferralQualificationService {
         snapshot: null,
         previousSnapshotId: referral.snapshotId,
         reason: 'no_active_plan',
+      };
+    }
+
+    if (plan.getWaterfallPlan() !== null) {
+      return {
+        requalified: false,
+        snapshot: null,
+        previousSnapshotId: referral.snapshotId,
+        reason: 'unsupported_plan_engine',
       };
     }
 

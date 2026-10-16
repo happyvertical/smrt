@@ -109,6 +109,46 @@ describe('CommissionPlan', () => {
     ]);
   });
 
+  it('rejects corrupted v2 terms and plans that mix v1 and v2 allocation engines', async () => {
+    const malformed = await createDraft({
+      planKey: 'malformed-waterfall',
+      steps: '{not-json',
+    });
+    expect(() => malformed.activate()).toThrow(/steps must be valid JSON/);
+
+    const mixed = await createDraft({ planKey: 'mixed-waterfall' });
+    mixed.setSteps([
+      {
+        key: 'crew',
+        base: 'gross',
+        amount: { kind: 'percent', rate: 0.5 },
+        recipient: { kind: 'member', id: 'crew' },
+      },
+    ]);
+    mixed.setRemainderSink({ kind: 'treasury' });
+    expect(() => mixed.activate()).toThrow(/cannot combine v1 components/);
+  });
+
+  it('refuses mixed numeric/string JSON keys at activation and active save without changing the draft', async () => {
+    const draft = await createDraft({
+      planKey: 'mixed-key-waterfall',
+      components: '[]',
+      steps: JSON.stringify(
+        [1, '1'].map((key, index) => ({
+          key,
+          base: 'gross',
+          amount: { kind: 'fixed', amountCents: 100 },
+          recipient: { kind: 'member', id: `account-${index}` },
+        })),
+      ),
+      remainderSink: JSON.stringify({ kind: 'treasury' }),
+    });
+    expect(() => draft.activate()).toThrow(/non-empty strings/);
+    draft.status = 'active';
+    await expect(draft.save()).rejects.toThrow(/non-empty strings/);
+    expect((await plans.get({ id: draft.id }))?.status).toBe('draft');
+  });
+
   it('freezes components/currency/planKey/version/effectiveFrom once active', async () => {
     const plan = await createDraft({ planKey: 'frozen-plan' });
     plan.activate();
@@ -264,6 +304,59 @@ describe('CommissionPlan', () => {
       new Date('2026-08-01T00:00:00Z'),
     );
     expect(after?.version).toBe(2);
+  });
+
+  it('does not inherit an amendment expiry and rejects an empty effective window', async () => {
+    const boundary = new Date('2026-08-01T00:00:00Z');
+    const expired = await createDraft({
+      planKey: 'windowed-plan',
+      effectiveFrom: new Date('2026-07-01T00:00:00Z'),
+      effectiveTo: boundary,
+    });
+    expired.activate();
+    await expired.save();
+
+    const amendment = await plans.createAmendment('windowed-plan', {
+      effectiveFrom: boundary,
+    });
+    expect(amendment.effectiveTo).toBeNull();
+    amendment.activate();
+    await amendment.save();
+
+    expect(
+      await plans.latestActiveByKey(
+        'windowed-plan',
+        new Date('2026-07-31T23:59:59Z'),
+      ),
+    ).toMatchObject({ version: 1 });
+    expect(
+      await plans.latestActiveByKey('windowed-plan', boundary),
+    ).toMatchObject({ version: 2 });
+    expect(
+      await plans.latestActiveByKey('windowed-plan', boundary, null),
+    ).toMatchObject({ version: 2 });
+
+    const tenantWindow = await createDraft({
+      planKey: 'tenant-window',
+      tenantId: 'tenant-window',
+      effectiveTo: boundary,
+    });
+    tenantWindow.activate();
+    await tenantWindow.save();
+    expect(
+      await plans.latestActiveByKey(
+        'tenant-window',
+        new Date('2026-08-01T00:00:00Z'),
+        'tenant-window',
+      ),
+    ).toBeNull();
+
+    const invalid = await createDraft({
+      planKey: 'invalid-window',
+      effectiveFrom: boundary,
+      effectiveTo: boundary,
+    });
+    expect(() => invalid.activate()).toThrow(/effectiveTo must be later/);
   });
 
   it('tenants do not collide on the same plan key/version (codex P1)', async () => {

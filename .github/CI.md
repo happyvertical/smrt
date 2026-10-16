@@ -219,7 +219,8 @@ reason recorded next to the setting or here:
   merge-group entry for the full 90.
 - The planner lanes (#4056): `planner-scope` at 10 (a checkout and a paths
   filter), `planner-browser` at 45 (one filtered build plus two short browser
-  suites), and `publish.yml`'s `planner-release-gate` at 60, whose work is
+  suites), and the `planner-release-gate` jobs in `publish.yml` and
+  `publish-dry-run.yml` at 60, whose work is
   bounded the same way as `m5-reference-gate`'s: two browser suites, one
   consumer install and one generated application, each tried at most twice,
   plus one control application when the generated one fails.
@@ -452,17 +453,22 @@ verifies complete package membership and uniform versions. Before publication,
 `planner-release-gate` (`scripts/planner-release-gate.mjs`) runs the planner's
 browser suites, installs its tarball against the release tarballs, validates
 every library cookbook with the built CLI, and runs a real
-`smrt cookbook apply` (default template smrt-start) whose app must install,
+`smrt cookbook apply` (from the public smrt-start template, as a user runs it,
+its smrt packages pinned to the release version by the CLI) whose app must install,
 build and typecheck with every `@happyvertical` package overridden to the
 release tarballs. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
 `publish-release` needs it to succeed. When the generated app fails, the gate
 repeats the apply as the published release generates it (the published CLI,
-manifests and packages) as a control; if that fails too, it reports upstream drift (the
-smrt-start template or a third-party release) instead of blaming the
+manifests and packages) as a control; if that fails too, it reports
+upstream drift (the smrt-start template or a third-party release) instead of blaming the
 framework. A control that cannot be built from the published release (a package new in
 this release, or a cookbook the published CLI cannot apply) is inconclusive
-and the failure stays the framework's. The gate fails either way.
+and the failure stays the framework's. The gate fails either way. The
+merge-group Publish Dry Run runs the same gate on its versioned archive and
+tarballs (#4061), so a failure that depends on the release environment (a
+restored archive with no dev build, an unpublished version, no credentials)
+ejects the merge group instead of blocking the next release.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
