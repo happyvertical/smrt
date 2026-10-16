@@ -6,6 +6,7 @@ export { CommentRevisionCollection } from './collections/CommentRevisionCollecti
 export {
   ParticipationBanCollection,
   ParticipationPolicyCollection,
+  ParticipationRateBucketCollection,
 } from './collections/ParticipationCollection.js';
 export { Comment } from './models/Comment.js';
 export { CommentReport } from './models/CommentReport.js';
