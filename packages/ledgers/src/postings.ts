@@ -37,6 +37,7 @@ function assertInput(input: LedgerPostingInput): void {
     input.counterparty.id,
     input.debitAccountId,
     input.creditAccountId,
+    ...(input.settlesSourceRef === undefined ? [] : [input.settlesSourceRef]),
   ]) {
     if (!value?.trim() || value !== value.trim())
       throw new Error(
@@ -57,6 +58,14 @@ function assertInput(input: LedgerPostingInput): void {
 export async function postLedgerEntry(
   input: LedgerPostingInput,
 ): Promise<Journal> {
+  // Snapshot caller-owned data before the first await; a caller may reuse or
+  // mutate its request object while another posting is waiting for a claim.
+  input = {
+    ...input,
+    counterparty: { ...input.counterparty },
+    date: input.date ? new Date(input.date) : undefined,
+    dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+  };
   assertInput(input);
   if (getTenantId() && getTenantId() !== input.tenantId)
     throw new Error('Ledger posting tenant differs from active context');

@@ -86,6 +86,18 @@ export function defineWorkerCoopLedgerSuite(
         (await db.query('SELECT id FROM journal_entries')).rows,
       ).toHaveLength(4);
     });
+    it('snapshots request data before asynchronous posting', async () => {
+      const input = { ...base, counterparty: { ...base.counterparty } };
+      const pending = postReceivable(input);
+      input.amountMinor = 20000;
+      input.counterparty.id = 'changed-after-submission';
+      const journal = await pending;
+      expect(await journal.getTotalDebits()).toBe(10000);
+      expect((await journal.getEntries())[0].counterpartyId).toBe(
+        base.counterparty.id,
+      );
+      expect((await postReceivable(base)).id).toBe(journal.id);
+    });
     it('rolls back journals, lines and receipts after posting failure, then retries', async () => {
       const original = Journal.prototype.post;
       vi.spyOn(Journal.prototype, 'post').mockImplementationOnce(
@@ -118,6 +130,12 @@ export function defineWorkerCoopLedgerSuite(
         await expect(
           postReceivable({ ...base, amountMinor }),
         ).rejects.toThrow();
+      await expect(
+        postReceivable({ ...base, idempotencyKey: ' padded ' }),
+      ).rejects.toThrow();
+      await expect(
+        postReceivable({ ...base, settlesSourceRef: '' }),
+      ).rejects.toThrow();
       await expect(
         postReceivable({ ...base, currency: 'USD' }),
       ).rejects.toThrow(/currency/);
@@ -210,6 +228,9 @@ export function defineWorkerCoopLedgerSuite(
       const ledgers = await LedgerCollection.create({ db });
       const ledger = await ledgers.get({ id: base.ledgerId });
       expect(ledger).toBeTruthy();
+      Reflect.set(ledger!, 'balanceMode', 'unsupported-mode');
+      await expect(ledger!.save()).rejects.toThrow();
+      ledger!.balanceMode = 'exact-integer';
       ledger!.currency = 'USD';
       await expect(ledger!.save()).rejects.toThrow();
       await expect(ledger!.delete()).rejects.toThrow();

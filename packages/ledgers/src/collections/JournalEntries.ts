@@ -106,7 +106,11 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
     for (const movement of movements) {
       const entry = await this.get({ id: movement.entryId });
       if (!entry?.counterpartyKind || !entry.counterpartyId) continue;
-      const key = `${entry.counterpartyKind}\u0000${entry.counterpartyId}\u0000${movement.currency}`;
+      const key = JSON.stringify([
+        entry.counterpartyKind,
+        entry.counterpartyId,
+        movement.currency,
+      ]);
       const row = result.get(key) ?? {
         counterpartyKind: entry.counterpartyKind,
         counterpartyId: entry.counterpartyId,
