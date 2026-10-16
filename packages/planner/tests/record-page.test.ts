@@ -279,12 +279,22 @@ describe('the record page widgets', () => {
     expect(data.rows.some((row) => row.href)).toBe(false);
     expect(data.href).toBeUndefined();
     expect(data.storedTotals).toBeUndefined();
-    // The informational discount stays out of the live block (smrt#4010).
+    // The informational discount rides along: the widget shows it as included
+    // and never subtracts it (smrt#4014).
     expect(data.totals).toEqual({
       subtotal: page.order.subtotal,
+      discount: page.order.discountTotal,
       tax: page.order.taxAmount,
       total: page.order.totalAmount,
+      lineAmountType: 'exclusive',
     });
+    const block = lineItemTotals(data.totals, amounts);
+    expect(block.lines.find((l) => l.key === 'discount')?.included).toBe(
+      Number(page.order.discountTotal) > 0 ? true : undefined,
+    );
+    expect(block.lines.find((l) => l.key === 'total')?.value).toBe(
+      Number(page.order.subtotal) + Number(page.order.taxAmount),
+    );
     expect(amounts).toBe(page.order.subtotal);
     expect(lineItemTotals(data.totals, amounts).mismatch).toBeNull();
   });
@@ -396,6 +406,24 @@ describe('the record page widgets', () => {
       recorded: Number(page.order.subtotal),
       lines: Number(page.order.subtotal) - MISMATCH_AMOUNT,
     });
+  });
+
+  it('flags a stale inclusive draft with its net lines, not the gross', async () => {
+    setSamplePricing({ pricesIncludeTax: true });
+    const page = await documentPage(ORDER, (_row, i) => i === MISMATCH_ROW);
+    expect(page.order.lineAmountType).toBe('inclusive');
+    expect(page.order.status).toBe('draft');
+    const gross = sum(page.lines, 'amount');
+    const net = gross - Number(page.order.taxAmount);
+    const result = lineItemTotals(page.data.totals, gross);
+    expect(result.mismatch).toEqual({
+      field: 'subtotal',
+      recorded: Number(page.order.subtotal),
+      lines: net,
+    });
+    // The stale subtotal is off by exactly the seeded amount, so the net
+    // lines (not the gross) name the true subtotal.
+    expect(net).toBe(Number(page.order.subtotal) - MISMATCH_AMOUNT);
   });
 
   it('flags only the seeded stale Order and Invoice, never a correct one', async () => {
