@@ -1,10 +1,76 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
+import PlanPickerI18n from './__tests__/PlanPickerI18n.svelte';
 import PlanPicker, { type PlanPickerPlan } from './PlanPicker.svelte';
 import planPickerSource from './PlanPicker.svelte?raw';
 
 describe('PlanPicker', () => {
+  it('renders pricing labels from the host translation snapshot', () => {
+    const { body } = render(PlanPickerI18n, {
+      props: {
+        plans: [
+          {
+            planKey: 'free',
+            name: 'Free tier',
+            pricingMode: 'free',
+            priceAmount: 0,
+            currency: 'USD',
+            billingInterval: 'mois',
+          },
+          {
+            planKey: 'pwyc',
+            name: 'Flexible',
+            pricingMode: 'pay_what_you_can',
+            priceAmount: 0,
+            minimumAmount: 500,
+            suggestedAmount: 1500,
+            currency: 'USD',
+            billingInterval: 'mois',
+          },
+        ],
+      },
+    });
+    expect(body).toContain('Gratuit');
+    expect(body).toContain('Prix libre');
+    expect(body).toContain('Au moins $5.00 par mois');
+    expect(body).toContain('Suggestion $15.00 par mois');
+    expect(body).not.toContain('Pay what you can');
+    expect(body).not.toContain('Suggested');
+  });
+
+  it('labels free and pay-what-you-can terms without presenting a zero fixed price', () => {
+    const { body } = render(PlanPicker, {
+      props: {
+        plans: [
+          {
+            planKey: 'free',
+            name: 'Free tier',
+            pricingMode: 'free',
+            priceAmount: 0,
+            currency: 'USD',
+            billingInterval: 'month',
+          },
+          {
+            planKey: 'pwyc',
+            name: 'Flexible',
+            pricingMode: 'pay_what_you_can',
+            priceAmount: 0,
+            minimumAmount: 500,
+            suggestedAmount: 1500,
+            currency: 'USD',
+            billingInterval: 'month',
+          },
+        ],
+      },
+    });
+    expect(body).toContain('Free');
+    expect(body).toContain('Pay what you can');
+    expect(body).toContain('Minimum $5.00 / month');
+    expect(body).toContain('Suggested $15.00 / month');
+    expect(body).not.toContain('$0.00');
+  });
+
   it('keys serialized id-less plans by planKey', () => {
     const plans: PlanPickerPlan[] = [
       {

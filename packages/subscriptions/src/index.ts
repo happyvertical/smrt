@@ -102,6 +102,7 @@ export type {
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,
+  PricingMode,
   RecordUsageOptions,
   Subscriber,
   SubscriberKind,

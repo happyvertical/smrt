@@ -1,10 +1,15 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type {
   BillingInterval,
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,
+  PricingMode,
   SubscriptionPlanOptions,
   SubscriptionPlanStatus,
 } from '../types.js';
@@ -21,7 +26,7 @@ import {
   api: { include: ['list', 'get', 'create', 'update'] },
   cli: { skipApiCheck: true },
   mcp: { include: ['list', 'get'] },
-  conflictColumns: ['plan_key'],
+  conflictColumns: ['tenant_id', 'plan_key'],
 })
 export class SubscriptionPlan extends SmrtObject {
   @tenantId({ nullable: true })
@@ -40,9 +45,17 @@ export class SubscriptionPlan extends SmrtObject {
   priceAmount: number = 0;
   currency: string = 'USD';
   billingInterval: BillingInterval = 'month';
-  externalProvider: string = 'stripe';
-  stripeProductId: string = '';
-  stripePriceId: string = '';
+  pricingMode: PricingMode = 'fixed';
+  minimumAmount: number = 0;
+  suggestedAmount: number = 0;
+  /** Optional provider binding; plan semantics never require a provider. */
+  externalProvider: string | null = null;
+  providerProductId: string | null = null;
+  providerPriceId: string | null = null;
+  /** @deprecated Use providerProductId. */
+  stripeProductId: string | null = null;
+  /** @deprecated Use providerPriceId. */
+  stripePriceId: string | null = null;
   features: string = '[]';
   thresholds: string = '[]';
   metadata: string = '{}';
@@ -64,6 +77,18 @@ export class SubscriptionPlan extends SmrtObject {
     }
     if (options.externalProvider !== undefined) {
       this.externalProvider = options.externalProvider;
+    }
+    if (options.pricingMode !== undefined)
+      this.pricingMode = options.pricingMode;
+    if (options.minimumAmount !== undefined)
+      this.minimumAmount = options.minimumAmount;
+    if (options.suggestedAmount !== undefined)
+      this.suggestedAmount = options.suggestedAmount;
+    if (options.providerProductId !== undefined) {
+      this.providerProductId = options.providerProductId;
+    }
+    if (options.providerPriceId !== undefined) {
+      this.providerPriceId = options.providerPriceId;
     }
     if (options.stripeProductId !== undefined) {
       this.stripeProductId = options.stripeProductId;
@@ -112,6 +137,60 @@ export class SubscriptionPlan extends SmrtObject {
 
   setMetadata(metadata: JsonObject): void {
     this.metadata = stringifyJson(metadata);
+  }
+
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    const { SubscriptionPlanCollection } = await import(
+      '../collections/SubscriptionPlanCollection.js'
+    );
+    const plans = await SubscriptionPlanCollection.create({ db: this.db });
+    const persisted =
+      (this.id
+        ? await plans.get({ id: String(this.id) }, { cache: false })
+        : null) ??
+      (await plans.findByPlanKey(
+        this.tenantId ?? getTenantId() ?? null,
+        this.planKey,
+      ));
+    // A concurrently created natural-key row must never be adopted after this
+    // validation: its pricing terms may differ from the terms checked here.
+    if (!persisted) this.requireInsertOnSave();
+    if (
+      persisted &&
+      (persisted.pricingMode !== this.pricingMode ||
+        persisted.minimumAmount !== this.minimumAmount)
+    ) {
+      throw new Error(
+        'Create a new plan to change pricing mode or minimum after persistence',
+      );
+    }
+    if (!['free', 'fixed', 'pay_what_you_can'].includes(this.pricingMode)) {
+      throw new Error('Invalid pricingMode');
+    }
+    if (this.pricingMode !== 'fixed' && this.priceAmount !== 0) {
+      throw new Error(
+        'priceAmount must be zero for free and pay_what_you_can plans',
+      );
+    }
+    for (const [name, value] of [
+      ['priceAmount', this.priceAmount],
+      ['minimumAmount', this.minimumAmount],
+      ['suggestedAmount', this.suggestedAmount],
+    ] as const) {
+      if (!Number.isSafeInteger(value) || value < 0) {
+        throw new Error(
+          `${name} must be a non-negative integer minor-unit amount`,
+        );
+      }
+    }
+    if (
+      this.pricingMode === 'pay_what_you_can' &&
+      this.suggestedAmount > 0 &&
+      this.suggestedAmount < this.minimumAmount
+    ) {
+      throw new Error('suggestedAmount must be at least minimumAmount');
+    }
   }
 }
 
