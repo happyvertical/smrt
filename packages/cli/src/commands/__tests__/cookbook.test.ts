@@ -302,10 +302,10 @@ describe('cookbook apply', () => {
     for (const dep of report.packages) {
       expect(pkg.dependencies[dep]).toBeDefined();
     }
-    // The template's framework line, not the CLI version.
-    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('^0.55.1');
-    // Existing dependencies untouched, deps sorted.
-    expect(pkg.dependencies['@happyvertical/smrt-users']).toBe('^0.55.1');
+    // This CLI's release, not the template's framework line (#4055).
+    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('9.9.9');
+    // The template's own smrt dependencies are pinned too; deps sorted.
+    expect(pkg.dependencies['@happyvertical/smrt-users']).toBe('9.9.9');
     expect(Object.keys(pkg.dependencies)).toEqual(
       [...Object.keys(pkg.dependencies)].sort((a, b) => a.localeCompare(b)),
     );
@@ -470,7 +470,7 @@ describe('cookbook apply', () => {
     expect(readdirSync(work)).not.toContain('dry');
   });
 
-  it('falls back to the CLI release line without a framework dependency', async () => {
+  it('pins added packages to the CLI release without a framework dependency', async () => {
     const bare = join(work, 'bare-template');
     mkdirSync(bare);
     writeFileSync(join(bare, 'package.json'), '{"name":"bare"}\n');
@@ -478,8 +478,207 @@ describe('cookbook apply', () => {
       template: bare,
     });
     expect(result.plan.addDependencies['@happyvertical/smrt-commerce']).toBe(
-      '^9.9.9',
+      '9.9.9',
     );
+  });
+});
+
+describe("apply pins smrt to the CLI's release (#4055)", () => {
+  /** A template that pins the vulnerable 0.55 line and locks it. */
+  function writeStaleTemplate(dir: string, lockfile = 'pnpm-lock.yaml') {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: '@smrt-app/start',
+          scripts: { 'app:setup': 'smrt app setup' },
+          dependencies: {
+            '@happyvertical/smrt-core': '^0.55.21',
+            '@happyvertical/smrt-ui': '0.55.21',
+            '@happyvertical/smrt-users': '~0.55.0',
+            '@happyvertical/smrt-local': 'link:../smrt-local',
+            '@happyvertical/smrt-alias': 'npm:@happyvertical/smrt-core@0.55.21',
+            '@happyvertical/sql': '^0.103.5',
+            svelte: '^5.57.1',
+          },
+          devDependencies: {
+            '@happyvertical/smrt-cli': '^0.55.21',
+            vitest: '4.1.10',
+          },
+          peerDependencies: { '@happyvertical/smrt-types': '>=0.55.0' },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(dir, lockfile),
+      "  '@happyvertical/smrt-core@0.55.21':\n    resolution: {}\n",
+    );
+  }
+
+  async function applyStale(cliVersion: string, extra = {}) {
+    const stale = join(work, 'stale-template');
+    writeStaleTemplate(stale);
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: stale,
+      install: false,
+      cliVersion,
+      cwd: work,
+      ...extra,
+    });
+    return { stale, dir, result };
+  }
+
+  it('pins every template smrt dependency and devDependency to the CLI version', async () => {
+    const { dir, result } = await applyStale('0.57.0');
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/smrt-core']).toBe('0.57.0');
+    expect(pkg.dependencies['@happyvertical/smrt-ui']).toBe('0.57.0');
+    expect(pkg.dependencies['@happyvertical/smrt-users']).toBe('0.57.0');
+    expect(pkg.devDependencies['@happyvertical/smrt-cli']).toBe('0.57.0');
+    expect(result.plan.smrtVersion).toBe('0.57.0');
+    expect(
+      result.plan.repinnedDependencies['@happyvertical/smrt-core'],
+    ).toEqual({ from: '^0.55.21', to: '0.57.0' });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('gives recipe-added smrt packages the CLI version', async () => {
+    const { dir, result } = await applyStale('0.57.0');
+    expect(result.plan.addDependencies).toEqual({
+      '@happyvertical/smrt-commerce': '0.57.0',
+    });
+    expect(
+      readJson(join(dir, 'package.json')).dependencies[
+        '@happyvertical/smrt-commerce'
+      ],
+    ).toBe('0.57.0');
+  });
+
+  it('leaves non-smrt dependencies, protocol specs and peer ranges alone', async () => {
+    const { dir } = await applyStale('0.57.0');
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/sql']).toBe('^0.103.5');
+    expect(pkg.dependencies.svelte).toBe('^5.57.1');
+    expect(pkg.devDependencies.vitest).toBe('4.1.10');
+    expect(pkg.dependencies['@happyvertical/smrt-local']).toBe(
+      'link:../smrt-local',
+    );
+    expect(pkg.dependencies['@happyvertical/smrt-alias']).toBe(
+      'npm:@happyvertical/smrt-core@0.55.21',
+    );
+    expect(pkg.peerDependencies['@happyvertical/smrt-types']).toBe('>=0.55.0');
+  });
+
+  it('drops the template lockfile so the install cannot keep the old smrt versions', async () => {
+    const { stale, dir, result } = await applyStale('0.57.0');
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(existsSync(join(dir, 'pnpm-lock.yaml'))).toBe(false);
+    expect(
+      readdirSync(dir)
+        .filter((f) => /lock/.test(f))
+        .map((f) => readFileSync(join(dir, f), 'utf-8'))
+        .join(''),
+    ).not.toContain('0.55.21');
+    // The template itself is untouched.
+    expect(existsSync(join(stale, 'pnpm-lock.yaml'))).toBe(true);
+  });
+
+  it('keeps the package manager the dropped lockfile named', async () => {
+    const stale = join(work, 'yarn-template');
+    writeStaleTemplate(stale, 'yarn.lock');
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'yarn-app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: stale,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    expect(existsSync(join(dir, 'yarn.lock'))).toBe(false);
+    expect(result.nextSteps).toContain('yarn install');
+  });
+
+  it('chooses the package manager from copied files, not git-ignored ones', async () => {
+    const repo = join(work, 'git-stale-template');
+    writeStaleTemplate(repo);
+    writeFileSync(join(repo, '.gitignore'), 'yarn.lock\n');
+    writeFileSync(join(repo, 'yarn.lock'), 'ignored');
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'git-stale-app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: repo,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(existsSync(join(dir, 'yarn.lock'))).toBe(false);
+    expect(result.nextSteps).toContain('pnpm install');
+  });
+
+  it('plans the pin and the dropped lockfile in a dry run without writing', async () => {
+    const { dir, result } = await applyStale('0.57.0', { dryRun: true });
+    expect(existsSync(dir)).toBe(false);
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(Object.keys(result.plan.repinnedDependencies)).toContain(
+      '@happyvertical/smrt-cli',
+    );
+  });
+
+  it.each([
+    '0.57.1-next.0',
+    '0.0.0',
+  ])('keeps the template ranges and warns for an unreleased CLI %s', async (version) => {
+    const { dir, result } = await applyStale(version);
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/smrt-core']).toBe('^0.55.21');
+    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('^0.55.21');
+    expect(existsSync(join(dir, 'pnpm-lock.yaml'))).toBe(true);
+    expect(result.plan.smrtVersion).toBeUndefined();
+    expect(result.warnings.join(' ')).toMatch(/not a published release/);
+  });
+
+  it('does not repin an existing project on --into or re-apply', async () => {
+    const dir = join(work, 'mine');
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'mine',
+        dependencies: { '@happyvertical/smrt-core': '0.56.2' },
+      }),
+    );
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'keep');
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      into: true,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/smrt-core']).toBe('0.56.2');
+    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('0.56.2');
+    expect(readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf-8')).toBe('keep');
+    expect(result.plan.repinnedDependencies).toEqual({});
   });
 });
 

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { create } from 'tar';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cliVersion } from '../cookbook/shared.js';
 import { cookbookCommands } from '../cookbook.js';
 import type { KitchenAI } from '../kitchen/ai.js';
 import { resolveKitchenAI } from '../kitchen/ai.js';
@@ -461,8 +462,10 @@ describe('/api/kitchen/cookbook', () => {
       readFileSync(join(project, 'package.json'), 'utf-8'),
     );
     expect(pkg.name).toBe('corner-bakery');
+    // A new project runs this CLI's smrt release, not the template's (#4055).
     expect(pkg.dependencies).toMatchObject({
-      '@happyvertical/smrt-commerce': '^1.2.3',
+      '@happyvertical/smrt-commerce': cliVersion(),
+      '@happyvertical/smrt-core': cliVersion(),
     });
     await expect(server.applied).resolves.toMatchObject({
       ok: true,

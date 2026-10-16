@@ -167,7 +167,11 @@ export const cookbookCommands: Record<string, CLICommand> = {
         });
         if (options.json) {
           console.log(
-            JSON.stringify({ ...result, warnings: report.warnings }, null, 2),
+            JSON.stringify(
+              { ...result, warnings: [...report.warnings, ...result.warnings] },
+              null,
+              2,
+            ),
           );
           return;
         }
