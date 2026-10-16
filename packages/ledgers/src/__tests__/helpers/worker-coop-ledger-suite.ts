@@ -1,5 +1,10 @@
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
-import { withSuperAdminBypass, withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  enableTenancy,
+  withSuperAdminBypass,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountCollection } from '../../collections/Accounts';
 import { JournalEntryCollection } from '../../collections/JournalEntries';
@@ -63,6 +68,7 @@ export function defineWorkerCoopLedgerSuite(
       });
     });
     afterEach(async () => {
+      disableTenancy();
       vi.restoreAllMocks();
       await (db as { close?: () => Promise<void> }).close?.();
     });
@@ -254,6 +260,133 @@ export function defineWorkerCoopLedgerSuite(
       await expect(journal.post()).rejects.toThrow();
       journal.status = 'posted';
       await expect(journal.save()).rejects.toThrow();
+    });
+    it('denies direct entry writes through foreign or missing parents', async () => {
+      enableTenancy();
+      const posted = await postReceivable(base);
+      const draft = await (await JournalCollection.create({ db })).create({
+        tenantId: base.tenantId,
+        ledgerId: base.ledgerId,
+        description: 'Owned draft',
+      });
+      const foreignTenant = crypto.randomUUID();
+      const attempt = async (journalId: string) => {
+        const entries = await JournalEntryCollection.create({ db });
+        await expect(
+          entries.create({
+            tenantId: foreignTenant,
+            journalId,
+            accountId: base.debitAccountId,
+            debit: 1,
+            currency: 'CAD',
+          }),
+        ).rejects.toThrow();
+      };
+      // Tenant-filtered parent lookup must fail closed, for both posted and draft.
+      await withTenant({ tenantId: foreignTenant }, async () => {
+        await attempt(posted.id!);
+        await attempt(draft.id!);
+      });
+      // Trusted and privileged lookups may see the parent, but ownership still binds.
+      await attempt(draft.id!);
+      await withTenant({ tenantId: foreignTenant }, () =>
+        withSuperAdminBypass(() => attempt(draft.id!)),
+      );
+      await expect(
+        (await JournalEntryCollection.create({ db })).create({
+          tenantId: base.tenantId,
+          journalId: crypto.randomUUID(),
+          accountId: base.debitAccountId,
+          debit: 1,
+          currency: 'CAD',
+        }),
+      ).rejects.toThrow();
+      expect(
+        (await db.query('SELECT id FROM journal_entries')).rows,
+      ).toHaveLength(2);
+      expect(await posted.getTotalDebits()).toBe(10000);
+      expect(await posted.isBalanced()).toBe(true);
+      await withTenant({ tenantId: base.tenantId }, async () => {
+        const own = await (await JournalEntryCollection.create({ db })).create({
+          journalId: draft.id!,
+          accountId: base.debitAccountId,
+          debit: 100,
+          currency: 'CAD',
+        });
+        expect(own.tenantId).toBe(base.tenantId);
+      });
+    });
+    it('denies direct legacy-line injection and reassignment into scoped accounts', async () => {
+      await withTenant({ tenantId: base.tenantId }, async () => {
+        const accounts = await AccountCollection.create({ db });
+        const debit = await accounts.create({
+          tenantId: base.tenantId,
+          name: 'Legacy asset',
+          number: '1200',
+          type: 'asset',
+        });
+        const credit = await accounts.create({
+          tenantId: base.tenantId,
+          name: 'Legacy revenue',
+          number: '4100',
+          type: 'revenue',
+        });
+        const journal = await (
+          await JournalCollection.create({ db })
+        ).createWithEntries({
+          tenantId: base.tenantId,
+          description: 'Legacy posted',
+          entries: [
+            { accountId: debit.id!, debit: 10, currency: 'CAD' },
+            { accountId: credit.id!, credit: 10, currency: 'CAD' },
+          ],
+        });
+        await journal.post();
+        const entries = await JournalEntryCollection.create({ db });
+        for (const currency of ['USD', 'CAD']) {
+          await expect(
+            entries.create({
+              tenantId: base.tenantId,
+              journalId: journal.id!,
+              accountId: base.debitAccountId,
+              debit: 1.5,
+              currency,
+              counterpartyKind: 'client',
+              counterpartyId: 'fabricated',
+              dueDate: new Date('2026-10-01'),
+            }),
+          ).rejects.toThrow();
+        }
+        const line = (await journal.getEntries()).find(
+          (entry) => entry.debit > 0,
+        )!;
+        line.accountId = base.debitAccountId;
+        await expect(line.save()).rejects.toThrow();
+        const stored = await entries.get({ id: line.id! }, { cache: false });
+        expect(stored!.accountId).toBe(debit.id);
+        expect(
+          (await db.query('SELECT id FROM journal_entries')).rows,
+        ).toHaveLength(2);
+        const scope = {
+          tenantId: base.tenantId,
+          accountIds: [base.debitAccountId],
+          currency: 'CAD',
+          from: new Date('2000-01-01'),
+          to: new Date('2100-01-01'),
+        };
+        expect(await entries.listPostedMovements(scope)).toEqual([]);
+        expect(await entries.getCounterpartyBalances(scope)).toEqual([]);
+        expect(await entries.getCounterpartyAging(scope, scope.to)).toEqual([]);
+        // Existing legacy movements cannot enter a ledger by promoting their account.
+        debit.ledgerId = base.ledgerId;
+        await expect(debit.save()).rejects.toThrow();
+        expect(
+          (await accounts.get({ id: debit.id! }, { cache: false }))!.ledgerId,
+        ).toBeNull();
+        // Normal legacy lines remain editable under the existing compatibility contract.
+        stored!.memo = 'Legacy edit';
+        await stored!.save();
+      });
     });
     it('serializes manual draft edits against posting with a parent revision claim', async () => {
       const journals = await JournalCollection.create({ db });

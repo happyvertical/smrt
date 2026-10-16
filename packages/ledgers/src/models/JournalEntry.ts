@@ -6,7 +6,13 @@
  */
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  isSuperAdminBypass,
+  isTenancyEnabled,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
 import { Account } from './Account';
 
@@ -112,7 +118,9 @@ export class JournalEntry extends SmrtObject {
   ): Promise<this> {
     return this.withTransaction(async () => {
       const journal = await this.getJournal();
-      if (journal?.ledgerId) {
+      if (!journal)
+        throw new Error('Journal entry requires an accessible parent journal');
+      if (journal.ledgerId) {
         if (!journal.isDraft() || !journal.updated_at)
           throw new Error('Ledger entries are immutable after posting');
         await journal.claimRevision(journal.updated_at);
@@ -127,12 +135,42 @@ export class JournalEntry extends SmrtObject {
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
     const journal = await this.getJournal();
-    if (journal?.ledgerId && !journal.isDraft())
+    // Validation precedes tenancy's beforeSave auto-population. Privileged
+    // bypasses do not auto-populate, so those callers must supply the owner.
+    const owner =
+      this.tenantId ??
+      (isTenancyEnabled() && !isSuperAdminBypass()
+        ? (getTenantId() ?? null)
+        : null);
+    if (!journal || journal.tenantId !== owner)
+      throw new Error(
+        'Journal entry and parent must belong to the same tenant',
+      );
+    const account = await this.getAccount();
+    if (
+      !account ||
+      account.ledgerId !== journal.ledgerId ||
+      (journal.ledgerId && account.tenantId !== journal.tenantId)
+    )
+      throw new Error(
+        'Journal entry account must belong to its journal ledger',
+      );
+    if (journal.ledgerId && !journal.isDraft())
       throw new Error('Ledger entries are immutable after posting');
     if (this.id) {
       const stored = await this.db.get(this.tableName, { id: this.id });
       if (stored && stored.journal_id !== this.journalId)
         throw new Error('Journal entry cannot be moved to another journal');
+      if (stored && stored.account_id !== this.accountId) {
+        const { AccountCollection } = await import('../collections/Accounts');
+        const oldAccount = await (
+          await AccountCollection.create(this.options)
+        ).get({ id: String(stored.account_id) }, { cache: false });
+        if (!oldAccount || oldAccount.ledgerId !== journal.ledgerId)
+          throw new Error(
+            'Stored entry account must belong to its journal ledger',
+          );
+      }
     }
     if (!Number.isFinite(this.debit) || !Number.isFinite(this.credit))
       throw new Error('Entry amounts must be finite');
@@ -176,7 +214,11 @@ export class JournalEntry extends SmrtObject {
         const journal = await (
           await JournalCollection.create({ db: this.db })
         ).get({ id: String(stored.journal_id) });
-        if (journal?.ledgerId) {
+        if (!journal || journal.tenantId !== stored.tenant_id)
+          throw new Error(
+            'Journal entry requires its accessible same-tenant parent',
+          );
+        if (journal.ledgerId) {
           if (!journal.isDraft() || !journal.updated_at)
             throw new Error('Ledger entries are immutable after posting');
           await journal.claimRevision(journal.updated_at);
@@ -231,7 +273,7 @@ export class JournalEntry extends SmrtObject {
     if (!this.accountId) return null;
     const { AccountCollection } = await import('../collections/Accounts');
     const collection = await AccountCollection.create(this.options);
-    return await collection.get({ id: this.accountId });
+    return await collection.get({ id: this.accountId }, { cache: false });
   }
 
   /**

@@ -8,7 +8,11 @@ Create a `Ledger` with `balanceMode: 'exact-integer'` and an ISO currency when
 the accounting scope stores minor units. Accounts and journals assigned to that
 ledger must share its tenant and currency; posting rejects fractional or unsafe
 amounts and requires exactly equal debit and credit totals. Existing journals
-without a ledger retain the compatible tolerant decimal rule.
+without a ledger retain the compatible tolerant decimal rule. Direct entry
+writes also require an accessible same-owner journal and matching account/journal
+ledger scope; legacy journals cannot write movements on scoped accounts. An
+existing account cannot change ledger scope, including adoption from an unassigned
+account; create a fresh scoped account instead.
 
 `JournalEntry` carries opaque `counterpartyKind` / `counterpartyId` values,
 plus an optional `dueDate`. `JournalEntryCollection.getCounterpartyBalances()`

@@ -95,10 +95,10 @@ export class Account extends SmrtHierarchical {
     if (this.id) {
       const stored = await this.db.get(this.tableName, { id: this.id });
       if (
-        stored?.ledger_id &&
+        stored &&
         (stored.ledger_id !== this.ledgerId ||
-          stored.tenant_id !== this.tenantId ||
-          stored.type !== this.type)
+          (stored.ledger_id &&
+            (stored.tenant_id !== this.tenantId || stored.type !== this.type)))
       )
         throw new Error('Ledger account scope, owner and type are immutable');
     }
