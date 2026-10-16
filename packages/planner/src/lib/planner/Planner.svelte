@@ -25,6 +25,7 @@ import ThemeBridge from '../components/ThemeBridge.svelte';
 import { cookbookStore, SHELL_STORAGE_KEY } from '../cookbook/store.svelte.ts';
 import type { Cookbook } from '../cookbook/types.ts';
 import { provideDataSource, tryUseDataSource } from '../data/context.ts';
+import { humanize, navNoun } from '../data/format.ts';
 import { createPlannerDataSource } from '../data/planner-source.ts';
 import { activeForms } from '../forms/active.ts';
 import { runViewTransition } from '../motion/view-transition.ts';
@@ -35,7 +36,8 @@ import {
   recipes,
   recipesById,
 } from '../recipes/index.ts';
-import { pageScope, scopePreset } from '../recipes/scope.ts';
+import { menuEntryWords, pageScope, scopePreset } from '../recipes/scope.ts';
+import { navItemId } from '../recipes/sections.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import { entryIndex } from '../sections/entries.ts';
 import { sectionInfo, sectionTitle } from '../sections/info.ts';
@@ -211,6 +213,24 @@ const scope = $derived.by(() => {
   );
 });
 const preset = $derived(scopePreset(scope));
+// The list's heading and New noun follow its menu entry, as the static app's.
+const entryWords = $derived.by(() => {
+  if (!model || !modelRoute) return {};
+  return menuEntryWords(
+    model,
+    navItemId(modelRoute.packageId, modelRoute.modelName, modelRoute.view),
+    modelRoute.view,
+    recipeState.ids.flatMap((id) => {
+      const recipe = recipes.find((r) => r.id === id);
+      return recipe ? recipeNav(recipe) : [];
+    }),
+    cookbookStore.layout,
+    humanize,
+  );
+});
+const listNoun = $derived(
+  entryWords.label ? navNoun(entryWords.label, entryWords.noun) : undefined,
+);
 // The planner's own pages (`#/configure/`, and any route no page above
 // claims) show the customization controls; the header marks them current.
 const configuring = $derived(
@@ -385,7 +405,7 @@ const dockToggles = $derived(
         />
       {/key}
     {:else if applied && model}
-      <ModelWorkspace model={applied.model} fields={applied.fields} {forms} {scope} {preset} href={hashHref} />
+      <ModelWorkspace model={applied.model} fields={applied.fields} {forms} {scope} {preset} title={entryWords.heading} noun={listNoun} href={hashHref} />
     {:else}
       <PlannerControls {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
     {/if}

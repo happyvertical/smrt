@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
+import { humanize } from '../src/lib/data/format.ts';
 import { setSamplePack } from '../src/lib/data/packs.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { activeForms, isFieldMap } from '../src/lib/forms/active.ts';
@@ -17,6 +18,7 @@ import {
 } from '../src/lib/recipes/index.ts';
 import {
   inScope,
+  menuEntryWords,
   pageScope,
   type RowScope,
   scopePreset,
@@ -144,5 +146,40 @@ describe('bakery ingredients', () => {
     expect(sellable.map((r) => r.name)).toContain('Sourdough loaf');
     expect(ingredients.length + sellable.length).toBe(rows.length);
     expect(ingredients.every((r) => r.category === 'Ingredient')).toBe(true);
+  });
+});
+
+describe('a model page heading follows its menu entry', () => {
+  it('uses the cookbook rename, else the recipe entry, never the bare model name', () => {
+    const roaster = getLibraryCookbook('roaster');
+    if (!roaster) throw new Error('roaster missing');
+    const wholesale = {
+      id: '@happyvertical/smrt-commerce:WholesaleOrder',
+      name: 'WholesaleOrder',
+    };
+    const added = entriesOf(roaster.document.recipes);
+    const itemId = 'item:commerce:WholesaleOrder';
+    expect(
+      menuEntryWords(
+        wholesale,
+        itemId,
+        undefined,
+        added,
+        roaster.document.layout,
+        humanize,
+      ),
+    ).toMatchObject({ label: 'Cafe orders', heading: 'Cafe orders' });
+    const plain = menuEntryWords(
+      wholesale,
+      itemId,
+      undefined,
+      added,
+      undefined,
+      humanize,
+    );
+    expect(plain.heading).not.toBe('Cafe orders');
+    expect(
+      menuEntryWords(wholesale, itemId, undefined, [], { items: {} }, humanize),
+    ).toEqual({});
   });
 });
