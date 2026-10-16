@@ -359,16 +359,21 @@ export class Journal extends SmrtObject {
     }
   }
 
-  async delete(): Promise<void> {
+  async delete(
+    options: Parameters<SmrtObject['delete']>[0] = {},
+  ): Promise<void> {
     await this.withTransaction(async () => {
-      if (this.isPersisted && this.updated_at)
-        await this.claimRevision(this.updated_at);
+      if (this.isPersisted && this.updated_at) {
+        await this.claimRevision(options.expectedUpdatedAt ?? this.updated_at);
+        if (options.expectedUpdatedAt !== undefined)
+          options = { ...options, expectedUpdatedAt: this.updated_at };
+      }
       const stored = this.id
         ? await this.db.get(this.tableName, { id: this.id })
         : null;
       if (stored?.ledger_id && stored.status !== 'draft')
         throw new Error('Ledger journals are immutable after posting');
-      await super.delete();
+      await super.delete(options);
     });
   }
 

@@ -104,7 +104,9 @@ export class Account extends SmrtHierarchical {
     }
   }
 
-  async delete(): Promise<void> {
+  async delete(
+    options: Parameters<SmrtHierarchical['delete']>[0] = {},
+  ): Promise<void> {
     const stored = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
@@ -112,7 +114,7 @@ export class Account extends SmrtHierarchical {
       throw new Error(
         'Ledger accounts cannot be deleted; deactivate them instead',
       );
-    await super.delete();
+    await super.delete(options);
   }
 
   /**

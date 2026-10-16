@@ -36,7 +36,7 @@ Keys are unique within `(tenantId, ledgerId)` and bind all accounting inputs,
 including an explicitly provided date. Omitted dates use the first successful
 posting time. Caller references must uniquely identify each open item within the
 selected account set. Use `normalBalance: 'credit'` for AP aging/balances (AR is
-debit-normal by default). Reports honor the supplied date range: choose a `from`
+debit-normal by default). Balance reports use `from`/`to`; aging uses `from`/`asOf`. Choose a `from`
 that includes the original obligation. An out-of-order settlement is included
 once its source exists; future-dated movements are excluded from historical
 reports. Negative balances/credits remain visible in balances, not aging buckets.

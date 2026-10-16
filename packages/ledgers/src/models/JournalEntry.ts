@@ -164,7 +164,9 @@ export class JournalEntry extends SmrtObject {
       throw new Error('Due date requires a counterparty');
   }
 
-  async delete(): Promise<void> {
+  async delete(
+    options: Parameters<SmrtObject['delete']>[0] = {},
+  ): Promise<void> {
     await this.withTransaction(async () => {
       const stored = this.id
         ? await this.db.get(this.tableName, { id: this.id })
@@ -180,7 +182,7 @@ export class JournalEntry extends SmrtObject {
           await journal.claimRevision(journal.updated_at);
         }
       }
-      await super.delete();
+      await super.delete(options);
     });
   }
 

@@ -258,6 +258,21 @@ export function defineWorkerCoopLedgerSuite(
       if (stored!.isPosted()) expect(await stored!.isBalanced()).toBe(true);
       else expect(stored!.status).toBe('draft');
     });
+    it('preserves revision-guarded deletion for legacy accounts', async () => {
+      const accounts = await AccountCollection.create({ db });
+      const account = await accounts.create({
+        tenantId: base.tenantId,
+        name: 'Legacy unused',
+        number: '9999',
+        type: 'asset',
+      });
+      await expect(
+        account.delete({ expectedUpdatedAt: new Date(0) }),
+      ).rejects.toThrow();
+      expect(await accounts.get({ id: account.id! })).toBeTruthy();
+      await account.delete({ expectedUpdatedAt: account.updated_at! });
+      expect(await accounts.get({ id: account.id! })).toBeNull();
+    });
     it('applies out-of-order settlements and supports credit-normal AP aging', async () => {
       await postSettlement({
         ...base,
