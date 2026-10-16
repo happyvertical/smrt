@@ -88,7 +88,11 @@ export function agreementHistoryCases(
           status: 'active',
           terms: JSON.stringify({ shareFraction: 0.25 }),
         })
-        .finally(releaseSecond);
+        .finally(() => {
+          // Settling early (before its check) must not park the second create.
+          releaseFirst();
+          releaseSecond();
+        });
       await Promise.race([firstAtCheck, first.catch(() => undefined)]);
       const second = agreements.create({
         ...common,
