@@ -72,6 +72,32 @@ console.log(earner.id, plan.getComponents());
 All money fields use integer cents. Rates and probability-like values use
 decimals from `0` to `1`; rounding occurs through the exported money helpers.
 
+## Waterfall plans
+
+Version-two plans can carry ordered `steps`, an `effectiveTo` boundary, and a
+`remainderSink`. `calculateWaterfall()` is a pure, generic allocation service:
+hosts register recipient resolvers, then persist the returned trace as the
+replay evidence. Step keys must be nonempty strings; malformed persisted keys
+are rejected before allocation or activation. Replay snapshots copy recipient
+and sink values, including nested metadata, so later caller-input mutation
+cannot change the returned evidence. The trace freezes the resolved recipients, input facts, and
+application-fee offset. All amounts are integer minor units; each percentage
+rounds half away from zero and recipients plus the sink always equal gross.
+
+An application fee already settled at checkout is modeled only as an offset to
+the configured recipient's payable allocation. It is never emitted as a second
+allocation or payable. Offset matching uses the entire recipient descriptor,
+including nested metadata; object key order does not change identity. The service
+does not initiate a payout or transfer.
+
+The referral qualification and commission bridge remain component-based. Both
+qualification and explicit requalification refuse a resolved waterfall plan with
+`unsupported_plan_engine`, before writing a snapshot or changing the referral.
+This applies to pinned plans and latest-active plan amendments. Existing frozen
+v1 snapshots keep governing earnings. To recover, activate and bind compatible
+component terms, then retry qualification; use `calculateWaterfall()` directly
+for v2 allocations. Switching a plan key's engine does not migrate referrals.
+
 ## Core model
 
 - **Roles are separate from money.** `SalesRepresentative` and `Referrer` are
