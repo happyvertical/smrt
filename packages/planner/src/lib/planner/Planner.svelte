@@ -25,7 +25,7 @@ import ThemeBridge from '../components/ThemeBridge.svelte';
 import { cookbookStore, SHELL_STORAGE_KEY } from '../cookbook/store.svelte.ts';
 import type { Cookbook } from '../cookbook/types.ts';
 import { provideDataSource, tryUseDataSource } from '../data/context.ts';
-import { humanize, navNoun } from '../data/format.ts';
+import { humanize, navNoun, pluralize } from '../data/format.ts';
 import { createPlannerDataSource } from '../data/planner-source.ts';
 import { activeForms } from '../forms/active.ts';
 import { runViewTransition } from '../motion/view-transition.ts';
@@ -228,6 +228,16 @@ const entryWords = $derived.by(() => {
     humanize,
   );
 });
+// The document title for every route a section page does not title itself
+// (`CookbookSectionPage` sets its own): set as the route changes, so the
+// previous page's title never lingers.
+const pageTitle = $derived.by(() => {
+  if (model) return entryWords.label ?? pluralize(humanize(model.name));
+  if (packageId) return humanize(packageId);
+  if (pathParts[0] === 'advanced-styles') return 'Advanced styles';
+  if (pathParts[0] === 'ai') return 'AI models';
+  return title;
+});
 const listNoun = $derived(
   entryWords.label ? navNoun(entryWords.label, entryWords.noun) : undefined,
 );
@@ -355,6 +365,10 @@ const dockToggles = $derived(
   (`CookbookSectionPage`, drawn `plain` with the planner's heading) to the
   sample data; `loaders.shortcuts` adds the record counts.
 -->
+<svelte:head>
+  {#if !sectionSlug}<title>{pageTitle}</title>{/if}
+</svelte:head>
+
 <CookbookApp
   cookbook={cookbook as ComponentProps<typeof CookbookApp>['cookbook']}
   catalog={shellCatalog}

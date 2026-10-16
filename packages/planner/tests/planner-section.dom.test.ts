@@ -69,4 +69,21 @@ describe('the mounted Planner section page', () => {
     expect(counts.length).toBeGreaterThan(0);
     for (const count of counts) expect(count).toMatch(/^\d+ records?$/);
   });
+
+  it('titles the document for the route it shows, never the previous one', async () => {
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    expect(document.title).toBe('Sales');
+    const heading = () => target.querySelector('main h2')?.textContent ?? '';
+    location.hash = '#/m/commerce/Order/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    expect(heading()).toContain(document.title);
+    expect(document.title).not.toBe('Sales');
+    location.hash = '#/configure/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    expect(document.title).toBe('Planner');
+    location.hash = '';
+  });
 });
