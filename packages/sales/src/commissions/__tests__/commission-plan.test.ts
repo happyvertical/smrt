@@ -292,6 +292,24 @@ describe('CommissionPlan', () => {
     expect(
       await plans.latestActiveByKey('windowed-plan', boundary),
     ).toMatchObject({ version: 2 });
+    expect(
+      await plans.latestActiveByKey('windowed-plan', boundary, null),
+    ).toMatchObject({ version: 2 });
+
+    const tenantWindow = await createDraft({
+      planKey: 'tenant-window',
+      tenantId: 'tenant-window',
+      effectiveTo: boundary,
+    });
+    tenantWindow.activate();
+    await tenantWindow.save();
+    expect(
+      await plans.latestActiveByKey(
+        'tenant-window',
+        new Date('2026-08-01T00:00:00Z'),
+        'tenant-window',
+      ),
+    ).toBeNull();
 
     const invalid = await createDraft({
       planKey: 'invalid-window',
