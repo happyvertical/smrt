@@ -159,6 +159,7 @@ describe('library cookbooks', () => {
       'equipment-rental': 'exclusive document',
       nonprofit: 'exclusive line',
       agency: 'exclusive line',
+      plumber: 'exclusive line',
     });
   });
 

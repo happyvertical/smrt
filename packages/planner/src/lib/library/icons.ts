@@ -57,4 +57,7 @@ export const COOKBOOK_ICONS: Record<string, readonly string[]> = {
     'M4 20h4l10.5-10.5a2.828 2.828 0 1 0-4-4l-10.5 10.5v4',
     'M13.5 6.5l4 4',
   ],
+  tool: [
+    'M7 10h3v-3l-3.5-3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1-3 3l-6-6a6 6 0 0 1-8-8l3.5 3.5',
+  ],
 };

@@ -2326,6 +2326,234 @@
           }
         }
       }
+    },
+    {
+      "id": "plumber",
+      "name": "Plumber",
+      "icon": "tool",
+      "summary": "Quotes, service calls, parts, appointments and billing for a plumbing business.",
+      "keywords": [
+        "plumber",
+        "plumbing",
+        "pipes",
+        "leak",
+        "drain",
+        "blocked drain",
+        "water heater",
+        "boiler",
+        "bathroom",
+        "faucet",
+        "toilet",
+        "sewer",
+        "emergency call-out",
+        "gas fitter"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Due on completion",
+        "taxRate": 0.07
+      },
+      "sectionDescriptions": {
+        "custom:jobs": "Work orders and the customers they belong to.",
+        "custom:parts": "Parts, materials and the stock on your shelves.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#0e7490"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.07"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.07"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on completion\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:jobs",
+            "custom:schedule",
+            "custom:parts",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:jobs": [
+              "item:commerce:Order",
+              "item:commerce:Estimate",
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventType"
+            ],
+            "custom:parts": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:events:EventSeries",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Order": "custom:jobs",
+            "item:commerce:Estimate": "custom:jobs",
+            "item:commerce:Customer": "custom:jobs",
+            "item:commerce:Agreement": "custom:jobs",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:products:Product": "custom:parts",
+            "item:inventory:StockLevel": "custom:parts",
+            "item:commerce:Vendor": "custom:parts",
+            "item:commerce:PurchaseOrder": "custom:parts",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:jobs",
+              "label": "Jobs"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Schedule"
+            },
+            {
+              "id": "custom:parts",
+              "label": "Parts"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Order": {
+              "label": "Service calls",
+              "description": "Call-outs and booked jobs, emergencies first, from the first call to the final invoice."
+            },
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Quotes for installs and bigger repairs, ready to book once approved."
+            },
+            "item:commerce:Agreement": {
+              "label": "Service plans",
+              "description": "Yearly water heater and drain service plans, with who holds them and when they renew."
+            },
+            "item:events:Event": {
+              "label": "Appointments",
+              "description": "Calls on the calendar, by day and van."
+            },
+            "item:events:EventType": {
+              "label": "Call types",
+              "description": "The kinds of call you take, like a leak, a blocked drain or a water heater install."
+            },
+            "item:products:Product": {
+              "label": "Parts & fittings",
+              "description": "Valves, fittings, pipe and fixtures you fit and charge for."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Van stock",
+              "description": "What is on each van and in the store, so a call is not a second trip."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The plumbing merchants and wholesalers you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Parts orders",
+              "description": "Parts you have ordered and when they are ready for pickup."
+            }
+          },
+          "sections": {
+            "custom:jobs": {
+              "icon": "wrench"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:parts": {
+              "icon": "package"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      }
     }
   ]
 }
