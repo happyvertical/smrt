@@ -41,6 +41,10 @@ export function agreementHistoryCases(
     let checked = 0;
     let releaseFirst!: () => void;
     let releaseSecond!: () => void;
+    let firstReached!: () => void;
+    const firstAtCheck = new Promise<void>((resolve) => {
+      firstReached = resolve;
+    });
     const bothChecked = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
@@ -49,6 +53,8 @@ export function agreementHistoryCases(
     });
     // Both real reads observe absence. Hold the second caller after its
     // preflight until the first has committed, reproducing the TOCTOU gap.
+    // Roles follow arrival order, so the second create starts only once the
+    // first is parked at its check; otherwise the first could wait on itself.
     const spy = vi
       .spyOn(agreements.db, 'query')
       .mockImplementation(async (sql, ...params) => {
@@ -58,8 +64,10 @@ export function agreementHistoryCases(
           sql.includes('WHERE kind = $1 AND party_a = $2')
         ) {
           checked += 1;
-          if (checked === 1) await bothChecked;
-          else {
+          if (checked === 1) {
+            firstReached();
+            await bothChecked;
+          } else {
             releaseFirst();
             await firstCommitted;
           }
@@ -81,6 +89,7 @@ export function agreementHistoryCases(
           terms: JSON.stringify({ shareFraction: 0.25 }),
         })
         .finally(releaseSecond);
+      await Promise.race([firstAtCheck, first.catch(() => undefined)]);
       const second = agreements.create({
         ...common,
         status: 'draft',
