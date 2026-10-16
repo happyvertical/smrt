@@ -7,6 +7,9 @@ export interface InvoiceRetentionEvidence {
   evidenceRef: string;
   actorId: string;
   reason: string;
+  /** Original calendar date only for immutable imported evidence; recordedAt stays actual record time. */
+  effectiveOn?: string;
+  sameDayCreditOrder?: 'credit-before-release' | 'release-before-credit' | null;
 }
 export interface InvoiceRetentionRelease extends InvoiceRetentionEvidence {
   amountMinor: number;
@@ -80,6 +83,21 @@ export function parseInvoiceRetention(
       !Number.isFinite(Date.parse(event.recordedAt))
     )
       invalid('Retention event timestamp is required');
+    if (
+      event.effectiveOn !== undefined &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(event.effectiveOn) ||
+        !Number.isFinite(Date.parse(event.effectiveOn)) ||
+        new Date(event.effectiveOn).toISOString().slice(0, 10) !==
+          event.effectiveOn)
+    )
+      invalid('Original retention event requires an exact calendar date');
+    if (
+      event.sameDayCreditOrder !== undefined &&
+      event.sameDayCreditOrder !== null &&
+      event.sameDayCreditOrder !== 'release-before-credit' &&
+      event.sameDayCreditOrder !== 'credit-before-release'
+    )
+      invalid('Unsupported original retention release/credit ordering');
     if (event !== state) {
       if (keys.has(event.requestId))
         invalid('Duplicate retention request identity');

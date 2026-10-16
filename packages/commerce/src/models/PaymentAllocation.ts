@@ -17,6 +17,10 @@ import {
   assertCustomerFundsWrite,
   customerFundsState,
 } from '../customer-funds-internal.js';
+import {
+  historicalCreditRefundCommittedTotal,
+  historicalInvoiceAllocationTotal,
+} from '../historical-funds-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
 
@@ -244,7 +248,9 @@ export class PaymentAllocation extends SmrtObject {
         allocationTotal(
           await allocations.findByInvoice(this.invoiceId),
           this.id,
-        ) + BigInt(this.amount);
+        ) +
+        BigInt(this.amount) +
+        BigInt(await historicalInvoiceAllocationTotal(this.db, this.invoiceId));
       if (paymentTotal > BigInt(payment.amount))
         throw new Error('PaymentAllocation would over-apply payment');
       const invoiceCap =
@@ -267,14 +273,15 @@ export class PaymentAllocation extends SmrtObject {
         if (!source.updated_at)
           throw new Error('Refund source invoice has no persisted revision');
         await source.claimRevision(source.updated_at);
-        const credits = (
-          await invoices.list({
-            where: {
-              tenantId: owner,
-              creditedInvoiceId: source.id,
-            },
-          })
-        ).filter(
+        const creditRows = await invoices.list({
+          where: { tenantId: owner, creditedInvoiceId: source.id },
+          limit: 100001,
+        });
+        if (creditRows.length > 100000)
+          throw new Error(
+            'Refund credit scope exceeds its bounded source limit',
+          );
+        const credits = creditRows.filter(
           (credit) =>
             credit.kind === 'credit_note' &&
             credit.status !== 'draft' &&
@@ -287,6 +294,10 @@ export class PaymentAllocation extends SmrtObject {
         let settledRefunds = 0;
         for (const credit of credits) {
           if (!credit.id) continue;
+          settledRefunds += await historicalCreditRefundCommittedTotal(
+            this.db,
+            credit.id,
+          );
           for (const allocation of await allocations.findByInvoice(credit.id)) {
             if (allocation.id === this.id) continue;
             const refund = await payments.get(

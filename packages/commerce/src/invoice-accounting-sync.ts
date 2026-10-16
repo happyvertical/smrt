@@ -285,6 +285,12 @@ async function loadSnapshot(
   tenantId: string,
   invoice: Invoice,
 ): Promise<FrozenInvoiceAccountingSnapshot> {
+  if (invoice.moneyAuthority === 'historical')
+    throw new MoneyValidationError(
+      'ACCOUNTING_SYNC_UNSUPPORTED',
+      'Historical sales source money requires an explicit reviewed provider representation; no quantities or tax breakdown will be invented',
+    );
+
   if (invoice.tenantId !== tenantId)
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
@@ -409,7 +415,7 @@ async function loadSnapshot(
       customerId: invoice.customerId,
       customerExternalId: invoice.customerExternalId || undefined,
       issueDate: invoice.issueDate,
-      dueDate: invoice.dueDate,
+      dueDate: invoice.dueDate ?? undefined,
       currency: invoice.currency,
       lineAmountType: invoice.lineAmountType,
       taxRoundingScope: invoice.taxRoundingScope,

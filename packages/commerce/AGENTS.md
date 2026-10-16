@@ -31,6 +31,8 @@ recipes show carry `@field({ description })` text; keep both in plain
 language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
+See [historical issued sales](agents/historical-sales.md) for exact original source
+money, immutable source children and combined historical/live customer funds.
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
 retry identity, parent corrections and supported dialects.
 See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default codes,

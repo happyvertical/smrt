@@ -213,6 +213,11 @@ export async function recognizeInvoiceRevenue(
       assertTenantAuthority(tenantId);
       const currency = bookCurrency(options.bookCurrency);
       const { invoice } = await lockAndReloadInvoice(tx, invoiceId, tenantId);
+      if (invoice.moneyAuthority === 'historical')
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Original historical revenue is retained evidence; a new revenue posting requires an explicit reviewed historical accounting contract',
+        );
       if (invoice.status === InvoiceStatus.DRAFT || !invoice.moneySnapshotId)
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',

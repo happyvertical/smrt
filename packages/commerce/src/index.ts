@@ -69,6 +69,11 @@ import './__smrt-register__.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
 export {
+  HistoricalCustomerFundsAllocationCollection,
+  HistoricalCustomerFundsCollection,
+} from './collections/HistoricalCustomerFundsCollections.js';
+export { HistoricalSalesLineCollection } from './collections/HistoricalSalesLineCollection.js';
+export {
   ContractCollection,
   ContractLineItemCollection,
   type CreatePayoutFromPaymentArgs,
@@ -167,6 +172,27 @@ export {
   previewInvoiceMoney,
 } from './document-money.js';
 export {
+  applyHistoricalCustomerFunds,
+  getHistoricalCustomerFundsPosition,
+  getHistoricalCustomerFundsSnapshot,
+  recordHistoricalCustomerAllocation,
+  recordHistoricalCustomerFunds,
+  refundHistoricalCustomerFunds,
+} from './historical-customer-funds.js';
+export type * from './historical-customer-funds-types.js';
+export {
+  getHistoricalSalesMoney,
+  readHistoricalSalesLines,
+  recordHistoricalSalesMoney,
+  validateHistoricalSalesMoneyFacts,
+} from './historical-sales-money.js';
+export {
+  type HistoricalSalesHeaderReportFact,
+  HistoricalSalesTaxClassificationRequired,
+  listHistoricalSalesHeaderFacts,
+} from './historical-sales-reports.js';
+export type * from './historical-sales-types.js';
+export {
   type FrozenAccountingReconciliationReady,
   type FrozenAccountingSyncResult,
   type FrozenInvoiceAccountingInput,
@@ -221,6 +247,19 @@ export {
   type CommercePartyLinksPreflight,
   preflightCommercePartyLinks,
 } from './migrations/partyLinks.js';
+export {
+  HistoricalCustomerFunds,
+  type HistoricalCustomerFundsOptions,
+} from './models/HistoricalCustomerFunds.js';
+export {
+  HistoricalCustomerFundsAllocation,
+  type HistoricalCustomerFundsAllocationOptions,
+} from './models/HistoricalCustomerFundsAllocation.js';
+// Exact original issued-sales money and immutable source line identities.
+export {
+  HistoricalSalesLine,
+  type HistoricalSalesLineOptions,
+} from './models/HistoricalSalesLine.js';
 // Models
 export {
   Agreement,

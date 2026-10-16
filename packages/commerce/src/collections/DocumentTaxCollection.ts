@@ -6,6 +6,10 @@ import {
   DOCUMENT_MONEY_WRITE,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
+import {
+  historicalSalesReportInvoices,
+  historicalSalesTaxReportFacts,
+} from '../historical-sales-reports.js';
 import { classifyContractPurchase } from '../models/Contract.js';
 import {
   type CommerceDocumentType,
@@ -254,39 +258,52 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
       options.to.toISOString(),
       ...(options.currency ? [options.currency] : []),
     );
-    return result.rows.map((row) => ({
-      tenantId: requiredText(row.tenant_id, 'tenant id'),
-      documentType: invoiceDocumentType(row.document_type),
-      documentId: requiredText(row.document_id, 'document id'),
-      documentNumber: requiredText(row.invoice_number, 'invoice number'),
-      partyId:
-        typeof row.customer_id === 'string' && row.customer_id.trim()
-          ? row.customer_id
-          : null,
-      documentKind: invoiceKind(row.invoice_kind),
-      issueDate: reportDate(row.issue_date, 'issue date'),
-      status: requiredText(row.status, 'invoice status'),
-      direction: 'sales' as const,
-      currency: requiredText(row.currency, 'currency'),
-      taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
-      taxCodeKind: taxCodeKind(row.kind),
-      taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
-      ...(row.net_minor != null
-        ? { netMinor: storedMinor(row.net_minor, 'net minor') }
-        : {}),
-      taxMinor: storedMinor(row.tax_minor, 'tax minor'),
-      recoverableMinor: storedMinor(row.recoverable_minor, 'recoverable minor'),
-      taxComponentId:
-        row.tax_component_id == null ? null : String(row.tax_component_id),
-      componentName:
-        row.tax_component_name == null ? null : String(row.tax_component_name),
-      liabilityAccountId:
-        row.liability_account_id == null
-          ? null
-          : String(row.liability_account_id),
-      commitmentId: null,
-      commitmentLineId: null,
-    }));
+    const ordinary = result.rows.map(
+      (row): DocumentTaxReportFact => ({
+        tenantId: requiredText(row.tenant_id, 'tenant id'),
+        documentType: invoiceDocumentType(row.document_type),
+        documentId: requiredText(row.document_id, 'document id'),
+        documentNumber: requiredText(row.invoice_number, 'invoice number'),
+        partyId:
+          typeof row.customer_id === 'string' && row.customer_id.trim()
+            ? row.customer_id
+            : null,
+        documentKind: invoiceKind(row.invoice_kind),
+        issueDate: reportDate(row.issue_date, 'issue date'),
+        status: requiredText(row.status, 'invoice status'),
+        direction: 'sales' as const,
+        currency: requiredText(row.currency, 'currency'),
+        taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
+        taxCodeKind: taxCodeKind(row.kind),
+        taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+        ...(row.net_minor != null
+          ? { netMinor: storedMinor(row.net_minor, 'net minor') }
+          : {}),
+        taxMinor: storedMinor(row.tax_minor, 'tax minor'),
+        recoverableMinor: storedMinor(
+          row.recoverable_minor,
+          'recoverable minor',
+        ),
+        taxComponentId:
+          row.tax_component_id == null ? null : String(row.tax_component_id),
+        componentName:
+          row.tax_component_name == null
+            ? null
+            : String(row.tax_component_name),
+        liabilityAccountId:
+          row.liability_account_id == null
+            ? null
+            : String(row.liability_account_id),
+        commitmentId: null,
+        commitmentLineId: null,
+      }),
+    );
+    return [
+      ...ordinary,
+      ...(await historicalSalesReportInvoices(this.db, options)).flatMap(
+        historicalSalesTaxReportFacts,
+      ),
+    ];
   }
 
   private async listPurchaseContractReportFacts(

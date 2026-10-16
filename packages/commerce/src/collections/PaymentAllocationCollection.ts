@@ -6,6 +6,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { customerFundsState } from '../customer-funds-internal.js';
+import { historicalInvoiceAllocationTotal } from '../historical-funds-internal.js';
 import { PaymentAllocation } from '../models/PaymentAllocation.js';
 
 export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocation> {
@@ -141,24 +142,28 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
    * @param paymentId - Payment ID
    * @returns Array of allocations
    */
-  async findByPayment(paymentId: string): Promise<PaymentAllocation[]> {
-    return await this.list({
-      where: { paymentId },
-      orderBy: 'allocatedAt DESC',
-    });
+  private async allFor(
+    field: 'paymentId' | 'invoiceId',
+    id: string,
+  ): Promise<PaymentAllocation[]> {
+    const rows: PaymentAllocation[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const page = await this.list({
+        where: { [field]: id },
+        orderBy: ['allocatedAt DESC', 'id ASC'],
+        offset,
+        limit: 1000,
+      });
+      rows.push(...page);
+      if (page.length < 1000) return rows;
+    }
   }
-
-  /**
-   * Find allocations by invoice
-   *
-   * @param invoiceId - Invoice ID
-   * @returns Array of allocations
-   */
+  async findByPayment(paymentId: string): Promise<PaymentAllocation[]> {
+    return this.allFor('paymentId', paymentId);
+  }
+  /** Every committed row participates in payment and historical combined capacity. */
   async findByInvoice(invoiceId: string): Promise<PaymentAllocation[]> {
-    return await this.list({
-      where: { invoiceId },
-      orderBy: 'allocatedAt DESC',
-    });
+    return this.allFor('invoiceId', invoiceId);
   }
 
   /**
@@ -169,7 +174,13 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
    */
   async getTotalAllocatedToInvoice(invoiceId: string): Promise<number> {
     const allocations = await this.findByInvoice(invoiceId);
-    return allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
+    const total = allocations.reduce(
+      (sum, alloc) => sum + BigInt(alloc.amount),
+      BigInt(await historicalInvoiceAllocationTotal(this.db, invoiceId)),
+    );
+    if (total > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new Error('Combined invoice allocation total is unsafe');
+    return Number(total);
   }
 
   /**

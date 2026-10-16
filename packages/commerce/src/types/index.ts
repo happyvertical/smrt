@@ -613,6 +613,10 @@ export type InvoiceCreditCalculationBasis =
  * Constructor options for {@link Invoice}.
  */
 export interface InvoiceOptions extends SmrtObjectOptions {
+  moneyAuthority?: 'calculated' | 'historical';
+  historicalSalesMoneyJson?: string;
+  historicalSourceKeyHash?: string | null;
+
   kind?: InvoiceKind;
   creditedInvoiceId?: string | null;
   creditedAmount?: number;
@@ -622,7 +626,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   invoiceNumber?: string;
   reference?: string;
   issueDate?: Date;
-  dueDate?: Date;
+  dueDate?: Date | null;
   paidDate?: Date | null;
   subtotal?: number;
   taxAmount?: number;

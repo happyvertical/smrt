@@ -209,8 +209,22 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
     },
   },
   cli: { skipApiCheck: true },
+  indexes: [
+    {
+      name: 'invoice_historical_source_identity',
+      columns: ['tenantId', 'historicalSourceKeyHash'],
+      unique: true,
+    },
+  ],
 })
 export class Invoice extends SmrtObject {
+  /** Command-owned original sales authority; ordinary documents stay calculated. */
+  moneyAuthority: 'calculated' | 'historical' = 'calculated';
+  historicalSalesMoneyJson = '';
+  @field({ type: 'text', nullable: true }) historicalSourceKeyHash:
+    | string
+    | null = null;
+
   /** @internal Collection read guard returns this snapshot on its root DB. */
   rebindMoneyRead(
     capability: DocumentMoneyReadRebindCapability,
@@ -299,8 +313,13 @@ export class Invoice extends SmrtObject {
   /**
    * Payment due date
    */
-  @field({ description: 'The date payment is expected.' })
-  dueDate: Date = new Date();
+  @field({
+    type: 'datetime',
+    nullable: true,
+    description:
+      'The date payment is expected; null when the original source did not establish it.',
+  })
+  dueDate: Date | null = new Date();
 
   /**
    * Date invoice was fully paid
@@ -540,6 +559,12 @@ export class Invoice extends SmrtObject {
     if (options.kind !== undefined) this.kind = options.kind;
     if (options.creditedInvoiceId !== undefined)
       this.creditedInvoiceId = options.creditedInvoiceId;
+    if (options.moneyAuthority !== undefined)
+      this.moneyAuthority = options.moneyAuthority;
+    if (options.historicalSalesMoneyJson !== undefined)
+      this.historicalSalesMoneyJson = options.historicalSalesMoneyJson;
+    if (options.historicalSourceKeyHash !== undefined)
+      this.historicalSourceKeyHash = options.historicalSourceKeyHash;
     if (options.creditedAmount !== undefined)
       this.creditedAmount = options.creditedAmount;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -980,7 +1005,7 @@ export class Invoice extends SmrtObject {
     if (this.getAmountDue() === 0) return false;
     if (this.status === InvoiceStatus.OVERDUE) return true;
     if (this.isPaid() || this.status === InvoiceStatus.CANCELLED) return false;
-    return new Date() > this.dueDate;
+    return this.dueDate !== null && new Date() > this.dueDate;
   }
 
   /**
@@ -1061,7 +1086,10 @@ export class Invoice extends SmrtObject {
     // exactly (e.g. 0.1×3 line items paid 0.3) is treated as PAID by both —
     // not PARTIAL here and then rejected on save (S5 audit #1390 follow-up).
     if (this.isFullyPaid()) {
-      if (this.status !== InvoiceStatus.PAID || !this.paidDate) {
+      if (
+        this.moneyAuthority !== 'historical' &&
+        (this.status !== InvoiceStatus.PAID || !this.paidDate)
+      ) {
         this.paidDate = new Date();
       }
       this.status = InvoiceStatus.PAID;
@@ -1073,7 +1101,7 @@ export class Invoice extends SmrtObject {
       this.paidDate = null;
       if (this.viewedAt) {
         this.status = InvoiceStatus.VIEWED;
-      } else if (this.sentAt) {
+      } else if (this.sentAt || this.moneyAuthority === 'historical') {
         this.status = InvoiceStatus.SENT;
       } else {
         this.status = InvoiceStatus.DRAFT;

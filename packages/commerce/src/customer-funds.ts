@@ -58,6 +58,8 @@ export interface CustomerFundsState extends Evidence {
   kind: 'receipt' | 'refund';
   policy: CustomerFundsPolicy;
   sourcePaymentId: string | null;
+  /** Present only on a new journal-backed refund of retained original cash. */
+  sourceHistoricalReceiptId?: string | null;
   requestFingerprint: string;
   recordedAt: string;
   operations: CustomerFundsOperation[];
@@ -145,7 +147,9 @@ function context(input: Context): void {
   if (getTenantId() !== input.tenantId)
     throw new Error('Customer funds require the explicit active tenant');
 }
-function policy(input: CustomerFundsPolicy): CustomerFundsPolicy {
+export function validateCustomerFundsPolicy(
+  input: CustomerFundsPolicy,
+): CustomerFundsPolicy {
   if (
     !input ||
     !['unapplied-ar', 'deposit-liability'].includes(input.mode) ||
@@ -185,7 +189,7 @@ function policy(input: CustomerFundsPolicy): CustomerFundsPolicy {
     throw new Error('Customer-funds accounts must be distinct');
   return result;
 }
-async function accounts(
+export async function validateCustomerFundsAccounts(
   db: DatabaseInterface,
   tenantId: string,
   rule: CustomerFundsPolicy,
@@ -403,7 +407,7 @@ export async function recordCustomerFunds(
     currency: text(input.currency, 'Currency'),
     amountMinor: amount(input.amountMinor),
     method: input.method,
-    policy: policy(input.policy),
+    policy: validateCustomerFundsPolicy(input.policy),
   };
   if (
     !ISO_4217_MINOR_UNITS.has(request.currency) ||
@@ -450,7 +454,7 @@ export async function recordCustomerFunds(
       )
         throw new Error('Sales contract does not match customer funds');
     }
-    await accounts(db, input.tenantId, request.policy);
+    await validateCustomerFundsAccounts(db, input.tenantId, request.policy);
     const state: CustomerFundsState = {
       version: 1,
       kind: 'receipt',
@@ -498,12 +502,16 @@ function replay(
     throw new Error('Customer funds operation replay differs');
   return true;
 }
-async function reclassify(
+export async function postCustomerFundsReclassification(
   db: DatabaseInterface,
-  payment: Payment,
-  state: CustomerFundsState,
-  operation: Omit<CustomerFundsOperation, 'journalId' | 'recordedAt'>,
+  payment: Pick<Payment, 'id' | 'currency'>,
+  state: Pick<CustomerFundsState, 'policy'>,
+  operation: Pick<
+    CustomerFundsOperation,
+    'requestId' | 'evidenceRef' | 'effectiveOn' | 'amountMinor'
+  >,
   reverse: boolean,
+  sourceKind: 'payment' | 'historical-receipt' = 'payment',
 ): Promise<string | null> {
   if (state.policy.mode === 'unapplied-ar') return null;
   const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
@@ -515,7 +523,9 @@ async function reclassify(
     sourceModule: 'smrt-commerce',
     sourceRef: payment.id!,
     metadata: {
-      paymentId: payment.id,
+      ...(sourceKind === 'payment'
+        ? { paymentId: payment.id }
+        : { historicalReceiptId: payment.id }),
       requestId: operation.requestId,
       evidenceRef: operation.evidenceRef,
     },
@@ -611,7 +621,7 @@ export async function allocateCustomerFunds(
       throw new Error(
         'Issued invoice does not match the customer funds and approved snapshot',
       );
-    await accounts(db, input.tenantId, state.policy);
+    await validateCustomerFundsAccounts(db, input.tenantId, state.policy);
     const allocation = new PaymentAllocation({
       db,
       id: operation.allocationId,
@@ -625,7 +635,13 @@ export async function allocateCustomerFunds(
     });
     await allocation.initialize();
     await withCustomerFundsWrite(allocation, () => allocation.save());
-    const journalId = await reclassify(db, payment, state, operation, false);
+    const journalId = await postCustomerFundsReclassification(
+      db,
+      payment,
+      state,
+      operation,
+      false,
+    );
     await invoice.loadFromId();
     invoice.updatePaymentStatus(
       await (
@@ -681,7 +697,7 @@ export async function refundCustomerFunds(
       operation.amountMinor > (await facts(db, payment, state)).availableMinor
     )
       throw new Error('Refund exceeds unallocated customer funds');
-    await accounts(db, input.tenantId, state.policy);
+    await validateCustomerFundsAccounts(db, input.tenantId, state.policy);
     const refundState: CustomerFundsState = {
       version: 1,
       kind: 'refund',
@@ -750,7 +766,7 @@ export async function reverseCustomerFundsAllocation(
       throw new Error('Customer funds application is already reversed');
     chronological(state, ev.effectiveOn);
     await facts(db, payment, state);
-    await accounts(db, input.tenantId, state.policy);
+    await validateCustomerFundsAccounts(db, input.tenantId, state.policy);
     const allocations = await PaymentAllocationCollection.create({ db });
     const allocation = await allocations.get(
       { id: original.allocationId! },
@@ -785,7 +801,13 @@ export async function reverseCustomerFundsAllocation(
           'Issued credit or credit refund consumes this settlement; resolve it before application reversal',
         );
     }
-    const journalId = await reclassify(db, payment, state, operation, true);
+    const journalId = await postCustomerFundsReclassification(
+      db,
+      payment,
+      state,
+      operation,
+      true,
+    );
     await withCustomerFundsWrite(allocation, () => allocation.delete());
     await invoice.loadFromId();
     invoice.updatePaymentStatus(

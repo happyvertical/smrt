@@ -1,4 +1,9 @@
 import { assertContractScheduleInvoiceFreeze } from './contract-billing-schedule.js';
+import {
+  getHistoricalSalesMoney,
+  readHistoricalSalesLines,
+} from './historical-sales-money.js';
+import type { HistoricalSalesMoneySnapshot } from './historical-sales-types.js';
 /** Transactional Invoice money aggregate persistence. */
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -116,6 +121,10 @@ export interface GetInvoiceMoneyFactsInput {
 }
 
 export interface InvoiceMoneyFacts {
+  historical?: {
+    snapshot: HistoricalSalesMoneySnapshot;
+    lines: Array<{ sourceKey: string; lineId: string }>;
+  };
   source: 'stored';
   payable?: ReturnType<Invoice['getPayableFacts']>;
   invoiceId: string;
@@ -128,6 +137,9 @@ export interface InvoiceMoneyFacts {
 }
 
 const FROZEN_INVOICE_FIELDS = [
+  'moneyAuthority',
+  'historicalSalesMoneyJson',
+  'historicalSourceKeyHash',
   'kind',
   'creditedInvoiceId',
   'tenantId',
@@ -368,14 +380,21 @@ function issuedCredit(invoice: Invoice): boolean {
   );
 }
 
-async function refreshIssuedCreditBalance(
+/** @internal Refresh one economic credit effect, including historical issued credits. */
+export async function refreshIssuedCreditBalance(
   db: DatabaseInterface,
   source: Invoice,
 ): Promise<void> {
   const sourceId = requireId(source.id, 'Credited invoice');
   const credits = await (await InvoiceCollection.create({ db })).list({
     where: { tenantId: source.tenantId, creditedInvoiceId: sourceId },
+    limit: 100001,
   });
+  if (credits.length > 100000)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Issued credit scope exceeds its bounded source limit',
+    );
   const issued = credits.filter(issuedCredit).sort((left, right) => {
     const date = left.issueDate.getTime() - right.issueDate.getTime();
     if (date) return date;
@@ -464,6 +483,11 @@ async function prepareCreditLines(
     throw new MoneyValidationError(
       'CREDIT_TARGET_NOT_ISSUED',
       'Credit target must be an issued, non-cancelled invoice in the same tenant',
+    );
+  if (sourceInvoice.moneyAuthority === 'historical')
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Historical source credits require exact original monetary facts and concrete historical source line lineage, not calculated quantity or inferred tax',
     );
   if (sourceInvoice.currency !== invoice.currency)
     throw new MoneyValidationError(
@@ -1229,8 +1253,22 @@ async function getInvoiceMoneyFactsOnScope(
   const taxes = await (
     await DocumentTaxCollection.create({ db: input.db })
   ).findByDocument(input.tenantId, invoice.kind, input.invoiceId);
+  const historical = getHistoricalSalesMoney(invoice);
   return {
     source: 'stored',
+    ...(historical
+      ? {
+          historical: {
+            snapshot: historical,
+            lines: (await readHistoricalSalesLines(input.db, invoice)).map(
+              (line) => ({
+                sourceKey: line.sourceKey,
+                lineId: String(line.id),
+              }),
+            ),
+          },
+        }
+      : {}),
     ...(invoice.retentionStateJson
       ? { payable: invoice.getPayableFacts() }
       : {}),
@@ -1321,6 +1359,21 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             'FROZEN_DOCUMENT',
             'Retention accounting state is managed by provider commands',
           );
+        if (
+          invoice.moneyAuthority !==
+            (existing?.moneyAuthority ?? 'calculated') ||
+          invoice.historicalSalesMoneyJson !==
+            (existing?.historicalSalesMoneyJson ?? '') ||
+          invoice.historicalSourceKeyHash !==
+            (existing?.historicalSourceKeyHash ?? null)
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Historical source authority is managed only by historical sales commands',
+          );
+        if (existing?.moneyAuthority === 'historical')
+          getHistoricalSalesMoney(existing);
+
         if (invoice.retentionStateJson !== (existing?.retentionStateJson ?? ''))
           throw new MoneyValidationError(
             'FROZEN_DOCUMENT',
