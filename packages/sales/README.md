@@ -20,7 +20,7 @@ Add `svelte` when consuming the optional UI export.
 
 | Entry point | Responsibility |
 | --- | --- |
-| `@happyvertical/smrt-sales/agreements` | Verified e-signature execution and immutable evidence |
+| `@happyvertical/smrt-sales/agreements` | Versioned commercial terms, verified e-signature execution, and immutable evidence |
 | `@happyvertical/smrt-sales/crm` | Leads, pipelines, opportunities, activities, conversions |
 | `@happyvertical/smrt-sales/referrals` | Referrers, links, attribution, qualification, agreements |
 | `@happyvertical/smrt-sales/commissions` | Earners, plans, earning events, commissions, payouts |
@@ -132,7 +132,19 @@ See [the CRM contract](agents/crm.md) for retry and duplicate semantics and
 
 ## Agreement boundary
 
-The agreements module accepts the provider-neutral
+`Agreement` is a counterparty-agnostic, effective-dated terms record. Parties
+are ordered `{ kind, id }` descriptors, so consumers can use tenant, earner,
+profile, organization, worker, or their own neutral kinds without importing a
+consumer domain. Versions are rows: `createAmendment()` creates a draft and
+`activateAmendment()` closes the predecessor at the successor's start. Effective
+intervals are half-open (`[effectiveFrom, effectiveTo)`), and `activeFor()` is
+an as-of query: it can return a superseded or terminated version that governed
+the supplied record date, never terms inferred from today's status. Ambiguous
+overlapping intervals fail closed. Callers that calculate money must snapshot
+the returned version at their authoritative event; this model does not settle
+or allocate funds.
+
+The execution portion of the agreements module accepts the provider-neutral
 `@happyvertical/signatures` contract plus an `AssetRuntimeLike`. Provider
 credentials remain in the injected SDK adapter and secret store. Executed
 agreements freeze the exact source, signed document, audit trail, hashes, and
