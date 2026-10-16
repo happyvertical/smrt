@@ -48,12 +48,14 @@ describe('generic legal member register', () => {
       sourceType: '@happyvertical/smrt-ledgers:JournalEntry',
       sourceId: 'share-1',
       authoritative: true,
+      effectiveFrom: '2026-01-05',
     });
     await register.addReference(alex.id as string, {
       kind: 'dues',
       sourceType: '@happyvertical/smrt-subscriptions:TenantSubscription',
       sourceId: 'dues-1',
       authoritative: true,
+      effectiveFrom: '2026-01-05',
     });
     await register.appoint(alex.id as string, {
       role: 'treasurer',
@@ -126,5 +128,65 @@ describe('generic legal member register', () => {
     expect(before).toEqual([expect.objectContaining({ eligible: true })]);
     expect(stored.some((snapshot) => snapshot.eligible)).toBe(true);
     await expect(stored[0].delete()).rejects.toThrow('cannot be deleted');
+  });
+
+  it('fails closed for cross-tenant ids, invalid calendar dates, and future evidence', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    close = async () => db.close?.();
+    const alpha = new MemberRegisterService(db, { tenantId: 'alpha' });
+    const beta = new MemberRegisterService(db, { tenantId: 'beta' });
+    const alphaClass = await alpha.addClass({ key: 'worker', name: 'Worker' });
+    const betaClass = await beta.addClass({ key: 'worker', name: 'Worker' });
+    await expect(
+      alpha.enroll({
+        memberClassId: betaClass.id as string,
+        kind: 'individual',
+        displayName: 'Wrong',
+        joinedOn: '2026-01-01',
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_NOT_FOUND' });
+    await expect(
+      alpha.enroll({
+        memberClassId: alphaClass.id as string,
+        kind: 'individual',
+        displayName: 'Bad date',
+        joinedOn: '2026-02-30',
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_INVALID' });
+    const member = await alpha.enroll({
+      memberClassId: alphaClass.id as string,
+      kind: 'individual',
+      displayName: 'Pat',
+      joinedOn: '2026-01-01',
+    });
+    await expect(
+      beta.appoint(member.id as string, {
+        role: 'treasurer',
+        effectiveFrom: '2026-01-01',
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_NOT_FOUND' });
+    await alpha.addReference(member.id as string, {
+      kind: 'dues',
+      sourceType: 'ledger',
+      sourceId: 'later',
+      authoritative: true,
+      effectiveFrom: '2026-04-01',
+    });
+    expect(
+      (
+        await alpha.asOf('2026-03-01', { requireAuthoritativeKinds: ['dues'] })
+      )[0],
+    ).toMatchObject({ eligible: false });
+    await alpha.setStatus(member.id as string, {
+      status: 'resigned',
+      effectiveOn: '2026-02-01',
+    });
+    await alpha.setStatus(member.id as string, {
+      status: 'active',
+      effectiveOn: '2026-03-01',
+    });
+    expect((await alpha.asOf('2026-03-15'))[0]).toMatchObject({
+      eligible: true,
+    });
   });
 });

@@ -143,6 +143,18 @@ export class LegalMemberReference extends SmrtObject {
   sourceId = '';
   /** Whether a caller supplied authoritative evidence; no balance is duplicated here. */
   @field({ type: 'boolean' }) authoritative = false;
+  /** The date on which this evidence may first support a record-date decision. */
+  @field({ type: 'text' }) effectiveFrom = '';
+  @field({ type: 'text', nullable: true }) effectiveTo: string | null = null;
+  override async save(): Promise<this> {
+    if (this.id && (await this.db.get(this.tableName, { id: this.id })))
+      throw new Error('Legal member references are append-only.');
+    this.requireInsertOnSave();
+    return super.save();
+  }
+  override async delete(): Promise<void> {
+    throw new Error('Legal member references cannot be deleted.');
+  }
 }
 
 /** A dated register of board/officer appointments; it does not implement elections. */

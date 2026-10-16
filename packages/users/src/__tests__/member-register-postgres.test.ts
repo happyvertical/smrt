@@ -57,5 +57,17 @@ describePostgres('member register (postgres)', () => {
       eligible: true,
     });
     expect(await beta.asOf('2026-03-01')).toEqual([]);
+    await alpha.addReference(member.id as string, {
+      kind: 'dues',
+      sourceType: 'ledger',
+      sourceId: 'future-dues',
+      authoritative: true,
+      effectiveFrom: '2026-04-01',
+    });
+    expect(
+      (
+        await alpha.asOf('2026-03-15', { requireAuthoritativeKinds: ['dues'] })
+      )[0],
+    ).toMatchObject({ eligible: false });
   });
 });
