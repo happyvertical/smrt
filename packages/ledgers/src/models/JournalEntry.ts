@@ -39,6 +39,19 @@ export class JournalEntry extends SmrtObject {
   @foreignKey(Account)
   accountId: string = '';
 
+  /** Opaque external party dimension, never a product-specific model. */
+  @field({ description: 'Generic counterparty type.', nullable: true })
+  counterpartyKind: string | null = null;
+
+  @field({ description: 'Generic counterparty identifier.', nullable: true })
+  counterpartyId: string | null = null;
+
+  /** Due date for an AR/AP open item. */
+  dueDate: Date | null = null;
+
+  /** Source reference of the open item reduced by this settlement line. */
+  settlesSourceRef: string | null = null;
+
   /**
    * Debit amount (left side)
    */
@@ -75,8 +88,16 @@ export class JournalEntry extends SmrtObject {
 
   constructor(options: JournalEntryOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.journalId !== undefined) this.journalId = options.journalId;
     if (options.accountId !== undefined) this.accountId = options.accountId;
+    if (options.counterpartyKind !== undefined)
+      this.counterpartyKind = options.counterpartyKind;
+    if (options.counterpartyId !== undefined)
+      this.counterpartyId = options.counterpartyId;
+    if (options.dueDate !== undefined) this.dueDate = options.dueDate;
+    if (options.settlesSourceRef !== undefined)
+      this.settlesSourceRef = options.settlesSourceRef;
     if (options.debit !== undefined) this.debit = options.debit;
     if (options.credit !== undefined) this.credit = options.credit;
     if (options.currency !== undefined) this.currency = options.currency;
@@ -91,6 +112,16 @@ export class JournalEntry extends SmrtObject {
    */
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    const journal = await this.getJournal();
+    if (journal?.ledgerId && !journal.isDraft())
+      throw new Error('Ledger entries are immutable after posting');
+    if (this.id) {
+      const stored = await this.db.get(this.tableName, { id: this.id });
+      if (stored && stored.journal_id !== this.journalId)
+        throw new Error('Journal entry cannot be moved to another journal');
+    }
+    if (!Number.isFinite(this.debit) || !Number.isFinite(this.credit))
+      throw new Error('Entry amounts must be finite');
     // Validate amounts are non-negative
     if (this.debit < 0) {
       throw new Error('Debit amount cannot be negative');
@@ -113,6 +144,22 @@ export class JournalEntry extends SmrtObject {
     if (this.exchangeRate <= 0) {
       throw new Error('Exchange rate must be positive');
     }
+    if (!!this.counterpartyKind !== !!this.counterpartyId)
+      throw new Error('Counterparty kind and ID must be provided together');
+    if (this.dueDate && (!this.counterpartyKind || !this.counterpartyId))
+      throw new Error('Due date requires a counterparty');
+  }
+
+  async delete(): Promise<void> {
+    const stored = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (stored) {
+      const journal = await this.db.get('journals', { id: stored.journal_id });
+      if (journal?.ledger_id && journal.status !== 'draft')
+        throw new Error('Ledger entries are immutable after posting');
+    }
+    await super.delete();
   }
 
   /**

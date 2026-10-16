@@ -24,6 +24,15 @@ PII-conscious variable selection: `tenantId`, `sourceRef` (may reference custome
 
 ## Balance Enforcement
 
+Named `Ledger` scopes freeze owner, currency and balance mode at creation.
+`exact-integer` mode requires safe integer minor units and exact equality; assigned
+accounts freeze scope/owner/type and cannot be deleted. Posted scoped journals and
+lines are immutable, including void/delete; use compensating postings.
+`postReceivable`/`postPayable`/`postSettlement` require exact ledgers and use one
+transactional claim per tenant/ledger/key with payload-digest replay validation.
+See README for ownership, reversal, aging and dialect contracts.
+
+
 `journal.post()` validates `Math.abs(totalDebits - totalCredits) < BALANCE_EPSILON` where `BALANCE_EPSILON = 0.01` (float rounding tolerance). Unbalanced journals cannot be posted.
 
 **This package is unit-agnostic** — `debit` / `credit` are plain DECIMAL numbers and the balance check only compares the two sides, so it holds for whatever unit the posting module uses. As of #2401, journals posted from `@happyvertical/smrt-commerce` (`Payment.recordPayment()`, `Invoice.recognizeRevenue()`) carry **integer minor units**, which balance exactly rather than merely within the epsilon. A consumer mixing modules that post in different units will get arithmetically balanced but semantically meaningless journals; pick one unit per ledger.

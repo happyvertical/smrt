@@ -5,7 +5,7 @@
  * Contains one or more JournalEntry records that must balance (debits = credits).
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
@@ -18,12 +18,20 @@ import {
   type JournalOptions,
   type JournalStatus,
 } from '../types';
+import { Ledger } from './Ledger';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create'] }, // No update/delete - immutable after posting
   mcp: { include: ['list', 'get', 'create'] },
   cli: { skipApiCheck: true },
+  indexes: [
+    {
+      name: 'journals_ledger_idempotency_key',
+      columns: ['tenantId', 'ledgerId', 'idempotencyKey'],
+      unique: true,
+    },
+  ],
 })
 export class Journal extends SmrtObject {
   /**
@@ -60,6 +68,19 @@ export class Journal extends SmrtObject {
    */
   sourceRef: string | null = null;
 
+  /** Optional durable accounting scope; null preserves legacy tolerant journals. */
+  @field({
+    description: 'The ledger policy that governs this journal.',
+    nullable: true,
+  })
+  @foreignKey(Ledger)
+  ledgerId: string | null = null;
+
+  @field({ nullable: true })
+  idempotencyKey: string | null = null;
+
+  requestDigest: string | null = null;
+
   /**
    * Journal status: draft, posted, voided
    */
@@ -91,6 +112,7 @@ export class Journal extends SmrtObject {
 
   constructor(options: JournalOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.number !== undefined) this.number = options.number;
     if (options.date !== undefined) this.date = options.date;
     if (options.description !== undefined)
@@ -98,6 +120,11 @@ export class Journal extends SmrtObject {
     if (options.sourceModule !== undefined)
       this.sourceModule = options.sourceModule;
     if (options.sourceRef !== undefined) this.sourceRef = options.sourceRef;
+    if (options.ledgerId !== undefined) this.ledgerId = options.ledgerId;
+    if (options.idempotencyKey !== undefined)
+      this.idempotencyKey = options.idempotencyKey;
+    if (options.requestDigest !== undefined)
+      this.requestDigest = options.requestDigest;
     if (options.status !== undefined) this.status = options.status;
     if (options.postedAt !== undefined) this.postedAt = options.postedAt;
     if (options.voidedAt !== undefined) this.voidedAt = options.voidedAt;
@@ -167,7 +194,28 @@ export class Journal extends SmrtObject {
   async isBalanced(): Promise<boolean> {
     const debits = await this.getTotalDebits();
     const credits = await this.getTotalCredits();
-    return Math.abs(debits - credits) < BALANCE_EPSILON;
+    const ledger = await this.getLedger();
+    if (!ledger || ledger.balanceMode === 'tolerant')
+      return Math.abs(debits - credits) < BALANCE_EPSILON;
+    const entries = await this.getEntries();
+    return (
+      Number.isSafeInteger(debits) &&
+      Number.isSafeInteger(credits) &&
+      entries.every(
+        (entry) =>
+          Number.isSafeInteger(entry.debit) &&
+          Number.isSafeInteger(entry.credit),
+      ) &&
+      debits === credits
+    );
+  }
+
+  async getLedger(): Promise<import('./Ledger').Ledger | null> {
+    if (!this.ledgerId) return null;
+    const { LedgerCollection } = await import('../collections/Ledgers');
+    return (await LedgerCollection.create(this.options)).get({
+      id: this.ledgerId,
+    });
   }
 
   /**
@@ -187,7 +235,12 @@ export class Journal extends SmrtObject {
     const collection = await JournalEntryCollection.create(this.options);
     const entry = await collection.create({
       journalId: this.id,
+      tenantId: this.tenantId,
       accountId: data.accountId,
+      counterpartyKind: data.counterpartyKind ?? null,
+      counterpartyId: data.counterpartyId ?? null,
+      dueDate: data.dueDate ?? null,
+      settlesSourceRef: data.settlesSourceRef ?? null,
       debit: data.debit || 0,
       credit: data.credit || 0,
       currency: data.currency || 'USD',
@@ -205,19 +258,7 @@ export class Journal extends SmrtObject {
       throw new Error('Only draft journals can be posted');
     }
 
-    const balanced = await this.isBalanced();
-    if (!balanced) {
-      const debits = await this.getTotalDebits();
-      const credits = await this.getTotalCredits();
-      throw new Error(
-        `Journal is not balanced. Debits: ${debits}, Credits: ${credits}`,
-      );
-    }
-
-    const entries = await this.getEntries();
-    if (entries.length === 0) {
-      throw new Error('Journal must have at least one entry');
-    }
+    await this.validatePosting();
 
     this.status = 'posted';
     this.postedAt = new Date();
@@ -236,6 +277,78 @@ export class Journal extends SmrtObject {
     this.voidedAt = new Date();
     this.voidReason = reason;
     await this.save();
+  }
+
+  private async validatePosting(): Promise<void> {
+    const balanced = await this.isBalanced();
+    if (!balanced) {
+      const debits = await this.getTotalDebits();
+      const credits = await this.getTotalCredits();
+      throw new Error(
+        `Journal is not balanced. Debits: ${debits}, Credits: ${credits}`,
+      );
+    }
+
+    const entries = await this.getEntries();
+    if (entries.length === 0) {
+      throw new Error('Journal must have at least one entry');
+    }
+    const ledger = await this.getLedger();
+    if (this.ledgerId && !ledger)
+      throw new Error(`Ledger not found: ${this.ledgerId}`);
+    if (ledger) {
+      if (ledger.tenantId !== this.tenantId)
+        throw new Error('Journal and ledger must belong to the same tenant');
+      if (entries.some((entry) => entry.currency !== ledger.currency))
+        throw new Error(
+          `Journal entries must use ledger currency ${ledger.currency}`,
+        );
+    }
+    const { AccountCollection } = await import('../collections/Accounts');
+    const accounts = await AccountCollection.create(this.options);
+    for (const entry of entries) {
+      const account = await accounts.get({ id: entry.accountId });
+      if (
+        (this.ledgerId || account?.ledgerId) &&
+        (!account ||
+          !account.active ||
+          account.tenantId !== this.tenantId ||
+          entry.tenantId !== this.tenantId ||
+          account.ledgerId !== this.ledgerId)
+      )
+        throw new Error(
+          'Journal entries must use active accounts owned by the journal ledger',
+        );
+    }
+  }
+
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    if (this.id) {
+      const stored = await this.db.get(this.tableName, { id: this.id });
+      if (stored?.ledger_id && stored.status !== 'draft')
+        throw new Error(
+          'Ledger journals are immutable after posting; use a compensating journal',
+        );
+    }
+    if (this.status === 'posted') {
+      if (this.ledgerId) await this.validatePosting();
+      else {
+        for (const entry of await this.getEntries()) {
+          if ((await entry.getAccount())?.ledgerId)
+            throw new Error('Scoped accounts require their journal ledger');
+        }
+      }
+    }
+  }
+
+  async delete(): Promise<void> {
+    const stored = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (stored?.ledger_id && stored.status !== 'draft')
+      throw new Error('Ledger journals are immutable after posting');
+    await super.delete();
   }
 
   /**

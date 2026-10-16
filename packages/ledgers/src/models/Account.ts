@@ -5,9 +5,15 @@
  * The 5 core types: Asset, Liability, Equity, Revenue, Expense
  */
 
-import { field, SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtHierarchical,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
+import { Ledger } from './Ledger';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -50,6 +56,10 @@ export class Account extends SmrtHierarchical {
   @field({ description: 'asset, liability, equity, revenue or expense.' })
   type: AccountType = 'asset';
 
+  /** Accounting scope; null is a legacy account usable only by legacy journals. */
+  @foreignKey(Ledger)
+  ledgerId: string | null = null;
+
   // parentId inherited from SmrtHierarchical (null = top-level)
 
   /**
@@ -68,14 +78,41 @@ export class Account extends SmrtHierarchical {
 
   constructor(options: AccountOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.number !== undefined) this.number = options.number;
     if (options.name !== undefined) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
     if (options.type !== undefined) this.type = options.type;
+    if (options.ledgerId !== undefined) this.ledgerId = options.ledgerId;
     if (options.parentId !== undefined) this.parentId = options.parentId;
     if (options.active !== undefined) this.active = options.active;
     if (options.metadata !== undefined) this.metadata = options.metadata;
+  }
+
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    if (this.id) {
+      const stored = await this.db.get(this.tableName, { id: this.id });
+      if (
+        stored?.ledger_id &&
+        (stored.ledger_id !== this.ledgerId ||
+          stored.tenant_id !== this.tenantId ||
+          stored.type !== this.type)
+      )
+        throw new Error('Ledger account scope, owner and type are immutable');
+    }
+  }
+
+  async delete(): Promise<void> {
+    const stored = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (stored?.ledger_id)
+      throw new Error(
+        'Ledger accounts cannot be deleted; deactivate them instead',
+      );
+    await super.delete();
   }
 
   /**
