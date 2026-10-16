@@ -55,6 +55,7 @@ export function calculateWaterfall(
   options: CalculateWaterfallOptions = {},
 ): WaterfallCalculationResult {
   validateWaterfallPlan(plan);
+  const planFingerprint = fingerprintPlan(plan);
   const calculationEvent: WaterfallEvent = options.frozenInputs
     ? {
         grossAmountCents: options.frozenInputs.grossAmountCents,
@@ -69,7 +70,8 @@ export function calculateWaterfall(
   if (
     options.frozenInputs &&
     (options.frozenInputs.planKey !== plan.planKey ||
-      options.frozenInputs.planVersion !== plan.version)
+      options.frozenInputs.planVersion !== plan.version ||
+      options.frozenInputs.planFingerprint !== planFingerprint)
   )
     throw new Error(
       'Waterfall frozen inputs belong to a different plan version',
@@ -78,6 +80,7 @@ export function calculateWaterfall(
   const frozenInputs: WaterfallFrozenInputs = {
     planKey: options.frozenInputs?.planKey ?? plan.planKey,
     planVersion: options.frozenInputs?.planVersion ?? plan.version,
+    planFingerprint: options.frozenInputs?.planFingerprint ?? planFingerprint,
     currency: options.frozenInputs?.currency ?? event.currency,
     grossAmountCents:
       options.frozenInputs?.grossAmountCents ?? event.grossAmountCents,
@@ -271,6 +274,18 @@ function decimalFraction(value: number): [bigint, bigint] {
   return [BigInt(digits), 10n ** BigInt(scale)];
 }
 
+function fingerprintPlan(plan: WaterfallPlan): string {
+  return JSON.stringify({
+    tenantId: plan.tenantId ?? null,
+    planKey: plan.planKey,
+    version: plan.version,
+    currency: plan.currency,
+    steps: plan.steps,
+    remainderSink: plan.remainderSink,
+    applicationFeeOffsetRecipient: plan.applicationFeeOffsetRecipient ?? null,
+  });
+}
+
 function conditionsMatch(
   conditions: WaterfallStepConditions | undefined,
   facts: Record<string, string | undefined>,
@@ -311,6 +326,27 @@ export function validateWaterfallPlan(plan: WaterfallPlan): void {
       throw new Error(
         `Waterfall step '${step.key}' requires customBaseKey for custom base`,
       );
+    if (!['gross', 'previous_remainder', 'custom'].includes(step.base))
+      throw new Error(`Waterfall step '${step.key}' has an invalid base`);
+    if (!['percent', 'fixed'].includes(step.amount.kind))
+      throw new Error(
+        `Waterfall step '${step.key}' has an invalid amount kind`,
+      );
+    if (step.conditions !== undefined) {
+      for (const [key, values] of Object.entries(step.conditions)) {
+        if (!['product', 'zone', 'source', 'member'].includes(key))
+          throw new Error(
+            `Waterfall step '${step.key}' has an unknown condition '${key}'`,
+          );
+        if (
+          !Array.isArray(values) ||
+          values.some((value) => typeof value !== 'string' || !value)
+        )
+          throw new Error(
+            `Waterfall step '${step.key}' condition '${key}' must be an array of non-empty strings`,
+          );
+      }
+    }
     if (
       step.amount.kind === 'percent' &&
       (!Number.isFinite(step.amount.rate) ||

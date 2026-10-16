@@ -235,6 +235,28 @@ describe('calculateWaterfall', () => {
     ).toEqual(first.trace);
   });
 
+  it('rejects malformed conditions and replay under changed terms', () => {
+    expect(() =>
+      calculateWaterfall(
+        {
+          ...plan,
+          steps: [
+            { ...plan.steps[0], conditions: { region: ['south'] } as never },
+          ],
+        },
+        event,
+        { resolver: resolver() },
+      ),
+    ).toThrow(/unknown condition/);
+    const first = calculateWaterfall(plan, event, { resolver: resolver() });
+    expect(() =>
+      calculateWaterfall({ ...plan, tenantId: 'other-tenant' }, event, {
+        resolver: resolver(),
+        frozenInputs: first.trace.frozenInputs,
+      }),
+    ).toThrow(/different plan version/);
+  });
+
   it('rejects an application fee that has no matching platform allocation', () => {
     expect(() =>
       calculateWaterfall(

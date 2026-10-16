@@ -237,6 +237,8 @@ export interface WaterfallStep {
 export interface WaterfallPlan {
   planKey: string;
   version: number;
+  /** Optional host tenancy identity; included in frozen replay evidence. */
+  tenantId?: string | null;
   currency: string;
   steps: WaterfallStep[];
   remainderSink: WaterfallRecipientDescriptor;
@@ -257,6 +259,7 @@ export interface WaterfallEvent {
 export interface WaterfallFrozenInputs {
   planKey: string;
   planVersion: number;
+  planFingerprint: string;
   currency: string;
   grossAmountCents: number;
   facts: Record<string, string | undefined>;

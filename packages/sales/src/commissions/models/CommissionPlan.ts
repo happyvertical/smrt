@@ -347,6 +347,7 @@ export class CommissionPlan extends SmrtObject {
     return {
       planKey: this.planKey,
       version: this.version,
+      tenantId: this.tenantId,
       currency: this.currency,
       steps,
       remainderSink,
