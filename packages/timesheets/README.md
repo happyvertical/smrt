@@ -366,6 +366,21 @@ Indexes on `(tenantId, workRefType, workRefId)` and `(tenantId, taskRefType,
 taskRefId)` serve job costing; a unique `(tenantId, punchId, openSlot)` index
 allows one open segment per punch. Segments never overlap each other or a break.
 
+`profileId` is the person whose time it is: the services copy it from the
+segment's punch when creating a segment (`startWork`, `switchWork`, `resumeWork`, replayed
+work actions, and the correction service's `saveSegment` and `addPunch`
+segments), it is immutable, and a write whose `profileId` differs from its
+punch's is refused. Indexed `(tenantId, profileId, startedAt)`, so labour by
+person needs no join. After adding the column through migrations, legacy rows
+have SQL NULL (hydrated as `null`); older text columns may also contain `''`.
+Closing or correcting those segments remains supported. Before reporting by
+person, run this idempotent backfill on SQLite or PostgreSQL; it preserves
+populated identities and matches the punch within the same tenant:
+`UPDATE attendance_segments SET profile_id = (SELECT p.profile_id FROM
+attendance_punches p WHERE p.id = attendance_segments.punch_id AND p.tenant_id = attendance_segments.tenant_id)
+WHERE COALESCE(CAST(profile_id AS TEXT), '') = '' AND EXISTS (SELECT 1 FROM
+attendance_punches p WHERE p.id = attendance_segments.punch_id AND p.tenant_id = attendance_segments.tenant_id)`.
+
 ```ts
 await attendance.punchIn(t(8));
 await attendance.startWork(t(8), { workRefType: '@acme:WorkOrder', workRefId: 'WO-1',
@@ -431,7 +446,8 @@ migrate them as `TEXT NOT NULL DEFAULT ''` (a NULL left on an older row is read 
 `punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,
 `switchWork` (both require `work`), `stopWork`, `resumeWork`). It sorts each batch by device
 time, then client id. Client ids are durable and scoped to tenant/profile.
-Successful taps set `recordedOffline` and `reviewRequired`. The conflict policy
+Successful taps set `recordedOffline` and `reviewRequired` unless `resolveAt` says otherwise;
+they never clear a flag set by an earlier tap. The conflict policy
 is **committed attendance wins**: an event predating committed activity, or
 invalid for the current state, gets a durable error outcome. Identical retries
 return that outcome even after later shifts; changed payloads using the same id
@@ -458,8 +474,13 @@ await attendance.replay(taps, {
 
 The receipt hashes the tap as sent, so a retry with the same `clientId` still
 matches even though the stored time differs; the outcome then has `resolvedAt`.
-Punches are always flagged `reviewRequired`; `reviewRequired: true` from the
-resolver also flags the resulting work segment (`AttendanceSegment.reviewRequired`,
+The resolver decides which flags this tap adds to the punch: `recordedOffline`
+and `reviewRequired` both default to `true`. Returning `false` leaves a fresh
+online punch unflagged, but never clears a flag from an earlier tap on the same
+punch. A device can therefore replay every tap while keeping any late tap under
+review. Use `AttendanceCorrectionService.correctPunch` to clear the review flag
+after a person reviews it; offline provenance remains set.
+`reviewRequired: true` also flags the resulting work segment (`AttendanceSegment.reviewRequired`,
 a new column). A refused outcome stores `{ error, code }`: `code` defaults to the
 `AttendanceConflict.code` (`predates_committed`, `punch_open`, `no_open_punch`,
 `break_open`, `no_open_break`, `during_break`, `work_open`, `no_open_work`,
@@ -514,8 +535,16 @@ the ledger. The ledger has no generated operations, and every ledger,
 closed-break and closed-segment write (insert, acknowledge, delete) is
 service-only: a generic `save()`, `delete()` or collection `create()` is refused. Notes:
 
-- Only **closed** punches are corrected; an open one is `AttendanceService`'s.
-  Moving a punch edge past a break or segment is refused: correct those first.
+- Moving a punch edge past a break or segment is refused: correct those first.
+- **Open punches** accept three corrections, each with a ledger row and the
+  same lock: `correctPunch({ punchId, startedAt })` changes the start only (it
+  cannot close the punch or move past its earliest break or segment);
+  `saveBreak`/`removeBreak`/`saveSegment`/`removeSegment` work on *closed*
+  intervals inside it (the open break or segment stays `AttendanceService`'s:
+  `startBreak`, `startWork`, ...); and `addPunch({ open: true, startedAt,
+  breaks?, segments?, ... })` records a missed clock-in that is still running,
+  with its closed breaks and segments, refused if the subject already has an
+  open punch. An open punch's durations are set when it closes.
 - `correctPunch` clears `reviewRequired` (a person reviewed it). A linked
   *draft* `ServiceTimeEntry` is kept in step; a submitted or approved one
   refuses the correction until it is corrected with `ServiceEvidenceService`.

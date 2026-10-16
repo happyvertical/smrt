@@ -66,6 +66,34 @@ export interface AddPunchInput
     AttendancePunchOptions {
   startedAt: Date;
   endedAt: Date;
+  open?: false;
+}
+/** A closed break to record inside an added open punch. */
+export interface AddPunchBreak {
+  startedAt: Date;
+  endedAt: Date;
+  paid?: boolean;
+  kind?: string;
+}
+/** A closed work segment to record inside an added open punch. */
+export interface AddPunchSegment {
+  startedAt: Date;
+  endedAt: Date;
+  work: AttendanceWork;
+}
+/**
+ * Adds a punch that is still open, with the closed breaks and segments that
+ * happened since it began. Refused if the subject already has an open punch.
+ * The open break or segment, if any, stays with `AttendanceService`.
+ */
+export interface AddOpenPunchInput
+  extends AttendanceCorrectionRequest,
+    AttendancePunchOptions {
+  open: true;
+  startedAt: Date;
+  endedAt?: undefined;
+  breaks?: readonly AddPunchBreak[];
+  segments?: readonly AddPunchSegment[];
 }
 /** Adds a break when `breakId` is absent; otherwise changes that break. */
 export interface SaveBreakInput extends AttendanceCorrectionRequest {
@@ -95,12 +123,23 @@ export interface RemoveSegmentInput extends AttendanceCorrectionRequest {
   segmentId: string;
 }
 
+type Recorder = (
+  kind: AttendanceCorrectionKind,
+  punch: AttendancePunch,
+  targetId: string,
+  before: object | null,
+  after: object | null,
+) => Promise<string>;
+
 interface Layout {
   startsAt: number;
   endsAt: number;
   breaks: { startedAt: Date; endedAt: Date; paid: boolean }[];
   segments: { startedAt: Date; endedAt: Date }[];
 }
+
+/** Stands in for "not yet ended" when validating a layout around an open interval. */
+const FOREVER = new Date(8.64e15);
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 const punchState = (p: AttendancePunch) => ({
@@ -193,7 +232,9 @@ function validateLayout(layout: Layout): void {
  * no segment across a break), recomputes `durationSeconds` and
  * `unpaidBreakSeconds`, keeps a still-draft linked service entry in step, and
  * appends an `AttendanceCorrection` row, all in one transaction serialized with
- * the subject's own taps. Open punches are not corrected here: use
+ * the subject's own taps. An open punch accepts three corrections only: its
+ * `startedAt`, closed breaks and segments inside it, and `addPunch({ open:
+ * true })`; closing it and the open break or segment stay with
  * `AttendanceService`.
  */
 export class AttendanceCorrectionService {
@@ -211,11 +252,17 @@ export class AttendanceCorrectionService {
     };
   }
 
-  /** Change a closed punch's start and/or end. A reviewed punch no longer needs review. */
+  /**
+   * Change a closed punch's start and/or end. A reviewed punch no longer needs
+   * review. An open punch may change `startedAt` only: it cannot be closed
+   * here, and its start cannot move past its earliest break or segment.
+   */
   async correctPunch(input: CorrectPunchInput): Promise<AttendanceCorrection> {
     return this.run(input, async (tx, subject, record) => {
-      const punch = await this.closedPunch(tx, subject, input.punchId);
+      const punch = await this.anyPunch(tx, subject, input.punchId);
       const before = punchState(punch);
+      if (!punch.endedAt)
+        return this.correctOpenStart(tx, subject, record, punch, input, before);
       const startedAt =
         input.startedAt === undefined
           ? punch.startedAt
@@ -261,8 +308,15 @@ export class AttendanceCorrectionService {
     });
   }
 
-  /** Record a missed punch retroactively, as an already-closed interval. */
-  async addPunch(input: AddPunchInput): Promise<AttendanceCorrection> {
+  /**
+   * Record a missed punch retroactively: a closed interval, or with
+   * `{ open: true }` one that is still running, carrying its closed breaks and
+   * segments.
+   */
+  async addPunch(
+    input: AddPunchInput | AddOpenPunchInput,
+  ): Promise<AttendanceCorrection> {
+    if (input.open === true) return this.addOpenPunch(input);
     return this.run(input, async (tx, subject, record) => {
       const startedAt = instant(input.startedAt, 'startedAt');
       const endedAt = instant(input.endedAt, 'endedAt');
@@ -298,16 +352,20 @@ export class AttendanceCorrectionService {
     });
   }
 
-  /** Add a break to a closed punch, or change one (times and/or paid). */
+  /** Add a closed break to a punch, or change one (times and/or paid). */
   async saveBreak(input: SaveBreakInput): Promise<AttendanceCorrection> {
     return this.run(input, async (tx, subject, record) => {
-      const punch = await this.closedPunch(tx, subject, input.punchId);
+      const punch = await this.anyPunch(tx, subject, input.punchId);
       const children = await this.children(tx, punch);
       const existing = input.breakId
         ? children.breaks.find((b) => b.id === input.breakId)
         : undefined;
       if (input.breakId && !existing)
         throw new AttendanceConflict('Break not found in that punch.');
+      if (existing && !existing.endedAt)
+        throw new AttendanceConflict(
+          'The open break is changed through AttendanceService.',
+        );
       if (
         !existing &&
         (input.startedAt === undefined || input.endedAt === undefined)
@@ -331,14 +389,12 @@ export class AttendanceCorrectionService {
       };
       const rest = children.breaks.filter((b) => b !== existing);
       validateLayout(
-        this.layout(punch.startedAt, punch.endedAt!, {
+        this.layout(punch.startedAt, punch.endedAt, {
           breaks: [...rest, next as unknown as AttendanceBreak],
           segments: children.segments,
         }),
       );
-      await this.guard(tx, subject, [
-        { startsAt: punch.startedAt, endsAt: punch.endedAt! },
-      ]);
+      await this.guard(tx, subject, [this.span(punch)]);
       const entry = await this.editableEntry(tx, punch);
       const before = existing ? breakState(existing) : null;
       let target: AttendanceBreak;
@@ -373,7 +429,7 @@ export class AttendanceCorrectionService {
     });
   }
 
-  /** Remove a break from a closed punch. */
+  /** Remove a closed break from a punch. */
   async removeBreak(input: RemoveBreakInput): Promise<AttendanceCorrection> {
     return this.run(input, async (tx, subject, record) => {
       const [target] = await tx.breaks.list({
@@ -381,11 +437,13 @@ export class AttendanceCorrectionService {
         limit: 1,
       });
       if (!target) throw new AttendanceConflict('Break not found.');
-      const punch = await this.closedPunch(tx, subject, target.punchId);
+      if (!target.endedAt)
+        throw new AttendanceConflict(
+          'The open break is ended through AttendanceService.',
+        );
+      const punch = await this.anyPunch(tx, subject, target.punchId);
       const children = await this.children(tx, punch);
-      await this.guard(tx, subject, [
-        { startsAt: punch.startedAt, endsAt: punch.endedAt! },
-      ]);
+      await this.guard(tx, subject, [this.span(punch)]);
       const entry = await this.editableEntry(tx, punch);
       const before = breakState(target);
       await deleteCorrection(target);
@@ -399,16 +457,20 @@ export class AttendanceCorrectionService {
     });
   }
 
-  /** Add a work segment to a closed punch, or change one (times and/or work attribution). */
+  /** Add a closed work segment to a punch, or change one (times and/or work attribution). */
   async saveSegment(input: SaveSegmentInput): Promise<AttendanceCorrection> {
     return this.run(input, async (tx, subject, record) => {
-      const punch = await this.closedPunch(tx, subject, input.punchId);
+      const punch = await this.anyPunch(tx, subject, input.punchId);
       const children = await this.children(tx, punch);
       const existing = input.segmentId
         ? children.segments.find((s) => s.id === input.segmentId)
         : undefined;
       if (input.segmentId && !existing)
         throw new AttendanceConflict('Work segment not found in that punch.');
+      if (existing && !existing.endedAt)
+        throw new AttendanceConflict(
+          'The open work segment is changed through AttendanceService.',
+        );
       if (
         !existing &&
         (input.startedAt === undefined ||
@@ -428,14 +490,12 @@ export class AttendanceCorrectionService {
       };
       const rest = children.segments.filter((s) => s !== existing);
       validateLayout(
-        this.layout(punch.startedAt, punch.endedAt!, {
+        this.layout(punch.startedAt, punch.endedAt, {
           breaks: children.breaks,
           segments: [...rest, next as unknown as AttendanceSegment],
         }),
       );
-      await this.guard(tx, subject, [
-        { startsAt: punch.startedAt, endsAt: punch.endedAt! },
-      ]);
+      await this.guard(tx, subject, [this.span(punch)]);
       const before = existing ? segmentState(existing) : null;
       let target: AttendanceSegment;
       if (existing) {
@@ -453,6 +513,7 @@ export class AttendanceCorrectionService {
         Object.assign(target, {
           tenantId: subject.tenantId,
           punchId: punch.id ?? undefined,
+          profileId: punch.profileId,
           workRefType: input.work!.workRefType,
           workRefId: input.work!.workRefId,
           taskRefType: input.work!.taskRefType ?? '',
@@ -474,7 +535,7 @@ export class AttendanceCorrectionService {
     });
   }
 
-  /** Remove a work segment from a closed punch. */
+  /** Remove a closed work segment from a punch. */
   async removeSegment(
     input: RemoveSegmentInput,
   ): Promise<AttendanceCorrection> {
@@ -484,10 +545,12 @@ export class AttendanceCorrectionService {
         limit: 1,
       });
       if (!target) throw new AttendanceConflict('Work segment not found.');
-      const punch = await this.closedPunch(tx, subject, target.punchId);
-      await this.guard(tx, subject, [
-        { startsAt: punch.startedAt, endsAt: punch.endedAt! },
-      ]);
+      if (!target.endedAt)
+        throw new AttendanceConflict(
+          'The open work segment is stopped through AttendanceService.',
+        );
+      const punch = await this.anyPunch(tx, subject, target.punchId);
+      await this.guard(tx, subject, [this.span(punch)]);
       const before = segmentState(target);
       await deleteCorrection(target);
       return record('segment.removed', punch, target.id!, before, null);
@@ -562,6 +625,191 @@ export class AttendanceCorrectionService {
     );
   }
 
+  /** The range a correction touches, for period-lock checks: an open punch runs to now. */
+  private span(punch: AttendancePunch): AttendanceCorrectionInterval {
+    const now = new Date();
+    return {
+      startsAt: punch.startedAt,
+      endsAt: punch.endedAt ?? (now > punch.startedAt ? now : punch.startedAt),
+    };
+  }
+
+  private async openPunchOf(
+    tx: AttendanceContext,
+    subject: AttendanceActor,
+  ): Promise<boolean> {
+    return (
+      (
+        await tx.punches.list({
+          where: {
+            tenantId: subject.tenantId,
+            profileId: subject.profileId,
+            endedAt: null,
+          },
+          limit: 1,
+        })
+      ).length > 0
+    );
+  }
+
+  private async correctOpenStart(
+    tx: AttendanceContext,
+    subject: AttendanceActor,
+    record: Recorder,
+    punch: AttendancePunch,
+    input: CorrectPunchInput,
+    before: object,
+  ): Promise<string> {
+    if (input.endedAt !== undefined)
+      throw new AttendanceConflict(
+        'An open punch cannot be closed by a correction; use AttendanceService.',
+      );
+    if (input.startedAt === undefined)
+      throw new AttendanceConflict('An open punch is corrected by startedAt.');
+    const startedAt = instant(input.startedAt, 'startedAt');
+    const children = await this.children(tx, punch);
+    validateLayout(this.layout(startedAt, null, children));
+    for (const other of await tx.punches.list({
+      where: { tenantId: subject.tenantId, profileId: subject.profileId },
+    }))
+      if (
+        other.id !== punch.id &&
+        overlapping(
+          { start: startedAt.getTime(), end: FOREVER.getTime() },
+          {
+            start: other.startedAt.getTime(),
+            end: other.endedAt?.getTime() ?? FOREVER.getTime(),
+          },
+        )
+      )
+        throw new AttendanceConflict('Punches must not overlap.');
+    const earliest = punch.startedAt < startedAt ? punch.startedAt : startedAt;
+    await this.guard(tx, subject, [
+      { startsAt: earliest, endsAt: this.span(punch).endsAt },
+    ]);
+    punch.startedAt = startedAt;
+    punch.reviewRequired = false;
+    await this.settle(tx, punch, children.breaks, null);
+    return record(
+      'punch.corrected',
+      punch,
+      punch.id!,
+      before,
+      punchState(punch),
+    );
+  }
+
+  private async addOpenPunch(
+    input: AddOpenPunchInput,
+  ): Promise<AttendanceCorrection> {
+    return this.run(input, async (tx, subject, record) => {
+      const startedAt = instant(input.startedAt, 'startedAt');
+      const meta = attendanceProvenance(input);
+      if (input.endedAt !== undefined)
+        throw new AttendanceConflict('An open punch has no endedAt.');
+      if (await this.openPunchOf(tx, subject))
+        throw new AttendanceConflict('A punch is already open.', 'punch_open');
+      const breaks = (input.breaks ?? []).map((b) => ({
+        startedAt: instant(b.startedAt, 'startedAt'),
+        endedAt: instant(b.endedAt, 'endedAt'),
+        paid: b.paid ?? false,
+        kind: attendanceLabel(b.kind, 'kind'),
+      }));
+      for (const b of input.breaks ?? [])
+        if (b.paid !== undefined && typeof b.paid !== 'boolean')
+          throw new AttendanceConflict('paid must be boolean.');
+      const segments = (input.segments ?? []).map((g) => {
+        validateAttendanceWork(g.work);
+        return {
+          startedAt: instant(g.startedAt, 'startedAt'),
+          endedAt: instant(g.endedAt, 'endedAt'),
+          work: g.work,
+        };
+      });
+      validateLayout({
+        startsAt: startedAt.getTime(),
+        endsAt: FOREVER.getTime(),
+        breaks,
+        segments,
+      });
+      for (const other of await tx.punches.list({
+        where: { tenantId: subject.tenantId, profileId: subject.profileId },
+      }))
+        if (
+          overlapping(
+            { start: startedAt.getTime(), end: FOREVER.getTime() },
+            {
+              start: other.startedAt.getTime(),
+              end: other.endedAt?.getTime() ?? FOREVER.getTime(),
+            },
+          )
+        )
+          throw new AttendanceConflict('Punches must not overlap.');
+      const now = new Date();
+      await this.guard(tx, subject, [
+        { startsAt: startedAt, endsAt: now > startedAt ? now : startedAt },
+      ]);
+      const punch = await tx.punches.create({
+        tenantId: subject.tenantId,
+        profileId: subject.profileId,
+        startedAt,
+        ...meta,
+        _insertOnly: true,
+      });
+      for (const b of breaks) {
+        const row = await new AttendanceBreak({
+          db: tx.db,
+          id: crypto.randomUUID(),
+          _skipLoad: true,
+        }).initialize();
+        Object.assign(row, {
+          tenantId: subject.tenantId,
+          punchId: punch.id ?? undefined,
+          ...b,
+        });
+        await persistCorrection(row);
+      }
+      const segmentStates: ReturnType<typeof segmentState>[] = [];
+      for (const g of segments) {
+        const row = await new AttendanceSegment({
+          db: tx.db,
+          id: crypto.randomUUID(),
+          _skipLoad: true,
+        }).initialize();
+        Object.assign(row, {
+          tenantId: subject.tenantId,
+          punchId: punch.id ?? undefined,
+          profileId: punch.profileId,
+          workRefType: g.work.workRefType,
+          workRefId: g.work.workRefId,
+          taskRefType: g.work.taskRefType ?? '',
+          taskRefId: g.work.taskRefId ?? '',
+          kind: g.work.kind ?? '',
+          description: g.work.description,
+          startedAt: g.startedAt,
+          endedAt: g.endedAt,
+          closedReason: 'stop',
+        });
+        await persistCorrection(row);
+        segmentStates.push(segmentState(row));
+      }
+      return record('punch.added', punch, punch.id!, null, {
+        ...punchState(punch),
+        ...(breaks.length
+          ? {
+              breaks: breaks.map((b) => ({
+                startedAt: iso(b.startedAt),
+                endedAt: iso(b.endedAt),
+                paid: b.paid,
+                ...(b.kind ? { kind: b.kind } : {}),
+              })),
+            }
+          : {}),
+        ...(segmentStates.length ? { segments: segmentStates } : {}),
+      });
+    });
+  }
+
   private attendance(subjectProfileId: string): AttendanceService {
     return new AttendanceService(this.db, {
       tenantId: this.actor.tenantId,
@@ -584,13 +832,7 @@ export class AttendanceCorrectionService {
     operation: (
       tx: AttendanceContext,
       subject: AttendanceActor,
-      record: (
-        kind: AttendanceCorrectionKind,
-        punch: AttendancePunch,
-        targetId: string,
-        before: object | null,
-        after: object | null,
-      ) => Promise<string>,
+      record: Recorder,
     ) => Promise<string>,
   ): Promise<AttendanceCorrection> {
     const reason =
@@ -641,7 +883,7 @@ export class AttendanceCorrectionService {
     return this.read(id);
   }
 
-  private async closedPunch(
+  private async anyPunch(
     tx: AttendanceContext,
     subject: AttendanceActor,
     punchId: string,
@@ -655,10 +897,6 @@ export class AttendanceCorrectionService {
       limit: 1,
     });
     if (!punch) throw new AttendanceConflict('Punch not found for subject.');
-    if (!punch.endedAt)
-      throw new AttendanceConflict(
-        'Only closed punches are corrected; use AttendanceService for an open one.',
-      );
     return punch;
   }
 
@@ -669,7 +907,10 @@ export class AttendanceCorrectionService {
       where,
       orderBy: 'started_at ASC',
     });
-    if (breaks.some((b) => !b.endedAt) || segments.some((s) => !s.endedAt))
+    if (
+      punch.endedAt &&
+      (breaks.some((b) => !b.endedAt) || segments.some((s) => !s.endedAt))
+    )
       throw new AttendanceConflict(
         'Closed punch has an open break or segment.',
       );
@@ -678,7 +919,7 @@ export class AttendanceCorrectionService {
 
   private layout(
     startedAt: Date,
-    endedAt: Date,
+    endedAt: Date | null,
     children: {
       breaks: readonly AttendanceBreak[];
       segments: readonly AttendanceSegment[];
@@ -686,15 +927,15 @@ export class AttendanceCorrectionService {
   ): Layout {
     return {
       startsAt: startedAt.getTime(),
-      endsAt: endedAt.getTime(),
+      endsAt: endedAt ? endedAt.getTime() : FOREVER.getTime(),
       breaks: children.breaks.map((b) => ({
         startedAt: b.startedAt,
-        endedAt: b.endedAt!,
+        endedAt: b.endedAt ?? FOREVER,
         paid: b.paid,
       })),
       segments: children.segments.map((s) => ({
         startedAt: s.startedAt,
-        endedAt: s.endedAt!,
+        endedAt: s.endedAt ?? FOREVER,
       })),
     };
   }
@@ -740,6 +981,11 @@ export class AttendanceCorrectionService {
     breaks: readonly AttendanceBreak[],
     entry: Awaited<ReturnType<AttendanceCorrectionService['editableEntry']>>,
   ): Promise<void> {
+    // An open punch's durations are fixed when it closes (`punchOut`).
+    if (!punch.endedAt) {
+      await persistCorrection(punch);
+      return;
+    }
     const unpaidMs = breaks
       .filter((b) => !b.paid)
       .reduce(

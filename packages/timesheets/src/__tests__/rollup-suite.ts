@@ -437,6 +437,68 @@ export function rollupSuite(
       });
       expect((await service.rollup(at(12))).totalSeconds).toBe(7200);
     });
+    it.each([
+      false,
+      true,
+    ])('retains late replay flags across online taps (separate batches: %s)', async (separate) => {
+      const attendance = new AttendanceService(db, actor);
+      const taps = [
+        {
+          clientId: 'late-in',
+          action: 'punchIn' as const,
+          at: at(8).toISOString(),
+        },
+        {
+          clientId: 'online-out',
+          action: 'punchOut' as const,
+          at: at(10).toISOString(),
+        },
+      ];
+      const options = {
+        resolveAt: ({ deviceAt }: { deviceAt: Date }) => ({
+          at: deviceAt,
+          reviewRequired: deviceAt.getTime() === at(8).getTime(),
+          recordedOffline: deviceAt.getTime() === at(8).getTime(),
+        }),
+      };
+      const outcomes = separate
+        ? [
+            ...(await attendance.replay([taps[0]], options)),
+            ...(await attendance.replay([taps[1]], options)),
+          ]
+        : await attendance.replay(taps, options);
+      expect(outcomes.every((outcome) => !outcome.error)).toBe(true);
+      const read = () =>
+        attendance.withTransaction((tx) =>
+          tx.punches.get(outcomes[0].punchId!),
+        );
+      expect(await read()).toMatchObject({
+        reviewRequired: true,
+        recordedOffline: true,
+      });
+      const enabled = new PeriodRollupService(db, actor, resolver, {
+        attendance: true,
+      });
+      expect((await enabled.rollup(at(12))).totalSeconds).toBe(0);
+      expect(
+        await attendance.replay(taps, {
+          resolveAt: () => {
+            throw new Error('A receipt retry must not resolve time again.');
+          },
+        }),
+      ).toEqual(outcomes);
+      await new AttendanceCorrectionService(db, actor).correctPunch({
+        subjectProfileId: actor.profileId,
+        punchId: outcomes[0].punchId!,
+        startedAt: at(8),
+        reason: 'Reviewed the late clock-in',
+      });
+      expect(await read()).toMatchObject({
+        reviewRequired: false,
+        recordedOffline: true,
+      });
+      expect((await enabled.rollup(at(12))).totalSeconds).toBe(7200);
+    });
     it('rolls up fractional-second attendance using integer elapsed milliseconds', async () => {
       const attendance = new AttendanceService(db, actor);
       const instant = (ms: number) => new Date(at(8).getTime() + ms);
@@ -495,6 +557,103 @@ export function rollupSuite(
               source.seconds === 1800,
           ),
       ).toBe(true);
+    });
+    describe('start attribution', () => {
+      const monday = Date.UTC(2026, 9, 5);
+      const hourAt = (offset: number) => new Date(monday + offset * 3600_000);
+      const weekly = (): PeriodRulesResolver => ({
+        periodFor: async (when) => {
+          const startsAt = new Date(
+            when.getTime() >= monday ? monday : monday - 7 * 86_400_000,
+          );
+          return {
+            startsAt,
+            endsAt: new Date(startsAt.getTime() + 7 * 86_400_000),
+            timezone: 'UTC',
+            version: 'weekly-v1',
+            rules: {},
+          };
+        },
+        classify: async (_period, sources) => ({
+          regularSeconds: sources.reduce((sum, row) => sum + row.seconds, 0),
+          overtimeSeconds: 0,
+        }),
+      });
+      async function crossing(withBreak: boolean) {
+        const attendance = new AttendanceService(db, actor);
+        await attendance.punchIn(hourAt(-2));
+        if (withBreak) {
+          await attendance.startBreak(hourAt(1));
+          await attendance.endBreak(hourAt(2));
+        }
+        return attendance.punchOut(hourAt(6));
+      }
+      const build = (attribution?: 'clip' | 'start') =>
+        new PeriodRollupService(db, actor, weekly(), {
+          attendance: true,
+          attribution,
+        });
+      const hours = (card: { totalSeconds: number }) =>
+        card.totalSeconds / 3600;
+      it('clips by default and with attribution clip', async () => {
+        await crossing(false);
+        for (const attribution of [undefined, 'clip' as const]) {
+          const rollup = build(attribution);
+          expect(hours(await rollup.rollup(hourAt(-1)))).toBe(2);
+          expect(hours(await rollup.rollup(hourAt(1)))).toBe(6);
+        }
+      });
+      it('attributes a crossing punch wholly to the period it started in', async () => {
+        const punch = await crossing(false);
+        const rollup = build('start');
+        const first = await rollup.rollup(hourAt(-1));
+        const second = await rollup.rollup(hourAt(1));
+        expect(hours(first)).toBe(8);
+        expect(hours(second)).toBe(0);
+        expect(first.getSources().map((source) => source.id)).toEqual([
+          punch.id,
+        ]);
+        expect(second.getSources()).toHaveLength(0);
+      });
+      it('keeps breaks with their punch across the boundary', async () => {
+        await crossing(true);
+        expect(hours(await build('start').rollup(hourAt(-1)))).toBe(7);
+        expect(hours(await build('start').rollup(hourAt(1)))).toBe(0);
+        const clipped = build('clip');
+        expect(hours(await clipped.rollup(hourAt(-1)))).toBe(2);
+        expect(hours(await clipped.rollup(hourAt(1)))).toBe(5);
+      });
+      it('attributes bounded manual evidence by its start', async () => {
+        await entry(8 * 3600, {
+          startedAt: hourAt(-2),
+          endedAt: hourAt(6),
+          approvedAt: hourAt(6),
+        });
+        const rollup = build('start');
+        expect(hours(await rollup.rollup(hourAt(-1)))).toBe(8);
+        expect(hours(await rollup.rollup(hourAt(1)))).toBe(0);
+      });
+      it('leaves a confirmed first period undisturbed by the second rollup', async () => {
+        await crossing(false);
+        const rollup = build('start');
+        const first = await rollup.confirm(
+          (await rollup.rollup(hourAt(-1))).id!,
+        );
+        const second = await rollup.rollup(hourAt(1));
+        expect(hours(second)).toBe(0);
+        const again = await rollup.get(first.id!);
+        expect(again.status).toBe('confirmed');
+        expect(hours(again)).toBe(8);
+        await expect(rollup.rollup(hourAt(-1))).rejects.toThrow('immutable');
+      });
+      it('rejects an unknown attribution', () => {
+        expect(
+          () =>
+            new PeriodRollupService(db, actor, weekly(), {
+              attribution: 'end' as never,
+            }),
+        ).toThrow('Attribution');
+      });
     });
     it('supports an explicitly resolved 25-hour DST period and supervisor attribution', async () => {
       const start = new Date('2026-11-01T06:00:00Z');

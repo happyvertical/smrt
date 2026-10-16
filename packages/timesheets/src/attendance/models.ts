@@ -356,6 +356,10 @@ export type AttendanceSegmentCloseReason =
       name: 'attendance_segments_task_idx',
       columns: ['tenantId', 'taskRefType', 'taskRefId'],
     },
+    {
+      name: 'attendance_segments_profile_idx',
+      columns: ['tenantId', 'profileId', 'startedAt'],
+    },
   ],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
@@ -364,6 +368,12 @@ export type AttendanceSegmentCloseReason =
 export class AttendanceSegment extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey(AttendancePunch) punchId = '';
+  /**
+   * The person whose time this is: its punch's `profileId`, set by the
+   * attendance and correction services on creation and immutable. Rows
+   * written before the column existed may read `null` (see the README backfill).
+   */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile') profileId = '';
   /** Qualified class name of the work context (for example a work order). */
   workRefType = '';
   workRefId = '';
@@ -433,10 +443,14 @@ export class AttendanceSegment extends SmrtObject {
       throw new Error(
         'A closed punch changes only through AttendanceCorrectionService.',
       );
+    if (!prior && this.profileId !== (parent.profile_id as string))
+      throw new Error("Segment profileId must be its punch's profileId.");
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
         prior.punch_id !== this.punchId ||
+        ((prior.profile_id as string | null) ?? '') !==
+          (this.profileId ?? '') ||
         (!corrected &&
           (prior.work_ref_type !== this.workRefType ||
             prior.work_ref_id !== this.workRefId ||
