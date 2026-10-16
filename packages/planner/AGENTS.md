@@ -70,7 +70,8 @@ hosted planner, the MCP widget or the Kitchen bridge also run
 Playwright's Chromium); PR CI runs both when planner paths change. A packed
 tarball is exercised with `test:package -- <tarball>`; the release pipeline
 runs it, the browser suites and a real `smrt cookbook apply` against the
-release's own tarballs before publishing (`scripts/planner-release-gate.mjs`).
+release's own tarballs before publishing (`scripts/planner-release-gate.mjs`;
+the merge-group Publish Dry Run runs the same gate).
 
 Exempt from `smrtVitestPlugin()` (`scripts/check-standards.mjs`): the planner
 declares no `@smrt()` classes and its tests must consume the built packages as a
