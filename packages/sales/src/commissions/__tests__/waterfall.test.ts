@@ -248,6 +248,20 @@ describe('calculateWaterfall', () => {
         { resolver: resolver() },
       ),
     ).toThrow(/unknown condition/);
+    expect(() =>
+      calculateWaterfall(
+        { ...plan, steps: [{ ...plan.steps[0], conditions: [] as never }] },
+        event,
+        { resolver: resolver() },
+      ),
+    ).toThrow(/conditions must be an object/);
+    expect(() =>
+      calculateWaterfall(
+        { ...plan, steps: [{ ...plan.steps[0], key: '__proto__' }] },
+        event,
+        { resolver: resolver() },
+      ),
+    ).toThrow(/reserved key/);
     const first = calculateWaterfall(plan, event, { resolver: resolver() });
     expect(() =>
       calculateWaterfall({ ...plan, tenantId: 'other-tenant' }, event, {

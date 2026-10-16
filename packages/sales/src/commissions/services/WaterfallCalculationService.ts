@@ -88,7 +88,10 @@ export function calculateWaterfall(
     customBases: {
       ...(options.frozenInputs?.customBases ?? event.customBases),
     },
-    recipientByStep: { ...(options.frozenInputs?.recipientByStep ?? {}) },
+    recipientByStep: Object.assign(
+      Object.create(null),
+      options.frozenInputs?.recipientByStep ?? {},
+    ),
     remainderSink:
       options.frozenInputs?.remainderSink ??
       resolveSink(plan, calculationEvent, options),
@@ -212,7 +215,12 @@ function resolveStepRecipient(
   }
   const recipient = options.resolver?.resolve(step.recipient, event) ?? null;
   const frozenRecipient = recipient ? freezeRecipient(recipient) : null;
-  frozen.recipientByStep[step.key] = frozenRecipient;
+  Object.defineProperty(frozen.recipientByStep, step.key, {
+    value: frozenRecipient,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
   return frozenRecipient;
 }
 
@@ -318,6 +326,8 @@ export function validateWaterfallPlan(plan: WaterfallPlan): void {
         `Waterfall step keys must be non-empty and unique: '${step.key}'`,
       );
     keys.add(step.key);
+    if (['__proto__', 'constructor', 'prototype'].includes(step.key))
+      throw new Error(`Waterfall step '${step.key}' uses a reserved key`);
     if (!step.recipient?.kind)
       throw new Error(
         `Waterfall step '${step.key}' requires a recipient descriptor`,
@@ -333,6 +343,14 @@ export function validateWaterfallPlan(plan: WaterfallPlan): void {
         `Waterfall step '${step.key}' has an invalid amount kind`,
       );
     if (step.conditions !== undefined) {
+      if (
+        !step.conditions ||
+        typeof step.conditions !== 'object' ||
+        Array.isArray(step.conditions)
+      )
+        throw new Error(
+          `Waterfall step '${step.key}' conditions must be an object`,
+        );
       for (const [key, values] of Object.entries(step.conditions)) {
         if (!['product', 'zone', 'source', 'member'].includes(key))
           throw new Error(

@@ -558,8 +558,70 @@ export class CommissionPlan extends SmrtObject {
   }
 
   private validateWaterfallTerms(): void {
-    const waterfall = this.getWaterfallPlan();
-    if (waterfall) validateWaterfallPlan(waterfall);
+    let steps: unknown;
+    try {
+      steps = JSON.parse(this.steps);
+    } catch {
+      throw new Error('CommissionPlan waterfall steps must be valid JSON');
+    }
+    if (!Array.isArray(steps))
+      throw new Error('CommissionPlan waterfall steps must be an array');
+    if (steps.length === 0) return;
+    if (this.getComponents().length > 0)
+      throw new Error(
+        'CommissionPlan cannot combine v1 components with v2 waterfall steps',
+      );
+    const remainderSink = this.parseRequiredDescriptor(
+      this.remainderSink,
+      'remainder sink',
+    );
+    const applicationFeeOffsetRecipient = this.parseOptionalDescriptor(
+      this.applicationFeeOffsetRecipient,
+      'application fee offset recipient',
+    );
+    validateWaterfallPlan({
+      planKey: this.planKey,
+      version: this.version,
+      tenantId: this.tenantId,
+      currency: this.currency,
+      steps: steps as WaterfallStep[],
+      remainderSink,
+      ...(applicationFeeOffsetRecipient
+        ? { applicationFeeOffsetRecipient }
+        : {}),
+    });
+  }
+
+  private parseRequiredDescriptor(
+    serialized: string,
+    label: string,
+  ): WaterfallRecipientDescriptor {
+    const descriptor = this.parseOptionalDescriptor(serialized, label);
+    if (!descriptor?.kind)
+      throw new Error(`CommissionPlan waterfall ${label} is required`);
+    return descriptor;
+  }
+
+  private parseOptionalDescriptor(
+    serialized: string,
+    label: string,
+  ): WaterfallRecipientDescriptor | null {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(serialized);
+    } catch {
+      throw new Error(`CommissionPlan waterfall ${label} must be valid JSON`);
+    }
+    if (parsed === null) return null;
+    if (
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      Object.getPrototypeOf(parsed) !== Object.prototype
+    )
+      throw new Error(`CommissionPlan waterfall ${label} must be an object`);
+    return Object.keys(parsed).length === 0
+      ? null
+      : (parsed as WaterfallRecipientDescriptor);
   }
 
   private validateEffectiveWindow(): void {

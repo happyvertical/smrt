@@ -109,6 +109,26 @@ describe('CommissionPlan', () => {
     ]);
   });
 
+  it('rejects corrupted v2 terms and plans that mix v1 and v2 allocation engines', async () => {
+    const malformed = await createDraft({
+      planKey: 'malformed-waterfall',
+      steps: '{not-json',
+    });
+    expect(() => malformed.activate()).toThrow(/steps must be valid JSON/);
+
+    const mixed = await createDraft({ planKey: 'mixed-waterfall' });
+    mixed.setSteps([
+      {
+        key: 'crew',
+        base: 'gross',
+        amount: { kind: 'percent', rate: 0.5 },
+        recipient: { kind: 'member', id: 'crew' },
+      },
+    ]);
+    mixed.setRemainderSink({ kind: 'treasury' });
+    expect(() => mixed.activate()).toThrow(/cannot combine v1 components/);
+  });
+
   it('freezes components/currency/planKey/version/effectiveFrom once active', async () => {
     const plan = await createDraft({ planKey: 'frozen-plan' });
     plan.activate();
