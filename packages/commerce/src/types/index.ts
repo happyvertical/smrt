@@ -492,6 +492,8 @@ export interface ContractOptions extends SmrtObjectOptions {
   moneySnapshotId?: string;
   moneyAuthority?: 'calculated' | 'received';
   receivedPurchaseMoneyJson?: string;
+  /** Command-owned contract schedule evidence. */
+  billingScheduleJson?: string;
 }
 
 export interface SalesContractOptions extends ContractOptions {

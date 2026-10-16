@@ -202,6 +202,10 @@ export class Contract extends SmrtObject {
   /** Guarded received evidence; write through recordReceivedPurchaseMoney only. */
   receivedPurchaseMoneyJson = '';
 
+  /** Append-only approved milestone schedule and issued claim evidence. */
+  @field({ type: 'text' })
+  billingScheduleJson = '';
+
   /** Pricing interpretation fixed before the Contract leaves draft. */
   lineAmountType: 'exclusive' | 'inclusive' | 'none' = 'exclusive';
 
@@ -309,6 +313,8 @@ export class Contract extends SmrtObject {
     if (options.contractType !== undefined)
       this.contractType = options.contractType;
     if (options.status !== undefined) this.status = options.status;
+    if (options.billingScheduleJson !== undefined)
+      this.billingScheduleJson = options.billingScheduleJson;
     if (options.moneyAuthority !== undefined)
       this.moneyAuthority = options.moneyAuthority;
     if (options.receivedPurchaseMoneyJson !== undefined)

@@ -118,6 +118,21 @@ export {
   COMMERCE_TAX_CODES_LIST_TOOL_SLUG,
   createCommerceMoneyTools,
 } from './commerce-money-tools.js';
+export type {
+  ApproveContractBillingScheduleInput,
+  ContractBillingMilestone,
+  ContractBillingSchedule,
+  ContractBillingScheduleRevision,
+  ContractMilestoneClaim,
+  ContractMilestoneInvoiceMoney,
+  IssueContractMilestoneInvoiceInput,
+} from './contract-billing-schedule.js';
+export {
+  allocateContractMilestones,
+  approveContractBillingSchedule,
+  getContractBillingSchedule,
+  issueContractMilestoneInvoice,
+} from './contract-billing-schedule.js';
 export {
   type AvailableRefundInput,
   allocateFrozenCredit,

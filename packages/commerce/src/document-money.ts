@@ -1,3 +1,4 @@
+import { assertContractScheduleInvoiceFreeze } from './contract-billing-schedule.js';
 /** Transactional Invoice money aggregate persistence. */
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -1354,6 +1355,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           invoice.taxAmount = invoice.providerTaxAmount;
           invoice.totalAmount = invoice.providerTaxAmount;
           if (invoice.status !== InvoiceStatus.DRAFT || invoice.arJournalId) {
+            await assertContractScheduleInvoiceFreeze(tx, invoice);
             const customers = await CustomerCollection.create({ db: tx });
             const customer = invoice.customerId
               ? await customers.get(
@@ -1454,6 +1456,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           : '';
         await recomputeInvoiceAggregate(tx, invoice, settings, snapshotId);
         if (freezing) {
+          await assertContractScheduleInvoiceFreeze(tx, invoice);
           const customers = await CustomerCollection.create({ db: tx });
           const customer = invoice.customerId
             ? await customers.get({ id: invoice.customerId }, { cache: false })

@@ -409,6 +409,13 @@ export async function saveContract(input: Contract): Promise<Contract> {
       const existing = contract.id
         ? await loadContract(scope.db, contract.id)
         : null;
+      if (
+        contract.billingScheduleJson !== (existing?.billingScheduleJson ?? '')
+      )
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Billing schedule is managed by schedule commands',
+        );
       if (existing && existing.tenantId !== scope.tenantId)
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
@@ -651,6 +658,11 @@ export async function deleteContract(
     const existing = await loadContract(db, contractId);
     if (!existing) return;
     await withLockedContract(db, tenantId, contractId, async (stored) => {
+      if (stored.billingScheduleJson)
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Contract billing schedule history cannot be deleted',
+        );
       if (getReceivedPurchaseMoney(stored))
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
