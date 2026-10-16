@@ -266,4 +266,24 @@ export function defineReimbursementPositionSuite(
       });
     });
   });
+  it('rejects a corrupt retained payment rather than deriving a cash claim', async () => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const source = await world.expense({
+        amount: 1000,
+        paidBy: 'person',
+        paidByProfileId: randomUUID(),
+        reimbursable: true,
+      });
+      await world.db.query(
+        'UPDATE expenses SET reimbursed_at = ?, reimbursed_amount = ? WHERE id = ?',
+        new Date('2026-10-01').toISOString(),
+        1100,
+        source.id,
+      );
+      await expect(
+        world.expenses.reimbursementPosition(source.id),
+      ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+    });
+  });
 }
