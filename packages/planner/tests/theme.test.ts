@@ -242,6 +242,26 @@ describe('cookbook themes', () => {
     expect(store.theme).toEqual({ preset: 'glass' });
   });
 
+  it('applying a cookbook keeps the colour scheme the visitor chose', () => {
+    const store = new CookbookStore();
+    const mechanic = getLibraryCookbook('mechanic');
+    if (!mechanic) throw new Error('mechanic missing');
+    store.setTheme({ colorScheme: 'light' });
+    expect(applyLibraryCookbook(mechanic, store, DEFAULT_SETTINGS).ok).toBe(
+      true,
+    );
+    expect(store.theme).toEqual({ preset: 'smrt', colorScheme: 'light' });
+    const dark = {
+      ...mechanic,
+      document: {
+        ...mechanic.document,
+        theme: { preset: 'smrt', colorScheme: 'dark' as const },
+      },
+    };
+    expect(applyLibraryCookbook(dark, store, DEFAULT_SETTINGS).ok).toBe(true);
+    expect(store.theme?.colorScheme).toBe('dark');
+  });
+
   it('resolves a brand colour to a registered theme id, reused per colour', () => {
     const first = resolveTheme({
       custom: { primary: '#b45309' },

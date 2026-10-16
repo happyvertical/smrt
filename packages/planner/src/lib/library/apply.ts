@@ -27,8 +27,15 @@ export function applyLibraryCookbook(
 ): CookbookResult {
   const result = resolveLibraryCookbook(cookbook, parseCookbook, settings);
   if (result.ok) {
-    // A cookbook without a theme leaves the visitor's own look alone.
-    const keep = result.cookbook.theme ? undefined : store.theme;
+    // A cookbook without a theme leaves the visitor's own look alone, and
+    // one that names no colour scheme keeps the visitor's light or dark.
+    const before = store.theme;
+    const theme = result.cookbook.theme;
+    const keep = theme
+      ? theme.colorScheme || !before?.colorScheme
+        ? undefined
+        : { ...theme, colorScheme: before.colorScheme }
+      : before;
     store.replace(result.cookbook);
     if (keep) store.theme = keep;
     setSamplePack(cookbook.id);

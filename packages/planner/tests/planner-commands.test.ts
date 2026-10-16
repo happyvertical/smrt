@@ -452,6 +452,16 @@ describe('runtime', () => {
     expect(ok(controller, 'reset_theme').receipt.changed).toBe(false);
   });
 
+  it('apply_cookbook keeps the colour scheme when the cookbook names none', () => {
+    const controller = fresh();
+    ok(controller, 'set_theme', { colorScheme: 'light' });
+    ok(controller, 'apply_cookbook', { id: 'mechanic', replace: true });
+    expect(cookbookStore.theme).toMatchObject({
+      preset: 'smrt',
+      colorScheme: 'light',
+    });
+  });
+
   it('undo refuses after later edits unless forced', () => {
     const controller = fresh();
     const first = ok(controller, 'set_theme', { preset: 'glass' });
