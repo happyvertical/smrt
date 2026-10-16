@@ -26,7 +26,8 @@ are packed and before anything is published: the planner's browser suites, its
 packed tarball installed against the release tarballs, and a real
 `smrt cookbook apply` whose generated app must install, build and typecheck
 against them (`scripts/planner-release-gate.mjs`; one retry per check, and the
-summary says whether the planner or the framework broke).
+summary says whether the planner, the framework, or upstream drift in the
+smrt-start template or a third-party release broke it).
 
 ## Where releases go
 

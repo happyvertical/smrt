@@ -21,7 +21,12 @@
  * Each check gets one retry; a check that passes only on retry is reported as
  * flaky but does not fail the gate. A failure names who broke: the planner
  * (its own suites) or the framework (a release package rejects a cookbook or
- * a generated app no longer builds against the release).
+ * a generated app no longer builds against the release). When the generated
+ * app fails, the same apply is repeated with every release package pinned to
+ * the latest published version, as a control: if that fails too, the cause is upstream drift (the
+ * smrt-start template or a third-party release), not this release, and the
+ * failure says so. The gate still fails then; a release is never published
+ * past an app that does not build.
  *
  * Usage: node scripts/planner-release-gate.mjs --packs <dir>
  *          [--cookbook bakery] [--template github:happyvertical/smrt-start]
@@ -41,6 +46,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { OWN_REGISTRY, registryArgs } from './release-registry.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PLANNER = join(ROOT, 'packages/planner');
@@ -57,6 +63,11 @@ const OWNERS = {
     label: 'FRAMEWORK',
     meaning:
       'the framework broke the planner: a release package rejects a library cookbook, or an app generated from one no longer installs, builds or typechecks against the release tarballs. Fix the package that changed (or, if the contract change is intended, update the cookbook in packages/planner/src/lib/library/library.json in the same PR).',
+  },
+  upstream: {
+    label: 'UPSTREAM',
+    meaning:
+      'not this release: the generated app also fails against the published packages, so the smrt-start template or a third-party release drifted. Fix the template (happyvertical/smrt-start) or pin the offending dependency, then re-run the release.',
   },
 };
 
@@ -104,12 +115,13 @@ function readPackedManifest(path) {
 
 /**
  * The project's pnpm-workspace.yaml with every release package overridden to
- * its tarball. An existing `overrides:` block keeps its entries; ours follow.
+ * the given spec (`file:<tarball>` for the release, a version for the
+ * control). An existing `overrides:` block keeps its entries; ours follow.
  */
-export function withTarballOverrides(workspaceYaml, tarballs) {
-  const lines = [...tarballs]
+export function withOverrides(workspaceYaml, specs) {
+  const lines = [...specs]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, path]) => `  '${name}': 'file:${path}'`);
+    .map(([name, spec]) => `  '${name}': '${spec}'`);
   const text = workspaceYaml.endsWith('\n') || workspaceYaml === '' ? workspaceYaml : `${workspaceYaml}\n`;
   if (/^overrides:\s*$/m.test(text)) {
     return text.replace(/^overrides:\s*$/m, `overrides:\n${lines.join('\n')}`);
@@ -134,7 +146,11 @@ export function runChecks(checks, { log = console.log, attempts = 2 } = {}) {
         log(`✗ ${check.name}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    if (!passed) failed.push(check);
+    if (!passed) {
+      // A check may re-attribute its failure (the generated app's control run).
+      const owner = check.classify?.() ?? check.owner;
+      failed.push(owner === check.owner ? check : { ...check, owner });
+    }
   }
   return { failed, flaky };
 }
@@ -149,6 +165,20 @@ function run(command, args, options = {}) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} exited ${result.status}`);
   }
+}
+
+/** The latest published smrt line (smrt-core's version on the primary registry). */
+function publishedVersion() {
+  const result = spawnSync(
+    'npm',
+    ['view', '@happyvertical/smrt-core', 'version', ...registryArgs(OWN_REGISTRY)],
+    { encoding: 'utf8' },
+  );
+  const version = result.stdout?.trim();
+  if (result.status !== 0 || !/^\d+\.\d+\.\d+$/.test(version ?? '')) {
+    throw new Error(`cannot read the published smrt version: ${result.stderr}`);
+  }
+  return version;
 }
 
 function libraryCookbooks() {
@@ -204,6 +234,39 @@ function frameworkChecks(tarballs, options, scratch) {
     files.set(cookbook.id, file);
   }
   const app = join(scratch, `app-${options.cookbook}`);
+  /**
+   * Apply the chosen cookbook into `dir` (template as a user gets it), then
+   * install, build and typecheck. With `overrides`, every release package
+   * resolves from its tarball; the template's lockfile is kept so everything
+   * else stays at the versions the template was tested with.
+   */
+  const generateApp = (dir, overrides) => {
+    rmSync(dir, { recursive: true, force: true });
+    run(
+      process.execPath,
+      [
+        CLI,
+        'cookbook',
+        'apply',
+        files.get(options.cookbook),
+        dir,
+        '--manifests',
+        manifests,
+        '--no-registry',
+        '--no-install',
+        ...(options.template ? ['--template', options.template] : []),
+      ],
+      { cwd: scratch },
+    );
+    if (overrides) {
+      const workspaceFile = join(dir, 'pnpm-workspace.yaml');
+      const current = existsSync(workspaceFile) ? readFileSync(workspaceFile, 'utf8') : '';
+      writeFileSync(workspaceFile, withOverrides(current, overrides));
+    }
+    run('pnpm', ['install', '--no-frozen-lockfile'], { cwd: dir, env: { CI: 'true' } });
+    run('pnpm', ['run', 'build'], { cwd: dir });
+    run('pnpm', ['run', 'typecheck'], { cwd: dir });
+  };
   return [
     {
       owner: 'framework',
@@ -226,30 +289,35 @@ function frameworkChecks(tarballs, options, scratch) {
       name: `smrt cookbook apply ${options.cookbook}, then install, build and typecheck against the release tarballs`,
       run: () => {
         if (!chosen) throw new Error(`no library cookbook ${options.cookbook}`);
-        rmSync(app, { recursive: true, force: true });
-        run(
-          process.execPath,
-          [
-            CLI,
-            'cookbook',
-            'apply',
-            files.get(options.cookbook),
-            app,
-            '--manifests',
-            manifests,
-            '--no-registry',
-            '--no-install',
-            ...(options.template ? ['--template', options.template] : []),
-          ],
-          { cwd: scratch },
+        generateApp(
+          app,
+          new Map([...tarballs].map(([name, path]) => [name, `file:${path}`])),
         );
-        const workspaceFile = join(app, 'pnpm-workspace.yaml');
-        const current = existsSync(workspaceFile) ? readFileSync(workspaceFile, 'utf8') : '';
-        writeFileSync(workspaceFile, withTarballOverrides(current, tarballs));
-        rmSync(join(app, 'pnpm-lock.yaml'), { force: true });
-        run('pnpm', ['install', '--no-frozen-lockfile'], { cwd: app, env: { CI: 'true' } });
-        run('pnpm', ['run', 'build'], { cwd: app });
-        run('pnpm', ['run', 'typecheck'], { cwd: app });
+      },
+      // Control: the same apply with every release package pinned to the
+      // latest published version (one consistent smrt line, as the release
+      // run has). If it fails too, the template or a third-party release
+      // drifted, not this release.
+      classify: () => {
+        if (!chosen) return 'framework';
+        console.log(
+          `\n▶ control: smrt cookbook apply ${options.cookbook} with every release package at the published version`,
+        );
+        try {
+          const published = publishedVersion();
+          console.log(`control pins every release package to ${published}`);
+          generateApp(
+            `${app}-control`,
+            new Map([...tarballs.keys()].map((name) => [name, published])),
+          );
+          console.log('✓ control passed: the release tarballs broke the app');
+          return 'framework';
+        } catch (error) {
+          console.log(
+            `✗ control failed too (${error instanceof Error ? error.message : String(error)}): upstream drift`,
+          );
+          return 'upstream';
+        }
       },
     },
   ];

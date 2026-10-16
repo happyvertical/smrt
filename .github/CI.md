@@ -455,7 +455,10 @@ every library cookbook with the built CLI, and runs a real
 build and typecheck with every `@happyvertical` package overridden to the
 release tarballs. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
-`publish-release` needs it to succeed.
+`publish-release` needs it to succeed. When the generated app fails, the gate
+repeats the apply against the published packages as a control; if that fails
+too, it reports upstream drift (the smrt-start template or a third-party
+release) instead of blaming the framework. The gate still fails then.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
