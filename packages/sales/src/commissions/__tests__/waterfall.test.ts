@@ -136,6 +136,80 @@ describe('calculateWaterfall', () => {
     expect(replay.trace).toEqual(first.trace);
   });
 
+  it('owns replay recipient and sink snapshots even after the caller mutates its inputs', () => {
+    const first = calculateWaterfall(plan, event, { resolver: resolver() });
+    const input = first.trace.frozenInputs;
+    const crew = input.recipientByStep.crew;
+    if (!crew) throw new Error('expected crew recipient');
+    const crewRouting = { account: 'crew-original' };
+    const sinkRouting = { account: 'sink-original' };
+    crew.metadata = { routing: crewRouting };
+    input.remainderSink.metadata = { routing: sinkRouting };
+    const replay = calculateWaterfall(plan, event, { frozenInputs: input });
+    const expected = structuredClone(replay.trace);
+    crew.id = 'changed-crew';
+    crewRouting.account = 'changed-crew-account';
+    input.remainderSink.id = 'changed-sink';
+    sinkRouting.account = 'changed-sink-account';
+    expect(replay.trace).toEqual(expected);
+    expect(
+      replay.trace.frozenInputs.recipientByStep['missing-recipient'],
+    ).toBeNull();
+    expect(
+      calculateWaterfall(plan, event, {
+        frozenInputs: replay.trace.frozenInputs,
+      }).trace,
+    ).toEqual(expected);
+  });
+
+  it.each(
+    [1, true, {}, []].map((key) => ({ key })),
+  )('rejects non-string persisted step keys before recipient lookup: $key', ({
+    key,
+  }) => {
+    const persisted = new CommissionPlan({
+      planKey: 'invalid-key',
+      version: 2,
+      currency: 'USD',
+      steps: JSON.stringify([
+        {
+          key,
+          base: 'gross',
+          amount: { kind: 'fixed', amountCents: 100 },
+          recipient: { kind: 'worker', id: 'account-a' },
+        },
+        {
+          key: String(key) || 'second',
+          base: 'gross',
+          amount: { kind: 'fixed', amountCents: 100 },
+          recipient: { kind: 'worker', id: 'account-b' },
+        },
+      ]),
+      remainderSink: JSON.stringify({ kind: 'treasury' }),
+    });
+    const terms = persisted.getWaterfallPlan();
+    if (!terms) throw new Error('expected waterfall terms');
+    expect(() =>
+      calculateWaterfall(
+        terms,
+        { ...event, applicationFeeSettledCents: 0 },
+        { resolver: resolver() },
+      ),
+    ).toThrow(/non-empty strings/);
+    terms.steps[0].key = 'first';
+    terms.steps[1].key = 'second';
+    const valid = calculateWaterfall(
+      terms,
+      { ...event, applicationFeeSettledCents: 0 },
+      { resolver: resolver() },
+    );
+    expect(valid.trace.steps.map((step) => step.recipient?.id)).toEqual([
+      'account-a',
+      'account-b',
+    ]);
+    expect(valid.trace.closureCents).toBe(0);
+  });
+
   it('copies recipient evidence before a host-owned resolver object can mutate', () => {
     const hostRecipient = {
       kind: 'worker',

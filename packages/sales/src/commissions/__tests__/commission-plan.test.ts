@@ -129,6 +129,26 @@ describe('CommissionPlan', () => {
     expect(() => mixed.activate()).toThrow(/cannot combine v1 components/);
   });
 
+  it('refuses mixed numeric/string JSON keys at activation and active save without changing the draft', async () => {
+    const draft = await createDraft({
+      planKey: 'mixed-key-waterfall',
+      components: '[]',
+      steps: JSON.stringify(
+        [1, '1'].map((key, index) => ({
+          key,
+          base: 'gross',
+          amount: { kind: 'fixed', amountCents: 100 },
+          recipient: { kind: 'member', id: `account-${index}` },
+        })),
+      ),
+      remainderSink: JSON.stringify({ kind: 'treasury' }),
+    });
+    expect(() => draft.activate()).toThrow(/non-empty strings/);
+    draft.status = 'active';
+    await expect(draft.save()).rejects.toThrow(/non-empty strings/);
+    expect((await plans.get({ id: draft.id }))?.status).toBe('draft');
+  });
+
   it('freezes components/currency/planKey/version/effectiveFrom once active', async () => {
     const plan = await createDraft({ planKey: 'frozen-plan' });
     plan.activate();

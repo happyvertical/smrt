@@ -77,7 +77,10 @@ decimals from `0` to `1`; rounding occurs through the exported money helpers.
 Version-two plans can carry ordered `steps`, an `effectiveTo` boundary, and a
 `remainderSink`. `calculateWaterfall()` is a pure, generic allocation service:
 hosts register recipient resolvers, then persist the returned trace as the
-replay evidence. The trace freezes the resolved recipients, input facts, and
+replay evidence. Step keys must be nonempty strings; malformed persisted keys
+are rejected before allocation or activation. Replay snapshots copy recipient
+and sink values, including nested metadata, so later caller-input mutation
+cannot change the returned evidence. The trace freezes the resolved recipients, input facts, and
 application-fee offset. All amounts are integer minor units; each percentage
 rounds half away from zero and recipients plus the sink always equal gross.
 

@@ -91,11 +91,18 @@ export function calculateWaterfall(
     },
     recipientByStep: Object.assign(
       Object.create(null),
-      options.frozenInputs?.recipientByStep ?? {},
+      Object.fromEntries(
+        Object.entries(options.frozenInputs?.recipientByStep ?? {}).map(
+          ([key, recipient]) => [
+            key,
+            recipient ? freezeRecipient(recipient) : null,
+          ],
+        ),
+      ),
     ),
-    remainderSink:
-      options.frozenInputs?.remainderSink ??
-      resolveSink(plan, calculationEvent, options),
+    remainderSink: options.frozenInputs
+      ? freezeRecipient(options.frozenInputs.remainderSink)
+      : resolveSink(plan, calculationEvent, options),
     applicationFeeSettledCents:
       options.frozenInputs?.applicationFeeSettledCents ??
       event.applicationFeeSettledCents ??
@@ -324,9 +331,9 @@ export function validateWaterfallPlan(plan: WaterfallPlan): void {
     );
   const keys = new Set<string>();
   for (const step of plan.steps) {
-    if (!step.key || keys.has(step.key))
+    if (typeof step.key !== 'string' || !step.key || keys.has(step.key))
       throw new Error(
-        `Waterfall step keys must be non-empty and unique: '${step.key}'`,
+        `Waterfall step keys must be non-empty strings and unique: '${step.key}'`,
       );
     keys.add(step.key);
     if (['__proto__', 'constructor', 'prototype'].includes(step.key))
