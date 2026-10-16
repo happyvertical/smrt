@@ -31,6 +31,12 @@ const REFERENCE_KINDS: readonly MemberReferenceKind[] = [
   'agreement',
   'ledger',
 ];
+function compareHistory(
+  a: { effectiveOn: string; sequence: number },
+  b: { effectiveOn: string; sequence: number },
+): number {
+  return a.effectiveOn.localeCompare(b.effectiveOn) || a.sequence - b.sequence;
+}
 function date(value: unknown, field: string): IsoDate {
   if (
     typeof value !== 'string' ||
@@ -89,10 +95,13 @@ export interface EligibilityRow {
 
 /** Trusted, tenant-scoped register writer. Hosts authorize the actor before construction. */
 export class MemberRegisterService {
+  private static readonly transactionToken = Symbol(
+    'member-register-transaction',
+  );
   constructor(
     private readonly db: DatabaseInterface,
     private readonly actor: MemberRegisterActor,
-    private readonly transactionBound = false,
+    private readonly transactionBound?: symbol,
   ) {
     text(actor?.tenantId, 'tenantId');
   }
@@ -105,7 +114,13 @@ export class MemberRegisterService {
         'Member register writes require transaction support.',
       );
     return this.db.transaction((db) =>
-      operation(new MemberRegisterService(db, this.actor, true)),
+      operation(
+        new MemberRegisterService(
+          db,
+          this.actor,
+          MemberRegisterService.transactionToken,
+        ),
+      ),
     );
   }
   private scope<T>(run: () => Promise<T>): Promise<T> {
@@ -164,7 +179,7 @@ export class MemberRegisterService {
     profileId?: string | null;
     externalPartyRef?: string | null;
   }): Promise<LegalMember> {
-    if (!this.transactionBound)
+    if (this.transactionBound !== MemberRegisterService.transactionToken)
       return this.transaction((service) => service.enroll(input));
     return this.scope(async () => {
       const joinedOn = date(input.joinedOn, 'joinedOn');
@@ -203,6 +218,7 @@ export class MemberRegisterService {
         memberId: member.id as string,
         status: 'active',
         effectiveOn: joinedOn,
+        sequence: 1,
         reason: 'joined',
         actorRef: this.actor.actorRef ?? null,
       });
@@ -213,7 +229,7 @@ export class MemberRegisterService {
     memberId: string,
     input: { status: LegalMemberStatus; effectiveOn: IsoDate; reason?: string },
   ): Promise<LegalMember> {
-    if (!this.transactionBound)
+    if (this.transactionBound !== MemberRegisterService.transactionToken)
       return this.transaction((service) => service.setStatus(memberId, input));
     return this.scope(async () => {
       const member = await this.member(memberId);
@@ -226,11 +242,15 @@ export class MemberRegisterService {
       const histories = await LegalMemberStatusHistoryCollection.create({
         db: this.db,
       });
+      const prior = await histories.list({
+        where: { tenantId: this.actor.tenantId, memberId: member.id },
+      });
       const row = await histories.create({
         tenantId: this.actor.tenantId,
         memberId: member.id as string,
         status: input.status,
         effectiveOn,
+        sequence: Math.max(0, ...prior.map((entry) => entry.sequence ?? 0)) + 1,
         reason: input.reason?.trim() ?? '',
         actorRef: this.actor.actorRef ?? null,
       });
@@ -241,7 +261,7 @@ export class MemberRegisterService {
         })
       )
         .filter((entry) => entry.effectiveOn <= today)
-        .sort((a, b) => a.effectiveOn.localeCompare(b.effectiveOn))
+        .sort(compareHistory)
         .at(-1);
       member.status = current?.status ?? 'active';
       member.leftOn =
@@ -329,7 +349,7 @@ export class MemberRegisterService {
     recordDate: IsoDate,
     policy: EligibilityPolicy = {},
   ): Promise<EligibilityRow[]> {
-    if (!this.transactionBound)
+    if (this.transactionBound !== MemberRegisterService.transactionToken)
       return this.transaction((service) => service.asOf(recordDate, policy));
     return this.scope(async () => {
       const on = date(recordDate, 'recordDate');
@@ -356,13 +376,7 @@ export class MemberRegisterService {
           })
         )
           .filter((entry) => entry.effectiveOn <= on)
-          .sort(
-            (a, b) =>
-              a.effectiveOn.localeCompare(b.effectiveOn) ||
-              String(a.created_at ?? '').localeCompare(
-                String(b.created_at ?? ''),
-              ),
-          );
+          .sort(compareHistory);
         const status = history.at(-1)?.status;
         const memberRefs = (
           await refs.list({
@@ -385,11 +399,7 @@ export class MemberRegisterService {
         const statusOK =
           !!status && (policy.statuses ?? ['active']).includes(status);
         const eligible =
-          member.joinedOn <= on &&
-          (member.leftOn === null || member.leftOn >= on) &&
-          classOK &&
-          statusOK &&
-          missing.length === 0;
+          member.joinedOn <= on && classOK && statusOK && missing.length === 0;
         const reason = missing.length
           ? `authoritative evidence unavailable: ${missing.join(', ')}`
           : !classOK
@@ -398,9 +408,7 @@ export class MemberRegisterService {
               ? `status ${status ?? 'unrecorded'} excluded by policy`
               : member.joinedOn > on
                 ? 'joined after record date'
-                : member.leftOn && member.leftOn < on
-                  ? 'left before record date'
-                  : 'eligible';
+                : 'eligible';
         const evidence = {
           status,
           requiredAuthoritativeKinds: policy.requireAuthoritativeKinds ?? [],

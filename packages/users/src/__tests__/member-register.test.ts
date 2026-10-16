@@ -2,6 +2,8 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  LegalMemberReferenceCollection,
+  LegalMemberStatusHistoryCollection,
   MemberEligibilitySnapshotCollection,
   MemberRegisterService,
 } from '../member-register/index.js';
@@ -188,5 +190,44 @@ describe('generic legal member register', () => {
     expect((await alpha.asOf('2026-03-15'))[0]).toMatchObject({
       eligible: true,
     });
+    await alpha.setStatus(member.id as string, {
+      status: 'resigned',
+      effectiveOn: '2026-03-15',
+    });
+    await alpha.setStatus(member.id as string, {
+      status: 'active',
+      effectiveOn: '2026-03-15',
+    });
+    expect((await alpha.asOf('2026-03-15'))[0]).toMatchObject({
+      eligible: true,
+    });
+    await expect(
+      alpha.addReference(member.id as string, {
+        kind: 'not-a-kind' as 'dues',
+        sourceType: 'ledger',
+        sourceId: 'bad',
+        effectiveFrom: '2026-01-01',
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_INVALID' });
+    await expect(
+      alpha.appoint(member.id as string, {
+        role: 'treasurer',
+        effectiveFrom: '2026-02-01',
+        effectiveTo: '2026-01-01',
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_INVALID' });
+    await withTenant({ tenantId: 'beta' }, async () => {
+      await expect(alpha.asOf('2026-03-15')).rejects.toMatchObject({
+        code: 'MEMBER_REGISTER_TENANT_MISMATCH',
+      });
+    });
+    const histories = await LegalMemberStatusHistoryCollection.create({ db });
+    const references = await LegalMemberReferenceCollection.create({ db });
+    const history = await histories.list({ where: { tenantId: 'alpha' } });
+    const reference = await references.list({ where: { tenantId: 'alpha' } });
+    history[0].reason = 'rewrite';
+    reference[0].sourceId = 'rewrite';
+    await expect(history[0].save()).rejects.toThrow('append-only');
+    await expect(reference[0].save()).rejects.toThrow('append-only');
   });
 });

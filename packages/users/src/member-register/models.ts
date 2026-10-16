@@ -105,6 +105,8 @@ export class LegalMemberStatusHistory extends SmrtObject {
   @foreignKey('LegalMember', { onDelete: 'RESTRICT' }) memberId = '';
   @field({ type: 'text' }) status: LegalMemberStatus = 'active';
   @field({ type: 'text' }) effectiveOn = '';
+  /** Stable correction order for entries sharing an effective date. */
+  sequence = 0;
   reason = '';
   @field({ type: 'text', nullable: true }) actorRef: string | null = null;
   /** History is corrected by appending another effective entry, never rewriting it. */
