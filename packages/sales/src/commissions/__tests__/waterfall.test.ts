@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CommissionPlan } from '../models/CommissionPlan.js';
 import {
   calculateWaterfall,
   WaterfallRecipientResolverRegistry,
@@ -70,6 +71,25 @@ const plan: WaterfallPlan = {
 };
 
 describe('calculateWaterfall', () => {
+  it('activates a fee-free persisted waterfall plan with the empty descriptor default', () => {
+    const persisted = new CommissionPlan({
+      planKey: 'fee-free',
+      version: 2,
+      currency: 'USD',
+    });
+    persisted.setSteps([
+      {
+        key: 'crew',
+        base: 'gross',
+        amount: { kind: 'percent', rate: 0.5 },
+        recipient: { kind: 'worker', id: 'crew-a' },
+      },
+    ]);
+    persisted.setRemainderSink({ kind: 'treasury' });
+    persisted.activate();
+    expect(persisted.isActive()).toBe(true);
+  });
+
   it('closes a non-journalism $100 worker-co-op project fixture and offsets an already-settled fee once', () => {
     const result = calculateWaterfall(plan, event, { resolver: resolver() });
     expect(result.trace.closureCents).toBe(0);

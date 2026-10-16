@@ -577,9 +577,10 @@ export class CommissionPlan extends SmrtObject {
   ): WaterfallRecipientDescriptor | null {
     try {
       const parsed = JSON.parse(serialized) as unknown;
-      return parsed && typeof parsed === 'object'
-        ? (parsed as WaterfallRecipientDescriptor)
-        : null;
+      if (!parsed || typeof parsed !== 'object') return null;
+      return Object.keys(parsed).length === 0
+        ? null
+        : (parsed as WaterfallRecipientDescriptor);
     } catch {
       return null;
     }
