@@ -52,3 +52,17 @@ test('mobile-contract verification gets exact checked-in support files only when
     rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+ test('isolated producer includes the root verifier delegate without the CLI runtime', () => {
+ const fixture = mkdtempSync(resolve(tmpdir(), 'smrt-verifier-support-'));
+ try {
+ const root=resolve(fixture,'root'); const producer=resolve(fixture,'producer');
+ const file='packages/cli/scripts/verify-package-types-exports.js';
+ mkdirSync(resolve(root,'packages/cli/scripts'),{recursive:true});
+ writeFileSync(resolve(root,file),'// exact verifier');
+ writeFileSync(resolve(root,'packages/cli/package.json'),'{}');
+ copyPackedProducerSupportFiles(root,producer);
+ assert.equal(readFileSync(resolve(producer,file),'utf8'),'// exact verifier');
+ assert.equal(existsSync(resolve(producer,'packages/cli/package.json')),false);
+ } finally { rmSync(fixture,{recursive:true,force:true}); }
+ });

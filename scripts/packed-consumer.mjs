@@ -39,6 +39,12 @@ export function copyPackedProducerSupportFiles(root, producer, selectedPackages 
       copyFileSync(resolve(source, file.name), resolve(destination, file.name));
     }
   }
+  // The root verification entrypoint delegates to the CLI's shipped verifier.
+  const verifier = 'packages/cli/scripts/verify-package-types-exports.js';
+  if (existsSync(resolve(root, verifier))) {
+    mkdirSync(dirname(resolve(producer, verifier)), { recursive: true });
+    copyFileSync(resolve(root, verifier), resolve(producer, verifier));
+  }
   // mobile-contract prepack verifies these checked-in sibling outputs. They
   // are build evidence, not an additional runtime package in the consumer.
   if (selectedPackages.includes('@happyvertical/smrt-mobile-contract')) {
