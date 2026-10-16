@@ -63,6 +63,10 @@ export class Account extends SmrtHierarchical {
   type: AccountType = 'asset';
 
   /** Accounting scope; null is a legacy account usable only by legacy journals. */
+  @field({
+    description: 'The ledger policy this account belongs to.',
+    nullable: true,
+  })
   @foreignKey(Ledger)
   ledgerId: string | null = null;
 

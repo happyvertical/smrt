@@ -54,6 +54,7 @@ export class JournalEntry extends SmrtObject {
   counterpartyId: string | null = null;
 
   /** Due date for an AR/AP open item. */
+  @field({ description: 'When this open receivable or payable is due.' })
   dueDate: Date | null = null;
 
   /** Source reference of the open item reduced by this settlement line. */
