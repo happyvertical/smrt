@@ -53,7 +53,13 @@ subscription and plan.
   Free and pay-what-you-can plans require `priceAmount: 0`; fixed plans use
   `priceAmount`. Monthly commerce period-close bills tenant subscribers using
   their agreed amount for pay-what-you-can, never the suggested amount, and
-  skips free plans. External subscriber invoice routing remains host-owned.
+  skips free plans. External subscriber invoice routing remains host-owned. Pricing
+  mode and minimum cannot be changed once a plan has subscriptions; create a
+  new plan instead (effective-dated transitions are tracked in #4032).
+  Invalid legacy pricing fails only its payer group at period close and reports
+  the subscription ID while other payer groups continue. Ordinary subscription
+  writes resolve only their own tenant's plans or legacy global plans; trusted
+  system-context billing can link a seller's plan to its child tenant.
 - `TenantUsageMetric` is immutable, idempotent usage evidence.
 - `SubscriptionResolver` combines current subscription, plan, and batched usage
   summaries into one entitlement decision.

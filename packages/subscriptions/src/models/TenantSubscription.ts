@@ -1,5 +1,11 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  isSystemContext,
+  TenantScoped,
+  tenantId,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
+import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import type {
   JsonObject,
   Subscriber,
@@ -151,13 +157,27 @@ export class TenantSubscription extends SmrtObject {
         'agreedAmount must be a non-negative integer minor-unit amount',
       );
     }
-    const plan = await this.db.get('_smrt_subscription_plans', {
-      id: this.planId,
-    });
-    if (plan?.pricing_mode === 'pay_what_you_can') {
+    const plans = await SubscriptionPlanCollection.create({ db: this.db });
+    // Ordinary reads inherit the caller's tenancy. The bounded global fallback
+    // permits legacy public plans without exposing any other tenant's plan.
+    const scopedPlan = await plans.get({ id: this.planId }, { cache: false });
+    const plan =
+      scopedPlan ??
+      (await withSystemContext(() =>
+        plans.get({ id: this.planId, tenantId: null }, { cache: false }),
+      ));
+    if (
+      !plan ||
+      (!isSystemContext() &&
+        plan.tenantId !== null &&
+        plan.tenantId !== this.tenantId)
+    ) {
+      throw new Error('Subscription plan is unavailable');
+    }
+    if (plan.pricingMode === 'pay_what_you_can') {
       if (
         this.agreedAmount === null ||
-        this.agreedAmount < Number(plan.minimum_amount)
+        this.agreedAmount < plan.minimumAmount
       ) {
         throw new Error('agreedAmount must meet the plan minimumAmount');
       }

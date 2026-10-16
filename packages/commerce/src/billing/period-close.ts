@@ -118,6 +118,7 @@ export class BillingPeriodCloseError extends Error {
 }
 
 interface Candidate {
+  validationError?: string;
   sourceType: BillingLineSourceType;
   sourceId: string;
   payerTenantId: string;
@@ -846,8 +847,17 @@ async function collectFlatPlans(
     if (!schedule.period || !schedule.billsFlatPlans) continue;
     const window = flatWindow(subscription, schedule.period, schedule.prorate);
     if (!window) continue;
+    let planAmount = 0;
+    let validationError: string | undefined;
+    try {
+      planAmount = subscriptionAmount(subscription, plan);
+    } catch (error) {
+      validationError = `Subscription ${subscription.id}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    if (!validationError && planAmount <= 0) continue;
     const forTenant = payer !== subscriber ? ` for tenant ${subscriber}` : '';
     candidates.push({
+      validationError,
       sourceType: 'subscription_period',
       // Assigned when claimed: the claim's number for its subscription.
       sourceId: '',
@@ -862,7 +872,7 @@ async function collectFlatPlans(
       periodEnd: window.end,
       flat: {
         subscriptionId: String(subscription.id),
-        planAmount: subscriptionAmount(subscription, plan),
+        planAmount,
         label: `${plan.name || plan.planKey}${forTenant}`,
         windowStart: window.start,
         windowEnd: window.end,
@@ -893,6 +903,8 @@ function subscriptionAmount(
   }
   if (plan.pricingMode !== 'fixed')
     throw new Error('Invalid subscription pricingMode');
+  if (!Number.isSafeInteger(plan.priceAmount) || plan.priceAmount < 0)
+    throw new Error('Invalid fixed plan priceAmount');
   return Number(plan.priceAmount);
 }
 
@@ -903,10 +915,6 @@ function isFlatPlan(
 ): boolean {
   if (subscription.stripeSubscriptionId) return false;
   if (plan.billingInterval !== 'month') return false;
-  const amount = subscriptionAmount(subscription, plan);
-  if (!Number.isSafeInteger(amount) || amount <= 0) {
-    return false;
-  }
   if (subscription.status === 'canceled' && !subscription.canceledAt) {
     return false;
   }
@@ -1140,6 +1148,10 @@ async function closeGroup(
   };
   let leaseToken: string | null = null;
   try {
+    const invalid = group.candidates.find(
+      (candidate) => candidate.validationError,
+    );
+    if (invalid) throw new Error(invalid.validationError);
     const existing = await runtime.closes.get(group.closeId);
     const account = await runtime.getAccount(group.payerTenantId);
     if (!account?.id) {

@@ -18,3 +18,10 @@ Tier amendment/renewal/cancellation continuity is deliberately covered by #4032;
 - Commerce `billing-period-close{,.optional}.test.ts`: tenant monthly free/PWYC invoices and close retry on SQLite/PostgreSQL. The agreed amount is 750 while suggested is 1500, proving consent controls the charge; free creates no invoice. Existing fixed-plan/provider-owned billing cases remain covered. External invoice routing is host-owned and unchanged.
 - Regression: the new PWYC close test fails on prior head `058cdcfc` (no invoice) and passes with the correction. Payment provider contract is the existing fake provider; no remote charges occur.
 - Atomicity: pricing validation precedes the single model save; period-close uses the existing claim/invoice transactions, exercised by its existing rollback/replay suite. This change adds no separate write transaction.
+
+## Round 2 corrections
+
+- Pricing references now use the public plan collection. Tenant-context reads and a bounded null-tenant global fallback reject missing/foreign plans; only explicit system context can bind seller plans to child tenants. SQLite/PostgreSQL upgrade tests exercise missing, foreign, global and trusted-system cases with tenancy enabled.
+- Plan mode/minimum edits with existing subscribers fail before mutation. The same guard checks natural-key upsert targets. Full effective-dated transitions remain #4032.
+- SQLite/PostgreSQL period-close regressions corrupt one legacy plan deliberately, assert its payer fails with the subscription ID while another payer completes, repair the subscriber's agreed amount, and retry without duplicate invoices.
+- Review packet correction: `2889e7b` was not an ancestor of old head `d5b3d7e`; actual old merge-base was `0b2afabb`. The apparent collection-exposure deletion was an invalid two-dot packet base, not part of the PR three-dot diff. Branch rebased onto `f31c4a5601a92a420c44c88265752a7799fbd661`; current gate/build and affected runtime tests must pass on that tree. No gate is deleted by this change.

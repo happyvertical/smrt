@@ -157,6 +157,60 @@ describe('smrt#3060 billing-period close', () => {
     );
   });
 
+  it('isolates invalid legacy PWYC terms to their payer and recovers on retry', async () => {
+    let subscriptionId = '';
+    await system(async () => {
+      const plan = await world.plans.create({
+        planKey: 'legacy-pwyc',
+        name: 'Legacy membership',
+        priceAmount: 800,
+      });
+      const [subscription] = await world.subscriptions.list({
+        where: { tenantId: SOLO },
+      });
+      if (!subscription) throw new Error('missing subscription');
+      subscription.planId = String(plan.id);
+      await subscription.save();
+      subscriptionId = String(subscription.id);
+      await expect(
+        world.plans.update(String(plan.id), {
+          pricingMode: 'pay_what_you_can',
+          priceAmount: 0,
+          minimumAmount: 500,
+        }),
+      ).rejects.toThrow();
+      // Simulate a legacy/direct write that bypassed model validation.
+      await world.db.update(
+        plan.tableName,
+        { id: plan.id },
+        {
+          pricing_mode: 'pay_what_you_can',
+          price_amount: 0,
+          minimum_amount: 500,
+        },
+      );
+    });
+    const error = await world.provider
+      .closePeriod(period)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(BillingPeriodCloseError);
+    const groups = (error as BillingPeriodCloseError).result.groups;
+    expect(groups.find((group) => group.payerTenantId === SOLO)).toMatchObject({
+      outcome: 'failed',
+      error: expect.stringContaining(subscriptionId),
+    });
+    expect(
+      groups.find((group) => group.payerTenantId === NETWORK)?.outcome,
+    ).toBe('completed');
+    expect(await invoiceFor(world, PROVIDER, SOLO)).toHaveLength(0);
+    await system(() =>
+      world.subscriptions.update(subscriptionId, { agreedAmount: 800 }),
+    );
+    await world.provider.closePeriod(period);
+    expect((await invoiceFor(world, PROVIDER, SOLO))[0]?.subtotal).toBe(800);
+    expect(await invoiceFor(world, PROVIDER, NETWORK)).toHaveLength(1);
+  });
+
   it('invoices flat and usage lines per billing owner, pushes them with provider tax, and posts revenue', async () => {
     await world.usage(SITE);
     await world.usage(SITE);

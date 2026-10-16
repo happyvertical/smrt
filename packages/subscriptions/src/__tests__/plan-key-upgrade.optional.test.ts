@@ -8,6 +8,12 @@ import {
   generateSchemaDiff,
   getSQLFromDiff,
 } from '@happyvertical/smrt-core/migrations';
+import {
+  disableTenancy,
+  enableTenancy,
+  withSystemContext,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { describe, expect, it, vi } from 'vitest';
@@ -140,6 +146,64 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
       })
     ).allowed,
   ).toBe(false);
+  await expect(
+    plans.update(String(selectedPlan.id), { minimumAmount: 900 }),
+  ).rejects.toThrow();
+  await expect(
+    plans.create({
+      tenantId: tenant,
+      planKey: 'worker',
+      name: 'Changed terms',
+      pricingMode: 'free',
+    }),
+  ).rejects.toThrow();
+  enableTenancy();
+  try {
+    await withTenant({ tenantId: tenant }, async () => {
+      await expect(
+        subscriptions.create({
+          tenantId: tenant,
+          subscriberKind: 'external',
+          subscriberExternalId: 'member:missing',
+          planId: '44444444-4444-4444-8444-444444444444',
+        }),
+      ).rejects.toThrow();
+      const otherPlan = await withSystemContext(() =>
+        plans.findByPlanKey('33333333-3333-4333-8333-333333333333', 'worker'),
+      );
+      await expect(
+        subscriptions.create({
+          tenantId: tenant,
+          subscriberKind: 'external',
+          subscriberExternalId: 'member:foreign',
+          planId: String(otherPlan?.id),
+        }),
+      ).rejects.toThrow();
+      const global = await withSystemContext(() =>
+        plans.findByPlanKey(null, 'global'),
+      );
+      expect(
+        (
+          await subscriptions.create({
+            tenantId: tenant,
+            subscriberKind: 'external',
+            subscriberExternalId: 'member:global',
+            planId: String(global?.id),
+          })
+        ).planId,
+      ).toBe(global?.id);
+    });
+    await withSystemContext(async () => {
+      const child = await subscriptions.create({
+        tenantId: '33333333-3333-4333-8333-333333333333',
+        planId: String(selectedPlan.id),
+        agreedAmount: 750,
+      });
+      expect(child.planId).toBe(selectedPlan.id);
+    });
+  } finally {
+    disableTenancy();
+  }
 }
 
 describe('plan-key upgrade (#3829)', () => {
