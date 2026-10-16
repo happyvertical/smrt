@@ -453,15 +453,15 @@ verifies complete package membership and uniform versions. Before publication,
 `planner-release-gate` (`scripts/planner-release-gate.mjs`) runs the planner's
 browser suites, installs its tarball against the release tarballs, validates
 every library cookbook with the built CLI, and runs a real
-`smrt cookbook apply` (from the release's own `smrt-template-sveltekit`
-tarball; the CLI's default template, smrt-start, is private) whose app must install,
+`smrt cookbook apply` (from the public smrt-start template, as a user runs it,
+its smrt packages pinned to the release version by the CLI) whose app must install,
 build and typecheck with every `@happyvertical` package overridden to the
 release tarballs. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
 `publish-release` needs it to succeed. When the generated app fails, the gate
 repeats the apply as the published release generates it (the published CLI,
-manifests, packages and template) as a control; if that fails too, it reports
-upstream drift (the published template or a third-party release) instead of blaming the
+manifests and packages) as a control; if that fails too, it reports
+upstream drift (the smrt-start template or a third-party release) instead of blaming the
 framework. A control that cannot be built from the published release (a package new in
 this release, or a cookbook the published CLI cannot apply) is inconclusive
 and the failure stays the framework's. The gate fails either way. The
