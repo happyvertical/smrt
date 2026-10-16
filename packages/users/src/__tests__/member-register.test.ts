@@ -129,6 +129,8 @@ describe('generic legal member register', () => {
     expect(stored).toHaveLength(3);
     expect(before).toEqual([expect.objectContaining({ eligible: true })]);
     expect(stored.some((snapshot) => snapshot.eligible)).toBe(true);
+    stored[0].reason = 'rewrite';
+    await expect(stored[0].save()).rejects.toThrow('immutable');
     await expect(stored[0].delete()).rejects.toThrow('cannot be deleted');
   });
 
