@@ -122,10 +122,11 @@ export interface AttendanceResolvedTime {
   at: Date;
   /**
    * Whether a person should review the result. Applies to the punch (default
-   * true when omitted) and, when true, the resulting work segment.
+   * true when omitted) and, when true, the resulting work segment. False does
+   * not clear a punch's existing review requirement; use a reviewed correction.
    */
   reviewRequired?: boolean;
-  /** Whether the punch is stored as recorded offline. Default true when omitted. */
+  /** Marks the punch offline (default true); false never clears an earlier flag. */
   recordedOffline?: boolean;
 }
 
@@ -849,8 +850,8 @@ export class AttendanceService {
                   replays: tx.replays,
                 };
                 const { punch, segment } = await this.apply(inner, tap, at);
-                punch.recordedOffline = offline;
-                punch.reviewRequired = punchReview;
+                punch.recordedOffline ||= offline;
+                punch.reviewRequired ||= punchReview;
                 await punch.save();
                 if (segment && review) {
                   segment.reviewRequired = true;

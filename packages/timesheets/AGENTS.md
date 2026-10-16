@@ -183,6 +183,8 @@ model writes; never bypass the instance capability with generic persistence.
 
 Replay hashes the tap AS SENT (action, device `at`, paid, work, and `source`/`device`/`kind` only when present, so older receipts still match) so retries match;
 `replay(taps, { resolveAt, now, refusal })` only changes the stored time, reason and the
-punch's `recordedOffline`/`reviewRequired` (both default true). Never hash the resolved time. Work actions (`startWork`, `switchWork`,
+punch's `recordedOffline`/`reviewRequired` (both default true and stay set across
+later taps; false never clears an earlier flag). A reviewed correction clears
+`reviewRequired`. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
 `stopWork`, `resumeWork`) run in the tap's transaction via `apply()`. Refusals store
 `code` from `AttendanceConflict.code`; give new conflicts a code.

@@ -437,6 +437,68 @@ export function rollupSuite(
       });
       expect((await service.rollup(at(12))).totalSeconds).toBe(7200);
     });
+    it.each([
+      false,
+      true,
+    ])('retains late replay flags across online taps (separate batches: %s)', async (separate) => {
+      const attendance = new AttendanceService(db, actor);
+      const taps = [
+        {
+          clientId: 'late-in',
+          action: 'punchIn' as const,
+          at: at(8).toISOString(),
+        },
+        {
+          clientId: 'online-out',
+          action: 'punchOut' as const,
+          at: at(10).toISOString(),
+        },
+      ];
+      const options = {
+        resolveAt: ({ deviceAt }: { deviceAt: Date }) => ({
+          at: deviceAt,
+          reviewRequired: deviceAt.getTime() === at(8).getTime(),
+          recordedOffline: deviceAt.getTime() === at(8).getTime(),
+        }),
+      };
+      const outcomes = separate
+        ? [
+            ...(await attendance.replay([taps[0]], options)),
+            ...(await attendance.replay([taps[1]], options)),
+          ]
+        : await attendance.replay(taps, options);
+      expect(outcomes.every((outcome) => !outcome.error)).toBe(true);
+      const read = () =>
+        attendance.withTransaction((tx) =>
+          tx.punches.get(outcomes[0].punchId!),
+        );
+      expect(await read()).toMatchObject({
+        reviewRequired: true,
+        recordedOffline: true,
+      });
+      const enabled = new PeriodRollupService(db, actor, resolver, {
+        attendance: true,
+      });
+      expect((await enabled.rollup(at(12))).totalSeconds).toBe(0);
+      expect(
+        await attendance.replay(taps, {
+          resolveAt: () => {
+            throw new Error('A receipt retry must not resolve time again.');
+          },
+        }),
+      ).toEqual(outcomes);
+      await new AttendanceCorrectionService(db, actor).correctPunch({
+        subjectProfileId: actor.profileId,
+        punchId: outcomes[0].punchId!,
+        startedAt: at(8),
+        reason: 'Reviewed the late clock-in',
+      });
+      expect(await read()).toMatchObject({
+        reviewRequired: false,
+        recordedOffline: true,
+      });
+      expect((await enabled.rollup(at(12))).totalSeconds).toBe(7200);
+    });
     it('rolls up fractional-second attendance using integer elapsed milliseconds', async () => {
       const attendance = new AttendanceService(db, actor);
       const instant = (ms: number) => new Date(at(8).getTime() + ms);
