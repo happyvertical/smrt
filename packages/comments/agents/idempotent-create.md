@@ -16,8 +16,12 @@ The trusted actor and record authorization run before every attempt, including
 replays. A key binds the actual author, qualified parent, exact body and sorted,
 deduplicated validated mentions. Reusing a key with different bound content throws
 `CommentIdempotencyError` with code `COMMENT_REQUEST_CONFLICT`. Replays return the
-original unchanged comment. A retained receipt referring to a missing or modified
-comment throws `COMMENT_REQUEST_UNAVAILABLE`, never recreates it.
+same comment identity with its current body after authorized edits. The immutable
+creation digest is verified against retained revision history when edited; history
+must remain while the keyed comment is retained. Parentless requests omit the parent
+field from the v1 digest to preserve pre-thread upgrade bindings. A retained receipt
+referring to a missing comment or a mismatched creation binding throws
+`COMMENT_REQUEST_UNAVAILABLE`, never recreates it.
 
 The service reuses core `runOnce` for atomic arbitration. Its fixed internal actor
 `smrt-comments.create:v1` is only an arbitration namespace: different authenticated
