@@ -33,7 +33,9 @@ describe('header icon links', () => {
       },
     }).body;
     expect(current).toContain('aria-current="page"');
-    expect(current).toContain('--planner-transition-name: planner-customize');
+    expect(current).toContain(
+      '--smrt-header-icon-link-transition-name: planner-customize',
+    );
   });
 
   it("draws the chef's hat as a filled 24x24 path", () => {

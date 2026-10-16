@@ -426,7 +426,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
     min-width: 0;
     overflow-wrap: anywhere;
     border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     background: var(--smrt-surface-panel, transparent);
   }
 
@@ -453,13 +453,15 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
   }
 
   .card[data-state='available'] .badge {
-    border: 1px dashed var(--smrt-hairline-strong-color);
+    border: var(--smrt-hairline-strong);
+    border-style: dashed;
     color: var(--smrt-color-on-surface-variant);
   }
 
   .card[data-state='off'] .badge {
     position: relative;
-    border: 1px dashed var(--smrt-hairline-color);
+    border: var(--smrt-hairline);
+    border-style: dashed;
     opacity: 0.5;
   }
 
@@ -510,7 +512,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
     margin: 0 0 var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3);
     border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
   }
 
   .field {

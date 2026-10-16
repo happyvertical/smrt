@@ -263,7 +263,7 @@ function commit() {
     top: var(--smrt-spacing-3);
     right: var(--smrt-spacing-3);
     padding: 0 var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font-size: 0.75rem;
@@ -297,7 +297,7 @@ function commit() {
 
   .chips li {
     padding: 0 var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container);
   }
 

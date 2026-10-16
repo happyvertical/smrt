@@ -44,7 +44,8 @@ const icons: Record<CapabilityId, string> = {
     width: 2.25rem;
     height: 2.25rem;
     border-radius: 50%;
-    border: 1px solid transparent;
+    border: var(--smrt-hairline);
+    border-color: transparent;
     color: var(--smrt-color-on-surface);
     text-decoration: none;
   }
@@ -65,14 +66,16 @@ const icons: Record<CapabilityId, string> = {
 
   /* Set up elsewhere but not on: dashed and muted. */
   .cap[data-state='available'] {
-    border: 1px dashed var(--smrt-hairline-strong-color);
+    border: var(--smrt-hairline-strong);
+    border-style: dashed;
     color: var(--smrt-color-on-surface-variant);
   }
 
   /* Not possible here: dashed, faded and struck through. */
   .cap[data-state='off'] {
     position: relative;
-    border: 1px dashed var(--smrt-hairline-color);
+    border: var(--smrt-hairline);
+    border-style: dashed;
     color: var(--smrt-color-on-surface-variant);
     opacity: 0.5;
   }

@@ -210,7 +210,7 @@ $effect(() => {
     scroll-snap-align: start;
   }
 
-  @property --planner-tabs-fade {
+  @property --smrt-planner-controls-tabs-fade {
     syntax: '<length>';
     inherits: false;
     initial-value: 0rem;
@@ -220,7 +220,7 @@ $effect(() => {
     .planner :global(.smrt-tabs__nav) {
       mask-image: linear-gradient(
         to right,
-        black calc(100% - var(--planner-tabs-fade)),
+        black calc(100% - var(--smrt-planner-controls-tabs-fade)),
         transparent
       );
       animation: planner-tabs-fade linear both;
@@ -229,10 +229,10 @@ $effect(() => {
 
     @keyframes planner-tabs-fade {
       from {
-        --planner-tabs-fade: 3rem;
+        --smrt-planner-controls-tabs-fade: 3rem;
       }
       to {
-        --planner-tabs-fade: 0rem;
+        --smrt-planner-controls-tabs-fade: 0rem;
       }
     }
   }

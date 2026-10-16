@@ -76,7 +76,7 @@ function startNew(entry: ShellSectionMenuEntry) {
   .new {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
     border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-primary);
     text-decoration: none;
     white-space: nowrap;

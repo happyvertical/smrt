@@ -38,7 +38,7 @@ let {
   aria-label={label}
   title={label}
   aria-current={current ? 'page' : undefined}
-  style:--planner-transition-name={transitionName}
+  style:--smrt-header-icon-link-transition-name={transitionName}
   {onclick}
 >
   <Icon {path} name={path ? undefined : icon} size={18} />
@@ -72,7 +72,7 @@ let {
   /* Named only while a transition runs, as in Planner.svelte: a permanent
      name makes a stacking context. */
   :global([data-smrt-view-transition]) .header-link {
-    view-transition-name: var(--planner-transition-name);
+    view-transition-name: var(--smrt-header-icon-link-transition-name);
   }
   /* Forced colours: the current page's background is replaced, so it is
      drawn as a selected item. */

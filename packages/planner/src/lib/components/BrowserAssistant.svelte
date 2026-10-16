@@ -259,7 +259,7 @@ $effect(() => {
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-on-surface-variant);
   }
 

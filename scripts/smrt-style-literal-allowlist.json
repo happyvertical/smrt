@@ -1,6 +1,14 @@
 {
   "$comment": "Per-file counts of bare colour literals and raw px lengths in component <style> blocks. Regenerate with `node scripts/check-smrt-token-vocabulary.mjs --write-allowlist`; shrink it when a literal is converted.",
-  "hex": {},
+  "hex": {
+    "packages/planner/src/lib/components/ThemeSection.svelte": {
+      "#00f": 1,
+      "#0f0": 1,
+      "#0ff": 1,
+      "#f0f": 1,
+      "#ff0": 1
+    }
+  },
   "px": {
     "packages/agents/src/svelte/components/AgentAdminPanel.svelte": 2,
     "packages/agents/src/svelte/components/AgentAdminTabs.svelte": 8,
@@ -115,6 +123,16 @@
     "packages/messages/src/svelte/components/SendStatusBadge.svelte": 1,
     "packages/messages/src/svelte/components/ThreadView.svelte": 2,
     "packages/personas/src/svelte/components/DirectiveReviewQueue.svelte": 1,
+    "packages/planner/src/lib/components/AiSetup.svelte": 1,
+    "packages/planner/src/lib/components/AiStatusIcons.svelte": 1,
+    "packages/planner/src/lib/components/BrowserAssistant.svelte": 2,
+    "packages/planner/src/lib/components/ChildRecords.svelte": 2,
+    "packages/planner/src/lib/components/CookbooksPanel.svelte": 1,
+    "packages/planner/src/lib/components/FormWorkspace.svelte": 2,
+    "packages/planner/src/lib/components/ModelWorkspace.svelte": 2,
+    "packages/planner/src/lib/components/ThemeSection.svelte": 6,
+    "packages/planner/src/lib/components/VariantGridForm.svelte": 2,
+    "packages/planner/src/routes/packages/+page.svelte": 2,
     "packages/products/src/app/App.svelte": 1,
     "packages/products/src/app/layouts/AppLayout.svelte": 7,
     "packages/products/src/app/pages/DemoPage.svelte": 4,
