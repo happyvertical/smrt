@@ -156,10 +156,17 @@ async function withPermissionIndependentScan<T>(
       'Commerce money detection on PostgreSQL needs a database with a connection URL, to scan on a connection of its own.',
     );
   const { getDatabase } = await import('@happyvertical/sql');
+  // Uncached: the adapter caches pools by URL, so a cached handle would be
+  // the caller's own pool, and closing it would wait on the caller's open
+  // transaction. A one-connection pool of our own closes on its own.
   const own = (await getDatabase({
     type: 'postgres',
     url,
-  })) as unknown as DatabaseInterface & { close?: () => Promise<void> };
+    cache: false,
+    max: 1,
+  } as Parameters<typeof getDatabase>[0])) as unknown as DatabaseInterface & {
+    close?: () => Promise<void>;
+  };
   try {
     if (!own.transaction)
       throw new Error('Commerce money detection needs transaction support.');
