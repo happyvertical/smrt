@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginSegment } from '../attendance/segments.js';
 import {
   AttendanceBreakCollection,
+  AttendanceCorrection,
   AttendanceCorrectionCollection,
   AttendanceCorrectionService,
   AttendancePunchCollection,
@@ -1481,6 +1482,61 @@ export function attendanceSuite(
           const closed = await service.punchOut(at(16));
           expect(closed.id).toBe(punch.id);
           expect(closed.durationSeconds).toBe(7 * 3600);
+        });
+        it('rolls back an added open punch and its children if its ledger write fails', async () => {
+          const write = vi
+            .spyOn(AttendanceCorrection.prototype, 'save')
+            .mockRejectedValueOnce(new Error('ledger unavailable'));
+          const input = {
+            ...base(),
+            open: true as const,
+            startedAt: at(8),
+            breaks: [{ startedAt: at(12), endedAt: at(13), paid: false }],
+            segments: [{ startedAt: at(8), endedAt: at(12), work }],
+          };
+          await expect(fix.addPunch(input)).rejects.toThrow(
+            'ledger unavailable',
+          );
+          write.mockRestore();
+          await service.withTransaction(async (tx) => {
+            expect(await tx.punches.list({ where: actor })).toHaveLength(0);
+            expect(
+              await tx.breaks.list({ where: { tenantId: actor.tenantId } }),
+            ).toHaveLength(0);
+            expect(
+              await tx.segments.list({ where: { tenantId: actor.tenantId } }),
+            ).toHaveLength(0);
+          });
+          const row = await fix.addPunch(input);
+          expect(await ledger(row.punchId!)).toHaveLength(1);
+          expect((await service.punchOut(at(16))).durationSeconds).toBe(
+            7 * 3600,
+          );
+        });
+        it('honours the correction guard and subject ownership for open punches', async () => {
+          const punch = await service.punchIn(at(8));
+          const guarded = new AttendanceCorrectionService(
+            db,
+            { tenantId: actor.tenantId, profileId: foreman },
+            { guard: async () => 'period is confirmed' },
+          );
+          await expect(
+            guarded.correctPunch({
+              ...base(),
+              punchId: punch.id!,
+              startedAt: at(7),
+            }),
+          ).rejects.toThrow('period is confirmed');
+          await expect(
+            fix.correctPunch({
+              ...base(),
+              subjectProfileId: crypto.randomUUID(),
+              punchId: punch.id!,
+              startedAt: at(7),
+            }),
+          ).rejects.toThrow('not found');
+          expect((await load(punch.id!)).punch.startedAt).toEqual(at(8));
+          expect(await ledger(punch.id!)).toHaveLength(0);
         });
         it('refuses an added open punch that overlaps or has a bad layout', async () => {
           await day();
