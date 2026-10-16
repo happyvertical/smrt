@@ -22,7 +22,6 @@ const TAX_CODE = `${C}TaxCode`;
 const TAX_COMPONENT = `${C}TaxComponent`;
 const TAX_SETTINGS = `${C}TaxSettings`;
 const DOCUMENT_TAX = `${C}DocumentTax`;
-const MONEY_MIGRATION = `${C}MoneyMigrationDocument`;
 
 /** The sample tenant's tax codes for the app's current settings. */
 function currentTaxCodes() {
@@ -63,9 +62,8 @@ export function createPlannerDataSource(): DataSource {
     // empty, as do Profile types: a form adds the one it needs. Locations, SKUs
     // and stock are sampled together (one SKU per product).
     // A document's tax snapshot is kept on its lines (`taxComponentsJson`),
-    // so `DocumentTax` holds no rows of its own; the planner's tenant is on
-    // the money model from the start and never migrates.
-    empty: [VARIANT, PROFILE_TYPE, DOCUMENT_TAX, MONEY_MIGRATION],
+    // so `DocumentTax` holds no rows of its own.
+    empty: [VARIANT, PROFILE_TYPE, DOCUMENT_TAX],
     samples: {
       // The tax codes sample documents resolve against: the seeded ones,
       // the app default and smrt-commerce's example pack (`data/money.ts`).
@@ -113,7 +111,6 @@ export function createPlannerDataSource(): DataSource {
                 ? 'inclusive'
                 : 'exclusive',
               taxRoundingScope: pricing.taxRounding,
-              moneyModel: 'v2',
             },
           ];
         },

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-planner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "license": "MIT",
   "description": "The smrt planner as a mountable Svelte component with a typed command set and plan snapshot.",
@@ -53,12 +53,12 @@
   },
   "dependencies": {
     "@happyvertical/ai": "^0.103.1",
-    "@happyvertical/smrt-assets": "^0.56.2",
-    "@happyvertical/smrt-chat": "^0.56.2",
-    "@happyvertical/smrt-commerce": "^0.56.2",
-    "@happyvertical/smrt-core": "^0.56.2",
-    "@happyvertical/smrt-svelte": "^0.56.2",
-    "@happyvertical/smrt-ui": "^0.56.2",
+    "@happyvertical/smrt-assets": "^0.57.0",
+    "@happyvertical/smrt-chat": "^0.57.0",
+    "@happyvertical/smrt-commerce": "^0.57.0",
+    "@happyvertical/smrt-core": "^0.57.0",
+    "@happyvertical/smrt-svelte": "^0.57.0",
+    "@happyvertical/smrt-ui": "^0.57.0",
     "@happyvertical/speech": "^0.103.1",
     "@huggingface/transformers": "^4.3.0",
     "@mlc-ai/web-llm": "^0.2.85"

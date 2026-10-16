@@ -10,11 +10,7 @@ import type {
   CatalogPackage,
   CatalogRoute,
 } from '../types.ts';
-import {
-  EXCLUDED_MODELS,
-  isInternalMoneyField,
-  PACKAGE_PREFIX,
-} from './exclusions.ts';
+import { isInternalMoneyField, PACKAGE_PREFIX } from './exclusions.ts';
 import { extractBrowser, extractRecipeMetadata } from './recipe-metadata.ts';
 
 /** The subset of a s-m-r-t `manifest.json` the catalog reads. */
@@ -351,9 +347,7 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
   const browser = extractBrowser(knowledge?.browser ?? manifest.browser);
   const objects = Object.values(manifest.objects);
   const objectMap = new Map(objects.map((o) => [o.qualifiedName, o]));
-  const rawModels = objects.filter(
-    (o) => isModel(o, objectMap) && !EXCLUDED_MODELS[o.qualifiedName],
-  );
+  const rawModels = objects.filter((o) => isModel(o, objectMap));
   const modelMap = new Map(rawModels.map((m) => [m.qualifiedName, m]));
   const collections = objects.filter((o) => !modelMap.has(o.qualifiedName));
   const knowledgeSurfaces = knowledge?.surfaces ?? null;

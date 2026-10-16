@@ -88,7 +88,7 @@ describe('memory data source defaults', () => {
 
 describe('money detection precedence', () => {
   const field = (over: Partial<CatalogField>): CatalogField => ({
-    name: 'legacyAmount',
+    name: 'amount',
     type: 'integer',
     required: false,
     ...over,
@@ -108,7 +108,7 @@ describe('money detection precedence', () => {
     expect(isMoneyField(field({ name: 'itemCount' }))).toBe(false);
   });
 
-  it('does not show legacyAmount as money when another format is declared', () => {
+  it('does not show a named money field as money when another format is declared', () => {
     expect(isMoneyField(field({ ui: { format: 'datetime' } }))).toBe(false);
     expect(isMoneyField(field({ ui: { format: 'percent' } }))).toBe(false);
   });
