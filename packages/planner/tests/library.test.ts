@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import { parseCookbook } from '../src/lib/cookbook/validate.ts';
-import { navNoun } from '../src/lib/data/format.ts';
+import { navNoun, singularize } from '../src/lib/data/format.ts';
 import {
   applyLibraryCookbook,
   holdsCookbook,
@@ -17,7 +17,7 @@ import {
 } from '../src/lib/library/index.ts';
 import { cookbookNavGroups, previewMenu } from '../src/lib/library/menu.ts';
 import type { CookbookLayout } from '../src/lib/library/types.ts';
-import { recipesById } from '../src/lib/recipes/index.ts';
+import { recipes, recipesById } from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 
 const C = '@happyvertical/smrt-commerce:';
@@ -223,7 +223,7 @@ describe('cookbook preview', () => {
     ]);
     expect(menu('yoga-studio')[0]).toEqual([
       'Classes',
-      ['Classes', 'Class series', 'Class types'],
+      ['Class schedule', 'Class series', 'Class types'],
     ]);
     expect(menu('mechanic')[0]).toEqual([
       'Jobs',
@@ -231,13 +231,34 @@ describe('cookbook preview', () => {
     ]);
   });
 
-  it('never lists a Jobs entry inside a Jobs section', () => {
+  it('never names an entry after the section it sits in', () => {
+    // Case and singular/plural do not make a different name: "Order" inside
+    // "Orders" repeats it as much as "Orders" does.
+    const same = (a: string, b: string) =>
+      singularize(a.trim().toLowerCase()) ===
+      singularize(b.trim().toLowerCase());
+    const repeats: string[] = [];
     for (const cookbook of libraryCookbooks) {
-      for (const [section, entries] of menu(cookbook.id)) {
-        if (section === 'Jobs')
-          expect(entries, cookbook.id).not.toContain('Jobs');
+      for (const section of previewMenu(cookbook.document)) {
+        for (const entry of section.entries) {
+          if (same(entry.label, section.label))
+            repeats.push(`${cookbook.id}: ${section.label} > ${entry.label}`);
+        }
       }
     }
+    // A recipe's own suggestion, as a visitor who switches it on sees it.
+    for (const recipe of recipes) {
+      for (const group of cookbookNavGroups({
+        recipes: [recipe.id],
+        features: [],
+      })) {
+        for (const item of group.items) {
+          if (same(item.label, group.heading))
+            repeats.push(`${recipe.id}: ${group.heading} > ${item.label}`);
+        }
+      }
+    }
+    expect(repeats).toEqual([]);
   });
 
   it('gives the welder work orders in Jobs, not a project tracker', () => {

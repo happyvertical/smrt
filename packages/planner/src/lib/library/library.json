@@ -401,7 +401,7 @@
               "description": "Every job in the shop, from drop-off to pick-up."
             },
             "item:products:Product": {
-              "label": "Parts",
+              "label": "Parts catalog",
               "description": "The parts you sell and fit, with prices."
             },
             "item:inventory:StockLevel": {
@@ -603,7 +603,7 @@
               "description": "Quotes for jobs, ready to turn into orders when accepted."
             },
             "item:products:Product": {
-              "label": "Materials",
+              "label": "Steel & supplies",
               "description": "Steel, rod, gas and other materials you stock and charge for."
             },
             "item:inventory:StockLevel": {
@@ -808,7 +808,7 @@
           ],
           "items": {
             "item:events:Event": {
-              "label": "Classes",
+              "label": "Class schedule",
               "description": "Every class on your timetable, with who's teaching and where."
             },
             "item:events:EventSeries": {
@@ -820,7 +820,7 @@
               "description": "Your styles, like Vinyasa or Yin, with length and price."
             },
             "item:commerce:Customer": {
-              "label": "Members",
+              "label": "Students",
               "description": "Your students, with how to reach them and what they have booked."
             },
             "item:commerce:Agreement": {
@@ -1317,7 +1317,7 @@
           ],
           "items": {
             "item:events:Event": {
-              "label": "Appointments",
+              "label": "Bookings",
               "description": "Every booking in the book, by stylist and chair."
             },
             "item:events:EventType": {
@@ -1329,7 +1329,7 @@
               "description": "Regulars who come back every few weeks, set up once."
             },
             "item:commerce:Customer": {
-              "label": "Clients",
+              "label": "Client cards",
               "description": "Your clients, with how to reach them and what they usually have."
             },
             "item:commerce:Order": {
@@ -1824,7 +1824,7 @@
           ],
           "items": {
             "item:commerce:Lease": {
-              "label": "Rentals",
+              "label": "Rental contracts",
               "description": "Every rental out the gate, with the dates and what is due."
             },
             "item:commerce:Estimate": {
@@ -2044,7 +2044,7 @@
           ],
           "items": {
             "item:commerce:Customer": {
-              "label": "Members",
+              "label": "Members & donors",
               "description": "Your members and donors, with how to reach them."
             },
             "item:commerce:Agreement": {
@@ -2052,7 +2052,7 @@
               "description": "Annual, family and student memberships, with who holds them and when they renew."
             },
             "item:events:Event": {
-              "label": "Events",
+              "label": "Event calendar",
               "description": "Meetings, fundraisers and volunteer days, with who is coming."
             },
             "item:events:EventSeries": {
@@ -2270,7 +2270,7 @@
           ],
           "items": {
             "item:commerce:Customer": {
-              "label": "Clients",
+              "label": "Client companies",
               "description": "The companies you work for, with how to reach them."
             },
             "item:commerce:Estimate": {
@@ -2298,7 +2298,7 @@
               "description": "Costs on a project, with the receipt and whether to bill them on."
             },
             "item:events:Event": {
-              "label": "Meetings",
+              "label": "Client meetings",
               "description": "Kickoffs, reviews and check-ins with clients, by day."
             },
             "item:events:EventType": {
@@ -2749,7 +2749,7 @@
               "description": "The kinds of visit you make, like a panel upgrade, a fault call or an inspection."
             },
             "item:products:Product": {
-              "label": "Materials",
+              "label": "Electrical supplies",
               "description": "Cable, breakers, devices and fixtures you stock and charge for."
             },
             "item:inventory:StockLevel": {
@@ -3187,7 +3187,7 @@
               "description": "The kinds of visit you make, like an inspection, a storm check or a tear-off."
             },
             "item:products:Product": {
-              "label": "Materials",
+              "label": "Roofing products",
               "description": "Shingles, underlayment, flashing and fasteners you install and charge for."
             },
             "item:inventory:StockLevel": {
