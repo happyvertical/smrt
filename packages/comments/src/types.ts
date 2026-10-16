@@ -8,7 +8,12 @@ export interface CommentOptions extends SmrtPolymorphicAssociationOptions {
   idempotencyKey?: string | null;
   requestDigest?: string | null;
   retryTenantId?: string | null;
+  parentCommentId?: string | null;
+  status?: CommentStatus;
+  participationSnapshot?: string | null;
 }
+
+export type CommentStatus = 'visible' | 'hidden' | 'pending' | 'deleted';
 
 /** Public service input; persistence identity and executor are server-owned. */
 export interface CreateCommentInput {
@@ -20,6 +25,8 @@ export interface CreateCommentInput {
   mentions?: readonly string[];
   /** Tenant-scoped request key; identical retries return the original comment. */
   idempotencyKey?: string;
+  /** A reply is bound to the same tenant and polymorphic parent record. */
+  parentCommentId?: string | null;
 }
 
 export interface CommentMention {
@@ -46,5 +53,5 @@ export interface CommentActorContext {
 export interface CommentRecordAccess extends CommentActorContext {
   recordType: string;
   recordId: string;
-  action: 'read' | 'comment';
+  action: 'read' | 'comment' | 'moderate';
 }

@@ -19,11 +19,15 @@
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { validateWaterfallPlan } from '../services/WaterfallCalculationService.js';
 import {
   COMMISSION_BASES,
   type CommissionPlanComponent,
   type CommissionPlanOptions,
   type CommissionPlanStatus,
+  type WaterfallPlan,
+  type WaterfallRecipientDescriptor,
+  type WaterfallStep,
 } from '../types.js';
 
 /**
@@ -199,6 +203,9 @@ export class CommissionPlan extends SmrtObject {
   /** When this version takes effect. Frozen once the plan activates. */
   effectiveFrom: Date | null = null;
 
+  /** Optional exclusive end of this version's effective period. */
+  effectiveTo: Date | null = null;
+
   /** ISO 4217 currency the plan's terms are denominated in. */
   currency: string = 'USD';
 
@@ -208,6 +215,15 @@ export class CommissionPlan extends SmrtObject {
    * {@link setComponents} (the setter validates).
    */
   components: string = '[]';
+
+  /** Ordered v2 waterfall steps. Empty keeps the v1 component contract. */
+  steps: string = '[]';
+
+  /** V2 residual recipient descriptor. */
+  remainderSink: string = '{}';
+
+  /** V2 checkout-fee offset recipient descriptor. */
+  applicationFeeOffsetRecipient: string = '{}';
 
   /** Additional metadata as a JSON string. */
   metadata: string = '{}';
@@ -223,8 +239,16 @@ export class CommissionPlan extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
     if (options.effectiveFrom !== undefined)
       this.effectiveFrom = CommissionPlan.coerceDate(options.effectiveFrom);
+    if (options.effectiveTo !== undefined)
+      this.effectiveTo = CommissionPlan.coerceDate(options.effectiveTo);
     if (options.currency !== undefined) this.currency = options.currency;
     if (options.components !== undefined) this.components = options.components;
+    if (options.steps !== undefined) this.steps = options.steps;
+    if (options.remainderSink !== undefined)
+      this.remainderSink = options.remainderSink;
+    if (options.applicationFeeOffsetRecipient !== undefined)
+      this.applicationFeeOffsetRecipient =
+        options.applicationFeeOffsetRecipient;
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
@@ -238,6 +262,7 @@ export class CommissionPlan extends SmrtObject {
   override async initialize(): Promise<this> {
     await super.initialize();
     this.effectiveFrom = CommissionPlan.coerceDate(this.effectiveFrom);
+    this.effectiveTo = CommissionPlan.coerceDate(this.effectiveTo);
     if (await this.isSaved()) {
       loadedPlanStatus.set(this, this.status);
       if (this.status !== 'draft') {
@@ -279,6 +304,59 @@ export class CommissionPlan extends SmrtObject {
     this.components = JSON.stringify(components);
   }
 
+  getSteps(): WaterfallStep[] {
+    try {
+      const parsed = JSON.parse(this.steps) as unknown;
+      return Array.isArray(parsed) ? (parsed as WaterfallStep[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  setSteps(steps: WaterfallStep[]): void {
+    this.steps = JSON.stringify(steps);
+  }
+
+  getRemainderSink(): WaterfallRecipientDescriptor | null {
+    try {
+      const parsed = JSON.parse(this.remainderSink) as unknown;
+      return parsed && typeof parsed === 'object'
+        ? (parsed as WaterfallRecipientDescriptor)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  setRemainderSink(sink: WaterfallRecipientDescriptor): void {
+    this.remainderSink = JSON.stringify(sink);
+  }
+
+  /** Return v2 terms when this plan has waterfall steps; v1 plans remain v1. */
+  getWaterfallPlan(): WaterfallPlan | null {
+    const steps = this.getSteps();
+    const remainderSink = this.getRemainderSink();
+    if (steps.length === 0) return null;
+    if (!remainderSink)
+      throw new Error(
+        'CommissionPlan waterfall steps require a remainder sink',
+      );
+    const applicationFeeOffsetRecipient = this.getRecipientDescriptor(
+      this.applicationFeeOffsetRecipient,
+    );
+    return {
+      planKey: this.planKey,
+      version: this.version,
+      tenantId: this.tenantId,
+      currency: this.currency,
+      steps,
+      remainderSink,
+      ...(applicationFeeOffsetRecipient
+        ? { applicationFeeOffsetRecipient }
+        : {}),
+    };
+  }
+
   /** Parse {@link metadata}; returns `{}` on empty/invalid JSON. */
   getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
@@ -310,6 +388,8 @@ export class CommissionPlan extends SmrtObject {
       );
     }
     validateCommissionPlanComponents(this.getComponents());
+    this.validateEffectiveWindow();
+    this.validateWaterfallTerms();
     this.status = 'active';
   }
 
@@ -357,6 +437,8 @@ export class CommissionPlan extends SmrtObject {
     await this.assertNaturalKeyNotTaken();
     if (this.status === 'active') {
       validateCommissionPlanComponents(this.getComponents());
+      this.validateEffectiveWindow();
+      this.validateWaterfallTerms();
     }
     const result = (await super.save()) as this;
     loadedPlanStatus.set(this, this.status);
@@ -468,7 +550,103 @@ export class CommissionPlan extends SmrtObject {
       effectiveFrom: this.effectiveFrom
         ? this.effectiveFrom.toISOString()
         : null,
+      effectiveTo: this.effectiveTo ? this.effectiveTo.toISOString() : null,
+      steps: this.steps,
+      remainderSink: this.remainderSink,
+      applicationFeeOffsetRecipient: this.applicationFeeOffsetRecipient,
     });
+  }
+
+  private validateWaterfallTerms(): void {
+    let steps: unknown;
+    try {
+      steps = JSON.parse(this.steps);
+    } catch {
+      throw new Error('CommissionPlan waterfall steps must be valid JSON');
+    }
+    if (!Array.isArray(steps))
+      throw new Error('CommissionPlan waterfall steps must be an array');
+    if (steps.length === 0) return;
+    if (this.getComponents().length > 0)
+      throw new Error(
+        'CommissionPlan cannot combine v1 components with v2 waterfall steps',
+      );
+    const remainderSink = this.parseRequiredDescriptor(
+      this.remainderSink,
+      'remainder sink',
+    );
+    const applicationFeeOffsetRecipient = this.parseOptionalDescriptor(
+      this.applicationFeeOffsetRecipient,
+      'application fee offset recipient',
+    );
+    validateWaterfallPlan({
+      planKey: this.planKey,
+      version: this.version,
+      tenantId: this.tenantId,
+      currency: this.currency,
+      steps: steps as WaterfallStep[],
+      remainderSink,
+      ...(applicationFeeOffsetRecipient
+        ? { applicationFeeOffsetRecipient }
+        : {}),
+    });
+  }
+
+  private parseRequiredDescriptor(
+    serialized: string,
+    label: string,
+  ): WaterfallRecipientDescriptor {
+    const descriptor = this.parseOptionalDescriptor(serialized, label);
+    if (!descriptor?.kind)
+      throw new Error(`CommissionPlan waterfall ${label} is required`);
+    return descriptor;
+  }
+
+  private parseOptionalDescriptor(
+    serialized: string,
+    label: string,
+  ): WaterfallRecipientDescriptor | null {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(serialized);
+    } catch {
+      throw new Error(`CommissionPlan waterfall ${label} must be valid JSON`);
+    }
+    if (parsed === null) return null;
+    if (
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      Object.getPrototypeOf(parsed) !== Object.prototype
+    )
+      throw new Error(`CommissionPlan waterfall ${label} must be an object`);
+    return Object.keys(parsed).length === 0
+      ? null
+      : (parsed as WaterfallRecipientDescriptor);
+  }
+
+  private validateEffectiveWindow(): void {
+    if (
+      this.effectiveFrom &&
+      this.effectiveTo &&
+      this.effectiveTo <= this.effectiveFrom
+    )
+      throw new Error(
+        'CommissionPlan effectiveTo must be later than effectiveFrom',
+      );
+  }
+
+  private getRecipientDescriptor(
+    serialized: string,
+  ): WaterfallRecipientDescriptor | null {
+    try {
+      const parsed = JSON.parse(serialized) as unknown;
+      if (!parsed || typeof parsed !== 'object') return null;
+      return Object.keys(parsed).length === 0
+        ? null
+        : (parsed as WaterfallRecipientDescriptor);
+    } catch {
+      return null;
+    }
   }
 
   private static coerceDate(value: unknown): Date | null {

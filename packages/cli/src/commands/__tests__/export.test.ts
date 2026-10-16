@@ -1,4 +1,4 @@
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyTypeExclusions,
@@ -35,6 +35,8 @@ vi.mock('@happyvertical/smrt-core', () => ({
 
       if (typeName === 'MeetingRecap' || typeName === 'MeetingAnnouncement') {
         baseFields.set('meetingId', { type: 'foreignKey' });
+        baseFields.set('generationRole', { type: 'meta' });
+        baseFields.set('generationInstructions', { type: 'meta' });
       }
 
       if (typeName === 'SparseMeetingRecap') {
@@ -170,6 +172,61 @@ describe('export command helpers', () => {
     expect(fields).not.toContain('context');
     expect(fields).not.toContain('created_at');
     expect(fields).not.toContain('updated_at');
+  });
+
+  it('projects the STI metadata blob without selecting child meta keys (#4036)', async () => {
+    const fields = await getCommonFields(
+      ['MeetingRecap', 'MeetingAnnouncement'],
+      { types: ['MeetingRecap', 'MeetingAnnouncement'] },
+      true,
+    );
+
+    expect(fields).toContain('_meta_data');
+    expect(fields).not.toContain('generationRole');
+    expect(fields).not.toContain('generationInstructions');
+
+    await expect(
+      getCommonFields(
+        ['MeetingRecap', 'MeetingAnnouncement'],
+        {
+          types: ['MeetingRecap', 'MeetingAnnouncement'],
+          include: ['title', 'generationRole', '_meta_data'],
+        },
+        true,
+      ),
+    ).resolves.toEqual(['title', '_meta_data']);
+
+    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      await db.query(
+        'CREATE TABLE contents (id TEXT PRIMARY KEY, slug TEXT, title TEXT, body TEXT, status TEXT, publish_date TEXT, meeting_id TEXT, _meta_type TEXT, _meta_data TEXT)',
+      );
+      await db.query(
+        'INSERT INTO contents (id, title, meeting_id, _meta_type, _meta_data) VALUES (?, ?, ?, ?, ?)',
+        'recap-1',
+        'Council recap',
+        'meeting-1',
+        '@anytown/praeco:MeetingRecap',
+        '{"generationRole":"recapper"}',
+      );
+
+      await expect(
+        queryWithProjection(
+          db,
+          'contents',
+          ['MeetingRecap', 'MeetingAnnouncement'],
+          fields,
+          {},
+        ),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          id: 'recap-1',
+          _meta_data: '{"generationRole":"recapper"}',
+        }),
+      ]);
+    } finally {
+      await db.close?.();
+    }
   });
 
   it('throws instead of dropping the file when a type is unregistered', async () => {

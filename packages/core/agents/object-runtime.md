@@ -214,3 +214,11 @@ owner-checked by the natural-key lookup can be adopted for a conditional update.
 An unmatched natural key uses INSERT, even if its explicit primary key names an
 existing row. Duplicate IDs therefore fail without changing foreign/global rows,
 including NULL-bearing natural keys on PostgreSQL.
+
+`requireInsertOnSave({ preserveDerivedSlug: true })` opts a model into new-identity
+writes while retaining generated-name slug disambiguation. Explicit natural-key
+collisions fail with the ordinary unique-constraint error; the create path of
+`getOrUpsert` cannot override this policy. Loaded objects still update by ID and
+run their model guards. The default without options remains strict INSERT for
+every initial save, including generated slugs. Once requested, that stricter
+policy cannot be relaxed by a later opt-in call from the model.

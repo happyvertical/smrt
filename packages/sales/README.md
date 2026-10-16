@@ -20,7 +20,7 @@ Add `svelte` when consuming the optional UI export.
 
 | Entry point | Responsibility |
 | --- | --- |
-| `@happyvertical/smrt-sales/agreements` | Verified e-signature execution and immutable evidence |
+| `@happyvertical/smrt-sales/agreements` | Versioned commercial terms, verified e-signature execution, and immutable evidence |
 | `@happyvertical/smrt-sales/crm` | Leads, pipelines, opportunities, activities, conversions |
 | `@happyvertical/smrt-sales/referrals` | Referrers, links, attribution, qualification, agreements |
 | `@happyvertical/smrt-sales/commissions` | Earners, plans, earning events, commissions, payouts |
@@ -71,6 +71,32 @@ console.log(earner.id, plan.getComponents());
 
 All money fields use integer cents. Rates and probability-like values use
 decimals from `0` to `1`; rounding occurs through the exported money helpers.
+
+## Waterfall plans
+
+Version-two plans can carry ordered `steps`, an `effectiveTo` boundary, and a
+`remainderSink`. `calculateWaterfall()` is a pure, generic allocation service:
+hosts register recipient resolvers, then persist the returned trace as the
+replay evidence. Step keys must be nonempty strings; malformed persisted keys
+are rejected before allocation or activation. Replay snapshots copy recipient
+and sink values, including nested metadata, so later caller-input mutation
+cannot change the returned evidence. The trace freezes the resolved recipients, input facts, and
+application-fee offset. All amounts are integer minor units; each percentage
+rounds half away from zero and recipients plus the sink always equal gross.
+
+An application fee already settled at checkout is modeled only as an offset to
+the configured recipient's payable allocation. It is never emitted as a second
+allocation or payable. Offset matching uses the entire recipient descriptor,
+including nested metadata; object key order does not change identity. The service
+does not initiate a payout or transfer.
+
+The referral qualification and commission bridge remain component-based. Both
+qualification and explicit requalification refuse a resolved waterfall plan with
+`unsupported_plan_engine`, before writing a snapshot or changing the referral.
+This applies to pinned plans and latest-active plan amendments. Existing frozen
+v1 snapshots keep governing earnings. To recover, activate and bind compatible
+component terms, then retry qualification; use `calculateWaterfall()` directly
+for v2 allocations. Switching a plan key's engine does not migrate referrals.
 
 ## Core model
 
@@ -132,7 +158,26 @@ See [the CRM contract](agents/crm.md) for retry and duplicate semantics and
 
 ## Agreement boundary
 
-The agreements module accepts the provider-neutral
+`Agreement` is a counterparty-agnostic, effective-dated terms record. Parties
+are ordered `{ kind, id }` descriptors, so consumers can use tenant, earner,
+profile, organization, worker, or their own neutral kinds without importing a
+consumer domain. Versions are rows: `createAmendment()` creates a draft and
+`activateAmendment()` closes the predecessor at the successor's start. Effective
+intervals are half-open (`[effectiveFrom, effectiveTo)`), and `activeFor()` is
+an as-of query: it can return a superseded or terminated version that governed
+the supplied record date, never terms inferred from today's status. Ambiguous
+overlapping intervals fail closed. Activation rejects backdated or out-of-order
+amendments that would overlap existing history. Ending a draft cancels it without
+making it govern; closed intervals cannot be reopened. Party JSON is canonicalized
+before persistence, so property order does not change an agreement's identity.
+Tenant lookups fall back to global terms for each requested date when no tenant
+version governs that date. A tenant must explicitly create its initial version
+before using amendment helpers; global terms are never implicitly copied into a
+tenant amendment. Callers that calculate money must snapshot
+the returned version at their authoritative event; this model does not settle
+or allocate funds.
+
+The execution portion of the agreements module accepts the provider-neutral
 `@happyvertical/signatures` contract plus an `AssetRuntimeLike`. Provider
 credentials remain in the injected SDK adapter and secret store. Executed
 agreements freeze the exact source, signed document, audit trail, hashes, and
@@ -163,3 +208,26 @@ pnpm --filter @happyvertical/smrt-sales build
 
 See [`AGENTS.md`](./AGENTS.md) for lifecycle, evidence, concurrency, and payout
 invariants.
+
+A future amendment activated through `activateAmendment` can be withdrawn through
+`withdrawAmendment(id)` only before its start, while it is still active. This
+transaction cancels the never-effective successor and restores its exact persisted
+predecessor end (including a finite end); it never infers an open-ended interval.
+Repeated, late, or conflicting withdrawals fail without changing history. Direct
+model termination remains for already-effective terms. Global defaults apply only
+before a tenant lane first governs; termination, expiry, and later gaps in that
+lane return no agreement instead of silently resuming global fees.
+
+Restoration provenance is written exclusively by amendment activation; ordinary
+creates and saves cannot supply or edit it. Withdrawal advances both persisted
+revision tokens so pre-withdrawal model instances cannot overwrite the result.
+
+Initial agreement creates use strict insertion: concurrent callers for the same
+tenant, kind, parties and version cannot replace the winning row or its terms.
+The losing create fails; load the existing version or create an amendment.
+
+Concurrent `createAmendment` calls serialize version allocation within the owning
+lane: PostgreSQL locks the oldest persisted version and re-reads the latest;
+embedded engines use core's transaction/write queue. Each successful call keeps
+its own terms and version. Direct `supersede()` requires a finite `effectiveTo`
+set before the transition; saving an open-ended superseded row is rejected.

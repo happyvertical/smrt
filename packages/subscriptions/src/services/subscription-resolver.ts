@@ -1,3 +1,4 @@
+import { isSystemContext } from '@happyvertical/smrt-tenancy';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
 import type { SubscriptionPlan } from '../models/SubscriptionPlan.js';
@@ -236,7 +237,9 @@ export class SubscriptionResolver {
       assertPlanMatchesSubscription(plan, subscription);
       return plan;
     }
-    return this.readers.plans.get({ id: subscription.planId });
+    const plan = await this.readers.plans.get({ id: subscription.planId });
+    assertPlanMatchesSubscription(plan, subscription);
+    return plan;
   }
 
   /**
@@ -402,6 +405,13 @@ function assertPlanMatchesSubscription(
 ): void {
   if (!plan) {
     return;
+  }
+  if (
+    !isSystemContext() &&
+    plan.tenantId !== null &&
+    plan.tenantId !== subscription.tenantId
+  ) {
+    throw new Error('Entitlement plan does not belong to subscription tenant');
   }
   if (!plan.id || plan.id !== subscription.planId) {
     throw new Error(

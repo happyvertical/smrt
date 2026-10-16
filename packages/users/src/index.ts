@@ -59,6 +59,8 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export * from './member-register/index.js';
+
 export {
   UsersRolesAndPermissionsRecipe,
   UsersSignInRecipe,

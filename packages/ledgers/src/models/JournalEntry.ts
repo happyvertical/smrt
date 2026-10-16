@@ -6,7 +6,14 @@
  */
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  isSuperAdminBypass,
+  isTenancyEnabled,
+  TenantScoped,
+  tenantId,
+  withTenantGlobalRead,
+} from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
 import { Account } from './Account';
 
@@ -38,6 +45,20 @@ export class JournalEntry extends SmrtObject {
   @field({ description: 'The account this entry changes.' })
   @foreignKey(Account)
   accountId: string = '';
+
+  /** Opaque external party dimension, never a product-specific model. */
+  @field({ description: 'Generic counterparty type.', nullable: true })
+  counterpartyKind: string | null = null;
+
+  @field({ description: 'Generic counterparty identifier.', nullable: true })
+  counterpartyId: string | null = null;
+
+  /** Due date for an AR/AP open item. */
+  @field({ description: 'When this open receivable or payable is due.' })
+  dueDate: Date | null = null;
+
+  /** Source reference of the open item reduced by this settlement line. */
+  settlesSourceRef: string | null = null;
 
   /**
    * Debit amount (left side)
@@ -75,8 +96,16 @@ export class JournalEntry extends SmrtObject {
 
   constructor(options: JournalEntryOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.journalId !== undefined) this.journalId = options.journalId;
     if (options.accountId !== undefined) this.accountId = options.accountId;
+    if (options.counterpartyKind !== undefined)
+      this.counterpartyKind = options.counterpartyKind;
+    if (options.counterpartyId !== undefined)
+      this.counterpartyId = options.counterpartyId;
+    if (options.dueDate !== undefined) this.dueDate = options.dueDate;
+    if (options.settlesSourceRef !== undefined)
+      this.settlesSourceRef = options.settlesSourceRef;
     if (options.debit !== undefined) this.debit = options.debit;
     if (options.credit !== undefined) this.credit = options.credit;
     if (options.currency !== undefined) this.currency = options.currency;
@@ -86,11 +115,67 @@ export class JournalEntry extends SmrtObject {
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
+  override async save(
+    options: Parameters<SmrtObject['save']>[0] = {},
+  ): Promise<this> {
+    return this.withTransaction(async () => {
+      const journal = await this.getJournal();
+      if (!journal)
+        throw new Error('Journal entry requires an accessible parent journal');
+      if (journal.ledgerId) {
+        if (!journal.isDraft() || !journal.updated_at)
+          throw new Error('Ledger entries are immutable after posting');
+        await journal.claimRevision(journal.updated_at);
+      }
+      return super.save(options);
+    });
+  }
+
   /**
    * Validate entry before save
    */
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    // A fresh accounting identity must never adopt another row by natural key.
+    // Core enforces this with INSERT uniqueness, including concurrent callers.
+    this.requireInsertOnSave({ preserveDerivedSlug: true });
+    const journal = await this.getJournal();
+    // Validation precedes tenancy's beforeSave auto-population. Privileged
+    // bypasses do not auto-populate, so those callers must supply the owner.
+    const owner =
+      this.tenantId ??
+      (isTenancyEnabled() && !isSuperAdminBypass()
+        ? (getTenantId() ?? null)
+        : null);
+    if (!journal || journal.tenantId !== owner)
+      throw new Error(
+        'Journal entry and parent must belong to the same tenant',
+      );
+    const account = await this.getAccount();
+    if (
+      !account ||
+      account.ledgerId !== journal.ledgerId ||
+      (journal.ledgerId && account.tenantId !== journal.tenantId)
+    )
+      throw new Error(
+        'Journal entry account must belong to its journal ledger',
+      );
+    if (journal.ledgerId && !journal.isDraft())
+      throw new Error('Ledger entries are immutable after posting');
+    if (this.id) {
+      const stored = await this.db.get(this.tableName, { id: this.id });
+      if (stored && stored.journal_id !== this.journalId)
+        throw new Error('Journal entry cannot be moved to another journal');
+      if (stored && stored.account_id !== this.accountId) {
+        const oldAccount = await this.loadAccount(String(stored.account_id));
+        if (!oldAccount || oldAccount.ledgerId !== journal.ledgerId)
+          throw new Error(
+            'Stored entry account must belong to its journal ledger',
+          );
+      }
+    }
+    if (!Number.isFinite(this.debit) || !Number.isFinite(this.credit))
+      throw new Error('Entry amounts must be finite');
     // Validate amounts are non-negative
     if (this.debit < 0) {
       throw new Error('Debit amount cannot be negative');
@@ -113,6 +198,36 @@ export class JournalEntry extends SmrtObject {
     if (this.exchangeRate <= 0) {
       throw new Error('Exchange rate must be positive');
     }
+    if (!!this.counterpartyKind !== !!this.counterpartyId)
+      throw new Error('Counterparty kind and ID must be provided together');
+    if (this.dueDate && (!this.counterpartyKind || !this.counterpartyId))
+      throw new Error('Due date requires a counterparty');
+  }
+
+  async delete(
+    options: Parameters<SmrtObject['delete']>[0] = {},
+  ): Promise<void> {
+    await this.withTransaction(async () => {
+      const stored = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if (stored) {
+        const { JournalCollection } = await import('../collections/Journals');
+        const journal = await (
+          await JournalCollection.create({ db: this.db })
+        ).get({ id: String(stored.journal_id) });
+        if (!journal || journal.tenantId !== stored.tenant_id)
+          throw new Error(
+            'Journal entry requires its accessible same-tenant parent',
+          );
+        if (journal.ledgerId) {
+          if (!journal.isDraft() || !journal.updated_at)
+            throw new Error('Ledger entries are immutable after posting');
+          await journal.claimRevision(journal.updated_at);
+        }
+      }
+      await super.delete(options);
+    });
   }
 
   /**
@@ -150,7 +265,7 @@ export class JournalEntry extends SmrtObject {
     if (!this.journalId) return null;
     const { JournalCollection } = await import('../collections/Journals');
     const collection = await JournalCollection.create(this.options);
-    return await collection.get({ id: this.journalId });
+    return await collection.get({ id: this.journalId }, { cache: false });
   }
 
   /**
@@ -158,9 +273,27 @@ export class JournalEntry extends SmrtObject {
    */
   async getAccount(): Promise<import('./Account').Account | null> {
     if (!this.accountId) return null;
+    return this.loadAccount(this.accountId);
+  }
+
+  private async loadAccount(
+    accountId: string,
+  ): Promise<import('./Account').Account | null> {
     const { AccountCollection } = await import('../collections/Accounts');
     const collection = await AccountCollection.create(this.options);
-    return await collection.get({ id: this.accountId });
+    const account = await collection.get({ id: accountId }, { cache: false });
+    if (account) return account;
+    const tenant = getTenantId();
+    if (!tenant) return null;
+    // Legacy charts expose shared, unassigned accounts. The public read scope
+    // retains actor authorization and never widens to another tenant's rows.
+    return withTenantGlobalRead(tenant, async () => {
+      const globals = await collection.list({
+        where: { id: accountId, tenantId: null, ledgerId: null },
+        limit: 1,
+      });
+      return globals[0] ?? null;
+    });
   }
 
   /**

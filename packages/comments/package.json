@@ -20,6 +20,10 @@
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
     },
+    "./participation": {
+      "types": "./dist/participation.d.ts",
+      "import": "./dist/participation.js"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
   },
