@@ -1,3 +1,4 @@
+import { hasRetentionAccountingAuthority } from './retention-accounting-internal.js';
 /** Frozen Invoice projection and guarded accounting-provider synchronization. */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -294,7 +295,11 @@ async function loadSnapshot(
       'FROZEN_DOCUMENT',
       'Accounting sync requires an issued frozen invoice',
     );
-  if (invoice.getPayableFacts().retainedRemainingMinor > 0)
+  if (
+    (invoice.getPayableFacts().retainedRemainingMinor > 0 ||
+      invoice.retentionAccountingStateJson) &&
+    !hasRetentionAccountingAuthority(invoice.tenantId, invoice.id)
+  )
     unsupported(
       'Unreleased retention requires a provider payable representation',
     );
@@ -369,6 +374,13 @@ async function loadSnapshot(
       throw new MoneyValidationError(
         'INVALID_MONEY_INPUT',
         'Frozen credit note requires the source invoice external ID',
+      );
+    if (
+      source.retentionAccountingStateJson &&
+      !hasRetentionAccountingAuthority(source.tenantId, source.id)
+    )
+      unsupported(
+        'Provider-retained credit requires the retained-first accounting adjustment command',
       );
     const sourceState = parseSyncState(source.accountingSyncStateJson);
     if (

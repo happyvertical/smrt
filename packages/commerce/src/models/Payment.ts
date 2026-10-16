@@ -1,3 +1,4 @@
+import { hasRetentionAccountingAuthority } from '../retention-accounting-internal.js';
 /**
  * Payment model - tracks payments with ledger integration
  * @packageDocumentation
@@ -155,6 +156,10 @@ export class Payment extends SmrtObject {
   /** Command-owned customer advance policy, source lineage and append-only application evidence. */
   @field({ type: 'text' })
   customerFundsJson = '';
+
+  /** Immutable provider-refund source binding owned by retention commands. */
+  @field({ sensitive: true })
+  retentionAccountingBindingJson = '';
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -439,6 +444,19 @@ export class Payment extends SmrtObject {
       const priorRow = await this.loadPersistedRow();
       if (this.customerFundsJson || priorRow?.customer_funds_json)
         assertCustomerFundsWrite(this);
+      const retainedBinding =
+        this.retentionAccountingBindingJson ||
+        String(priorRow?.retention_accounting_binding_json ?? '');
+      if (
+        retainedBinding &&
+        !hasRetentionAccountingAuthority(
+          this.tenantId,
+          JSON.parse(retainedBinding).invoiceId,
+        )
+      )
+        throw new Error(
+          'Provider-recorded refund is immutable; use an explicit reversal workflow',
+        );
       const prior =
         priorRow && priorRow.status != null
           ? (priorRow.status as PaymentStatus)
@@ -492,6 +510,11 @@ export class Payment extends SmrtObject {
   /** Managed receipts and refunds retain immutable cash provenance. */
   override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
     const persisted = await this.loadPersistedRow();
+    if (
+      this.retentionAccountingBindingJson ||
+      persisted?.retention_accounting_binding_json
+    )
+      throw new Error('Provider-recorded refund history cannot be deleted');
     if (this.customerFundsJson || persisted?.customer_funds_json)
       throw new Error('Customer funds cash history cannot be deleted');
     return super.delete(options);

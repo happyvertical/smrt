@@ -864,3 +864,72 @@ Provider-controlled imports/automatic collection cannot acquire retention.
 Accounting export refuses unreleased retention until the provider has an
 explicit payable representation; it never silently requests collection of
 gross. Fully released invoices use the existing gross accounting contract.
+
+## Retained invoice accounting
+
+The public `syncRetainedInvoiceToAccounting`, `releaseRetainedInvoiceToAccounting`,
+`syncRetainedCreditToAccounting`, and `syncRetainedRefundToAccounting` commands
+implement an explicit QuickBooks accrual reclassification contract. They require
+SDK `receivableTransfers` (happyvertical/sdk#1414, not present in SDK0.104.0).
+They are available from the Commerce root and `/invoices` entry points.
+
+The tenant must review/version the realm, environment, customer, AR account,
+retained-asset account and optional bank account mapping. Supported choices are
+`accrual`, `invoice-tax-point` and `host-managed` release due dates. Verified home
+currency only; no inferred FX, tax timing, recovery percentage or release date.
+Hosts authorize actors before these server commands and provide an active tenant.
+
+For gross10500/retained1000, the original approved invoice remains10500. A
+withholding journal debits retained assets and credits customer AR1000; a
+zero-cash application links that credit to the original invoice. A partial release
+creates the opposite journal and an explicitly dated host collection obligation.
+The original invoice and its tax snapshot are unchanged. Provider collections and
+provider tax overrides are unsupported for this contract.
+
+Initial export requires an issued, unpaid, uncredited, unreleased host-owned
+invoice with no prior provider identity. Historical source-owned invoices require
+a separate reconciled ownership contract and are rejected: importing history must
+not duplicate its original journal. Existing local retention commands continue to
+reject provider-controlled releases; use the provider release command instead.
+
+Retained-first credits cancel the applicable retained asset through a release
+journal, apply the exported credit memo to that journal, and apply any due portion
+to the original invoice. Unapplied credit remains available for a refund. Refund
+sync requires an already completed local refund Payment, its cash journal and one
+exact source-credit allocation. It records the cash journal and applies the
+existing credit; it performs no bank action and makes no settlement-certification
+claim. That source payment/allocation becomes immutable. Provider-managed invoice
+voids/write-offs, credit cancellation/reallocation and refund deletion are rejected
+rather than silently erasing remote postings. Corrective reversal contracts are
+not implemented by these commands.
+
+### Recovery and concurrency
+
+Each external write has persisted request bytes/hash, attempt owner, status and
+validated readback. Confirmed earlier steps survive a later failure. Unknown or
+interrupted steps block new operations; `reconcileRetainedAccountingStep` requires
+the observed request/attempt, a known remote ID for exact provider readback, or
+explicit authoritative absence evidence. An interrupted in-flight owner must be
+proven stopped. Reconciliation evidence and previous attempts remain recorded.
+`reconcileRetainedBaseInvoice` wraps the existing frozen invoice recovery contract.
+`reconcileRetainedCreditAccounting` resolves the reserved credit-memo creation step. Ordinary credit export is blocked for provider-retained sources.
+
+The descriptor hash is not remote idempotency. The SDK uses documented QuickBooks
+request-ID duplicate handling; never create a new request identity merely because
+a response was lost. Exact local replays reuse confirmed steps. Competing commands
+serialize under the tenant/source invoice locks, and releases check an observed
+invoice revision. Source credits cannot change during an unfinished retention
+operation. Commands reject caller-owned Commerce money transactions because a
+provider write cannot be rolled back with local SQL.
+
+`readRetainedInvoiceAccountingState` exposes the persisted operation/readback
+history. Canonical `Invoice.getPayableFacts()` remains the source of local gross,
+retained, released, credited and currently due amounts. Provider invoice
+`TotalAmt - Balance` includes noncash applications and must never be labeled cash
+received. SDK readback separates noncash applications, recorded cash journals and
+unverified bank settlement.
+
+Validation uses native SQLite/PostgreSQL persistence with mocked public provider
+operations, plus the SDK's exact request/readback fixtures. No live provider call
+or sandbox certification has been performed. Primary contract evidence and
+provider-field limits are documented in the SDK Accounting README.

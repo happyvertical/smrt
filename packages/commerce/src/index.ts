@@ -338,6 +338,25 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
+export type {
+  ReconcileRetainedAccountingStepInput,
+  ReconcileRetainedCreditAccountingInput,
+  ReleaseRetainedInvoiceToAccountingInput,
+  RetainedInvoiceAccountingState,
+  SyncRetainedCreditToAccountingInput,
+  SyncRetainedInvoiceToAccountingInput,
+  SyncRetainedRefundToAccountingInput,
+} from './retention-accounting.js';
+export {
+  readRetainedInvoiceAccountingState,
+  reconcileRetainedAccountingStep,
+  reconcileRetainedBaseInvoice,
+  reconcileRetainedCreditAccounting,
+  releaseRetainedInvoiceToAccounting,
+  syncRetainedCreditToAccounting,
+  syncRetainedInvoiceToAccounting,
+  syncRetainedRefundToAccounting,
+} from './retention-accounting.js';
 export {
   calculateInvoicePayable,
   type InvoicePayableFacts,

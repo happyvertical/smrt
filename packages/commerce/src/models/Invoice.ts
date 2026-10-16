@@ -239,6 +239,10 @@ export class Invoice extends SmrtObject {
   /** Server-owned immutable retention policy and append-only release evidence. */
   retentionStateJson = '';
 
+  /** Command-owned durable provider retention bundle; never caller-writable. */
+  @field({ sensitive: true })
+  retentionAccountingStateJson = '';
+
   getPayableFacts() {
     return calculateInvoicePayable(this);
   }
@@ -658,7 +662,24 @@ export class Invoice extends SmrtObject {
     this.assertAmountsAreMinorUnits();
     const payable = calculateInvoicePayable(this);
     if (
+      this.retentionAccountingStateJson &&
+      [InvoiceStatus.CANCELLED, InvoiceStatus.WRITTEN_OFF].includes(this.status)
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+        'Provider retention cannot be voided or written off without an explicit reconciled reversal contract',
+      );
+    if (
+      this.retentionAccountingStateJson &&
+      (this.collectionMethod || this.providerTaxAmount)
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Retention accounting does not support provider collection or tax overrides',
+      );
+    if (
       payable.retainedRemainingMinor > 0 &&
+      !this.retentionAccountingStateJson &&
       (this.externalId ||
         this.externalProvider ||
         this.accountingSyncStateJson ||

@@ -201,6 +201,8 @@ export class PaymentAllocation extends SmrtObject {
       );
       if (!payment)
         throw new Error('PaymentAllocation referenced Payment does not exist');
+      if (payment.retentionAccountingBindingJson)
+        throw new Error('Provider-recorded refund allocation is immutable');
       if (customerFundsState(payment.customerFundsJson))
         assertCustomerFundsWrite(this);
       if (!payment.updated_at)
@@ -324,6 +326,10 @@ export class PaymentAllocation extends SmrtObject {
         { id: String(persisted?.payment_id ?? this.paymentId) },
         { cache: false },
       );
+      if (payment?.retentionAccountingBindingJson)
+        throw new Error(
+          'Provider-recorded refund allocation cannot be deleted',
+        );
       if (payment?.customerFundsJson) assertCustomerFundsWrite(this);
       return super.delete(options);
     });

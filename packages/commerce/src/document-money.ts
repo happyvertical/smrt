@@ -398,11 +398,39 @@ async function refreshIssuedCreditBalance(
       ? Math.min(credit.totalAmount, remainingSource)
       : 0;
     if (included) remainingSource -= applied;
+    if (source.retentionAccountingStateJson) {
+      const providerState = JSON.parse(source.retentionAccountingStateJson);
+      const managedCredit = providerState.credits.find(
+        (entry: { creditId: string }) => entry.creditId === credit.id,
+      );
+      if (
+        managedCredit &&
+        (applied !== managedCredit.retainedMinor + managedCredit.appliedMinor ||
+          !included)
+      )
+        throw new MoneyValidationError(
+          'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+          'Provider-managed credit allocation cannot change without an explicit reversal contract',
+        );
+    }
     if (credit.creditedAmount !== applied) {
       credit.creditedAmount = applied;
       credit.updatePaymentStatus(credit.amountPaid);
       await credit.saveDerived(DOCUMENT_MONEY_WRITE);
     }
+  }
+  if (source.retentionAccountingStateJson && total !== source.creditedAmount) {
+    const state = JSON.parse(source.retentionAccountingStateJson);
+    if (
+      state.status !== 'ready' ||
+      state.steps.some(
+        (step: { status: string }) => step.status !== 'confirmed',
+      )
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+        'Provider retention operation must reconcile before changing source credits',
+      );
   }
   source.creditedAmount = total;
   source.updatePaymentStatus(source.amountPaid);
@@ -1285,6 +1313,14 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
         const settings = await lockRuntimeSettings(tx, candidateTenantId);
         const existing = invoice.id ? await findInvoice(tx, invoice.id) : null;
         const tenantId = existing?.tenantId ?? candidateTenantId;
+        if (
+          invoice.retentionAccountingStateJson !==
+          (existing?.retentionAccountingStateJson ?? '')
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Retention accounting state is managed by provider commands',
+          );
         if (invoice.retentionStateJson !== (existing?.retentionStateJson ?? ''))
           throw new MoneyValidationError(
             'FROZEN_DOCUMENT',
