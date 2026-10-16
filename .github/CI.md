@@ -217,6 +217,11 @@ reason recorded next to the setting or here:
   30-minute Playwright `globalTimeout`, so a run still going at 60 is stuck
   rather than slow. The value keeps a wedged docker-lane job from holding a
   merge-group entry for the full 90.
+- The planner lanes (#4056): `planner-scope` at 10 (a checkout and a paths
+  filter), `planner-browser` at 45 (one filtered build plus two short browser
+  suites), and `publish.yml`'s `planner-release-gate` at 60, whose work is
+  bounded the same way as `m5-reference-gate`'s: two browser suites, one
+  consumer install and one generated application, each tried at most twice.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
@@ -304,6 +309,17 @@ runs in `affected` mode as well as in `full`, which is every merge group.
 Every other lane in `on-pull-request.yml` and `test-suite.yml` is
 PostgreSQL-free; the registered PostgreSQL suites live in
 `postgres-tests.yml`, described under PostgreSQL isolation below.
+
+The planner (`packages/planner`) is validated in three places (#4056). Its
+unit tests, typecheck and lint run in the normal lanes above, and its tests
+include validating every library cookbook against the catalog its build
+generates from the workspace manifests. Every catalog source package is a
+planner devDependency, so Turbo's affected filter selects the planner's tests
+on any PR that changes one: a contract change that invalidates a cookbook
+fails that PR, not a release. `on-pull-request.yml`'s `planner-browser` runs
+its two browser suites when `planner-scope` sees planner or shell paths
+change, and `Required CI` treats it like the playground visual lane. The
+release-side gate is under Release artifacts.
 
 `Required CI` is the aggregate repository-validation status; the PostgreSQL
 lane's `postgres-required` is the second required context (#2659, #3068).
@@ -428,8 +444,18 @@ schema-versioned manifest containing package name, version, filename, and
 SHA-256. Profiles and Sales validation additionally install each exact tarball
 into an isolated consumer, run the built CLI to generate `.smrt/register.js`,
 and import the generated file so every manifest-advertised root import is
-proven against the publish artifact. The summary verifies complete package
-membership and uniform versions.
+proven against the publish artifact. The planner's tarball is checked offline
+(`scripts/verify-packed-planner.mjs`): it must carry `app/`, `app/mcp.html`
+and a catalog whose every package is at the release version. The summary
+verifies complete package membership and uniform versions. Before publication,
+`planner-release-gate` (`scripts/planner-release-gate.mjs`) runs the planner's
+browser suites, installs its tarball against the release tarballs, validates
+every library cookbook with the built CLI, and runs a real
+`smrt cookbook apply` (default template smrt-start) whose app must install,
+build and typecheck with every `@happyvertical` package overridden to the
+release tarballs. Each check is retried once; the job summary and error
+annotation say whether the planner or the framework broke, and
+`publish-release` needs it to succeed.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and

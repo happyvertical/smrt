@@ -18,6 +18,16 @@ prepares versioned artifacts, validates the release package set, publishes it,
 and updates release refs and the GitHub release. Consult those workflows for
 current gates, publishing modes, and documentation-deployment conditions.
 
+Every `@happyvertical/smrt-*` package releases on this one line, including
+`@happyvertical/smrt-planner` (`packages/planner`, formerly its own repository
+and 0.1.x line). Its build generates the planner's catalog from the same
+workspace, and `Planner Release Gate` in `publish.yml` runs after the tarballs
+are packed and before anything is published: the planner's browser suites, its
+packed tarball installed against the release tarballs, and a real
+`smrt cookbook apply` whose generated app must install, build and typecheck
+against them (`scripts/planner-release-gate.mjs`; one retry per check, and the
+summary says whether the planner or the framework broke).
+
 ## Where releases go
 
 A release is published to **our own registry, `https://npm.happyvertical.com/`**,

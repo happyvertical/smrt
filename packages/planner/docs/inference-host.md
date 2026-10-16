@@ -336,7 +336,7 @@ and unknown ids.
 
 ### Serving the planner app: `@happyvertical/smrt-planner/app`
 
-`pnpm package` also builds the prerendered static app into the package's
+`pnpm build` also builds the prerendered static app into the package's
 `app/` directory. `appDir` from `@happyvertical/smrt-planner/app` remains its
 absolute root-build path (Node only; `appFile('x')` resolves one file in it).
 For a subpath deployment, `materializeApp` is the supported build contract:
