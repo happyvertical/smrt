@@ -367,13 +367,19 @@ taskRefId)` serve job costing; a unique `(tenantId, punchId, openSlot)` index
 allows one open segment per punch. Segments never overlap each other or a break.
 
 `profileId` is the person whose time it is: the services copy it from the
-segment's punch on every write (`startWork`, `switchWork`, `resumeWork`, replayed
+segment's punch when creating a segment (`startWork`, `switchWork`, `resumeWork`, replayed
 work actions, and the correction service's `saveSegment` and `addPunch`
 segments), it is immutable, and a write whose `profileId` differs from its
 punch's is refused. Indexed `(tenantId, profileId, startedAt)`, so labour by
-person needs no join. Rows written before the column existed read `''`; backfill
-with `UPDATE attendance_segments SET profile_id = (SELECT p.profile_id FROM
-attendance_punches p WHERE p.id = attendance_segments.punch_id) WHERE profile_id = ''`.
+person needs no join. After adding the column through migrations, legacy rows
+have SQL NULL (hydrated as `null`); older text columns may also contain `''`.
+Closing or correcting those segments remains supported. Before reporting by
+person, run this idempotent backfill on SQLite or PostgreSQL; it preserves
+populated identities and matches the punch within the same tenant:
+`UPDATE attendance_segments SET profile_id = (SELECT p.profile_id FROM
+attendance_punches p WHERE p.id = attendance_segments.punch_id AND p.tenant_id = attendance_segments.tenant_id)
+WHERE COALESCE(CAST(profile_id AS TEXT), '') = '' AND EXISTS (SELECT 1 FROM
+attendance_punches p WHERE p.id = attendance_segments.punch_id AND p.tenant_id = attendance_segments.tenant_id)`.
 
 ```ts
 await attendance.punchIn(t(8));

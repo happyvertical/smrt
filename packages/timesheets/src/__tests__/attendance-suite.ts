@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -164,6 +165,75 @@ export function attendanceSuite(
         });
         expect(rows.map((g) => g.profileId)).toEqual([actor.profileId]);
       });
+    });
+    it('closes and corrects legacy segments with a NULL profile', async () => {
+      const punch = await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      const [segment] = await service.segments(punch.id!);
+      await db.query(
+        `UPDATE attendance_segments SET profile_id = NULL WHERE id = ${isPostgresDatabase(db) ? '$1' : '?'}`,
+        [segment.id],
+      );
+      await service.stopWork(at(10));
+      await service.punchOut(at(12));
+      const correction = new AttendanceCorrectionService(db, actor);
+      await correction.saveSegment({
+        subjectProfileId: actor.profileId,
+        reason: 'Correct a legacy interval',
+        punchId: punch.id!,
+        segmentId: segment.id!,
+        endedAt: at(11),
+      });
+      const [closed] = await service.segments(punch.id!);
+      expect(closed.durationSeconds).toBe(3 * 3600);
+      expect(closed.profileId).toBeNull();
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        const stored = await collection.get(segment.id!);
+        stored!.profileId = crypto.randomUUID();
+        await expect(stored!.save()).rejects.toThrow('immutable');
+      });
+    });
+    it('backfills legacy profiles using the documented SQL idempotently', async () => {
+      const punch = await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      await service.switchWork(at(9), { ...work, workRefId: 'work-2' });
+      await service.stopWork(at(10));
+      const segments = await service.segments(punch.id!);
+      await db.query(
+        `UPDATE attendance_segments SET profile_id = NULL WHERE id = ${isPostgresDatabase(db) ? '$1' : '?'}`,
+        [segments[0].id],
+      );
+      const otherActor = {
+        tenantId: crypto.randomUUID(),
+        profileId: crypto.randomUUID(),
+      };
+      const otherService = new AttendanceService(db, otherActor);
+      const otherPunch = await otherService.punchIn(at(8));
+      await otherService.startWork(at(8), work);
+      const [otherSegment] = await otherService.segments(otherPunch.id!);
+      // A mismatched tenant/punch reference must not copy another tenant's profile.
+      await db.query(
+        isPostgresDatabase(db)
+          ? 'UPDATE attendance_segments SET profile_id = NULL, punch_id = $1 WHERE id = $2'
+          : 'UPDATE attendance_segments SET profile_id = NULL, punch_id = ? WHERE id = ?',
+        [punch.id, otherSegment.id],
+      );
+      const readme = readFileSync(
+        new URL('../../README.md', import.meta.url),
+        'utf8',
+      );
+      const sql = readme.match(/`(UPDATE attendance_segments[\s\S]*?)`/)?.[1];
+      expect(sql).toBeDefined();
+      await db.query(sql!);
+      await db.query(sql!);
+      expect(
+        (await service.segments(punch.id!)).map((segment) => segment.profileId),
+      ).toEqual([actor.profileId, actor.profileId]);
+      const untouched = await db.get('attendance_segments', {
+        id: otherSegment.id,
+      });
+      expect(untouched?.profile_id).toBeNull();
     });
     it('refuses resume without an interrupting break, half task refs and work outside a punch', async () => {
       await expect(service.startWork(at(8), work)).rejects.toThrow(
