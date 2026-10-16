@@ -248,6 +248,10 @@ export class Journal extends SmrtObject {
       memo: data.memo || '',
     });
     await entry.save();
+    if (this.ledgerId) {
+      const parent = await entry.getJournal();
+      this.updated_at = parent?.updated_at ?? this.updated_at;
+    }
   }
 
   /**
@@ -322,6 +326,19 @@ export class Journal extends SmrtObject {
     }
   }
 
+  override async save(
+    options: Parameters<SmrtObject['save']>[0] = {},
+  ): Promise<this> {
+    return this.withTransaction(async () => {
+      if (this.isPersisted && this.updated_at) {
+        await this.claimRevision(options.expectedUpdatedAt ?? this.updated_at);
+        if (options.expectedUpdatedAt !== undefined)
+          options = { ...options, expectedUpdatedAt: this.updated_at };
+      }
+      return super.save(options);
+    });
+  }
+
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
     if (this.id) {
@@ -343,12 +360,16 @@ export class Journal extends SmrtObject {
   }
 
   async delete(): Promise<void> {
-    const stored = this.id
-      ? await this.db.get(this.tableName, { id: this.id })
-      : null;
-    if (stored?.ledger_id && stored.status !== 'draft')
-      throw new Error('Ledger journals are immutable after posting');
-    await super.delete();
+    await this.withTransaction(async () => {
+      if (this.isPersisted && this.updated_at)
+        await this.claimRevision(this.updated_at);
+      const stored = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if (stored?.ledger_id && stored.status !== 'draft')
+        throw new Error('Ledger journals are immutable after posting');
+      await super.delete();
+    });
   }
 
   /**

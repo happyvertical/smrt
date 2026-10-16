@@ -107,6 +107,20 @@ export class JournalEntry extends SmrtObject {
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
+  override async save(
+    options: Parameters<SmrtObject['save']>[0] = {},
+  ): Promise<this> {
+    return this.withTransaction(async () => {
+      const journal = await this.getJournal();
+      if (journal?.ledgerId) {
+        if (!journal.isDraft() || !journal.updated_at)
+          throw new Error('Ledger entries are immutable after posting');
+        await journal.claimRevision(journal.updated_at);
+      }
+      return super.save(options);
+    });
+  }
+
   /**
    * Validate entry before save
    */
@@ -151,15 +165,23 @@ export class JournalEntry extends SmrtObject {
   }
 
   async delete(): Promise<void> {
-    const stored = this.id
-      ? await this.db.get(this.tableName, { id: this.id })
-      : null;
-    if (stored) {
-      const journal = await this.db.get('journals', { id: stored.journal_id });
-      if (journal?.ledger_id && journal.status !== 'draft')
-        throw new Error('Ledger entries are immutable after posting');
-    }
-    await super.delete();
+    await this.withTransaction(async () => {
+      const stored = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if (stored) {
+        const { JournalCollection } = await import('../collections/Journals');
+        const journal = await (
+          await JournalCollection.create({ db: this.db })
+        ).get({ id: String(stored.journal_id) });
+        if (journal?.ledgerId) {
+          if (!journal.isDraft() || !journal.updated_at)
+            throw new Error('Ledger entries are immutable after posting');
+          await journal.claimRevision(journal.updated_at);
+        }
+      }
+      await super.delete();
+    });
   }
 
   /**
@@ -197,7 +219,7 @@ export class JournalEntry extends SmrtObject {
     if (!this.journalId) return null;
     const { JournalCollection } = await import('../collections/Journals');
     const collection = await JournalCollection.create(this.options);
-    return await collection.get({ id: this.journalId });
+    return await collection.get({ id: this.journalId }, { cache: false });
   }
 
   /**

@@ -28,7 +28,9 @@ amount; full reversals use the remaining amount. Commerce/sales owns deciding
 that amount and retaining the external payment/refund event, including disputes
 after payout; ledgers never initiates a money transfer. Retry the same key after
 a crash between external payout completion and ledger posting. A failed ledger
-transaction rolls back the journal, lines and retry receipt together.
+transaction rolls back the journal, lines and retry receipt together. Manual
+draft edits and posting claim the parent journal revision in their transaction;
+a concurrent loser fails closed and must reload before retrying.
 
 Keys are unique within `(tenantId, ledgerId)` and bind all accounting inputs,
 including an explicitly provided date. Omitted dates use the first successful

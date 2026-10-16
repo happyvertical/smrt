@@ -234,6 +234,30 @@ export function defineWorkerCoopLedgerSuite(
       journal.status = 'posted';
       await expect(journal.save()).rejects.toThrow();
     });
+    it('serializes manual draft edits against posting with a parent revision claim', async () => {
+      const journals = await JournalCollection.create({ db });
+      const draft = await journals.createWithEntries({
+        tenantId: base.tenantId,
+        ledgerId: base.ledgerId,
+        description: 'Manual draft',
+        entries: [
+          { accountId: base.debitAccountId, debit: 1000, currency: 'CAD' },
+          { accountId: base.creditAccountId, credit: 1000, currency: 'CAD' },
+        ],
+      });
+      const entries = await JournalEntryCollection.create({ db });
+      const line = (await entries.findByJournal(draft.id!)).find(
+        (entry) => entry.debit > 0,
+      )!;
+      line.debit = 500;
+      const results = await Promise.allSettled([draft.post(), line.save()]);
+      expect(
+        results.filter((result) => result.status === 'rejected').length,
+      ).toBeGreaterThan(0);
+      const stored = await journals.get({ id: draft.id! });
+      if (stored!.isPosted()) expect(await stored!.isBalanced()).toBe(true);
+      else expect(stored!.status).toBe('draft');
+    });
     it('applies out-of-order settlements and supports credit-normal AP aging', async () => {
       await postSettlement({
         ...base,
