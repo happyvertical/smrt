@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.57.3
+
+### Patch Changes
+
+- ### Features
+  
+  - integrate co-op foundations (#4060) (#4064) (release)
+  
+  ### Bug Fixes
+  
+  - ship declaration maps (#4075) (#4077) (planner)
+  
+  ### Other Changes
+  
+  - ci: apply the public smrt-start template in the release gate (#4071) (planner)
+- @happyvertical/smrt-config@0.57.3
+  - @happyvertical/smrt-scanner@0.57.3
+  - @happyvertical/smrt-types@0.57.3
+
 ## 0.57.2
 
 ### Patch Changes
