@@ -22,7 +22,7 @@ overrides:
   '@happyvertical/json': ^0.103.7
   '@happyvertical/logger': ^0.103.7
   '@happyvertical/messages': ^0.103.7
-  '@happyvertical/ocr': ^0.61.6
+  '@happyvertical/ocr': ^0.62.1
   '@happyvertical/pdf': ^0.65.9
   '@happyvertical/projects': ^0.103.7
   '@happyvertical/repos': ^0.103.7
@@ -200,7 +200,7 @@ catalog:
   '@happyvertical/json': ^0.103.7
   '@happyvertical/logger': ^0.103.7
   '@happyvertical/messages': ^0.103.7
-  '@happyvertical/ocr': ^0.61.6
+  '@happyvertical/ocr': ^0.62.1
   '@happyvertical/pdf': ^0.65.9
   '@happyvertical/projects': ^0.103.7
   '@happyvertical/repos': ^0.103.7
