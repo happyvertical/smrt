@@ -11,3 +11,10 @@
 No database mutation is introduced by the calculator, so transaction rollback and
 multi-dialect persistence rows are N/A for the new calculation path. Plan
 effective-date coverage remains in the existing collection suites.
+
+## Round 8 accepted blockers
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor / context | Data executor / transaction | Runtime / dialect | External contract edge | Test level | Validation command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Fee offset uses complete recipient descriptor identity | Same kind and absent id, distinct nested metadata accounts | Only account B receives offset; reordered object keys still match; frozen replay identical | Account A must never receive B's offset | Host resolver and settled-fee evidence | Pure calculation; N/A transaction | Node / dialect-independent | Nested metadata distinguishes accounts | Unit regression | `pnpm --filter @happyvertical/smrt-sales exec vitest run src/commissions/__tests__/waterfall.test.ts` |
+| Legacy referral snapshots accept only component plans | Pinned v2 agreement or unpinned v1-to-v2 plan amendment | Existing v1 snapshot replays unchanged; compatible later plan permits retry | Qualify and requalify refuse v2 before any snapshot/referral write | Referral service, existing agreement tenant lookup unchanged | Collection reads; refusal performs no mutation; prior snapshot/history retained | SQLite integration; guard is dialect-independent before writes, existing PostgreSQL suite retained | Typed `unsupported_plan_engine` refusal; no silent zero commission | Integration regression | `pnpm --filter @happyvertical/smrt-sales exec vitest run src/referrals/__tests__/qualification.test.ts` |

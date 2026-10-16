@@ -197,6 +197,54 @@ describe('calculateWaterfall', () => {
     ).toEqual([15, 5]);
   });
 
+  it('offsets only the complete metadata recipient identity and preserves replay', () => {
+    const accountPlan: WaterfallPlan = {
+      ...plan,
+      steps: ['A', 'B'].map((account) => ({
+        key: account,
+        base: 'gross',
+        amount: { kind: 'fixed', amountCents: 1000 },
+        recipient: {
+          kind: 'platform',
+          metadata: { account, routing: { region: 'west', tags: ['primary'] } },
+        },
+      })),
+      applicationFeeOffsetRecipient: {
+        kind: 'platform',
+        metadata: {
+          routing: { tags: ['primary'], region: 'west' },
+          account: 'B',
+        },
+      },
+    };
+    const accounts = new WaterfallRecipientResolverRegistry();
+    accounts.register('platform', (descriptor) => ({
+      kind: 'platform',
+      id: String(descriptor.metadata?.account),
+    }));
+    accounts.register('treasury', () => ({ kind: 'treasury', id: 'coop' }));
+    const first = calculateWaterfall(accountPlan, event, {
+      resolver: accounts,
+    });
+    expect(first.trace.steps.map((step) => step.recipient?.id)).toEqual([
+      'A',
+      'B',
+    ]);
+    expect(
+      first.trace.steps.map((step) => step.applicationFeeOffsetCents),
+    ).toEqual([0, 500]);
+    expect(first.trace.steps.map((step) => step.payableCents)).toEqual([
+      1000, 500,
+    ]);
+    expect(first.trace.closureCents).toBe(0);
+    const replay = calculateWaterfall(
+      accountPlan,
+      { ...event, applicationFeeSettledCents: 0 },
+      { frozenInputs: first.trace.frozenInputs },
+    );
+    expect(replay.trace).toEqual(first.trace);
+  });
+
   it('freezes custom metric bases for replay', () => {
     const customPlan: WaterfallPlan = {
       planKey: 'custom-base',

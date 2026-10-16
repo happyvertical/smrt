@@ -1,5 +1,6 @@
 /** Deterministic calculation for version-two commission waterfalls. */
 
+import { isDeepStrictEqual } from 'node:util';
 import type {
   WaterfallCalculationResult,
   WaterfallEvent,
@@ -310,7 +311,9 @@ function descriptorMatches(
   a: WaterfallRecipientDescriptor | undefined,
   b: WaterfallRecipientDescriptor,
 ): boolean {
-  return a?.kind === b.kind && a?.id === b.id;
+  // Metadata is host-defined routing identity, not merely display evidence.
+  // Object key order is immaterial, including inside nested metadata.
+  return a !== undefined && isDeepStrictEqual(a, b);
 }
 
 /** Validate persisted v2 terms before a plan becomes active. */

@@ -83,7 +83,17 @@ rounds half away from zero and recipients plus the sink always equal gross.
 
 An application fee already settled at checkout is modeled only as an offset to
 the configured recipient's payable allocation. It is never emitted as a second
-allocation or payable. The service does not initiate a payout or transfer.
+allocation or payable. Offset matching uses the entire recipient descriptor,
+including nested metadata; object key order does not change identity. The service
+does not initiate a payout or transfer.
+
+The referral qualification and commission bridge remain component-based. Both
+qualification and explicit requalification refuse a resolved waterfall plan with
+`unsupported_plan_engine`, before writing a snapshot or changing the referral.
+This applies to pinned plans and latest-active plan amendments. Existing frozen
+v1 snapshots keep governing earnings. To recover, activate and bind compatible
+component terms, then retry qualification; use `calculateWaterfall()` directly
+for v2 allocations. Switching a plan key's engine does not migrate referrals.
 
 ## Core model
 
