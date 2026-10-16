@@ -72,7 +72,9 @@ reports. Received purchase components may declare a taxable basis above net;
 when that occurs their explicit `netMinor` is required for report classification.
 Recording evidence remains allowed without that classification.
 
-The current accounting SDK validates additive rates only. The frozen accounting
-mapper rejects compound snapshots with `ACCOUNTING_SYNC_UNSUPPORTED` until the
-provider contract supports their ordered metadata ([SDK #1412](https://github.com/happyvertical/sdk/issues/1412)). It never substitutes an
-effective/flattened rate to bypass provider validation.
+Compound accounting synchronization uses the public SDK ordered snapshot contract
+([SDK #1412](https://github.com/happyvertical/sdk/issues/1412)). The mapper preserves
+original rates, exact taxable bases and caller-verified realm TaxCode ordering.
+Missing or mismatched reviewed mapping still raises `ACCOUNTING_SYNC_UNSUPPORTED`.
+It never substitutes a flattened rate. Deployment requires the SDK release that
+contains this public contract; the prior additive-only SDK cannot accept it.

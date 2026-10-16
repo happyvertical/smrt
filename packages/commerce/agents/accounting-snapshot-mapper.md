@@ -109,3 +109,14 @@ example A is tax-exclusive and example B is tax-inclusive. Both cover line and
 document allocation; example B's document scope preserves line 3's allocated
 GST cent. Focused sync tests inspect the exact public SDK request inputs and
 persisted create descriptors without performing a provider network write.
+
+## Compound tax configuration
+
+`FrozenQuickBooksTaxMapping.lines[lineId].taxComponents` may retain the
+caller-verified ordered realm TaxCode configuration as `{taxRateRef, compound}`
+entries. Compound frozen lines require that exact sequence and their stored
+`taxableMinor` bases. The mapper projects `compound` and `taxableAmount` into the
+public accounting SDK without changing statutory percentages or declared taxes.
+Missing/mismatched configuration fails explicitly. Hosts own tenant-scoped review
+and provenance of the existing realm code's applicability/order; a taxCodeRef
+string alone is insufficient evidence. Use the SDK release containing sdk#1412.

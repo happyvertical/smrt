@@ -321,7 +321,7 @@ describe('mapFrozenAccountingSnapshot', () => {
     });
   });
 
-  it('rejects compound snapshots before an additive-only provider can reinterpret them', () => {
+  it('rejects compound snapshots without verified realm ordering', () => {
     const snapshot = exampleA('line');
     const changed = {
       ...snapshot,
@@ -338,7 +338,81 @@ describe('mapFrozenAccountingSnapshot', () => {
       ),
     };
     expect(() => mapFrozenAccountingSnapshot(changed, mapping)).toThrow(
-      'must support ordered compound',
+      'requires caller-verified ordered',
+    );
+  });
+
+  it('preserves exact compound basis, rates and verified realm ordering in the SDK DTO', () => {
+    const snapshot = document({
+      subtotalMinor: 10000,
+      taxAmountMinor: 1235,
+      totalAmountMinor: 11235,
+      lineItems: [
+        {
+          id: '1',
+          description: 'Compound',
+          quantity: 1,
+          unitPriceMinor: 10000,
+          discountMinor: 0,
+          amountMinor: 10000,
+          taxMinor: 1235,
+          taxComponents: [
+            { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 500 },
+            {
+              taxComponentId: 'pst',
+              name: 'Compound',
+              percent: '7',
+              taxMinor: 735,
+              compound: true,
+              taxableMinor: 10500,
+            },
+          ],
+        },
+      ],
+    });
+    const verified = {
+      ...mapping,
+      lines: {
+        '1': {
+          itemRef: 'item-1',
+          taxCodeRef: 'ordered',
+          taxComponents: [
+            { taxRateRef: 'rate-gst', compound: false },
+            { taxRateRef: 'rate-pst', compound: true },
+          ],
+        },
+      },
+    };
+    const projected = mapFrozenAccountingSnapshot(snapshot, verified);
+    expect(projected.lineItems[0].taxComponents?.[1]).toEqual({
+      taxCode: 'pst',
+      rate: '0.07',
+      quickbooksTaxRateRef: 'rate-pst',
+      taxAmount: 7.35,
+      compound: true,
+      taxableAmount: 105,
+    });
+    expect(projected.lineItems[0].quickbooksMapping).toEqual(
+      verified.lines['1'],
+    );
+    expect(() =>
+      mapFrozenAccountingSnapshot(snapshot, {
+        ...verified,
+        lines: {
+          '1': {
+            ...verified.lines['1'],
+            taxComponents: [...verified.lines['1'].taxComponents].reverse(),
+          },
+        },
+      }),
+    ).toThrow('does not match');
+  });
+
+  it('rejects malformed compound metadata instead of coercing it', () => {
+    const snapshot = structuredClone(exampleA('line'));
+    Object.assign(snapshot.lineItems[0].taxComponents[0], { compound: 'true' });
+    expect(() => mapFrozenAccountingSnapshot(snapshot, mapping)).toThrow(
+      'must be boolean',
     );
   });
 
