@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.1
+
+### Patch Changes
+
+- ### Features
+  
+  - release attendance corrections, attribution and segment profiles (#4042) (timesheets)
+- @happyvertical/smrt-config@0.57.1
+  - @happyvertical/smrt-scanner@0.57.1
+  - @happyvertical/smrt-types@0.57.1
+
 ## 0.57.0
 
 ### Minor Changes

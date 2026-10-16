@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginSegment } from '../attendance/segments.js';
 import {
   AttendanceBreakCollection,
+  AttendanceCorrection,
   AttendanceCorrectionCollection,
   AttendanceCorrectionService,
   AttendancePunchCollection,
@@ -100,6 +102,11 @@ export function attendanceSuite(
       const punch = await service.punchOut(at(16));
       expect(await service.currentWork()).toBeNull();
       const segments = await service.segments(punch.id!);
+      expect(segments.map((g) => g.profileId)).toEqual([
+        punch.profileId,
+        punch.profileId,
+        punch.profileId,
+      ]);
       expect(
         segments.map((g) => [
           g.workRefId,
@@ -130,6 +137,103 @@ export function attendanceSuite(
         closed.endedAt = at(11);
         await expect(closed.save()).rejects.toThrow('immutable');
       });
+    });
+    it('stamps the punch profile on a segment and refuses a mismatched write', async () => {
+      const punch = await service.punchIn(at(8));
+      const wo = {
+        workRefType: '@fixture/work:WorkOrder',
+        workRefId: 'WO-9',
+        description: 'x',
+      };
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        await expect(
+          collection.create({
+            tenantId: actor.tenantId,
+            punchId: punch.id!,
+            profileId: crypto.randomUUID(),
+            ...wo,
+            startedAt: at(9),
+          }),
+        ).rejects.toThrow('profileId');
+      });
+      await service.startWork(at(9), wo);
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        const rows = await collection.list({
+          where: { tenantId: actor.tenantId, profileId: actor.profileId },
+        });
+        expect(rows.map((g) => g.profileId)).toEqual([actor.profileId]);
+      });
+    });
+    it('closes and corrects legacy segments with a NULL profile', async () => {
+      const punch = await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      const [segment] = await service.segments(punch.id!);
+      await db.query(
+        `UPDATE attendance_segments SET profile_id = NULL WHERE id = ${isPostgresDatabase(db) ? '$1' : '?'}`,
+        [segment.id],
+      );
+      await service.stopWork(at(10));
+      await service.punchOut(at(12));
+      const correction = new AttendanceCorrectionService(db, actor);
+      await correction.saveSegment({
+        subjectProfileId: actor.profileId,
+        reason: 'Correct a legacy interval',
+        punchId: punch.id!,
+        segmentId: segment.id!,
+        endedAt: at(11),
+      });
+      const [closed] = await service.segments(punch.id!);
+      expect(closed.durationSeconds).toBe(3 * 3600);
+      expect(closed.profileId).toBeNull();
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        const stored = await collection.get(segment.id!);
+        stored!.profileId = crypto.randomUUID();
+        await expect(stored!.save()).rejects.toThrow('immutable');
+      });
+    });
+    it('backfills legacy profiles using the documented SQL idempotently', async () => {
+      const punch = await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      await service.switchWork(at(9), { ...work, workRefId: 'work-2' });
+      await service.stopWork(at(10));
+      const segments = await service.segments(punch.id!);
+      await db.query(
+        `UPDATE attendance_segments SET profile_id = NULL WHERE id = ${isPostgresDatabase(db) ? '$1' : '?'}`,
+        [segments[0].id],
+      );
+      const otherActor = {
+        tenantId: crypto.randomUUID(),
+        profileId: crypto.randomUUID(),
+      };
+      const otherService = new AttendanceService(db, otherActor);
+      const otherPunch = await otherService.punchIn(at(8));
+      await otherService.startWork(at(8), work);
+      const [otherSegment] = await otherService.segments(otherPunch.id!);
+      // A mismatched tenant/punch reference must not copy another tenant's profile.
+      await db.query(
+        isPostgresDatabase(db)
+          ? 'UPDATE attendance_segments SET profile_id = NULL, punch_id = $1 WHERE id = $2'
+          : 'UPDATE attendance_segments SET profile_id = NULL, punch_id = ? WHERE id = ?',
+        [punch.id, otherSegment.id],
+      );
+      const readme = readFileSync(
+        new URL('../../README.md', import.meta.url),
+        'utf8',
+      );
+      const sql = readme.match(/`(UPDATE attendance_segments[\s\S]*?)`/)?.[1];
+      expect(sql).toBeDefined();
+      await db.query(sql!);
+      await db.query(sql!);
+      expect(
+        (await service.segments(punch.id!)).map((segment) => segment.profileId),
+      ).toEqual([actor.profileId, actor.profileId]);
+      const untouched = await db.get('attendance_segments', {
+        id: otherSegment.id,
+      });
+      expect(untouched?.profile_id).toBeNull();
     });
     it('refuses resume without an interrupting break, half task refs and work outside a punch', async () => {
       await expect(service.startWork(at(8), work)).rejects.toThrow(
@@ -256,6 +360,38 @@ export function attendanceSuite(
       await expect(
         service.replay([{ ...taps[1], at: at(11).toISOString() }]),
       ).rejects.toThrow('different content');
+    });
+    it('lets resolveAt decide the punch flags, defaulting both to true', async () => {
+      const flags = async (
+        clientId: string,
+        hour: number,
+        resolved?: { recordedOffline?: boolean; reviewRequired?: boolean },
+      ) => {
+        const [out] = await service.replay(
+          [{ clientId, action: 'punchIn', at: at(hour).toISOString() }],
+          resolved
+            ? { resolveAt: ({ deviceAt }) => ({ at: deviceAt, ...resolved }) }
+            : {},
+        );
+        const punch = await withTenant({ tenantId: actor.tenantId }, async () =>
+          (await AttendancePunchCollection.create({ db })).get(out.punchId!),
+        );
+        const result = [punch?.recordedOffline, punch?.reviewRequired];
+        await service.punchOut(at(hour + 1));
+        return result;
+      };
+      expect(await flags('f-none', 8)).toEqual([true, true]);
+      expect(await flags('f-empty', 10, {})).toEqual([true, true]);
+      expect(
+        await flags('f-online', 12, {
+          recordedOffline: false,
+          reviewRequired: false,
+        }),
+      ).toEqual([false, false]);
+      expect(await flags('f-late', 14, { reviewRequired: true })).toEqual([
+        true,
+        true,
+      ]);
     });
     it('composes segment helpers inside one transaction and rolls back together', async () => {
       await service.punchIn(at(8));
@@ -1138,9 +1274,13 @@ export function attendanceSuite(
         state = await run();
         expect(state.segments.map((g) => g.workRefId)).toEqual(['work-2']);
         expect(state.segments[0].durationSeconds).toBe(2 * 3600);
+        expect(state.segments[0].profileId).toBe(state.punch.profileId);
         await withTenant({ tenantId: actor.tenantId }, async () => {
           const rows = await AttendanceSegmentCollection.create({ db });
           const stored = await rows.get(state.segments[0].id!);
+          stored!.profileId = crypto.randomUUID();
+          await expect(stored!.save()).rejects.toThrow('immutable');
+          stored!.profileId = state.punch.profileId;
           await expect(stored!.delete()).rejects.toThrow('immutable');
           stored!.endedAt = null;
           await expect(stored!.delete()).rejects.toThrow('immutable');
@@ -1317,6 +1457,233 @@ export function attendanceSuite(
           }),
         ).rejects.toThrow('period is confirmed');
         expect(await ledger(punch.id!)).toHaveLength(0);
+      });
+      describe('open punches', () => {
+        const load = (id: string) =>
+          new AttendanceService(db, actor).withTransaction(async (tx) => ({
+            punch: (
+              await tx.punches.list({ where: { ...actor, id }, limit: 1 })
+            )[0],
+            breaks: await tx.breaks.list({
+              where: { tenantId: actor.tenantId, punchId: id },
+              orderBy: 'started_at ASC',
+            }),
+            segments: await tx.segments.list({
+              where: { tenantId: actor.tenantId, punchId: id },
+              orderBy: 'started_at ASC',
+            }),
+          }));
+        it('corrects only the start of an open punch, never past its first interval', async () => {
+          const open = await service.punchIn(at(8));
+          await service.startWork(at(9), work);
+          await service.stopWork(at(10));
+          const row = await fix.correctPunch({
+            ...base(),
+            punchId: open.id!,
+            startedAt: at(7),
+          });
+          expect(row).toMatchObject({
+            kind: 'punch.corrected',
+            actorProfileId: foreman,
+          });
+          expect(row.getBefore()).toMatchObject({
+            startedAt: at(8).toISOString(),
+            endedAt: null,
+          });
+          const { punch } = await load(open.id!);
+          expect(punch.startedAt).toEqual(at(7));
+          expect(punch.endedAt).toBeNull();
+          await expect(
+            fix.correctPunch({ ...base(), punchId: open.id!, endedAt: at(11) }),
+          ).rejects.toThrow('cannot be closed');
+          await expect(
+            fix.correctPunch({
+              ...base(),
+              punchId: open.id!,
+              startedAt: half(9),
+            }),
+          ).rejects.toThrow('inside its punch');
+          expect(await ledger(open.id!)).toHaveLength(1);
+          const closed = await service.punchOut(at(11));
+          expect(closed.durationSeconds).toBe(4 * 3600);
+        });
+        it('saves and removes closed breaks and segments inside an open punch', async () => {
+          const open = await service.punchIn(at(8));
+          const id = open.id!;
+          await fix.saveBreak({
+            ...base(),
+            punchId: id,
+            startedAt: at(10),
+            endedAt: half(10),
+            paid: false,
+          });
+          await fix.saveSegment({
+            ...base(),
+            punchId: id,
+            startedAt: at(8),
+            endedAt: at(10),
+            work,
+          });
+          let state = await load(id);
+          expect(state.breaks).toHaveLength(1);
+          expect(state.segments).toHaveLength(1);
+          await fix.saveBreak({
+            ...base(),
+            punchId: id,
+            breakId: state.breaks[0].id!,
+            endedAt: at(11),
+          });
+          await service.startWork(at(11), work);
+          state = await load(id);
+          // The open segment stays service-owned and bounds closed edits.
+          const openSegment = state.segments.find((x) => !x.endedAt)!;
+          await expect(
+            fix.saveSegment({
+              ...base(),
+              punchId: id,
+              segmentId: openSegment.id!,
+              endedAt: at(12),
+            }),
+          ).rejects.toThrow('AttendanceService');
+          await expect(
+            fix.removeSegment({ ...base(), segmentId: openSegment.id! }),
+          ).rejects.toThrow('AttendanceService');
+          await expect(
+            fix.saveBreak({
+              ...base(),
+              punchId: id,
+              startedAt: half(11),
+              endedAt: at(12),
+            }),
+          ).rejects.toThrow('overlap');
+          await fix.removeBreak({ ...base(), breakId: state.breaks[0].id! });
+          await fix.removeSegment({
+            ...base(),
+            segmentId: state.segments.find((x) => x.endedAt)!.id!,
+          });
+          state = await load(id);
+          expect(state.breaks).toHaveLength(0);
+          expect(state.segments).toHaveLength(1);
+          expect(state.punch.endedAt).toBeNull();
+          expect(await ledger(id)).toHaveLength(5);
+        });
+        it('adds an open punch with closed breaks and segments and a ledger row', async () => {
+          const detailedWork = {
+            ...work,
+            taskRefType: 'test:Task',
+            taskRefId: crypto.randomUUID(),
+            kind: 'installation',
+            description: 'Install the replacement pump',
+          };
+          const row = await fix.addPunch({
+            ...base(),
+            open: true,
+            startedAt: at(8),
+            breaks: [{ startedAt: at(12), endedAt: at(13), paid: false }],
+            segments: [
+              { startedAt: at(8), endedAt: at(12), work: detailedWork },
+            ],
+          });
+          expect(row).toMatchObject({
+            kind: 'punch.added',
+            actorProfileId: foreman,
+          });
+          const { punch, breaks, segments } = await load(row.punchId!);
+          expect(punch.endedAt).toBeNull();
+          expect(breaks).toHaveLength(1);
+          expect(segments).toHaveLength(1);
+          const expectedSegment = {
+            ...detailedWork,
+            startedAt: at(8).toISOString(),
+            endedAt: at(12).toISOString(),
+            durationSeconds: 4 * 3600,
+            closedReason: 'stop',
+          };
+          expect(segments[0]).toMatchObject({
+            ...expectedSegment,
+            startedAt: at(8),
+            endedAt: at(12),
+          });
+          const [storedCorrection] = await ledger(punch.id!);
+          expect(storedCorrection.getAfter()).toMatchObject({
+            segments: [expectedSegment],
+          });
+          await expect(
+            fix.addPunch({ ...base(), open: true, startedAt: at(14) }),
+          ).rejects.toThrow('already open');
+          const closed = await service.punchOut(at(16));
+          expect(closed.id).toBe(punch.id);
+          expect(closed.durationSeconds).toBe(7 * 3600);
+        });
+        it('rolls back an added open punch and its children if its ledger write fails', async () => {
+          const write = vi
+            .spyOn(AttendanceCorrection.prototype, 'save')
+            .mockRejectedValueOnce(new Error('ledger unavailable'));
+          const input = {
+            ...base(),
+            open: true as const,
+            startedAt: at(8),
+            breaks: [{ startedAt: at(12), endedAt: at(13), paid: false }],
+            segments: [{ startedAt: at(8), endedAt: at(12), work }],
+          };
+          await expect(fix.addPunch(input)).rejects.toThrow(
+            'ledger unavailable',
+          );
+          write.mockRestore();
+          await service.withTransaction(async (tx) => {
+            expect(await tx.punches.list({ where: actor })).toHaveLength(0);
+            expect(
+              await tx.breaks.list({ where: { tenantId: actor.tenantId } }),
+            ).toHaveLength(0);
+            expect(
+              await tx.segments.list({ where: { tenantId: actor.tenantId } }),
+            ).toHaveLength(0);
+          });
+          const row = await fix.addPunch(input);
+          expect(await ledger(row.punchId!)).toHaveLength(1);
+          expect((await service.punchOut(at(16))).durationSeconds).toBe(
+            7 * 3600,
+          );
+        });
+        it('honours the correction guard and subject ownership for open punches', async () => {
+          const punch = await service.punchIn(at(8));
+          const guarded = new AttendanceCorrectionService(
+            db,
+            { tenantId: actor.tenantId, profileId: foreman },
+            { guard: async () => 'period is confirmed' },
+          );
+          await expect(
+            guarded.correctPunch({
+              ...base(),
+              punchId: punch.id!,
+              startedAt: at(7),
+            }),
+          ).rejects.toThrow('period is confirmed');
+          await expect(
+            fix.correctPunch({
+              ...base(),
+              subjectProfileId: crypto.randomUUID(),
+              punchId: punch.id!,
+              startedAt: at(7),
+            }),
+          ).rejects.toThrow('not found');
+          expect((await load(punch.id!)).punch.startedAt).toEqual(at(8));
+          expect(await ledger(punch.id!)).toHaveLength(0);
+        });
+        it('refuses an added open punch that overlaps or has a bad layout', async () => {
+          await day();
+          await expect(
+            fix.addPunch({ ...base(), open: true, startedAt: at(9) }),
+          ).rejects.toThrow('overlap');
+          await expect(
+            fix.addPunch({
+              ...base(),
+              open: true,
+              startedAt: at(20),
+              breaks: [{ startedAt: at(19), endedAt: at(21) }],
+            }),
+          ).rejects.toThrow('inside its punch');
+        });
       });
       it('keeps auto-close reason and provenance when an auto-closed punch is corrected', async () => {
         await service.punchIn(at(8), {

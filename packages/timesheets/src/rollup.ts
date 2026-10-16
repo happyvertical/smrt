@@ -14,6 +14,7 @@ export { PeriodRollupService } from './rollup/service.js';
 export type {
   PeriodRollupOptions,
   PeriodRulesResolver,
+  RollupAttribution,
   TimecardActor,
   TimecardAdjustmentInput,
   TimecardPeriod,

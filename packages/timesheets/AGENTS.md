@@ -25,12 +25,16 @@ per-instance capability (`attendance/write.ts`, not exported) that lifts the
 models' closed-interval checks for one save, validates the whole punch layout,
 recomputes durations and appends an `AttendanceCorrection` (append-only ledger,
 no generated operations; only a first acknowledgement by the subject may update
-a row). Never export `write.ts`. Punch `source`/`deviceRef*` and break `kind` are immutable except through corrections; `autoCloseReason` is write-once via `persistAutoClose`. A confirmed `PeriodTimecard` is honoured by the
+a row). An open punch accepts only a `startedAt` correction, closed breaks/segments inside it, and `addPunch({ open: true })`; the open break/segment and closing stay `AttendanceService`'s. Never export `write.ts`. Punch `source`/`deviceRef*` and break `kind` are immutable except through corrections; `autoCloseReason` is write-once via `persistAutoClose`. A confirmed `PeriodTimecard` is honoured by the
 opt-in `confirmedTimecardGuard` (`rollup/correction-guard.ts`), which refuses
 while a card is submitted or confirmed. `PeriodRollupService.reopen()` returns
 such a card to `open` and appends a `TimecardReopening` (`timecard_reopenings`,
 append-only, service-only via `rollup/write.ts`); `submit()` is the optional
 open -> submitted step (`requireSubmission` makes it mandatory) (#3950).
+`PeriodRollupOptions.attribution` (`'clip'` default | `'start'`) decides crossing
+sources: `'start'` keeps a punch (breaks and segments included) or bounded entry
+whole in the period containing its start, unclipped, and excludes it from the
+next (`attributeSource` in `rollup/calculation.ts`) (#4028).
 Segment transitions live in `attendance/segments.ts`; compose them with other
 attendance writes via `AttendanceService.withTransaction`. Any new attendance
 table must be added to the `includeObjects` lists in the `*.optional.test.ts`
@@ -178,7 +182,9 @@ Timecards and adjustments have closed generated surfaces and service-only
 model writes; never bypass the instance capability with generic persistence.
 
 Replay hashes the tap AS SENT (action, device `at`, paid, work, and `source`/`device`/`kind` only when present, so older receipts still match) so retries match;
-`replay(taps, { resolveAt, now, refusal })` only changes the stored time and
-reason. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
+`replay(taps, { resolveAt, now, refusal })` only changes the stored time, reason and the
+punch's `recordedOffline`/`reviewRequired` (both default true and stay set across
+later taps; false never clears an earlier flag). A reviewed correction clears
+`reviewRequired`. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
 `stopWork`, `resumeWork`) run in the tap's transaction via `apply()`. Refusals store
 `code` from `AttendanceConflict.code`; give new conflicts a code.

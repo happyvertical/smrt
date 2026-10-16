@@ -120,8 +120,14 @@ export interface AttendanceTimeInput {
 /** The effective time a policy chose, and whether a person should look at it. */
 export interface AttendanceResolvedTime {
   at: Date;
-  /** Flags the resulting work segment (punches are always flagged offline). */
+  /**
+   * Whether a person should review the result. Applies to the punch (default
+   * true when omitted) and, when true, the resulting work segment. False does
+   * not clear a punch's existing review requirement; use a reviewed correction.
+   */
   reviewRequired?: boolean;
+  /** Marks the punch offline (default true); false never clears an earlier flag. */
+  recordedOffline?: boolean;
 }
 
 /** Why a consumer refuses or rewrites the stored reason of a refused tap. */
@@ -805,6 +811,8 @@ export class AttendanceService {
           const deviceAt = new Date(tap.at);
           let at = deviceAt;
           let review = false;
+          let punchReview = true;
+          let offline = true;
           if (options.resolveAt) {
             const serverNow = this.date(options.now?.() ?? new Date());
             const resolved = await options.resolveAt({
@@ -822,6 +830,8 @@ export class AttendanceService {
               throw new Error('resolveAt must return a valid date.');
             at = resolved.at;
             review = resolved.reviewRequired === true;
+            punchReview = resolved.reviewRequired !== false;
+            offline = resolved.recordedOffline !== false;
           }
           let outcome: AttendanceReplayOutcome;
           try {
@@ -840,8 +850,8 @@ export class AttendanceService {
                   replays: tx.replays,
                 };
                 const { punch, segment } = await this.apply(inner, tap, at);
-                punch.recordedOffline = true;
-                punch.reviewRequired = true;
+                punch.recordedOffline ||= offline;
+                punch.reviewRequired ||= punchReview;
                 await punch.save();
                 if (segment && review) {
                   segment.reviewRequired = true;

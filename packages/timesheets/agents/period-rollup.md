@@ -134,6 +134,19 @@ Outputs are reloaded on the root executor after commit. Rollup reads are an
 application snapshot: subsequent source approvals/corrections appear on the
 next open rollup, and confirmed cards require explicit adjustments.
 
+## Boundary attribution (#4028)
+
+By default (`attribution: 'clip'`) a source crossing a period boundary is
+prorated across every period it overlaps. Pass `{ attribution: 'start' }` for a
+pay rule where a shift counts wholly in the period it started: an attendance
+punch (its breaks and segments follow it) or a bounded evidence entry belongs,
+unclipped, to the period containing its start and is excluded from the period
+it spills into. A Sunday 22:00 to Monday 06:00 shift with a Monday 00:00
+boundary rolls up as 8 h / 0 h under `'start'` and 2 h / 6 h under `'clip'`.
+Source `endsAt` may then lie past the period end. Use one attribution per
+person: switching it for periods already confirmed does not re-roll them, and
+confirmed or submitted cards behave as before (reopen, then roll up again).
+
 ## Lifecycle: submit, confirm, reopen (#3950)
 
 `open` (draft) -> `submitted` (optional) -> `confirmed`. `submit(id)` freezes an

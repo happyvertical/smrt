@@ -82,6 +82,7 @@ export async function beginSegment(
   return tx.segments.create({
     tenantId: punch.tenantId,
     punchId: punch.id ?? undefined,
+    profileId: punch.profileId,
     workRefType: work.workRefType,
     workRefId: work.workRefId,
     taskRefType: work.taskRefType ?? '',
