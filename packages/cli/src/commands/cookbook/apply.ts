@@ -224,11 +224,17 @@ export function scopedProjectName(
 ): string {
   const scope = /^@[a-z0-9][a-z0-9._~-]*\//.exec(templateName ?? '')?.[0];
   const prefix = scope ? scope.slice(0, -1) : DEFAULT_PROJECT_SCOPE;
-  // Never the template's own name (its app identity), even when the slug
-  // matches it.
-  const suffix = `${prefix}/${slugName}` === templateName ? '-project' : '';
-  const room = 214 - prefix.length - 1 - suffix.length;
-  return `${prefix}/${slugName.slice(0, room).replace(/-+$/, '')}${suffix}`;
+  const fit = (suffix: string) => {
+    const room = 214 - prefix.length - 1 - suffix.length;
+    return `${prefix}/${slugName.slice(0, room).replace(/-+$/, '')}${suffix}`;
+  };
+  // Never the template's own name (its app identity), compared after
+  // truncation; suffixes are tried until the name differs.
+  let name = fit('');
+  for (let n = 1; name === templateName; n += 1) {
+    name = fit(n === 1 ? '-project' : `-project-${n}`);
+  }
+  return name;
 }
 
 /** Parse `github:owner/repo#ref`, a git URL, or a local path. */

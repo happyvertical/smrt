@@ -1006,6 +1006,20 @@ describe('scopedProjectName (#4061)', () => {
     );
   });
 
+  it('compares with the template name after truncating to 214 characters', () => {
+    const template = `@smrt-app/${'a'.repeat(204)}`;
+    const name = scopedProjectName('a'.repeat(205), template);
+    expect(name).not.toBe(template);
+    expect(name.length).toBeLessThanOrEqual(214);
+    expect(name.endsWith('-project')).toBe(true);
+    // A slug that already ends in the suffix at the truncation point.
+    const tricky = `${'a'.repeat(195)}-project`;
+    const trickyTemplate = `@smrt-app/${tricky}`;
+    expect(scopedProjectName(`${tricky}-project`, trickyTemplate)).not.toBe(
+      trickyTemplate,
+    );
+  });
+
   it('stays within the 214-character npm name limit', () => {
     const name = scopedProjectName('a'.repeat(300), '@smrt-app/start');
     expect(name.length).toBeLessThanOrEqual(214);
