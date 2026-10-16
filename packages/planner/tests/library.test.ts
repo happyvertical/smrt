@@ -277,6 +277,28 @@ describe('applying a cookbook', () => {
     expect(needsConfirm(s)).toBe(true);
   });
 
+  it('asks exactly when replacing would lose work', () => {
+    const s = store();
+    // Only a light/dark choice: applying keeps it, so nothing is lost.
+    s.setTheme({ colorScheme: 'light' });
+    expect(needsConfirm(s, null)).toBe(false);
+    // A cookbook as applied: applying it again gets it back.
+    expect(applyLibraryCookbook(libraryCookbooks[0], s).ok).toBe(true);
+    expect(needsConfirm(s)).toBe(false);
+    s.setTheme({ ...s.theme, colorScheme: 'dark' });
+    expect(needsConfirm(s)).toBe(false);
+    // Any edit since applying would be lost.
+    recipeState.add('sales.pipeline');
+    expect(needsConfirm(s)).toBe(true);
+    recipeState.remove('sales.pipeline');
+    expect(needsConfirm(s)).toBe(false);
+    s.setLayout({ ...s.layout, version: 1, hidden: ['x'] });
+    expect(needsConfirm(s)).toBe(true);
+    // Switching from an untouched cookbook to another does not ask.
+    applyLibraryCookbook(libraryCookbooks[1], s);
+    expect(needsConfirm(s)).toBe(false);
+  });
+
   it('applies one cookbook over another', () => {
     const s = store();
     applyLibraryCookbook(libraryCookbooks[0], s);

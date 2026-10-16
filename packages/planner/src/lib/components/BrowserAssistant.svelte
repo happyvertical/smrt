@@ -13,7 +13,6 @@ import { useDataSource } from '../data/context.ts';
 import { applyLibraryCookbook, needsConfirm } from '../library/apply.ts';
 import { getLibraryCookbook } from '../library/index.ts';
 import { previewMenu } from '../library/menu.ts';
-import { libraryState } from '../library/state.svelte.ts';
 import { appHref } from '../planner/app.svelte.ts';
 import { settingsOfCookbook } from '../settings/app-settings.ts';
 import VoiceTyping from './VoiceTyping.svelte';
@@ -58,7 +57,6 @@ $effect(() => {
     );
     if (!result.ok) return result.error;
     dataSource.reset?.();
-    libraryState.select(cookbook.id);
     return null;
   };
   return () => {

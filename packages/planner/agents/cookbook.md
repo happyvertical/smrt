@@ -81,6 +81,8 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   are exclusive, per line. `pending.json` holds cookbooks waiting on unreleased recipes (empty since
   Agency moved in with smrt 0.56.1). `menu.ts` previews
   a library cookbook's menu (same `applyShellLayout`), `apply.ts` replaces the document
-  (confirm when non-empty), `state.svelte.ts` remembers the last applied id in
+  (confirm exactly when work would be lost: never when empty or still as the last applied cookbook
+  left it, `document.ts` `wouldLoseWork`; the colour scheme is kept, so it never counts),
+  `state.svelte.ts` remembers the last applied id and that document's `workFingerprint` in
   localStorage (not in the document). Applying regenerates the sample records from the cookbook's pack (the panel says so). Add a
   library cookbook by adding an entry; use only existing recipe ids.

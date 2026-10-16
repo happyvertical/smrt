@@ -69,7 +69,6 @@ function commit() {
   if (result.ok) {
     // Sample records are regenerated from the cookbook's own sample data.
     dataSource.reset?.();
-    libraryState.select(selected.id);
     error = '';
     const count = previewMenu(selected.document).length;
     notice = `${selected.name} added ${count} menu sections. Explore them in the left sidebar.`;
