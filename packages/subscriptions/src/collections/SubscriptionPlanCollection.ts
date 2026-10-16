@@ -23,7 +23,15 @@ export class SubscriptionPlanCollection extends SmrtCollection<SubscriptionPlan>
     providerPriceId: string,
   ): Promise<SubscriptionPlan | null> {
     const plans = await this.list({ where: { providerPriceId }, limit: 1 });
-    return plans[0] ?? null;
+    if (plans[0]) return plans[0];
+    const legacy = await this.list({
+      where: { stripePriceId: providerPriceId },
+    });
+    return (
+      legacy.find(
+        (plan) => !plan.externalProvider || plan.externalProvider === 'stripe',
+      ) ?? null
+    );
   }
 
   /** @deprecated Provider-neutral integrations should use findByProviderPriceId. */

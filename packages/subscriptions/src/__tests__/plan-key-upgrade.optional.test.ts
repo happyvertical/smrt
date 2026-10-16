@@ -68,6 +68,16 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
   const original = await plans.get(id);
   expect(original?.name).toBe('Existing co-op');
   expect(original?.pricingMode).toBe('fixed');
+  await plans.update(id, { stripePriceId: 'price_legacy' });
+  expect((await plans.findByProviderPriceId('price_legacy'))?.id).toBe(id);
+  await plans.update(id, { externalProvider: 'other' });
+  expect(await plans.findByProviderPriceId('price_legacy')).toBeNull();
+  await plans.update(id, {
+    externalProvider: 'stripe',
+    providerPriceId: 'price_neutral',
+  });
+  expect((await plans.findByProviderPriceId('price_neutral'))?.id).toBe(id);
+  expect((await plans.findByStripePriceId('price_legacy'))?.id).toBe(id);
   await plans.create({
     tenantId: '33333333-3333-4333-8333-333333333333',
     planKey: 'membership',

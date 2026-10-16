@@ -5,6 +5,38 @@ import PlanPicker, { type PlanPickerPlan } from './PlanPicker.svelte';
 import planPickerSource from './PlanPicker.svelte?raw';
 
 describe('PlanPicker', () => {
+  it('labels free and pay-what-you-can terms without presenting a zero fixed price', () => {
+    const { body } = render(PlanPicker, {
+      props: {
+        plans: [
+          {
+            planKey: 'free',
+            name: 'Free tier',
+            pricingMode: 'free',
+            priceAmount: 0,
+            currency: 'USD',
+            billingInterval: 'month',
+          },
+          {
+            planKey: 'pwyc',
+            name: 'Flexible',
+            pricingMode: 'pay_what_you_can',
+            priceAmount: 0,
+            minimumAmount: 500,
+            suggestedAmount: 1500,
+            currency: 'USD',
+            billingInterval: 'month',
+          },
+        ],
+      },
+    });
+    expect(body).toContain('Free');
+    expect(body).toContain('Pay what you can');
+    expect(body).toContain('Minimum $5.00 / month');
+    expect(body).toContain('Suggested $15.00 / month');
+    expect(body).not.toContain('$0.00');
+  });
+
   it('keys serialized id-less plans by planKey', () => {
     const plans: PlanPickerPlan[] = [
       {

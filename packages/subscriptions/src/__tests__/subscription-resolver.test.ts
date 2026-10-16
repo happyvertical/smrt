@@ -1,3 +1,4 @@
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
@@ -15,6 +16,50 @@ afterEach(() => {
 });
 
 describe('smrt-subscriptions', () => {
+  it.each([
+    'reader',
+    'context',
+  ] as const)('checks plan ownership on the %s path, preserving trusted seller binding', async (path) => {
+    const plan = new SubscriptionPlan({
+      tenantId: 'seller',
+      planKey: 'seller',
+      name: 'Seller',
+    });
+    Object.assign(plan, { id: 'plan-seller' });
+    const subscription = new TenantSubscription({
+      tenantId: 'child',
+      planId: 'plan-seller',
+      status: 'active',
+    });
+    const resolver = new SubscriptionResolver({
+      plans: { get: async () => plan },
+      subscriptions: { findCurrentForTenant: async () => subscription },
+      usage: {
+        summarize: async () => {
+          throw new Error('No thresholds');
+        },
+      },
+    });
+    const options =
+      path === 'context' ? { context: { plan, subscription } } : {};
+    await expect(
+      resolver.resolveTenantEntitlements('child', options),
+    ).rejects.toThrow('does not belong');
+    await expect(
+      withSystemContext(() =>
+        resolver.resolveTenantEntitlements('child', options),
+      ),
+    ).resolves.toMatchObject({ planKey: 'seller' });
+    plan.tenantId = 'child';
+    await expect(
+      resolver.resolveTenantEntitlements('child', options),
+    ).resolves.toMatchObject({ planKey: 'seller' });
+    plan.tenantId = null;
+    await expect(
+      resolver.resolveTenantEntitlements('child', options),
+    ).resolves.toMatchObject({ planKey: 'seller' });
+  });
+
   it('stores plan feature grants and thresholds as typed accessors', () => {
     const plan = new SubscriptionPlan({
       planKey: 'growth',

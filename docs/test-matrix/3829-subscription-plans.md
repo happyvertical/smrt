@@ -34,3 +34,9 @@ Tier amendment/renewal/cancellation continuity is deliberately covered by #4032;
 ## Round 4 correction
 
 - A coordinated SQLite/PostgreSQL natural-key race holds both first-create lookups before either insert. Exactly one write succeeds; the losing create cannot reprice the winner. Matching-term retries retain one identity; different mode/minimum remains rejected. Initial writes use core's existing strict-insert API, with no framework workaround or dependency on another unreleased branch.
+
+## External review corrections
+
+- Reader and supplied-context entitlement paths reject foreign-owned plans, accept own/global plans, and preserve explicit trusted system-context seller-to-child resolution (`subscription-resolver.test.ts`).
+- SQLite/PostgreSQL upgrade fixtures prove legacy Stripe lookup fallback and reject that fallback for explicit other-provider bindings.
+- PlanPicker SSR tests and browser QA verify free/PWYC minimum/suggestion labels while existing fixed-price/currency rendering remains covered.

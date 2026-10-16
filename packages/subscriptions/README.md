@@ -60,6 +60,9 @@ subscription and plan.
   the subscription ID while other payer groups continue. Ordinary subscription
   writes resolve only their own tenant's plans or legacy global plans; trusted
   system-context billing can link a seller's plan to its child tenant.
+  Entitlement resolution validates plan ownership on both reader and supplied
+  context paths; trusted seller-to-child resolution requires explicit system
+  context too.
 - `TenantUsageMetric` is immutable, idempotent usage evidence.
 - `SubscriptionResolver` combines current subscription, plan, and batched usage
   summaries into one entitlement decision.
@@ -89,7 +92,11 @@ foundation does not provide immutable period snapshots. Concurrent first creates
 for one `(tenantId, planKey)` use a strict insert: one succeeds and a collision
 fails without changing the winner. Retry by reading the existing plan; a
 sequential create with matching mode/minimum retains natural-key upsert behavior.
-Retrying different pricing mode/minimum is rejected.
+Retrying different pricing mode/minimum is rejected. The provider-neutral price
+lookup falls back to legacy Stripe IDs when the binding is Stripe or unspecified;
+explicit bindings to other providers do not use that fallback. PlanPicker accepts
+optional pricing mode, minimum and suggested amounts, labeling free plans and
+PWYC terms explicitly instead of displaying them as zero fixed-price plans.
 
 Existing databases created before #3829 may retain the global
 `_smrt_subscription_plans_plan_key_idx` on older migration runners. Run
