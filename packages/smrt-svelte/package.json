@@ -51,6 +51,11 @@
       "import": "./dist/components/import-export/index.js",
       "default": "./dist/components/import-export/index.js"
     },
+    "./import-export/csv": {
+      "types": "./dist/components/import-export/csv.d.ts",
+      "import": "./dist/components/import-export/csv.js",
+      "default": "./dist/components/import-export/csv.js"
+    },
     "./command-palette": {
       "types": "./dist/components/command-palette/index.d.ts",
       "svelte": "./dist/components/command-palette/index.js",
