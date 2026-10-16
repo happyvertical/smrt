@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   disableTenancy,
@@ -25,6 +26,9 @@ import type {
   HistoricalSalesMoneyFacts,
   HistoricalSalesSource,
 } from '../historical-sales-types.js';
+import { serializeInvoiceMcpGet } from '../invoice-mcp.js';
+import { HistoricalSalesLine } from '../models/HistoricalSalesLine.js';
+import { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus } from '../types/index.js';
 
 const facts: HistoricalSalesMoneyFacts = {
@@ -233,6 +237,45 @@ describe('historical issued sales money on SQLite', () => {
             (line) => line.quantityText === null && line.taxMinor === null,
           ),
         ).toBe(true);
+        expect(
+          (await serializeInvoiceMcpGet(parent)).money?.historical,
+        ).toEqual({ snapshot: withLines.snapshot, lines: withLines.lines });
+        for (const [model, fieldName] of [
+          [Invoice, 'historicalSalesMoneyJson'],
+          [HistoricalSalesLine, 'sourceKey'],
+          [HistoricalSalesLine, 'netMinor'],
+          [HistoricalSalesLine, 'sourceFieldsJson'],
+        ] as const) {
+          const registered = ObjectRegistry.getClassByConstructor(model);
+          const definitions = [
+            registered?.fields,
+            registered?.inheritedFields,
+          ].flatMap((fields) =>
+            fields?.get(fieldName) ? [fields.get(fieldName)!] : [],
+          );
+          expect(definitions.length).toBeGreaterThan(0);
+          const prior = definitions.map((field) => field.readPermission);
+          definitions.forEach((field) => {
+            field.readPermission = 'original.money.read';
+          });
+          try {
+            expect(await serializeInvoiceMcpGet(parent)).not.toHaveProperty(
+              'money',
+            );
+            expect(
+              (
+                await serializeInvoiceMcpGet(parent, {
+                  permissions: ['original.money.read'],
+                })
+              ).money?.historical,
+            ).toEqual({ snapshot: withLines.snapshot, lines: withLines.lines });
+          } finally {
+            definitions.forEach((field, index) => {
+              if (prior[index] === undefined) delete field.readPermission;
+              else field.readPermission = prior[index];
+            });
+          }
+        }
         children[0].netMinor = 1;
         await expect(children[0].save()).rejects.toThrow(
           'public historical Commerce command',

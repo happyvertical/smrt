@@ -47,3 +47,14 @@ state and belong to exact retry identity. Shared SQLite/PostgreSQL retention pro
 checks configure/release reload, changed-date refusal and outer rollback. Omitted
 dates remain unknown; no recorded timestamp is substituted. The initial application
 failure and cancelled combined-gate run remain in the MVP evidence ledger.
+
+
+Combined-package regression coverage additionally preserves ordinary invoice save
+normalization before evaluating retained capacity. New caller-supplied payment
+totals are still ignored, paid-at-creation and negative-line rejection retain their
+existing guards, and retention validation still runs before persistence. Public
+invoice money projections depend on the fields actually projected: private provider
+operation state is not returned and must not hide ordinary money. Original source
+snapshots/children and the explicit tax net basis retain their own field-permission
+gates. Existing security-audit, money-tool, document-money and manifest regressions
+plus focused original-source policy assertions cover these integration boundaries.

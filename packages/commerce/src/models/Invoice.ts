@@ -685,6 +685,25 @@ export class Invoice extends SmrtObject {
     const prior = await this.resolvePriorStatus(persisted);
 
     this.assertAmountsAreMinorUnits();
+    if (persisted && this.id) await this.recomputeAmountPaid();
+    else {
+      // A new invoice has no PaymentAllocations behind it, so it cannot
+      // start paid: payment status is derived from allocations.
+      this.amountPaid = 0;
+      if (
+        this.status === InvoiceStatus.PAID ||
+        this.status === InvoiceStatus.PARTIAL
+      )
+        throw new Error(
+          `Invoice ${this.invoiceNumber || '<new>'}: a new invoice cannot start ` +
+            `in status '${this.status}' — payment status is derived from ` +
+            'PaymentAllocations, not set at creation. Create the invoice unpaid ' +
+            '(DRAFT / SENT) and record payments via allocations.',
+        );
+    }
+    this.assertNonNegativeAmounts();
+    this.assertStatusTransition(prior);
+    this.assertPaymentStatusConsistent();
     const payable = calculateInvoicePayable(this);
     if (
       this.retentionAccountingStateJson &&
@@ -715,25 +734,6 @@ export class Invoice extends SmrtObject {
         'INVALID_MONEY_INPUT',
         'Unreleased retention requires an explicit provider retention contract',
       );
-    if (persisted && this.id) await this.recomputeAmountPaid();
-    else {
-      // A new invoice has no PaymentAllocations behind it, so it cannot
-      // start paid: payment status is derived from allocations.
-      this.amountPaid = 0;
-      if (
-        this.status === InvoiceStatus.PAID ||
-        this.status === InvoiceStatus.PARTIAL
-      )
-        throw new Error(
-          `Invoice ${this.invoiceNumber || '<new>'}: a new invoice cannot start ` +
-            `in status '${this.status}' — payment status is derived from ` +
-            'PaymentAllocations, not set at creation. Create the invoice unpaid ' +
-            '(DRAFT / SENT) and record payments via allocations.',
-        );
-    }
-    this.assertNonNegativeAmounts();
-    this.assertStatusTransition(prior);
-    this.assertPaymentStatusConsistent();
     await this.assertDraftDeliveryHistory(persisted);
 
     await assertAllocationParent(this, 'invoice');

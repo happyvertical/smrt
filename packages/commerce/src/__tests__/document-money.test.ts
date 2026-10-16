@@ -228,6 +228,7 @@ describe('invoice money persistence (#3933)', () => {
         gateFieldForTest(Invoice, 'taxAmount', 'invoices.read.money'),
         gateFieldForTest(InvoiceLineItem, 'taxAmount', 'invoices.read.money'),
         gateFieldForTest(DocumentTax, 'taxMinor', 'invoices.read.money'),
+        gateFieldForTest(DocumentTax, 'netMinor', 'invoices.read.money'),
       ];
       try {
         const denied = await serializeInvoiceMcpGet(storedInvoice);
@@ -249,6 +250,24 @@ describe('invoice money persistence (#3933)', () => {
         restorePolicies.reverse().forEach((restore) => {
           restore();
         });
+      }
+
+      const restoreNet = gateFieldForTest(
+        DocumentTax,
+        'netMinor',
+        'tax-basis.read',
+      );
+      try {
+        expect(await serializeInvoiceMcpGet(storedInvoice)).not.toHaveProperty(
+          'money',
+        );
+        expect(
+          await serializeInvoiceMcpGet(storedInvoice, {
+            permissions: ['tax-basis.read'],
+          }),
+        ).toHaveProperty('money');
+      } finally {
+        restoreNet();
       }
 
       const crossTenant = await withTenant({ tenantId: 'tenant-other' }, () =>

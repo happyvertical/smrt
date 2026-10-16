@@ -90,6 +90,7 @@ export class DocumentTax extends SmrtObject {
     type: 'integer',
     nullable: true,
     description: 'Net basis when different from the component taxable basis.',
+    ui: { format: 'money' },
   })
   netMinor: number | null = null;
 
