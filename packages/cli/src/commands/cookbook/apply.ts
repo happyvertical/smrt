@@ -215,7 +215,8 @@ export const DEFAULT_PROJECT_SCOPE = '@smrt-app';
  * A new project's package name: the slug under the template's npm scope (else
  * `@smrt-app`). SMRT qualifies class names as `@scope/package:ClassName` and
  * refuses to scan a project with an unscoped name, so an unscoped name would
- * leave any template that declares its own models unbuildable (#4061).
+ * leave any template that declares its own models unbuildable (#4061). A
+ * slug that would reproduce the template's name gets a `-project` suffix.
  */
 export function scopedProjectName(
   slugName: string,
@@ -223,8 +224,11 @@ export function scopedProjectName(
 ): string {
   const scope = /^@[a-z0-9][a-z0-9._~-]*\//.exec(templateName ?? '')?.[0];
   const prefix = scope ? scope.slice(0, -1) : DEFAULT_PROJECT_SCOPE;
-  const room = 214 - prefix.length - 1;
-  return `${prefix}/${slugName.slice(0, room).replace(/-+$/, '')}`;
+  // Never the template's own name (its app identity), even when the slug
+  // matches it.
+  const suffix = `${prefix}/${slugName}` === templateName ? '-project' : '';
+  const room = 214 - prefix.length - 1 - suffix.length;
+  return `${prefix}/${slugName.slice(0, room).replace(/-+$/, '')}${suffix}`;
 }
 
 /** Parse `github:owner/repo#ref`, a git URL, or a local path. */

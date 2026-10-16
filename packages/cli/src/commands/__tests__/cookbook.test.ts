@@ -1000,6 +1000,12 @@ describe('scopedProjectName (#4061)', () => {
     expect(scopedProjectName('bakery', undefined)).toBe('@smrt-app/bakery');
   });
 
+  it('never reproduces the template name, whose app identity it would share', () => {
+    expect(scopedProjectName('sveltekit-app', '@smrt-app/sveltekit-app')).toBe(
+      '@smrt-app/sveltekit-app-project',
+    );
+  });
+
   it('stays within the 214-character npm name limit', () => {
     const name = scopedProjectName('a'.repeat(300), '@smrt-app/start');
     expect(name.length).toBeLessThanOrEqual(214);
