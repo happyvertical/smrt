@@ -73,4 +73,38 @@ describePostgres('Agreement PostgreSQL effective-dated terms', () => {
     expect(prior?.status).toBe('superseded');
     expect(current?.version).toBe(2);
   });
+
+  it('uses the explicit tenant lane without reading a matching tenant', async () => {
+    const partyA = JSON.stringify(COOP);
+    const partyB = JSON.stringify(WORKER);
+    const a = await agreements.create({
+      id: randomUUID(),
+      tenantId: randomUUID(),
+      kind: KIND,
+      partyA,
+      partyB,
+      version: 1,
+      status: 'active',
+      terms: JSON.stringify({ shareFraction: 0.25 }),
+    });
+    await agreements.create({
+      id: randomUUID(),
+      tenantId: randomUUID(),
+      kind: KIND,
+      partyA,
+      partyB,
+      version: 1,
+      status: 'active',
+      terms: JSON.stringify({ shareFraction: 0.75 }),
+    });
+
+    const resolved = await agreements.activeFor(
+      KIND,
+      COOP,
+      WORKER,
+      new Date(),
+      a.tenantId as string,
+    );
+    expect(resolved?.id).toBe(a.id);
+  });
 });

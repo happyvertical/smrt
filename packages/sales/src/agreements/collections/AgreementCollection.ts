@@ -1,7 +1,10 @@
 /** Collection helpers for generic versioned agreements. */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { assertTenantReadAllowed } from '@happyvertical/smrt-tenancy';
+import {
+  assertTenantReadAllowed,
+  getCurrentTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { Agreement, serializeAgreementParty } from '../models/Agreement.js';
 import type { AgreementParty } from '../types.js';
@@ -31,14 +34,12 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     partyA: AgreementParty,
     partyB: AgreementParty,
   ): Promise<Agreement[]> {
-    return await this.list({
-      where: {
-        kind,
-        partyA: serializeAgreementParty(partyA),
-        partyB: serializeAgreementParty(partyB),
-      },
-      orderBy: 'version DESC',
-    });
+    return await this.findGoverningCandidates(
+      kind,
+      serializeAgreementParty(partyA),
+      serializeAgreementParty(partyB),
+      this.ambientTenantId(),
+    );
   }
 
   /**
@@ -64,7 +65,7 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       kind,
       partyAValue,
       partyBValue,
-      tenantId,
+      tenantId === undefined ? this.ambientTenantId() : tenantId,
     );
     const matches = candidates.filter(
       (agreement) =>
@@ -181,13 +182,16 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     partyB: string,
     tenantId: string | null | undefined,
   ): Promise<Agreement[]> {
-    if (tenantId === undefined) {
-      return await this.list({
-        where: { kind, partyA, partyB },
-        orderBy: 'version DESC',
-      });
-    }
+    // With no ambient or explicit tenant this is an operator/global lookup;
+    // never let optional tenancy turn it into an unscoped cross-tenant read.
     if (tenantId === null) {
+      return await this.query(
+        `SELECT * FROM ${this.tableName} WHERE tenant_id IS NULL AND kind = ? AND party_a = ? AND party_b = ? ORDER BY version DESC`,
+        [kind, partyA, partyB],
+        { allowRawOnTenantScoped: true },
+      );
+    }
+    if (tenantId === undefined) {
       return await this.query(
         `SELECT * FROM ${this.tableName} WHERE tenant_id IS NULL AND kind = ? AND party_a = ? AND party_b = ? ORDER BY version DESC`,
         [kind, partyA, partyB],
@@ -206,6 +210,10 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       [kind, partyA, partyB],
       { allowRawOnTenantScoped: true },
     );
+  }
+
+  private ambientTenantId(): string | undefined {
+    return getCurrentTenant()?.tenantId;
   }
 
   private async runTransaction<T>(

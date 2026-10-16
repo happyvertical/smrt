@@ -181,4 +181,47 @@ describe('Agreement', () => {
       disableTenancy();
     }
   });
+
+  it('keeps amendments and default reads in the ambient tenant lane with global fallback', async () => {
+    const global = await createDraft({ tenantId: null, status: 'active' });
+    const a = await createDraft({ tenantId: 'tenant-a', status: 'active' });
+    const b = await createDraft({ tenantId: 'tenant-b', status: 'active' });
+
+    enableTenancy();
+    try {
+      await withTenant({ tenantId: 'tenant-a' }, async () => {
+        expect((await agreements.activeFor(KIND, COOP, WORKER))?.id).toBe(a.id);
+        const amendment = await agreements.createAmendment(KIND, COOP, WORKER, {
+          effectiveFrom: new Date('2026-02-01T00:00:00Z'),
+        });
+        expect(amendment.tenantId).toBe('tenant-a');
+        await agreements.activateAmendment(amendment.id as string);
+      });
+      expect((await agreements.get({ id: b.id }))?.status).toBe('active');
+    } finally {
+      disableTenancy();
+    }
+
+    const globalAmendment = await agreements.createAmendment(
+      KIND,
+      COOP,
+      WORKER,
+    );
+    expect(globalAmendment.tenantId).toBeNull();
+    expect(global.id).toBeTruthy();
+  });
+
+  it('uses global terms when an ambient tenant has no agreement', async () => {
+    const global = await createDraft({ tenantId: null, status: 'active' });
+    enableTenancy();
+    try {
+      await withTenant({ tenantId: 'tenant-a' }, async () => {
+        expect((await agreements.activeFor(KIND, COOP, WORKER))?.id).toBe(
+          global.id,
+        );
+      });
+    } finally {
+      disableTenancy();
+    }
+  });
 });
