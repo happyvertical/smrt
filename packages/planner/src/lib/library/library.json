@@ -2781,6 +2781,218 @@
           }
         }
       }
+    },
+    {
+      "id": "painter",
+      "name": "Painter",
+      "icon": "brush",
+      "summary": "Estimates, jobs, paint and materials, crew schedule and billing for a painting business.",
+      "keywords": [
+        "painter",
+        "painting",
+        "decorator",
+        "decorating",
+        "house painting",
+        "interior painting",
+        "exterior painting",
+        "wallpaper",
+        "drywall repair",
+        "cabinet painting",
+        "stain",
+        "repaint"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "50% deposit, balance on completion",
+        "taxRate": 0.06
+      },
+      "sectionDescriptions": {
+        "custom:jobs": "Work orders and the customers they belong to.",
+        "custom:paint": "Paint, sundries and the stock in your store room.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#be185d"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.06"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on completion\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.06"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on completion\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:jobs",
+            "custom:schedule",
+            "custom:paint",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:jobs": [
+              "item:commerce:Estimate",
+              "item:commerce:Order",
+              "item:commerce:Customer"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventType"
+            ],
+            "custom:paint": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:events:EventSeries",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Estimate": "custom:jobs",
+            "item:commerce:Order": "custom:jobs",
+            "item:commerce:Customer": "custom:jobs",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:products:Product": "custom:paint",
+            "item:inventory:StockLevel": "custom:paint",
+            "item:commerce:Vendor": "custom:paint",
+            "item:commerce:PurchaseOrder": "custom:paint",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:jobs",
+              "label": "Jobs"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Crew"
+            },
+            {
+              "id": "custom:paint",
+              "label": "Paint & supplies"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Estimate": {
+              "label": "Estimates",
+              "description": "Room-by-room estimates from the site visit, ready to book once signed."
+            },
+            "item:commerce:Order": {
+              "label": "Projects",
+              "description": "Every painting project you have booked, from prep to the final walkthrough."
+            },
+            "item:events:Event": {
+              "label": "Crew schedule",
+              "description": "Site visits and crew days on the calendar, by job."
+            },
+            "item:events:EventType": {
+              "label": "Visit types",
+              "description": "The kinds of day you book, like an estimate visit, prep or a touch-up."
+            },
+            "item:products:Product": {
+              "label": "Paint & sundries",
+              "description": "Paint, primer, caulk, tape and the other things you use and charge for."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Paint on hand",
+              "description": "Paint and supplies in the store room and on the van."
+            },
+            "item:commerce:Vendor": {
+              "label": "Paint suppliers",
+              "description": "The paint stores and suppliers you buy from, with trade terms."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Supply orders",
+              "description": "Paint and supplies you have ordered and when they are ready."
+            }
+          },
+          "sections": {
+            "custom:jobs": {
+              "icon": "wrench"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:paint": {
+              "icon": "package"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      }
     }
   ]
 }

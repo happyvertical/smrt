@@ -36,6 +36,7 @@ describe('cookbook data', () => {
       'landscaping',
       'mechanic',
       'nonprofit',
+      'painter',
       'plumber',
       'welder',
       'yoga-studio',

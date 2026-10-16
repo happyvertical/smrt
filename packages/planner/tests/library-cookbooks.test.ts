@@ -160,6 +160,7 @@ describe('library cookbooks', () => {
       nonprofit: 'exclusive line',
       agency: 'exclusive line',
       plumber: 'exclusive line',
+      painter: 'exclusive line',
       electrician: 'exclusive line',
     });
   });
