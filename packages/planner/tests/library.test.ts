@@ -11,6 +11,7 @@ import {
 } from '../src/lib/library/apply.ts';
 import {
   COOKBOOK_ICONS,
+  getLibraryCookbook,
   libraryCookbooks,
   libraryRecipeLabels,
 } from '../src/lib/library/index.ts';
@@ -26,16 +27,16 @@ afterEach(() => recipeState.clear());
 describe('cookbook data', () => {
   it('ships the cookbooks with unique ids and known icons', () => {
     expect(libraryCookbooks.map((c) => c.id)).toEqual([
+      'agency',
       'bakery',
-      'mechanic',
-      'welder',
-      'yoga-studio',
-      'landscaping',
-      'salon',
       'roaster',
       'equipment-rental',
+      'salon',
+      'landscaping',
+      'mechanic',
       'nonprofit',
-      'agency',
+      'welder',
+      'yoga-studio',
     ]);
     expect(new Set(libraryCookbooks.map((c) => c.id)).size).toBe(
       libraryCookbooks.length,
@@ -239,11 +240,29 @@ describe('cookbook preview', () => {
   });
 
   it('lists recipe chips by label', () => {
-    const bakery = libraryCookbooks[0];
+    const bakery = book('bakery');
     expect(libraryRecipeLabels(bakery)).toContain('Wholesale orders');
     expect(libraryRecipeLabels(bakery)).toHaveLength(
       bakery.document.recipes.length,
     );
+  });
+});
+
+const book = (id: string) => {
+  const found = getLibraryCookbook(id);
+  if (!found) throw new Error(`library has no ${id}`);
+  return found;
+};
+
+describe('the library order', () => {
+  it('lists cookbooks alphabetically by name', () => {
+    const names = libraryCookbooks.map((c) => c.name);
+    expect(names).toEqual(
+      [...names].sort((a, b) =>
+        a.localeCompare(b, 'en', { sensitivity: 'base' }),
+      ),
+    );
+    expect(names[0]).toBe('Agency');
   });
 });
 
@@ -255,7 +274,7 @@ describe('applying a cookbook', () => {
     recipeState.add('sales.pipeline');
     recipeState.addFeature(`${C}Cart`);
     s.setLayout({ version: 1, hidden: ['section:sales'] });
-    const bakery = libraryCookbooks[0];
+    const bakery = book('bakery');
     expect(applyLibraryCookbook(bakery, s).ok).toBe(true);
     const snap = s.snapshot();
     expect(snap.recipes).toEqual(bakery.document.recipes);
@@ -283,7 +302,7 @@ describe('applying a cookbook', () => {
     s.setTheme({ colorScheme: 'light' });
     expect(needsConfirm(s, null)).toBe(false);
     // A cookbook as applied: applying it again gets it back.
-    expect(applyLibraryCookbook(libraryCookbooks[0], s).ok).toBe(true);
+    expect(applyLibraryCookbook(book('bakery'), s).ok).toBe(true);
     expect(needsConfirm(s)).toBe(false);
     s.setTheme({ ...s.theme, colorScheme: 'dark' });
     expect(needsConfirm(s)).toBe(false);
@@ -295,16 +314,16 @@ describe('applying a cookbook', () => {
     s.setLayout({ ...s.layout, version: 1, hidden: ['x'] });
     expect(needsConfirm(s)).toBe(true);
     // Switching from an untouched cookbook to another does not ask.
-    applyLibraryCookbook(libraryCookbooks[1], s);
+    applyLibraryCookbook(book('mechanic'), s);
     expect(needsConfirm(s)).toBe(false);
   });
 
   it('applies one cookbook over another', () => {
     const s = store();
-    applyLibraryCookbook(libraryCookbooks[0], s);
-    applyLibraryCookbook(libraryCookbooks[3], s);
-    expect(s.snapshot().recipes).toEqual(libraryCookbooks[3].document.recipes);
+    applyLibraryCookbook(book('bakery'), s);
+    applyLibraryCookbook(book('yoga-studio'), s);
+    expect(s.snapshot().recipes).toEqual(book('yoga-studio').document.recipes);
     expect(s.snapshot().features).toEqual([]);
-    expect(holdsCookbook(libraryCookbooks[0], s.snapshot())).toBe(false);
+    expect(holdsCookbook(book('bakery'), s.snapshot())).toBe(false);
   });
 });
