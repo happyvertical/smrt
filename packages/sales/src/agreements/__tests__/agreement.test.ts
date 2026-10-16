@@ -224,4 +224,28 @@ describe('Agreement', () => {
       disableTenancy();
     }
   });
+  it('activates an operator-owned tenant draft without superseding global terms', async () => {
+    const tenantId = 'tenant-a';
+    const initial = {
+      kind: KIND,
+      partyA: JSON.stringify(COOP),
+      partyB: JSON.stringify(WORKER),
+      version: 1,
+      status: 'active' as const,
+      effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+    };
+    const global = await agreements.create(initial);
+    const prior = await agreements.create({ ...initial, tenantId });
+    const draft = await agreements.create({
+      ...initial,
+      tenantId,
+      version: 2,
+      status: 'draft',
+      effectiveFrom: new Date('2026-02-01T00:00:00Z'),
+    });
+    await agreements.activateAmendment(draft.id as string);
+    expect((await agreements.get({ id: prior.id }))?.status).toBe('superseded');
+    expect((await agreements.get({ id: global.id }))?.status).toBe('active');
+    expect((await agreements.get({ id: global.id }))?.effectiveTo).toBeNull();
+  });
 });

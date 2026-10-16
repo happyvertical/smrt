@@ -144,10 +144,13 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       const partyB = draft.getPartyB();
       if (!partyA || !partyB) throw new Error('Agreement has invalid parties');
 
-      const versions = await agreements.findVersions(
+      // Mutation follows the loaded draft's owner, never a global fallback.
+      const versions = await agreements.findGoverningCandidates(
         draft.kind,
-        partyA,
-        partyB,
+        serializeAgreementParty(partyA),
+        serializeAgreementParty(partyB),
+        draft.tenantId,
+        false,
       );
       const predecessors = versions.filter(
         (version) =>
@@ -181,6 +184,7 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     partyA: string,
     partyB: string,
     tenantId: string | null | undefined,
+    includeGlobalFallback = true,
   ): Promise<Agreement[]> {
     // With no ambient or explicit tenant this is an operator/global lookup;
     // never let optional tenancy turn it into an unscoped cross-tenant read.
@@ -204,7 +208,7 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       [tenantId, kind, partyA, partyB],
       { allowRawOnTenantScoped: true },
     );
-    if (tenantRows.length > 0) return tenantRows;
+    if (tenantRows.length > 0 || !includeGlobalFallback) return tenantRows;
     return await this.query(
       `SELECT * FROM ${this.tableName} WHERE tenant_id IS NULL AND kind = ? AND party_a = ? AND party_b = ? ORDER BY version DESC`,
       [kind, partyA, partyB],
