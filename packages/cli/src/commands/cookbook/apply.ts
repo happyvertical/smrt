@@ -329,10 +329,14 @@ function renderJson(value: unknown, indent: string | number = 2): string {
   return `${JSON.stringify(value, null, indent)}\n`;
 }
 
-function packageManager(dir: string): string {
-  if (existsSync(join(dir, 'yarn.lock'))) return 'yarn';
-  if (existsSync(join(dir, 'package-lock.json'))) return 'npm';
+function packageManagerFrom(has: (file: string) => boolean): string {
+  if (has('yarn.lock')) return 'yarn';
+  if (has('package-lock.json')) return 'npm';
   return 'pnpm';
+}
+
+function packageManager(dir: string): string {
+  return packageManagerFrom((file) => existsSync(join(dir, file)));
 }
 
 export function nextSteps(
@@ -458,17 +462,20 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
     }
     // The template's lockfile resolves the ranges just replaced; keeping it
     // would let the install (or a later frozen one) restore them.
+    // What the new project receives from the template: a local git
+    // template contributes only `files` (an ignored lockfile stays behind).
+    const copied = (file: string): boolean => {
+      const { root, files } = template as AcquiredTemplate;
+      return files ? files.includes(file) : existsSync(join(root, file));
+    };
     const removedLockfiles =
       mode === 'new' && Object.keys(repinnedDependencies).length > 0
-        ? LOCKFILES.filter((file) => {
-            const { root, files } = template as AcquiredTemplate;
-            return files ? files.includes(file) : existsSync(join(root, file));
-          })
+        ? LOCKFILES.filter(copied)
         : [];
-    // Decided before a lockfile is dropped, since lockfiles name it.
-    const pm = packageManager(
-      mode === 'new' ? (template as AcquiredTemplate).root : targetDir,
-    );
+    // Decided from the copied files before a lockfile is dropped, since
+    // lockfiles name it.
+    const pm =
+      mode === 'new' ? packageManagerFrom(copied) : packageManager(targetDir);
 
     const range = smrtVersion ?? chooseRange(baseJson, options.cliVersion);
     const addDependencies: Record<string, string> = {};

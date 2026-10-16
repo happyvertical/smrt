@@ -609,6 +609,28 @@ describe("apply pins smrt to the CLI's release (#4055)", () => {
     expect(result.nextSteps).toContain('yarn install');
   });
 
+  it('chooses the package manager from copied files, not git-ignored ones', async () => {
+    const repo = join(work, 'git-stale-template');
+    writeStaleTemplate(repo);
+    writeFileSync(join(repo, '.gitignore'), 'yarn.lock\n');
+    writeFileSync(join(repo, 'yarn.lock'), 'ignored');
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'git-stale-app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: repo,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(existsSync(join(dir, 'yarn.lock'))).toBe(false);
+    expect(result.nextSteps).toContain('pnpm install');
+  });
+
   it('plans the pin and the dropped lockfile in a dry run without writing', async () => {
     const { dir, result } = await applyStale('0.57.0', { dryRun: true });
     expect(existsSync(dir)).toBe(false);
