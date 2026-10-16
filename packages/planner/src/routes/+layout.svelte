@@ -5,7 +5,13 @@ import {
   type ShellNavGroup,
   type ShellNavItem,
 } from '@happyvertical/smrt-svelte/workspace';
-import { afterNavigate, goto, onNavigate, replaceState } from '$app/navigation';
+import {
+  afterNavigate,
+  goto,
+  onNavigate,
+  pushState,
+  replaceState,
+} from '$app/navigation';
 import { base } from '$app/paths';
 import { page } from '$app/state';
 import { aiState } from '$lib/ai/instance.ts';
@@ -37,7 +43,13 @@ import {
   liveKitchenBinding,
 } from '$lib/kitchen/live.ts';
 import { kitchenState } from '$lib/kitchen/state.svelte.ts';
+import { libraryCookbooks } from '$lib/library/index.ts';
 import { libraryState } from '$lib/library/state.svelte.ts';
+import {
+  cookbookFromSearch,
+  cookbookView,
+  withCookbook,
+} from '$lib/library/view.svelte.ts';
 import { createOnNavigateViewTransition } from '$lib/motion/view-transition.ts';
 import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
 import { CHEF_HAT_ICON, EXPORT_ICON } from '$lib/planner/header-icons.ts';
@@ -83,6 +95,36 @@ plannerRuntime.onReplaced = () => dataSource.reset?.();
 plannerRuntime.openSection = (id) => {
   void goto(appHref(sectionPath(id)));
 };
+
+// The Cookbooks tab's open cookbook lives in the address (`?cookbook=`):
+// opening one pushes a shallow history entry, so browser Back (or the detail's
+// own back control) returns to the grid, and a link opens the detail.
+const cookbookIds = libraryCookbooks.map((c) => c.id);
+const openCookbook = () =>
+  plannerTab.active === 'cookbooks' ? cookbookView.open : null;
+cookbookView.navigator = {
+  open(id) {
+    const query = withCookbook(withTab(appQuery(), 'cookbooks'), id);
+    pushState(`${location.pathname}${query}${location.hash}`, {
+      ...page.state,
+      cookbook: id,
+    });
+    void cookbookView.set(id);
+  },
+  close() {
+    if (page.state.cookbook) history.back();
+    else void cookbookView.set(null);
+  },
+};
+function onPopState() {
+  // `page.route` still names the page Back is leaving; the address is current.
+  const planner =
+    location.pathname.replace(/\/$/, '') === base.replace(/\/$/, '');
+  void cookbookView.set(
+    planner ? cookbookFromSearch(location.search, cookbookIds) : null,
+    planner,
+  );
+}
 
 // No Planner entry: the shell's Edit layout toggle goes to the Planner page.
 const nav: ShellNavItem[] = [];
@@ -259,7 +301,7 @@ function syncUrl() {
   if (cookbookStore.keepLegacyUrl) return;
   // The tab belongs to the Planner page only; other pages drop it.
   const wanted = onPlanner()
-    ? withTab(appQuery(), plannerTab.active)
+    ? withCookbook(withTab(appQuery(), plannerTab.active), openCookbook())
     : withListFilter(appQuery());
   if (location.search !== wanted) {
     replaceState(`${location.pathname}${wanted}${location.hash}`, page.state);
@@ -300,6 +342,10 @@ afterNavigate((navigation) => {
   if (onPlanner()) {
     // Cookbooks is the entry point even when a plan already exists.
     plannerTab.fromSearch(location.search);
+    void cookbookView.set(
+      cookbookFromSearch(location.search, cookbookIds),
+      false,
+    );
   }
   // SvelteKit runs the initial 'enter' callbacks before the router counts as
   // started, and replaceState throws until then, so wait one microtask.
@@ -350,6 +396,7 @@ $effect(() => {
   void appQuery();
   void cookbookStore.keepLegacyUrl;
   void plannerTab.active;
+  void cookbookView.open;
   void page.route.id;
   if (ready) syncUrl();
 });
@@ -368,7 +415,10 @@ function flushOnHide() {
 }
 </script>
 
-<svelte:window onpagehide={() => !liveBinding && cookbookStore.flush()} />
+<svelte:window
+  onpagehide={() => !liveBinding && cookbookStore.flush()}
+  onpopstate={onPopState}
+/>
 <svelte:document onvisibilitychange={flushOnHide} />
 
 {#if liveBinding}<LiveKitchenBridge binding={liveBinding} onlock={(locked) => liveLocked = locked} />{/if}

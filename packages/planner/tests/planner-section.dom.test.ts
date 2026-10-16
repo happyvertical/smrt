@@ -70,6 +70,41 @@ describe('the mounted Planner section page', () => {
     for (const count of counts) expect(count).toMatch(/^\d+ records?$/);
   });
 
+  it('opens a cookbook from its fragment route, and Back returns to the grid', async () => {
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    location.hash = '#/configure/cookbooks/mechanic/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    const detail = () => target.querySelector('[data-cookbook-detail]');
+    expect(detail()?.getAttribute('data-cookbook-detail')).toBe('mechanic');
+    expect(target.querySelector('ul[aria-label="Cookbooks"]')).toBeNull();
+    location.hash = '#/configure/cookbooks/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    expect(detail()).toBeNull();
+    expect(target.querySelector('ul[aria-label="Cookbooks"]')).not.toBeNull();
+    location.hash = '';
+  });
+
+  it('returns to the grid on the bare configure route a detail was opened from', async () => {
+    location.hash = '#/configure/';
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    const go = async (hash: string) => {
+      location.hash = hash;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await settle();
+    };
+    await go('#/configure/cookbooks/bakery/');
+    expect(target.querySelector('[data-cookbook-detail]')).not.toBeNull();
+    // What Back (history.back()) lands on: the route the card was clicked on.
+    await go('#/configure/');
+    expect(target.querySelector('[data-cookbook-detail]')).toBeNull();
+    expect(target.querySelector('ul[aria-label="Cookbooks"]')).not.toBeNull();
+    location.hash = '';
+  });
+
   it('titles the document for the route it shows, never the previous one', async () => {
     app = mount(Planner, { target, props: { basePath: '/planner' } });
     await settle();

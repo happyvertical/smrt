@@ -84,5 +84,9 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   (confirm exactly when work would be lost: never when empty or still as the last applied cookbook
   left it, `document.ts` `wouldLoseWork`; the colour scheme is kept, so it never counts),
   `state.svelte.ts` remembers the last applied id and that document's `workFingerprint` in
-  localStorage (not in the document). Applying regenerates the sample records from the cookbook's pack (the panel says so). Add a
+  localStorage (not in the document). The Cookbooks tab shows the grid or one cookbook's detail in
+  its place (`view.svelte.ts` `cookbookView`, a view-transition swap, instant under reduced motion,
+  with a back control and Escape); the host keeps it in the address through a `CookbookNavigator`:
+  the static layout pushes a shallow `?cookbook=<id>` entry, the mount a `#/configure/cookbooks/<id>/`
+  route, so browser Back returns to the grid and a link opens the detail. Applying regenerates the sample records from the cookbook's pack (the panel says so). Add a
   library cookbook by adding an entry; use only existing recipe ids.

@@ -28,6 +28,7 @@ import { provideDataSource, tryUseDataSource } from '../data/context.ts';
 import { humanize, navNoun, pluralize } from '../data/format.ts';
 import { createPlannerDataSource } from '../data/planner-source.ts';
 import { activeForms } from '../forms/active.ts';
+import { cookbookView } from '../library/view.svelte.ts';
 import { runViewTransition } from '../motion/view-transition.ts';
 import { plannerLoaders, resolveRecipeExport } from '../overviews/registry.ts';
 import {
@@ -259,6 +260,40 @@ const routeTab = $derived(
 );
 $effect(() => {
   if (routeTab) plannerTab.active = routeTab;
+});
+// `#/configure/cookbooks/<id>/` opens that cookbook's detail on the Cookbooks
+// tab; the hash router's own view transition is the swap, so none here.
+// Opening one pushes the route, so browser Back returns to the grid.
+// Any other configure route (`#/configure/`, where the header's Planner link
+// and an empty app land, or another tab's) is the grid.
+const routeCookbook = $derived(
+  pathParts[0] === 'configure'
+    ? pathParts[1] === 'cookbooks'
+      ? (pathParts[2] ?? null)
+      : null
+    : undefined,
+);
+$effect(() => {
+  if (routeCookbook !== undefined) void cookbookView.set(routeCookbook, false);
+});
+let openedHere = false;
+onMount(() => {
+  const previous = cookbookView.navigator;
+  cookbookView.navigator = {
+    open(id) {
+      openedHere = true;
+      location.hash = `#/configure/cookbooks/${encodeURIComponent(id)}/`;
+    },
+    close() {
+      if (openedHere) {
+        openedHere = false;
+        history.back();
+      } else location.replace('#/configure/cookbooks/');
+    },
+  };
+  return () => {
+    cookbookView.navigator = previous;
+  };
 });
 const exporting = $derived(configuring && plannerTab.active === 'export');
 /** The mount's own way around: a fragment route. */
