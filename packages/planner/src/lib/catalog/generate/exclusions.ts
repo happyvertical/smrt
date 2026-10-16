@@ -34,31 +34,14 @@ export const PACKAGE_SCOPE = '@happyvertical/';
 export const PACKAGE_PREFIX = `${PACKAGE_SCOPE}smrt-`;
 
 /**
- * Models that are s-m-r-t bookkeeping inside a package the catalog keeps,
- * never something a visitor would add or see: dropped from the catalog, the
- * reason recorded here. Qualified names.
- */
-export const EXCLUDED_MODELS: Readonly<Record<string, string>> = {
-  '@happyvertical/smrt-commerce:MoneyMigrationDocument':
-    'tenant money-migration journal (smrt#3988); written only by the migration',
-};
-
-/**
  * Money-model internals of smrt-commerce (smrt#3988): serialized snapshots
- * (`*Json`: tax components, registrations, credit bases, sync state), the
- * freeze identity (`moneySnapshotId`), the migration's rollback copy
- * (`legacyAmount`) and its marker and owner (`moneyModel`,
- * `moneyMigrationId`). The framework writes them; generated surfaces and
- * cookbooks never do. They stay in the catalog marked `system`, so forms,
- * lists, record pages and policies skip them while sample data still keeps
- * a line's tax snapshot.
+ * (`*Json`: tax components, registrations, credit bases, sync state) and the
+ * freeze identity (`moneySnapshotId`). The framework writes them; generated
+ * surfaces and cookbooks never do. They stay in the catalog marked `system`,
+ * so forms, lists, record pages and policies skip them while sample data
+ * still keeps a line's tax snapshot.
  */
-const INTERNAL_MONEY_FIELDS = new Set([
-  'moneySnapshotId',
-  'legacyAmount',
-  'moneyModel',
-  'moneyMigrationId',
-]);
+const INTERNAL_MONEY_FIELDS = new Set(['moneySnapshotId']);
 
 /** Is `field` of a model in `packageName` a framework-managed money internal? */
 export function isInternalMoneyField(

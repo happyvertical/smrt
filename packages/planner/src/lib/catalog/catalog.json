@@ -5,7 +5,7 @@
     {
       "id": "ads",
       "packageName": "@happyvertical/smrt-ads",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Advertising delivery and tracking models for SMRT framework",
       "models": [
         {
@@ -1511,7 +1511,7 @@
     {
       "id": "analytics",
       "packageName": "@happyvertical/smrt-analytics",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Analytics integration models for SMRT framework",
       "models": [
         {
@@ -3420,7 +3420,7 @@
     {
       "id": "approvals",
       "packageName": "@happyvertical/smrt-approvals",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Approval decision gate for the SMRT framework: revision-bound, single-use approvals with quorum, expiry, and an append-only event ledger",
       "models": [
         {
@@ -3807,7 +3807,7 @@
     {
       "id": "assets",
       "packageName": "@happyvertical/smrt-assets",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
       "models": [
         {
@@ -5607,7 +5607,7 @@
     {
       "id": "chat",
       "packageName": "@happyvertical/smrt-chat",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
       "models": [
         {
@@ -7974,7 +7974,7 @@
     {
       "id": "comments",
       "packageName": "@happyvertical/smrt-comments",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Record comments and mention hooks for SMRT applications",
       "models": [
         {
@@ -8130,7 +8130,7 @@
     {
       "id": "commerce",
       "packageName": "@happyvertical/smrt-commerce",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
       "models": [
         {
@@ -10256,12 +10256,6 @@
               }
             },
             {
-              "name": "legacyAmount",
-              "type": "integer",
-              "required": false,
-              "system": true
-            },
-            {
               "name": "moneySnapshotId",
               "type": "text",
               "required": false,
@@ -10347,10 +10341,6 @@
           ],
           "cli": [
             {
-              "operation": "calculateAmount",
-              "name": "contractlineitem_calculateAmount"
-            },
-            {
               "operation": "create",
               "name": "contractlineitem_create"
             },
@@ -10408,13 +10398,6 @@
             }
           ],
           "methods": [
-            {
-              "name": "calculateAmount",
-              "async": false,
-              "parameters": [],
-              "returnType": "number",
-              "aiCallable": false
-            },
             {
               "name": "delete",
               "async": true,
@@ -10479,6 +10462,13 @@
               "aiCallable": true
             },
             {
+              "name": "initialize",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
               "name": "isRecurring",
               "async": false,
               "parameters": [],
@@ -10522,8 +10512,7 @@
               "name": "saveDerived",
               "async": true,
               "parameters": [
-                "capability: DocumentMoneyWriteCapability",
-                "legacy: boolean"
+                "capability: DocumentMoneyWriteCapability"
               ],
               "returnType": "Promise<this>",
               "aiCallable": false
@@ -12550,7 +12539,7 @@
               "parameters": [
                 "options: CancelRevenueOptions"
               ],
-              "returnType": "Promise<Journal | null>",
+              "returnType": "Promise<Journal>",
               "aiCallable": false
             },
             {
@@ -12847,8 +12836,7 @@
               "name": "saveDerived",
               "async": true,
               "parameters": [
-                "capability: DocumentMoneyWriteCapability",
-                "options: object"
+                "capability: DocumentMoneyWriteCapability"
               ],
               "returnType": "Promise<this>",
               "aiCallable": false
@@ -12946,13 +12934,6 @@
               "description": "How many."
             },
             {
-              "name": "invoiceEditorStateJson",
-              "type": "text",
-              "required": false,
-              "default": "",
-              "system": true
-            },
-            {
               "name": "unitPrice",
               "type": "integer",
               "required": false,
@@ -13034,12 +13015,6 @@
               "ui": {
                 "format": "money"
               }
-            },
-            {
-              "name": "legacyAmount",
-              "type": "integer",
-              "required": false,
-              "system": true
             },
             {
               "name": "moneySnapshotId",
@@ -13126,14 +13101,6 @@
           ],
           "cli": [
             {
-              "operation": "applyEditorDraft",
-              "name": "invoicelineitem_applyEditorDraft"
-            },
-            {
-              "operation": "calculateAmount",
-              "name": "invoicelineitem_calculateAmount"
-            },
-            {
               "operation": "create",
               "name": "invoicelineitem_create"
             },
@@ -13148,18 +13115,6 @@
             {
               "operation": "get",
               "name": "invoicelineitem_get"
-            },
-            {
-              "operation": "getEditorDraft",
-              "name": "invoicelineitem_getEditorDraft"
-            },
-            {
-              "operation": "getSubtotal",
-              "name": "invoicelineitem_getSubtotal"
-            },
-            {
-              "operation": "getTaxAmount",
-              "name": "invoicelineitem_getTaxAmount"
             },
             {
               "operation": "hasPeriod",
@@ -13180,10 +13135,6 @@
             {
               "operation": "saveDerived",
               "name": "invoicelineitem_saveDerived"
-            },
-            {
-              "operation": "toAccountingLineItem",
-              "name": "invoicelineitem_toAccountingLineItem"
             },
             {
               "operation": "update",
@@ -13218,44 +13169,11 @@
               "name": "invoicelineitemcollection_getNextSortOrder"
             },
             {
-              "operation": "getSubtotalForInvoice",
-              "name": "invoicelineitemcollection_getSubtotalForInvoice"
-            },
-            {
-              "operation": "getTaxForInvoice",
-              "name": "invoicelineitemcollection_getTaxForInvoice"
-            },
-            {
               "operation": "getTotalForInvoice",
               "name": "invoicelineitemcollection_getTotalForInvoice"
-            },
-            {
-              "operation": "recalculateAmounts",
-              "name": "invoicelineitemcollection_recalculateAmounts"
-            },
-            {
-              "operation": "toAccountingLineItems",
-              "name": "invoicelineitemcollection_toAccountingLineItems"
             }
           ],
           "methods": [
-            {
-              "name": "applyEditorDraft",
-              "async": false,
-              "parameters": [
-                "draft: InvoiceLineDraft",
-                "context: InvoiceCalculationContext"
-              ],
-              "returnType": "void",
-              "aiCallable": false
-            },
-            {
-              "name": "calculateAmount",
-              "async": false,
-              "parameters": [],
-              "returnType": "number",
-              "aiCallable": false
-            },
             {
               "name": "delete",
               "async": true,
@@ -13339,48 +13257,7 @@
               "aiCallable": true
             },
             {
-              "name": "getEditorDraft",
-              "async": false,
-              "parameters": [
-                "authorizedContext: InvoiceCalculationContext"
-              ],
-              "returnType": "InvoiceLineDraft | null",
-              "aiCallable": false
-            },
-            {
               "name": "getNextSortOrder",
-              "async": true,
-              "parameters": [
-                "invoiceId: string"
-              ],
-              "returnType": "Promise<number>",
-              "aiCallable": false
-            },
-            {
-              "name": "getSubtotal",
-              "async": false,
-              "parameters": [],
-              "returnType": "number",
-              "aiCallable": false
-            },
-            {
-              "name": "getSubtotalForInvoice",
-              "async": true,
-              "parameters": [
-                "invoiceId: string"
-              ],
-              "returnType": "Promise<number>",
-              "aiCallable": false
-            },
-            {
-              "name": "getTaxAmount",
-              "async": false,
-              "parameters": [],
-              "returnType": "number",
-              "aiCallable": false
-            },
-            {
-              "name": "getTaxForInvoice",
               "async": true,
               "parameters": [
                 "invoiceId: string"
@@ -13412,6 +13289,13 @@
               "aiCallable": false
             },
             {
+              "name": "initialize",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
               "name": "list",
               "async": true,
               "parameters": [
@@ -13431,15 +13315,6 @@
               "aiCallable": false
             },
             {
-              "name": "recalculateAmounts",
-              "async": true,
-              "parameters": [
-                "invoiceId: string"
-              ],
-              "returnType": "Promise<InvoiceLineItem[]>",
-              "aiCallable": false
-            },
-            {
               "name": "save",
               "async": true,
               "parameters": [],
@@ -13450,28 +13325,9 @@
               "name": "saveDerived",
               "async": true,
               "parameters": [
-                "capability: DocumentMoneyWriteCapability",
-                "legacy: boolean"
+                "capability: DocumentMoneyWriteCapability"
               ],
               "returnType": "Promise<this>",
-              "aiCallable": false
-            },
-            {
-              "name": "toAccountingLineItem",
-              "async": false,
-              "parameters": [
-                "currency?: string"
-              ],
-              "returnType": "AccountingLineItemInput",
-              "aiCallable": false
-            },
-            {
-              "name": "toAccountingLineItems",
-              "async": true,
-              "parameters": [
-                "invoiceId: string"
-              ],
-              "returnType": "Promise<AccountingLineItemInput[]>",
               "aiCallable": false
             }
           ],
@@ -18835,7 +18691,8 @@
               "name": "findByCode",
               "async": true,
               "parameters": [
-                "code: string"
+                "code: string",
+                "tenantId?: string"
               ],
               "returnType": "Promise<TaxCode | null>",
               "aiCallable": false
@@ -19025,24 +18882,6 @@
               "type": "text",
               "required": false,
               "system": true
-            },
-            {
-              "name": "moneyModel",
-              "type": "text",
-              "required": false,
-              "default": "legacy",
-              "enum": [
-                "legacy",
-                "migrating",
-                "v2"
-              ],
-              "system": true
-            },
-            {
-              "name": "moneyMigrationId",
-              "type": "text",
-              "required": false,
-              "system": true
             }
           ],
           "rest": [
@@ -19083,28 +18922,8 @@
               "name": "taxsettings_list"
             },
             {
-              "operation": "saveMoneyModel",
-              "name": "taxsettings_saveMoneyModel"
-            },
-            {
-              "operation": "saveMoneyModelOnTransaction",
-              "name": "taxsettings_saveMoneyModelOnTransaction"
-            },
-            {
               "operation": "update",
               "name": "taxsettings_update"
-            },
-            {
-              "operation": "activateMoneyV2",
-              "name": "taxsettingscollection_activateMoneyV2"
-            },
-            {
-              "operation": "beginMoneyMigration",
-              "name": "taxsettingscollection_beginMoneyMigration"
-            },
-            {
-              "operation": "beginMoneyRollback",
-              "name": "taxsettingscollection_beginMoneyRollback"
             },
             {
               "operation": "getForTenant",
@@ -19117,43 +18936,9 @@
             {
               "operation": "lockForTenant",
               "name": "taxsettingscollection_lockForTenant"
-            },
-            {
-              "operation": "restoreLegacyMoneyModel",
-              "name": "taxsettingscollection_restoreLegacyMoneyModel"
             }
           ],
           "methods": [
-            {
-              "name": "activateMoneyV2",
-              "async": true,
-              "parameters": [
-                "tenantId: string",
-                "migrationId: string"
-              ],
-              "returnType": "Promise<void>",
-              "aiCallable": false
-            },
-            {
-              "name": "beginMoneyMigration",
-              "async": true,
-              "parameters": [
-                "tenantId: string",
-                "requestedMigrationId?: string"
-              ],
-              "returnType": "Promise<string>",
-              "aiCallable": false
-            },
-            {
-              "name": "beginMoneyRollback",
-              "async": true,
-              "parameters": [
-                "tenantId: string",
-                "migrationId: string"
-              ],
-              "returnType": "Promise<void>",
-              "aiCallable": false
-            },
             {
               "name": "getForTenant",
               "async": true,
@@ -19176,44 +18961,15 @@
               "name": "lockForTenant",
               "async": true,
               "parameters": [
-                "tenantId: string",
-                "create?: any"
+                "tenantId: string"
               ],
-              "returnType": "Promise<TaxSettings | null>",
-              "aiCallable": false
-            },
-            {
-              "name": "restoreLegacyMoneyModel",
-              "async": true,
-              "parameters": [
-                "tenantId: string",
-                "migrationId: string"
-              ],
-              "returnType": "Promise<void>",
+              "returnType": "Promise<TaxSettings>",
               "aiCallable": false
             },
             {
               "name": "save",
               "async": true,
               "parameters": [],
-              "returnType": "Promise<this>",
-              "aiCallable": false
-            },
-            {
-              "name": "saveMoneyModel",
-              "async": true,
-              "parameters": [
-                "capability: MoneyMigrationWriteCapability"
-              ],
-              "returnType": "Promise<this>",
-              "aiCallable": false
-            },
-            {
-              "name": "saveMoneyModelOnTransaction",
-              "async": true,
-              "parameters": [
-                "capability: MoneyMigrationWriteCapability"
-              ],
               "returnType": "Promise<this>",
               "aiCallable": false
             }
@@ -20399,7 +20155,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             },
@@ -20561,7 +20317,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             }
@@ -20768,9 +20524,6 @@
             },
             "@happyvertical/smrt-commerce:InvoiceLineItem": {
               "fields": {
-                "invoiceEditorStateJson": {
-                  "visibility": "hidden"
-                },
                 "sourceType": {
                   "visibility": "hidden"
                 },
@@ -20796,7 +20549,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             },
@@ -20950,7 +20703,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             }
@@ -21057,7 +20810,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             }
@@ -21156,7 +20909,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             }
@@ -21264,7 +21017,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             }
@@ -21426,7 +21179,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Stored fraction: 0.05 means 5%."
+                  "visibility": "hidden"
                 }
               }
             }
@@ -21460,7 +21213,7 @@
     {
       "id": "content",
       "packageName": "@happyvertical/smrt-content",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Content processing module for SMRT framework - handles documents, web content, and media",
       "models": [
         {
@@ -28390,7 +28143,7 @@
     {
       "id": "events",
       "packageName": "@happyvertical/smrt-events",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Hierarchical event management with participant tracking and SMRT framework support",
       "models": [
         {
@@ -30394,7 +30147,7 @@
     {
       "id": "expenses",
       "packageName": "@happyvertical/smrt-expenses",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Expense records for the SMRT framework - reviewed costs against a cost object, deduplicated receipts, and commitment drawdown",
       "models": [
         {
@@ -31079,7 +30832,7 @@
     {
       "id": "facts",
       "packageName": "@happyvertical/smrt-facts",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Distributed memory and knowledge management with provenance tracking for SMRT framework",
       "models": [
         {
@@ -33103,7 +32856,7 @@
     {
       "id": "fields",
       "packageName": "@happyvertical/smrt-fields",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Layered field policy store and resolver (defaults, visibility tiers, help text) for SMRT objects",
       "models": [
         {
@@ -33816,7 +33569,7 @@
     {
       "id": "human-resources",
       "packageName": "@happyvertical/smrt-human-resources",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "HR records for the SMRT framework: who works for an organization, as what, and with what standing — employment with dated terms, and qualifications with expiry",
       "models": [
         {
@@ -34336,7 +34089,7 @@
     {
       "id": "images",
       "packageName": "@happyvertical/smrt-images",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
       "models": [
         {
@@ -34946,7 +34699,7 @@
     {
       "id": "ingestion",
       "packageName": "@happyvertical/smrt-ingestion",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Durable tenant-scoped intake and evidence foundations",
       "models": [
         {
@@ -36024,7 +35777,7 @@
     {
       "id": "inventory",
       "packageName": "@happyvertical/smrt-inventory",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Multi-location stock tracking for the SMRT framework — Sku, InventoryLocation, StockLevel, StockMovement, and a stock-mutation service",
       "models": [
         {
@@ -36628,7 +36381,7 @@
     {
       "id": "ledgers",
       "packageName": "@happyvertical/smrt-ledgers",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Double-entry accounting ledger for the SMRT framework",
       "models": [
         {
@@ -37930,7 +37683,7 @@
     {
       "id": "manufacturing",
       "packageName": "@happyvertical/smrt-manufacturing",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
       "models": [
         {
@@ -38882,7 +38635,7 @@
     {
       "id": "marketing",
       "packageName": "@happyvertical/smrt-marketing",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
       "models": [
         {
@@ -39488,7 +39241,7 @@
     {
       "id": "messages",
       "packageName": "@happyvertical/smrt-messages",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Unified multi-channel messaging with STI-based hierarchies",
       "models": [
         {
@@ -46175,7 +45928,7 @@
     {
       "id": "places",
       "packageName": "@happyvertical/smrt-places",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Hierarchical place management with geo integration and SMRT framework support",
       "models": [
         {
@@ -47019,7 +46772,7 @@
     {
       "id": "preferences",
       "packageName": "@happyvertical/smrt-preferences",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Tenant defaults and per-user overrides for user-interface preferences (overview layouts, shell layout), validated per registered kind",
       "models": [
         {
@@ -47173,7 +46926,7 @@
     {
       "id": "products",
       "packageName": "@happyvertical/smrt-products",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
       "models": [
         {
@@ -48656,7 +48409,7 @@
     {
       "id": "profiles",
       "packageName": "@happyvertical/smrt-profiles",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
       "models": [
         {
@@ -53917,7 +53670,7 @@
     {
       "id": "projects",
       "packageName": "@happyvertical/smrt-projects",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
       "models": [
         {
@@ -56910,7 +56663,7 @@
     {
       "id": "properties",
       "packageName": "@happyvertical/smrt-properties",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Digital property and zone management models for SMRT framework",
       "models": [
         {
@@ -57773,7 +57526,7 @@
     {
       "id": "reports",
       "packageName": "@happyvertical/smrt-reports",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Materialized aggregate report models for SMRT",
       "models": [
         {
@@ -58608,7 +58361,7 @@
     {
       "id": "sales",
       "packageName": "@happyvertical/smrt-sales",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Modular sales for the SMRT framework: agreement execution, CRM, referral intake, neutral commissions, and reusable Svelte surfaces",
       "models": [
         {
@@ -64972,7 +64725,7 @@
     {
       "id": "sites",
       "packageName": "@happyvertical/smrt-sites",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Site lifecycle management for multi-tenant SMRT networks",
       "models": [
         {
@@ -65440,7 +65193,7 @@
     {
       "id": "social",
       "packageName": "@happyvertical/smrt-social",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
       "models": [
         {
@@ -66427,7 +66180,7 @@
     {
       "id": "subscriptions",
       "packageName": "@happyvertical/smrt-subscriptions",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
       "models": [
         {
@@ -68252,7 +68005,7 @@
     {
       "id": "support",
       "packageName": "@happyvertical/smrt-support",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
       "models": [
         {
@@ -71445,7 +71198,7 @@
     {
       "id": "tags",
       "packageName": "@happyvertical/smrt-tags",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
       "models": [
         {
@@ -72224,7 +71977,7 @@
     {
       "id": "timesheets",
       "packageName": "@happyvertical/smrt-timesheets",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Shared time entries for the SMRT framework: who worked how long on what, approval and correction, with immutable charge and compensation snapshots",
       "models": [
         {
@@ -73749,7 +73502,7 @@
     {
       "id": "users",
       "packageName": "@happyvertical/smrt-users",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
       "models": [
         {
@@ -77631,7 +77384,7 @@
     {
       "id": "video",
       "packageName": "@happyvertical/smrt-video",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Video content management for AI-powered video production in the SMRT ecosystem",
       "models": [
         {
@@ -85008,7 +84761,7 @@
     {
       "id": "voice",
       "packageName": "@happyvertical/smrt-voice",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem",
       "models": [
         {
@@ -86468,7 +86221,7 @@
     {
       "id": "webhooks",
       "packageName": "@happyvertical/smrt-webhooks",
-      "version": "0.56.2",
+      "version": "0.57.0",
       "description": "Outbound webhook subscriptions, signed delivery, and durable retries",
       "models": [
         {

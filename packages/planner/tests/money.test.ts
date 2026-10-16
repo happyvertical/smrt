@@ -6,7 +6,6 @@
  */
 import { COMMON_TAX_CODE_EXAMPLE_PACK } from '@happyvertical/smrt-commerce';
 import { describe, expect, it } from 'vitest';
-import { EXCLUDED_MODELS } from '../src/lib/catalog/generate/exclusions.ts';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import { isMoneyField } from '../src/lib/data/fakes.ts';
 import {
@@ -62,16 +61,13 @@ describe('sample tax codes', () => {
     ]);
   });
 
-  it('seeds exempt, zero-rated and out-of-scope, never legacy-unreconciled', () => {
+  it('seeds exempt, zero-rated and out-of-scope', () => {
     expect(SEEDED_TAX_CODES.map((c) => c.kind)).toEqual([
       'exempt',
       'zero-rated',
       'out-of-scope',
     ]);
     expect(SEEDED_TAX_CODES.every((c) => c.components.length === 0)).toBe(true);
-    expect(
-      sampleTaxCodes(0.05).some((c) => c.code === 'legacy-unreconciled'),
-    ).toBe(false);
   });
 
   it("maps the tax rate to the app default as smrt's cookbook activation does", () => {
@@ -250,18 +246,14 @@ describe('the money model in the catalog', () => {
     return found;
   };
 
-  it('hides the money internals and drops the migration journal', () => {
+  it('hides the money internals', () => {
     for (const [model, name] of [
       ['InvoiceLineItem', 'taxComponentsJson'],
-      ['InvoiceLineItem', 'legacyAmount'],
       ['InvoiceLineItem', 'moneySnapshotId'],
       ['InvoiceLineItem', 'creditCalculationBasisJson'],
       ['Invoice', 'sellerTaxRegistrationsJson'],
       ['Invoice', 'accountingSyncStateJson'],
-      ['ContractLineItem', 'legacyAmount'],
       ['TaxCode', 'componentsJson'],
-      ['TaxSettings', 'moneyModel'],
-      ['TaxSettings', 'moneyMigrationId'],
     ] as const) {
       expect(field(model, name).system, `${model}.${name}`).toBe(true);
     }
@@ -274,10 +266,6 @@ describe('the money model in the catalog', () => {
     ] as const) {
       expect(field(model, name).system, `${model}.${name}`).toBeUndefined();
     }
-    expect(
-      getModelByQualifiedName(`${C}MoneyMigrationDocument`),
-    ).toBeUndefined();
-    expect(EXCLUDED_MODELS[`${C}MoneyMigrationDocument`]).toBeTruthy();
   });
 
   it('keeps tax codes a feature and the rest of the tax models plumbing', () => {

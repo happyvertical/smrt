@@ -94,9 +94,7 @@ const code = (
 
 /**
  * The codes every tenant is seeded with, which report differently and carry
- * no components. smrt also seeds `legacy-unreconciled` for tenants migrated
- * from the legacy model; the planner's tenant is v2 from the start, so it has
- * none.
+ * no components.
  */
 export const SEEDED_TAX_CODES: readonly SampleTaxCode[] = [
   code('exempt', 'Exempt', 'exempt'),

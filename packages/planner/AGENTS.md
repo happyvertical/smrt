@@ -20,9 +20,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/catalog/generate/`: the generator (`registry.ts` discovery and
   tarball reads, `extract.ts` manifest -> catalog (a `Meta<T>` field is kept
   as its `_meta.underlyingType`), `exclusions.ts` the
-  documented infrastructure exclusion list, plus `EXCLUDED_MODELS` (smrt-commerce's
-  `MoneyMigrationDocument`) and the money-model internals marked `system` (`isInternalMoneyField`:
-  commerce `*Json`, `moneySnapshotId`, `legacyAmount`, `moneyModel`, `moneyMigrationId`); `recipe-metadata.ts` validates the
+  documented infrastructure exclusion list, plus the money-model internals marked `system` (`isInternalMoneyField`:
+  commerce `*Json` and `moneySnapshotId`); `recipe-metadata.ts` validates the
   recipes' surfaces, providers, runtime, demo seed and `demo` and the package's
   `browser`, carried as authored). `scripts/generate-catalog.ts` is
   the entry point; Node runs the TypeScript directly.
@@ -382,8 +381,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   shows. A write the model refuses (a discount above the price, a code switched off, any line change on an
   issued document, whose money is frozen as smrt freezes it) throws `MoneyValidationError` and is undone,
   deletes and moves out of an issued document included, and the list and line editors show the reason;
-  the current rate's default code is always available (smrt's activation creates it when the rate is set); a draft resolves the app's current tax defaults on every save, as smrt's does. Fresh tenants
-  still start on the legacy model upstream until smrt#4009 ships (the export prompt has a TODO).
+  the current rate's default code is always available (smrt's activation creates it when the rate is set); a draft resolves the app's current tax defaults on every save, as smrt's does.
   Stored sample rows live under `smrt-planner:data:v6:`; bump it (never migrate) when line amounts change meaning.
 - `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export in `ExportPanel`: the cookbook summary, Copy prompt for a coding agent / Send to kitchen / Download with the file's name, size, apply command and JSON preview, then Import and Reset apart under "Replace or start over"), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/` (and `/[view]/`:
