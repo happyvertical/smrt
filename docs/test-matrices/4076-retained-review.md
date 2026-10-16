@@ -23,3 +23,19 @@ the updated harness races startup against rejection so it cannot conceal this
 failure. Full logs are retained under the coordinator evidence directory as
 `smrt-retention-past-due-base.log`, `smrt-retention-review-focused-v2.log`,
 `smrt-retention-review-postgres-v2.log`, and `smrt-retention-review-build-v2.log`.
+
+Retained credit review extension: the shared native suite reads the exact issued
+credit before its first provider push, maps the immutable original invoice reference,
+rejects wrong source IDs, foreign tenant/realm and generic export, and proves no
+provider mutation during review. The initial test used the model enum `credit_note`
+instead of the public frozen DTO enum `creditMemo`; that test-only mismatch is
+preserved in the first failed log. Focused SQLite now passes. PostgreSQL/build
+evidence is recorded with this checkpoint before delivery.
+
+Credit review validation: SQLite 6.68s and managed isolated PostgreSQL 10.99s
+passed; commerce build passed with no TypeScript diagnostics. Logs:
+`smrt-retained-credit-review-focused-v2.log`,
+`smrt-retained-credit-review-postgres-v2.log`, and
+`smrt-retained-credit-review-build.log`. An initial runner call lacked an explicit
+managed database URL; it failed before connecting. The corrected run used the
+managed wrapper and cleaned its owned disposable database.

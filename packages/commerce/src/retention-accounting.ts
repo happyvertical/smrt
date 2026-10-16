@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   type AccountingProvider,
+  type CreditMemoInput,
   prepareQuickBooksReceivableRequest,
   type QuickBooksReceivableMapping,
   type QuickBooksReceivableReadback,
@@ -26,6 +27,7 @@ import {
   type ReconcileFrozenInvoiceAccountingInput,
   reconcileFrozenInvoiceAccountingSync,
   syncFrozenInvoiceToAccounting,
+  toFrozenInvoiceAccountingInput,
 } from './invoice-accounting-sync.js';
 import type { Invoice } from './models/Invoice.js';
 import { MoneyValidationError } from './money.js';
@@ -240,6 +242,73 @@ export async function toRetainedInvoiceAccountingInput(
     input.mapping,
   ) as AccountingInvoiceInput;
 }
+type RetainedCreditReviewScope = Omit<
+  FrozenInvoiceAccountingInput,
+  'mapping'
+> & {
+  creditInvoiceId: string;
+};
+async function reviewRetainedCredit<T>(
+  input: RetainedCreditReviewScope,
+  read: (scope: Omit<FrozenInvoiceAccountingInput, 'mapping'>) => Promise<T>,
+): Promise<T> {
+  if (!input.tenantId || getTenantId() !== input.tenantId)
+    reject('Retained credit review requires its active tenant');
+  return withDocumentMoneyTransaction(input.db, async (tx) => {
+    // The existing owning reader proves the original calculated retained invoice.
+    const original = await loadRetainedInvoiceAccountingSnapshot({
+      ...input,
+      db: tx,
+    });
+    const { invoice: credit } = await lockAndReloadInvoice(
+      tx,
+      input.creditInvoiceId,
+      input.tenantId,
+    );
+    if (
+      credit.kind !== 'credit_note' ||
+      credit.creditedInvoiceId !== input.invoiceId ||
+      credit.customerId !== original.document.customerId ||
+      credit.currency !== original.document.currency ||
+      credit.moneyAuthority === 'historical'
+    )
+      reject(
+        'Retained credit review requires its exact calculated source lineage',
+      );
+    return withRetentionAccountingAuthority(
+      input.tenantId,
+      input.invoiceId,
+      () =>
+        read({
+          db: tx,
+          tenantId: input.tenantId,
+          invoiceId: input.creditInvoiceId,
+        }),
+    );
+  });
+}
+/** Read an issued retained-first credit without permitting generic credit export. */
+export function loadRetainedCreditAccountingSnapshot(
+  input: RetainedCreditReviewScope,
+) {
+  return reviewRetainedCredit(input, loadFrozenInvoiceAccountingSnapshot);
+}
+/** Map a retained-first credit using the existing frozen reader's realm/lineage checks. */
+export function toRetainedCreditAccountingInput(
+  input: RetainedCreditReviewScope & {
+    mapping: QuickBooksFrozenInvoiceMapping;
+  },
+): Promise<CreditMemoInput> {
+  return reviewRetainedCredit(input, async (scope) => {
+    // The owning review above proves credit_note; the legacy generic converter's
+    // return declaration names InvoiceInput for both runtime document variants.
+    return (await toFrozenInvoiceAccountingInput({
+      ...scope,
+      mapping: input.mapping,
+    })) as unknown as CreditMemoInput;
+  });
+}
+
 async function locked<T>(
   input: Scope,
   operation: (

@@ -875,6 +875,13 @@ refuses unreleased retention. A supplied host-managed release due date may prece
 the release date: preserving original past-due terms makes the released amount
 immediately overdue rather than silently extending payment terms.
 
+`loadRetainedCreditAccountingSnapshot` and `toRetainedCreditAccountingInput`
+provide the equivalent review path for an issued calculated credit. The caller
+supplies both original invoice and credit IDs; the owning API verifies tenant,
+customer, currency and exact original lineage, then retains the existing frozen
+reader's issue and provider-realm checks. Generic retained-credit export remains
+blocked. Review never creates a credit adjustment or contacts a provider.
+
 The public `syncRetainedInvoiceToAccounting`, `releaseRetainedInvoiceToAccounting`,
 `syncRetainedCreditToAccounting`, and `syncRetainedRefundToAccounting` commands
 implement an explicit QuickBooks accrual reclassification contract. They require

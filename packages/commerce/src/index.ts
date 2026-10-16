@@ -395,6 +395,7 @@ export type {
   SyncRetainedRefundToAccountingInput,
 } from './retention-accounting.js';
 export {
+  loadRetainedCreditAccountingSnapshot,
   loadRetainedInvoiceAccountingSnapshot,
   readRetainedInvoiceAccountingState,
   reconcileRetainedAccountingStep,
@@ -404,6 +405,7 @@ export {
   syncRetainedCreditToAccounting,
   syncRetainedInvoiceToAccounting,
   syncRetainedRefundToAccounting,
+  toRetainedCreditAccountingInput,
   toRetainedInvoiceAccountingInput,
 } from './retention-accounting.js';
 export {

@@ -22,6 +22,7 @@ import {
   releaseInvoiceRetention,
 } from '../../invoice-retention.js';
 import {
+  loadRetainedCreditAccountingSnapshot,
   loadRetainedInvoiceAccountingSnapshot,
   readRetainedInvoiceAccountingState,
   reconcileRetainedAccountingStep,
@@ -29,6 +30,7 @@ import {
   syncRetainedCreditToAccounting,
   syncRetainedInvoiceToAccounting,
   syncRetainedRefundToAccounting,
+  toRetainedCreditAccountingInput,
   toRetainedInvoiceAccountingInput,
 } from '../../retention-accounting.js';
 import { ensureTenantTaxCodes } from '../../tax/standard-codes.js';
@@ -401,6 +403,47 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
         mapping: creditCommand.creditMapping,
       }),
     ).rejects.toThrow('retained-first accounting adjustment');
+    const creditReviewScope = {
+      db,
+      tenantId,
+      invoiceId: invoice.id!,
+      creditInvoiceId: credit.id!,
+    };
+    const creditSnapshot =
+      await loadRetainedCreditAccountingSnapshot(creditReviewScope);
+    expect(creditSnapshot.document.id).toBe(credit.id);
+    expect(creditSnapshot.document.kind).toBe('creditMemo');
+    expect(creditPush).not.toHaveBeenCalled();
+    const creditInput = await toRetainedCreditAccountingInput({
+      ...creditReviewScope,
+      mapping: creditCommand.creditMapping,
+    });
+    expect(creditInput.creditedInvoiceExternalId).toBe('provider-invoice-1');
+    expect(creditInput.creditMemoNumber).toBe('CR-1');
+    await expect(
+      loadFrozenInvoiceAccountingSnapshot({
+        db,
+        tenantId,
+        invoiceId: credit.id!,
+      }),
+    ).rejects.toThrow('retained-first accounting adjustment');
+    await expect(
+      toRetainedCreditAccountingInput({
+        ...creditReviewScope,
+        mapping: { ...creditCommand.creditMapping, realmId: 'foreign' },
+      }),
+    ).rejects.toThrow('same accounting provider');
+    await expect(
+      loadRetainedCreditAccountingSnapshot({
+        ...creditReviewScope,
+        creditInvoiceId: invoice.id!,
+      }),
+    ).rejects.toThrow('source lineage');
+    await expect(
+      withTenant({ tenantId: randomUUID() }, () =>
+        loadRetainedCreditAccountingSnapshot(creditReviewScope),
+      ),
+    ).rejects.toThrow('active tenant');
     const adjusted = await syncRetainedCreditToAccounting(creditCommand);
     expect(adjusted.credits[0]).toMatchObject({
       retainedMinor: 700,
