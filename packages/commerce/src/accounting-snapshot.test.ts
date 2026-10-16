@@ -321,6 +321,27 @@ describe('mapFrozenAccountingSnapshot', () => {
     });
   });
 
+  it('rejects compound snapshots before an additive-only provider can reinterpret them', () => {
+    const snapshot = exampleA('line');
+    const changed = {
+      ...snapshot,
+      lineItems: snapshot.lineItems.map((line, index) =>
+        index === 0
+          ? {
+              ...line,
+              taxComponents: line.taxComponents.map((component) => ({
+                ...component,
+                compound: true,
+              })),
+            }
+          : line,
+      ),
+    };
+    expect(() => mapFrozenAccountingSnapshot(changed, mapping)).toThrow(
+      'must support ordered compound',
+    );
+  });
+
   it('preserves JPY zero-decimal minor values', () => {
     const result = mapFrozenAccountingSnapshot(
       document({

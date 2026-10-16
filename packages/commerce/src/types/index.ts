@@ -568,6 +568,10 @@ export interface ContractTaxComponentSnapshot {
   name: string;
   percent: string;
   taxMinor: number;
+  /** Missing on historical additive snapshots means false. */
+  compound?: boolean;
+  /** Actual component basis, including preceding tax when compound. */
+  taxableMinor?: number;
 }
 
 /**
@@ -655,6 +659,10 @@ export interface InvoiceTaxComponentSnapshot {
   name: string;
   percent: string;
   taxMinor: number;
+  /** Missing on historical additive snapshots means false. */
+  compound?: boolean;
+  /** Actual component basis, including preceding tax when compound. */
+  taxableMinor?: number;
 }
 
 /** Constructor options for {@link InvoiceLineItem}. */

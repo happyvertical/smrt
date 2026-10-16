@@ -18,6 +18,26 @@ describe('received purchase monetary authority', () => {
       await db.close?.();
     }
   });
+  it('retains supplier-declared compound bases above net without inventing a rate', () => {
+    const facts = validateReceivedPurchaseMoneyFacts({
+      ...receivedFacts,
+      taxComponents: [
+        {
+          sourceKey: 'compound',
+          label: 'Declared tax',
+          amountMinor: receivedFacts.taxMinor,
+          taxableMinor: receivedFacts.netMinor + 500,
+          netMinor: receivedFacts.netMinor,
+          classification: null,
+          recoverableMinor: null,
+        },
+      ],
+    });
+    expect(facts.taxComponents?.[0]).toMatchObject({
+      taxableMinor: receivedFacts.netMinor + 500,
+      netMinor: receivedFacts.netMinor,
+    });
+  });
   it('distinguishes unknown from known zero and refuses malformed source facts', () => {
     expect(
       validateReceivedPurchaseMoneyFacts(receivedFacts).taxComponents,

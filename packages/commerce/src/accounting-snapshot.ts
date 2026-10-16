@@ -11,7 +11,11 @@ import {
 } from '@happyvertical/accounting';
 
 import { minorToMajorUnits } from './billing/units.js';
-import type { LineAmountType, TaxRoundingScope } from './money.js';
+import {
+  type LineAmountType,
+  MoneyValidationError,
+  type TaxRoundingScope,
+} from './money.js';
 
 export type FrozenAccountingDocumentKind = 'invoice' | 'creditMemo';
 
@@ -32,6 +36,8 @@ export interface FrozenAccountingTaxComponent {
   /** Exact percent text: `5` means 5 percent. */
   readonly percent: string;
   readonly taxMinor: number;
+  readonly compound?: boolean;
+  readonly taxableMinor?: number;
 }
 
 /** A frozen commerce line. `unitPriceMinor` and `discountMinor` are pre-discount document-mode values. */
@@ -190,6 +196,11 @@ function mapLine(
   const componentIds = new Set<string>();
   let componentTotalMinor = 0;
   const taxComponents = line.taxComponents.map((component) => {
+    if (component.compound)
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_UNSUPPORTED',
+        'The accounting provider must support ordered compound tax snapshots before this document can be synchronized',
+      );
     requireText(component.taxComponentId, `Line '${line.id}' tax component ID`);
     if (componentIds.has(component.taxComponentId)) {
       throw new Error(

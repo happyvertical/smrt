@@ -34,7 +34,7 @@ export type DocumentTaxWriteInput = Required<
     | 'taxMinor'
     | 'recoverableMinor'
   >
->;
+> & { netMinor?: number | null };
 
 /** Normalized immutable document-tax snapshots for tax-summary materialization. */
 export interface DocumentTaxReportFact {
@@ -55,6 +55,7 @@ export interface DocumentTaxReportFact {
   /** Null is an unassigned/unknown snapshot and must remain visible as a warning. */
   taxCodeKind: TaxCodeKind | null;
   taxableMinor: number;
+  netMinor?: number;
   taxMinor: number;
   recoverableMinor: number;
   taxComponentId: string | null;
@@ -178,6 +179,7 @@ const BUSINESS_FIELDS = [
   'percent',
   'liabilityAccountId',
   'taxableMinor',
+  'netMinor',
   'taxMinor',
   'recoverableMinor',
 ] as const;
@@ -230,7 +232,7 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
     const result = await this.db.query(
       `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
               d.tax_component_id, d.tax_component_name, d.liability_account_id,
-              d.taxable_minor, d.tax_minor, d.recoverable_minor,
+              d.taxable_minor, d.net_minor, d.tax_minor, d.recoverable_minor,
               i.kind AS invoice_kind, i.invoice_number, i.customer_id, i.issue_date, i.status
          FROM document_taxes d
          JOIN invoices i
@@ -269,6 +271,9 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
       taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
       taxCodeKind: taxCodeKind(row.kind),
       taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+      ...(row.net_minor != null
+        ? { netMinor: storedMinor(row.net_minor, 'net minor') }
+        : {}),
       taxMinor: storedMinor(row.tax_minor, 'tax minor'),
       recoverableMinor: storedMinor(row.recoverable_minor, 'recoverable minor'),
       taxComponentId:
@@ -321,7 +326,7 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
     const result = await this.db.query(
       `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
               d.tax_component_id, d.tax_component_name, d.liability_account_id,
-              d.taxable_minor, d.tax_minor, d.recoverable_minor
+              d.taxable_minor, d.net_minor, d.tax_minor, d.recoverable_minor
          FROM document_taxes d
          JOIN contracts c
            ON CAST(c.id AS TEXT) = CAST(d.document_id AS TEXT)
@@ -362,6 +367,9 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
             taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
             taxCodeKind: taxCodeKind(row.kind),
             taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+            ...(row.net_minor != null
+              ? { netMinor: storedMinor(row.net_minor, 'net minor') }
+              : {}),
             taxMinor: storedMinor(row.tax_minor, 'tax minor'),
             recoverableMinor: storedMinor(
               row.recoverable_minor,

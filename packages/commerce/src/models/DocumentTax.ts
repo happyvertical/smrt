@@ -28,6 +28,7 @@ export interface DocumentTaxOptions extends SmrtObjectOptions {
   percent?: string | null;
   liabilityAccountId?: string | null;
   taxableMinor?: number;
+  netMinor?: number | null;
   taxMinor?: number;
   recoverableMinor?: number;
 }
@@ -79,10 +80,18 @@ export class DocumentTax extends SmrtObject {
   liabilityAccountId: string | null = null;
 
   @field({
-    description: 'Tax-exclusive base in integer minor units.',
+    description:
+      'Actual component taxable basis, including prior compound taxes.',
     ui: { format: 'money' },
   })
   taxableMinor = 0;
+
+  @field({
+    type: 'integer',
+    nullable: true,
+    description: 'Net basis when different from the component taxable basis.',
+  })
+  netMinor: number | null = null;
 
   @field({
     description: 'Tax total in integer minor units.',
@@ -116,6 +125,7 @@ export class DocumentTax extends SmrtObject {
       this.liabilityAccountId = options.liabilityAccountId;
     if (options.taxableMinor !== undefined)
       this.taxableMinor = options.taxableMinor;
+    if (options.netMinor !== undefined) this.netMinor = options.netMinor;
     if (options.taxMinor !== undefined) this.taxMinor = options.taxMinor;
     if (options.recoverableMinor !== undefined)
       this.recoverableMinor = options.recoverableMinor;
@@ -142,6 +152,7 @@ export class DocumentTax extends SmrtObject {
     }
     for (const [label, value] of [
       ['taxableMinor', this.taxableMinor],
+      ['netMinor', this.netMinor ?? this.taxableMinor],
       ['taxMinor', this.taxMinor],
       ['recoverableMinor', this.recoverableMinor],
     ] as const) {

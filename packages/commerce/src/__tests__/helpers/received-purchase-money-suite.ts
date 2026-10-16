@@ -211,7 +211,8 @@ export async function proveReceivedPurchaseMoney(
             label: 'Supplier component',
             amountMinor: 537,
             classification: 'taxable',
-            taxableMinor: 10000,
+            taxableMinor: 10500,
+            netMinor: 10000,
             taxCodeId: code.id,
             taxComponentId: component.id!,
             recoverableMinor: 123,
@@ -234,7 +235,8 @@ export async function proveReceivedPurchaseMoney(
       expect.objectContaining({
         documentId: known.id,
         taxMinor: 537,
-        taxableMinor: 10000,
+        taxableMinor: 10500,
+        netMinor: 10000,
         recoverableMinor: 123,
         taxComponentId: component.id,
       }),
@@ -253,6 +255,8 @@ export async function proveReceivedPurchaseMoney(
         (warning) => warning.code === 'unassigned-tax-code',
       ),
     ).toBe(false);
+    expect(summary.kindRows[0].taxableMinor).toBe(10000);
+    expect(summary.componentRows[0].taxableMinor).toBe(10500);
     const revisedComponent = await (
       await TaxComponentCollection.create({ db })
     ).create({

@@ -23,6 +23,7 @@ export interface TaxSummaryStoredFact {
   /** Null is an incomplete/unassigned stored snapshot, never out-of-scope. */
   taxCodeKind: TaxCodeKind | null;
   taxableMinor: number;
+  netMinor?: number;
   taxMinor: number;
   recoverableMinor: number;
   taxComponentId: string | null;
@@ -249,6 +250,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
 
   for (const fact of input.facts) {
     assertMinor(fact.taxableMinor, 'taxableMinor');
+    if (fact.netMinor !== undefined) assertMinor(fact.netMinor, 'netMinor');
     assertMinor(fact.taxMinor, 'taxMinor');
     assertMinor(fact.recoverableMinor, 'recoverableMinor');
     if (!usableFact(fact, input)) continue;
@@ -289,7 +291,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
       };
       row.taxableMinor = addMinor(
         row.taxableMinor,
-        sign * fact.taxableMinor,
+        sign * (fact.netMinor ?? fact.taxableMinor),
         'kind taxable total',
       );
       const documents = kindDocuments.get(kindKey) ?? new Set<string>();

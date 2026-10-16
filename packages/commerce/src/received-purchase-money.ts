@@ -30,6 +30,8 @@ export interface ReceivedPurchaseTaxComponent {
   taxCodeId?: string | null;
   taxComponentId?: string | null;
   taxableMinor?: number | null;
+  /** Explicit net allocation when supplier taxable basis includes prior taxes. */
+  netMinor?: number | null;
   recoverableMinor: number | null;
 }
 /** Complete source line money; optional source decimal text is evidence, not a calculator input. */
@@ -145,8 +147,12 @@ export function validateReceivedPurchaseMoneyFacts(
         component.taxableMinor == null
           ? null
           : minor(component.taxableMinor, 'Taxable basis');
-      if (taxableMinor !== null && taxableMinor > totals.netMinor)
-        invalid('Component taxable basis exceeds document net');
+      const netMinor =
+        component.netMinor == null
+          ? null
+          : minor(component.netMinor, 'Component net basis');
+      if (netMinor !== null && netMinor > totals.netMinor)
+        invalid('Component net basis exceeds document net');
       if (
         classification !== null &&
         classification !== 'taxable' &&
@@ -167,6 +173,7 @@ export function validateReceivedPurchaseMoneyFacts(
             ? null
             : text(component.taxComponentId, 'Tax component identity'),
         taxableMinor,
+        ...(netMinor !== null ? { netMinor } : {}),
         recoverableMinor,
       };
     });
@@ -428,6 +435,8 @@ export function receivedPurchaseReportFacts(
       !component.taxCodeId ||
       component.taxableMinor == null ||
       component.recoverableMinor === null ||
+      (component.taxableMinor > snapshot.facts.netMinor &&
+        component.netMinor == null) ||
       (component.classification === 'taxable' && !component.taxComponentId)
     )
       throw new ReceivedPurchaseTaxClassificationRequired(id);
@@ -445,6 +454,7 @@ export function receivedPurchaseReportFacts(
       taxCodeId: component.taxCodeId,
       taxCodeKind: component.classification,
       taxableMinor: component.taxableMinor,
+      ...(component.netMinor != null ? { netMinor: component.netMinor } : {}),
       taxMinor: component.amountMinor,
       recoverableMinor: component.recoverableMinor,
       taxComponentId: component.taxComponentId ?? null,

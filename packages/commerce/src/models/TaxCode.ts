@@ -35,7 +35,7 @@ export class TaxCode extends SmrtObject {
   })
   appliesTo: TaxCodeAppliesTo = 'both';
 
-  /** Ordered component IDs; compound is reserved and deliberately unsupported. */
+  /** Ordered component IDs; compound includes every preceding component in this code. */
   /** Stored JSON is guarded through the typed accessor below. */
   componentsJson = '[]';
 
@@ -115,12 +115,6 @@ export class TaxCode extends SmrtObject {
         );
       }
       seen.add(component.taxComponentId);
-      if (component.compound) {
-        throw new MoneyValidationError(
-          'COMPOUND_UNSUPPORTED',
-          'Compound tax components are reserved for a future release.',
-        );
-      }
     }
     return this.withTransaction(async () => {
       const { TaxComponentCollection } = await import(

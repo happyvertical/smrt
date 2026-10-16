@@ -615,7 +615,7 @@ async function recomputeInvoiceAggregate(
         components: source.taxComponents.map((component) => ({
           taxComponentId: component.taxComponentId,
           percent: component.percent,
-          compound: false,
+          compound: component.compound ?? false,
         })),
       };
     }
@@ -795,6 +795,7 @@ async function recomputeInvoiceAggregate(
                     taxComponentId: part.taxComponentId,
                     name: component.name,
                     percent: component.percent,
+                    ...(part.compound ? { compound: true } : {}),
                     taxMinor: 0,
                   };
                 }),
@@ -852,6 +853,20 @@ async function recomputeInvoiceAggregate(
         const desiredTax = sourceComponent.taxMinor - priorTax;
         const taxDelta = desiredTax - component.taxMinor;
         component.taxMinor = desiredTax;
+        if (sourceComponent.compound) {
+          component.compound = true;
+          component.taxableMinor =
+            (sourceComponent.taxableMinor ?? 0) -
+            prior.reduce(
+              (sum, candidate) =>
+                sum +
+                (candidate.taxComponents.find(
+                  (part) =>
+                    part.taxComponentId === sourceComponent.taxComponentId,
+                )?.taxableMinor ?? 0),
+              0,
+            );
+        }
         result.taxMinor += taxDelta;
         if (invoice.lineAmountType === 'inclusive')
           result.amountMinor += taxDelta;
@@ -863,6 +878,7 @@ async function recomputeInvoiceAggregate(
         taxCodeId: string | null;
         taxComponentId: string | null;
         taxableMinor: number;
+        netMinor?: number;
         taxMinor: number;
       }
     >();
@@ -870,7 +886,14 @@ async function recomputeInvoiceAggregate(
       const metadata = resolvedCodes.get(result.id) ?? null;
       const parts = result.components.length
         ? result.components
-        : [{ taxComponentId: null, taxMinor: 0 }];
+        : [
+            {
+              taxComponentId: null,
+              taxMinor: 0,
+              compound: false,
+              taxableMinor: undefined,
+            },
+          ];
       for (const part of parts) {
         const key = `${metadata?.id ?? ''}\u0000${part.taxComponentId ?? ''}`;
         const row = rebuilt.get(key) ?? {
@@ -879,7 +902,8 @@ async function recomputeInvoiceAggregate(
           taxableMinor: 0,
           taxMinor: 0,
         };
-        row.taxableMinor += result.netMinor;
+        row.taxableMinor += part.taxableMinor ?? result.netMinor;
+        if (part.compound) row.netMinor = (row.netMinor ?? 0) + result.netMinor;
         row.taxMinor += part.taxMinor;
         rebuilt.set(key, row);
       }
@@ -953,14 +977,21 @@ async function recomputeInvoiceAggregate(
         name: component.name,
         percent: component.percent,
         taxMinor: entry.taxMinor,
+        ...(entry.compound
+          ? { compound: true, taxableMinor: entry.taxableMinor }
+          : {}),
       };
     });
-    line.taxRate = code
-      ? code.components.reduce(
-          (sum, part) => sum + Number(part.percent) / 100,
-          0,
-        )
-      : 0;
+    line.taxRate = result.components.some((part) => part.compound)
+      ? result.netMinor === 0
+        ? 0
+        : result.taxMinor / result.netMinor
+      : code
+        ? code.components.reduce(
+            (sum, part) => sum + Number(part.percent) / 100,
+            0,
+          )
+        : 0;
     if (freezeSnapshotId) line.moneySnapshotId = freezeSnapshotId;
     if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE);
   }
@@ -1010,6 +1041,7 @@ async function recomputeInvoiceAggregate(
         currentComponent?.liabilityAccountId ||
         null,
       taxableMinor: tax.taxableMinor,
+      netMinor: tax.netMinor ?? null,
       taxMinor: tax.taxMinor,
       recoverableMinor: 0,
     };
@@ -1207,6 +1239,7 @@ async function getInvoiceMoneyFactsOnScope(
       percent: row.percent,
       liabilityAccountId: row.liabilityAccountId,
       taxableMinor: row.taxableMinor,
+      ...(row.netMinor !== null ? { netMinor: row.netMinor } : {}),
       taxMinor: row.taxMinor,
       recoverableMinor: row.recoverableMinor,
     })),

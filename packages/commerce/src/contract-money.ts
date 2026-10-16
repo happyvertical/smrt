@@ -329,13 +329,20 @@ async function recompute(
           name: component.name,
           percent: component.percent,
           taxMinor: part.taxMinor,
+          ...(part.compound
+            ? { compound: true, taxableMinor: part.taxableMinor }
+            : {}),
         };
       },
     );
-    line.taxRate = line.taxComponents.reduce(
-      (sum, part) => sum + Number(part.percent) / 100,
-      0,
-    );
+    line.taxRate = row.components.some((part) => part.compound)
+      ? row.netMinor === 0
+        ? 0
+        : row.taxMinor / row.netMinor
+      : line.taxComponents.reduce(
+          (sum, part) => sum + Number(part.percent) / 100,
+          0,
+        );
     if (snapshotId) line.moneySnapshotId = snapshotId;
     if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE);
   }
@@ -357,6 +364,7 @@ async function recompute(
       percent: component?.percent ?? null,
       liabilityAccountId: component?.liabilityAccountId ?? null,
       taxableMinor: tax.taxableMinor,
+      netMinor: tax.netMinor ?? null,
       taxMinor: tax.taxMinor,
       recoverableMinor:
         direction(contract) === 'purchases' && component?.recoverable
