@@ -78,13 +78,22 @@ export class DocumentTax extends SmrtObject {
   @field({ nullable: true })
   liabilityAccountId: string | null = null;
 
-  @field({ description: 'Tax-exclusive base in integer minor units.' })
+  @field({
+    description: 'Tax-exclusive base in integer minor units.',
+    ui: { format: 'money' },
+  })
   taxableMinor = 0;
 
-  @field({ description: 'Tax total in integer minor units.' })
+  @field({
+    description: 'Tax total in integer minor units.',
+    ui: { format: 'money' },
+  })
   taxMinor = 0;
 
-  @field({ description: 'Recoverable purchase tax in integer minor units.' })
+  @field({
+    description: 'Recoverable purchase tax in integer minor units.',
+    ui: { format: 'money' },
+  })
   recoverableMinor = 0;
 
   constructor(options: DocumentTaxOptions = {}) {

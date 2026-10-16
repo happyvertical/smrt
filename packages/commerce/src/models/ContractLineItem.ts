@@ -91,14 +91,17 @@ export class ContractLineItem extends SmrtObject {
   quantity: number = 1.0;
 
   /**
-   * Unit price before discount, in **integer minor units** (cents, satoshis).
+   * Unit price before discount, in **integer minor units** (cents, satoshis),
+   * in the document's pricing mode: tax-inclusive when its `lineAmountType`
+   * is `inclusive`.
    *
    * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
    * INTEGER and a decimal literal to DECIMAL. Money is exact, so `$49.99` is
    * `4999` (#2401).
    */
   @field({
-    description: 'The price of one, before tax.',
+    description:
+      "The price of one, before discount; includes tax when the document's prices include tax.",
     ui: { format: 'money' },
   })
   unitPrice: number = 0;
@@ -162,16 +165,23 @@ export class ContractLineItem extends SmrtObject {
   }
 
   /** Exact sum of frozen component taxes, in integer minor units. */
+  @field({ ui: { format: 'money' } })
   taxAmount = 0;
 
   /** Stable issue/freeze identity, independent of lifecycle updated_at. */
   moneySnapshotId = '';
 
   /**
-   * Line amount in integer minor units, in the Contract's line amount type.
-   * Derived by the Contract money aggregate on every save.
+   * Line amount in integer minor units: net of discount and before tax for
+   * `exclusive` / `none` documents, and tax-inclusive for `inclusive` ones;
+   * {@link taxAmount} holds the tax. Derived by the Contract money aggregate
+   * on every save.
    */
-  @field({ description: 'The line total.', ui: { format: 'money' } })
+  @field({
+    description:
+      "The line amount: net of discount, and including tax only when the document's prices include tax.",
+    ui: { format: 'money' },
+  })
   amount: number = 0;
 
   /**

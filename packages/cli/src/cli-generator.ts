@@ -1242,10 +1242,13 @@ export class CLIGenerator {
     // CUSTOM METHODS - discover from manifest (including inherited methods)
     const methods = await ObjectRegistry.getAllMethods(objectName);
 
-    // Check if include list contains any custom method names (indicates strict mode)
-    const hasCustomMethodsInInclude = included?.some(
-      (item) => !isCrudOperation(item),
-    );
+    // Check if include list contains any custom method names (indicates strict mode).
+    // A collection class's include list is always the complete allowlist, as
+    // on MCP and REST: a collection inherits its model's include list as CRUD
+    // verbs only, and its own methods must stay closed until it lists them.
+    const hasCustomMethodsInInclude =
+      included?.some((item) => !isCrudOperation(item)) ||
+      (Array.isArray(included) && ObjectRegistry.isCollectionClass(objectName));
 
     // Every name a caller can already type for this object, taken from the
     // CRUD commands actually pushed above — their names AND their aliases,

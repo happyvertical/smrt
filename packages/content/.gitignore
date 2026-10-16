@@ -7,8 +7,6 @@ src/routes/api/v1/contentcontributionattachments/listForContribution/+server.ts
 src/routes/api/v1/contentcontributionattachments/listForRevision/+server.ts
 src/routes/api/v1/contentcontributionrevisions/\[id\]/+server.ts
 src/routes/api/v1/contentcontributionrevisions/+server.ts
-src/routes/api/v1/contentcontributionrevisions/getLatestForContribution/+server.ts
-src/routes/api/v1/contentcontributionrevisions/listForContribution/+server.ts
 src/routes/api/v1/contentcontributions/\[id\]/+server.ts
 src/routes/api/v1/contentcontributions/\[id\]/approve/+server.ts
 src/routes/api/v1/contentcontributions/\[id\]/promote/+server.ts
@@ -24,10 +22,8 @@ src/routes/api/v1/contentcontributions/submit/+server.ts
 src/routes/api/v1/contentcontributions/types/+server.ts
 src/routes/api/v1/contentcontributiontypes/\[id\]/+server.ts
 src/routes/api/v1/contentcontributiontypes/+server.ts
-src/routes/api/v1/contentcontributiontypes/getByKey/+server.ts
 src/routes/api/v1/contentcontributors/\[id\]/+server.ts
 src/routes/api/v1/contentcontributors/+server.ts
-src/routes/api/v1/contentcontributors/findOrCreateByEmail/+server.ts
 src/routes/api/v1/contentcontributors/getByEmail/+server.ts
 src/routes/api/v1/contentcontributors/getByProfileId/+server.ts
 src/routes/api/v1/contentcorrections/\[id\]/+server.ts
@@ -36,19 +32,12 @@ src/routes/api/v1/contentcorrections/getPublishedForContent/+server.ts
 src/routes/api/v1/contentcorrections/listForContent/+server.ts
 src/routes/api/v1/contentfeedsources/\[id\]/+server.ts
 src/routes/api/v1/contentfeedsources/+server.ts
-src/routes/api/v1/contentfeedsources/findActive/+server.ts
-src/routes/api/v1/contentfeedsources/findByFeedUrl/+server.ts
-src/routes/api/v1/contentfeedsources/findByStatus/+server.ts
 src/routes/api/v1/contentgovernanceassignments/\[id\]/+server.ts
 src/routes/api/v1/contentgovernanceassignments/+server.ts
-src/routes/api/v1/contentgovernanceassignments/getByKey/+server.ts
-src/routes/api/v1/contentgovernanceassignments/resolveForContent/+server.ts
 src/routes/api/v1/contentgovernancepolicies/\[id\]/+server.ts
 src/routes/api/v1/contentgovernancepolicies/+server.ts
-src/routes/api/v1/contentgovernancepolicies/getByKey/+server.ts
 src/routes/api/v1/contentgovernanceprofiles/\[id\]/+server.ts
 src/routes/api/v1/contentgovernanceprofiles/+server.ts
-src/routes/api/v1/contentgovernanceprofiles/getByKey/+server.ts
 src/routes/api/v1/contentreferences/\[id\]/+server.ts
 src/routes/api/v1/contentreferences/+server.ts
 src/routes/api/v1/contentreferences/attach/+server.ts
@@ -61,11 +50,6 @@ src/routes/api/v1/contentreferences/setLinks/+server.ts
 src/routes/api/v1/contentreferences/unlink/+server.ts
 src/routes/api/v1/contentreviews/\[id\]/+server.ts
 src/routes/api/v1/contentreviews/+server.ts
-src/routes/api/v1/contentreviews/createFromResult/+server.ts
-src/routes/api/v1/contentreviews/getLatestForContent/+server.ts
-src/routes/api/v1/contentreviews/getLatestForPolicyKey/+server.ts
-src/routes/api/v1/contentreviews/listForContent/+server.ts
-src/routes/api/v1/contentreviews/listForContentByPolicyKey/+server.ts
 src/routes/api/v1/contents/\[id\]/+server.ts
 src/routes/api/v1/contents/\[id\]/corrections/+server.ts
 src/routes/api/v1/contents/\[id\]/fact-audit/+server.ts
@@ -90,10 +74,5 @@ src/routes/api/v1/contents/query/+server.ts
 src/routes/api/v1/contentversions/\[id\]/+server.ts
 src/routes/api/v1/contentversions/\[id\]/transparency/+server.ts
 src/routes/api/v1/contentversions/+server.ts
-src/routes/api/v1/contentversions/getLatestForContent/+server.ts
-src/routes/api/v1/contentversions/getLatestPublishedForContent/+server.ts
-src/routes/api/v1/contentversions/getNextVersionNumber/+server.ts
-src/routes/api/v1/contentversions/getVersion/+server.ts
-src/routes/api/v1/contentversions/listForContent/+server.ts
 src/routes/api/v1/sync/apply/+server.ts
 # END SMRT auto-generated routes (Vite plugin)

@@ -174,7 +174,12 @@ vitest.selects.config.ts` (also part of `pnpm test:ui`).
 Minor-unit amounts on Contract, Invoice, their line items, Payment,
 PaymentAllocation, `Customer.creditLimit` and `Vendor.minimumOrderAmount`
 carry `ui: { format: 'money' }` (#3718; `widget: 'currency'` stays the
-currency-code picker on the text `currency` field). Payout and Payment's
+currency-code picker on the text `currency` field). That includes the
+money-v2 fields (#4011): line `taxAmount`, `discountTotal` on Invoice and
+Contract, `Invoice.creditedAmount`, and `DocumentTax` `taxableMinor` /
+`taxMinor` / `recoverableMinor`; the test asserts every integer named
+`*Amount`, `*Total`, `*Minor` or `subtotal` on those models (and Contract's
+STI subtypes) is hinted. Payout and Payment's
 native/USD drift amounts are not hinted: their currency is a payout rail or
 fixed USD, not the record's `currency`. The line-item FKs
 (`ContractLineItem.contractId`, `InvoiceLineItem.invoiceId`,

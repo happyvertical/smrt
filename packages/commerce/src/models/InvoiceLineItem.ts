@@ -161,14 +161,17 @@ export class InvoiceLineItem extends SmrtObject {
   quantity: number = 1.0;
 
   /**
-   * Unit price before discount, in **integer minor units** (cents, satoshis).
+   * Unit price before discount, in **integer minor units** (cents, satoshis),
+   * in the document's pricing mode: tax-inclusive when its `lineAmountType`
+   * is `inclusive`.
    *
    * Money is exact, so it is stored as minor units and never as a float —
    * `$19.99` is `1999`. An integer literal is what maps this to an INTEGER
    * column (#2361).
    */
   @field({
-    description: 'The price of one, before tax.',
+    description:
+      "The price of one, before discount; includes tax when the document's prices include tax.",
     ui: { format: 'money' },
   })
   unitPrice: number = 0;
@@ -232,15 +235,23 @@ export class InvoiceLineItem extends SmrtObject {
     this.taxComponentsJson = JSON.stringify(value);
   }
 
+  /** Exact sum of frozen component taxes, in integer minor units. */
+  @field({ ui: { format: 'money' } })
   taxAmount = 0;
 
   /** Stable document snapshot identity; ordinary lifecycle saves do not change it. */
   moneySnapshotId = '';
 
   /**
-   * Calculated line amount, in integer minor units (#2361).
+   * Calculated line amount, in integer minor units (#2361): net of discount
+   * and before tax for `exclusive` / `none` documents, and tax-inclusive for
+   * `inclusive` ones; {@link taxAmount} holds the tax.
    */
-  @field({ description: 'The line total.', ui: { format: 'money' } })
+  @field({
+    description:
+      "The line amount: net of discount, and including tax only when the document's prices include tax.",
+    ui: { format: 'money' },
+  })
   amount: number = 0;
 
   // ============================================================================

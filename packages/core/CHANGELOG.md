@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.56.2
+
+### Patch Changes
+
+- ### Features
+  
+  - add purchase-side supplier quotations (#4022) (commerce)
+  - add family learning foundation (#4000) (education)
+  
+  ### Bug Fixes
+  
+  - adapt packages to inherited collection surfaces
+  - collections inherit their model's generated surface (core)
+  - money-v2 follow-ups — fallback totals, money hints, line descriptions (patch train) (#4014)
+  
+  ### Other Changes
+  
+  - test: cover education collections in the surface gate (bundle-gate)
+  - test: gate collection surfaces across packages (bundle-gate)
+- @happyvertical/smrt-config@0.56.2
+  - @happyvertical/smrt-scanner@0.56.2
+  - @happyvertical/smrt-types@0.56.2
+
 ## 0.56.1
 
 ### Patch Changes

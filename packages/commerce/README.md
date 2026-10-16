@@ -1,6 +1,6 @@
 # @happyvertical/smrt-commerce
 
-Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (9 STI types), invoices with ledger integration, payments, and fulfillment tracking.
+Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (10 STI types), invoices with ledger integration, payments, and fulfillment tracking.
 
 ## Installation
 
@@ -196,15 +196,32 @@ earlier columns are dropped once no tenant needs the upgrade. See
 
 ### Models
 
+#### Supplier quotations
+
+`SupplierQuote` extends `PurchaseContract`, requires `vendorId`, and has
+`ContractType.SUPPLIER_QUOTE`. Create it through `PurchaseContractCollection`
+(or `ContractCollection`) with `_meta_type:
+'@happyvertical/smrt-commerce:SupplierQuote'`. It inherits `expiryDate`,
+`reference`, `notes`, and `terms`; it has no customer relationship. Purchase
+branch reads include quotes and sales branch reads exclude them.
+
+Keep received quote revisions and shared quote identity in your application.
+Awarding a quote creates a separate `PurchaseOrder`; accepting or saving a
+quote never converts its identity into an order. Quotes use purchase-side
+money calculation and frozen snapshots, but never contribute incurred purchase
+tax to reports, regardless of status. Existing Estimate and PurchaseOrder
+report eligibility is unchanged.
+
 #### Upgrading contract parties (#3898)
 
 `Contract` no longer declares `customerId` or `vendorId`. Narrow a contract to
 `SalesContract` to read `customerId`, or to `PurchaseContract` to read `vendorId`.
-The nine leaf qualified names and the `contracts` table stay the same; a
+The existing leaf qualified names and the `contracts` table stay the same; a
 `db:migrate --dry-run` against a v0.55.19 schema reports no DDL changes on
 SQLite or PostgreSQL. Sales leaves no longer accept `vendorId`; purchase leaves
 no longer accept `customerId`. `Order`, `Estimate`, `Agreement`, `Lease`, and
-`WholesaleOrder` require a customer on save. `PurchaseOrder` requires a vendor.
+`WholesaleOrder` require a customer on save. `PurchaseOrder` and `SupplierQuote`
+require a vendor.
 `Cart`, `LicenseSale`, and `ProductionOrder` retain optional parties on their side.
 
 Before upgrading existing data, run the read-only
@@ -241,6 +258,7 @@ This preflight never edits rows; an operator chooses the data correction.
 | `Order` | Customer purchase order |
 | `Lease` | Rental or lease agreement |
 | `Agreement` | Service or maintenance agreement |
+| `SupplierQuote` | Quotation received from a vendor; distinct from an awarded purchase order |
 | `PurchaseOrder` | Order sent to a vendor/supplier |
 | `ContractLineItem` | Line item within a contract |
 | `Invoice` | Billing document with status lifecycle and ledger integration |
@@ -268,7 +286,7 @@ replay, parent revision refresh and compatibility requirements.
 
 | Export | Values |
 |--------|--------|
-| `ContractType` | `estimate`, `order`, `lease`, `agreement`, `purchase_order`, `wholesale_order`, `production_order`, `cart`, `license_sale` |
+| `ContractType` | `estimate`, `order`, `lease`, `agreement`, `supplier_quote`, `purchase_order`, `wholesale_order`, `production_order`, `cart`, `license_sale` |
 | `ContractStatus` | `draft`, `sent`, `accepted`, `declined`, `completed`, `cancelled` |
 | `CustomerStatus` | `active`, `inactive`, `suspended` |
 | `VendorStatus` | `active`, `inactive`, `suspended` |

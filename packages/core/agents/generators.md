@@ -222,6 +222,30 @@ rather than asserting the collision.
 `smrt doctor` prints the whole surface — model tools, intents, playbooks — from
 these artifacts alone, with no application running.
 
+## Collection exposure
+
+A collection class is registered as a resource of its own, so every transport
+generates operations for it (`<name>collection_create` MCP tools,
+`<name>collection:create` CLI commands, routes for its public methods). It may
+never publish more than its model. `registry/collection-exposure.ts` holds the
+rule; the manifest generator applies it (`mergeInheritedFields`) and
+`ObjectRegistry.getConfig()` applies it again at runtime, so a manifest built
+before the rule is held to it too. For each of `api`/`mcp`/`cli` the collection
+leaves unset, it inherits the model's: `false` stays `false`; an `include`
+list keeps only its CRUD verbs (the other names are the model's instance
+methods, so the collection's own methods stay closed); an `exclude` list is
+copied; an open model leaves the collection open. A `sensitive: true` model's
+collection gets read-only MCP unless it configures `mcp` itself. The CLI treats
+a collection's `include` as the complete allowlist, as MCP and REST do.
+
+A collection opens its own methods by listing them in its own `@smrt()`. A
+collection decorator's config is merged over its model's at runtime, so repeat
+the model's CRUD verbs (and storage keys) there. The build fails with
+`CONFIG_COLLECTION_EXPOSURE` when a collection's own surface opens an MCP or
+CLI CRUD write its model closes. Gates: `registry/__tests__/collection-exposure.test.ts`,
+`packages/cli/src/__tests__/collection-exposure.test.ts`, and the cross-package
+`packages/bundle-gate/src/__tests__/collection-exposure.spec.ts`.
+
 ## Custom-action contract
 
 `resolveCustomActionMetadata()` is the common discovery and invocation contract

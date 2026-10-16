@@ -2,8 +2,18 @@
  * Tests for SmrtClass functionality
  */
 
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtClass } from './class';
+
+async function closeDatabase(instance: SmrtClass): Promise<void> {
+  const db = (instance as any)._db as { close?: () => Promise<void> };
+  if (typeof db?.close === 'function') {
+    await db.close();
+  }
+}
 
 describe('SmrtClass', () => {
   describe('Construction', () => {
@@ -168,9 +178,7 @@ describe('SmrtClass', () => {
     });
 
     it('should create system tables in DuckDB JSON mode', async () => {
-      const { tmpdir } = await import('node:os');
-      const { join } = await import('node:path');
-      const testDir = join(tmpdir(), `smrt-test-${Date.now()}`);
+      const testDir = await mkdtemp(join(tmpdir(), 'smrt-test-'));
 
       const instance = new SmrtClass({
         db: {
@@ -180,30 +188,36 @@ describe('SmrtClass', () => {
         },
       });
 
-      await (instance as any).initialize();
+      try {
+        await (instance as any).initialize();
 
-      // Verify system tables exist in DuckDB
-      const tables = await (instance as any)._db.many`
+        // Verify system tables exist in DuckDB
+        const tables = await (instance as any)._db.many`
         SELECT table_name
         FROM information_schema.tables
         WHERE table_name LIKE '_smrt_%'
         ORDER BY table_name
       `;
 
-      const tableNames = tables.map((row: any) => row.table_name);
-      expect(tableNames).toContain('_smrt_ai_usage');
-      expect(tableNames).toContain('_smrt_contexts');
-      expect(tableNames).toContain('_smrt_migrations');
-      expect(tableNames).toContain('_smrt_changes');
-      // Retired in 1.10.1 — never written, no longer created (issue #2376).
-      expect(tableNames).not.toContain('_smrt_registry');
-      expect(tableNames).not.toContain('_smrt_signals');
+        const tableNames = tables.map((row: any) => row.table_name);
+        expect(tableNames).toContain('_smrt_ai_usage');
+        expect(tableNames).toContain('_smrt_contexts');
+        expect(tableNames).toContain('_smrt_migrations');
+        expect(tableNames).toContain('_smrt_changes');
+        // Retired in 1.10.1 — never written, no longer created (issue #2376).
+        expect(tableNames).not.toContain('_smrt_registry');
+        expect(tableNames).not.toContain('_smrt_signals');
+      } finally {
+        try {
+          await closeDatabase(instance);
+        } finally {
+          await rm(testDir, { recursive: true, force: true });
+        }
+      }
     });
 
     it('should support INSERT ... ON CONFLICT in DuckDB', async () => {
-      const { tmpdir } = await import('node:os');
-      const { join } = await import('node:path');
-      const testDir = join(tmpdir(), `smrt-test-${Date.now()}`);
+      const testDir = await mkdtemp(join(tmpdir(), 'smrt-test-'));
 
       const instance = new SmrtClass({
         db: {
@@ -213,43 +227,51 @@ describe('SmrtClass', () => {
         },
       });
 
-      await (instance as any).initialize();
+      try {
+        await (instance as any).initialize();
 
-      // Test INSERT ... ON CONFLICT syntax with a NEW version (not 1.0.0 which is already used)
-      const id = crypto.randomUUID();
-      const version = '2.0.0-test';
-      const description = 'Test migration';
+        // Test INSERT ... ON CONFLICT syntax with a NEW version (not 1.0.0 which is already used)
+        const id = crypto.randomUUID();
+        const version = '2.0.0-test';
+        const description = 'Test migration';
 
-      await (instance as any)._db.execute`
+        await (instance as any)._db.execute`
         INSERT INTO _smrt_migrations (id, version, description)
         VALUES (${id}, ${version}, ${description})
         ON CONFLICT(version) DO NOTHING
       `;
 
-      // Verify the record exists
-      const result = await (instance as any)._db.single`
+        // Verify the record exists
+        const result = await (instance as any)._db.single`
         SELECT * FROM _smrt_migrations WHERE version = ${version}
       `;
 
-      expect(result).toBeDefined();
-      expect(result.version).toBe(version);
-      expect(result.description).toBe(description);
+        expect(result).toBeDefined();
+        expect(result.version).toBe(version);
+        expect(result.description).toBe(description);
 
-      // Test that ON CONFLICT DO NOTHING actually prevents duplicates
-      const duplicateId = crypto.randomUUID();
-      await (instance as any)._db.execute`
+        // Test that ON CONFLICT DO NOTHING actually prevents duplicates
+        const duplicateId = crypto.randomUUID();
+        await (instance as any)._db.execute`
         INSERT INTO _smrt_migrations (id, version, description)
         VALUES (${duplicateId}, ${version}, ${'Should be ignored'})
         ON CONFLICT(version) DO NOTHING
       `;
 
-      // Verify the original record is unchanged
-      const unchangedResult = await (instance as any)._db.single`
+        // Verify the original record is unchanged
+        const unchangedResult = await (instance as any)._db.single`
         SELECT * FROM _smrt_migrations WHERE version = ${version}
       `;
 
-      expect(unchangedResult.id).toBe(id); // Original ID, not duplicateId
-      expect(unchangedResult.description).toBe(description); // Original description
+        expect(unchangedResult.id).toBe(id); // Original ID, not duplicateId
+        expect(unchangedResult.description).toBe(description); // Original description
+      } finally {
+        try {
+          await closeDatabase(instance);
+        } finally {
+          await rm(testDir, { recursive: true, force: true });
+        }
+      }
     });
 
     it('should fail loudly if system tables cannot be created', async () => {

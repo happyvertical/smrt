@@ -28,6 +28,7 @@ import type { Meta } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 /**
  * Simulates Profile from @happyvertical/smrt-profiles
@@ -93,9 +94,7 @@ describe('Issue #370: STI Field Loading', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('STI Child Classes - ID Generation', () => {

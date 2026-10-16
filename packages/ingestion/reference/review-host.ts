@@ -130,20 +130,25 @@ export class ReferenceReviewHost {
       ...options.database,
       classes,
     });
-    await db.query(
-      'CREATE TABLE IF NOT EXISTS review_assignments (tenant_id TEXT NOT NULL,item_id TEXT NOT NULL,assignee_id TEXT,version INTEGER NOT NULL,request_id TEXT NOT NULL,request_digest TEXT NOT NULL,PRIMARY KEY(tenant_id,item_id))',
-    );
-    await db.query(
-      'CREATE TABLE IF NOT EXISTS review_grants (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL)',
-    );
-    for (const actor of ['owner', 'reviewer'])
+    try {
       await db.query(
-        'INSERT INTO review_grants(actor_id,enabled) VALUES(?,1) ON CONFLICT(actor_id) DO NOTHING',
-        actor,
+        'CREATE TABLE IF NOT EXISTS review_assignments (tenant_id TEXT NOT NULL,item_id TEXT NOT NULL,assignee_id TEXT,version INTEGER NOT NULL,request_id TEXT NOT NULL,request_digest TEXT NOT NULL,PRIMARY KEY(tenant_id,item_id))',
       );
-    const host = new ReferenceReviewHost(db, root, options);
-    ReferenceReviewWorker.host = host;
-    return host;
+      await db.query(
+        'CREATE TABLE IF NOT EXISTS review_grants (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL)',
+      );
+      for (const actor of ['owner', 'reviewer'])
+        await db.query(
+          'INSERT INTO review_grants(actor_id,enabled) VALUES(?,1) ON CONFLICT(actor_id) DO NOTHING',
+          actor,
+        );
+      const host = new ReferenceReviewHost(db, root, options);
+      ReferenceReviewWorker.host = host;
+      return host;
+    } catch (error) {
+      await db.close?.();
+      throw error;
+    }
   }
   async revoke(actorId: string) {
     await this.db.query(

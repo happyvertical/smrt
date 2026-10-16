@@ -29,6 +29,7 @@ export {
   PurchaseContract,
   PurchaseOrder,
   SalesContract,
+  SupplierQuote,
   WholesaleOrder,
 } from './Contract.js';
 export { ContractLineItem } from './ContractLineItem.js';

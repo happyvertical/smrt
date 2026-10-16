@@ -7,6 +7,9 @@
  * reset per test via vi.resetModules() + dynamic import.
  */
 
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 async function loadFresh() {
@@ -65,17 +68,24 @@ describe('createFilesystemAdapter', () => {
   });
 
   it('falls back to a runtime-resolved @happyvertical/files import when no factory is registered', async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), 'smrt-filesystem-loader-'));
     const loader = await loadFresh();
     // Workspace runtimes resolve the SDK from node_modules — the behavior
     // ordinary Node/tsx/vite-dev consumers rely on with zero configuration.
-    const adapter = await loader.createFilesystemAdapter({
-      type: 'local',
-      basePath: '.',
-    } as never);
-    expect(adapter).toBeDefined();
+    try {
+      const adapter = await loader.createFilesystemAdapter({
+        type: 'local',
+        basePath: '.',
+        cacheDir,
+      } as never);
+      expect(adapter).toBeDefined();
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
   });
 
   it('the explicit filesystem entry registers the SDK-backed factory', async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), 'smrt-filesystem-loader-'));
     vi.resetModules();
     const loader = await import('./filesystem-loader.js');
     const spy = vi.fn();
@@ -86,11 +96,16 @@ describe('createFilesystemAdapter', () => {
     // The entry registers its own SDK-backed factory; last registration
     // wins, so the spy factory above must no longer be consulted.
     await import('./filesystem.js');
-    const adapter = await loader.createFilesystemAdapter({
-      type: 'local',
-      basePath: '.',
-    } as never);
-    expect(spy).not.toHaveBeenCalled();
-    expect(adapter).toBeDefined();
+    try {
+      const adapter = await loader.createFilesystemAdapter({
+        type: 'local',
+        basePath: '.',
+        cacheDir,
+      } as never);
+      expect(spy).not.toHaveBeenCalled();
+      expect(adapter).toBeDefined();
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
   });
 });

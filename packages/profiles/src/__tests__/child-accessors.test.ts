@@ -9,15 +9,16 @@
  * (`Profile.getMetadata`, `ProfileRelationship.getTerms`) are preserved.
  */
 
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ProfileCollection,
   ProfileRelationshipCollection,
   ProfileRelationshipTypeCollection,
   ProfileTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 describe('R10: generated child accessors on Profile', () => {
   let profiles: ProfileCollection;
@@ -28,15 +29,21 @@ describe('R10: generated child accessors on Profile', () => {
 
   beforeEach(async () => {
     // Shared file DB so the related models resolve each other's tables.
-    const dbUrl = join(tmpdir(), `test-r10-profiles-${Date.now()}.db`);
-    const persistence = { type: 'sqlite' as const, url: dbUrl };
+    const persistence = {
+      type: 'sqlite' as const,
+      url: fixtures.url('test-r10-profiles'),
+    };
 
     profiles = await ProfileCollection.create({ persistence });
+    fixtures.track(profiles.db);
     relationships = await ProfileRelationshipCollection.create({ persistence });
+    fixtures.track(relationships.db);
     const types = await ProfileTypeCollection.create({ persistence });
+    fixtures.track(types.db);
     const relTypes = await ProfileRelationshipTypeCollection.create({
       persistence,
     });
+    fixtures.track(relTypes.db);
 
     const personType = await types.create({ name: 'Person' });
     await personType.save();
@@ -67,6 +74,8 @@ describe('R10: generated child accessors on Profile', () => {
     });
     await rel.save();
   });
+
+  afterEach(() => fixtures.cleanup());
 
   it('exposes generated getRelationshipsFrom() / getRelationshipsTo()', () => {
     expect(typeof (alice as any).getRelationshipsFrom).toBe('function');

@@ -55,10 +55,10 @@ async function foregroundContrast(page: import('@playwright/test').Page) {
   });
 }
 
-test('v2 money A–E frozen snapshots render exact stored values across scopes, schemes, and widths', async ({ browser }) => {
+for (const kind of cases) for (const scope of scopes) for (const theme of themes) for (const width of [1280, 375])
+test(`v2 money ${kind}/${scope}/${theme.name}/${width} frozen snapshot renders exact stored values`, async ({ browser }) => {
   const evidence = process.env.INVOICE_EVIDENCE_DIR;
   if (evidence) await mkdir(evidence, { recursive: true });
-  for (const kind of cases) for (const scope of scopes) for (const theme of themes) for (const width of [1280, 375]) {
     const context = await browser.newContext({ viewport: { width, height: 844 } });
     const page = await context.newPage();
     await page.emulateMedia({ colorScheme: theme.colorScheme, forcedColors: theme.forcedColors });
@@ -75,7 +75,6 @@ test('v2 money A–E frozen snapshots render exact stored values across scopes, 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (evidence) await page.screenshot({ path: join(evidence, `money-${kind}-${scope}-${theme.name}-${width}.png`), fullPage: true });
     await context.close();
-  }
 });
 
 test('v2 money interactions confirm mode, preserve input, keep one discount form, and submit native fields', async ({ page }) => {

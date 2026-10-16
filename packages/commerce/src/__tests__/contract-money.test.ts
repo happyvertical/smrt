@@ -19,7 +19,7 @@ import {
   classifyContractPurchase,
   isContractSnapshotReportEligible,
 } from '../contract-money.js';
-import { Order, PurchaseOrder } from '../models/Contract.js';
+import { Order, PurchaseOrder, SupplierQuote } from '../models/Contract.js';
 import { ContractStatus } from '../types/index.js';
 
 describe('Contract money persistence (#3933)', () => {
@@ -107,6 +107,12 @@ describe('Contract money persistence (#3933)', () => {
 
     expect(classifyContractPurchase(new Order())).toBe(false);
     expect(classifyContractPurchase(new PurchaseOrder())).toBe(true);
+    expect(classifyContractPurchase(new SupplierQuote())).toBe(true);
+    class CustomSupplierQuote extends SupplierQuote {}
+    for (const quote of [new SupplierQuote(), new CustomSupplierQuote()]) {
+      quote.status = ContractStatus.ACCEPTED;
+      expect(isContractSnapshotReportEligible(quote)).toBe(false);
+    }
     expect(classifyContractPurchase(new CustomPurchaseOrder())).toBe(true);
     expect(
       isContractSnapshotReportEligible(
@@ -243,28 +249,44 @@ describe('Contract money persistence (#3933)', () => {
       const vendor = await (await VendorCollection.create({ db })).create({
         defaultTaxCodeId: codes.gst,
       });
-      const purchase = new PurchaseOrder({
-        db,
-        vendorId: vendor.id,
-        currency: 'CAD',
-      });
-      await purchase.initialize();
-      await purchase.save();
-      await lines.create({
-        contractId: purchase.id,
-        description: 'Recoverable purchase',
-        quantity: 1,
-        unitPrice: 100,
-      });
-      expect(
-        await (await DocumentTaxCollection.create({ db })).findByDocument(
-          tenantId,
-          'contract',
-          purchase.id,
-        ),
-      ).toMatchObject([
-        { taxableMinor: 100, taxMinor: 5, recoverableMinor: 5 },
-      ]);
+      for (const Purchase of [PurchaseOrder, SupplierQuote]) {
+        const purchase = new Purchase({
+          db,
+          vendorId: vendor.id,
+          currency: 'CAD',
+        });
+        await purchase.initialize();
+        await purchase.save();
+        await lines.create({
+          contractId: purchase.id,
+          description: 'Recoverable purchase',
+          quantity: 1,
+          unitPrice: 100,
+        });
+        expect(
+          await (await DocumentTaxCollection.create({ db })).findByDocument(
+            tenantId,
+            'contract',
+            purchase.id,
+          ),
+        ).toMatchObject([
+          { taxableMinor: 100, taxMinor: 5, recoverableMinor: 5 },
+        ]);
+        const frozen = await (await ContractCollection.create({ db })).get(
+          { id: purchase.id },
+          { cache: false },
+        );
+        if (!frozen) throw new Error('Expected purchase contract');
+        frozen.status = ContractStatus.ACCEPTED;
+        await frozen.save();
+        const savedLines = await lines.list({
+          where: { contractId: purchase.id },
+        });
+        savedLines[0].unitPrice = 101;
+        await expect(savedLines[0].save()).rejects.toMatchObject({
+          code: 'FROZEN_DOCUMENT',
+        });
+      }
     });
   });
 

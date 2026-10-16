@@ -13,3 +13,9 @@ their exact sum. Purchase component tax is recoverable only when the frozen
 component says so. A Contract leaving draft snapshots registrations, party tax
 identity, per-line component amounts, and `moneySnapshotId`; later money edits
 are refused with `FROZEN_DOCUMENT`.
+
+`SupplierQuote` uses purchase defaults and recoverability. Non-draft quotes
+freeze just like other Contracts, but quote snapshots (including custom
+descendants) are excluded by their hydrated STI subtype, not the mutable
+`contractType` scalar, from report candidates and purchase tax facts. Awarding
+requires a separate PurchaseOrder.

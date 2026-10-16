@@ -23,6 +23,7 @@
  * live CLI needs the same tenant-context gate MCP has.
  */
 
+import { rm } from 'node:fs/promises';
 import {
   field,
   ObjectRegistry,
@@ -60,6 +61,7 @@ class TenantDocCollection extends SmrtCollection<TenantDoc> {
 
 describe('Generated MCP fail-closed tenant context (#1554)', () => {
   let db: any;
+  const emittedServerDirs: string[] = [];
 
   beforeAll(async () => {
     ObjectRegistry.registerCollection('TenantDoc', TenantDocCollection);
@@ -88,7 +90,15 @@ describe('Generated MCP fail-closed tenant context (#1554)', () => {
 
   afterAll(async () => {
     disableTenancy();
-    await db?.close?.();
+    try {
+      await db?.close?.();
+    } finally {
+      await Promise.all(
+        emittedServerDirs.map((dir) =>
+          rm(dir, { recursive: true, force: true }),
+        ),
+      );
+    }
   });
 
   describe('MCP', () => {
@@ -134,6 +144,7 @@ describe('Generated MCP fail-closed tenant context (#1554)', () => {
       const { tmpdir } = await import('node:os');
       const { join } = await import('node:path');
       const dir = await mkdtemp(join(tmpdir(), 'mcp-emit-'));
+      emittedServerDirs.push(dir);
       const gen = new MCPGenerator(
         { name: 'emit-test', version: '1.0.0' },
         { db },

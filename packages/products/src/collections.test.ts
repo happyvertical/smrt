@@ -17,25 +17,49 @@
  * Real in-memory SQLite per test, fresh unique db url, never mocked.
  */
 
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { AssetCollection } from '@happyvertical/smrt-assets';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOwnedSqliteFixtures } from './__tests__/owned-sqlite-fixtures.js';
 import { CategoryCollection } from './lib/collections/CategoryCollection.js';
 import { MaterialCollection } from './lib/collections/MaterialCollection.js';
 import { ProductAssetCollection } from './lib/collections/ProductAssetCollection.js';
 import { ProductCollection } from './lib/collections/ProductCollection.js';
 
+const fixtures = createOwnedSqliteFixtures();
+
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
+
+async function createCategories(name: string): Promise<CategoryCollection> {
+  const categories = await CategoryCollection.create({
+    db: { type: 'sqlite', url: getTestDbUrl(name) },
+  });
+  fixtures.track(categories.db);
+  return categories;
+}
+
+async function createMaterials(name: string): Promise<MaterialCollection> {
+  const materials = await MaterialCollection.create({
+    db: { type: 'sqlite', url: getTestDbUrl(name) },
+  });
+  fixtures.track(materials.db);
+  return materials;
+}
+
+async function createProducts(name: string): Promise<ProductCollection> {
+  const products = await ProductCollection.create({
+    db: { type: 'sqlite', url: getTestDbUrl(name) },
+  });
+  fixtures.track(products.db);
+  return products;
+}
+
+afterEach(() => fixtures.cleanup());
 
 describe('CategoryCollection.getRootCategories', () => {
   it('merges empty-string and NULL parents and excludes children', async () => {
-    const categories = await CategoryCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('cat-roots-merge') },
-    });
+    const categories = await createCategories('cat-roots-merge');
 
     // Created via the framework — parent_id serializes to ''.
     const empty = await categories.create({ name: 'Empty-parent root' });
@@ -68,9 +92,7 @@ describe('CategoryCollection.getRootCategories', () => {
     // row could match both lists the merge must emit it once. We force the
     // overlap by leaving one row with '' and confirming the merge path runs
     // (both lists non-empty) without duplicating any id.
-    const categories = await CategoryCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('cat-roots-dedup') },
-    });
+    const categories = await createCategories('cat-roots-dedup');
 
     const a = await categories.create({ name: 'A' });
     await a.save();
@@ -87,9 +109,7 @@ describe('CategoryCollection.getRootCategories', () => {
   });
 
   it('returns only empty-string roots when no NULL parents exist (early return)', async () => {
-    const categories = await CategoryCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('cat-roots-only-empty') },
-    });
+    const categories = await createCategories('cat-roots-only-empty');
 
     const root = await categories.create({ name: 'Only empty' });
     await root.save();
@@ -104,9 +124,7 @@ describe('CategoryCollection.getRootCategories', () => {
   });
 
   it('returns only NULL roots when no empty-string parents exist (early return)', async () => {
-    const categories = await CategoryCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('cat-roots-only-null') },
-    });
+    const categories = await createCategories('cat-roots-only-null');
 
     const root = await categories.create({ name: 'Only null' });
     await root.save();
@@ -120,18 +138,14 @@ describe('CategoryCollection.getRootCategories', () => {
   });
 
   it('returns an empty array when there are no categories at all', async () => {
-    const categories = await CategoryCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('cat-roots-empty') },
-    });
+    const categories = await createCategories('cat-roots-empty');
     expect(await categories.getRootCategories()).toEqual([]);
   });
 });
 
 describe('MaterialCollection.findByKind', () => {
   it('returns only Materials whose @meta materialKind matches', async () => {
-    const materials = await MaterialCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('material-find-by-kind') },
-    });
+    const materials = await createMaterials('material-find-by-kind');
 
     await (
       await materials.create({ name: 'Cotton jersey', materialKind: 'fabric' })
@@ -155,9 +169,7 @@ describe('MaterialCollection.findByKind', () => {
   });
 
   it('returns an empty array when no Material has the requested kind', async () => {
-    const materials = await MaterialCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('material-find-by-kind-none') },
-    });
+    const materials = await createMaterials('material-find-by-kind-none');
 
     await (
       await materials.create({ name: 'Snap button', materialKind: 'component' })
@@ -169,9 +181,7 @@ describe('MaterialCollection.findByKind', () => {
 
 describe('ProductCollection filters', () => {
   it('findByManufacturer returns only products from the given manufacturer', async () => {
-    const products = await ProductCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('product-by-manufacturer') },
-    });
+    const products = await createProducts('product-by-manufacturer');
 
     await (
       await products.create({ name: 'Acme Widget', manufacturer: 'Acme' })
@@ -194,9 +204,7 @@ describe('ProductCollection filters', () => {
   });
 
   it('findInStock returns only products with inStock = true', async () => {
-    const products = await ProductCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('product-in-stock') },
-    });
+    const products = await createProducts('product-in-stock');
 
     await (
       await products.create({ name: 'Available A', inStock: true })
@@ -220,12 +228,15 @@ describe('ProductAssetCollection direct helpers', () => {
     const products = await ProductCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(products.db);
     const assets = await AssetCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(assets.db);
     const productAssets = await ProductAssetCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(productAssets.db);
 
     const product = await products.create({ name: 'Widget' });
     await product.save();

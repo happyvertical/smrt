@@ -19,6 +19,10 @@ import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import {
+  cleanupDirectoryDatabase,
+  cleanupFileDatabase,
+} from '../testing/file-cleanup';
 
 // Define test class at module level for AST scanner
 @smrt({ tableName: 'councils_issue_208' })
@@ -48,6 +52,10 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
         type: 'json',
         url: dataDir,
       });
+    });
+
+    afterEach(async () => {
+      await cleanupDirectoryDatabase(db, dataDir);
     });
 
     it('should handle field helper with optional ? syntax when undefined', async () => {
@@ -100,6 +108,10 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
       db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     });
 
+    afterEach(async () => {
+      await db.close?.();
+    });
+
     it('should handle field helper with optional ? syntax when undefined', async () => {
       const collection = await CouncilIssue208Collection.create({ db });
 
@@ -139,6 +151,10 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
       );
       // Note: This tests SQLite with a file path (vs in-memory) to catch file I/O issues
       db = await getTestDatabase({ type: 'sqlite', url: dbPath });
+    });
+
+    afterEach(async () => {
+      await cleanupFileDatabase(db, dbPath);
     });
 
     it('should handle field helper with optional ? syntax when undefined (SQLite file)', async () => {

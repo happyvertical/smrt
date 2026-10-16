@@ -26,6 +26,7 @@ import { afterAll, beforeAll, vi } from 'vitest';
 import type { SmrtVitestPluginOptions } from './index.js';
 import {
   applySqliteSpeedPragmas,
+  disposeSqliteSchemaTemplateState,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
@@ -839,6 +840,10 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
+  // This setup file runs inside each Vitest worker realm. Dispose only that
+  // realm's tracked template directory; the exit hook remains a crash fallback.
+  disposeSqliteSchemaTemplateState();
+
   // Restore original state to prevent cross-file pollution
   const g = globalThis as Record<string, CacheState>;
   g.__smrtManifestCache = originalManifestCache;

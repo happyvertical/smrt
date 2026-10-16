@@ -87,6 +87,12 @@ import { clearSubtypeLineage } from './registry/subtype-lineage';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
+import { inheritCollectionExposure } from './registry/collection-exposure';
+import {
+  isCollectionRegistration,
+  resolveCollectionItemClassName,
+  resolveRelatedRegistration,
+} from './registry/collection-resolution';
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
   clearRegistryDiagnostics,
@@ -102,6 +108,7 @@ import {
   hasEmbeddings as _hasEmbeddings,
   resolveEmbeddingConfig as _resolveEmbeddingConfig,
 } from './registry/embedding-manager';
+import { isFrameworkBaseClass } from './registry/framework-base-classes';
 import {
   bumpRegistryGeneration,
   getRegistryGeneration,
@@ -533,6 +540,109 @@ function viteFsUrlToPath(urlString: string): string | null {
   const decoded = decodeURIComponent(pathname.slice('/@fs'.length));
   // Windows: `/C:/dir/file` -> `C:/dir/file`.
   return /^\/[A-Za-z]:\//.test(decoded) ? decoded.slice(1) : decoded;
+}
+
+/**
+ * A collection class's config with the generated-surface exposure it takes
+ * from its model (`registry/collection-exposure.ts`). Applied here as well as
+ * in the manifest generator, so a collection registered from a manifest built
+ * before that rule, or by any other runtime path, still never publishes more
+ * than its model. Returns the registered config object itself when nothing is
+ * inherited.
+ */
+const effectiveCollectionConfigCache = new WeakMap<
+  RegisteredClass,
+  { generation: number; source: SmartObjectConfig; config: SmartObjectConfig }
+>();
+
+const collectionExposureLookup = {
+  findClass: (className: string) => ObjectRegistry.getClass(className),
+  findClassInPackage: (packageName: string, className: string) =>
+    ObjectRegistry.getClassInPackage(packageName, className),
+  // Walk `extends` directly: `getInheritanceChain()` memoizes, and this
+  // lookup runs from `getConfig()` while classes are still registering, so a
+  // chain cached here would miss ancestors registered later.
+  getInheritanceChain: (className: string) => {
+    const chain: string[] = [];
+    let current = ObjectRegistry.getClass(className);
+    const seen = new Set<string>();
+    while (current?.extends && !seen.has(current.extends)) {
+      seen.add(current.extends);
+      chain.push(current.extends);
+      current = ObjectRegistry.getClass(current.extends);
+    }
+    return chain;
+  },
+};
+
+/**
+ * Method names a model declares or inherits from its registered ancestors,
+ * matching the merged method set the manifest generator compares against.
+ */
+function chainMethodNames(registered: RegisteredClass): Set<string> {
+  const names = new Set(registered.methods.keys());
+  for (const ancestor of collectionExposureLookup.getInheritanceChain(
+    registered.qualifiedName || registered.name,
+  )) {
+    for (const name of ObjectRegistry.getClass(ancestor)?.methods.keys() ??
+      []) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
+function resolveCollectionEffectiveConfig(
+  name: string,
+  registered: RegisteredClass,
+): SmartObjectConfig {
+  const generation = getRegistryGeneration();
+  const cached = effectiveCollectionConfigCache.get(registered);
+  if (
+    cached &&
+    cached.generation === generation &&
+    cached.source === registered.config
+  ) {
+    return cached.config;
+  }
+  let config = registered.config;
+  const key = registered.qualifiedName || registered.name || name;
+  if (
+    !isFrameworkBaseClass(registered.name, registered.packageName) &&
+    isCollectionRegistration(key, registered, collectionExposureLookup)
+  ) {
+    const itemName = resolveCollectionItemClassName(
+      key,
+      registered,
+      collectionExposureLookup,
+    );
+    const item = itemName
+      ? resolveRelatedRegistration(
+          itemName,
+          registered,
+          collectionExposureLookup,
+        )
+      : undefined;
+    if (item && item !== registered) {
+      const inherited = inheritCollectionExposure(
+        registered.config,
+        item.config,
+        {
+          collection: new Set(registered.methods.keys()),
+          item: chainMethodNames(item),
+        },
+      );
+      if (Object.keys(inherited).length > 0) {
+        config = { ...registered.config, ...inherited };
+      }
+    }
+  }
+  effectiveCollectionConfigCache.set(registered, {
+    generation,
+    source: registered.config,
+    config,
+  });
+  return config;
 }
 
 /**
@@ -2756,12 +2866,29 @@ export class ObjectRegistry {
   }
 
   /**
-   * Get configuration for a registered class
+   * Whether `name` is a registered collection class (a `SmrtCollection`,
+   * junction or report collection subclass) rather than a model.
+   */
+  static isCollectionClass(name: string): boolean {
+    const registered = ObjectRegistry.findClass(name);
+    if (!registered) return false;
+    return isCollectionRegistration(
+      registered.qualifiedName || registered.name || name,
+      registered,
+      collectionExposureLookup,
+    );
+  }
+
+  /**
+   * Get configuration for a registered class. A collection class's
+   * api/mcp/cli surfaces it leaves unset come from its model (see
+   * `registry/collection-exposure.ts`).
    */
   static getConfig(name: string): SmartObjectConfig {
     // Issue #951: Use findClass for multi-strategy lookup
     const registered = ObjectRegistry.findClass(name);
-    return registered ? registered.config : {};
+    if (!registered) return {};
+    return resolveCollectionEffectiveConfig(name, registered);
   }
 
   /**

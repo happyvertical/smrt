@@ -11,6 +11,10 @@
  *   `total` role, else the first money field), then a contact (email, then
  *   phone) while there is room. Empty values are skipped.
  */
+import {
+  isLineAmountType,
+  type LineAmountType,
+} from '../overview/widgets/line-totals.js';
 import { screenTitles } from './fields.js';
 import { isDocumentLike, type ScreenFieldRoles } from './roles.js';
 import type {
@@ -138,9 +142,10 @@ export function deriveRecordHeader(
 
 /**
  * The record's own totals, read by role (`subtotal`, `discount`, `tax`,
- * `total`): what the line-items totals block shows as authoritative. With
- * `visible` (the policy-filtered view fields), a field the policy omits is
- * never read.
+ * `total`): what the line-items totals block shows as authoritative, plus
+ * the record's `lineAmountType` when it has a valid one, which tells the
+ * block whether the lines are gross (#4010). With `visible` (the
+ * policy-filtered view fields), a field the policy omits is never read.
  */
 export function recordTotals(
   record: ScreenRecord,
@@ -151,8 +156,15 @@ export function recordTotals(
   discount?: number | null;
   tax?: number | null;
   total?: number | null;
+  lineAmountType?: LineAmountType;
 } {
-  const out: Record<string, number | null> = {};
+  const out: {
+    subtotal?: number | null;
+    discount?: number | null;
+    tax?: number | null;
+    total?: number | null;
+    lineAmountType?: LineAmountType;
+  } = {};
   for (const role of ['subtotal', 'discount', 'tax', 'total'] as const) {
     const field = Object.keys(roles).find(
       (name) =>
@@ -163,6 +175,12 @@ export function recordTotals(
     const value = record[field];
     out[role] =
       typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+  }
+  if (
+    isLineAmountType(record.lineAmountType) &&
+    (!visible || visible.some((f) => f.name === 'lineAmountType'))
+  ) {
+    out.lineAmountType = record.lineAmountType;
   }
   return out;
 }

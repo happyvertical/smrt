@@ -6,14 +6,14 @@
  * lookup/get-or-create, default seeding, and tenant scoping.
  */
 
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { EventType, EventTypeCollection } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function makeTypes(name: string) {
@@ -21,8 +21,11 @@ async function makeTypes(name: string) {
   const types = await EventTypeCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(types.db);
   return { dbUrl, types };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('EventType model', () => {
   it('persists name, description, and round-trips schema JSON', async () => {

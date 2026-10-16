@@ -18,7 +18,7 @@ const SALES = [
   'Agreement',
   'LicenseSale',
 ];
-const PURCHASES = ['PurchaseOrder', 'ProductionOrder'];
+const PURCHASES = ['SupplierQuote', 'PurchaseOrder', 'ProductionOrder'];
 const ref = (name: string) => `@happyvertical/smrt-commerce:${name}`;
 
 function screenDefinitions() {
