@@ -67,8 +67,9 @@ An issued document whose stored lines do not add up exactly to its stored
 header fails its tenant. So do an invalid stored rate, an invoice posted under
 the earlier version (its revenue journal carries that version's provenance,
 which current posting and reversal refuse; void it and clear the link, or reset
-the data), and an existing `rate-<percent>` code or component that does not
-mean exactly that rate. Nothing in that tenant changes, and the result lists
+the data), an existing `rate-<percent>` code or component that does not
+mean exactly that rate, and an edited standard `exempt` or `out-of-scope`
+code. Nothing in that tenant changes, and the result lists
 each failing document. A tenant whose earlier
 migration never finished also fails; roll it back with the version that started
 it, or reset its data. Converted tenants are skipped on a rerun.

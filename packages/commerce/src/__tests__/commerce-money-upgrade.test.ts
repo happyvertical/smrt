@@ -756,6 +756,40 @@ describe('commerce money upgrade (#4021)', () => {
     ).toEqual([[201, 10, 10]]);
   });
 
+  it('refuses a tenant whose standard out-of-scope code was made taxable', async () => {
+    await ensureCommerceTenant(db, 'edited');
+    const draft = await oldInvoice('edited', 'E-1', { issued: false });
+    await db.query(
+      'UPDATE invoice_line_items SET tax_rate = 0, amount = 200 WHERE id = ?',
+      draft.lineId,
+    );
+    await withTenant({ tenantId: 'edited' }, async () => {
+      const component = await (
+        await TaxComponentCollection.create({ db })
+      ).create({ tenantId: 'edited', name: 'Sneaky', percent: '5' });
+      const codes = await TaxCodeCollection.create({ db });
+      const outOfScope = await codes.findByCode('out-of-scope', 'edited');
+      if (!outOfScope) throw new Error('Expected the standard code');
+      outOfScope.kind = 'taxable';
+      outOfScope.components = [
+        { taxComponentId: String(component.id), compound: false },
+      ];
+      await outOfScope.save();
+    });
+    await earlierSchema(['edited']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.upgraded).toEqual([]);
+    expect(result.failures).toEqual([
+      expect.objectContaining({
+        tenantId: 'edited',
+        reason: expect.stringContaining(
+          "Standard tax code 'out-of-scope' was changed to kind 'taxable'",
+        ),
+      }),
+    ]);
+  });
+
   it('refuses a tenantless read of a database with old money storage', async () => {
     await ensureCommerceTenant(db, 'legacy');
     await oldInvoice('legacy', 'L-1', { issued: false });

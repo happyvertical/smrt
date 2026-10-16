@@ -7,7 +7,10 @@ editable `TaxCode.components` list. Never edit a used component's percent.
 Every tenant seeds `exempt`, `zero-rated`, and `out-of-scope`
 (`STANDARD_TAX_CODES`, seeded by `ensureTenantTaxCodes(db, tenantId)` in
 `src/tax/standard-codes.ts`). Those kinds have no components because they
-report differently. `TaxCodeCollection.findByCode(code, tenantId?)` finds a
+report differently. They are reserved: billing lines and zero rates rely on
+them never carrying tax, so `ensureTenantTaxCodes` (and through it the
+bootstrap, billing period close and the upgrade) refuses a standard code
+whose kind or components were changed. `TaxCodeCollection.findByCode(code, tenantId?)` finds a
 code by its tenant-unique `code`, optionally for an explicit tenant.
 The [money data upgrade](money-upgrade.md) adds a one-component
 `rate-<percent>` code for each nonzero rate it finds in earlier-version data.

@@ -14,7 +14,8 @@ export const STANDARD_TAX_CODES = [
 /**
  * Ensure the three non-taxable codes every tenant needs. Repeating the call is
  * safe; callers must use a transaction-capable database so the check/create
- * sequence is atomic with their surrounding work.
+ * sequence is atomic with their surrounding work. An existing standard code
+ * whose kind or components were changed is refused, never adopted.
  */
 export async function ensureTenantTaxCodes(
   db: DatabaseInterface,
@@ -25,8 +26,15 @@ export async function ensureTenantTaxCodes(
     const result: TaxCode[] = [];
     for (const [code, name, kind] of STANDARD_TAX_CODES) {
       const existing = await codes.findByCode(code, tenantId);
-      if (existing) result.push(existing);
-      else {
+      if (existing) {
+        // The standard codes are reserved: billing lines and zero rates rely
+        // on them never carrying tax. An edited one is refused, not adopted.
+        if (existing.kind !== kind || existing.components.length > 0)
+          throw new Error(
+            `Standard tax code '${code}' was changed to kind '${existing.kind}' with ${existing.components.length} component(s); restore it to '${kind}' with no components.`,
+          );
+        result.push(existing);
+      } else {
         const id = await deterministicTaxId(tenantId, 'code', code);
         result.push(
           await createOrLoadTaxSeed(

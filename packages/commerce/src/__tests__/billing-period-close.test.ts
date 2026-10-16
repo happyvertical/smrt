@@ -1136,4 +1136,27 @@ describe('smrt#3060 billing-period close', () => {
       ['out-of-scope', 0],
     ]);
   });
+  it('refuses to bill through a standard out-of-scope code made taxable (#4021)', async () => {
+    await commerceRoot.ensureCommerceTenant(world.db, PROVIDER);
+    await withTenant({ tenantId: PROVIDER }, async () => {
+      const component = await (
+        await commerceRoot.TaxComponentCollection.create({ db: world.db })
+      ).create({ tenantId: PROVIDER, name: 'Sneaky', percent: '5' });
+      const codes = await commerceRoot.TaxCodeCollection.create({
+        db: world.db,
+      });
+      const outOfScope = await codes.findByCode('out-of-scope', PROVIDER);
+      if (!outOfScope) throw new Error('Expected the standard code');
+      outOfScope.kind = 'taxable';
+      outOfScope.components = [
+        { taxComponentId: String(component.id), compound: false },
+      ];
+      await outOfScope.save();
+    });
+    await world.usage(SITE);
+    await expect(world.provider.closePeriod(period)).rejects.toThrow(
+      /Standard tax code 'out-of-scope' was changed/,
+    );
+    expect(await invoiceFor(world, PROVIDER, NETWORK)).toEqual([]);
+  });
 });
