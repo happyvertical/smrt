@@ -870,7 +870,8 @@ gross. Fully released invoices use the existing gross accounting contract.
 The public `syncRetainedInvoiceToAccounting`, `releaseRetainedInvoiceToAccounting`,
 `syncRetainedCreditToAccounting`, and `syncRetainedRefundToAccounting` commands
 implement an explicit QuickBooks accrual reclassification contract. They require
-SDK `receivableTransfers` (happyvertical/sdk#1414, not present in SDK0.104.0).
+SDK `receivableTransfers` from the published SDK0.104.1 cohort
+(happyvertical/sdk#1414 / #1415; absent from SDK0.104.0).
 They are available from the Commerce root and `/invoices` entry points.
 
 The tenant must review/version the realm, environment, customer, AR account,
