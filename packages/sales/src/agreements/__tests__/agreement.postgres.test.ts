@@ -134,5 +134,13 @@ describePostgres('Agreement PostgreSQL effective-dated terms', () => {
     expect((await agreements.get({ id: global.id }))?.status).toBe('active');
     expect((await agreements.get({ id: global.id }))?.effectiveTo).toBeNull();
   });
-  agreementHistoryCases(() => agreements);
+  agreementHistoryCases(
+    () => agreements,
+    async () => {
+      if (!isolated) throw new Error('Missing PostgreSQL fixture');
+      // Initial creates use independent commits; an expected unique violation
+      // must not abort the shared rollback transaction used by history cases.
+      return AgreementCollection.create({ db: isolated.baseDb });
+    },
+  );
 });

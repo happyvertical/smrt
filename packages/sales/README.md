@@ -222,6 +222,10 @@ Restoration provenance is written exclusively by amendment activation; ordinary
 creates and saves cannot supply or edit it. Withdrawal advances both persisted
 revision tokens so pre-withdrawal model instances cannot overwrite the result.
 
+Initial agreement creates use strict insertion: concurrent callers for the same
+tenant, kind, parties and version cannot replace the winning row or its terms.
+The losing create fails; load the existing version or create an amendment.
+
 Concurrent `createAmendment` calls serialize version allocation within the owning
 lane: PostgreSQL locks the oldest persisted version and re-reads the latest;
 embedded engines use core's transaction/write queue. Each successful call keeps

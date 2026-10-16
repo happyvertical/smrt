@@ -255,6 +255,9 @@ export class Agreement extends SmrtObject {
     await this.assertNaturalKeyNotTaken();
     if (this.status !== 'draft' && this.status !== 'cancelled')
       this.assertValidTerms();
+    // Preflight reads are advisory: a racing create must never upsert over
+    // an existing immutable version after both callers observed absence.
+    if (!this.isPersisted) this.requireInsertOnSave();
     const result = (await super.save()) as this;
     loadedStatus.set(this, this.status);
     if (this.status !== 'draft' && !frozenTerms.has(this)) {

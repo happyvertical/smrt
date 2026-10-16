@@ -12,6 +12,8 @@ import { Agreement } from '../models/Agreement.js';
 
 export function agreementHistoryCases(
   collection: () => AgreementCollection,
+  initialCreateCollection: () => Promise<AgreementCollection> = async () =>
+    collection(),
 ): void {
   const kind = 'history_contract';
   const partyA = { kind: 'organization', id: 'coop' };
@@ -27,6 +29,86 @@ export function agreementHistoryCases(
       effectiveFrom: january,
       ...extra,
     });
+
+  it.each([
+    'global',
+    'tenant',
+  ] as const)('rejects a racing initial create without replacing active %s terms', async (scope) => {
+    const agreements = await initialCreateCollection();
+    const raceKind = `initial-create-${randomUUID()}`;
+    const tenantId = scope === 'tenant' ? randomUUID() : null;
+    const query = agreements.db.query.bind(agreements.db);
+    let checked = 0;
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const bothChecked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstCommitted = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    // Both real reads observe absence. Hold the second caller after its
+    // preflight until the first has committed, reproducing the TOCTOU gap.
+    const spy = vi
+      .spyOn(agreements.db, 'query')
+      .mockImplementation(async (sql, ...params) => {
+        const result = await query(sql, ...params);
+        if (
+          sql.startsWith('SELECT id, tenant_id FROM') &&
+          sql.includes('WHERE kind = $1 AND party_a = $2')
+        ) {
+          checked += 1;
+          if (checked === 1) await bothChecked;
+          else {
+            releaseFirst();
+            await firstCommitted;
+          }
+        }
+        return result;
+      });
+    try {
+      const common = {
+        kind: raceKind,
+        partyA: JSON.stringify(partyA),
+        partyB: JSON.stringify(partyB),
+        effectiveFrom: january,
+        tenantId,
+      };
+      const first = agreements
+        .create({
+          ...common,
+          status: 'active',
+          terms: JSON.stringify({ shareFraction: 0.25 }),
+        })
+        .finally(releaseSecond);
+      const second = agreements.create({
+        ...common,
+        status: 'draft',
+        terms: JSON.stringify({ shareFraction: 0.75 }),
+      });
+      const outcomes = await Promise.allSettled([first, second]);
+      expect(checked).toBe(2);
+      expect(outcomes.map((result) => result.status)).toEqual([
+        'fulfilled',
+        'rejected',
+      ]);
+      if (outcomes[0].status !== 'fulfilled')
+        throw new Error('Initial agreement did not persist');
+      const winner = outcomes[0].value;
+      const rows = await agreements.list({
+        where: { kind: raceKind, tenantId },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(winner.id);
+      expect(rows[0].status).toBe('active');
+      expect(rows[0].getTerms()).toEqual({ shareFraction: 0.25 });
+    } finally {
+      releaseFirst();
+      releaseSecond();
+      spy.mockRestore();
+      await agreements.db.delete(agreements.tableName, { kind: raceKind });
+    }
+  });
 
   it.each([
     'superseded',
