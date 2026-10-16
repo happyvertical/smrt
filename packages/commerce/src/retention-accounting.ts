@@ -9,6 +9,7 @@ import {
 } from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { mapFrozenAccountingSnapshot } from './accounting-snapshot.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { PaymentAllocationCollection } from './collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from './collections/PaymentCollection.js';
@@ -19,6 +20,8 @@ import {
   withDocumentMoneyTransaction,
 } from './document-money-internal.js';
 import {
+  type FrozenInvoiceAccountingInput,
+  loadFrozenInvoiceAccountingSnapshot,
   type QuickBooksFrozenInvoiceMapping,
   type ReconcileFrozenInvoiceAccountingInput,
   reconcileFrozenInvoiceAccountingSync,
@@ -34,7 +37,7 @@ import {
   validateRetentionEvidence,
 } from './retention-money.js';
 import { lockTenantMoneyRuntime } from './tenant-money-barrier.js';
-import { InvoiceStatus } from './types/index.js';
+import { type AccountingInvoiceInput, InvoiceStatus } from './types/index.js';
 
 type Provider = Pick<
   AccountingProvider,
@@ -193,6 +196,49 @@ export function readRetainedInvoiceAccountingState(
   if (state.retentionAgreementHash !== hash(agreement))
     reject('Provider retention agreement changed');
   return state;
+}
+/** Read-only review of the exact retained document; generic export stays blocked.
+ * The host supplies authorization, and every read stays on the caller's executor.
+ */
+export async function loadRetainedInvoiceAccountingSnapshot(
+  input: Omit<FrozenInvoiceAccountingInput, 'mapping'>,
+) {
+  if (!input.tenantId || getTenantId() !== input.tenantId)
+    reject('Retained accounting review requires its active tenant');
+  return withDocumentMoneyTransaction(input.db, async (tx) => {
+    await lockTenantMoneyRuntime(tx, input.tenantId);
+    const { invoice } = await lockAndReloadInvoice(
+      tx,
+      input.invoiceId,
+      input.tenantId,
+    );
+    const retention = parseInvoiceRetention(invoice.retentionStateJson);
+    if (
+      !retention ||
+      retention.retainedMinor <= 0 ||
+      invoice.kind !== 'invoice' ||
+      invoice.moneyAuthority === 'historical'
+    )
+      reject(
+        'Retained accounting review requires a calculated retained invoice',
+      );
+    readRetainedInvoiceAccountingState(invoice);
+    return withRetentionAccountingAuthority(
+      input.tenantId,
+      input.invoiceId,
+      () => loadFrozenInvoiceAccountingSnapshot({ ...input, db: tx }),
+    );
+  });
+}
+/** Validate reviewed realm item/tax mapping without creating a provider operation. */
+export async function toRetainedInvoiceAccountingInput(
+  input: FrozenInvoiceAccountingInput,
+) {
+  const snapshot = await loadRetainedInvoiceAccountingSnapshot(input);
+  return mapFrozenAccountingSnapshot(
+    snapshot.document,
+    input.mapping,
+  ) as AccountingInvoiceInput;
 }
 async function locked<T>(
   input: Scope,
@@ -468,11 +514,7 @@ export async function releaseRetainedInvoiceToAccounting(
   validateRetentionEvidence(input);
   date(input.effectiveOn, 'Release effective date');
   date(input.dueOn, 'Release due date');
-  if (
-    input.dueOn < input.effectiveOn ||
-    !Number.isSafeInteger(input.amountMinor) ||
-    input.amountMinor <= 0
-  )
+  if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0)
     reject('Release amount or due date is invalid');
   const key = `release:${input.requestId}`;
   await locked(input, async (invoice, state) => {

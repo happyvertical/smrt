@@ -867,6 +867,14 @@ gross. Fully released invoices use the existing gross accounting contract.
 
 ## Retained invoice accounting
 
+`loadRetainedInvoiceAccountingSnapshot` supplies a read-only frozen document for
+reviewing item/tax mapping before posting; `toRetainedInvoiceAccountingInput`
+validates that reviewed mapping against those frozen lines. Both preserve tenant and caller executor
+scope and performs no provider operation. Generic accounting snapshot/export still
+refuses unreleased retention. A supplied host-managed release due date may precede
+the release date: preserving original past-due terms makes the released amount
+immediately overdue rather than silently extending payment terms.
+
 The public `syncRetainedInvoiceToAccounting`, `releaseRetainedInvoiceToAccounting`,
 `syncRetainedCreditToAccounting`, and `syncRetainedRefundToAccounting` commands
 implement an explicit QuickBooks accrual reclassification contract. They require

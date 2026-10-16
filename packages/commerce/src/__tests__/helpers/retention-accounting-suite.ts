@@ -13,18 +13,23 @@ import { InvoiceLineItemCollection } from '../../collections/InvoiceLineItemColl
 import { PaymentAllocationCollection } from '../../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../../collections/PaymentCollection.js';
 import { withDocumentMoneyTransaction } from '../../document-money-internal.js';
-import { syncFrozenInvoiceToAccounting } from '../../invoice-accounting-sync.js';
+import {
+  loadFrozenInvoiceAccountingSnapshot,
+  syncFrozenInvoiceToAccounting,
+} from '../../invoice-accounting-sync.js';
 import {
   configureInvoiceRetention,
   releaseInvoiceRetention,
 } from '../../invoice-retention.js';
 import {
+  loadRetainedInvoiceAccountingSnapshot,
   readRetainedInvoiceAccountingState,
   reconcileRetainedAccountingStep,
   releaseRetainedInvoiceToAccounting,
   syncRetainedCreditToAccounting,
   syncRetainedInvoiceToAccounting,
   syncRetainedRefundToAccounting,
+  toRetainedInvoiceAccountingInput,
 } from '../../retention-accounting.js';
 import { ensureTenantTaxCodes } from '../../tax/standard-codes.js';
 import { InvoiceStatus } from '../../types/index.js';
@@ -74,12 +79,50 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     row.status = InvoiceStatus.SENT;
     await row.save();
     const snapshot = row.moneySnapshotId;
+    const reviewScope = { db, tenantId, invoiceId: invoice.id! };
+    await expect(
+      loadFrozenInvoiceAccountingSnapshot(reviewScope),
+    ).rejects.toThrow('Unreleased retention');
+    const retainedReview =
+      await loadRetainedInvoiceAccountingSnapshot(reviewScope);
+    expect(retainedReview.moneySnapshotId).toBe(snapshot);
+    expect(retainedReview.document.totalAmountMinor).toBe(10500);
+    expect(retainedReview.document.lineItems[0].id).toBe(line.id);
+    expect((await load()).retentionAccountingStateJson).toBe('');
+    await expect(
+      loadRetainedInvoiceAccountingSnapshot({
+        ...reviewScope,
+        tenantId: randomUUID(),
+      }),
+    ).rejects.toThrow('active tenant');
+    const plain = await invoices.create({
+      customerId: customer.id!,
+      currency: 'CAD',
+    });
+    await expect(
+      loadRetainedInvoiceAccountingSnapshot({
+        ...reviewScope,
+        invoiceId: plain.id!,
+      }),
+    ).rejects.toThrow('calculated retained');
     const invoiceMapping = {
       realmId: 'realm-1',
       environment: 'sandbox' as const,
       lines: { [line.id!]: { itemRef: 'item-1', taxCodeRef: 'non-tax' } },
       components: {},
     };
+    const preview = await toRetainedInvoiceAccountingInput({
+      ...reviewScope,
+      mapping: invoiceMapping,
+    });
+    expect(preview.totalAmount).toBe(105);
+    await expect(
+      toRetainedInvoiceAccountingInput({
+        ...reviewScope,
+        mapping: { ...invoiceMapping, lines: {} },
+      }),
+    ).rejects.toThrow();
+    expect((await load()).retentionAccountingStateJson).toBe('');
     const mapping = {
       realmId: 'realm-1',
       environment: 'sandbox' as const,
@@ -237,7 +280,7 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
       requestId: 'release-1',
       amountMinor: 300,
       effectiveOn: '2026-10-17',
-      dueOn: '2026-11-17',
+      dueOn: '2026-10-01',
       expectedUpdatedAt: new Date(row.updated_at!).toISOString(),
     };
     await expect(
@@ -251,7 +294,7 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
       releaseStarted = resolve;
     });
     const pendingRelease = releaseRetainedInvoiceToAccounting(release);
-    await startedRelease;
+    await Promise.race([startedRelease, pendingRelease]);
     await expect(
       releaseRetainedInvoiceToAccounting({
         ...release,
@@ -272,6 +315,9 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     ).rejects.toThrow('proven stopped');
     unblockRelease();
     await pendingRelease;
+    expect(
+      readRetainedInvoiceAccountingState(await load())!.releases[0].dueOn,
+    ).toBe('2026-10-01');
     releaseGate = undefined;
     expect((await load()).getPayableFacts()).toMatchObject({
       retainedRemainingMinor: 700,

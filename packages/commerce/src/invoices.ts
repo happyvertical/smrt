@@ -17,6 +17,7 @@ export type {
   SyncRetainedRefundToAccountingInput,
 } from './retention-accounting.js';
 export {
+  loadRetainedInvoiceAccountingSnapshot,
   readRetainedInvoiceAccountingState,
   reconcileRetainedAccountingStep,
   reconcileRetainedBaseInvoice,
@@ -25,5 +26,6 @@ export {
   syncRetainedCreditToAccounting,
   syncRetainedInvoiceToAccounting,
   syncRetainedRefundToAccounting,
+  toRetainedInvoiceAccountingInput,
 } from './retention-accounting.js';
 export * from './svelte/invoices/calculations.js';
