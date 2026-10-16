@@ -1,5 +1,14 @@
 # @happyvertical/smrt-approvals
 
+## 0.57.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.1
+  - @happyvertical/smrt-tenancy@0.57.1
+  - @happyvertical/smrt-users@0.57.1
+
 ## 0.57.0
 
 ### Patch Changes
