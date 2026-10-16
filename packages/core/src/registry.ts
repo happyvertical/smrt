@@ -141,6 +141,7 @@ import {
   hasClass as _hasClass,
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
   resolveType as _resolveType,
+  findClassStrict,
 } from './registry/name-resolver';
 import {
   collectManifestAliasInventory,
@@ -183,6 +184,7 @@ import {
   setNextDbId,
   verboseLog,
 } from './registry/shared-state';
+import { inheritSubclassExposure } from './registry/subclass-exposure';
 import type {
   RegisteredClass,
   RegisteredField,
@@ -543,14 +545,15 @@ function viteFsUrlToPath(urlString: string): string | null {
 }
 
 /**
- * A collection class's config with the generated-surface exposure it takes
- * from its model (`registry/collection-exposure.ts`). Applied here as well as
- * in the manifest generator, so a collection registered from a manifest built
- * before that rule, or by any other runtime path, still never publishes more
- * than its model. Returns the registered config object itself when nothing is
- * inherited.
+ * A class's config with the generated-surface exposure it inherits: a
+ * collection's from its model (`registry/collection-exposure.ts`), a model
+ * subclass's from its parent model (`registry/subclass-exposure.ts`). Applied
+ * here as well as in the manifest generator, so a class registered from a
+ * manifest built before those rules, or by any other runtime path, still never
+ * publishes more than its source. Returns the registered config object itself
+ * when nothing is inherited.
  */
-const effectiveCollectionConfigCache = new WeakMap<
+const effectiveConfigCache = new WeakMap<
   RegisteredClass,
   { generation: number; source: SmartObjectConfig; config: SmartObjectConfig }
 >();
@@ -592,12 +595,52 @@ function chainMethodNames(registered: RegisteredClass): Set<string> {
   return names;
 }
 
-function resolveCollectionEffectiveConfig(
+/**
+ * The registered model a model class directly extends, or `undefined` when
+ * its parent is a framework base, a collection, or not registered. Resolved
+ * package-first, the way the inheritance chain is; an ambiguous simple name
+ * resolves to nothing rather than to a guess.
+ */
+function resolveParentModel(
+  registered: RegisteredClass,
+): RegisteredClass | undefined {
+  const parentName = registered.extends;
+  if (!parentName) return undefined;
+  let parent: RegisteredClass | undefined;
+  try {
+    parent = findClassStrict(parentName, registered.packageName);
+  } catch {
+    return undefined;
+  }
+  if (!parent || parent === registered) return undefined;
+  if (isFrameworkBaseClass(parent.name, parent.packageName)) return undefined;
+  if (
+    isCollectionRegistration(
+      parent.qualifiedName || parent.name,
+      parent,
+      collectionExposureLookup,
+    )
+  ) {
+    return undefined;
+  }
+  return parent;
+}
+
+/**
+ * A class's effective config: its registered config plus the
+ * generated-surface exposure it inherits. A collection class takes it from
+ * its model (`registry/collection-exposure.ts`); a model subclass takes it
+ * from its parent model (`registry/subclass-exposure.ts`). Both resolve
+ * against the source's own effective config, so a collection over an STI
+ * child sees the restrictions the child inherits from its base.
+ */
+function resolveEffectiveConfig(
   name: string,
   registered: RegisteredClass,
+  visiting: Set<RegisteredClass> = new Set(),
 ): SmartObjectConfig {
   const generation = getRegistryGeneration();
-  const cached = effectiveCollectionConfigCache.get(registered);
+  const cached = effectiveConfigCache.get(registered);
   if (
     cached &&
     cached.generation === generation &&
@@ -605,39 +648,56 @@ function resolveCollectionEffectiveConfig(
   ) {
     return cached.config;
   }
+  if (visiting.has(registered)) return registered.config;
+  visiting.add(registered);
   let config = registered.config;
   const key = registered.qualifiedName || registered.name || name;
-  if (
-    !isFrameworkBaseClass(registered.name, registered.packageName) &&
-    isCollectionRegistration(key, registered, collectionExposureLookup)
-  ) {
-    const itemName = resolveCollectionItemClassName(
-      key,
-      registered,
-      collectionExposureLookup,
-    );
-    const item = itemName
-      ? resolveRelatedRegistration(
-          itemName,
-          registered,
-          collectionExposureLookup,
-        )
-      : undefined;
-    if (item && item !== registered) {
-      const inherited = inheritCollectionExposure(
-        registered.config,
-        item.config,
-        {
-          collection: new Set(registered.methods.keys()),
-          item: chainMethodNames(item),
-        },
+  if (!isFrameworkBaseClass(registered.name, registered.packageName)) {
+    if (isCollectionRegistration(key, registered, collectionExposureLookup)) {
+      const itemName = resolveCollectionItemClassName(
+        key,
+        registered,
+        collectionExposureLookup,
       );
-      if (Object.keys(inherited).length > 0) {
-        config = { ...registered.config, ...inherited };
+      const item = itemName
+        ? resolveRelatedRegistration(
+            itemName,
+            registered,
+            collectionExposureLookup,
+          )
+        : undefined;
+      if (item && item !== registered) {
+        const inherited = inheritCollectionExposure(
+          registered.config,
+          resolveEffectiveConfig(itemName as string, item, visiting),
+          {
+            collection: new Set(registered.methods.keys()),
+            item: chainMethodNames(item),
+          },
+        );
+        if (Object.keys(inherited).length > 0) {
+          config = { ...registered.config, ...inherited };
+        }
+      }
+    } else {
+      const parent = resolveParentModel(registered);
+      if (parent) {
+        const inherited = inheritSubclassExposure(
+          registered.config,
+          resolveEffectiveConfig(
+            parent.qualifiedName || parent.name,
+            parent,
+            visiting,
+          ),
+        );
+        if (Object.keys(inherited).length > 0) {
+          config = { ...registered.config, ...inherited };
+        }
       }
     }
   }
-  effectiveCollectionConfigCache.set(registered, {
+  visiting.delete(registered);
+  effectiveConfigCache.set(registered, {
     generation,
     source: registered.config,
     config,
@@ -2888,7 +2948,7 @@ export class ObjectRegistry {
     // Issue #951: Use findClass for multi-strategy lookup
     const registered = ObjectRegistry.findClass(name);
     if (!registered) return {};
-    return resolveCollectionEffectiveConfig(name, registered);
+    return resolveEffectiveConfig(name, registered);
   }
 
   /**

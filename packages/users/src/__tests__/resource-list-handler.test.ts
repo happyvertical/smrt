@@ -380,6 +380,43 @@ describe('createResourceListHandler', () => {
     ).toBe(false);
   });
 
+  it('folds an STI child that shares its base collection into the base', async () => {
+    // A subclass inherits its parent's cli surface, so an STI child such as
+    // Person (collection `profiles`) is listed like its base. The route
+    // generator serves it through the base's route, so it must not collide.
+    mockRegistry({
+      '@p/pkg:Profile': makeRegistered(
+        'Profile',
+        { api: true, cli: true },
+        {},
+        {
+          qualifiedName: '@p/pkg:Profile',
+          packageName: '@p/pkg',
+          collection: 'profiles',
+          extends: 'SmrtObject',
+        } as any,
+      ),
+      '@p/pkg:Person': makeRegistered('Person', { api: true, cli: true }, {}, {
+        qualifiedName: '@p/pkg:Person',
+        packageName: '@p/pkg',
+        collection: 'profiles',
+        extends: 'Profile',
+      } as any),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    expect(res.status).toBe(200);
+    expect(
+      res.body.resources.map(
+        (resource: { className: string }) => resource.className,
+      ),
+    ).toEqual(['Profile']);
+  });
+
   it('500s on resource-slug collision', async () => {
     mockRegistry({
       A: makeRegistered('A', { api: true, cli: true }, {}, {

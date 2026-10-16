@@ -556,6 +556,29 @@ export interface SmartObjectConfig {
   api?: boolean | ApiConfig;
 
   /**
+   * Operations a model subclass deliberately opens although its parent model
+   * keeps them closed, per transport (CRUD verbs or method names).
+   *
+   * A subclass inherits every api/mcp/cli surface it leaves unset from its
+   * parent, and its own `@smrt()` may narrow those surfaces but not widen
+   * them: the build fails (`CONFIG_SUBCLASS_EXPOSURE`) when a subclass opens
+   * an operation its parent closes, unless that operation is listed here. An
+   * entry that widens nothing is also a build error. See
+   * `registry/subclass-exposure.ts`.
+   *
+   * @example
+   * ```typescript
+   * // Message is read-only over REST; Email is writable there.
+   * @smrt({
+   *   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+   *   widenParentExposure: { api: ['create', 'update', 'delete'] },
+   * })
+   * class Email extends Message {}
+   * ```
+   */
+  widenParentExposure?: Partial<Record<'api' | 'mcp' | 'cli', string[]>>;
+
+  /**
    * MCP server configuration
    */
   mcp?:

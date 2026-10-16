@@ -14,6 +14,8 @@ import { Message } from './Message';
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
+  // Message is read-only over REST; this provider type is writable there.
+  widenParentExposure: { api: ['create'] },
 })
 export class SlackMessage extends Message {
   channelId = '';
