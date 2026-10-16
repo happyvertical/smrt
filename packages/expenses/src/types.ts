@@ -112,7 +112,8 @@ export interface ExpenseRefundPosition {
 /** Who actually received a linked supplier refund; independent of original payer. */
 export type ExpenseRefundRecipient =
   | { kind: 'company' }
-  | { kind: 'person'; profileId: string };
+  | { kind: 'person'; profileId: string }
+  | { kind: 'third-party'; name: string };
 
 /** Cash reimbursement liability, distinct from supplier economic cost basis. */
 export interface ExpenseReimbursementPosition {
@@ -128,6 +129,7 @@ export interface ExpenseReimbursementPosition {
   unknownReason:
     | 'unknown-refund-recipient'
     | 'recipient-is-another-person'
+    | 'unknown-third-party-recipient'
     | 'legacy-reimbursement-amount'
     | null;
 }

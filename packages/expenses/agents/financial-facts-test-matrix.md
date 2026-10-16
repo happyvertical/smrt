@@ -133,3 +133,14 @@ rows; no historical payer or paid cash is inferred.
 
 Focused evidence: `/home/will/Work/tmp/tc-mvp-20261016/expense-reimbursement-position/`.
 No worker broad build/suite/review/PR; coordinator owns combined release gates.
+
+## Explicit third-party refund recipients (#4082)
+
+Shared SQLite/PostgreSQL cases retain exact bounded third-party source names,
+refuse blank/malformed/overlong names and extra fields, persist/reload guarded
+JSON and preserve reviewed provenance. Recipient edits claim the source revision;
+caller rollback restores both evidence and revision. Person reimbursement with
+third-party cash receipt returns unknown-third-party-recipient, nullable cash
+positions and retained actual paid cash; it cannot infer company income, person
+payment or settlement. An exact source name is evidence, not verified customer
+identity. Existing company/person and unknown legacy cases remain covered.

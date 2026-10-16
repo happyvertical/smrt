@@ -291,7 +291,11 @@ check that repeat migration is a no-op.
 
 A refund's optional `refundRecipient` is guarded JSON, read/written through
 `getRefundRecipient()` / `setRefundRecipient({ kind: 'company' })` or
-`setRefundRecipient({ kind: 'person', profileId })`. It states who actually
+`setRefundRecipient({ kind: 'person', profileId })` or
+`setRefundRecipient({ kind: 'third-party', name })`. A third-party name is exact
+retained source evidence (nonblank, at most 200 characters), not independently
+verified party/customer identity. It is never trimmed, fuzzily matched or resolved
+to another party by this API. It states who actually
 received the cash, independently of `paidBy`. Missing recipient is unknown;
 historical payer fields are never reinterpreted as receipt evidence. The field
 belongs only to linked negative refunds and joins the reviewed-money freeze.
@@ -314,7 +318,9 @@ fixed. Payment fields cannot be forged by direct save. Existing no-refund
 callers may omit amount and record the full original gross as before.
 
 `unknownReason` identifies an unknown recipient, another person's recipient,
-or a historical reimbursement marker without retained paid cash. Unknown
+an explicit third-party receipt (`unknown-third-party-recipient`), or a historical
+reimbursement marker without retained paid cash. A third-party receipt is never
+counted as company/person cash or interpreted as income or settlement. Unknown
 positions return null liability/receivable rather than inferring zero or a
 historical gross payment. Resolve legacy evidence explicitly; this API supplies
 no automatic legacy conversion. Recording is not transfer execution. Both public

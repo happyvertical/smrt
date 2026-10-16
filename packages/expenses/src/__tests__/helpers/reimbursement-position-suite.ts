@@ -266,6 +266,211 @@ export function defineReimbursementPositionSuite(
       });
     });
   });
+  it('retains exact named third-party receipt evidence without claiming independent identity', async () => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const name = 'Source payer company ';
+      const source = await world.expense({
+        amount: 1000,
+        paidBy: 'third-party',
+        paidByName: name,
+      });
+      const refund = await world.expense({
+        amount: -200,
+        refundOfId: source.id,
+        refundRecipient: JSON.stringify({ kind: 'third-party', name }),
+      });
+      const loaded = await world.expenses.get(
+        { id: refund.id },
+        { cache: false },
+      );
+      expect(loaded?.getRefundRecipient()).toEqual({
+        kind: 'third-party',
+        name,
+      });
+      expect(
+        (await world.expenses.get({ id: source.id }, { cache: false }))?.amount,
+      ).toBe(1000);
+      expect(await source.getRefundPosition()).toMatchObject({
+        refundedAmount: 200,
+        remainingAmount: 800,
+      });
+      await loaded?.review({ reviewerProfileId: randomUUID() });
+      loaded?.setRefundRecipient({
+        kind: 'third-party',
+        name: 'Different evidence',
+      });
+      await expect(loaded?.save()).rejects.toMatchObject({
+        code: 'EXPENSE_REVIEW_FIELDS_LOCKED',
+      });
+    });
+  });
+
+  it.each([
+    null,
+    0,
+    [],
+    {},
+    '',
+    '   ',
+    'a'.repeat(201),
+  ])('rejects malformed or unbounded third-party name %j', async (name) => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const source = await world.expense({ amount: 1000 });
+      await expect(
+        world.expense({
+          amount: -100,
+          refundOfId: source.id,
+          refundRecipient: JSON.stringify({ kind: 'third-party', name }),
+        }),
+      ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+    });
+  });
+
+  it('refuses extra third-party recipient fields instead of inferring a customer identity', async () => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const source = await world.expense({ amount: 1000 });
+      await expect(
+        world.expense({
+          amount: -100,
+          refundOfId: source.id,
+          refundRecipient: JSON.stringify({
+            kind: 'third-party',
+            name: 'Customer',
+            customerId: randomUUID(),
+          }),
+        }),
+      ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+    });
+  });
+
+  it.each([
+    false,
+    true,
+  ])('keeps third-party receipts unknown for a person claim with prior payment=%s', async (paid) => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const source = await world.expense({
+        amount: 1000,
+        paidBy: 'person',
+        paidByProfileId: randomUUID(),
+        reimbursable: true,
+      });
+      if (paid)
+        await source.markReimbursed({
+          amount: 1000,
+          reference: 'Retained actual person cash',
+        });
+      await world.expense({
+        amount: -100,
+        refundOfId: source.id,
+        refundRecipient: JSON.stringify({
+          kind: 'third-party',
+          name: 'Explicit recipient',
+        }),
+      });
+      expect(await source.getReimbursementPosition()).toMatchObject({
+        sourceAmount: 1000,
+        personRefundAmount: null,
+        companyRefundAmount: null,
+        reimbursedAmount: paid ? 1000 : 0,
+        remainingAmount: null,
+        owedToCompany: null,
+        unknownReason: 'unknown-third-party-recipient',
+      });
+      const loaded = await world.expenses.get(
+        { id: source.id },
+        { cache: false },
+      );
+      await expect(
+        loaded?.markReimbursed({ amount: 1000 }),
+      ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+    });
+  });
+
+  it('rolls third-party recipient changes and source revision back together', async () => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const source = await world.expense({
+        amount: 1000,
+        paidBy: 'person',
+        paidByProfileId: randomUUID(),
+        reimbursable: true,
+      });
+      const refund = await world.expense({
+        amount: -100,
+        refundOfId: source.id,
+        refundRecipient: JSON.stringify({ kind: 'company' }),
+      });
+      const before = (
+        await world.db.query(
+          'SELECT updated_at FROM expenses WHERE id=?',
+          source.id,
+        )
+      ).rows[0]?.updated_at;
+      if (!world.db.transaction) throw new Error('Transactions required');
+      await expect(
+        world.db.transaction(async (tx) => {
+          const expenses = await ExpenseCollection.create({ db: tx });
+          const loaded = await expenses.get(
+            { id: refund.id },
+            { cache: false },
+          );
+          if (!loaded) throw new Error('Missing refund');
+          loaded.setRefundRecipient({
+            kind: 'third-party',
+            name: 'Received by explicit third party',
+          });
+          await loaded.save();
+          expect(await expenses.reimbursementPosition(source.id)).toMatchObject(
+            { unknownReason: 'unknown-third-party-recipient' },
+          );
+          throw new Error('Third-party recipient rollback');
+        }),
+      ).rejects.toThrow('Third-party recipient rollback');
+      expect(
+        (
+          await world.expenses.get({ id: refund.id }, { cache: false })
+        )?.getRefundRecipient(),
+      ).toEqual({ kind: 'company' });
+      expect(
+        (
+          await world.db.query(
+            'SELECT updated_at FROM expenses WHERE id=?',
+            source.id,
+          )
+        ).rows[0]?.updated_at,
+      ).toEqual(before);
+      expect(
+        await world.expenses.reimbursementPosition(source.id),
+      ).toMatchObject({
+        remainingAmount: 1000,
+        companyRefundAmount: 100,
+        unknownReason: null,
+      });
+      const loaded = await world.expenses.get(
+        { id: refund.id },
+        { cache: false },
+      );
+      if (!loaded) throw new Error('Missing refund');
+      loaded.setRefundRecipient({
+        kind: 'third-party',
+        name: 'Received by explicit third party',
+      });
+      await loaded.save();
+      expect(
+        (
+          await world.db.query(
+            'SELECT updated_at FROM expenses WHERE id=?',
+            source.id,
+          )
+        ).rows[0]?.updated_at,
+      ).not.toEqual(before);
+    });
+  });
+
   it('rejects a corrupt retained payment rather than deriving a cash claim', async () => {
     const world = getWorld();
     await world.inTenant(async () => {

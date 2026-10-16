@@ -36,8 +36,17 @@ export function parseRefundRecipient(
     )
   )
     return { kind: 'person', profileId: object.profileId };
+  // Exact retained evidence only: no trimming, lookup or identity inference.
+  if (
+    object.kind === 'third-party' &&
+    Object.keys(object).length === 2 &&
+    typeof object.name === 'string' &&
+    object.name.trim().length > 0 &&
+    object.name.length <= 200
+  )
+    return { kind: 'third-party', name: object.name };
   return invalid(
-    'recipient must explicitly identify company or person profile.',
+    'recipient must explicitly identify company, person profile or a third-party name (1–200 characters).',
   );
 }
 
@@ -75,6 +84,8 @@ export function calculateReimbursementPosition(
     const recipient = refund.getRefundRecipient();
     if (!recipient) reason ??= 'unknown-refund-recipient';
     else if (recipient.kind === 'company') company -= BigInt(refund.amount);
+    else if (recipient.kind === 'third-party')
+      reason ??= 'unknown-third-party-recipient';
     else if (recipient.profileId === source.paidByProfileId)
       person -= BigInt(refund.amount);
     else reason ??= 'recipient-is-another-person';

@@ -205,8 +205,11 @@ locks and revision claims. No customer credit or cash recipient is inferred.
 
 ## Cash reimbursement positions (#4073)
 
-`refundRecipient` guarded JSON is explicit company/person cash receipt evidence,
-separate from payer. Missing/other-person direction stays unknown. Public
+`refundRecipient` guarded JSON is explicit company/person/third-party cash receipt evidence,
+separate from payer. Third-party names are exact bounded source evidence, never
+verified identities or fuzzy joins. Missing/other-person/third-party direction
+stays unknown for person reimbursement; third-party yields
+`unknown-third-party-recipient`. Public
 `reimbursementPosition` / `getReimbursementPosition` returns nonnegative remaining
 claim and separate money owed to company; never offset economic cost basis or
 infer historical payment. `markReimbursed` stores exact full remaining
