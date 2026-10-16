@@ -20,6 +20,7 @@ import {
   acquireTemplate,
   applyCookbook,
   nextSteps,
+  scopedProjectName,
 } from '../cookbook/apply.js';
 import {
   createRecipeIndex,
@@ -310,7 +311,7 @@ describe('cookbook apply', () => {
       [...Object.keys(pkg.dependencies)].sort((a, b) => a.localeCompare(b)),
     );
     // Named from the directory, never the template's shared identity.
-    expect(pkg.name).toBe(`out-${name}`);
+    expect(pkg.name).toBe(`@smrt-app/out-${name}`);
     expect(readJson(join(dir, 'smrt.cookbook.json'))).toEqual(report.cookbook);
     // Template files copied, .git left behind.
     expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
@@ -337,13 +338,15 @@ describe('cookbook apply', () => {
       cliVersion: '9.9.9',
       cwd: work,
     });
-    expect(readJson(join(dir, 'package.json')).name).toBe('sourdough-co');
+    expect(readJson(join(dir, 'package.json')).name).toBe(
+      '@smrt-app/sourdough-co',
+    );
   });
 
   it('names the project from the target directory when the cookbook has no name', async () => {
     const cases: Array<[string, string]> = [
-      ['My Cool_App!', 'my-cool-app'],
-      ['___', 'smrt-app'],
+      ['My Cool_App!', '@smrt-app/my-cool-app'],
+      ['___', '@smrt-app/smrt-app'],
     ];
     for (const [dirName, expected] of cases) {
       const dir = join(work, dirName);
@@ -359,7 +362,7 @@ describe('cookbook apply', () => {
       });
       const name = readJson(join(dir, 'package.json')).name;
       expect(name).toBe(expected);
-      expect(name).toMatch(/^[a-z0-9][a-z0-9-]*$/);
+      expect(name).toMatch(/^@smrt-app\/[a-z0-9][a-z0-9-]*$/);
     }
   });
 
@@ -426,7 +429,7 @@ describe('cookbook apply', () => {
     const after = readJson(pkgPath);
     expect(after.scripts.custom).toBe('echo hi');
     expect(after.dependencies['@happyvertical/smrt-commerce']).toBe('~0.55.9');
-    expect(after.name).toBe('idem');
+    expect(after.name).toBe('@smrt-app/idem');
     expect(readFileSync(join(dir, 'src', 'app.ts'), 'utf-8')).toBe('// mine\n');
     expect(readJson(join(dir, 'smrt.cookbook.json')).recipes).toContain(
       'commerce.wholesale',
@@ -983,4 +986,23 @@ applyCookbook({ cookbook: { version: 1, recipes: [], features: [], policies: [] 
     expect(run.stdout).not.toContain('STDOUT-LEAK');
     expect(run.stderr).toContain('STDOUT-LEAK');
   }, 60_000);
+});
+
+describe('scopedProjectName (#4061)', () => {
+  it('keeps the template scope, else uses @smrt-app, so SMRT can qualify class names', () => {
+    expect(scopedProjectName('bakery', '@smrt-app/sveltekit-app')).toBe(
+      '@smrt-app/bakery',
+    );
+    expect(scopedProjectName('bakery', '@acme/starter')).toBe('@acme/bakery');
+    expect(scopedProjectName('bakery', 'unscoped-template')).toBe(
+      '@smrt-app/bakery',
+    );
+    expect(scopedProjectName('bakery', undefined)).toBe('@smrt-app/bakery');
+  });
+
+  it('stays within the 214-character npm name limit', () => {
+    const name = scopedProjectName('a'.repeat(300), '@smrt-app/start');
+    expect(name.length).toBeLessThanOrEqual(214);
+    expect(name.startsWith('@smrt-app/a')).toBe(true);
+  });
 });

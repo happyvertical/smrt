@@ -208,6 +208,25 @@ export function npmNameFromText(value: string): string | undefined {
   return name || undefined;
 }
 
+/** The scope a new project's name takes when its template's name has none. */
+export const DEFAULT_PROJECT_SCOPE = '@smrt-app';
+
+/**
+ * A new project's package name: the slug under the template's npm scope (else
+ * `@smrt-app`). SMRT qualifies class names as `@scope/package:ClassName` and
+ * refuses to scan a project with an unscoped name, so an unscoped name would
+ * leave any template that declares its own models unbuildable (#4061).
+ */
+export function scopedProjectName(
+  slugName: string,
+  templateName: string | undefined,
+): string {
+  const scope = /^@[a-z0-9][a-z0-9._~-]*\//.exec(templateName ?? '')?.[0];
+  const prefix = scope ? scope.slice(0, -1) : DEFAULT_PROJECT_SCOPE;
+  const room = 214 - prefix.length - 1;
+  return `${prefix}/${slugName.slice(0, room).replace(/-+$/, '')}`;
+}
+
 /** Parse `github:owner/repo#ref`, a git URL, or a local path. */
 export function parseTemplateSpec(
   spec: string,
@@ -497,12 +516,16 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
     // A new project never keeps the template's package name: the runtime
     // derives the application identity (and so the OS data directory) from
     // it, so two projects from one template would share a database. Name it
-    // from the cookbook, else from the target directory.
+    // from the cookbook, else from the target directory, under the template's
+    // scope: SMRT requires a scoped package name to qualify class names.
     const projectName =
       mode === 'new'
-        ? (npmNameFromText(options.cookbook.name ?? '') ??
-          npmNameFromText(basename(targetDir)) ??
-          'smrt-app')
+        ? scopedProjectName(
+            npmNameFromText(options.cookbook.name ?? '') ??
+              npmNameFromText(basename(targetDir)) ??
+              'smrt-app',
+            typeof baseJson.name === 'string' ? baseJson.name : undefined,
+          )
         : undefined;
 
     const plan: ApplyPlan = {

@@ -44,7 +44,8 @@ object that is not in its package's manifest, or a policy field the object lacks
   `git archive HEAD` would drop. A non-git directory is copied whole minus `.git`/`node_modules`.
   `package.json` `name` becomes the slug of `cookbook.name` when set, else of the target directory's
   basename (never the template's name: the runtime derives the app identity, hence the OS data
-  directory, from it).
+  directory, from it), under the template's npm scope, else `@smrt-app` (`scopedProjectName`): SMRT
+  refuses to scan an unscoped project, so a template with its own models needs one (#4061).
 - **Existing project**: `--into [dir]`, or re-running on a directory that already holds `smrt.cookbook.json`.
 - **Writes**: missing packages (from the recipes, features and policies) into `dependencies`,
   sorted; `smrt.cookbook.json` (the validated, normalized cookbook); for a new project, the smrt pin
