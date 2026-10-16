@@ -8,6 +8,8 @@ import {
   MemberRegisterService,
 } from '../member-register/index.js';
 
+import { memberRegisterAtomicityTests } from './helpers/member-register-atomicity.js';
+
 describe('generic legal member register', () => {
   let close: (() => Promise<void>) | undefined;
   async function service(tenantId: string) {
@@ -20,6 +22,12 @@ describe('generic legal member register', () => {
   afterEach(async () => {
     await close?.();
     close = undefined;
+  });
+
+  memberRegisterAtomicityTests(async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    close = async () => db.close?.();
+    return db;
   });
 
   it('keeps worker-co-op legal membership independent from login and subscription concepts', async () => {

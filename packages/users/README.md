@@ -1341,6 +1341,9 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `LegalMemberStatusHistory` | Append-only effective status history for historical and record-date queries. |
 | `LegalMemberReference` | Qualified reference to authoritative shares, dues, subscription, agreement, or ledger evidence; it never stores a balance. |
 | `MemberOfficerAppointment` | Effective-dated board/officer register entry; it is not an RBAC grant or ballot engine. |
+| `TenantPermissionOverride` | Tenant-level permission override (INHERIT/GRANT/DENY). |
+| `GroupMember`, `GroupRole`, `RolePermission` | Junction tables for groups and role-permission assignments. |
+| `AccessRequest` | "Request access / waitlist" record captured before a `User` exists. Closed generated surface — all access via `AccessRequestService`. |
 
 ## Legal member register
 
@@ -1356,9 +1359,28 @@ policy)` produces persisted, neutral eligibility snapshots plus CSV/JSON
 exports. A policy that requires shares or dues evidence fails closed unless the
 register has an explicitly authoritative reference for every required kind; the
 snapshot names that missing evidence rather than inferring payment status.
-| `TenantPermissionOverride` | Tenant-level permission override (INHERIT/GRANT/DENY). |
-| `GroupMember`, `GroupRole`, `RolePermission` | Junction tables for groups and role-permission assignments. |
-| `AccessRequest` | "Request access / waitlist" record captured before a `User` exists. Closed generated surface — all access via `AccessRequestService`. |
+
+Hosts must authorize the trusted `MemberRegisterActor` before constructing the
+service. Generated REST, CLI and MCP operations are closed for these sensitive
+records. Every service lookup and write stays in the actor's tenant; an active
+context for another tenant is rejected. Direct collections are trusted internal
+APIs, not an authorization boundary for untrusted input.
+
+`enroll`, `setStatus` and `asOf` require database transaction support and commit
+all of their writes together. History and references are append-only, and
+snapshots reject updates and deletes. Same-day history corrections use persisted
+sequence order. Eligibility uses effective history; `LegalMember.status` and
+`leftOn` are display caches refreshed by `setStatus`, so scheduled changes may
+make those caches stale until another write. Use `asOf` for record-date decisions.
+
+Apply the generated SMRT manifest migration before using the register; its six
+new tables require no auth-membership or subscription backfill. `userId` links
+to the local `User`; `profileId` uses the cross-package reference
+`@happyvertical/smrt-profiles:Profile`. Financial evidence is an opaque
+`sourceType`/`sourceId` reference (for example
+`@happyvertical/smrt-ledgers:JournalEntry` or
+`@happyvertical/smrt-subscriptions:TenantSubscription`); the host validates its
+authority and effective dates, and no posting or balance is copied here.
 
 ### Collections
 

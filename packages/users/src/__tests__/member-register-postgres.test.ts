@@ -5,6 +5,8 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemberRegisterService } from '../member-register/index.js';
 
+import { memberRegisterAtomicityTests } from './helpers/member-register-atomicity.js';
+
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 describePostgres('member register (postgres)', () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -12,6 +14,21 @@ describePostgres('member register (postgres)', () => {
     await cleanup?.();
     cleanup = undefined;
   });
+  memberRegisterAtomicityTests(async () => {
+    const isolated = await createIsolatedTestDbFromManifest({
+      includeObjects: [
+        'MemberClass',
+        'LegalMember',
+        'LegalMemberStatusHistory',
+        'LegalMemberReference',
+        'MemberOfficerAppointment',
+        'MemberEligibilitySnapshot',
+      ],
+    });
+    cleanup = isolated.cleanup;
+    return isolated.baseDb;
+  });
+
   it('keeps tenant data and immutable record-date evidence isolated', async () => {
     const isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
