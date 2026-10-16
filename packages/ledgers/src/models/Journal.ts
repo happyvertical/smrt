@@ -341,6 +341,9 @@ export class Journal extends SmrtObject {
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    // A fresh accounting identity must never adopt another row by natural key.
+    // Core enforces this with INSERT uniqueness, including concurrent callers.
+    this.requireInsertOnSave({ preserveDerivedSlug: true });
     if (this.id) {
       const stored = await this.db.get(this.tableName, { id: this.id });
       if (stored?.ledger_id && stored.status !== 'draft')

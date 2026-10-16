@@ -45,6 +45,9 @@ export class Ledger extends SmrtObject {
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    // A fresh accounting identity must never adopt another row by natural key.
+    // Core enforces this with INSERT uniqueness, including concurrent callers.
+    this.requireInsertOnSave({ preserveDerivedSlug: true });
     if (!['tolerant', 'exact-integer'].includes(this.balanceMode))
       throw new Error('Unknown ledger balance mode');
     if (this.id) {

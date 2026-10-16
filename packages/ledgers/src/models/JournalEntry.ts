@@ -12,6 +12,7 @@ import {
   isTenancyEnabled,
   TenantScoped,
   tenantId,
+  withTenantGlobalRead,
 } from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
 import { Account } from './Account';
@@ -134,6 +135,9 @@ export class JournalEntry extends SmrtObject {
    */
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    // A fresh accounting identity must never adopt another row by natural key.
+    // Core enforces this with INSERT uniqueness, including concurrent callers.
+    this.requireInsertOnSave({ preserveDerivedSlug: true });
     const journal = await this.getJournal();
     // Validation precedes tenancy's beforeSave auto-population. Privileged
     // bypasses do not auto-populate, so those callers must supply the owner.
@@ -162,10 +166,7 @@ export class JournalEntry extends SmrtObject {
       if (stored && stored.journal_id !== this.journalId)
         throw new Error('Journal entry cannot be moved to another journal');
       if (stored && stored.account_id !== this.accountId) {
-        const { AccountCollection } = await import('../collections/Accounts');
-        const oldAccount = await (
-          await AccountCollection.create(this.options)
-        ).get({ id: String(stored.account_id) }, { cache: false });
+        const oldAccount = await this.loadAccount(String(stored.account_id));
         if (!oldAccount || oldAccount.ledgerId !== journal.ledgerId)
           throw new Error(
             'Stored entry account must belong to its journal ledger',
@@ -271,9 +272,27 @@ export class JournalEntry extends SmrtObject {
    */
   async getAccount(): Promise<import('./Account').Account | null> {
     if (!this.accountId) return null;
+    return this.loadAccount(this.accountId);
+  }
+
+  private async loadAccount(
+    accountId: string,
+  ): Promise<import('./Account').Account | null> {
     const { AccountCollection } = await import('../collections/Accounts');
     const collection = await AccountCollection.create(this.options);
-    return await collection.get({ id: this.accountId }, { cache: false });
+    const account = await collection.get({ id: accountId }, { cache: false });
+    if (account) return account;
+    const tenant = getTenantId();
+    if (!tenant) return null;
+    // Legacy charts expose shared, unassigned accounts. The public read scope
+    // retains actor authorization and never widens to another tenant's rows.
+    return withTenantGlobalRead(tenant, async () => {
+      const globals = await collection.list({
+        where: { id: accountId, tenantId: null, ledgerId: null },
+        limit: 1,
+      });
+      return globals[0] ?? null;
+    });
   }
 
   /**

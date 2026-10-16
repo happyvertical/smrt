@@ -98,6 +98,9 @@ export class Account extends SmrtHierarchical {
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    // A fresh accounting identity must never adopt another row by natural key.
+    // Core enforces this with INSERT uniqueness, including concurrent callers.
+    this.requireInsertOnSave({ preserveDerivedSlug: true });
     if (this.ledgerId) {
       const { LedgerCollection } = await import('../collections/Ledgers');
       const ledger = await (await LedgerCollection.create(this.options)).get(

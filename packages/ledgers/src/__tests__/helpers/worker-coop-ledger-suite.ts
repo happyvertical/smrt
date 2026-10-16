@@ -72,6 +72,250 @@ export function defineWorkerCoopLedgerSuite(
       vi.restoreAllMocks();
       await (db as { close?: () => Promise<void> }).close?.();
     });
+    it('preserves generated slug disambiguation and refuses getOrUpsert adoption', async () => {
+      const ledgers = await LedgerCollection.create({ db });
+      await expect(
+        ledgers.getOrUpsert({
+          tenantId: base.tenantId,
+          name: 'Worker co-op',
+          currency: 'USD',
+          balanceMode: 'tolerant',
+        }),
+      ).rejects.toThrow();
+      const copies = await Promise.all(
+        [1, 2].map(() =>
+          ledgers.create({
+            tenantId: base.tenantId,
+            name: 'Same generated name',
+            currency: 'CAD',
+            balanceMode: 'exact-integer',
+          }),
+        ),
+      );
+      expect(copies[0].id).not.toBe(copies[1].id);
+      expect(copies[0].slug).not.toBe(copies[1].slug);
+      await expect(
+        ledgers.create({
+          tenantId: base.tenantId,
+          name: 'Same generated name',
+          currency: 'CAD',
+          balanceMode: 'exact-integer',
+          _insertOnly: true,
+        }),
+      ).rejects.toThrow();
+      expect(
+        (await ledgers.get(base.ledgerId, { cache: false }))!.currency,
+      ).toBe('CAD');
+    });
+    it('allows only one concurrent explicit accounting identity insertion', async () => {
+      const ledgers = await LedgerCollection.create({ db });
+      const results = await Promise.allSettled(
+        ['CAD', 'USD'].map((currency) =>
+          ledgers.create({
+            tenantId: base.tenantId,
+            slug: 'one-concurrent-identity',
+            name: currency,
+            currency,
+            balanceMode: 'exact-integer',
+          }),
+        ),
+      );
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === 'rejected'),
+      ).toHaveLength(1);
+      const winner = results.find((result) => result.status === 'fulfilled');
+      if (!winner || winner.status !== 'fulfilled')
+        throw new Error('Expected one insert');
+      const stored = (await ledgers.get(winner.value.id!, { cache: false }))!;
+      expect(stored.currency).toBe(winner.value.currency);
+      expect(
+        await ledgers.list({ where: { slug: 'one-concurrent-identity' } }),
+      ).toHaveLength(1);
+    });
+    it('rejects natural-key replacement of immutable ledger policy', async () => {
+      const ledgers = await LedgerCollection.create({ db });
+      const original = (await ledgers.get(base.ledgerId))!;
+      await postReceivable(base);
+      await expect(
+        ledgers.create({
+          tenantId: base.tenantId,
+          slug: original.slug,
+          context: original.context,
+          name: 'Replacement',
+          currency: 'USD',
+          balanceMode: 'tolerant',
+        }),
+      ).rejects.toThrow();
+      const stored = (await (
+        await LedgerCollection.create({ db })
+      ).get(base.ledgerId, { cache: false }))!;
+      expect(stored.currency).toBe('CAD');
+      expect(stored.balanceMode).toBe('exact-integer');
+    });
+    it('rejects natural-key replacement of scoped and legacy accounts', async () => {
+      const accounts = await AccountCollection.create({ db });
+      const original = (await accounts.get(base.debitAccountId))!;
+      await postReceivable(base);
+      await expect(
+        accounts.create({
+          tenantId: base.tenantId,
+          slug: original.slug,
+          context: original.context,
+          number: '9999',
+          name: 'Replacement',
+          type: 'revenue',
+          ledgerId: null,
+        }),
+      ).rejects.toThrow();
+      const stored = (await accounts.get(base.debitAccountId, {
+        cache: false,
+      }))!;
+      expect(stored.ledgerId).toBe(base.ledgerId);
+      expect(stored.type).toBe('asset');
+      const legacy = await accounts.create({
+        tenantId: base.tenantId,
+        name: 'Legacy collision',
+        number: '2000',
+        type: 'asset',
+      });
+      await expect(
+        accounts.create({
+          tenantId: base.tenantId,
+          slug: legacy.slug,
+          context: legacy.context,
+          number: '2001',
+          name: 'Promotion',
+          type: 'asset',
+          ledgerId: base.ledgerId,
+        }),
+      ).rejects.toThrow();
+      expect(
+        (await accounts.get(legacy.id!, { cache: false }))!.ledgerId,
+      ).toBeNull();
+      // Updates remain explicit through the persisted identity.
+      legacy.name = 'Renamed legacy';
+      await legacy.save();
+      expect((await accounts.get(legacy.id!, { cache: false }))!.name).toBe(
+        'Renamed legacy',
+      );
+    });
+    it('rejects natural-key replacement of posted journals', async () => {
+      const posted = await postReceivable(base);
+      const journals = await JournalCollection.create({ db });
+      await expect(
+        journals.create({
+          tenantId: base.tenantId,
+          slug: posted.slug,
+          context: posted.context,
+          description: 'Replacement draft',
+          ledgerId: null,
+          status: 'draft',
+        }),
+      ).rejects.toThrow();
+      const stored = (await journals.get(posted.id!, { cache: false }))!;
+      expect(stored.status).toBe('posted');
+      expect(stored.ledgerId).toBe(base.ledgerId);
+      await expect(stored.delete()).rejects.toThrow(/immutable/);
+    });
+    it('rejects natural-key replacement of posted journal lines', async () => {
+      const posted = await postReceivable(base);
+      const original = (await posted.getEntries())[0];
+      const draft = await (await JournalCollection.create({ db })).create({
+        tenantId: base.tenantId,
+        ledgerId: base.ledgerId,
+        description: 'Collision draft',
+      });
+      const entries = await JournalEntryCollection.create({ db });
+      await expect(
+        entries.create({
+          tenantId: base.tenantId,
+          slug: original.slug,
+          context: original.context,
+          journalId: draft.id!,
+          accountId: original.accountId,
+          debit: 1,
+          credit: 0,
+          currency: 'CAD',
+        }),
+      ).rejects.toThrow();
+      const stored = (await entries.get(original.id!, { cache: false }))!;
+      expect(stored.journalId).toBe(posted.id);
+      expect(stored.debit).toBe(original.debit);
+      expect(stored.credit).toBe(original.credit);
+      expect(await posted.isBalanced()).toBe(true);
+      expect(await draft.getEntries()).toHaveLength(0);
+    });
+    it('permits shared unassigned global accounts for legacy tenant journals only', async () => {
+      const accounts = await AccountCollection.create({ db });
+      const globalDebit = await accounts.create({
+        name: 'Global asset',
+        number: 'G1',
+        type: 'asset',
+      });
+      const globalCredit = await accounts.create({
+        name: 'Global revenue',
+        number: 'G2',
+        type: 'revenue',
+      });
+      const foreign = await accounts.create({
+        tenantId: crypto.randomUUID(),
+        name: 'Foreign legacy',
+        number: 'F1',
+        type: 'asset',
+      });
+      enableTenancy();
+      await withTenant({ tenantId: base.tenantId }, async () => {
+        const journal = await (await JournalCollection.create({ db })).create({
+          description: 'Tenant legacy',
+        });
+        const entries = await JournalEntryCollection.create({ db });
+        await entries.create({
+          journalId: journal.id!,
+          accountId: globalDebit.id!,
+          debit: 1.25,
+        });
+        await entries.create({
+          journalId: journal.id!,
+          accountId: globalCredit.id!,
+          credit: 1.25,
+        });
+        await journal.post();
+        expect(await journal.isBalanced()).toBe(true);
+        const debitLine = (await journal.getEntries()).find(
+          (line) => line.debit > 0,
+        )!;
+        debitLine.accountId = globalCredit.id!;
+        await debitLine.save();
+        expect((await debitLine.getAccount())!.id).toBe(globalCredit.id);
+        const draft = await (await JournalCollection.create({ db })).create({
+          description: 'Foreign denial',
+        });
+        await expect(
+          entries.create({
+            journalId: draft.id!,
+            accountId: foreign.id!,
+            debit: 1,
+          }),
+        ).rejects.toThrow();
+        const scoped = await (await JournalCollection.create({ db })).create({
+          ledgerId: base.ledgerId,
+          description: 'Scoped denial',
+        });
+        await expect(
+          entries.create({
+            journalId: scoped.id!,
+            accountId: globalDebit.id!,
+            debit: 1,
+            currency: 'CAD',
+          }),
+        ).rejects.toThrow();
+        expect(await draft.getEntries()).toHaveLength(0);
+        expect(await scoped.getEntries()).toHaveLength(0);
+      });
+    });
     it('serializes concurrent same-key replay and denies concurrent content changes', async () => {
       const results = await Promise.all([
         postReceivable(base),

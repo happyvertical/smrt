@@ -233,3 +233,10 @@ the exported `Account` and `AccountCollection` are unchanged.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+Accounting identities are insert-only on their first save: an explicit slug/context
+collision cannot replace an existing ledger, account, journal, or line. Load the
+existing object to update it through its lifecycle guards. This also applies to
+legacy unassigned objects; natural-key replacement is not a supported update path.
+Legacy tenant journals may still use shared global accounts that have no ledger;
+scoped journals require accounts owned by their ledger.
