@@ -94,3 +94,23 @@ runs pass four SQLite and seven PostgreSQL cases (`fixed-sqlite.log`,
 `fixed-postgres.log`). Final committed-head package build, full test, PostgreSQL,
 typecheck, and browser commands are recorded with HEAD and exit status in
 `validation-records.json` and their named logs in that same evidence directory.
+
+
+## Exact refund positions (#4070)
+
+Risk: high — cumulative financial reversals and concurrent edits. The shared
+SQLite/PostgreSQL suite covers partial/full/excess cash reversals (including
+rejected rows), independent subtotal/charged/recovery/nonrecoverable caps, exact
+component identities, signed residuals, unknown legacy/partial facts, source
+corrections, refund edits/reparenting, and rollback of refund plus source revision.
+PostgreSQL additionally proves stale sibling amount and financial-facts edits
+abort under REPEATABLE READ, then fail the appropriate cap on a fresh retry.
+No missing financial facts are synthesized. A former freeze fixture now uses a
+source gross sufficient for its refund and retains known linked facts after
+reopen: clearing them would erase already-proved reversal bounds.
+
+Focused commands: `pnpm --filter @happyvertical/smrt-expenses exec vitest run
+src/__tests__/expenses.test.ts`, the same PostgreSQL optional test through
+`scripts/run-with-ci-postgres.mjs`, and owning-package `tsc -p tsconfig.json
+--noEmit`. External receipts: `/home/will/Work/tmp/tc-mvp-20261016/expense-refund-caps/`.
+Coordinator owns combined prerequisites, release validation, and review.

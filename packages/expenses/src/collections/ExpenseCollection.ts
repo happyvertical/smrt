@@ -22,6 +22,7 @@ import {
   type CurrencyTotals,
   ExpenseError,
   type ExpenseFinancialBreakdown,
+  type ExpenseRefundPosition,
   type ExpenseReviewStatus,
   type ExpenseTotalsOptions,
 } from '../types.js';
@@ -116,6 +117,14 @@ function addTo(totals: CurrencyTotals, currency: string, amount: number) {
 })
 export class ExpenseCollection extends SmrtCollection<Expense> {
   static readonly _itemClass = Expense;
+
+  /** All persisted linked refunds reserve source capacity, irrespective of review. */
+  async refundPosition(sourceId: string): Promise<ExpenseRefundPosition> {
+    const source = await this.get({ id: sourceId }, { cache: false });
+    if (!source)
+      throw new ExpenseError('EXPENSE_INVALID', 'Refund source was not found.');
+    return source.getRefundPosition();
+  }
 
   /**
    * Record a new, unreviewed expense for the signed-in person in their

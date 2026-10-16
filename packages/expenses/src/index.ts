@@ -79,6 +79,7 @@ export {
   type ExpenseOptions,
   type ExpensePayer,
   type ExpenseReceiptOptions,
+  type ExpenseRefundPosition,
   type ExpenseReviewStatus,
   type ExpenseTaxComponent,
   type ExpenseTotalsOptions,

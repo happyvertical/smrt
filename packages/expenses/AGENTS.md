@@ -147,14 +147,13 @@ the compatible owner alias.
 All three fields participate in the reviewed-money freeze. See the README and
 [financial facts test matrix](agents/financial-facts-test-matrix.md).
 
-Linking a new refund (or changing its source) also claims the source revision in
+Linking a refund, changing its source, or editing amount/financial facts claims the source revision in
 that same transaction through `claimRevision(source.updated_at)`. This makes a
 source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
 serialization error instead of missing the new refund. Reload a source after
 linking a refund before editing/reviewing it; on a serialization failure, retry
 the entire caller transaction with fresh instances. Failed outer transactions
-roll back both the refund and the source revision claim. Existing-link saves do
-not advance the source revision.
+roll back both the refund and the source revision claim. Saves without capacity-relevant changes do not advance the source revision.
 
 ## Cross-package references
 
@@ -191,3 +190,15 @@ profile ids in tests: PostgreSQL stores them as `uuid`.
 Draft amounts are lossless currency-unit text; model/review amounts remain integer
 minor units. Receipt upload is composed from Assets, never reimplemented here.
 `test` includes backend and UI SSR; `test:e2e` proves native browser submissions.
+
+
+## Exact refund capacity (#4070)
+
+All persisted linked refunds reserve gross capacity regardless of review state.
+`refundPosition(sourceId)` / `getRefundPosition()` expose exact positive cash
+magnitudes and nullable complete financial residuals. `src/refund-position.ts`
+bounds known subtotal and tax-code charged/recoverable/nonrecoverable reversals
+separately; source component identities cannot compensate for one another.
+Unknown facts stay null, and known linked facts cannot be cleared. Source edits
+and refund edits revalidate the prospective position under the existing source
+locks and revision claims. No customer credit or cash recipient is inferred.

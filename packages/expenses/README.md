@@ -242,12 +242,24 @@ Negative amounts require `refundOfId`, naming a positive non-refund expense
 visible in the same tenant and currency. Refund breakdown components are negative
 (or zero), including recovered tax. Self, missing, foreign-owner, currency-mismatched,
 and refund-of-refund sources fail closed. Source lookup uses the caller's database
-executor. This link retains provenance only: it does not allocate settlements,
-cap cumulative refunds, issue credits, or determine entitlement. A source may
-be explicitly reopened and corrected, but existing same-owner refunds prevent
-changes that would make it zero/nonpositive, turn it into a refund, or change
-its currency away from theirs. Unrelated edits and positive same-currency amount
-corrections remain allowed; there is no cumulative refund limit.
+executor. Every persisted linked refund reserves gross cash capacity, including
+unreviewed or rejected rows. Cumulative refunds cannot exceed source gross.
+Known financial reversals additionally cannot exceed the source subtotal or any
+exact source tax-code component's charged, recoverable, or nonrecoverable amount;
+components cannot compensate for one another. Source and refund edits revalidate
+the prospective position. Known linked facts cannot be cleared. This records
+reversals, not settlement allocation, customer credit authority, or entitlement.
+
+`await expenses.refundPosition(sourceId)` (also `source.getRefundPosition()`)
+returns positive `sourceAmount`, `refundedAmount`, and `remainingAmount`, plus
+all `refundIds`. Its `financialPosition` contains the original breakdown, signed
+negative cumulative `refunded` breakdown, and positive/zero `remaining`
+breakdown. It is null if source facts or any refund facts are unknown; unknown
+never implies zero tax or completed reversal. Known refunds on unknown legacy
+sources remain valid, bounded by known gross. When source facts exist, all known
+refund components remain bounded even if another refund's facts are unknown.
+The read retains the caller transaction and tenant boundary. Source gross is
+preserved: recording refunds never overwrites it.
 
 Expense saves validate and persist in one transaction, including nested caller
 transactions. On PostgreSQL, source edits and refund writes acquire ordered
@@ -259,14 +271,14 @@ requires these locks and the source revision claim below. Callers must not concu
 model instance while it is temporarily transaction-bound. Direct SQL writes
 remain outside these model-level guarantees.
 
-Linking a new refund (or changing its source) also claims the source revision in
+Linking a refund, changing its source, or editing its amount/financial facts claims the source revision in
 that same transaction through `claimRevision(source.updated_at)`. This makes a
 source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
 serialization error instead of missing the new refund. Reload a source after
 linking a refund before editing/reviewing it; on a serialization failure, retry
 the entire caller transaction with fresh instances. Failed outer transactions
-roll back both the refund and the source revision claim. Existing-link saves do
-not advance the source revision.
+roll back both the refund and the source revision claim. Saves that do not change
+capacity-relevant fields do not advance the source revision.
 
 Financial breakdown, third-party payer name, and refund provenance join the
 existing reviewed-money lock. Save `reopen()` first, then correct facts and review

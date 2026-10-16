@@ -91,6 +91,24 @@ export interface ExpenseCostBasis {
   costBasis: number;
 }
 
+/** Exact refund capacity; cash magnitudes are positive, financial reversals signed. */
+export interface ExpenseRefundPosition {
+  sourceId: string;
+  currency: string;
+  sourceAmount: number;
+  refundedAmount: number;
+  remainingAmount: number;
+  /** Every persisted linked refund reserves capacity, regardless of review state. */
+  refundIds: string[];
+  /** Null if any source/refund financial facts are unknown; never inferred zero. */
+  financialPosition: {
+    source: ExpenseFinancialBreakdown;
+    /** Negative cumulative reversal, with source component identities. */
+    refunded: ExpenseFinancialBreakdown;
+    remaining: ExpenseFinancialBreakdown;
+  } | null;
+}
+
 /** Constructor options for {@link Expense}. */
 export interface ExpenseOptions extends SmrtObjectOptions {
   tenantId?: string | null;

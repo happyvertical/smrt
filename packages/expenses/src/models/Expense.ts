@@ -25,12 +25,14 @@ import {
   expenseCostBasis,
   parseExpenseFinancialBreakdown,
 } from '../financial-facts.js';
+import { calculateRefundPosition } from '../refund-position.js';
 import {
   type ExpenseCostBasis,
   ExpenseError,
   type ExpenseFinancialBreakdown,
   type ExpenseOptions,
   type ExpensePayer,
+  type ExpenseRefundPosition,
   type ExpenseReviewStatus,
   type MarkDuplicateExpenseInput,
   type MarkReimbursedInput,
@@ -864,31 +866,36 @@ export class Expense extends SmrtObject {
       !persisted ||
       (Number(persisted.amount) === this.amount &&
         String(persisted.currency ?? '') === this.currency &&
-        asNullableString(persisted.refund_of_id) === this.refundOfId)
+        asNullableString(persisted.refund_of_id) === this.refundOfId &&
+        asNullableString(persisted.financial_breakdown) ===
+          this.financialBreakdown)
     )
       return;
     const { ExpenseCollection } = await import(
       '../collections/ExpenseCollection.js'
     );
     const expenses = await ExpenseCollection.create({ db: this.db });
-    const invalidated = await expenses.list({
-      where: {
-        refundOfId: this.id,
-        tenantId: effectiveTenant(this.tenantId),
-        ...(this.amount > 0 && !this.refundOfId
-          ? { 'currency !=': this.currency }
-          : {}),
-      },
-      select: ['id'],
-      limit: 1,
+    const refunds = await expenses.list({
+      where: { refundOfId: this.id, tenantId: effectiveTenant(this.tenantId) },
       cache: false,
     });
-    if (invalidated.length > 0) {
+    if (refunds.length === 0) return;
+    if (this.amount <= 0 || this.refundOfId) {
       throw new ExpenseError(
         'EXPENSE_INVALID',
-        'A referenced refund source must remain positive, non-refund, and in the currency of its refunds.',
+        'A referenced refund source must remain positive and non-refund.',
       );
     }
+    if (persisted.financial_breakdown && !this.getFinancialBreakdown()) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Financial facts of a linked refund source cannot be cleared.',
+      );
+    }
+    calculateRefundPosition(
+      this as Expense & { id: string },
+      refunds as Array<Expense & { id: string }>,
+    );
   }
 
   private async assertRefund(persisted: PersistedRow | null): Promise<void> {
@@ -919,7 +926,32 @@ export class Expense extends SmrtObject {
         'Refund source must be a positive non-refund expense in the same tenant and currency.',
       );
     }
-    if (!persisted || persisted.refund_of_id !== this.refundOfId) {
+    if (persisted?.financial_breakdown && !this.getFinancialBreakdown()) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Financial facts of a linked refund cannot be cleared.',
+      );
+    }
+    const refunds = await expenses.list({
+      where: {
+        refundOfId: source.id,
+        tenantId: effectiveTenant(this.tenantId),
+      },
+      cache: false,
+    });
+    calculateRefundPosition(
+      source as Expense & { id: string },
+      [...refunds.filter((refund) => refund.id !== this.id), this] as Array<
+        Expense & { id: string }
+      >,
+    );
+    if (
+      !persisted ||
+      persisted.refund_of_id !== this.refundOfId ||
+      Number(persisted.amount) !== this.amount ||
+      asNullableString(persisted.financial_breakdown) !==
+        this.financialBreakdown
+    ) {
       // A row lock alone cannot refresh an existing REPEATABLE READ snapshot.
       // Advance the source through public CAS so stale source writers abort.
       if (!source.updated_at) {
@@ -930,6 +962,37 @@ export class Expense extends SmrtObject {
       }
       await source.claimRevision(source.updated_at);
     }
+  }
+
+  /** Exact source cash capacity and optional complete signed financial position. */
+  async getRefundPosition(): Promise<ExpenseRefundPosition> {
+    return this.withTransaction(async () => {
+      await this.lockRefundRows();
+      const { ExpenseCollection } = await import(
+        '../collections/ExpenseCollection.js'
+      );
+      const expenses = await ExpenseCollection.create({ db: this.db });
+      const source = this.id
+        ? await expenses.get({ id: this.id }, { cache: false })
+        : null;
+      if (!source || source.refundOfId) {
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Refund position requires a persisted positive non-refund source.',
+        );
+      }
+      const refunds = await expenses.list({
+        where: {
+          refundOfId: source.id,
+          tenantId: effectiveTenant(source.tenantId),
+        },
+        cache: false,
+      });
+      return calculateRefundPosition(
+        source as Expense & { id: string },
+        refunds as Array<Expense & { id: string }>,
+      );
+    });
   }
 
   private async transition(

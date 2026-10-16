@@ -172,4 +172,114 @@ export function defineRefundConcurrency(getDb: () => DatabaseInterface): void {
       disableTenancy();
     }
   });
+  it.each([
+    'amount',
+    'financial-facts',
+  ] as const)('rejects a stale sibling refund %s edit under REPEATABLE READ', async (change) => {
+    const db = getDb();
+    enableTenancy();
+    const pinned = deferred<void>();
+    const resume = deferred<void>();
+    let writer: Promise<unknown> | undefined;
+    try {
+      const world = await createWorld(db);
+      await world.inTenant(async () => {
+        const financial = change === 'financial-facts';
+        const source = await world.expense({
+          amount: 1000,
+          ...(financial
+            ? {
+                financialBreakdown: JSON.stringify({
+                  currency: 'USD',
+                  subtotal: 900,
+                  taxes: [
+                    {
+                      code: 'supplier-tax',
+                      amount: 100,
+                      recoverableAmount: 40,
+                    },
+                  ],
+                  total: 1000,
+                }),
+              }
+            : {}),
+        });
+        const first = await world.expense({
+          amount: financial ? -100 : -400,
+          refundOfId: source.id,
+        });
+        const second = await world.expense({
+          amount: financial ? -100 : -400,
+          refundOfId: source.id,
+        });
+        if (!db.transaction) throw new Error('Transactions required');
+        writer = db
+          .transaction(async (tx) => {
+            await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            const expenses = await ExpenseCollection.create({ db: tx });
+            const stale = await expenses.get(
+              { id: second.id },
+              { cache: false },
+            );
+            if (!stale) throw new Error('Missing refund');
+            pinned.resolve();
+            await resume.promise;
+            if (financial)
+              stale.setFinancialBreakdown({
+                currency: 'USD',
+                subtotal: -99,
+                taxes: [
+                  { code: 'supplier-tax', amount: -1, recoverableAmount: 0 },
+                ],
+                total: -100,
+              });
+            else stale.amount = -500;
+            await stale.save();
+          })
+          .then(
+            () => null,
+            (error: unknown) => error,
+          );
+        await pinned.promise;
+        if (financial)
+          first.setFinancialBreakdown({
+            currency: 'USD',
+            subtotal: 0,
+            taxes: [
+              { code: 'supplier-tax', amount: -100, recoverableAmount: -40 },
+            ],
+            total: -100,
+          });
+        else first.amount = -600;
+        await first.save();
+        resume.resolve();
+        expect(String(await writer)).toMatch(
+          /could not serialize|concurrent update/i,
+        );
+        const fresh = await world.expenses.get(
+          { id: second.id },
+          { cache: false },
+        );
+        if (!fresh) throw new Error('Missing refund');
+        if (financial)
+          fresh.setFinancialBreakdown({
+            currency: 'USD',
+            subtotal: -99,
+            taxes: [{ code: 'supplier-tax', amount: -1, recoverableAmount: 0 }],
+            total: -100,
+          });
+        else fresh.amount = -500;
+        await expect(fresh.save()).rejects.toMatchObject({
+          code: 'EXPENSE_INVALID',
+        });
+        expect(
+          (await world.expenses.refundPosition(source.id)).refundedAmount,
+        ).toBe(financial ? 200 : 1000);
+      });
+    } finally {
+      resume.resolve();
+      await writer;
+      disableTenancy();
+    }
+  });
 }
