@@ -29,7 +29,10 @@ beforeEach(() => recipeState.clear());
 // a 1-2B model more than extra rules) add ~600. Every recipe adds its own line
 // (about 200 characters), so the budget is a fixed part (215) plus 215 each:
 // the same 4300 for the 19 business recipes, growing with the catalogue.
-const PROMPT_BUDGET = 215 + 215 * recipes.length;
+// The fixed part holds the first ten cookbooks; each one after that adds its
+// own line too (about 110 characters).
+const COOKBOOK_ALLOWANCE = 110 * Math.max(0, libraryCookbooks.length - 10);
+const PROMPT_BUDGET = 215 + 215 * recipes.length + COOKBOOK_ALLOWANCE;
 
 describe('prompt', () => {
   it('lists cookbooks and current settings and stays small', () => {

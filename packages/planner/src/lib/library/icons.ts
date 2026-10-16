@@ -67,4 +67,9 @@ export const COOKBOOK_ICONS: Record<string, readonly string[]> = {
     'M21 3a16 16 0 0 1-10.2 12.8',
     'M10.6 9a9 9 0 0 1 4.4 4.4',
   ],
+  home: [
+    'M5 12H3l9-9l9 9h-2',
+    'M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7',
+    'M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6',
+  ],
 };
