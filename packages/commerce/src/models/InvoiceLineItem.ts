@@ -343,6 +343,18 @@ export class InvoiceLineItem extends SmrtObject {
   }
 
   /** Persist through the invoice money aggregate. */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
+    }
+    return this;
+  }
+
   override async save(): Promise<this> {
     const { saveInvoiceLineItem } = await import('../document-money.js');
     return (await saveInvoiceLineItem(this)) as this;

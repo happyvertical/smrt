@@ -22,6 +22,7 @@ import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
+import { SalesContractCollection } from '../collections/SalesContractCollection.js';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
@@ -41,7 +42,7 @@ const OLD_COLUMNS = [
   "ALTER TABLE tax_settings ADD COLUMN money_migration_id TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE invoice_line_items ADD COLUMN legacy_amount INTEGER',
   'ALTER TABLE contract_line_items ADD COLUMN legacy_amount INTEGER',
-  'CREATE TABLE money_migration_documents (id TEXT PRIMARY KEY)',
+  'CREATE TABLE commerce_money_migration_documents (id TEXT PRIMARY KEY)',
 ];
 
 describe('commerce money upgrade (#4021)', () => {
@@ -158,9 +159,9 @@ describe('commerce money upgrade (#4021)', () => {
     // Detection: the whole database and every tenant to convert.
     const status = await findCommerceMoneyUpgradeNeeds(db);
     expect(status.oldSchema).toEqual([
+      'commerce_money_migration_documents',
       'contract_line_items.legacy_amount',
       'invoice_line_items.legacy_amount',
-      'money_migration_documents',
       'tax_settings.money_migration_id',
       'tax_settings.money_model',
     ]);
@@ -413,7 +414,7 @@ describe('commerce money upgrade (#4021)', () => {
       'ALTER TABLE tax_settings DROP COLUMN money_migration_id',
       'ALTER TABLE invoice_line_items DROP COLUMN legacy_amount',
       'ALTER TABLE contract_line_items DROP COLUMN legacy_amount',
-      'DROP TABLE money_migration_documents',
+      'DROP TABLE commerce_money_migration_documents',
     ])
       await db.query(sql);
     await restart();
@@ -806,6 +807,17 @@ describe('commerce money upgrade (#4021)', () => {
     await ensureCommerceTenant(db, 'dropped');
     const issued = await oldInvoice('dropped', 'D-ISSUED', { issued: true });
     const draft = await oldInvoice('dropped', 'D-DRAFT', { issued: false });
+    await withTenant({ tenantId: 'dropped' }, async () => {
+      const customer = await (await CustomerCollection.create({ db })).create(
+        {},
+      );
+      await (await ContractCollection.create({ db })).create({
+        _meta_type: 'Order',
+        customerId: customer.id,
+        reference: 'D-ORDER',
+        currency: 'CAD',
+      });
+    });
     await restart();
     expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
       oldSchema: [],
@@ -818,10 +830,21 @@ describe('commerce money upgrade (#4021)', () => {
         "Tenant dropped has commerce documents in an earlier version's money format.",
       ),
     });
+    // An unscoped read, and an STI collection without its own guard, refuse
+    // the old rows too: every hydrated money row is checked.
+    await expect(
+      (await InvoiceCollection.create({ db })).list({}),
+    ).rejects.toMatchObject({ code: COMMERCE_DATA_NEEDS_UPGRADE });
+    await expect(
+      withTenant({ tenantId: 'dropped' }, async () =>
+        (await SalesContractCollection.create({ db })).list({}),
+      ),
+    ).rejects.toMatchObject({ code: COMMERCE_DATA_NEEDS_UPGRADE });
     const result = await upgradeCommerceMoney(db);
     expect(result.failures).toEqual([]);
     expect(result.upgraded).toMatchObject([
-      { tenantId: 'dropped', issuedBackfilled: 1, draftsRecomputed: 1 },
+      // Drafts: the old draft invoice and the order created with it.
+      { tenantId: 'dropped', issuedBackfilled: 1, draftsRecomputed: 2 },
     ]);
     expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
       oldSchema: [],

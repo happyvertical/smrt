@@ -6,7 +6,7 @@ count as old data:
 
 - The schema still has the earlier version's money columns
   (`tax_settings.money_model`, `*_line_items.legacy_amount`) or the
-  `money_migration_documents` table.
+  `commerce_money_migration_documents` table.
 - An invoice or contract row has no tenant. The upgrade lists each one; assign
   it to a tenant or delete it, then rerun.
 - A tenant has invoices or contracts but no tax settings row.

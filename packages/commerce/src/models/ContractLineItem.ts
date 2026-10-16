@@ -255,6 +255,18 @@ export class ContractLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
+    }
+    return this;
+  }
+
   override async save(): Promise<this> {
     const { saveContractLineItem } = await import('../contract-money.js');
     return (await saveContractLineItem(this)) as this;

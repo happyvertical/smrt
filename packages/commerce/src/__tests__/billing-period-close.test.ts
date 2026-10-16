@@ -1159,4 +1159,17 @@ describe('smrt#3060 billing-period close', () => {
     );
     expect(await invoiceFor(world, PROVIDER, NETWORK)).toEqual([]);
   });
+  it('refuses an unsupported ledger book currency before any billing work (#4021)', async () => {
+    for (const bookCurrency of ['ZZZ', 'usd'])
+      await expect(
+        BillingRuntime.create({
+          db: world.db,
+          sellerTenantId: PROVIDER,
+          kind: 'provider',
+          provider: world.provider.provider,
+          billingRelationships: world.relationships,
+          ledger: { ...world.ledger, bookCurrency },
+        }),
+      ).rejects.toThrow(/not a supported ISO 4217 currency code/);
+  });
 });

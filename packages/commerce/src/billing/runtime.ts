@@ -19,6 +19,7 @@ import {
   TenantSubscriptionCollection,
 } from '@happyvertical/smrt-subscriptions';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
+import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
@@ -341,8 +342,17 @@ export class BillingRuntime {
         throw new Error(`Ledger account ${key} is required.`);
       }
     }
-    if (!/^[A-Z]{3}$/.test(options.ledger?.bookCurrency ?? '')) {
-      throw new Error('Ledger bookCurrency must be an ISO 4217 currency code.');
+    // Validate against the table revenue posting uses, so a bad book
+    // currency fails here, before any invoice reaches the provider.
+    const bookCurrency = options.ledger?.bookCurrency ?? '';
+    if (
+      !/^[A-Z]{3}$/.test(bookCurrency) ||
+      !ISO_4217_MINOR_UNITS.has(bookCurrency) ||
+      ISO_4217_MINOR_UNITS.get(bookCurrency) === null
+    ) {
+      throw new Error(
+        `Ledger bookCurrency '${bookCurrency}' is not a supported ISO 4217 currency code.`,
+      );
     }
   }
 

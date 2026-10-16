@@ -33,7 +33,7 @@ const OLD_COLUMNS = [
   "ALTER TABLE tax_settings ADD COLUMN IF NOT EXISTS money_migration_id TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS legacy_amount INTEGER',
   'ALTER TABLE contract_line_items ADD COLUMN IF NOT EXISTS legacy_amount INTEGER',
-  'CREATE TABLE IF NOT EXISTS money_migration_documents (id TEXT PRIMARY KEY)',
+  'CREATE TABLE IF NOT EXISTS commerce_money_migration_documents (id TEXT PRIMARY KEY)',
 ];
 
 const RESTORE = [
@@ -41,7 +41,7 @@ const RESTORE = [
   'ALTER TABLE tax_settings DROP COLUMN IF EXISTS money_migration_id',
   'ALTER TABLE invoice_line_items DROP COLUMN IF EXISTS legacy_amount',
   'ALTER TABLE contract_line_items DROP COLUMN IF EXISTS legacy_amount',
-  'DROP TABLE IF EXISTS money_migration_documents',
+  'DROP TABLE IF EXISTS commerce_money_migration_documents',
   ...['invoices', 'invoice_line_items', 'tax_settings'].flatMap((table) => [
     `DROP POLICY IF EXISTS smrt_4021_system_only ON ${table}`,
     `ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`,
@@ -139,9 +139,9 @@ describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
 
     const status = await findCommerceMoneyUpgradeNeeds(db);
     expect(status.oldSchema).toEqual([
+      'commerce_money_migration_documents',
       'contract_line_items.legacy_amount',
       'invoice_line_items.legacy_amount',
-      'money_migration_documents',
       'tax_settings.money_migration_id',
       'tax_settings.money_model',
     ]);

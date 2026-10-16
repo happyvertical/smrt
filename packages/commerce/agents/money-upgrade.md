@@ -11,7 +11,7 @@ and names the upgrade command. The operator steps are in the CLI guide,
 
 - **Old schema.** The database still has `tax_settings.money_model`,
   `tax_settings.money_migration_id`, `*_line_items.legacy_amount`, or the
-  `money_migration_documents` table. This refuses the whole database.
+  `commerce_money_migration_documents` table. This refuses the whole database.
 - **Documents without a tenant.** An Invoice or Contract row, header or line,
   with no tenant. The current model writes none, and the upgrade cannot convert
   one: assign it to a tenant or delete it. This refuses the whole database and
@@ -26,7 +26,10 @@ and names the upgrade command. The operator steps are in the CLI guide,
 `assertCommerceMoneySchemaCurrent(db)` checks the schema.
 `assertTenantMoneyCurrent(db, tenantId)` checks the schema, then the tenant.
 Both cache a passing result per database (keyed by its connection URL, so
-request executors share it) and tenant, so the check runs once per process. A
+request executors share it) and tenant, so the check runs once per process.
+Invoice, Contract and line models also run the check from `initialize()` on
+every row hydrated from the database, which covers unscoped reads and every
+collection class, including generated STI subtype collections. A
 tenantless collection read still checks the schema, and a tenant's first
 `TaxSettings` row is refused while that tenant holds old documents. Every runtime money read and write, the money MCP tools, the tax
 summary, and `ensureCommerceTenant()` call them first.

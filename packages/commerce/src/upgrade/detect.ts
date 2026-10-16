@@ -11,7 +11,7 @@
  * - **Pre-#4021 schema.** A database last migrated by a version with the
  *   per-tenant money switch still has its columns (`tax_settings.money_model`,
  *   `tax_settings.money_migration_id`, `*_line_items.legacy_amount`) or the
- *   `money_migration_documents` table. The upgrade converts every tenant and
+ *   `commerce_money_migration_documents` table. The upgrade converts every tenant and
  *   drops them, so their presence means the database has not been upgraded.
  * - **Pre-settings tenant.** A tenant with Invoice or Contract rows but no
  *   `tax_settings` row. Its documents predate tenant tax settings.
@@ -79,7 +79,7 @@ export const OLD_MONEY_COLUMNS = [
 ] as const;
 
 /** Tables only a pre-#4021 schema has. The upgrade drops each one. */
-export const OLD_MONEY_TABLES = ['money_migration_documents'] as const;
+export const OLD_MONEY_TABLES = ['commerce_money_migration_documents'] as const;
 
 function rowsOf(result: { rows: unknown[] }): Array<Record<string, unknown>> {
   return result.rows as Array<Record<string, unknown>>;
@@ -113,7 +113,7 @@ export async function findOldMoneySchema(
        SELECT table_name AS "table", '' AS "column"
          FROM information_schema.tables
         WHERE table_schema = ANY (current_schemas(false))
-          AND table_name = 'money_migration_documents'`,
+          AND table_name = 'commerce_money_migration_documents'`,
     );
     for (const row of rowsOf(result))
       found.push(row.column ? `${row.table}.${row.column}` : String(row.table));
@@ -483,4 +483,19 @@ export async function assertTenantMoneyCurrent(
       tenantId,
     );
   state.tenants.add(tenantId);
+}
+
+/**
+ * Refuse a money document row hydrated from the database while its tenant (or,
+ * for a tenantless row, the database) still holds old-format money data.
+ * Models call it from `initialize()`, so every collection read is covered,
+ * including generated STI subtype collections and unscoped reads.
+ */
+export async function assertHydratedMoneyRowCurrent(row: {
+  readonly db: DatabaseInterface;
+  readonly tenantId: string | null;
+}): Promise<void> {
+  if (upgradeScope.getStore()) return;
+  if (row.tenantId) await assertTenantMoneyCurrent(row.db, row.tenantId);
+  else await assertCommerceMoneySchemaCurrent(row.db);
 }
