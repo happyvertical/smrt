@@ -202,3 +202,15 @@ separately; source component identities cannot compensate for one another.
 Unknown facts stay null, and known linked facts cannot be cleared. Source edits
 and refund edits revalidate the prospective position under the existing source
 locks and revision claims. No customer credit or cash recipient is inferred.
+
+## Cash reimbursement positions (#4073)
+
+`refundRecipient` guarded JSON is explicit company/person cash receipt evidence,
+separate from payer. Missing/other-person direction stays unknown. Public
+`reimbursementPosition` / `getReimbursementPosition` returns nonnegative remaining
+claim and separate money owed to company; never offset economic cost basis or
+infer historical payment. `markReimbursed` stores exact full remaining
+`reimbursedAmount` with date/reference; direct payment-field writes, replacement
+payments, and later source cash-claim/payer edits are refused. Legacy payment
+markers with null amount remain unknown. Recipient changes share refund source
+locks/CAS, including rollback and stale REPEATABLE READ decisions.

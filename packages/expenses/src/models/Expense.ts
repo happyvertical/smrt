@@ -27,12 +27,18 @@ import {
 } from '../financial-facts.js';
 import { calculateRefundPosition } from '../refund-position.js';
 import {
+  calculateReimbursementPosition,
+  parseRefundRecipient,
+} from '../reimbursement-position.js';
+import {
   type ExpenseCostBasis,
   ExpenseError,
   type ExpenseFinancialBreakdown,
   type ExpenseOptions,
   type ExpensePayer,
   type ExpenseRefundPosition,
+  type ExpenseRefundRecipient,
+  type ExpenseReimbursementPosition,
   type ExpenseReviewStatus,
   type MarkDuplicateExpenseInput,
   type MarkReimbursedInput,
@@ -79,6 +85,7 @@ const LOCKED_WHEN_REVIEWED = [
   ['financialBreakdown', 'financial_breakdown'],
   ['paidByName', 'paid_by_name'],
   ['refundOfId', 'refund_of_id'],
+  ['refundRecipient', 'refund_recipient'],
   ['currency', 'currency'],
   ['incurredOn', 'incurred_on'],
   ['recordedAt', 'recorded_at'],
@@ -96,6 +103,11 @@ const LOCKED_WHEN_REVIEWED = [
 const authorizedTransition = new WeakMap<
   Expense,
   { from: ExpenseReviewStatus; expected: ReviewFieldState }
+>();
+
+const authorizedReimbursement = new WeakMap<
+  Expense,
+  { at: number; amount: number; reference: string }
 >();
 
 /** Every review field, normalized for comparison. */
@@ -222,6 +234,10 @@ export class Expense extends SmrtObject {
   @foreignKey('Expense', { onDelete: 'RESTRICT' })
   refundOfId: string | null = null;
 
+  /** Explicit cash recipient of a refund; absent legacy direction is unknown. */
+  @field({ type: 'text' })
+  refundRecipient: string | null = null;
+
   /** Calendar date the cost was incurred, `YYYY-MM-DD`. Required. */
   @field({ type: 'text' })
   incurredOn: string = '';
@@ -286,12 +302,16 @@ export class Expense extends SmrtObject {
   @field({ type: 'boolean' })
   reimbursable: boolean = false;
 
+  /** Exact historical reimbursement cash; null on legacy payment markers. */
+  @field({ type: 'integer', nullable: true, readonly: true })
+  reimbursedAmount: number | null = null;
+
   /** When the person was paid back; set by {@link Expense.markReimbursed}. */
-  @field({ type: 'datetime' })
+  @field({ type: 'datetime', readonly: true })
   reimbursedAt: Date | null = null;
 
   /** Payroll line, payables reference, or transfer id of the payback. */
-  @field({ type: 'text' })
+  @field({ type: 'text', readonly: true })
   reimbursementReference: string = '';
 
   constructor(options: ExpenseOptions = {}) {
@@ -324,6 +344,10 @@ export class Expense extends SmrtObject {
       this.commitmentLineId = options.commitmentLineId;
     if (options.reimbursable !== undefined)
       this.reimbursable = options.reimbursable;
+    if (options.refundRecipient !== undefined)
+      this.refundRecipient = options.refundRecipient;
+    if (options.reimbursedAmount !== undefined)
+      this.reimbursedAmount = options.reimbursedAmount;
     if (options.reimbursedAt !== undefined)
       this.reimbursedAt = options.reimbursedAt;
     if (options.reimbursementReference !== undefined)
@@ -347,6 +371,17 @@ export class Expense extends SmrtObject {
     }
     expenseCostBasis(value, this.amount, this.currency);
     this.financialBreakdown = JSON.stringify(value);
+  }
+
+  /** Explicit recipient, independent of this expense's payer facts. */
+  getRefundRecipient(): ExpenseRefundRecipient | null {
+    return parseRefundRecipient(this.refundRecipient);
+  }
+
+  setRefundRecipient(value: ExpenseRefundRecipient | null): void {
+    const stored = value === null ? null : JSON.stringify(value);
+    parseRefundRecipient(stored);
+    this.refundRecipient = stored;
   }
 
   /** Return exact retained purchase cost; legacy unknown tax facts return null. */
@@ -472,16 +507,76 @@ export class Expense extends SmrtObject {
    *   `reimbursable`.
    */
   async markReimbursed(input: MarkReimbursedInput = {}): Promise<this> {
-    if (!this.reimbursable) {
-      throw new ExpenseError(
-        'EXPENSE_INVALID',
-        `Expense ${this.id} is not owed back to anyone.`,
-      );
-    }
-    this.reimbursedAt = input.at ?? new Date();
-    if (input.reference !== undefined)
-      this.reimbursementReference = input.reference;
-    return this.save();
+    return this.withTransaction(async () => {
+      await this.lockRefundRows();
+      const persisted = await this.readPersisted();
+      if (!persisted || persisted.reimbursed_at || this.reimbursedAt) {
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Reimbursement requires a persisted source without an existing payment marker.',
+        );
+      }
+      for (const [field, column] of [
+        ['amount', 'amount'],
+        ['currency', 'currency'],
+        ['paidBy', 'paid_by'],
+        ['paidByProfileId', 'paid_by_profile_id'],
+        ['reimbursable', 'reimbursable'],
+        ['refundOfId', 'refund_of_id'],
+      ] as const) {
+        if (
+          field === 'reimbursable'
+            ? Boolean(this[field]) !== Boolean(persisted[column])
+            : String(this[field] ?? '') !== String(persisted[column] ?? '')
+        )
+          throw new ExpenseError(
+            'EXPENSE_INVALID',
+            'Save source corrections separately before recording reimbursement.',
+          );
+      }
+      const position = await this.getReimbursementPosition();
+      if (
+        position.remainingAmount === null ||
+        position.remainingAmount <= 0 ||
+        position.owedToCompany !== 0 ||
+        (input.amount !== undefined &&
+          input.amount !== position.remainingAmount)
+      ) {
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Record only the exact full known remaining reimbursement; unknown, partial, or settled claims require explicit resolution.',
+        );
+      }
+      const at = input.at ?? new Date();
+      if (!(at instanceof Date) || !Number.isFinite(at.getTime()))
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Reimbursement date must be valid.',
+        );
+      const previous = {
+        at: this.reimbursedAt,
+        amount: this.reimbursedAmount,
+        reference: this.reimbursementReference,
+      };
+      this.reimbursedAt = at;
+      this.reimbursedAmount = position.remainingAmount;
+      this.reimbursementReference = input.reference ?? '';
+      authorizedReimbursement.set(this, {
+        at: at.getTime(),
+        amount: position.remainingAmount,
+        reference: this.reimbursementReference,
+      });
+      try {
+        return await this.save();
+      } catch (error) {
+        this.reimbursedAt = previous.at;
+        this.reimbursedAmount = previous.amount;
+        this.reimbursementReference = previous.reference;
+        throw error;
+      } finally {
+        authorizedReimbursement.delete(this);
+      }
+    });
   }
 
   /**
@@ -555,6 +650,7 @@ export class Expense extends SmrtObject {
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
     await this.assertVendor(persisted);
+    this.assertReimbursementFields(persisted);
     await this.assertInboundRefunds(persisted);
     await this.assertRefund(persisted);
 
@@ -617,6 +713,22 @@ export class Expense extends SmrtObject {
       assertQualifiedClassName('Expense', label, this.costObjectType);
     }
     this.getFinancialBreakdown();
+    const recipient = this.getRefundRecipient();
+    if (recipient && !this.refundOfId)
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Only linked refunds may name a cash recipient.',
+      );
+    if (
+      this.reimbursedAmount !== null &&
+      (!Number.isSafeInteger(this.reimbursedAmount) ||
+        this.reimbursedAmount <= 0 ||
+        !this.reimbursedAt)
+    )
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Retained reimbursement needs a positive exact amount and payment date.',
+      );
     if (
       this.paidBy === 'third-party'
         ? typeof this.paidByName !== 'string' || !this.paidByName.trim()
@@ -663,6 +775,12 @@ export class Expense extends SmrtObject {
       throw new ExpenseError(
         'EXPENSE_INVALID',
         `Expense ${label}: only an expense a person paid can be owed back.`,
+      );
+    }
+    if (this.reimbursedAt && instantMs(this.reimbursedAt) === null) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Retained reimbursement date must be valid.',
       );
     }
     if (this.reimbursedAt && !this.reimbursable) {
@@ -950,7 +1068,8 @@ export class Expense extends SmrtObject {
       persisted.refund_of_id !== this.refundOfId ||
       Number(persisted.amount) !== this.amount ||
       asNullableString(persisted.financial_breakdown) !==
-        this.financialBreakdown
+        this.financialBreakdown ||
+      asNullableString(persisted.refund_recipient) !== this.refundRecipient
     ) {
       // A row lock alone cannot refresh an existing REPEATABLE READ snapshot.
       // Advance the source through public CAS so stale source writers abort.
@@ -962,6 +1081,88 @@ export class Expense extends SmrtObject {
       }
       await source.claimRevision(source.updated_at);
     }
+  }
+
+  private assertReimbursementFields(persisted: PersistedRow | null): void {
+    const token = authorizedReimbursement.get(this);
+    const at = instantMs(this.reimbursedAt);
+    const priorAt = instantMs(persisted?.reimbursed_at);
+    const priorAmount =
+      persisted?.reimbursed_amount == null
+        ? null
+        : Number(persisted.reimbursed_amount);
+    const changed =
+      at !== priorAt ||
+      this.reimbursedAmount !== priorAmount ||
+      String(this.reimbursementReference ?? '') !==
+        String(persisted?.reimbursement_reference ?? '');
+    if (
+      changed &&
+      (!token ||
+        priorAt !== null ||
+        at !== token.at ||
+        this.reimbursedAmount !== token.amount ||
+        this.reimbursementReference !== token.reference)
+    ) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Retained reimbursement payment fields change only through markReimbursed and cannot be overwritten.',
+      );
+    }
+    if (priorAt !== null && persisted) {
+      for (const [field, column] of [
+        ['amount', 'amount'],
+        ['currency', 'currency'],
+        ['paidBy', 'paid_by'],
+        ['paidByProfileId', 'paid_by_profile_id'],
+        ['reimbursable', 'reimbursable'],
+        ['refundOfId', 'refund_of_id'],
+      ] as const) {
+        if (
+          field === 'reimbursable'
+            ? Boolean(this[field]) !== Boolean(persisted[column])
+            : String(this[field] ?? '') !== String(persisted[column] ?? '')
+        )
+          throw new ExpenseError(
+            'EXPENSE_INVALID',
+            'A paid reimbursement preserves its original cash claim and payer.',
+          );
+      }
+    }
+  }
+
+  /** Remaining person cash claim and separate company receivable; null is unknown. */
+  async getReimbursementPosition(): Promise<ExpenseReimbursementPosition> {
+    return this.withTransaction(async () => {
+      await this.lockRefundRows();
+      const { ExpenseCollection } = await import(
+        '../collections/ExpenseCollection.js'
+      );
+      const expenses = await ExpenseCollection.create({ db: this.db });
+      const source = this.id
+        ? await expenses.get({ id: this.id }, { cache: false })
+        : null;
+      if (!source || source.refundOfId)
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Reimbursement position requires a persisted positive source.',
+        );
+      const refunds = await expenses.list({
+        where: {
+          refundOfId: source.id,
+          tenantId: effectiveTenant(source.tenantId),
+        },
+        cache: false,
+      });
+      calculateRefundPosition(
+        source as Expense & { id: string },
+        refunds as Array<Expense & { id: string }>,
+      );
+      return calculateReimbursementPosition(
+        source as Expense & { id: string },
+        refunds,
+      );
+    });
   }
 
   /** Exact source cash capacity and optional complete signed financial position. */

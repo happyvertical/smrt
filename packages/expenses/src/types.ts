@@ -109,6 +109,29 @@ export interface ExpenseRefundPosition {
   } | null;
 }
 
+/** Who actually received a linked supplier refund; independent of original payer. */
+export type ExpenseRefundRecipient =
+  | { kind: 'company' }
+  | { kind: 'person'; profileId: string };
+
+/** Cash reimbursement liability, distinct from supplier economic cost basis. */
+export interface ExpenseReimbursementPosition {
+  sourceId: string;
+  currency: string;
+  sourceAmount: number;
+  personRefundAmount: number | null;
+  companyRefundAmount: number | null;
+  reimbursedAmount: number | null;
+  remainingAmount: number | null;
+  /** Separate receivable; never a negative reimbursement or automatic settlement. */
+  owedToCompany: number | null;
+  unknownReason:
+    | 'unknown-refund-recipient'
+    | 'recipient-is-another-person'
+    | 'legacy-reimbursement-amount'
+    | null;
+}
+
 /** Constructor options for {@link Expense}. */
 export interface ExpenseOptions extends SmrtObjectOptions {
   tenantId?: string | null;
@@ -133,6 +156,8 @@ export interface ExpenseOptions extends SmrtObjectOptions {
   commitmentId?: string | null;
   commitmentLineId?: string | null;
   reimbursable?: boolean;
+  refundRecipient?: string | null;
+  reimbursedAmount?: number | null;
   reimbursedAt?: Date | null;
   reimbursementReference?: string;
 }
@@ -189,6 +214,8 @@ export interface ReopenExpenseInput {
 
 /** Arguments for `Expense.markReimbursed()`. */
 export interface MarkReimbursedInput {
+  /** Optional expected cash amount; must equal the full remaining claim. */
+  amount?: number;
   /** When the person was paid back; defaults to now. */
   at?: Date;
   /** Payroll line, payables reference, or transfer id. */

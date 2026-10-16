@@ -282,4 +282,73 @@ export function defineRefundConcurrency(getDb: () => DatabaseInterface): void {
       disableTenancy();
     }
   });
+  it('rejects stale reimbursement after a concurrent recipient correction', async () => {
+    const db = getDb();
+    enableTenancy();
+    const pinned = deferred<void>();
+    const resume = deferred<void>();
+    let writer: Promise<unknown> | undefined;
+    try {
+      const world = await createWorld(db);
+      await world.inTenant(async () => {
+        const profileId = randomUUID();
+        const source = await world.expense({
+          amount: 1000,
+          paidBy: 'person',
+          paidByProfileId: profileId,
+          reimbursable: true,
+        });
+        const refund = await world.expense({
+          amount: -200,
+          refundOfId: source.id,
+          refundRecipient: '{"kind":"company"}',
+        });
+        if (!db.transaction) throw new Error('Transactions required');
+        writer = db
+          .transaction(async (tx) => {
+            await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            const expenses = await ExpenseCollection.create({ db: tx });
+            const stale = await expenses.get(
+              { id: source.id },
+              { cache: false },
+            );
+            if (!stale) throw new Error('Missing source');
+            pinned.resolve();
+            await resume.promise;
+            await stale.markReimbursed({
+              amount: 1000,
+              reference: 'stale payment',
+            });
+          })
+          .then(
+            () => null,
+            (error: unknown) => error,
+          );
+        await pinned.promise;
+        refund.setRefundRecipient({ kind: 'person', profileId });
+        await refund.save();
+        resume.resolve();
+        expect(String(await writer)).toMatch(
+          /could not serialize|concurrent update/i,
+        );
+        const fresh = await world.expenses.get(
+          { id: source.id },
+          { cache: false },
+        );
+        if (!fresh) throw new Error('Missing source');
+        await expect(
+          fresh.markReimbursed({ amount: 1000 }),
+        ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+        await fresh.markReimbursed({ amount: 800, reference: 'fresh payment' });
+        expect(
+          (await world.expenses.reimbursementPosition(source.id))
+            .reimbursedAmount,
+        ).toBe(800);
+      });
+    } finally {
+      resume.resolve();
+      await writer;
+      disableTenancy();
+    }
+  });
 }

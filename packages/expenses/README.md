@@ -286,3 +286,38 @@ again; corrections cannot ride alongside the reopen operation. New columns are
 additive via `smrt db:migrate`; legacy amounts survive without invented facts.
 The SQLite and PostgreSQL suites execute upgrades from the preceding schema and
 check that repeat migration is a no-op.
+
+### Refund cash recipients and reimbursement positions
+
+A refund's optional `refundRecipient` is guarded JSON, read/written through
+`getRefundRecipient()` / `setRefundRecipient({ kind: 'company' })` or
+`setRefundRecipient({ kind: 'person', profileId })`. It states who actually
+received the cash, independently of `paidBy`. Missing recipient is unknown;
+historical payer fields are never reinterpreted as receipt evidence. The field
+belongs only to linked negative refunds and joins the reviewed-money freeze.
+
+For a positive person-paid reimbursable source,
+`await expenses.reimbursementPosition(sourceId)` (or
+`source.getReimbursementPosition()`) reports original `sourceAmount`,
+`personRefundAmount`, `companyRefundAmount`, retained `reimbursedAmount`,
+`remainingAmount`, and separate `owedToCompany`. Company-received refunds do not
+reduce the person's original gross cash claim. Same-person refunds do. A later
+person-received refund after reimbursement creates money owed to the company;
+it never becomes a negative reimbursement or automatically records settlement.
+These cash values remain separate from economic `getCostBasis()`.
+
+`markReimbursed({ amount?, at?, reference? })` records only the full known
+remaining claim and retains exact `reimbursedAmount`, preserving source gross.
+An optional expected `amount` must match it exactly; partial payment is refused.
+An existing payment cannot be overwritten, and its cash claim/payer remain
+fixed. Payment fields cannot be forged by direct save. Existing no-refund
+callers may omit amount and record the full original gross as before.
+
+`unknownReason` identifies an unknown recipient, another person's recipient,
+or a historical reimbursement marker without retained paid cash. Unknown
+positions return null liability/receivable rather than inferring zero or a
+historical gross payment. Resolve legacy evidence explicitly; this API supplies
+no automatic legacy conversion. Recording is not transfer execution. Both public
+position reads and writes preserve caller transaction affinity and source locks;
+refund-recipient changes also advance the source revision to reject stale
+REPEATABLE READ reimbursement decisions.

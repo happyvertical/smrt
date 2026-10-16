@@ -35,6 +35,7 @@ import {
 import { computeContentSha256 } from '../../validation.js';
 import { defineFinancialFactsSuite } from './financial-facts-suite.js';
 import { defineRefundPositionSuite } from './refund-position-suite.js';
+import { defineReimbursementPositionSuite } from './reimbursement-position-suite.js';
 
 export const PROJECT = '@happyvertical/smrt-projects:Project';
 
@@ -207,6 +208,7 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
 
   defineFinancialFactsSuite(() => world);
   defineRefundPositionSuite(() => world);
+  defineReimbursementPositionSuite(() => world);
 
   describe('recording', () => {
     it('stores integer minor units, the incurred date, and recordedAt', async () => {

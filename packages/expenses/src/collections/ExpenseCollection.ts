@@ -23,6 +23,7 @@ import {
   ExpenseError,
   type ExpenseFinancialBreakdown,
   type ExpenseRefundPosition,
+  type ExpenseReimbursementPosition,
   type ExpenseReviewStatus,
   type ExpenseTotalsOptions,
 } from '../types.js';
@@ -117,6 +118,19 @@ function addTo(totals: CurrencyTotals, currency: string, amount: number) {
 })
 export class ExpenseCollection extends SmrtCollection<Expense> {
   static readonly _itemClass = Expense;
+
+  /** Cash claim after explicit refund receipts and retained historical payments. */
+  async reimbursementPosition(
+    sourceId: string,
+  ): Promise<ExpenseReimbursementPosition> {
+    const source = await this.get({ id: sourceId }, { cache: false });
+    if (!source)
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Reimbursement source was not found.',
+      );
+    return source.getReimbursementPosition();
+  }
 
   /** All persisted linked refunds reserve source capacity, irrespective of review. */
   async refundPosition(sourceId: string): Promise<ExpenseRefundPosition> {

@@ -114,3 +114,22 @@ src/__tests__/expenses.test.ts`, the same PostgreSQL optional test through
 `scripts/run-with-ci-postgres.mjs`, and owning-package `tsc -p tsconfig.json
 --noEmit`. External receipts: `/home/will/Work/tmp/tc-mvp-20261016/expense-refund-caps/`.
 Coordinator owns combined prerequisites, release validation, and review.
+
+## Refund cash direction and reimbursement positions (#4073)
+
+Risk: high — retained payment amount, liability/receivable direction, additive
+schema migration, and recipient-vs-payment concurrency. Shared SQLite/PostgreSQL
+cases prove company receipts preserve gross personal claim, person receipts
+reduce it, exact full-remaining payment is retained independently of economic
+cost basis, later personal receipt creates a separate company receivable,
+unknown/other-person recipients and historical missing paid amounts remain
+unknown, direct overwrite/source-claim rewrite fail closed, recipient review
+freeze/shape apply, and caller rollback restores an unpaid claim. PostgreSQL
+pins a REPEATABLE READ reimbursement before an independent recipient correction
+and requires serialization rejection, followed by exact fresh payment. Existing
+service-backed permission tests run unchanged; optional expected amount remains
+behind the same authorization. Migration verifies new fields stay null on legacy
+rows; no historical payer or paid cash is inferred.
+
+Focused evidence: `/home/will/Work/tmp/tc-mvp-20261016/expense-reimbursement-position/`.
+No worker broad build/suite/review/PR; coordinator owns combined release gates.

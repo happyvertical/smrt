@@ -15,7 +15,13 @@ export async function proveFinancialFactsMigration(
 ): Promise<void> {
   const current = ObjectRegistry.getAllSchemasAsDefinitions().expenses;
   const legacy = structuredClone(current);
-  const additions = ['financial_breakdown', 'paid_by_name', 'refund_of_id'];
+  const additions = [
+    'financial_breakdown',
+    'paid_by_name',
+    'refund_of_id',
+    'refund_recipient',
+    'reimbursed_amount',
+  ];
   for (const column of additions) delete legacy.columns[column];
   legacy.foreignKeys = legacy.foreignKeys.filter(
     (key) => !additions.includes(key.column),
@@ -58,6 +64,8 @@ export async function proveFinancialFactsMigration(
   expect(loaded?.getCostBasis()).toBeNull();
   expect(loaded?.refundOfId).toBeNull();
   expect(loaded?.paidByName).toBeNull();
+  expect(loaded?.getRefundRecipient()).toBeNull();
+  expect(loaded?.reimbursedAmount).toBeNull();
   // Both the existing legacy row and a newly explicit fact can be saved.
   await loaded!.save();
   loaded!.setFinancialBreakdown({
