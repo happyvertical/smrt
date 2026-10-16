@@ -355,27 +355,33 @@ class RateCodes {
 
 async function partyFor(
   db: DatabaseInterface,
+  tenantId: string,
   header: Row,
 ): Promise<{ taxId: string; exempt: boolean }> {
-  if (header.customer_id) {
-    const row = rowsOf(
-      await db.query(
-        'SELECT tax_id, tax_exempt FROM customers WHERE CAST(id AS TEXT) = ?',
-        String(header.customer_id),
-      ),
-    )[0];
-    return { taxId: String(row?.tax_id ?? ''), exempt: !!row?.tax_exempt };
-  }
-  if (header.vendor_id) {
-    const row = rowsOf(
-      await db.query(
-        'SELECT tax_id FROM vendors WHERE CAST(id AS TEXT) = ?',
-        String(header.vendor_id),
-      ),
-    )[0];
-    return { taxId: String(row?.tax_id ?? ''), exempt: false };
-  }
-  return { taxId: '', exempt: false };
+  const [table, id] = header.customer_id
+    ? ['customers', String(header.customer_id)]
+    : header.vendor_id
+      ? ['vendors', String(header.vendor_id)]
+      : [null, null];
+  if (!table || !id) return { taxId: '', exempt: false };
+  const row = rowsOf(
+    await db.query(
+      `SELECT CAST(tenant_id AS TEXT) AS tenant_id, tax_id${
+        table === 'customers' ? ', tax_exempt' : ''
+      } FROM ${table} WHERE CAST(id AS TEXT) = ?`,
+      id,
+    ),
+  )[0];
+  // A party belongs to the document's tenant (or is global); copying another
+  // tenant's tax identity into a frozen snapshot would leak it.
+  if (row?.tenant_id && String(row.tenant_id) !== tenantId)
+    throw new Error(
+      `references ${table === 'customers' ? 'customer' : 'vendor'} ${id} of another tenant`,
+    );
+  return {
+    taxId: String(row?.tax_id ?? ''),
+    exempt: table === 'customers' && !!row?.tax_exempt,
+  };
 }
 
 function totalsOf(header: Row): CommerceMoneyUpgradeTotals {
@@ -400,7 +406,7 @@ async function backfillIssued(
   registrationsJson: string,
 ): Promise<void> {
   const documentId = String(header.id);
-  const party = await partyFor(db, header);
+  const party = await partyFor(db, tenantId, header);
   const stored = totalsOf(header);
   const providerTax =
     kind.documentType === 'invoice'
@@ -454,11 +460,18 @@ async function backfillIssued(
       },
     ]);
     const key = `${mapped.taxCodeId}\0${mapped.component?.id ?? ''}`;
+    // Purchase tax on a recoverable component is recoverable, line by line.
+    const recoverable =
+      kind.documentType === 'contract' &&
+      header.vendor_id &&
+      mapped.component?.recoverable
+        ? tax
+        : 0;
     const group = groups.get(key);
     if (group) {
       group.taxableMinor += net;
       group.taxMinor += tax;
-      if (group.recoverableMinor) group.recoverableMinor += tax;
+      group.recoverableMinor += recoverable;
     } else
       groups.set(key, {
         tenantId,
@@ -474,12 +487,7 @@ async function backfillIssued(
         liabilityAccountId: mapped.component?.liabilityAccountId ?? null,
         taxableMinor: net,
         taxMinor: tax,
-        recoverableMinor:
-          kind.documentType === 'contract' &&
-          header.vendor_id &&
-          mapped.component?.recoverable
-            ? tax
-            : 0,
+        recoverableMinor: recoverable,
       });
   }
   const mismatches: string[] = [];
@@ -522,13 +530,14 @@ async function backfillIssued(
 /** Point a draft's lines at mapped codes, then recompute it through the runtime. */
 async function recomputeDraft(
   db: DatabaseInterface,
+  tenantId: string,
   kind: Kind,
   header: Row,
   lines: Row[],
   codes: RateCodes,
 ): Promise<CommerceMoneyUpgradeTotals> {
   const documentId = String(header.id);
-  const party = await partyFor(db, header);
+  const party = await partyFor(db, tenantId, header);
   for (const line of lines) {
     // The draft header keeps its stored amount type and rounding (old-format
     // drafts carry the schema defaults, exclusive and per line).
@@ -658,7 +667,14 @@ async function convertTenant(
   for (const { kind, header, lines } of drafts) {
     const old = totalsOf(header);
     try {
-      const next = await recomputeDraft(tx, kind, header, lines, codes);
+      const next = await recomputeDraft(
+        tx,
+        tenantId,
+        kind,
+        header,
+        lines,
+        codes,
+      );
       result.draftsRecomputed++;
       if (
         next.subtotalMinor !== old.subtotalMinor ||
@@ -720,6 +736,7 @@ export async function upgradeCommerceMoney(
 ): Promise<CommerceMoneyUpgradeResult> {
   if (!db.transaction)
     throw new Error('The commerce money upgrade requires transactions');
+  const postgres = isPostgresDatabase(db);
   const before = await findCommerceMoneyUpgradeNeeds(db);
   const targets = before.tenants.filter(
     (need) => !options.tenantId || need.tenantId === options.tenantId,
@@ -739,13 +756,19 @@ export async function upgradeCommerceMoney(
     }
     try {
       upgraded.push(
-        await withDocumentMoneyTransaction(db, (tx) =>
-          withCommerceMoneyUpgradeExecutor(tx, () =>
+        await withDocumentMoneyTransaction(db, async (tx) => {
+          // An operator conversion: under PostgreSQL row policies, see and
+          // write every row of the tenant for this transaction only.
+          if (postgres)
+            await tx.query(
+              "SELECT set_config('smrt.system_context', 'true', true)",
+            );
+          return withCommerceMoneyUpgradeExecutor(tx, () =>
             withTenant({ tenantId: need.tenantId }, () =>
               convertTenant(tx, need.tenantId, before.oldSchema),
             ),
-          ),
-        ),
+          );
+        }),
       );
     } catch (error) {
       if (error instanceof TenantUpgradeRefused)

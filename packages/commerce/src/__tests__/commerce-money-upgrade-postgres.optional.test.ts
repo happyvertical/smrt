@@ -42,10 +42,21 @@ const RESTORE = [
   'ALTER TABLE invoice_line_items DROP COLUMN IF EXISTS legacy_amount',
   'ALTER TABLE contract_line_items DROP COLUMN IF EXISTS legacy_amount',
   'DROP TABLE IF EXISTS money_migration_documents',
-  'DROP POLICY IF EXISTS smrt_4021_system_only ON invoices',
-  'ALTER TABLE invoices NO FORCE ROW LEVEL SECURITY',
-  'ALTER TABLE invoices DISABLE ROW LEVEL SECURITY',
+  ...['invoices', 'invoice_line_items', 'tax_settings'].flatMap((table) => [
+    `DROP POLICY IF EXISTS smrt_4021_system_only ON ${table}`,
+    `ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`,
+    `ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`,
+  ]),
 ];
+
+/** Rows visible and writable only in system context, as the generated policies. */
+async function systemOnly(db: DatabaseInterface, table: string): Promise<void> {
+  await db.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+  await db.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
+  await db.query(
+    `CREATE POLICY smrt_4021_system_only ON ${table} USING (COALESCE(NULLIF(current_setting('smrt.system_context', true), ''), 'false')::boolean)`,
+  );
+}
 
 describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
   let db: DatabaseInterface;
@@ -179,11 +190,7 @@ describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
     );
     // Model a principal without invoice read permission: rows are visible
     // only in system context, as with the generated permission policies.
-    await db.query('ALTER TABLE invoices ENABLE ROW LEVEL SECURITY');
-    await db.query('ALTER TABLE invoices FORCE ROW LEVEL SECURITY');
-    await db.query(
-      "CREATE POLICY smrt_4021_system_only ON invoices USING (COALESCE(NULLIF(current_setting('smrt.system_context', true), ''), 'false')::boolean)",
-    );
+    await systemOnly(db, 'invoices');
     await restart();
     expect(
       (
@@ -210,5 +217,33 @@ describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
       "SELECT COALESCE(current_setting('smrt.system_context', true), '') AS value",
     );
     expect(restored.rows[0]?.value).not.toBe('true');
+  });
+
+  it('converts a tenant under forced row policies', async () => {
+    const tenantId = randomUUID();
+    await ensureCommerceTenant(db, tenantId);
+    const issued = await oldInvoice(tenantId, true);
+    for (const sql of OLD_COLUMNS) await db.query(sql);
+    await db.query("UPDATE tax_settings SET money_model = 'v2'");
+    await db.query(
+      "UPDATE tax_settings SET money_model = 'legacy' WHERE CAST(tenant_id AS TEXT) = ?",
+      tenantId,
+    );
+    for (const table of ['invoices', 'invoice_line_items', 'tax_settings'])
+      await systemOnly(db, table);
+    await restart();
+    const result = await upgradeCommerceMoney(db, { tenantId });
+    expect(result.failures).toEqual([]);
+    expect(result.upgraded).toMatchObject([{ tenantId, issuedBackfilled: 1 }]);
+    const status = await findCommerceMoneyUpgradeNeeds(db);
+    expect(status.tenants.map((need) => need.tenantId)).not.toContain(tenantId);
+    for (const sql of RESTORE.slice(5)) await db.query(sql);
+    const line = (
+      await db.query(
+        'SELECT amount, tax_amount FROM invoice_line_items WHERE CAST(id AS TEXT) = ?',
+        issued.lineId,
+      )
+    ).rows[0] as Record<string, unknown>;
+    expect([Number(line.amount), Number(line.tax_amount)]).toEqual([200, 10]);
   });
 });

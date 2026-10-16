@@ -16,18 +16,23 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ContractCollection } from '../collections/ContractCollection.js';
+import { ContractLineItemCollection } from '../collections/ContractLineItemCollection.js';
+import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import {
   COMMERCE_DATA_NEEDS_UPGRADE,
   ensureCommerceTenant,
   findCommerceMoneyUpgradeNeeds,
   upgradeCommerceMoney,
 } from '../index.js';
+import { deterministicTaxId } from '../tax/identity.js';
 import { InvoiceStatus } from '../types/index.js';
 import { forgetCommerceMoneyChecks } from '../upgrade/detect.js';
 
@@ -642,6 +647,113 @@ describe('commerce money upgrade (#4021)', () => {
       },
     ]);
     expect(result.droppedSchema).toEqual([]);
+  });
+
+  it('refuses a document whose customer belongs to another tenant', async () => {
+    await ensureCommerceTenant(db, 'mine');
+    const foreign = await withTenant({ tenantId: 'theirs' }, async () =>
+      (await CustomerCollection.create({ db })).create({ taxId: 'THEIR-TAX' }),
+    );
+    const ids = await oldInvoice('mine', 'X-1', { issued: true });
+    await db.query(
+      'UPDATE invoices SET customer_id = ? WHERE id = ?',
+      String(foreign.id),
+      ids.invoiceId,
+    );
+    await earlierSchema(['mine']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([
+      expect.objectContaining({
+        tenantId: 'mine',
+        documentId: ids.invoiceId,
+        reason: expect.stringContaining('of another tenant'),
+      }),
+    ]);
+    const row = (
+      await db.query(
+        'SELECT party_tax_id FROM invoices WHERE id = ?',
+        ids.invoiceId,
+      )
+    ).rows[0] as Record<string, unknown>;
+    expect(row.party_tax_id || '').toBe('');
+  });
+
+  it('accumulates recoverable purchase tax line by line', async () => {
+    await ensureCommerceTenant(db, 'buyer');
+    const contractId = await withTenant({ tenantId: 'buyer' }, async () => {
+      // An existing recoverable 5% component and its rate-5 code.
+      const componentId = await deterministicTaxId(
+        'buyer',
+        'component',
+        'rate-5',
+      );
+      await (await TaxComponentCollection.create({ db })).create({
+        id: componentId,
+        tenantId: 'buyer',
+        name: '5%',
+        percent: '5',
+        recoverable: true,
+      });
+      await (await TaxCodeCollection.create({ db })).create({
+        tenantId: 'buyer',
+        code: 'rate-5',
+        name: '5%',
+        kind: 'taxable',
+        components: [{ taxComponentId: componentId, compound: false }],
+      });
+      const vendor = await (await VendorCollection.create({ db })).create({
+        name: 'Supplier',
+      });
+      const contract = await (await ContractCollection.create({ db })).create({
+        _meta_type: 'PurchaseOrder',
+        vendorId: vendor.id,
+        currency: 'CAD',
+      });
+      const lines = await ContractLineItemCollection.create({ db });
+      for (const unitPrice of [1, 200])
+        await lines.create({
+          contractId: contract.id,
+          description: `Line ${unitPrice}`,
+          quantity: 1,
+          unitPrice,
+        });
+      return String(contract.id);
+    });
+    // Old format: 5% stored as a fraction; the 1-unit line rounds to no tax.
+    await db.query(
+      `UPDATE contract_line_items SET tax_rate = 0.05, tax_amount = 0,
+              tax_code_id = NULL, tax_code_code = NULL, tax_code_name = NULL,
+              tax_components_json = NULL, tax_mode = 'inherit', money_snapshot_id = '',
+              amount = CASE WHEN unit_price = 1 THEN 1 ELSE 210 END
+        WHERE contract_id = ?`,
+      contractId,
+    );
+    await db.query(
+      `UPDATE contracts SET status = 'sent', subtotal = 201, tax_amount = 10,
+              total_amount = 211, money_snapshot_id = '' WHERE id = ?`,
+      contractId,
+    );
+    await db.query(
+      'DELETE FROM document_taxes WHERE document_id = ?',
+      contractId,
+    );
+    await earlierSchema(['buyer']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([]);
+    const taxes = await withTenant({ tenantId: 'buyer' }, async () =>
+      (await DocumentTaxCollection.create({ db })).list({
+        where: { documentId: contractId },
+      }),
+    );
+    expect(
+      taxes.map((row) => [
+        row.taxableMinor,
+        row.taxMinor,
+        row.recoverableMinor,
+      ]),
+    ).toEqual([[201, 10, 10]]);
   });
 
   it('refuses a tenantless read of a database with old money storage', async () => {
