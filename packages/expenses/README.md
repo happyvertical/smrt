@@ -327,3 +327,70 @@ no automatic legacy conversion. Recording is not transfer execution. Both public
 position reads and writes preserve caller transaction affinity and source locks;
 refund-recipient changes also advance the source revision to reject stale
 REPEATABLE READ reimbursement decisions.
+
+## Supplier retention and payable evidence
+
+`Expense.recordSupplierPayable()` and the matching collection method retain an
+original supplier obligation separately from incurred money, tax recovery,
+company cost and employee reimbursement. The original `payableBasisMinor` is
+explicit or `null`; neither payer nor expense gross implies unpaid supplier debt.
+Original held/released/settled events carry exact source identity, original author,
+calendar date and explicit same-day sequence. Unknown original author is null,
+never a fabricated current reviewer. The current recorder and import
+review evidence are independent. Returned events have immutable UUIDs for host
+crosswalks. Recording evidence does not approve the expense, execute a payment,
+create a journal or contact an accounting provider.
+
+```ts
+const position = await expenses.recordSupplierPayable(expenseId, {
+  requestId, currency: 'CAD', payableBasisMinor: null,
+  source: { namespace: 'original-books', key: 'receipt-42', version: '1', author: 'Original bookkeeper' },
+  recordedByProfileId: reviewerProfileId,
+  evidenceRef: 'Reviewed original source export',
+  events: [{
+    kind: 'hold', amountMinor: 1000, effectiveOn: '2026-09-15', sequence: 0,
+    evidenceRef: 'Original retained amount',
+    source: { namespace: 'original-books', key: 'hold-7', version: '1', author: 'Original bookkeeper' },
+  }],
+});
+// position.retainedMinor === 1000; position.remainingPayableMinor === null
+```
+
+`completeSupplierPayableBasis()` can complete an originally unknown basis once,
+with explicit review evidence while preserving the original unknown snapshot.
+`recordSupplierPayableEvent()` appends a dated hold, release, supplier settlement
+or refund interpretation. Exact `recordedRetainedMinor` remains visible while `retainedMinor` is null if a
+linked refund lacks its allocation evidence. A settlement is evidence of money already paid; it is
+not a bank instruction. Current settlements require a known basis and every
+linked refund's explicit interpretation. Releases consume only retained capacity.
+The current caller remains responsible for host permissions and reviewer identity;
+these methods are not generated REST/MCP/CLI actions.
+
+A linked negative Expense does not establish how much supplier debt was reduced
+or how much cash was returned. Its explicit `refund` event therefore names
+`refundExpenseId`, `payableReductionMinor`, `retainedReductionMinor`, and
+`cashReturnedMinor`, each bounded by the owning source/capacity. Retained reduction
+cannot exceed payable reduction. Unknown refund interpretation makes the payable
+position unknown and prohibits new settlement or release; it never becomes zero or an
+inferred allocation. Expense refund gross/component caps continue to apply.
+
+Every chronological prefix conserves retained and paid capacity: obligation is
+basis minus explicit payable reductions; net paid is settlements minus cash
+returns; retained is holds minus releases and retained reductions; payable is
+obligation minus net paid and retained. No intermediate amount may be negative.
+An original unknown basis uses expense gross only as an upper validation bound,
+never as a reported payable amount. Source events precede neither the expense
+nor their exact linked refund date, and same-day events require unique sequence.
+`getSupplierPayablePosition({ asOfDate })` / collection `supplierPayablePosition`
+returns dated sums with the complete original/current authority for provenance.
+It returns null before the original Expense date, rather than projecting a future
+obligation into an earlier period.
+A later reviewed basis completion is explicit retrospective interpretation, not
+proof that the amount was known to the original author on an earlier date.
+
+Commands share Expense's transaction, source-row locks and revision guards with
+refunds. Exact retries return retained IDs; changed requests are refused. Original
+source and current completion/event evidence cannot be replaced or deleted;
+managed source money/payer/context and linked refund facts cannot be edited
+around the position. Caller rollback includes both evidence and source revision.
+Expenses with no supplier-payable authority keep their existing behavior.

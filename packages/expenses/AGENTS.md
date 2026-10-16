@@ -217,3 +217,16 @@ infer historical payment. `markReimbursed` stores exact full remaining
 payments, and later source cash-claim/payer edits are refused. Legacy payment
 markers with null amount remain unknown. Recipient changes share refund source
 locks/CAS, including rollback and stale REPEATABLE READ decisions.
+
+## Supplier payable authority (#4096)
+
+`src/supplier-payable.ts` owns exact dated retention/settlement/refund-direction
+projection, separately from incurred cost and employee reimbursement. The guarded
+`supplierPayableJson` is method-only, original snapshot + append-only child UUIDs
++ optional one-time unknown-basis completion. Current source-row locks/CAS also
+serialize this authority with linked refunds. Direct field writes/deletes and
+managed money/payer/refund mutations fail; no generated action exposes these
+methods. Unknown basis or unreconciled refund remains unknown and blocks new
+settlement. A settlement records evidence; it executes no bank/provider/journal
+operation. Preserve explicit chronological prefixes and same-day ordering.
+See README and `agents/supplier-payable-test-matrix.md` for the full contract.

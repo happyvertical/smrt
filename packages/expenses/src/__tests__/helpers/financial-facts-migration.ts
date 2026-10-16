@@ -16,6 +16,7 @@ export async function proveFinancialFactsMigration(
   const current = ObjectRegistry.getAllSchemasAsDefinitions().expenses;
   const legacy = structuredClone(current);
   const additions = [
+    'supplier_payable_json',
     'financial_breakdown',
     'paid_by_name',
     'refund_of_id',
@@ -60,6 +61,7 @@ export async function proveFinancialFactsMigration(
   const expenses = await ExpenseCollection.create({ db });
   const loaded = await expenses.get({ id });
   expect(loaded?.amount).toBe(12500);
+  expect(loaded?.supplierPayableJson).toBeNull();
   expect(loaded?.getFinancialBreakdown()).toBeNull();
   expect(loaded?.getCostBasis()).toBeNull();
   expect(loaded?.refundOfId).toBeNull();

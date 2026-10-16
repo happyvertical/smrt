@@ -20,7 +20,11 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import {
   expenseCostBasis,
   parseExpenseFinancialBreakdown,
@@ -30,6 +34,21 @@ import {
   calculateReimbursementPosition,
   parseRefundRecipient,
 } from '../reimbursement-position.js';
+import {
+  appendSupplierPayableEvent,
+  type CompleteSupplierPayableBasisInput,
+  completeSupplierPayable,
+  createSupplierPayable,
+  parseSupplierPayable,
+  payableDigest,
+  payableExpenseFingerprint,
+  payableInvalid,
+  type RecordSupplierPayableEventInput,
+  type RecordSupplierPayableInput,
+  type SupplierPayablePosition,
+  type SupplierPayableState,
+  supplierPayablePosition,
+} from '../supplier-payable.js';
 import {
   type ExpenseCostBasis,
   ExpenseError,
@@ -58,6 +77,8 @@ import {
   normalizeTenantId,
   pinNaturalKey,
 } from '../validation.js';
+
+const authorizedPayable = new WeakMap<Expense, string>();
 
 const PROFILE = '@happyvertical/smrt-profiles:Profile';
 
@@ -226,6 +247,10 @@ export class Expense extends SmrtObject {
   @field({ type: 'text' })
   financialBreakdown: string | null = null;
 
+  /** Command-owned immutable supplier payable/retention evidence; no cash execution. */
+  @field({ type: 'text', nullable: true, readonly: true })
+  supplierPayableJson: string | null = null;
+
   /** Name of the third party who paid; no employee reimbursement is implied. */
   @field({ type: 'text' })
   paidByName: string | null = null;
@@ -329,6 +354,8 @@ export class Expense extends SmrtObject {
     if (options.financialBreakdown !== undefined)
       this.financialBreakdown = options.financialBreakdown;
     if (options.paidByName !== undefined) this.paidByName = options.paidByName;
+    if (options.supplierPayableJson !== undefined)
+      this.supplierPayableJson = options.supplierPayableJson;
     if (options.refundOfId !== undefined) this.refundOfId = options.refundOfId;
     if (options.incurredOn !== undefined) this.incurredOn = options.incurredOn;
     if (options.recordedAt !== undefined) this.recordedAt = options.recordedAt;
@@ -646,6 +673,7 @@ export class Expense extends SmrtObject {
         `Expense ${this.id}: its tenant cannot change after it is recorded.`,
       );
     }
+    await this.assertSupplierPayable(persisted);
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
@@ -665,6 +693,212 @@ export class Expense extends SmrtObject {
       }
       throw error;
     }
+  }
+
+  /** Record original supplier authority without creating approval, cash or journals. */
+  async recordSupplierPayable(
+    input: RecordSupplierPayableInput,
+  ): Promise<SupplierPayablePosition> {
+    return this.mutateSupplierPayable((source, state, refunds) => {
+      if (state) {
+        if (
+          state.original.requestId === input.requestId &&
+          state.original.requestFingerprint === payableDigest(input)
+        )
+          return state;
+        return payableInvalid('original supplier authority is immutable.');
+      }
+      return createSupplierPayable(source, input, refunds);
+    });
+  }
+
+  /** Append explicit dated hold, release, supplier settlement or refund interpretation. */
+  async recordSupplierPayableEvent(
+    input: RecordSupplierPayableEventInput,
+  ): Promise<SupplierPayablePosition> {
+    return this.mutateSupplierPayable((source, state, refunds) => {
+      if (!state)
+        return payableInvalid('original supplier authority is required.');
+      return appendSupplierPayableEvent(source, state, input, refunds);
+    });
+  }
+
+  /** Complete a previously unknown basis once with independent current review evidence. */
+  async completeSupplierPayableBasis(
+    input: CompleteSupplierPayableBasisInput,
+  ): Promise<SupplierPayablePosition> {
+    return this.mutateSupplierPayable((source, state, refunds) => {
+      if (!state)
+        return payableInvalid('original supplier authority is required.');
+      return completeSupplierPayable(source, state, input, refunds);
+    });
+  }
+
+  /** Read exact dated supplier position; null means no authority exists or the source is not yet effective. */
+  async getSupplierPayablePosition(
+    input: { asOfDate?: string } = {},
+  ): Promise<SupplierPayablePosition | null> {
+    return this.withTransaction(async () => {
+      this.assertSupplierPayableContext();
+      await this.lockRefundRows();
+      const source = await this.loadSupplierPayableSource();
+      const state = parseSupplierPayable(source.supplierPayableJson);
+      if (!state) return null;
+      const position = supplierPayablePosition(
+        source,
+        state,
+        await source.supplierRefunds(),
+        input.asOfDate,
+      );
+      return input.asOfDate && input.asOfDate < source.incurredOn
+        ? null
+        : position;
+    });
+  }
+
+  private assertSupplierPayableContext(): void {
+    const active = getTenantId();
+    if (active && this.tenantId && active !== this.tenantId)
+      payableInvalid('active tenant must own the supplier source.');
+  }
+
+  private async loadSupplierPayableSource(): Promise<Expense> {
+    const { ExpenseCollection } = await import(
+      '../collections/ExpenseCollection.js'
+    );
+    const source = await (await ExpenseCollection.create({ db: this.db })).get(
+      { id: this.id, tenantId: effectiveTenant(this.tenantId) },
+      { cache: false },
+    );
+    if (!source || source.amount <= 0 || source.refundOfId)
+      return payableInvalid('requires an owned persisted positive source.');
+    return source;
+  }
+
+  private async supplierRefunds(): Promise<Expense[]> {
+    const { ExpenseCollection } = await import(
+      '../collections/ExpenseCollection.js'
+    );
+    const collection = await ExpenseCollection.create({ db: this.db });
+    const all: Expense[] = [];
+    for (let offset = 0; ; offset += 200) {
+      const rows = await collection.list({
+        where: {
+          refundOfId: this.id,
+          tenantId: effectiveTenant(this.tenantId),
+        },
+        orderBy: ['id ASC'],
+        limit: 200,
+        offset,
+        cache: false,
+      });
+      all.push(...rows);
+      if (rows.length < 200) return all;
+    }
+  }
+
+  private async mutateSupplierPayable(
+    change: (
+      source: Expense,
+      state: SupplierPayableState | null,
+      refunds: Expense[],
+    ) => SupplierPayableState,
+  ): Promise<SupplierPayablePosition> {
+    return this.withTransaction(async () => {
+      this.assertSupplierPayableContext();
+      await this.lockRefundRows();
+      const source = await this.loadSupplierPayableSource(),
+        refunds = await source.supplierRefunds();
+      const state = change(
+        source,
+        parseSupplierPayable(source.supplierPayableJson),
+        refunds,
+      );
+      const position = supplierPayablePosition(source, state, refunds),
+        stored = JSON.stringify(state);
+      if (stored !== source.supplierPayableJson) {
+        source.supplierPayableJson = stored;
+        authorizedPayable.set(source, stored);
+        try {
+          await source.save();
+        } finally {
+          authorizedPayable.delete(source);
+        }
+      }
+      return position;
+    });
+  }
+
+  private async assertSupplierPayable(
+    persisted: PersistedRow | null,
+  ): Promise<void> {
+    const prior = asNullableString(persisted?.supplier_payable_json),
+      next = asNullableString(this.supplierPayableJson);
+    if (prior !== next && (!next || authorizedPayable.get(this) !== next))
+      payableInvalid('supplier authority is command-owned.');
+    const state = parseSupplierPayable(next);
+    if (state)
+      supplierPayablePosition(this, state, await this.supplierRefunds());
+    const oldParent = asNullableString(persisted?.refund_of_id);
+    if (oldParent) {
+      const { ExpenseCollection } = await import(
+        '../collections/ExpenseCollection.js'
+      );
+      const parent = await (
+        await ExpenseCollection.create({ db: this.db })
+      ).get(
+        { id: oldParent, tenantId: effectiveTenant(this.tenantId) },
+        { cache: false },
+      );
+      if (parent?.supplierPayableJson) {
+        for (const [field, column] of LOCKED_WHEN_REVIEWED) {
+          const old = persisted?.[column],
+            current = this[field];
+          const equal =
+            field === 'recordedAt'
+              ? instantMs(old) === instantMs(current)
+              : String(old ?? '') === String(current ?? '');
+          if (!equal)
+            payableInvalid(
+              'linked supplier refund source facts are immutable; reconcile with new evidence.',
+            );
+        }
+      }
+    }
+  }
+
+  /** Managed supplier evidence cannot be erased through ordinary model/collection deletion. */
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    return this.withTransaction(async () => {
+      this.assertSupplierPayableContext();
+      await this.lockRefundRows();
+      const row = await this.readPersisted();
+      if (
+        row &&
+        String(row.tenant_id ?? '') !==
+          String(effectiveTenant(this.tenantId) ?? '')
+      )
+        payableInvalid('owned source is required.');
+      if (row?.supplier_payable_json)
+        payableInvalid('supplier authority cannot be deleted.');
+      const parentId = asNullableString(row?.refund_of_id);
+      if (parentId) {
+        const { ExpenseCollection } = await import(
+          '../collections/ExpenseCollection.js'
+        );
+        const parent = await (
+          await ExpenseCollection.create({ db: this.db })
+        ).get(
+          { id: parentId, tenantId: effectiveTenant(this.tenantId) },
+          { cache: false },
+        );
+        if (parent?.supplierPayableJson)
+          payableInvalid('supplier refund evidence cannot be deleted.');
+      }
+      await super.delete(options);
+    });
   }
 
   private normalize(): void {
@@ -961,9 +1195,18 @@ export class Expense extends SmrtObject {
    */
   private async lockRefundRows(): Promise<void> {
     if (!isPostgresDatabase(this.db)) return;
+    const oldRow = await this.readPersisted();
+    const oldParent =
+      oldRow &&
+      String(oldRow.tenant_id ?? '') ===
+        String(effectiveTenant(this.tenantId) ?? '')
+        ? asNullableString(oldRow.refund_of_id)
+        : null;
     const ids = [
       ...new Set(
-        [this.id, this.refundOfId].filter((id): id is string => Boolean(id)),
+        [this.id, this.refundOfId, oldParent].filter((id): id is string =>
+          Boolean(id),
+        ),
       ),
     ].sort();
     if (ids.length === 0) return;

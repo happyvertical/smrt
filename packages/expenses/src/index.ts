@@ -63,6 +63,17 @@ export { ExpenseReceiptCollection } from './collections/ExpenseReceiptCollection
 export { Expense } from './models/Expense.js';
 export { ExpenseReceipt } from './models/ExpenseReceipt.js';
 export { ExpensesRecipe } from './recipes.js';
+export type {
+  CompleteSupplierPayableBasisInput,
+  RecordSupplierPayableEventInput,
+  RecordSupplierPayableInput,
+  SupplierPayableEvent,
+  SupplierPayableEventInput,
+  SupplierPayablePosition,
+  SupplierPayableReview,
+  SupplierPayableSource,
+  SupplierPayableState,
+} from './supplier-payable.js';
 export {
   type AttachReceiptInput,
   type CommitmentPosition,
