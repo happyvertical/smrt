@@ -1,8 +1,8 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
+  getTenantId,
   TenantScoped,
   tenantId,
-  withSystemContext,
 } from '@happyvertical/smrt-tenancy';
 import type {
   BillingInterval,
@@ -148,30 +148,19 @@ export class SubscriptionPlan extends SmrtObject {
     const persisted =
       (this.id
         ? await plans.get({ id: String(this.id) }, { cache: false })
-        : null) ?? (await plans.findByPlanKey(this.tenantId, this.planKey));
+        : null) ??
+      (await plans.findByPlanKey(
+        this.tenantId ?? getTenantId() ?? null,
+        this.planKey,
+      ));
     if (
       persisted &&
       (persisted.pricingMode !== this.pricingMode ||
         persisted.minimumAmount !== this.minimumAmount)
     ) {
-      const { TenantSubscriptionCollection } = await import(
-        '../collections/TenantSubscriptionCollection.js'
+      throw new Error(
+        'Create a new plan to change pricing mode or minimum after persistence',
       );
-      const subscriptions = await TenantSubscriptionCollection.create({
-        db: this.db,
-      });
-      // Seller-owned plans may have child-tenant subscribers. Only existence of
-      // a reference to this already-authorized plan is read across tenants.
-      const subscribers = await withSystemContext(() =>
-        subscriptions.list({
-          where: { planId: String(persisted.id) },
-          limit: 1,
-        }),
-      );
-      if (subscribers.length)
-        throw new Error(
-          'Create a new plan to change pricing mode or minimum after subscriptions exist',
-        );
     }
     if (!['free', 'fixed', 'pay_what_you_can'].includes(this.pricingMode)) {
       throw new Error('Invalid pricingMode');

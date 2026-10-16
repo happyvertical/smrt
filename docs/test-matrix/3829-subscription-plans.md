@@ -25,3 +25,8 @@ Tier amendment/renewal/cancellation continuity is deliberately covered by #4032;
 - Plan mode/minimum edits with existing subscribers fail before mutation. The same guard checks natural-key upsert targets. Full effective-dated transitions remain #4032.
 - SQLite/PostgreSQL period-close regressions corrupt one legacy plan deliberately, assert its payer fails with the subscription ID while another payer completes, repair the subscriber's agreed amount, and retry without duplicate invoices.
 - Review packet correction: `2889e7b` was not an ancestor of old head `d5b3d7e`; actual old merge-base was `0b2afabb`. The apparent collection-exposure deletion was an invalid two-dot packet base, not part of the PR three-dot diff. Branch rebased onto `f31c4a5601a92a420c44c88265752a7799fbd661`; current gate/build and affected runtime tests must pass on that tree. No gate is deleted by this change.
+
+## Round 3 corrections
+
+- Enabled-tenancy SQLite/PostgreSQL tests create both plans and subscriptions without explicit tenant IDs, verify context population, and reject explicit foreign tenant bindings.
+- Pricing mode and minimum are immutable once persisted, including natural-key upserts. SQLite/PostgreSQL tests reject a stale free-to-fixed editor before and after signup and confirm the persisted free plan still has zero price. This avoids check-then-save subscriber-count races; full price/entitlement version snapshots remain #4032.

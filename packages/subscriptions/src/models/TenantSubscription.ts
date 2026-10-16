@@ -1,5 +1,6 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
+  getTenantId,
   isSystemContext,
   TenantScoped,
   tenantId,
@@ -170,7 +171,7 @@ export class TenantSubscription extends SmrtObject {
       !plan ||
       (!isSystemContext() &&
         plan.tenantId !== null &&
-        plan.tenantId !== this.tenantId)
+        plan.tenantId !== (this.tenantId ?? getTenantId() ?? null))
     ) {
       throw new Error('Subscription plan is unavailable');
     }

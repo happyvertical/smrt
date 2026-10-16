@@ -160,6 +160,45 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
   enableTenancy();
   try {
     await withTenant({ tenantId: tenant }, async () => {
+      const contextualPlan = await plans.create({
+        planKey: 'contextual',
+        name: 'Contextual plan',
+        pricingMode: 'free',
+      });
+      expect(contextualPlan.tenantId).toBe(tenant);
+      // A stale editor cannot race a signup into a free-to-fixed charge.
+      const stalePlan = await plans.get(
+        { id: String(contextualPlan.id) },
+        { cache: false },
+      );
+      expect(stalePlan).not.toBeNull();
+      stalePlan!.pricingMode = 'fixed';
+      stalePlan!.priceAmount = 500;
+      await expect(stalePlan!.save()).rejects.toThrow();
+      await expect(
+        plans.update(String(contextualPlan.id), { minimumAmount: 100 }),
+      ).rejects.toThrow();
+      const contextualSubscription = await subscriptions.create({
+        subscriberKind: 'external',
+        subscriberExternalId: 'member:contextual',
+        planId: String(contextualPlan.id),
+      });
+      expect(contextualSubscription.tenantId).toBe(tenant);
+      await expect(stalePlan!.save()).rejects.toThrow();
+      const retainedPlan = await plans.get(
+        { id: String(contextualPlan.id) },
+        { cache: false },
+      );
+      expect(retainedPlan?.pricingMode).toBe('free');
+      expect(retainedPlan?.priceAmount).toBe(0);
+      await expect(
+        subscriptions.create({
+          tenantId: '33333333-3333-4333-8333-333333333333',
+          subscriberKind: 'external',
+          subscriberExternalId: 'member:explicit-foreign',
+          planId: String(contextualPlan.id),
+        }),
+      ).rejects.toThrow();
       await expect(
         subscriptions.create({
           tenantId: tenant,

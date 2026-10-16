@@ -54,7 +54,7 @@ subscription and plan.
   `priceAmount`. Monthly commerce period-close bills tenant subscribers using
   their agreed amount for pay-what-you-can, never the suggested amount, and
   skips free plans. External subscriber invoice routing remains host-owned. Pricing
-  mode and minimum cannot be changed once a plan has subscriptions; create a
+  mode and minimum are immutable after the plan is saved; create a
   new plan instead (effective-dated transitions are tracked in #4032).
   Invalid legacy pricing fails only its payer group at period close and reports
   the subscription ID while other payer groups continue. Ordinary subscription
@@ -78,6 +78,14 @@ subscribers add a stable external discriminator. Utilities such as
 coherent.
 
 ## Upgrade note
+
+`SubscriptionPlanCollection.findByPlanKey` now requires `(tenantId, planKey)`;
+pass `null` explicitly for legacy global plans. Update callers from the old
+single-argument signature. Pricing mode and minimum cannot be edited after
+persistence, even before the first subscriber, so a concurrent signup cannot
+observe terms that change mode underneath it. Existing fixed-price edits and
+current-period entitlement versioning remain separate work in #4032; this
+foundation does not provide immutable period snapshots.
 
 Existing databases created before #3829 may retain the global
 `_smrt_subscription_plans_plan_key_idx` on older migration runners. Run
