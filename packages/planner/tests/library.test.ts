@@ -234,7 +234,12 @@ describe('cookbook preview', () => {
     expect(welder.document.recipes).not.toContain('projects.tracker');
     const jobs = menu('welder')[0];
     expect(jobs?.[0]).toBe('Jobs');
-    expect(jobs?.[1]).toEqual(['Jobs', 'Customers', 'Quotes', 'Agreements']);
+    expect(jobs?.[1]).toEqual([
+      'Jobs',
+      'Customers',
+      'Quotes',
+      'General agreements',
+    ]);
     expect(navNoun('Jobs')).toBe('job');
     expect(JSON.stringify(welder.document.layout)).not.toContain('projects:');
   });
