@@ -221,7 +221,8 @@ reason recorded next to the setting or here:
   filter), `planner-browser` at 45 (one filtered build plus two short browser
   suites), and `publish.yml`'s `planner-release-gate` at 60, whose work is
   bounded the same way as `m5-reference-gate`'s: two browser suites, one
-  consumer install and one generated application, each tried at most twice.
+  consumer install and one generated application, each tried at most twice,
+  plus one control application when the generated one fails.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
@@ -456,9 +457,11 @@ build and typecheck with every `@happyvertical` package overridden to the
 release tarballs. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
 `publish-release` needs it to succeed. When the generated app fails, the gate
-repeats the apply against the published packages as a control; if that fails
-too, it reports upstream drift (the smrt-start template or a third-party
-release) instead of blaming the framework. The gate still fails then.
+repeats the apply as the published release generates it (published manifests
+and packages) as a control; if that fails too, it reports upstream drift (the
+smrt-start template or a third-party release) instead of blaming the
+framework. A control that cannot be built (a package new in this release) is
+inconclusive and the failure stays the framework's. The gate fails either way.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and

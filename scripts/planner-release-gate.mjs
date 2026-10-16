@@ -22,11 +22,14 @@
  * flaky but does not fail the gate. A failure names who broke: the planner
  * (its own suites) or the framework (a release package rejects a cookbook or
  * a generated app no longer builds against the release). When the generated
- * app fails, the same apply is repeated with every release package pinned to
- * the latest published version, as a control: if that fails too, the cause is upstream drift (the
+ * app fails, a control repeats the apply as the published release generates
+ * it (published manifests, every release package pinned to the latest
+ * published version): if that fails too, the cause is upstream drift (the
  * smrt-start template or a third-party release), not this release, and the
- * failure says so. The gate still fails then; a release is never published
- * past an app that does not build.
+ * failure says so. When the control cannot be built from published packages
+ * (one the app uses is new in this release), it is inconclusive and the
+ * failure stays the framework's. The gate fails in every case; a release is
+ * never published past an app that does not build.
  *
  * Usage: node scripts/planner-release-gate.mjs --packs <dir>
  *          [--cookbook bakery] [--template github:happyvertical/smrt-start]
@@ -181,6 +184,29 @@ function publishedVersion() {
   return version;
 }
 
+const errorText = (error) => (error instanceof Error ? error.message : String(error));
+
+/** The `@happyvertical/smrt-*` packages a generated app's package.json names. */
+function appSmrtDependencies(dir) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    return Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
+      .filter((name) => name.startsWith('@happyvertical/smrt-'))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function isPublished(name, version) {
+  const result = spawnSync(
+    'npm',
+    ['view', `${name}@${version}`, 'version', ...registryArgs(OWN_REGISTRY)],
+    { encoding: 'utf8' },
+  );
+  return result.status === 0 && result.stdout.trim() === version;
+}
+
 function libraryCookbooks() {
   const library = JSON.parse(
     readFileSync(join(PLANNER, 'src/lib/library/library.json'), 'utf8'),
@@ -240,7 +266,7 @@ function frameworkChecks(tarballs, options, scratch) {
    * resolves from its tarball; the template's lockfile is kept so everything
    * else stays at the versions the template was tested with.
    */
-  const generateApp = (dir, overrides) => {
+  const generateApp = (dir, overrides, { published = false } = {}) => {
     rmSync(dir, { recursive: true, force: true });
     run(
       process.execPath,
@@ -250,9 +276,9 @@ function frameworkChecks(tarballs, options, scratch) {
         'apply',
         files.get(options.cookbook),
         dir,
-        '--manifests',
-        manifests,
-        '--no-registry',
+        // The release app is generated from this release's manifests; the
+        // control from the published ones, as a user of that release gets it.
+        ...(published ? [] : ['--manifests', manifests, '--no-registry']),
         '--no-install',
         ...(options.template ? ['--template', options.template] : []),
       ],
@@ -301,21 +327,34 @@ function frameworkChecks(tarballs, options, scratch) {
       classify: () => {
         if (!chosen) return 'framework';
         console.log(
-          `\n▶ control: smrt cookbook apply ${options.cookbook} with every release package at the published version`,
+          `\n▶ control: smrt cookbook apply ${options.cookbook} as the published release generates it`,
         );
+        let published;
         try {
-          const published = publishedVersion();
+          published = publishedVersion();
+        } catch (error) {
+          console.log(`control inconclusive (${errorText(error)}): reporting the framework`);
+          return 'framework';
+        }
+        const used = appSmrtDependencies(app);
+        const unpublished = used.filter((name) => !isPublished(name, published));
+        if (unpublished.length > 0) {
+          console.log(
+            `control inconclusive: ${unpublished.join(', ')} not published at ${published}; reporting the framework`,
+          );
+          return 'framework';
+        }
+        try {
           console.log(`control pins every release package to ${published}`);
           generateApp(
             `${app}-control`,
             new Map([...tarballs.keys()].map((name) => [name, published])),
+            { published: true },
           );
           console.log('✓ control passed: the release tarballs broke the app');
           return 'framework';
         } catch (error) {
-          console.log(
-            `✗ control failed too (${error instanceof Error ? error.message : String(error)}): upstream drift`,
-          );
+          console.log(`✗ control failed too (${errorText(error)}): upstream drift`);
           return 'upstream';
         }
       },
