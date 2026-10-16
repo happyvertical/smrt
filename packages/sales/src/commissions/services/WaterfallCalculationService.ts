@@ -194,7 +194,7 @@ function resolveSink(
   const sink = options.resolver?.resolve(plan.remainderSink, event) ?? null;
   if (!sink)
     throw new Error('Waterfall remainderSink must resolve to a recipient');
-  return sink;
+  return freezeRecipient(sink);
 }
 
 function resolveStepRecipient(
@@ -203,11 +203,26 @@ function resolveStepRecipient(
   options: CalculateWaterfallOptions,
   frozen: WaterfallFrozenInputs,
 ): WaterfallResolvedRecipient | null {
-  if (Object.hasOwn(frozen.recipientByStep, step.key))
-    return frozen.recipientByStep[step.key] ?? null;
+  if (Object.hasOwn(frozen.recipientByStep, step.key)) {
+    const existing = frozen.recipientByStep[step.key];
+    return existing ? freezeRecipient(existing) : null;
+  }
   const recipient = options.resolver?.resolve(step.recipient, event) ?? null;
-  frozen.recipientByStep[step.key] = recipient;
-  return recipient;
+  const frozenRecipient = recipient ? freezeRecipient(recipient) : null;
+  frozen.recipientByStep[step.key] = frozenRecipient;
+  return frozenRecipient;
+}
+
+function freezeRecipient(
+  recipient: WaterfallResolvedRecipient,
+): WaterfallResolvedRecipient {
+  return {
+    kind: recipient.kind,
+    id: recipient.id,
+    ...(recipient.metadata
+      ? { metadata: structuredClone(recipient.metadata) }
+      : {}),
+  };
 }
 
 function resolveBase(

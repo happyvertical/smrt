@@ -136,6 +136,33 @@ describe('calculateWaterfall', () => {
     expect(replay.trace).toEqual(first.trace);
   });
 
+  it('copies recipient evidence before a host-owned resolver object can mutate', () => {
+    const hostRecipient = {
+      kind: 'worker',
+      id: 'crew-a',
+      metadata: { routing: { account: 'original' } },
+    };
+    const mutableResolver = new WaterfallRecipientResolverRegistry();
+    mutableResolver.register('worker', () => hostRecipient);
+    mutableResolver.register('treasury', () => ({
+      kind: 'treasury',
+      id: 'coop',
+    }));
+    mutableResolver.register('platform', () => ({
+      kind: 'platform',
+      id: 'platform',
+    }));
+    const first = calculateWaterfall(plan, event, {
+      resolver: mutableResolver,
+    });
+    hostRecipient.id = 'changed';
+    hostRecipient.metadata.routing.account = 'changed';
+    expect(first.trace.steps[0].recipient).toMatchObject({
+      id: 'crew-a',
+      metadata: { routing: { account: 'original' } },
+    });
+  });
+
   it('rounds decimal half-cents exactly and spreads an offset across matching steps', () => {
     const result = calculateWaterfall(
       {
