@@ -2554,6 +2554,233 @@
           }
         }
       }
+    },
+    {
+      "id": "electrician",
+      "name": "Electrician",
+      "icon": "bolt",
+      "summary": "Quotes, installs, repairs, materials and billing for an electrical contractor.",
+      "keywords": [
+        "electrician",
+        "electrical",
+        "electric",
+        "wiring",
+        "rewire",
+        "panel upgrade",
+        "breaker",
+        "lighting",
+        "outlets",
+        "ev charger",
+        "inspection",
+        "sparky",
+        "electrical contractor"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Net 15",
+        "taxRate": 0.0625
+      },
+      "sectionDescriptions": {
+        "custom:jobs": "Work orders and the customers they belong to.",
+        "custom:material": "Material, stock and what you have ordered.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#ca8a04"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.0625"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.0625"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:jobs",
+            "custom:schedule",
+            "custom:material",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:jobs": [
+              "item:commerce:Estimate",
+              "item:commerce:Order",
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventType"
+            ],
+            "custom:material": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:events:EventSeries",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Estimate": "custom:jobs",
+            "item:commerce:Order": "custom:jobs",
+            "item:commerce:Customer": "custom:jobs",
+            "item:commerce:Agreement": "custom:jobs",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:products:Product": "custom:material",
+            "item:inventory:StockLevel": "custom:material",
+            "item:commerce:Vendor": "custom:material",
+            "item:commerce:PurchaseOrder": "custom:material",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:jobs",
+              "label": "Jobs"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Schedule"
+            },
+            {
+              "id": "custom:material",
+              "label": "Material"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Priced quotes for installs, rewires and upgrades, ready to schedule once accepted."
+            },
+            "item:commerce:Order": {
+              "label": "Work orders",
+              "description": "Installs, repairs and inspections you have won, from rough-in to sign-off."
+            },
+            "item:commerce:Agreement": {
+              "label": "Maintenance contracts",
+              "description": "Planned maintenance and testing for commercial sites, with renewal dates."
+            },
+            "item:events:Event": {
+              "label": "Site visits",
+              "description": "Visits to quote, wire, inspect or test, by day and electrician."
+            },
+            "item:events:EventType": {
+              "label": "Visit types",
+              "description": "The kinds of visit you make, like a panel upgrade, a fault call or an inspection."
+            },
+            "item:products:Product": {
+              "label": "Materials",
+              "description": "Cable, breakers, devices and fixtures you stock and charge for."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Materials on hand",
+              "description": "Cable and parts in the shop and on the trucks."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The electrical wholesalers and lighting suppliers you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Material orders",
+              "description": "Material you have ordered and when it lands."
+            }
+          },
+          "sections": {
+            "custom:jobs": {
+              "icon": "wrench"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:material": {
+              "icon": "layers"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      }
     }
   ]
 }

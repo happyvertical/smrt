@@ -60,4 +60,5 @@ export const COOKBOOK_ICONS: Record<string, readonly string[]> = {
   tool: [
     'M7 10h3v-3l-3.5-3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1-3 3l-6-6a6 6 0 0 1-8-8l3.5 3.5',
   ],
+  bolt: ['M13 3v7h6l-8 11v-7H5l8-11'],
 };
