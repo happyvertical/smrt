@@ -13,7 +13,7 @@ export const SHELL_CLASS = 'smrt-admin-shell';
 export const SCOPE_ATTRIBUTE = 'data-smrt-planner-scope';
 /** `?styles=off` turns custom CSS off, whatever it hides. */
 export const STYLES_OFF_PARAM = 'styles';
-const APPROVED_KEY = 'smrt-planner-approved-css-v2';
+const APPROVED_KEY = 'smrt-planner-approved-css-v2'; // localStorage key, not a secret. gitleaks:allow
 const LEGACY_APPROVED_KEY = 'smrt-planner-approved-css';
 const MAX_APPROVED = 20;
 
