@@ -320,6 +320,9 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     expect(
       readRetainedInvoiceAccountingState(await load())!.releases[0].dueOn,
     ).toBe('2026-10-01');
+    expect(
+      JSON.parse((await load()).retentionStateJson).releases[0].effectiveOn,
+    ).toBe(release.effectiveOn);
     releaseGate = undefined;
     expect((await load()).getPayableFacts()).toMatchObject({
       retainedRemainingMinor: 700,

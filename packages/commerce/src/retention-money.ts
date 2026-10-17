@@ -7,7 +7,7 @@ export interface InvoiceRetentionEvidence {
   evidenceRef: string;
   actorId: string;
   reason: string;
-  /** Original calendar date only for immutable imported evidence; recordedAt stays actual record time. */
+  /** Explicit business calendar date for original or current evidence; recordedAt stays actual record time. */
   effectiveOn?: string;
   sameDayCreditOrder?: 'credit-before-release' | 'release-before-credit' | null;
 }

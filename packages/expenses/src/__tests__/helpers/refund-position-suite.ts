@@ -62,6 +62,49 @@ export function defineRefundPositionSuite(getWorld: () => ExpenseWorld): void {
     });
   });
 
+  it('includes every refund page in capacity, source edits and reimbursement', async () => {
+    const world = getWorld();
+    await world.inTenant(async () => {
+      const profileId = randomUUID();
+      const source = await world.expense({
+        amount: 201,
+        paidBy: 'person',
+        paidByProfileId: profileId,
+        reimbursable: true,
+      });
+      for (let index = 0; index < 201; index++) {
+        await world.expense({
+          amount: -1,
+          refundOfId: source.id,
+          refundRecipient: JSON.stringify({ kind: 'person', profileId }),
+        });
+      }
+      const position = await source.getRefundPosition();
+      expect(position).toMatchObject({
+        refundedAmount: 201,
+        remainingAmount: 0,
+      });
+      expect(position.refundIds).toHaveLength(201);
+      expect(await source.getReimbursementPosition()).toMatchObject({
+        remainingAmount: 0,
+        personRefundAmount: 201,
+      });
+      await expect(
+        world.expense({ amount: -1, refundOfId: source.id }),
+      ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+      const fresh = await world.expenses.get(
+        { id: source.id },
+        { cache: false },
+      );
+      if (!fresh) throw new Error('Missing source');
+      fresh.amount = 200;
+      await expect(fresh.save()).rejects.toMatchObject({
+        code: 'EXPENSE_INVALID',
+      });
+      expect((await source.getRefundPosition()).remainingAmount).toBe(0);
+    });
+  }, 60000);
+
   it('returns exact signed component residuals without changing source gross', async () => {
     const world = getWorld();
     await world.inTenant(async () => {

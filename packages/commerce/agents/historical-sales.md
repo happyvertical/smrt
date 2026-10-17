@@ -81,3 +81,11 @@ cash/credit/refund chronology, conservation, CAD journals for new movements,
 caller rollback and isolated PostgreSQL execution. Consumer historical adapters
 must still map every source table and prove full-cohort reconciliation; adopting
 these public facts alone is not full reference-import acceptance.
+
+Current explicitly dated retention releases append after the immutable original
+release prefix. Both remain readable without changing original dates or source
+authority; replay binds the explicit date and caller rollback restores the
+complete release history. Provider releases retain their effective date in the
+canonical retention history as well as provider evidence. Shared SQLite and
+PostgreSQL retention suites verify reload, exact retry, original-prefix tamper
+refusal, and transactional rollback.

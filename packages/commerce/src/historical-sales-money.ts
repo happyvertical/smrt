@@ -180,10 +180,7 @@ export function getHistoricalSalesMoney(
     if (
       JSON.stringify(
         retained.releases.slice(0, expectedRetention.releases.length),
-      ) !== JSON.stringify(expectedRetention.releases) ||
-      retained.releases
-        .slice(expectedRetention.releases.length)
-        .some((event) => event.effectiveOn !== undefined)
+      ) !== JSON.stringify(expectedRetention.releases)
     )
       invalid('Original retention release projection changed');
   } else if (retained)

@@ -666,6 +666,7 @@ export async function releaseRetainedInvoiceToAccounting(
         actorId: release.actorId,
         reason: release.reason,
         amountMinor: release.amountMinor,
+        effectiveOn: release.effectiveOn,
         recordedAt: new Date().toISOString(),
       });
       invoice.retentionStateJson = JSON.stringify(retention);

@@ -144,3 +144,10 @@ third-party cash receipt returns unknown-third-party-recipient, nullable cash
 positions and retained actual paid cash; it cannot infer company income, person
 payment or settlement. An exact source name is evidence, not verified customer
 identity. Existing company/person and unknown legacy cases remain covered.
+
+## Complete programmatic refund reads
+
+A shared 201-refund SQLite/PostgreSQL case verifies full cumulative cash capacity,
+exact person reimbursement, over-refund refusal and source-reduction refusal.
+The internal collection reads intentionally use the unbounded programmatic
+`list()` contract; generated API page defaults do not apply to those reads.

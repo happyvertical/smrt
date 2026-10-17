@@ -16,12 +16,14 @@ import {
 } from '../../invoice-retention.js';
 import { ensureTenantTaxCodes } from '../../tax/standard-codes.js';
 import { InvoiceStatus } from '../../types/index.js';
+import { proveHistoricalDatedRelease } from './historical-retention-release.js';
 
 function id(value: string | null | undefined) {
   if (!value) throw new Error('Missing fixture id');
   return value;
 }
 export async function proveRetention(db: DatabaseInterface) {
+  await proveHistoricalDatedRelease(db);
   const tenantId = randomUUID();
   await ensureTenantTaxCodes(db, tenantId);
   await withTenant({ tenantId }, async () => {
