@@ -219,6 +219,10 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
 })
 export class Invoice extends SmrtObject {
   /** Command-owned original sales authority; ordinary documents stay calculated. */
+  @field({
+    description:
+      'Whether amounts were calculated or retained from an original issued invoice.',
+  })
   moneyAuthority: 'calculated' | 'historical' = 'calculated';
   historicalSalesMoneyJson = '';
   @field({ type: 'text', nullable: true }) historicalSourceKeyHash:

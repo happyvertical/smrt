@@ -197,6 +197,10 @@ export class Contract extends SmrtObject {
   currency: string = 'USD';
 
   /** Calculated pricing or immutable source-declared purchase evidence. */
+  @field({
+    description:
+      'Whether amounts were calculated or recorded from reviewed original paperwork.',
+  })
   moneyAuthority: 'calculated' | 'received' = 'calculated';
 
   /** Guarded received evidence; write through the public received purchase/sales contract commands only. */

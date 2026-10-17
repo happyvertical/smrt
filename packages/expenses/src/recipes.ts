@@ -65,6 +65,11 @@ export class ExpensesRecipe extends SmrtRecipe {
         },
         costObjectType: { visibility: 'hidden' },
         financialBreakdown: { visibility: 'hidden' },
+        supplierPayableJson: { visibility: 'hidden' },
+        refundRecipient: { visibility: 'hidden' },
+        reimbursedAmount: {
+          help: 'The recorded amount paid back to the person who paid.',
+        },
         refundOfId: { visibility: 'hidden' },
         recordedByProfileId: { visibility: 'hidden' },
         commitmentId: { visibility: 'hidden' },
