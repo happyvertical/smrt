@@ -34,9 +34,12 @@ let items = $state<InboxEntry[]>([]),
   error = $state(false);
 let alive = true,
   epoch = 0;
+let uploadRequestId: string | undefined;
 onDestroy(() => {
   alive = false;
   epoch++;
+  files = [];
+  uploadRequestId = undefined;
 });
 async function load(more = false) {
   const ticket = ++epoch;
@@ -76,7 +79,10 @@ async function mutate(operation: () => Promise<unknown>, selected = false) {
   try {
     const result = await operation();
     if (!alive || ticket !== epoch) return;
-    files = [];
+    if (selected) {
+      files = [];
+      uploadRequestId = undefined;
+    }
     if (selected && result && typeof result === 'object' && 'itemId' in result)
       onselect?.(String(result.itemId));
     await load();
@@ -84,11 +90,17 @@ async function mutate(operation: () => Promise<unknown>, selected = false) {
     if (alive && ticket === epoch) {
       items = [];
       assignments = {};
-      files = [];
       error = true;
       pending = false;
     }
   }
+}
+async function upload() {
+  if (pending || !files.length) return;
+  uploadRequestId ??= crypto.randomUUID();
+  const requestId = uploadRequestId;
+  const originals = [...files];
+  await mutate(() => host.upload(originals, requestId), true);
 }
 onMount(() => {
   void load();
@@ -101,8 +113,8 @@ onMount(() => {
 <Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />
 <Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button>
 </div>
-<FilePicker bind:files multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
-<Button disabled={pending || !files.length} onclick={() => mutate(() => host.upload([...files],crypto.randomUUID()),true)}>{t(M['ingestion.upload'])}</Button>
+<FilePicker bind:files onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
+<Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
