@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.57.4
+
+### Patch Changes
+
+- ### Features
+  
+  - support original financial facts, retained settlements and customer funds (#4101)
+  
+  ### Bug Fixes
+  
+  - QA round screencast findings and four trade cookbooks (#4092) (planner)
+  - allow @happyvertical/ocr ^0.62.1 for paddleocr-vl (#4087) (#4104) (deps)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.105.1 (#4105) (deps)
+  - chore: sync sdk packages to v0.105.0 (#4098) (deps)
+- @happyvertical/smrt-config@0.57.4
+  - @happyvertical/smrt-scanner@0.57.4
+  - @happyvertical/smrt-types@0.57.4
+
 ## 0.57.3
 
 ### Patch Changes
