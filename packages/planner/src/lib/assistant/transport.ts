@@ -11,6 +11,7 @@ import {
   matchAssistantQuestionText,
   validateAssistantQuestionAnswer,
 } from '@happyvertical/smrt-chat/svelte';
+import { resolveRuntimeReportTimeRange } from '@happyvertical/smrt-reports/spec';
 import {
   createSliceController,
   type PlannerController,
@@ -253,7 +254,6 @@ const ANSWER_FILLER = new Set([
   'past',
   'previous',
   'current',
-  'next',
   'day',
   'week',
   'month',
@@ -264,7 +264,6 @@ const ANSWER_FILLER = new Set([
   'ytd',
   'date',
   'time',
-  'over',
 ]);
 const answerWords = (text: string) =>
   text
@@ -272,8 +271,7 @@ const answerWords = (text: string) =>
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
-    .map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w))
-    .filter((w) => !/^\d+$/.test(w) && !/^q[1-4]$/.test(w));
+    .map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w));
 
 /**
  * A typed reply that answers the pending question and says nothing else
@@ -294,8 +292,14 @@ function directAnswer(
       answerWords([o.label, o.value, ...(o.keywords ?? [])].join(' ')),
     ),
   );
+  // A number counts only when it is part of a period the time parser read
+  // ("last 90 days", "Q3", "2025"); "over 500" is a threshold for the model.
+  const period = resolveRuntimeReportTimeRange(text, new Date()) !== null;
   const extra = answerWords(text).filter(
-    (w) => !known.has(w) && !ANSWER_FILLER.has(w),
+    (w) =>
+      !known.has(w) &&
+      !ANSWER_FILLER.has(w) &&
+      !(period && (/^\d+$/.test(w) || /^q[1-4]$/.test(w))),
   );
   if (extra.length) return undefined;
   const chosen = values[followUp.field];

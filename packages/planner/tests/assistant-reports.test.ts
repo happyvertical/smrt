@@ -423,6 +423,14 @@ describe('the assistant builds runtime reports (#4100)', () => {
       { field: 'issueDate', op: 'lt', value: '2026-01-01' },
     ]);
 
+    // A threshold or a period the code cannot read goes to the model.
+    for (const reply of ['status over 500', 'status next month']) {
+      await say('a report of invoices by flavour');
+      const n = message.mock.calls.length;
+      await say(reply);
+      expect(message.mock.calls.length, reply).toBe(n + 1);
+    }
+
     // A new follow-up, then an unrelated request: the model sees it.
     await say('a report of invoices by flavour');
     const before = message.mock.calls.length;
