@@ -2,6 +2,7 @@
 import type { User } from '../../../state/app-state.js';
 import type { PaletteProvider } from '../../command-palette/types.js';
 import type { ShellLayout } from '../../workspace/admin-shell/layout.js';
+import type { ShellSlot } from '../../workspace/admin-shell/slots.js';
 import type {
   ShellNavItem,
   ShellPanelDefaults,
@@ -25,10 +26,12 @@ let {
   layout,
   edgeToggles = false,
   title = 'Planner',
+  colorScheme,
 }: {
   user?: User | null;
   accountMenu?: AppShellAccountMenu;
-  colorSchemeToggle?: boolean | { slot?: never };
+  colorSchemeToggle?: boolean | { slot?: ShellSlot };
+  colorScheme?: 'light' | 'dark' | 'system';
   commandPalette?: { providers: PaletteProvider[]; placeholder?: string };
   settingsHref?: string;
   signOutHref?: string;
@@ -51,6 +54,7 @@ const nav: ShellNavItem[] = [
   {user}
   {accountMenu}
   {colorSchemeToggle}
+  {colorScheme}
   {commandPalette}
   {settingsHref}
   {signOutHref}

@@ -100,6 +100,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantRail?: Snippet;
     /** Content pinned below the collapsed tenant rail. */
     tenantRailFooter?: Snippet;
+    /**
+     * Icon controls in the left sidebar's utility row: with the collapse
+     * chevron at the end of the nav region, above the sidebar footer, in the
+     * expanded sidebar (start of the row; the chevron keeps the inner edge)
+     * and in the collapsed rail (stacked above the chevron). Desktop only;
+     * `AppShell` puts its color-scheme item here.
+     */
+    tenantUtilities?: Snippet;
     /** Content for the left tenant panel. */
     tenantPanel?: Snippet;
     /**
@@ -213,6 +221,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     appPanel,
     tenantRail,
     tenantRailFooter,
+    tenantUtilities,
     tenantPanel,
     tenantFooter,
     slots,
@@ -1123,6 +1132,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 {/snippet}
 
+<!-- The left sidebar's utility row: host icon controls (the color scheme)
+     then the chevron, closing the nav region above the footer slot. -->
+{#snippet tenantUtilityRow()}
+  <div class="smrt-admin-shell__tenant-utilities" data-smrt-part="utilities">
+    {#if tenantUtilities}{@render tenantUtilities()}{/if}
+    {#if showToggle('left')}{@render edgeToggle('left')}{/if}
+  </div>
+{/snippet}
+
 {#snippet menuOpener()}
   <!-- raw-primitive-allow: shell chrome control, not a content button -->
   <button
@@ -1383,7 +1401,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                 {@render tenantRail()}
               {/if}
             </div>
-            {#if showToggle('left') && !isPhone && shownOpen('left')}{@render edgeToggle('left')}{/if}
+            {#if shownOpen('left') && !isPhone && (tenantUtilities || showToggle('left'))}{@render tenantUtilityRow()}{/if}
             {#if tenantFooter && !footerInHeader}
               <div class="smrt-admin-shell__tenant-footer">
                 {@render tenantFooter()}
@@ -1392,12 +1410,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             {@render slotGroup('leftSidebar.footer')}
           </div>
         {/if}
-        {#if !shownOpen('left') && (tenantRail || tenantRailFooter)}
+        {#if !shownOpen('left') && (tenantRail || tenantRailFooter || tenantUtilities)}
           <div class="smrt-admin-shell__tenant-rail-stack">
             <div class="smrt-admin-shell__tenant-rail-content">
               {#if tenantRail}{@render tenantRail()}{/if}
             </div>
-            {#if showToggle('left') && !isPhone}{@render edgeToggle('left')}{/if}
+            {#if !isPhone && (tenantUtilities || showToggle('left'))}{@render tenantUtilityRow()}{/if}
             {#if tenantRailFooter}
               <div class="smrt-admin-shell__tenant-rail-footer">
                 {@render tenantRailFooter()}
@@ -1408,7 +1426,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         <!-- The chevron closes the nav region, above the footer slot: inside
              the expanded stack or the collapsed rail stack. Only when neither
              is rendered does it stand alone at the bottom of the rail. -->
-        {#if showToggle('left') && !isPhone && !shownOpen('left') && !(tenantRail || tenantRailFooter)}{@render edgeToggle('left')}{/if}
+        {#if showToggle('left') && !isPhone && !shownOpen('left') && !(tenantRail || tenantRailFooter || tenantUtilities)}{@render edgeToggle('left')}{/if}
       </div>
     </aside>
   {/if}
@@ -2302,6 +2320,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
      `margin-block-start: auto` pins it to the end of the nav region even when
      nothing above it grows. Expanded it hugs the inner edge and points left;
      collapsed it is centred in the narrow rail and points right. */
+  .smrt-admin-shell__tenant-utilities {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    min-width: 0;
+    margin-block-start: auto;
+  }
+  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__tenant-utilities {
+    flex-direction: column;
+    grid-row: 2;
+  }
   .smrt-admin-shell__edge--left :global(.smrt-admin-shell__edge-toggle--left) {
     flex: 0 0 auto;
     margin-block-start: auto;
@@ -2318,6 +2348,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
   .smrt-admin-shell__tenant-rail-stack > :global(.smrt-admin-shell__edge-toggle--left) {
     grid-row: 2;
+  }
+  /* In the row the chevron keeps the inner edge (expanded) or the centre
+     (rail); the row itself is what is pinned to the end of the nav region. */
+  .smrt-admin-shell__tenant-utilities > :global(.smrt-admin-shell__edge-toggle--left) {
+    align-self: center;
+    margin-block-start: 0;
+    margin-inline-start: auto;
+  }
+  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__tenant-utilities > :global(.smrt-admin-shell__edge-toggle--left) {
+    margin-inline-start: 0;
   }
   .smrt-admin-shell__edge--left[data-state='expanded'] :global(.smrt-admin-shell__edge-toggle-chevron) {
     transform: scaleX(-1);
