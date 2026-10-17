@@ -227,6 +227,18 @@ describe('the assistant builds runtime reports (#4100)', () => {
     expect(await saved()).toEqual([]);
   });
 
+  it('adding Reports alone builds nothing, so it still asks which records', async () => {
+    const { say } = mechanic({
+      reply: 'Done.',
+      add: [REPORTS_RECIPE],
+      remove: [],
+    });
+    const answer = await say('summarize sales last month');
+    expect(answer?.content).toMatch(
+      /^Added Reports\. Which records should the report cover: .*Invoices.*\?$/,
+    );
+  });
+
   it('"sales report" never routes to the catalogue', async () => {
     const { say, setSection, controller } = mechanic({
       reply: 'Opening the catalogue.',

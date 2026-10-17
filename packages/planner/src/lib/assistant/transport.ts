@@ -432,9 +432,18 @@ export function createBrowserAssistantTransport(
       ]
         .filter(Boolean)
         .join(' ');
-      if (reportRequest && !change.report && !ran) {
-        // Asked for a report, named nothing to build and nothing else ran:
-        // ask which records, never guess (or say this planner cannot build one).
+      // The model adding Reports is a report request too, whatever the words.
+      const askedForReport =
+        reportRequest || applied.added.includes(REPORTS_RECIPE);
+      if (
+        askedForReport &&
+        !change.report &&
+        !openText &&
+        !applied.removed.length
+      ) {
+        // Asked for a report but named nothing to build (adding Reports alone
+        // builds nothing): ask which records, never guess, or say this planner
+        // cannot build one. Going to the Reports section needs no question.
         reportText = reports
           ? whichSourceQuestion(reportSources)
           : REPORTS_UNAVAILABLE;

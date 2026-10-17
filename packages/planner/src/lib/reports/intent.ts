@@ -82,6 +82,8 @@ export interface ReportIntent {
     value: string | number | boolean;
   }[];
   title?: string;
+  /** Parts the model stated that could not be read; a follow-up asks about them. */
+  unreadable?: string[];
 }
 
 /** The JSON Schema of the `report` property of one assistant turn. */
@@ -158,20 +160,31 @@ export function parseReportIntent(value: unknown): ReportIntent | null {
   const raw = value as Record<string, unknown>;
   const source = shortText(raw.source, RUNTIME_REPORT_LIMITS.maxSourceIdLength);
   if (!source) return null;
+  // A part the model stated but that cannot be read is recorded, never
+  // dropped: dropping a filter or a period would silently broaden the report.
+  const unreadable: string[] = [];
+  const stated = (key: string) => raw[key] !== undefined && raw[key] !== null;
   const measures = Array.isArray(raw.measures)
     ? raw.measures.slice(0, MAX_MEASURES).flatMap((entry) => {
-        if (!entry || typeof entry !== 'object') return [];
-        const m = entry as Record<string, unknown>;
+        const m = (entry && typeof entry === 'object' ? entry : {}) as Record<
+          string,
+          unknown
+        >;
         const fn = oneOf(m.fn, REPORT_MEASURES);
-        if (!fn) return [];
+        if (!fn) {
+          unreadable.push('a measure');
+          return [];
+        }
         const field = shortText(m.field);
         return [{ fn, ...(field ? { field } : {}) }];
       })
     : [];
   const filters = Array.isArray(raw.filters)
     ? raw.filters.slice(0, MAX_FILTERS).flatMap((entry) => {
-        if (!entry || typeof entry !== 'object') return [];
-        const f = entry as Record<string, unknown>;
+        const f = (entry && typeof entry === 'object' ? entry : {}) as Record<
+          string,
+          unknown
+        >;
         const field = shortText(f.field);
         const op = oneOf(f.op, REPORT_FILTER_OPS);
         const v = f.value;
@@ -184,16 +197,27 @@ export function parseReportIntent(value: unknown): ReportIntent | null {
             typeof v === 'boolean'
           )
         ) {
+          unreadable.push(field ? `the ${field} filter` : 'a filter');
           return [];
         }
         return [{ field, op, value: v }];
       })
     : [];
+  if (Array.isArray(raw.measures) && raw.measures.length > MAX_MEASURES) {
+    unreadable.push(`more than ${MAX_MEASURES} measures`);
+  }
+  if (Array.isArray(raw.filters) && raw.filters.length > MAX_FILTERS) {
+    unreadable.push(`more than ${MAX_FILTERS} filters`);
+  }
   const groupBy = shortText(raw.groupBy);
   const bucket = oneOf(raw.bucket, REPORT_BUCKETS);
   const period = oneOf(raw.period, REPORT_PERIODS);
   const dateField = shortText(raw.dateField);
   const title = shortText(raw.title, RUNTIME_REPORT_LIMITS.maxTitleLength);
+  if (stated('groupBy') && !groupBy) unreadable.push('the grouping');
+  if (stated('bucket') && !bucket) unreadable.push('the time grouping');
+  if (stated('period') && !period) unreadable.push('the period');
+  if (stated('dateField') && !dateField) unreadable.push('the date');
   return {
     source,
     ...(measures.length ? { measures } : {}),
@@ -203,6 +227,7 @@ export function parseReportIntent(value: unknown): ReportIntent | null {
     ...(dateField ? { dateField } : {}),
     ...(filters.length ? { filters } : {}),
     ...(title ? { title } : {}),
+    ...(unreadable.length ? { unreadable } : {}),
   };
 }
 
@@ -344,14 +369,20 @@ const OP_WORDS: Record<ReportFilterOp, string> = {
   contains: 'contains',
 };
 
-/** A money amount in currency units ("500", "$1,250.50", 500) as integer minor units. */
+/**
+ * One amount in currency units, written plainly ("500", "$1,250.50", "-20",
+ * 500), as integer minor units. Anything else ("$1k", "1e3", "500 or 600") is
+ * not read at all: a guessed threshold would save the wrong report.
+ */
+const MONEY_TEXT = /^-?\s*[$€£¥]?\s*-?(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$/;
 function moneyAmount(value: string | number | boolean): number | null {
-  const units =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && /\d/.test(value)
-        ? Number(value.replace(/[^0-9.-]/g, ''))
-        : Number.NaN;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.round(value * 100) : null;
+  }
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!MONEY_TEXT.test(text)) return null;
+  const units = Number(text.replace(/[^0-9.-]/g, ''));
   return Number.isFinite(units) ? Math.round(units * 100) : null;
 }
 
@@ -371,6 +402,11 @@ export function specFromIntent(
   if (!source) return ask(whichSourceQuestion(sources));
   const { fields } = describeRuntimeReportMemorySource(sources, source.id);
   const noun = source.label;
+  if (intent.unreadable?.length) {
+    return ask(
+      `I could not read ${choices(intent.unreadable).replace(/ or ([^,]+)$/, ' and $1')} for the ${noun} report. Can you say that again?`,
+    );
+  }
 
   // Measures: "a summary" is how many and how much.
   const requested = intent.measures?.length
@@ -451,7 +487,11 @@ export function specFromIntent(
         `Group ${noun} by what: ${choices(groupable.length ? groupable : fields.map((f) => f.label))}?`,
       );
     }
-    dimensions.push({ field: field.name });
+    // "By month" on the date itself is one time grouping, not the raw date
+    // plus its bucket (which would leave every date its own row).
+    if (!(intent.bucket && dateField && field.name === dateField.name)) {
+      dimensions.push({ field: field.name });
+    }
   }
   if (intent.bucket && dateField) {
     dimensions.push({ field: dateField.name, bucket: intent.bucket });

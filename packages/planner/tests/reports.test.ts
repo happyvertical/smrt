@@ -62,7 +62,7 @@ describe('report sources (#4100)', () => {
 });
 
 describe('report intents', () => {
-  it('keep structure only and drop what is not an intent', () => {
+  it('keep structure only, and list what is not readable', () => {
     expect(parseReportIntent(null)).toBeNull();
     expect(parseReportIntent({ period: 'last_month' })).toBeNull();
     expect(
@@ -75,6 +75,7 @@ describe('report intents', () => {
     ).toEqual({
       source: 'invoices',
       measures: [{ fn: 'sum', field: 'total' }],
+      unreadable: ['a measure', 'the status filter', 'the period'],
     });
   });
 
@@ -132,6 +133,37 @@ describe('report intents', () => {
       ['issueDate', 'month'],
     ]);
     expect(built.spec.chart).toMatchObject({ type: 'bar', x: 'status' });
+  });
+
+  it('group "by month" on the date itself as one time grouping', () => {
+    const built = specFromIntent(
+      { source: 'invoices', groupBy: 'issueDate', bucket: 'month' },
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    if (!built.ok) throw new Error(built.question);
+    expect(built.spec.dimensions).toEqual([
+      { field: 'issueDate', bucket: 'month', as: 'issue_date_month' },
+    ]);
+  });
+
+  it('records what it could not read instead of dropping it', () => {
+    const intent = parseReportIntent({
+      source: 'invoices',
+      period: 'last_fortnight',
+      filters: [{ field: 'status', op: 'like', value: 'paid' }],
+    });
+    expect(intent?.unreadable).toEqual(['the status filter', 'the period']);
+    const built = specFromIntent(
+      intent as NonNullable<typeof intent>,
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    expect(built).toEqual({
+      ok: false,
+      question:
+        'I could not read the status filter and the period for the Invoices report. Can you say that again?',
+    });
   });
 
   it.each([
@@ -250,14 +282,23 @@ describe('planner reports store', () => {
           : null,
       },
     ]);
-    const unclear = await reports.define({
+    for (const value of ['a lot', '$1k', '1e3', '500 or 600']) {
+      expect(
+        await reports.define({
+          source: 'invoices',
+          filters: [{ field: 'totalAmount', op: 'gt', value }],
+        }),
+      ).toEqual({
+        ok: false,
+        question: 'What amount should Total amount be compared with?',
+      });
+    }
+    const written = await reports.define({
       source: 'invoices',
-      filters: [{ field: 'totalAmount', op: 'gt', value: 'a lot' }],
+      filters: [{ field: 'totalAmount', op: 'gte', value: '$1,250.50' }],
     });
-    expect(unclear).toEqual({
-      ok: false,
-      question: 'What amount should Total amount be compared with?',
-    });
+    if (!written.ok) throw new Error(written.question);
+    expect(written.proposal.spec.filters[0].value).toBe(125050);
   });
 
   it('turns a value the field cannot take into a question', async () => {

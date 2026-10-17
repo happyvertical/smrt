@@ -206,7 +206,8 @@ describe('report requests without sample data to report on (#4100)', () => {
     });
     const first = await say('give me a summary of all sales last month');
     expect(first).toMatch(/^Added /);
-    expect(first).not.toContain(REPORTS_UNAVAILABLE);
+    // Adding Reports builds nothing; without sample data it says so.
+    expect(first).toContain(REPORTS_UNAVAILABLE);
     expect(first).not.toContain('Summary ready');
     const reports = controller
       .snapshot()
