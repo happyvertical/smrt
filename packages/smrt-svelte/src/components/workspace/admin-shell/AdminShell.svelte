@@ -43,6 +43,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 </script>
 
 <script lang="ts">
+  import {
+    ASSISTANT_REQUEST_EVENT,
+    type AssistantRequestDetail,
+    requestAssistant,
+  } from '@happyvertical/smrt-ui/chat';
   import { swipeDismiss } from '@happyvertical/smrt-ui/feedback';
   import {
     focusWhenReady,
@@ -403,6 +408,57 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       document.removeEventListener(SHELL_NAVIGATED_EVENT, onShellNavigated);
       cancelNavigationFocus?.();
     };
+  });
+
+  /**
+   * The page asks the assistant (smrt-ui `requestAssistant`) from outside the
+   * dock: open the dock's assistant tool (`assistant`, else the active or
+   * first tool, else the host's `focusPanel`), then hand the request on from
+   * inside the dock, which mounts
+   * its content only once open. Focus returns to the requester when the dock
+   * closes.
+   */
+  async function onAssistantRequest(event: Event) {
+    const root = rootElement;
+    const target = event.target;
+    if (
+      event.defaultPrevented ||
+      !root ||
+      !(target instanceof Element) ||
+      sideElements.right?.contains(target) ||
+      !shell.dockAvailable
+    ) {
+      return;
+    }
+    const tools = shell.focusTools;
+    const tool =
+      tools.find((candidate) => candidate.id === 'assistant') ??
+      tools.find((candidate) => candidate.id === shell.activeFocusToolId) ??
+      tools[0];
+    // A dock with no tools is its host's `focusPanel`.
+    if (!tool && !focusPanel) return;
+    const detail = (event as CustomEvent<AssistantRequestDetail>).detail;
+    if (typeof detail?.prompt !== 'string') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const returnFocus = target instanceof HTMLElement ? target : null;
+    if (tool) shell.openDockTool(tool.id, { focus: false, returnFocus });
+    else {
+      shell.expandPanel('right');
+      shell.dockReturnFocus = returnFocus;
+    }
+    // The dock's content mounts (and starts listening) after this update.
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const dock = sideElements.right;
+    if (dock?.isConnected) requestAssistant(dock, { prompt: detail.prompt });
+  }
+  $effect(() => {
+    const root = rootElement;
+    if (!root) return;
+    const listener = (event: Event) => void onAssistantRequest(event);
+    root.addEventListener(ASSISTANT_REQUEST_EVENT, listener);
+    return () => root.removeEventListener(ASSISTANT_REQUEST_EVENT, listener);
   });
 
   const overlayEdge = $derived<SideEdge | null>(

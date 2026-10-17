@@ -3,6 +3,11 @@
  * and bottom bars, form action bars, scrim, navigation, phone presentations
  * of the right edge, and resizable side edges.
  */
+
+import {
+  ASSISTANT_REQUEST_EVENT,
+  requestAssistant,
+} from '@happyvertical/smrt-ui/chat';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, flushSync, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -857,6 +862,53 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
       focus: 'h1[data-report-id="a"]',
     });
     await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it('opens the dock for a page request and hands it on from inside (#4100)', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    const seen: { prompt: string; inDock: boolean }[] = [];
+    const listener = (event: Event) => {
+      const dock = document.getElementById('dock-card');
+      seen.push({
+        prompt: (event as CustomEvent<{ prompt: string }>).detail.prompt,
+        inDock: Boolean(
+          dock?.closest('.smrt-admin-shell')?.contains(event.target as Node) &&
+            (event.target as Element).contains(dock),
+        ),
+      });
+      event.preventDefault();
+    };
+    document.addEventListener(ASSISTANT_REQUEST_EVENT, listener);
+    try {
+      const main = document.querySelector('.smrt-admin-shell__main')!;
+      const button = document.createElement('button');
+      button.textContent = 'New report';
+      main.append(button);
+      // Taken at once (the shell opens the dock), so the page says nothing.
+      expect(requestAssistant(button, { prompt: 'Make a report of ' })).toBe(
+        true,
+      );
+      await waitFor(() => expect(shell.panels.right).toBe('expanded'));
+      await waitFor(() =>
+        expect(seen).toEqual([{ prompt: 'Make a report of ', inDock: true }]),
+      );
+    } finally {
+      document.removeEventListener(ASSISTANT_REQUEST_EVENT, listener);
+    }
+  });
+
+  it('leaves a page request alone when the shell has no dock', async () => {
+    setWidth(1300);
+    render(AdminShell, {
+      props: { state: createShellState(), children: html('<p>page</p>') },
+    });
+    await settle();
+    const button = document.createElement('button');
+    document.querySelector('.smrt-admin-shell__main')!.append(button);
+    expect(requestAssistant(button, { prompt: 'x' })).toBe(false);
   });
 
   it('a host can keep an overlay open after navigation', async () => {

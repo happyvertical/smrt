@@ -19,6 +19,7 @@ import type { Component } from 'svelte';
 import type { WidgetRegistry } from './registry.js';
 import type {
   OverviewOptions,
+  OverviewWidget,
   WidgetComponentModule,
   WidgetComponentProps,
   WidgetDefinition,
@@ -76,6 +77,25 @@ export interface RecipeWidgetRegistration {
   skipped: RecipeWidgetSkip[];
   /** Removes exactly the registrations this call made. */
   dispose: () => void;
+}
+
+/**
+ * The widget a recipe declares as its section page (`sectionDefault: true`),
+ * placed the way a section overview's defaults hold it: full width, with no
+ * options (each required option starts from its `default`), its type as id.
+ * `undefined` when the recipe declares none. A host uses it for the section
+ * the recipe leads, in place of the generic shortcuts, count and records.
+ */
+export function sectionDefaultWidget(
+  recipe: RecipeWidgetSource | undefined,
+): OverviewWidget | undefined {
+  const surface = recipe?.surfaces?.find(
+    (candidate): candidate is RecipeWidgetSurface =>
+      candidate.kind === 'widget' && candidate.sectionDefault === true,
+  );
+  return surface
+    ? { id: surface.type, type: surface.type, span: 4, options: {} }
+    : undefined;
 }
 
 /** Split `'<specifier>#<Name>'`; refuses relative and absolute specifiers. */

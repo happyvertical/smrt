@@ -64,6 +64,7 @@ export {
   type RecipeWidgetSource,
   type RegisterRecipeWidgetsOptions,
   registerRecipeWidgets,
+  sectionDefaultWidget,
 } from './recipe-widgets.js';
 export {
   RECORD_OVERVIEW_ALLOWED,
