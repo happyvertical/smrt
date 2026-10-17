@@ -16,8 +16,8 @@ import type { ColorSchemeSetting } from '../theme/theme.ts';
 
 // The app document owns the theme. This applies it to the shell's
 // ThemeProvider once the saved document is read, and reads back a preset or
-// scheme change made through the provider's own controls (ThemeSwitcher,
-// ColorSchemeToggle) so that it is saved with the document.
+// scheme change made through the provider's own controls (ThemeSwitcher, the
+// shell's color-scheme toggle) so that it is saved with the document.
 const context = getThemeContext();
 let {
   deferInitial = false,

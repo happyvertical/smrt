@@ -244,7 +244,11 @@ describe('the left edge toggle is an icon-only chevron closing the nav region', 
     // It closes the nav region (inside the sidebar body), not the rail.
     expect(rail?.contains(toggle)).toBe(true);
     expect(rail?.lastElementChild).not.toBe(toggle);
+    // In the sidebar's utility row, inside the expanded stack.
     expect(toggle?.parentElement?.classList).toContain(
+      'smrt-admin-shell__tenant-utilities',
+    );
+    expect(toggle?.parentElement?.parentElement?.classList).toContain(
       'smrt-admin-shell__tenant-stack',
     );
     // Navigation comes before it, not after.
