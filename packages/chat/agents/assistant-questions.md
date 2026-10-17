@@ -10,7 +10,9 @@ are choice fields: `options` (`value`, `label`, `hint?`, `keywords?`),
 (`parseAssistantQuestion`, `assistantQuestionFromMessage`), seeds defaults,
 validates answers and describes them in one line.
 
-`AssistantDock` renders it as `AssistantQuestionForm`: one fieldset whose
+The dock renders structured cards (a question, a tool result component, a
+host's `toolCall` content) under the message's text bubble at the full thread
+width; plain text stays in bubbles. `AssistantDock` renders it as `AssistantQuestionForm`: one fieldset whose
 legend is the prompt; a single choice is a smrt-ui radio group (a select past
 six options), several choices are checkboxes; the default is preselected and
 focus moves into the newest form. Once answered it is a read-only summary.

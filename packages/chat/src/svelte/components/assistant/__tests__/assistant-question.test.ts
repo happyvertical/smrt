@@ -211,4 +211,14 @@ describe('dock question form', () => {
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
   });
+
+  it('renders the form as a full-width card under the text bubble', async () => {
+    await mount(true);
+    const form = screen.getByRole('group', { name: /Group invoices/ });
+    expect(form.closest('.bubble')).toBeNull();
+    expect(form.closest('.assistant-dock-card')).not.toBeNull();
+    expect(
+      screen.getByText('How should I group them?').closest('.bubble'),
+    ).not.toBeNull();
+  });
 });

@@ -192,13 +192,25 @@ async function submit() {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  /* A card spanning the thread, like the other structured cards. */
   .assistant-question {
-    margin-block-start: var(--smrt-spacing-2);
+    box-sizing: border-box;
+    inline-size: 100%;
+    padding: var(--smrt-spacing-3);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
   }
 
   .assistant-question :global(.assistant-question-form) {
     display: grid;
     gap: var(--smrt-spacing-3);
+  }
+
+  .assistant-question :global(fieldset) {
+    min-inline-size: 0;
+    margin: 0;
   }
 
   .assistant-question-select {
@@ -207,9 +219,15 @@ async function submit() {
     font: var(--smrt-typography-label-large-font);
   }
 
+  .assistant-question-select :global(select) {
+    inline-size: 100%;
+  }
+
+  /* Actions sit at the end, like a report card's; a narrow dock gives the
+     button the whole row. */
   .assistant-question-actions {
     display: flex;
-    justify-content: flex-start;
+    justify-content: flex-end;
   }
 
   .assistant-question-summary {
@@ -221,6 +239,7 @@ async function submit() {
   .assistant-question-prompt {
     display: block;
     color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-label-large-font);
   }
 }
 </style>

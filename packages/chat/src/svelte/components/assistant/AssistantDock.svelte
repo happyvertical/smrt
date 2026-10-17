@@ -794,32 +794,21 @@ async function handleConfirmAction(requestId: string) {
 
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
+            {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
+            {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
             <li data-role={message.role}>
-              <MessageBubble
-                variant={bubbleVariant(message.role)}
-                own={message.role === 'user'}
-              >
-                {#snippet children()}
-                  {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
-                  {#if ResultComponent}
-                    <ResultComponent {message} />
-                  {:else}
+              {#if ResultComponent}
+                <!-- Structured results are cards spanning the thread, not bubbles. -->
+                <div class="assistant-dock-card">
+                  <ResultComponent {message} />
+                </div>
+              {:else}
+                <MessageBubble
+                  variant={bubbleVariant(message.role)}
+                  own={message.role === 'user'}
+                >
+                  {#snippet children()}
                     <p class="assistant-dock-message-content">{message.content}</p>
-                  {/if}
-                {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
-                {#if question}
-                  <AssistantQuestionForm
-                    {question}
-                    answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
-                    autofocus={message.id === controller.messages.at(-1)?.id}
-                    onsubmit={(values) => handleAnswerQuestion(message.id, question, values)}
-                  />
-                {/if}
-                {#if toolCall && message.toolCallData != null}
-                  <div class="assistant-dock-tool-call">
-                    {@render toolCall(message)}
-                  </div>
-                {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="assistant-dock-attachments"
@@ -851,8 +840,26 @@ async function handleConfirmAction(requestId: string) {
                       {/each}
                     </ul>
                   {/if}
-                {/snippet}
-              </MessageBubble>
+                  {/snippet}
+                </MessageBubble>
+              {/if}
+              {#if question}
+                <div class="assistant-dock-card">
+                  <AssistantQuestionForm
+                    {question}
+                    answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
+                    autofocus={message.id === controller.messages.at(-1)?.id}
+                    onsubmit={(values) => handleAnswerQuestion(message.id, question, values)}
+                  />
+                </div>
+              {/if}
+              {#if toolCall && message.toolCallData != null}
+                <!-- A host's cards (a report preview, an offer) span the thread
+                     under the message's text bubble. -->
+                <div class="assistant-dock-card assistant-dock-tool-call">
+                  {@render toolCall(message)}
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -1299,9 +1306,13 @@ async function handleConfirmAction(requestId: string) {
     min-height: 4rem;
   }
 
-  .assistant-dock-tool-call {
+  /* Structured cards (results, questions, a host's previews) use the full
+   * thread width; the components inside draw their own card surface. */
+  .assistant-dock-card {
+    align-self: stretch;
+    inline-size: 100%;
+    min-inline-size: 0;
     margin-top: var(--smrt-spacing-2);
-    min-width: 0;
   }
 
   .assistant-dock-message-content {
