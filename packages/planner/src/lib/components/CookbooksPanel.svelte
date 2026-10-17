@@ -2,7 +2,7 @@
 import { tryUseAdminShell } from '@happyvertical/smrt-svelte/workspace';
 import { Button } from '@happyvertical/smrt-ui';
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
-import { onMount } from 'svelte';
+import { onMount, tick } from 'svelte';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { useDataSource } from '../data/context.ts';
 import {
@@ -18,6 +18,7 @@ import {
 } from '../library/index.ts';
 import { previewMenu } from '../library/menu.ts';
 import { libraryState } from '../library/state.svelte.ts';
+import { cookbookView } from '../library/view.svelte.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import {
   type AppSettings as Settings,
@@ -27,17 +28,62 @@ import AppSettings from './AppSettings.svelte';
 
 const dataSource = useDataSource();
 const shell = tryUseAdminShell();
-let selectedId = $state<string | null>(null);
 let confirming = $state(false);
 let error = $state('');
 let notice = $state('');
 
 onMount(() => {
   libraryState.load();
-  selectedId = libraryState.active;
 });
 
-const selected = $derived(libraryCookbooks.find((c) => c.id === selectedId));
+// The grid, or one cookbook's detail in its place (`cookbookView`; the host
+// keeps it in the address, so Back returns to the grid).
+const selected = $derived(
+  libraryCookbooks.find((c) => c.id === cookbookView.open),
+);
+
+// Focus follows the swap: the detail's heading on the way in, the card the
+// visitor came from on the way out, each scrolled into view. Not on the first
+// render, so a link that opens a cookbook does not take focus from the page.
+let grid = $state<HTMLElement | null>(null);
+let detailHeading = $state<HTMLElement | null>(null);
+let shownId: string | null | undefined;
+$effect(() => {
+  const id = selected?.id ?? null;
+  const first = shownId === undefined;
+  const changed = shownId !== id;
+  shownId = id;
+  if (first || !changed) return;
+  void tick().then(() => {
+    if (id) {
+      detailHeading?.scrollIntoView({ block: 'nearest' });
+      detailHeading?.focus({ preventScroll: true });
+      return;
+    }
+    const card = grid?.querySelector<HTMLElement>(
+      `[data-cookbook="${cookbookView.returnTo ?? ''}"]`,
+    );
+    card?.scrollIntoView({ block: 'nearest' });
+    card?.focus({ preventScroll: true });
+  });
+});
+
+function open(cookbook: LibraryCookbook) {
+  notice = '';
+  error = '';
+  cookbookView.show(cookbook.id);
+}
+
+function back() {
+  cookbookView.back();
+}
+
+// Escape leaves the detail, unless a dialog or a control is using it.
+function onDetailKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || event.defaultPrevented || confirming) return;
+  event.preventDefault();
+  back();
+}
 
 // The preview's editable copy of the cookbook's settings; choosing a cookbook
 // (again) resets it to the cookbook's own values. The cookbook is never changed.
@@ -69,7 +115,6 @@ function commit() {
   if (result.ok) {
     // Sample records are regenerated from the cookbook's own sample data.
     dataSource.reset?.();
-    libraryState.select(selected.id);
     error = '';
     const count = previewMenu(selected.document).length;
     notice = `${selected.name} added ${count} menu sections. Explore them in the left sidebar.`;
@@ -91,16 +136,17 @@ function commit() {
     anything in the other tabs.
   </p>
 
-  <ul class="grid" aria-label="Cookbooks">
+  <div class="swap">
+  {#if !selected}
+  <ul class="grid" aria-label="Cookbooks" bind:this={grid}>
     {#each libraryCookbooks as cookbook (cookbook.id)}
       {@const active = isActive(cookbook)}
       <li>
         <button
           type="button"
           class="card"
-          class:selected={selectedId === cookbook.id}
-          aria-pressed={selectedId === cookbook.id}
-          onclick={() => { selectedId = cookbook.id; notice = ''; }}
+          data-cookbook={cookbook.id}
+          onclick={() => open(cookbook)}
         >
           <span class="heading">
             <svg
@@ -128,10 +174,22 @@ function commit() {
     {/each}
   </ul>
 
-  {#if selected}
+  {:else}
     {@const menu = previewMenu(selected.document)}
-    <section class="preview" aria-labelledby="preview-heading">
-      <h2 id="preview-heading">{selected.name}</h2>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <section
+      class="preview"
+      aria-labelledby="preview-heading"
+      data-cookbook-detail={selected.id}
+      onkeydown={onDetailKeydown}
+    >
+      <div class="back">
+        <Button variant="ghost" onclick={back}>
+          <span aria-hidden="true">←</span> Back to cookbooks
+        </Button>
+      </div>
+      <h2 id="preview-heading" tabindex="-1" bind:this={detailHeading}>{selected.name}</h2>
+      <p class="summary">{selected.summary}</p>
       <div class="block">
         <h3>Recipes</h3>
         <ul class="chips" aria-label="Recipes">
@@ -169,6 +227,7 @@ function commit() {
       </div>
     </section>
   {/if}
+  </div>
 
   {#if error}
     <Alert variant="error" title="Could not use this cookbook">{error}</Alert>
@@ -236,9 +295,9 @@ function commit() {
     cursor: pointer;
   }
 
-  .card.selected {
-    border-color: var(--smrt-color-primary);
-    outline: 2px solid var(--smrt-color-primary);
+  .card:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   .icon {
@@ -320,12 +379,33 @@ function commit() {
     gap: var(--smrt-spacing-3);
   }
 
-  /* Forced colours: the selected cookbook keeps a Highlight frame. */
-  @media (forced-colors: active) {
-    .card.selected {
-      border-color: Highlight;
-      outline-color: Highlight;
-    }
+  .back {
+    justify-self: start;
+    margin-inline-start: calc(-1 * var(--smrt-spacing-2));
+  }
+
+  .preview h2:focus {
+    outline: none;
+  }
+
+  .preview h2:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+
+  /* The grid and the detail swap in one place: while a view transition runs
+     (`runViewTransition` marks the root) they share a name, so the swap is a
+     short crossfade there rather than the whole page's. Reduced motion skips
+     the transition outright. */
+  :global([data-smrt-view-transition]) .swap {
+    view-transition-name: planner-cookbooks;
+  }
+
+  :global(::view-transition-group(planner-cookbooks)),
+  :global(::view-transition-old(planner-cookbooks)),
+  :global(::view-transition-new(planner-cookbooks)) {
+    animation-duration: var(--smrt-duration-short4);
+    animation-timing-function: var(--smrt-easing-standard);
   }
 }
 </style>

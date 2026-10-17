@@ -154,11 +154,11 @@ describe('tax codes (#3934)', () => {
       ).rejects.toMatchObject({ code: 'TAX_CODE_NON_TAXABLE_COMPONENTS' });
       await expect(
         codes.create({
-          code: 'bad-compound',
-          name: 'Bad compound',
+          code: 'missing-compound-component',
+          name: 'Missing component',
           components: [{ taxComponentId: 'one', compound: true }],
         }),
-      ).rejects.toMatchObject({ code: 'COMPOUND_UNSUPPORTED' });
+      ).rejects.toThrow('Tax code components must belong to the same tenant');
     });
   });
 

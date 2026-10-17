@@ -72,6 +72,8 @@ export interface ReviewExpenseActionInput {
 /** Body of the `recordReimbursement` action. */
 export interface MarkExpenseReimbursedActionInput {
   expenseId: string;
+  /** Optional expected full remaining reimbursement in minor units. */
+  amount?: number;
   /** Payroll line, payables reference, or transfer id of the payback. */
   reference?: string;
 }
@@ -376,8 +378,24 @@ export async function markExpenseReimbursedAction(
   return withActionPrincipal(principal, async () => {
     const expense = await loadExpense(expenses, principal, body);
     const reference = optionalString(body, 'reference');
+    const amount = body.amount;
+    if (
+      amount !== undefined &&
+      (typeof amount !== 'number' ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0)
+    ) {
+      throw new ExpenseActionError(
+        400,
+        'invalid_request',
+        'amount must be a positive safe integer.',
+      );
+    }
     return domainCall(() =>
-      expense.markReimbursed(reference !== undefined ? { reference } : {}),
+      expense.markReimbursed({
+        ...(reference !== undefined ? { reference } : {}),
+        ...(amount !== undefined ? { amount: amount as number } : {}),
+      }),
     );
   });
 }

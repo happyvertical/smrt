@@ -636,8 +636,9 @@ export function createPlannerAdapter(
   /**
    * Applying a library cookbook that sets no theme keeps the person's own look
    * (as the Cookbooks tab does): the preset, brand colour, colour scheme,
-   * corner radius, density and contrast (the font is not carried). Returns
-   * the patch.
+   * corner radius, density and contrast (the font is not carried). One that
+   * sets a theme without a colour scheme keeps the person's light or dark.
+   * Returns the patch.
    */
   function themeToKeep(
     raw: Record<string, unknown>,
@@ -645,9 +646,15 @@ export function createPlannerAdapter(
     const input = raw.input;
     if (raw.name !== 'apply_cookbook' || !isObject(input)) return undefined;
     const book = catalog.cookbooks?.find((c) => c.id === input.id);
-    if (!book || (book.document as { theme?: unknown }).theme) return undefined;
+    if (!book) return undefined;
     const theme = engine.cookbook().theme;
     if (!theme) return undefined;
+    const own = (book.document as { theme?: { colorScheme?: unknown } }).theme;
+    if (own) {
+      return own.colorScheme || !theme.colorScheme
+        ? undefined
+        : { colorScheme: theme.colorScheme };
+    }
     const patch: Record<string, unknown> = {};
     if (theme.preset) patch.preset = theme.preset;
     if (theme.custom?.primary) patch.primary = theme.custom.primary;

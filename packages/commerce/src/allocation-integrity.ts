@@ -89,7 +89,9 @@ export async function assertAllocationParent(
   const cap =
     kind === 'payment'
       ? (parent as Payment).amount
-      : (parent as Invoice).totalAmount;
+      : (parent as Invoice).totalAmount -
+        ((parent as Invoice).getPayableFacts().retainedMinor -
+          (parent as Invoice).getPayableFacts().releasedMinor);
   if (allocationTotal(rows) > BigInt(cap))
     throw new Error('Parent amount cannot be less than committed allocations');
   for (const row of rows) {

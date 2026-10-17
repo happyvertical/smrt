@@ -314,7 +314,7 @@ describe('the record page widgets', () => {
     expect(sum(stored.taxes, 'tax')).toBe(page.order.taxAmount);
     // The app's 5% is smrt's cookbook activation code: one component.
     for (const tax of stored.taxes) {
-      expect(tax).toMatchObject({ name: 'Cookbook 5%', percent: '5' });
+      expect(tax).toMatchObject({ name: 'Tax 5%', percent: '5' });
     }
   });
 
@@ -338,7 +338,7 @@ describe('the record page widgets', () => {
     expect(stored.taxes.map((t) => `${t.name} ${t.percent}`).sort()).toEqual([
       'BC PST 7% 7',
       'Canada GST 5% 5',
-      'Cookbook 12% 12',
+      'Tax 12% 12',
     ]);
     const gst = must(stored.taxes.find((t) => t.percent === '5'));
     const pst = must(stored.taxes.find((t) => t.percent === '7'));

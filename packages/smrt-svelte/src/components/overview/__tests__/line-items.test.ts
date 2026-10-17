@@ -9,11 +9,25 @@ import {
   groupStoredTaxComponents,
   lineItemTotals,
   sumLineAmounts,
+  taxComponentLabel,
 } from '../widgets/line-totals.js';
 import {
   createLineItemsLoader,
   lineItemsRelation,
 } from '../widgets/record-loaders.js';
+
+describe('taxComponentLabel', () => {
+  it('adds the rate unless the name already states it', () => {
+    expect(taxComponentLabel('GST', '5')).toBe('GST 5%');
+    expect(taxComponentLabel('Canada GST 5%', '5')).toBe('Canada GST 5%');
+    expect(taxComponentLabel('Tax 8.25%', '8.25')).toBe('Tax 8.25%');
+    expect(taxComponentLabel('Tax 18.25%', '8.25')).toBe('Tax 18.25% 8.25%');
+    expect(taxComponentLabel('Tax 8x25%', '8.25')).toBe('Tax 8x25% 8.25%');
+    expect(taxComponentLabel('Ontario HST 13 %', '13')).toBe(
+      'Ontario HST 13 %',
+    );
+  });
+});
 
 describe('lineItemTotals', () => {
   it('shows the record figures as they are when they agree with the lines', () => {

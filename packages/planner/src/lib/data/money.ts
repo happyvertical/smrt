@@ -230,7 +230,7 @@ export function percentText(rate: number): string {
  * smrt-commerce's cookbook activation (`applyCommerceCookbookSettings`)
  * creates it, so the planner prices what an exported cookbook will: no rate
  * (0) is `out-of-scope`, any other rate the `default-<rate>` code with one
- * `Cookbook <rate>%` component. The example pack's codes are only ever chosen
+ * `Tax <rate>%` component. The example pack's codes are only ever chosen
  * explicitly, on a line (`examplePackCodeFor`).
  */
 export function defaultTaxCode(rate: number): SampleTaxCode {
@@ -241,7 +241,7 @@ export function defaultTaxCode(rate: number): SampleTaxCode {
     `default-${percent.replace('.', '_')}`,
     `Default ${percent}%`,
     'taxable',
-    [component(`cookbook-${percent}`, `Cookbook ${percent}%`, percent, false)],
+    [component(`cookbook-${percent}`, `Tax ${percent}%`, percent, false)],
   );
 }
 

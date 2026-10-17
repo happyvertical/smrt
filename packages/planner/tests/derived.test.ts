@@ -316,6 +316,7 @@ describe('labels and titles', () => {
     expect(pluralize('Agreement')).toBe('Agreements');
     expect(pluralize('Currency')).toBe('Currencies');
     expect(pluralize('Address')).toBe('Addresses');
+    expect(pluralize('Event series')).toBe('Event series');
     expect(recordCount(1)).toBe('1 record');
     expect(recordCount(8)).toBe('8 records');
   });

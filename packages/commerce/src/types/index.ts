@@ -292,6 +292,8 @@ export interface PartyContact {
  * Options for recording a payment with ledger integration
  */
 export interface RecordPaymentOptions {
+  /** Original settlement calendar date (YYYY-MM-DD); journal and paidAt use noon UTC. Omission uses the current clock for ordinary payments. Managed customer funds retain their reviewed date. */
+  effectiveOn?: string;
   /** The ledger to record the journal entry in */
   ledgerId: string;
   /** Account ID for receivables (credit side) */
@@ -490,6 +492,10 @@ export interface ContractOptions extends SmrtObjectOptions {
   sellerTaxRegistrationsJson?: string;
   partyTaxId?: string;
   moneySnapshotId?: string;
+  moneyAuthority?: 'calculated' | 'received';
+  receivedPurchaseMoneyJson?: string;
+  /** Command-owned contract schedule evidence. */
+  billingScheduleJson?: string;
 }
 
 export interface SalesContractOptions extends ContractOptions {
@@ -566,6 +572,10 @@ export interface ContractTaxComponentSnapshot {
   name: string;
   percent: string;
   taxMinor: number;
+  /** Missing on historical additive snapshots means false. */
+  compound?: boolean;
+  /** Actual component basis, including preceding tax when compound. */
+  taxableMinor?: number;
 }
 
 /**
@@ -605,6 +615,10 @@ export type InvoiceCreditCalculationBasis =
  * Constructor options for {@link Invoice}.
  */
 export interface InvoiceOptions extends SmrtObjectOptions {
+  moneyAuthority?: 'calculated' | 'historical';
+  historicalSalesMoneyJson?: string;
+  historicalSourceKeyHash?: string | null;
+
   kind?: InvoiceKind;
   creditedInvoiceId?: string | null;
   creditedAmount?: number;
@@ -614,7 +628,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   invoiceNumber?: string;
   reference?: string;
   issueDate?: Date;
-  dueDate?: Date;
+  dueDate?: Date | null;
   paidDate?: Date | null;
   subtotal?: number;
   taxAmount?: number;
@@ -653,6 +667,10 @@ export interface InvoiceTaxComponentSnapshot {
   name: string;
   percent: string;
   taxMinor: number;
+  /** Missing on historical additive snapshots means false. */
+  compound?: boolean;
+  /** Actual component basis, including preceding tax when compound. */
+  taxableMinor?: number;
 }
 
 /** Constructor options for {@link InvoiceLineItem}. */
@@ -720,6 +738,8 @@ export interface FulfillmentLineItemOptions extends SmrtObjectOptions {
  * Constructor options for {@link Payment}.
  */
 export interface PaymentOptions extends SmrtObjectOptions {
+  /** Internal command-owned customer funds evidence; use public commands. */
+  customerFundsJson?: string;
   kind?: PaymentKind;
   tenantId?: string | null;
   contractId?: string | null;

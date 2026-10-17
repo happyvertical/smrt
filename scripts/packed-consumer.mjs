@@ -27,6 +27,32 @@ function hasCleanAncestors(directory) {
     if (dirname(current) === current) return true;
   }
 }
+/** Preserve project-reference resolution without adding unselected runtime packages. */
+export function copyPackedProducerSupportFiles(root, producer, selectedPackages = []) {
+  for (const entry of readdirSync(resolve(root, 'packages'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const source = resolve(root, 'packages', entry.name);
+    for (const file of readdirSync(source, { withFileTypes: true })) {
+      if (!file.isFile() || !/^tsconfig.*\.json$/.test(file.name)) continue;
+      const destination = resolve(producer, 'packages', entry.name);
+      mkdirSync(destination, { recursive: true });
+      copyFileSync(resolve(source, file.name), resolve(destination, file.name));
+    }
+  }
+  // The root verification entrypoint delegates to the CLI's shipped verifier.
+  const verifier = 'packages/cli/scripts/verify-package-types-exports.js';
+  if (existsSync(resolve(root, verifier))) {
+    mkdirSync(dirname(resolve(producer, verifier)), { recursive: true });
+    copyFileSync(resolve(root, verifier), resolve(producer, verifier));
+  }
+  // mobile-contract prepack verifies these checked-in sibling outputs. They
+  // are build evidence, not an additional runtime package in the consumer.
+  if (selectedPackages.includes('@happyvertical/smrt-mobile-contract')) {
+    const contract = 'packages/smrt-mobile/src/commonMain/kotlin/com/happyvertical/smrt/mobile/contract';
+    cpSync(resolve(root, contract), resolve(producer, contract), { recursive: true });
+  }
+}
+
 /** Install real workspace tarballs in a consumer that cannot borrow producer types. */
 export function createPackedConsumer({ root, packageNames, evidence, consumerDependencies = {}, overrides = {} }) {
   const workspace = readJson(resolve(root, 'package.json'));
@@ -119,6 +145,7 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
       if (entry.isFile() && (entry.name === 'package.json' || entry.name === 'pnpm-workspace.yaml' || entry.name === 'pnpm-lock.yaml' || entry.name === 'AGENTS.md' || /^(tsconfig.*\.json|vite\.config\..+)$/.test(entry.name)))
         copyFileSync(resolve(root, entry.name), resolve(producer, entry.name));
     }
+    copyPackedProducerSupportFiles(root, producer, [...selected.keys()]);
     cpSync(resolve(root, 'scripts'), resolve(producer, 'scripts'), { recursive: true });
     const linkDependencies = (source, destination) => {
       mkdirSync(destination, { recursive: true });

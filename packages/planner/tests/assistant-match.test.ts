@@ -115,7 +115,7 @@ describe('coverage', () => {
       'my car',
       'we have members',
       'classes',
-      'a metal roof',
+      'metal shelving',
       'an art studio',
       'hello',
       'keep the books',
@@ -126,6 +126,8 @@ describe('coverage', () => {
     expect(matchText(index, 'hello')).toEqual([]);
     // Weak words still hint.
     expect(ids('my car', 'cookbook')).toContain('mechanic');
+    // "Metal" stays weak; a roof is the roofer's own word.
+    expect(top('a metal roof')).toMatchObject({ id: 'roofer' });
   });
 
   it('ranks an exact label above another recipe whose id ends in the same word', () => {

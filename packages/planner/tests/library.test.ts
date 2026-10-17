@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import { parseCookbook } from '../src/lib/cookbook/validate.ts';
-import { navNoun } from '../src/lib/data/format.ts';
+import { navNoun, singularize } from '../src/lib/data/format.ts';
 import {
   applyLibraryCookbook,
   holdsCookbook,
@@ -11,12 +11,13 @@ import {
 } from '../src/lib/library/apply.ts';
 import {
   COOKBOOK_ICONS,
+  getLibraryCookbook,
   libraryCookbooks,
   libraryRecipeLabels,
 } from '../src/lib/library/index.ts';
 import { cookbookNavGroups, previewMenu } from '../src/lib/library/menu.ts';
 import type { CookbookLayout } from '../src/lib/library/types.ts';
-import { recipesById } from '../src/lib/recipes/index.ts';
+import { recipes, recipesById } from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 
 const C = '@happyvertical/smrt-commerce:';
@@ -26,16 +27,20 @@ afterEach(() => recipeState.clear());
 describe('cookbook data', () => {
   it('ships the cookbooks with unique ids and known icons', () => {
     expect(libraryCookbooks.map((c) => c.id)).toEqual([
+      'agency',
       'bakery',
+      'roaster',
+      'electrician',
+      'equipment-rental',
+      'salon',
+      'landscaping',
       'mechanic',
+      'nonprofit',
+      'painter',
+      'plumber',
+      'roofer',
       'welder',
       'yoga-studio',
-      'landscaping',
-      'salon',
-      'roaster',
-      'equipment-rental',
-      'nonprofit',
-      'agency',
     ]);
     expect(new Set(libraryCookbooks.map((c) => c.id)).size).toBe(
       libraryCookbooks.length,
@@ -218,7 +223,7 @@ describe('cookbook preview', () => {
     ]);
     expect(menu('yoga-studio')[0]).toEqual([
       'Classes',
-      ['Classes', 'Class series', 'Class types'],
+      ['Class schedule', 'Class series', 'Class types'],
     ]);
     expect(menu('mechanic')[0]).toEqual([
       'Jobs',
@@ -226,24 +231,77 @@ describe('cookbook preview', () => {
     ]);
   });
 
-  it('gives the welder work orders as Jobs, not a project tracker', () => {
+  it('never names an entry after the section it sits in', () => {
+    // Case and singular/plural do not make a different name: "Order" inside
+    // "Orders" repeats it as much as "Orders" does.
+    const same = (a: string, b: string) =>
+      singularize(a.trim().toLowerCase()) ===
+      singularize(b.trim().toLowerCase());
+    const repeats: string[] = [];
+    for (const cookbook of libraryCookbooks) {
+      for (const section of previewMenu(cookbook.document)) {
+        for (const entry of section.entries) {
+          if (same(entry.label, section.label))
+            repeats.push(`${cookbook.id}: ${section.label} > ${entry.label}`);
+        }
+      }
+    }
+    // A recipe's own suggestion, as a visitor who switches it on sees it.
+    for (const recipe of recipes) {
+      for (const group of cookbookNavGroups({
+        recipes: [recipe.id],
+        features: [],
+      })) {
+        for (const item of group.items) {
+          if (same(item.label, group.heading))
+            repeats.push(`${recipe.id}: ${group.heading} > ${item.label}`);
+        }
+      }
+    }
+    expect(repeats).toEqual([]);
+  });
+
+  it('gives the welder work orders in Jobs, not a project tracker', () => {
     const welder = libraryCookbooks.find((c) => c.id === 'welder');
     if (!welder) throw new Error('welder');
     expect(welder.document.recipes).toContain('commerce.sales');
     expect(welder.document.recipes).not.toContain('projects.tracker');
     const jobs = menu('welder')[0];
     expect(jobs?.[0]).toBe('Jobs');
-    expect(jobs?.[1]).toEqual(['Jobs', 'Customers', 'Quotes', 'Agreements']);
-    expect(navNoun('Jobs')).toBe('job');
+    expect(jobs?.[1]).toEqual([
+      'Work orders',
+      'Customers',
+      'Quotes',
+      'General agreements',
+    ]);
+    expect(navNoun('Work orders')).toBe('work order');
     expect(JSON.stringify(welder.document.layout)).not.toContain('projects:');
   });
 
   it('lists recipe chips by label', () => {
-    const bakery = libraryCookbooks[0];
+    const bakery = book('bakery');
     expect(libraryRecipeLabels(bakery)).toContain('Wholesale orders');
     expect(libraryRecipeLabels(bakery)).toHaveLength(
       bakery.document.recipes.length,
     );
+  });
+});
+
+const book = (id: string) => {
+  const found = getLibraryCookbook(id);
+  if (!found) throw new Error(`library has no ${id}`);
+  return found;
+};
+
+describe('the library order', () => {
+  it('lists cookbooks alphabetically by name', () => {
+    const names = libraryCookbooks.map((c) => c.name);
+    expect(names).toEqual(
+      [...names].sort((a, b) =>
+        a.localeCompare(b, 'en', { sensitivity: 'base' }),
+      ),
+    );
+    expect(names[0]).toBe('Agency');
   });
 });
 
@@ -255,7 +313,7 @@ describe('applying a cookbook', () => {
     recipeState.add('sales.pipeline');
     recipeState.addFeature(`${C}Cart`);
     s.setLayout({ version: 1, hidden: ['section:sales'] });
-    const bakery = libraryCookbooks[0];
+    const bakery = book('bakery');
     expect(applyLibraryCookbook(bakery, s).ok).toBe(true);
     const snap = s.snapshot();
     expect(snap.recipes).toEqual(bakery.document.recipes);
@@ -277,12 +335,34 @@ describe('applying a cookbook', () => {
     expect(needsConfirm(s)).toBe(true);
   });
 
+  it('asks exactly when replacing would lose work', () => {
+    const s = store();
+    // Only a light/dark choice: applying keeps it, so nothing is lost.
+    s.setTheme({ colorScheme: 'light' });
+    expect(needsConfirm(s, null)).toBe(false);
+    // A cookbook as applied: applying it again gets it back.
+    expect(applyLibraryCookbook(book('bakery'), s).ok).toBe(true);
+    expect(needsConfirm(s)).toBe(false);
+    s.setTheme({ ...s.theme, colorScheme: 'dark' });
+    expect(needsConfirm(s)).toBe(false);
+    // Any edit since applying would be lost.
+    recipeState.add('sales.pipeline');
+    expect(needsConfirm(s)).toBe(true);
+    recipeState.remove('sales.pipeline');
+    expect(needsConfirm(s)).toBe(false);
+    s.setLayout({ ...s.layout, version: 1, hidden: ['x'] });
+    expect(needsConfirm(s)).toBe(true);
+    // Switching from an untouched cookbook to another does not ask.
+    applyLibraryCookbook(book('mechanic'), s);
+    expect(needsConfirm(s)).toBe(false);
+  });
+
   it('applies one cookbook over another', () => {
     const s = store();
-    applyLibraryCookbook(libraryCookbooks[0], s);
-    applyLibraryCookbook(libraryCookbooks[3], s);
-    expect(s.snapshot().recipes).toEqual(libraryCookbooks[3].document.recipes);
+    applyLibraryCookbook(book('bakery'), s);
+    applyLibraryCookbook(book('yoga-studio'), s);
+    expect(s.snapshot().recipes).toEqual(book('yoga-studio').document.recipes);
     expect(s.snapshot().features).toEqual([]);
-    expect(holdsCookbook(libraryCookbooks[0], s.snapshot())).toBe(false);
+    expect(holdsCookbook(book('bakery'), s.snapshot())).toBe(false);
   });
 });

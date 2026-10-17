@@ -69,6 +69,11 @@ import './__smrt-register__.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
 export {
+  HistoricalCustomerFundsAllocationCollection,
+  HistoricalCustomerFundsCollection,
+} from './collections/HistoricalCustomerFundsCollections.js';
+export { HistoricalSalesLineCollection } from './collections/HistoricalSalesLineCollection.js';
+export {
   ContractCollection,
   ContractLineItemCollection,
   type CreatePayoutFromPaymentArgs,
@@ -111,6 +116,7 @@ export {
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export { PurchasePriceObservationCollection } from './collections/PurchasePriceObservationCollection.js';
 export {
   COMMERCE_INVOICE_LINE_ADD_TOOL_SLUG,
   COMMERCE_INVOICE_LINE_UPDATE_TOOL_SLUG,
@@ -118,6 +124,21 @@ export {
   COMMERCE_TAX_CODES_LIST_TOOL_SLUG,
   createCommerceMoneyTools,
 } from './commerce-money-tools.js';
+export type {
+  ApproveContractBillingScheduleInput,
+  ContractBillingMilestone,
+  ContractBillingSchedule,
+  ContractBillingScheduleRevision,
+  ContractMilestoneClaim,
+  ContractMilestoneInvoiceMoney,
+  IssueContractMilestoneInvoiceInput,
+} from './contract-billing-schedule.js';
+export {
+  allocateContractMilestones,
+  approveContractBillingSchedule,
+  getContractBillingSchedule,
+  issueContractMilestoneInvoice,
+} from './contract-billing-schedule.js';
 export {
   type AvailableRefundInput,
   allocateFrozenCredit,
@@ -129,6 +150,21 @@ export {
   type IssuedCreditConsumption,
 } from './credit-allocation.js';
 export {
+  type AllocateCustomerFundsInput,
+  allocateCustomerFunds,
+  type CustomerFundsFacts,
+  type CustomerFundsOperation,
+  type CustomerFundsPolicy,
+  type CustomerFundsReleaseEvidence,
+  getCustomerFundsFacts,
+  type RecordCustomerFundsInput,
+  type RefundCustomerFundsInput,
+  type ReverseCustomerFundsAllocationInput,
+  recordCustomerFunds,
+  refundCustomerFunds,
+  reverseCustomerFundsAllocation,
+} from './customer-funds.js';
+export {
   type GetInvoiceMoneyFactsInput,
   getInvoiceMoneyFacts,
   type InvoiceMoneyFacts,
@@ -136,6 +172,27 @@ export {
   type PreviewInvoiceMoneyResult,
   previewInvoiceMoney,
 } from './document-money.js';
+export {
+  applyHistoricalCustomerFunds,
+  getHistoricalCustomerFundsPosition,
+  getHistoricalCustomerFundsSnapshot,
+  recordHistoricalCustomerAllocation,
+  recordHistoricalCustomerFunds,
+  refundHistoricalCustomerFunds,
+} from './historical-customer-funds.js';
+export type * from './historical-customer-funds-types.js';
+export {
+  getHistoricalSalesMoney,
+  readHistoricalSalesLines,
+  recordHistoricalSalesMoney,
+  validateHistoricalSalesMoneyFacts,
+} from './historical-sales-money.js';
+export {
+  type HistoricalSalesHeaderReportFact,
+  HistoricalSalesTaxClassificationRequired,
+  listHistoricalSalesHeaderFacts,
+} from './historical-sales-reports.js';
+export type * from './historical-sales-types.js';
 export {
   type FrozenAccountingReconciliationReady,
   type FrozenAccountingSyncResult,
@@ -166,6 +223,11 @@ export {
   loadInvoiceRecordScreenData,
 } from './invoice-record-screen.js';
 export {
+  configureInvoiceRetention,
+  type InvoiceRetentionCommand,
+  releaseInvoiceRetention,
+} from './invoice-retention.js';
+export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
   type InvoiceEditorStoragePreflight,
@@ -186,6 +248,19 @@ export {
   type CommercePartyLinksPreflight,
   preflightCommercePartyLinks,
 } from './migrations/partyLinks.js';
+export {
+  HistoricalCustomerFunds,
+  type HistoricalCustomerFundsOptions,
+} from './models/HistoricalCustomerFunds.js';
+export {
+  HistoricalCustomerFundsAllocation,
+  type HistoricalCustomerFundsAllocationOptions,
+} from './models/HistoricalCustomerFundsAllocation.js';
+// Exact original issued-sales money and immutable source line identities.
+export {
+  HistoricalSalesLine,
+  type HistoricalSalesLineOptions,
+} from './models/HistoricalSalesLine.js';
 // Models
 export {
   Agreement,
@@ -234,6 +309,7 @@ export {
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
+export { PurchasePriceObservation } from './models/PurchasePriceObservation.js';
 export {
   assertIntegerMinorUnits,
   calculateMoneyDocument,
@@ -257,6 +333,7 @@ export {
   type TaxComponentInput,
   type TaxRoundingScope,
 } from './money.js';
+export * from './observed-purchase-price.js';
 // Customer and vendor contact rows posted by the party forms (#3501)
 export {
   applyPartyContactIntent,
@@ -279,6 +356,23 @@ export {
   validatePartyContactRows,
 } from './party-contacts.js';
 export {
+  getReceivedPurchaseMoney,
+  getReceivedSalesContractMoney,
+  type ReceivedPurchaseMoneyFacts,
+  type ReceivedPurchaseMoneyLine,
+  type ReceivedPurchaseMoneySnapshot,
+  type ReceivedPurchaseQuoteSource,
+  ReceivedPurchaseTaxClassificationRequired,
+  type ReceivedPurchaseTaxComponent,
+  type ReceivedSalesContractMoneyFacts,
+  type ReceivedSalesContractMoneySnapshot,
+  type RecordReceivedPurchaseMoneyInput,
+  type RecordReceivedSalesContractMoneyInput,
+  recordReceivedPurchaseMoney,
+  recordReceivedSalesContractMoney,
+  validateReceivedPurchaseMoneyFacts,
+} from './received-purchase-money.js';
+export {
   AgreementsRecipe,
   CustomersRecipe,
   EstimatesRecipe,
@@ -291,6 +385,34 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
+export type {
+  ReconcileRetainedAccountingStepInput,
+  ReconcileRetainedCreditAccountingInput,
+  ReleaseRetainedInvoiceToAccountingInput,
+  RetainedInvoiceAccountingState,
+  SyncRetainedCreditToAccountingInput,
+  SyncRetainedInvoiceToAccountingInput,
+  SyncRetainedRefundToAccountingInput,
+} from './retention-accounting.js';
+export {
+  loadRetainedCreditAccountingSnapshot,
+  loadRetainedInvoiceAccountingSnapshot,
+  readRetainedInvoiceAccountingState,
+  reconcileRetainedAccountingStep,
+  reconcileRetainedBaseInvoice,
+  reconcileRetainedCreditAccounting,
+  releaseRetainedInvoiceToAccounting,
+  syncRetainedCreditToAccounting,
+  syncRetainedInvoiceToAccounting,
+  syncRetainedRefundToAccounting,
+  toRetainedCreditAccountingInput,
+  toRetainedInvoiceAccountingInput,
+} from './retention-accounting.js';
+export {
+  calculateInvoicePayable,
+  type InvoicePayableFacts,
+  type InvoiceRetentionState,
+} from './retention-money.js';
 export {
   buildRevenueJournalEntries,
   type RevenueJournalDocumentInput,

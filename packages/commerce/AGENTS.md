@@ -31,6 +31,8 @@ recipes show carry `@field({ description })` text; keep both in plain
 language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
+See [historical issued sales](agents/historical-sales.md) for exact original source
+money, immutable source children and combined historical/live customer funds.
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
 retry identity, parent corrections and supported dialects.
 See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default codes,
@@ -215,3 +217,18 @@ See [agents/purchasing-ui.md](agents/purchasing-ui.md) for caller responsibiliti
 
 Pure signed cost billing and explicit tax rounding are available through the
 independent `cost-billing` subpath; see [contract](agents/cost-billing.md).
+
+See [contract billing schedules](agents/contract-billing-schedules.md) for exact
+approved milestone capacity, immutable amendments and atomic canonical invoice issue.
+
+## Customer funds (#4079)
+
+See [customer advances](agents/customer-funds.md) for explicitly configured
+unapplied-AR/deposit-liability receipts, conserved application/refund capacity,
+real liability reclassification, final-invoice attestation and mutation guards.
+Use the public commands; `Payment.customerFundsJson` is command-owned.
+
+See [observed purchase prices](agents/observed-purchase-prices.md) for incomplete
+original supplier prices, explicit unknown totals and reviewed completion.
+See [received sales agreement money](agents/received-sales-contract-money.md) for
+exact complete source Order/Agreement evidence without synthetic lines or tax recognition.

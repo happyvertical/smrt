@@ -190,6 +190,13 @@ describe('service-backed expense actions (#4001)', () => {
     });
     expect(reviewed.body.result.reviewedAt).toBeTruthy();
 
+    const partial = await call(reviewer(), 'POST', '/recordReimbursement', {
+      expenseId,
+      amount: BODY.amount - 1,
+      reference: 'must-not-record-partial',
+    });
+    expect(partial.status).toBe(400);
+
     const reimbursed = await call(reviewer(), 'POST', '/recordReimbursement', {
       expenseId,
       reference: 'payroll-2026-09',
@@ -198,6 +205,7 @@ describe('service-backed expense actions (#4001)', () => {
     expect(reimbursed.body.result).toMatchObject({
       reviewStatus: 'reviewed',
       reimbursementReference: 'payroll-2026-09',
+      reimbursedAmount: BODY.amount,
     });
     expect(reimbursed.body.result.reimbursedAt).toBeTruthy();
   });

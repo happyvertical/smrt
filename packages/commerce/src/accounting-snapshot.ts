@@ -11,14 +11,29 @@ import {
 } from '@happyvertical/accounting';
 
 import { minorToMajorUnits } from './billing/units.js';
-import type { LineAmountType, TaxRoundingScope } from './money.js';
+import {
+  type LineAmountType,
+  MoneyValidationError,
+  type TaxRoundingScope,
+} from './money.js';
 
 export type FrozenAccountingDocumentKind = 'invoice' | 'creditMemo';
 
 /** Realm-specific references are configuration, never inferred from a tax name or rate. */
 export interface FrozenQuickBooksTaxMapping {
   readonly lines: Readonly<
-    Record<string, { readonly itemRef: string; readonly taxCodeRef: string }>
+    Record<
+      string,
+      {
+        readonly itemRef: string;
+        readonly taxCodeRef: string;
+        /** Caller-verified configuration of the referenced realm TaxCode. */
+        readonly taxComponents?: readonly {
+          readonly taxRateRef: string;
+          readonly compound: boolean;
+        }[];
+      }
+    >
   >;
   readonly components: Readonly<
     Record<string, { readonly quickbooksTaxRateRef: string }>
@@ -32,6 +47,8 @@ export interface FrozenAccountingTaxComponent {
   /** Exact percent text: `5` means 5 percent. */
   readonly percent: string;
   readonly taxMinor: number;
+  readonly compound?: boolean;
+  readonly taxableMinor?: number;
 }
 
 /** A frozen commerce line. `unitPriceMinor` and `discountMinor` are pre-discount document-mode values. */
@@ -190,6 +207,40 @@ function mapLine(
   const componentIds = new Set<string>();
   let componentTotalMinor = 0;
   const taxComponents = line.taxComponents.map((component) => {
+    if (
+      component.compound !== undefined &&
+      typeof component.compound !== 'boolean'
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Frozen component compound flag must be boolean',
+      );
+    if (component.compound && !lineMapping.taxComponents)
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_UNSUPPORTED',
+        'Compound accounting sync requires caller-verified ordered realm tax-code mapping',
+      );
+    if (component.compound && component.taxableMinor === undefined)
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_UNSUPPORTED',
+        'Compound accounting sync requires the frozen component taxable basis',
+      );
+    const basisMinor =
+      component.taxableMinor === undefined
+        ? undefined
+        : requireSafeMinor(
+            component.taxableMinor,
+            `Line '${line.id}' component taxable basis`,
+          );
+    if (
+      basisMinor !== undefined &&
+      basisMinor !==
+        amountMinor + (component.compound ? componentTotalMinor : 0)
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_UNSUPPORTED',
+        'Frozen component taxable basis does not match ordered source facts',
+      );
     requireText(component.taxComponentId, `Line '${line.id}' tax component ID`);
     if (componentIds.has(component.taxComponentId)) {
       throw new Error(
@@ -217,8 +268,26 @@ function mapLine(
       rate: percentToFraction(component.percent, component.taxComponentId),
       quickbooksTaxRateRef: componentMapping.quickbooksTaxRateRef,
       taxAmount: minorToMajorUnits(taxAmountMinor, currency),
+      ...(component.compound ? { compound: true } : {}),
+      ...(basisMinor !== undefined
+        ? { taxableAmount: minorToMajorUnits(basisMinor, currency) }
+        : {}),
     };
   });
+  if (
+    lineMapping.taxComponents &&
+    (lineMapping.taxComponents.length !== taxComponents.length ||
+      lineMapping.taxComponents.some(
+        (part, index) =>
+          part.taxRateRef !== taxComponents[index].quickbooksTaxRateRef ||
+          typeof part.compound !== 'boolean' ||
+          part.compound !== (taxComponents[index].compound ?? false),
+      ))
+  )
+    throw new MoneyValidationError(
+      'ACCOUNTING_SYNC_UNSUPPORTED',
+      'Ordered realm tax-code mapping does not match frozen components',
+    );
   if (componentTotalMinor !== taxMinor) {
     throw new Error(
       `Line '${line.id}' frozen component tax ${componentTotalMinor} does not equal line tax ${taxMinor}`,
@@ -250,6 +319,13 @@ function mapLine(
     quickbooksMapping: {
       itemRef: lineMapping.itemRef,
       taxCodeRef: lineMapping.taxCodeRef,
+      ...(lineMapping.taxComponents
+        ? {
+            taxComponents: lineMapping.taxComponents.map((part) => ({
+              ...part,
+            })),
+          }
+        : {}),
     },
   };
   if (lineAmountType === 'inclusive') {

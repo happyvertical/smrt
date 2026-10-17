@@ -323,6 +323,10 @@ and retry only if it is still pending. An already completed payment retains the
 owner: if it rolls back after settlement returns, reload the payment before retry.
 These guarantees cover new postings, not orphaned journals written by older
 versions. The returned journal uses the caller's database executor.
+Both payment and refund journal lines retain the payment's explicit currency and
+exact amount; posting does not convert currencies or fall back to USD. When
+reporting accounts that contain different currencies, use the public
+`listPostedMovements` currency filter rather than combining their amounts.
 
 ### Cross-Package References
 
@@ -827,3 +831,129 @@ native POST of vendor, reference, notes, expected date and ship-to fields. Pass
 allocations and totals unchanged. `PurchaseOrder` stores `expectedDate` and
 `shipTo` in existing STI metadata. See [the purchasing contract](agents/purchasing-ui.md#purchase-order-header)
 for validation, retained values and transport details.
+
+### Invoice retention and release
+
+`configureInvoiceRetention` freezes an explicit retained minor-unit amount on an
+unpaid draft. Supply tenant, invoice, currency, expected invoice revision,
+request identity, actor, reason, evidence reference, and versioned host policy.
+The supported `creditPolicy: 'retained-first'` is an explicit caller choice:
+issued credits reduce unreleased retention first, then current payable. Hosts
+must choose and authorize their regional policy; Commerce supplies no legal
+percentage or release date default. Configuration cannot be overwritten; replace
+an unissued draft to change the original agreement.
+
+`releaseInvoiceRetention` appends evidence under the invoice's transaction lock.
+It cannot release more than the currently retained remainder. Exact request
+replays are safe; changed payloads or stale revisions fail. Both commands retain
+caller transaction affinity. Original gross, tax, line snapshots and approved
+configuration stay unchanged. Credits and credit cancellation derive remaining
+retention without rewriting release history.
+
+`invoice.getPayableFacts()` separates `grossBalanceMinor`,
+`retainedRemainingMinor`, `currentlyDueMinor`, and `allocationCapMinor`. The
+allocation API enforces the current cap. `getAmountDue()` returns current due;
+`getBalance()` remains the signed gross balance. An invoice with paid current
+due and unreleased retention is not fully paid or overdue. Display gross and
+current payable separately; pass explicit current due and remaining holdback to
+the exact retained invoice UI props rather than treating gross as payable.
+Stored money facts include `payable` for retained invoices; MCP projection honors
+field visibility for every source of the payable alias.
+
+Provider-controlled imports/automatic collection cannot acquire retention.
+Accounting export refuses unreleased retention until the provider has an
+explicit payable representation; it never silently requests collection of
+gross. Fully released invoices use the existing gross accounting contract.
+
+## Retained invoice accounting
+
+`loadRetainedInvoiceAccountingSnapshot` supplies a read-only frozen document for
+reviewing item/tax mapping before posting; `toRetainedInvoiceAccountingInput`
+validates that reviewed mapping against those frozen lines. Both preserve tenant and caller executor
+scope and performs no provider operation. Generic accounting snapshot/export still
+refuses unreleased retention. A supplied host-managed release due date may precede
+the release date: preserving original past-due terms makes the released amount
+immediately overdue rather than silently extending payment terms.
+
+`loadRetainedCreditAccountingSnapshot` and `toRetainedCreditAccountingInput`
+provide the equivalent review path for an issued calculated credit. The caller
+supplies both original invoice and credit IDs; the owning API verifies tenant,
+customer, currency and exact original lineage, then retains the existing frozen
+reader's issue and provider-realm checks. Generic retained-credit export remains
+blocked. Review never creates a credit adjustment or contacts a provider.
+
+The public `syncRetainedInvoiceToAccounting`, `releaseRetainedInvoiceToAccounting`,
+`syncRetainedCreditToAccounting`, and `syncRetainedRefundToAccounting` commands
+implement an explicit QuickBooks accrual reclassification contract. They require
+SDK `receivableTransfers` from the published SDK0.104.1 cohort
+(happyvertical/sdk#1414 / #1415; absent from SDK0.104.0).
+They are available from the Commerce root and `/invoices` entry points.
+
+The tenant must review/version the realm, environment, customer, AR account,
+retained-asset account and optional bank account mapping. Supported choices are
+`accrual`, `invoice-tax-point` and `host-managed` release due dates. Verified home
+currency only; no inferred FX, tax timing, recovery percentage or release date.
+Hosts authorize actors before these server commands and provide an active tenant.
+
+For gross10500/retained1000, the original approved invoice remains10500. A
+withholding journal debits retained assets and credits customer AR1000; a
+zero-cash application links that credit to the original invoice. A partial release
+creates the opposite journal and an explicitly dated host collection obligation.
+The original invoice and its tax snapshot are unchanged. Provider collections and
+provider tax overrides are unsupported for this contract.
+
+Initial export requires an issued, unpaid, uncredited, unreleased host-owned
+invoice with no prior provider identity. Historical source-owned invoices require
+a separate reconciled ownership contract and are rejected: importing history must
+not duplicate its original journal. Existing local retention commands continue to
+reject provider-controlled releases; use the provider release command instead.
+
+Retained-first credits cancel the applicable retained asset through a release
+journal, apply the exported credit memo to that journal, and apply any due portion
+to the original invoice. Unapplied credit remains available for a refund. Refund
+sync requires an already completed local refund Payment, its cash journal and one
+exact source-credit allocation. It records the cash journal and applies the
+existing credit; it performs no bank action and makes no settlement-certification
+claim. That source payment/allocation becomes immutable. Provider-managed invoice
+voids/write-offs, credit cancellation/reallocation and refund deletion are rejected
+rather than silently erasing remote postings. Corrective reversal contracts are
+not implemented by these commands.
+
+### Recovery and concurrency
+
+Each external write has persisted request bytes/hash, attempt owner, status and
+validated readback. Confirmed earlier steps survive a later failure. Unknown or
+interrupted steps block new operations; `reconcileRetainedAccountingStep` requires
+the observed request/attempt, a known remote ID for exact provider readback, or
+explicit authoritative absence evidence. An interrupted in-flight owner must be
+proven stopped. Reconciliation evidence and previous attempts remain recorded.
+`reconcileRetainedBaseInvoice` wraps the existing frozen invoice recovery contract.
+`reconcileRetainedCreditAccounting` resolves the reserved credit-memo creation step. Ordinary credit export is blocked for provider-retained sources.
+
+The descriptor hash is not remote idempotency. The SDK uses documented QuickBooks
+request-ID duplicate handling; never create a new request identity merely because
+a response was lost. Exact local replays reuse confirmed steps. Competing commands
+serialize under the tenant/source invoice locks, and releases check an observed
+invoice revision. Source credits cannot change during an unfinished retention
+operation. Commands reject caller-owned Commerce money transactions because a
+provider write cannot be rolled back with local SQL.
+
+`readRetainedInvoiceAccountingState` exposes the persisted operation/readback
+history. Canonical `Invoice.getPayableFacts()` remains the source of local gross,
+retained, released, credited and currently due amounts. Provider invoice
+`TotalAmt - Balance` includes noncash applications and must never be labeled cash
+received. SDK readback separates noncash applications, recorded cash journals and
+unverified bank settlement.
+
+Validation uses native SQLite/PostgreSQL persistence with mocked public provider
+operations, plus the SDK's exact request/readback fixtures. No live provider call
+or sandbox certification has been performed. Primary contract evidence and
+provider-field limits are documented in the SDK Accounting README.
+
+### Incomplete supplier price evidence
+
+Use `recordPurchasePriceObservation`, `readPurchasePriceObservation`, and
+`completePurchasePriceObservation` for source quotes/orders that lack complete
+net/tax/gross facts. Unknown totals remain null and no calculated or reportable
+Contract exists until explicit reviewed completion. See
+[observed purchase prices](agents/observed-purchase-prices.md).

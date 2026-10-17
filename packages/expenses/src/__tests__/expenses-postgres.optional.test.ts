@@ -148,6 +148,8 @@ describePostgres('expenses on PostgreSQL', () => {
         financial_breakdown: 'text',
         paid_by_name: 'text',
         refund_of_id: 'uuid',
+        refund_recipient: 'text',
+        reimbursed_amount: 'bigint',
         currency: 'text',
         incurred_on: 'text',
         cost_object_type: 'text',

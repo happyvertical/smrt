@@ -5,6 +5,7 @@ import {
 } from '../../cookbook/store.svelte.ts';
 import { parseCookbook } from '../../cookbook/validate.ts';
 import { setSamplePack } from '../../data/packs.ts';
+import { workFingerprint } from '../../library/document.ts';
 import { libraryState } from '../../library/state.svelte.ts';
 import {
   type Cell,
@@ -49,7 +50,7 @@ export function portFromStore(store: CookbookStore): PlannerPort {
       if (replaced) store.replace(next);
       else store.apply(next);
       if (libraryApplied && applied) {
-        libraryState.select(applied);
+        libraryState.select(applied, workFingerprint(store.snapshot()));
         setSamplePack(applied);
       }
     },

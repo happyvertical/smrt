@@ -318,6 +318,7 @@ export class InvoicingRecipe extends SmrtRecipe {
   static options = {
     Invoice: {
       fields: {
+        historicalSourceKeyHash: { visibility: 'hidden' },
         providerTaxAmount: { visibility: 'hidden' },
         arJournalId: { visibility: 'hidden' },
         revenueJournalId: { visibility: 'hidden' },
@@ -429,7 +430,9 @@ export class AgreementsRecipe extends SmrtRecipe {
   static models = [Agreement, Contract, ContractLineItem];
   static nav = [
     {
-      label: 'Agreements',
+      // Not "Agreements": that is the section, and an entry repeating it
+      // reads as a duplicate once the section is expanded.
+      label: 'General agreements',
       model: Agreement,
       icon: 'fileText',
       description: 'Signed deals and terms with your customers, in one place.',
