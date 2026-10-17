@@ -510,5 +510,192 @@ export async function proveOrdinaryAccounting(db: DatabaseInterface) {
     expect(row.totalAmount).toBe(2000);
     expect(row.creditedAmount).toBe(700);
     expect(row.retentionAccountingStateJson).toBe('');
+    const adopted = await invoices.create({
+      customerId: customer.id!,
+      customerExternalId: 'customer-1',
+      currency: 'CAD',
+      invoiceNumber: 'ORD-ADOPT',
+    });
+    const adoptedLine = await lines.create({
+      invoiceId: adopted.id!,
+      quantity: 1,
+      unitPrice: 500,
+      description: 'Original adoption source',
+    });
+    const adoptedRow = (await invoices.get(
+      { id: adopted.id! },
+      { cache: false },
+    ))!;
+    adoptedRow.status = InvoiceStatus.SENT;
+    await adoptedRow.save();
+    const adoptedMapping = {
+      ...invoiceMapping,
+      lines: {
+        [adoptedLine.id!]: { itemRef: 'original-item', taxCodeRef: 'non-tax' },
+      },
+    };
+    const adoptedScope = { ...scope, invoiceId: adopted.id! };
+    await syncFrozenInvoiceToAccounting({
+      ...adoptedScope,
+      mapping: adoptedMapping,
+    });
+    const before = (await invoices.get({ id: adopted.id! }, { cache: false }))!;
+    const originalSync = readFrozenAccountingSyncState(before);
+    const writes = provider.invoices.push.mock.calls.length;
+    await expect(
+      syncOrdinaryInvoiceToAccounting({
+        ...init,
+        ...adoptedScope,
+        invoiceMapping: {
+          ...adoptedMapping,
+          lines: {
+            [adoptedLine.id!]: {
+              itemRef: 'replacement-item',
+              taxCodeRef: 'non-tax',
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow('mapping');
+    const refused = (await invoices.get(
+      { id: adopted.id! },
+      { cache: false },
+    ))!;
+    expect(refused.ordinaryAccountingStateJson).toBe('');
+    expect(readFrozenAccountingSyncState(refused)).toEqual(originalSync);
+    expect(provider.invoices.push.mock.calls.length).toBe(writes);
+    const exact = await syncOrdinaryInvoiceToAccounting({
+      ...init,
+      ...adoptedScope,
+      invoiceMapping: adoptedMapping,
+    });
+    expect(exact.status).toBe('ready');
+    expect(exact.invoiceMapping).toEqual(adoptedMapping);
+    expect(provider.invoices.push.mock.calls.length).toBe(writes);
+    const makeOther = async (number: string) => {
+      const other = await invoices.create({
+        customerId: customer.id!,
+        customerExternalId: 'customer-1',
+        currency: 'CAD',
+        invoiceNumber: number,
+      });
+      const otherLine = await lines.create({
+        invoiceId: other.id!,
+        quantity: 1,
+        unitPrice: 500,
+        description: 'Original comparison source',
+      });
+      const issued = (await invoices.get({ id: other.id! }, { cache: false }))!;
+      issued.status = InvoiceStatus.SENT;
+      await issued.save();
+      return {
+        ...init,
+        invoiceId: other.id!,
+        invoiceMapping: {
+          ...invoiceMapping,
+          lines: {
+            [otherLine.id!]: {
+              itemRef: 'original-item',
+              taxCodeRef: 'non-tax',
+            },
+          },
+        },
+      };
+    };
+    const unknown = await makeOther('ORD-UNKNOWN');
+    const unknownProvider = {
+      ...provider,
+      invoices: {
+        push: vi.fn(async () => {
+          throw Error('Unknown original export');
+        }),
+      } as any,
+    };
+    await expect(
+      syncFrozenInvoiceToAccounting({
+        ...unknown,
+        provider: unknownProvider,
+        mapping: unknown.invoiceMapping,
+      }),
+    ).rejects.toThrow('Unknown original export');
+    const unknownBefore = readFrozenAccountingSyncState(
+      (await invoices.get({ id: unknown.invoiceId }, { cache: false }))!,
+    );
+    await expect(
+      syncOrdinaryInvoiceToAccounting({
+        ...unknown,
+        invoiceMapping: {
+          ...unknown.invoiceMapping,
+          lines: Object.fromEntries(
+            Object.keys(unknown.invoiceMapping.lines).map((id) => [
+              id,
+              { itemRef: 'replacement-item', taxCodeRef: 'non-tax' },
+            ]),
+          ),
+        },
+      }),
+    ).rejects.toThrow('mapping');
+    const unknownAfter = (await invoices.get(
+      { id: unknown.invoiceId },
+      { cache: false },
+    ))!;
+    expect(unknownAfter.ordinaryAccountingStateJson).toBe('');
+    expect(readFrozenAccountingSyncState(unknownAfter)).toEqual(unknownBefore);
+    expect(unknownProvider.invoices.push).toHaveBeenCalledTimes(1);
+
+    const racing = await makeOther('ORD-RACE');
+    let reached!: () => void, release!: () => void;
+    const reserved = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let remoteWrites = 0;
+    const racingProvider = {
+      ...provider,
+      invoices: {
+        push: vi.fn(async () => {
+          reached();
+          await resume;
+          remoteWrites++;
+          return {
+            externalId: 'race-export',
+            syncedAt: new Date(),
+            success: true,
+            action: 'created' as const,
+          };
+        }),
+      } as any,
+    };
+    const pending = syncOrdinaryInvoiceToAccounting({
+      ...racing,
+      provider: racingProvider,
+    });
+    await reserved;
+    try {
+      expect(remoteWrites).toBe(0);
+      await expect(
+        syncFrozenInvoiceToAccounting({
+          ...racing,
+          provider: racingProvider,
+          mapping: {
+            ...racing.invoiceMapping,
+            lines: Object.fromEntries(
+              Object.keys(racing.invoiceMapping.lines).map((id) => [
+                id,
+                { itemRef: 'competing-item', taxCodeRef: 'non-tax' },
+              ]),
+            ),
+          },
+        }),
+      ).rejects.toThrow('owning accounting command');
+    } finally {
+      release();
+    }
+    const settled = await pending;
+    expect(settled.invoiceMapping).toEqual(racing.invoiceMapping);
+    expect(settled.status).toBe('ready');
+    expect(remoteWrites).toBe(1);
   });
 }

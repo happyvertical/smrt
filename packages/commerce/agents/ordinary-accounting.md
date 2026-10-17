@@ -63,3 +63,10 @@ credit and both refund-step lost responses; same-day ordering; changed retry;
 source/tenant checks; reservation rollback; concurrent refund attempts; and direct
 payment/allocation mutation refusal. The retained suite protects shared-engine
 compatibility.
+
+An existing generic frozen export can enter ordinary coordination only when the
+reviewed mapping reconstructs its exact original creation request. This check
+runs under the reservation lock, including unresolved exports; a mismatch leaves
+ordinary state absent. Once ordinary authority is reserved, base export uses the
+owning command so a competing generic export cannot replace that mapping between
+reservation and provider I/O. Read-only frozen projections remain available.

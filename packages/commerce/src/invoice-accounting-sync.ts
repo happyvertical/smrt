@@ -599,6 +599,13 @@ async function prepareSync(
       input.invoiceId,
       input.tenantId,
     );
+    if (
+      invoice.ordinaryAccountingStateJson &&
+      !hasOrdinaryAccountingAuthority(invoice.tenantId, invoice.id)
+    )
+      unsupported(
+        'Provider ordinary invoice requires its owning accounting command',
+      );
     const snapshot = await loadSnapshot(tx, input.tenantId, invoice);
     const sdkInput = toSdkInput(snapshot, input.mapping);
     const prior = parseSyncState(invoice.accountingSyncStateJson);

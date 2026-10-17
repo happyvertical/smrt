@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   type AccountingProvider,
   type CreditMemoInput,
+  prepareQuickBooksInvoiceRequest,
   prepareQuickBooksReceivableRequest,
   type QuickBooksOrdinaryReceivableMapping,
   type QuickBooksReceivableRequest,
@@ -288,6 +289,37 @@ export async function syncOrdinaryInvoiceToAccounting(
   await input.provider.receivableTransfers!.verifyMapping(input.mapping);
   await locked(input, async (invoice, state) => {
     validateOrdinarySource(invoice, input);
+    // A generic exporter may already own this document. Compare its exact
+    // prepared request while holding the same lock before retaining a mapping.
+    const prior = readFrozenAccountingSyncState(invoice);
+    if (prior) {
+      const sdkInput = await toFrozenInvoiceAccountingInput({
+        db: invoice.db,
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        mapping: input.invoiceMapping,
+      });
+      // Reconstruct the original creation payload, not an update to its result.
+      const request = prepareQuickBooksInvoiceRequest(
+        { ...sdkInput, externalId: undefined },
+        {
+          requestId: prior.requestId,
+          realmId: input.invoiceMapping.realmId,
+          environment: input.invoiceMapping.environment,
+        },
+      );
+      if (
+        prior.provider !== 'quickbooks' ||
+        prior.documentKind !== 'invoice' ||
+        prior.moneySnapshotId !== invoice.moneySnapshotId ||
+        prior.realmId !== request.realmId ||
+        prior.environment !== request.environment ||
+        prior.request.payloadHash !== request.payloadHash
+      )
+        reject(
+          'Ordinary invoice mapping differs from its frozen export request',
+        );
+    }
     if (state) {
       if (
         hash([
@@ -325,10 +357,15 @@ export async function syncOrdinaryInvoiceToAccounting(
     };
     await save(invoice, next);
   });
-  const result = await syncFrozenInvoiceToAccounting({
-    ...input,
-    mapping: input.invoiceMapping,
-  });
+  const result = await withOrdinaryAccountingAuthority(
+    input.tenantId,
+    input.invoiceId,
+    () =>
+      syncFrozenInvoiceToAccounting({
+        ...input,
+        mapping: input.invoiceMapping,
+      }),
+  );
   return locked(input, async (invoice, state) => {
     if (!state) reject('Ordinary provider reservation disappeared');
     syncedIdentity(invoice, state.mapping);
