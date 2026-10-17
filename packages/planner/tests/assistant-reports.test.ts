@@ -185,7 +185,7 @@ describe('the assistant builds runtime reports (#4100)', () => {
     // Approval opens the saved report under Shared reports.
     const openPath = vi.fn();
     plannerRuntime.openPath = openPath;
-    openSavedReport(report);
+    await openSavedReport(report);
     expect(openPath).toHaveBeenCalledWith(reportPath(report.id));
     expect(reportPath(report.id)).toBe(
       `/m/reports/RuntimeReport/${report.id}/`,

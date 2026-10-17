@@ -289,7 +289,14 @@ onMount(() => {
     location.hash = `#${shell.sectionPath(id)}`;
   };
   plannerRuntime.openPath = (path) => {
-    location.hash = `#${path}`;
+    const hash = `#${path}`;
+    // The same fragment does not navigate: nothing to wait for.
+    if (location.hash === hash) return Promise.resolve();
+    const changed = new Promise<void>((resolve) => {
+      window.addEventListener('hashchange', () => resolve(), { once: true });
+    });
+    location.hash = hash;
+    return changed;
   };
   const previous = cookbookView.navigator;
   cookbookView.navigator = {

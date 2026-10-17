@@ -39,7 +39,8 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   the default and says "I went with …": the identical question is never asked twice. `BrowserAssistant` renders the proposal with smrt-reports'
   `ReportConfirmation` (`ReportProposalCard`); Approve (a trusted click) is the browser's confirmed
   save: `save` re-parses, checks the Web Crypto hash, reruns against the current sources and stores a
-  RuntimeReport row in the sample data, then `plannerRuntime.openPath` opens it. Sources
+  RuntimeReport row in the sample data, then `plannerRuntime.openPath` opens it (a promise
+  that resolves when the navigation has finished). Sources
   (`sources.ts`) are the menu models of the recipes that are on (`packages.reports.runtime.sources`
   in a generated app). Without a data source (`createPlannerAssistant` for a host's controller) the
   capability is off and a report request says `REPORTS_UNAVAILABLE`. Not an authority boundary:

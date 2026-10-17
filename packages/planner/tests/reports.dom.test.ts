@@ -4,6 +4,7 @@
  * `ReportDetail`, all over the plan's sample data.
  */
 import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
+import { SHELL_NAVIGATED_EVENT } from '@happyvertical/smrt-svelte/workspace';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,9 +15,13 @@ import ReportProposalCard from '../src/lib/components/ReportProposalCard.svelte'
 import { DATA_SOURCE_KEY } from '../src/lib/data/context.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { getLibraryCookbook } from '../src/lib/library/index.ts';
+import { plannerRuntime } from '../src/lib/planner/instance.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
-import { plannerReportsFor } from '../src/lib/reports/planner.ts';
+import {
+  openSavedReportFrom,
+  plannerReportsFor,
+} from '../src/lib/reports/planner.ts';
 import {
   REPORTS_RECIPE,
   RUNTIME_REPORT_MODEL,
@@ -100,6 +105,43 @@ describe('report preview and shared reports (#4100)', () => {
     await settle();
     expect(root.querySelector('[role="status"]')).not.toBeNull();
     expect(await stored()).toEqual([]);
+  });
+
+  it('announces the opened report only once the app has finished navigating', async () => {
+    // A router (SvelteKit's goto) blurs and resets focus as it lands, even on
+    // the page already open: announcing first would let it undo the shell's
+    // focus on the report heading (R12-F1).
+    let finish: () => void = () => {};
+    const previous = plannerRuntime.openPath;
+    const opened: string[] = [];
+    plannerRuntime.openPath = (path) => {
+      opened.push(path);
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    };
+    const card = document.createElement('div');
+    document.body.append(card);
+    const announced: string[] = [];
+    document.addEventListener(SHELL_NAVIGATED_EVENT, (event) => {
+      announced.push(
+        (event as CustomEvent<{ focus?: string }>).detail.focus ?? '',
+      );
+    });
+    try {
+      const done = openSavedReportFrom(card, { id: 'rpt-1' });
+      await settle();
+      expect(opened).toEqual(['/m/reports/RuntimeReport/rpt-1/']);
+      expect(announced).toEqual([]);
+
+      finish();
+      await done;
+      expect(announced).toEqual([
+        '[data-smrt-component="ReportDetail"][data-report-id="rpt-1"] h1',
+      ]);
+    } finally {
+      plannerRuntime.openPath = previous;
+    }
   });
 
   it('lists a saved report under Shared reports and runs it on its page', async () => {

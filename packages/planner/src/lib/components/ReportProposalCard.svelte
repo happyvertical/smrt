@@ -5,11 +5,10 @@ import {
   type RuntimeReportProposal,
   type SavedRuntimeReport,
 } from '@happyvertical/smrt-reports/svelte';
-import { announceShellNavigation } from '@happyvertical/smrt-svelte/workspace';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { useDataSource } from '../data/context.ts';
 import { appHref } from '../planner/app.svelte.ts';
-import { openSavedReport, plannerReportsFor } from '../reports/planner.ts';
+import { openSavedReportFrom, plannerReportsFor } from '../reports/planner.ts';
 import { reportPath } from '../reports/store.ts';
 
 interface ReportProposalCardProps {
@@ -46,13 +45,7 @@ function record(next: ReportConfirmationOutcome) {
 }
 function onsaved(report: SavedRuntimeReport) {
   record({ status: 'saved', report: { id: report.id, title: report.title } });
-  openSavedReport(report);
-  if (element) {
-    announceShellNavigation(element, {
-      // This report's own heading: never the page the person approved from.
-      focus: `[data-smrt-component="ReportDetail"][data-report-id="${CSS.escape(report.id)}"] h1`,
-    });
-  }
+  void openSavedReportFrom(element, report);
 }
 </script>
 

@@ -11,8 +11,12 @@ export const plannerRuntime: {
   onReplaced?: () => void;
   /** Open a menu section's page (`focus` with a `section`). */
   openSection?: (sectionId: string) => void;
-  /** Open an in-app path (`/m/...`), e.g. a report the person just saved. */
-  openPath?: (path: string) => void;
+  /**
+   * Open an in-app path (`/m/...`), e.g. a report the person just saved.
+   * Resolves once the navigation has finished (the router's own focus reset
+   * included), so a caller can move focus onto the opened page afterwards.
+   */
+  openPath?: (path: string) => void | Promise<void>;
 } = {};
 
 /**
