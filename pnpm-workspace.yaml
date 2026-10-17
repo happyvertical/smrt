@@ -22,7 +22,7 @@ overrides:
   '@happyvertical/json': ^0.105.0
   '@happyvertical/logger': ^0.105.0
   '@happyvertical/messages': ^0.105.0
-  '@happyvertical/ocr': ^0.61.6
+  '@happyvertical/ocr': ^0.62.1
   '@happyvertical/pdf': ^0.65.9
   '@happyvertical/projects': ^0.105.0
   '@happyvertical/repos': ^0.105.0
@@ -181,6 +181,7 @@ minimumReleaseAgeExclude:
   - '@happyvertical/payments@0.96.0 || 0.96.1 || 0.98.0 || 0.100.3 || 0.102.1 || 0.102.2 || 0.102.3 || 0.102.4 || 0.102.5 || 0.102.7 || 0.103.1 || 0.103.2 || 0.103.4 || 0.103.5 || 0.103.6 || 0.103.7 || 0.105.0'
   - '@happyvertical/icalendar@0.100.2 || 0.100.3'
   - '@happyvertical/animation@0.5.0'
+  - '@happyvertical/ocr@0.62.1'
 
 catalog:
   '@aws-sdk/client-sqs': ^3.1136.0
@@ -200,7 +201,7 @@ catalog:
   '@happyvertical/json': ^0.105.0
   '@happyvertical/logger': ^0.105.0
   '@happyvertical/messages': ^0.105.0
-  '@happyvertical/ocr': ^0.61.6
+  '@happyvertical/ocr': ^0.62.1
   '@happyvertical/pdf': ^0.65.9
   '@happyvertical/projects': ^0.105.0
   '@happyvertical/repos': ^0.105.0
