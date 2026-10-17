@@ -358,16 +358,17 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
     if (isolated.config.type !== 'postgres') {
       throw new Error('Expected a PostgreSQL test database');
     }
-    db = isolated.baseDb;
+    // Legacy DDL belongs to this owned transaction. Rolling it back restores
+    // current payments, their rows and every dependent FK for later suites.
+    db = isolated.db;
     // `_smrt_backfills` is what makes the migration idempotent, so each case
     // has to start with an empty ledger or the second test's marker would make
     // the third a no-op.
     await db.query('DROP TABLE IF EXISTS _smrt_backfills');
     BackfillTracker.invalidateInitialization(db);
-    // CASCADE: the suite above provisions the current `payments` table in
-    // this same database, and `payment_allocations` holds a foreign key to
-    // it. The constraint is restored by the manifest reconciliation the next
-    // time an isolated database is built from the full commerce manifest.
+    // The shared schema may already have real payment allocations. CASCADE
+    // removes their FK only inside this transaction; cleanup restores it and
+    // the original payments rather than leaving committed orphan rows.
     await db.query('DROP TABLE IF EXISTS payments CASCADE');
     await db.query(
       `CREATE TABLE payments (
@@ -381,11 +382,11 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
   });
 
   afterEach(async () => {
-    // Never leave the hand-built legacy table behind for a later suite to
-    // reconcile against.
-    await db?.query('DROP TABLE IF EXISTS payments CASCADE');
-    await isolated?.cleanup();
-    isolated = undefined;
+    try {
+      await isolated?.cleanup();
+    } finally {
+      isolated = undefined;
+    }
   });
 
   async function seed(rows: Array<[string, number]>): Promise<void> {

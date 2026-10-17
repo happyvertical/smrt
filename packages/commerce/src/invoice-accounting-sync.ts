@@ -1,3 +1,4 @@
+import { hasRetentionAccountingAuthority } from './retention-accounting-internal.js';
 /** Frozen Invoice projection and guarded accounting-provider synchronization. */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -284,6 +285,12 @@ async function loadSnapshot(
   tenantId: string,
   invoice: Invoice,
 ): Promise<FrozenInvoiceAccountingSnapshot> {
+  if (invoice.moneyAuthority === 'historical')
+    throw new MoneyValidationError(
+      'ACCOUNTING_SYNC_UNSUPPORTED',
+      'Historical sales source money requires an explicit reviewed provider representation; no quantities or tax breakdown will be invented',
+    );
+
   if (invoice.tenantId !== tenantId)
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
@@ -293,6 +300,14 @@ async function loadSnapshot(
     throw new MoneyValidationError(
       'FROZEN_DOCUMENT',
       'Accounting sync requires an issued frozen invoice',
+    );
+  if (
+    (invoice.getPayableFacts().retainedRemainingMinor > 0 ||
+      invoice.retentionAccountingStateJson) &&
+    !hasRetentionAccountingAuthority(invoice.tenantId, invoice.id)
+  )
+    unsupported(
+      'Unreleased retention requires a provider payable representation',
     );
   if (invoice.status === InvoiceStatus.CANCELLED)
     unsupported('Cancelled documents cannot be created by accounting sync');
@@ -366,6 +381,13 @@ async function loadSnapshot(
         'INVALID_MONEY_INPUT',
         'Frozen credit note requires the source invoice external ID',
       );
+    if (
+      source.retentionAccountingStateJson &&
+      !hasRetentionAccountingAuthority(source.tenantId, source.id)
+    )
+      unsupported(
+        'Provider-retained credit requires the retained-first accounting adjustment command',
+      );
     const sourceState = parseSyncState(source.accountingSyncStateJson);
     if (
       sourceState?.status !== 'synced' ||
@@ -393,7 +415,7 @@ async function loadSnapshot(
       customerId: invoice.customerId,
       customerExternalId: invoice.customerExternalId || undefined,
       issueDate: invoice.issueDate,
-      dueDate: invoice.dueDate,
+      dueDate: invoice.dueDate ?? undefined,
       currency: invoice.currency,
       lineAmountType: invoice.lineAmountType,
       taxRoundingScope: invoice.taxRoundingScope,

@@ -196,6 +196,20 @@ export class Contract extends SmrtObject {
   })
   currency: string = 'USD';
 
+  /** Calculated pricing or immutable source-declared purchase evidence. */
+  @field({
+    description:
+      'Whether amounts were calculated or recorded from reviewed original paperwork.',
+  })
+  moneyAuthority: 'calculated' | 'received' = 'calculated';
+
+  /** Guarded received evidence; write through the public received purchase/sales contract commands only. */
+  receivedPurchaseMoneyJson = '';
+
+  /** Append-only approved milestone schedule and issued claim evidence. */
+  @field({ type: 'text' })
+  billingScheduleJson = '';
+
   /** Pricing interpretation fixed before the Contract leaves draft. */
   lineAmountType: 'exclusive' | 'inclusive' | 'none' = 'exclusive';
 
@@ -303,6 +317,12 @@ export class Contract extends SmrtObject {
     if (options.contractType !== undefined)
       this.contractType = options.contractType;
     if (options.status !== undefined) this.status = options.status;
+    if (options.billingScheduleJson !== undefined)
+      this.billingScheduleJson = options.billingScheduleJson;
+    if (options.moneyAuthority !== undefined)
+      this.moneyAuthority = options.moneyAuthority;
+    if (options.receivedPurchaseMoneyJson !== undefined)
+      this.receivedPurchaseMoneyJson = options.receivedPurchaseMoneyJson;
     if (options.subtotal !== undefined) this.subtotal = options.subtotal;
     if (options.discountTotal !== undefined)
       this.discountTotal = options.discountTotal;
@@ -413,6 +433,24 @@ export class Contract extends SmrtObject {
   override async save(): Promise<this> {
     const { saveContract } = await import('../contract-money.js');
     return (await saveContract(this)) as this;
+  }
+
+  /** Received purchase monetary history cannot be deleted. */
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    const { deleteContract } = await import('../contract-money.js');
+    await deleteContract(this, options);
+  }
+
+  /** @internal Contract aggregate persistence only. */
+  async deleteDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Contract money write capability is required');
+    await super.delete(options);
   }
 
   /** @internal Contract aggregate persistence only. */

@@ -242,12 +242,24 @@ Negative amounts require `refundOfId`, naming a positive non-refund expense
 visible in the same tenant and currency. Refund breakdown components are negative
 (or zero), including recovered tax. Self, missing, foreign-owner, currency-mismatched,
 and refund-of-refund sources fail closed. Source lookup uses the caller's database
-executor. This link retains provenance only: it does not allocate settlements,
-cap cumulative refunds, issue credits, or determine entitlement. A source may
-be explicitly reopened and corrected, but existing same-owner refunds prevent
-changes that would make it zero/nonpositive, turn it into a refund, or change
-its currency away from theirs. Unrelated edits and positive same-currency amount
-corrections remain allowed; there is no cumulative refund limit.
+executor. Every persisted linked refund reserves gross cash capacity, including
+unreviewed or rejected rows. Cumulative refunds cannot exceed source gross.
+Known financial reversals additionally cannot exceed the source subtotal or any
+exact source tax-code component's charged, recoverable, or nonrecoverable amount;
+components cannot compensate for one another. Source and refund edits revalidate
+the prospective position. Known linked facts cannot be cleared. This records
+reversals, not settlement allocation, customer credit authority, or entitlement.
+
+`await expenses.refundPosition(sourceId)` (also `source.getRefundPosition()`)
+returns positive `sourceAmount`, `refundedAmount`, and `remainingAmount`, plus
+all `refundIds`. Its `financialPosition` contains the original breakdown, signed
+negative cumulative `refunded` breakdown, and positive/zero `remaining`
+breakdown. It is null if source facts or any refund facts are unknown; unknown
+never implies zero tax or completed reversal. Known refunds on unknown legacy
+sources remain valid, bounded by known gross. When source facts exist, all known
+refund components remain bounded even if another refund's facts are unknown.
+The read retains the caller transaction and tenant boundary. Source gross is
+preserved: recording refunds never overwrites it.
 
 Expense saves validate and persist in one transaction, including nested caller
 transactions. On PostgreSQL, source edits and refund writes acquire ordered
@@ -259,14 +271,14 @@ requires these locks and the source revision claim below. Callers must not concu
 model instance while it is temporarily transaction-bound. Direct SQL writes
 remain outside these model-level guarantees.
 
-Linking a new refund (or changing its source) also claims the source revision in
+Linking a refund, changing its source, or editing its amount/financial facts claims the source revision in
 that same transaction through `claimRevision(source.updated_at)`. This makes a
 source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
 serialization error instead of missing the new refund. Reload a source after
 linking a refund before editing/reviewing it; on a serialization failure, retry
 the entire caller transaction with fresh instances. Failed outer transactions
-roll back both the refund and the source revision claim. Existing-link saves do
-not advance the source revision.
+roll back both the refund and the source revision claim. Saves that do not change
+capacity-relevant fields do not advance the source revision.
 
 Financial breakdown, third-party payer name, and refund provenance join the
 existing reviewed-money lock. Save `reopen()` first, then correct facts and review
@@ -274,3 +286,111 @@ again; corrections cannot ride alongside the reopen operation. New columns are
 additive via `smrt db:migrate`; legacy amounts survive without invented facts.
 The SQLite and PostgreSQL suites execute upgrades from the preceding schema and
 check that repeat migration is a no-op.
+
+### Refund cash recipients and reimbursement positions
+
+A refund's optional `refundRecipient` is guarded JSON, read/written through
+`getRefundRecipient()` / `setRefundRecipient({ kind: 'company' })` or
+`setRefundRecipient({ kind: 'person', profileId })` or
+`setRefundRecipient({ kind: 'third-party', name })`. A third-party name is exact
+retained source evidence (nonblank, at most 200 characters), not independently
+verified party/customer identity. It is never trimmed, fuzzily matched or resolved
+to another party by this API. It states who actually
+received the cash, independently of `paidBy`. Missing recipient is unknown;
+historical payer fields are never reinterpreted as receipt evidence. The field
+belongs only to linked negative refunds and joins the reviewed-money freeze.
+
+For a positive person-paid reimbursable source,
+`await expenses.reimbursementPosition(sourceId)` (or
+`source.getReimbursementPosition()`) reports original `sourceAmount`,
+`personRefundAmount`, `companyRefundAmount`, retained `reimbursedAmount`,
+`remainingAmount`, and separate `owedToCompany`. Company-received refunds do not
+reduce the person's original gross cash claim. Same-person refunds do. A later
+person-received refund after reimbursement creates money owed to the company;
+it never becomes a negative reimbursement or automatically records settlement.
+These cash values remain separate from economic `getCostBasis()`.
+
+`markReimbursed({ amount?, at?, reference? })` records only the full known
+remaining claim and retains exact `reimbursedAmount`, preserving source gross.
+An optional expected `amount` must match it exactly; partial payment is refused.
+An existing payment cannot be overwritten, and its cash claim/payer remain
+fixed. Payment fields cannot be forged by direct save. Existing no-refund
+callers may omit amount and record the full original gross as before.
+
+`unknownReason` identifies an unknown recipient, another person's recipient,
+an explicit third-party receipt (`unknown-third-party-recipient`), or a historical
+reimbursement marker without retained paid cash. A third-party receipt is never
+counted as company/person cash or interpreted as income or settlement. Unknown
+positions return null liability/receivable rather than inferring zero or a
+historical gross payment. Resolve legacy evidence explicitly; this API supplies
+no automatic legacy conversion. Recording is not transfer execution. Both public
+position reads and writes preserve caller transaction affinity and source locks;
+refund-recipient changes also advance the source revision to reject stale
+REPEATABLE READ reimbursement decisions.
+
+## Supplier retention and payable evidence
+
+`Expense.recordSupplierPayable()` and the matching collection method retain an
+original supplier obligation separately from incurred money, tax recovery,
+company cost and employee reimbursement. The original `payableBasisMinor` is
+explicit or `null`; neither payer nor expense gross implies unpaid supplier debt.
+Original held/released/settled events carry exact source identity, original author,
+calendar date and explicit same-day sequence. Unknown original author is null,
+never a fabricated current reviewer. The current recorder and import
+review evidence are independent. Returned events have immutable UUIDs for host
+crosswalks. Recording evidence does not approve the expense, execute a payment,
+create a journal or contact an accounting provider.
+
+```ts
+const position = await expenses.recordSupplierPayable(expenseId, {
+  requestId, currency: 'CAD', payableBasisMinor: null,
+  source: { namespace: 'original-books', key: 'receipt-42', version: '1', author: 'Original bookkeeper' },
+  recordedByProfileId: reviewerProfileId,
+  evidenceRef: 'Reviewed original source export',
+  events: [{
+    kind: 'hold', amountMinor: 1000, effectiveOn: '2026-09-15', sequence: 0,
+    evidenceRef: 'Original retained amount',
+    source: { namespace: 'original-books', key: 'hold-7', version: '1', author: 'Original bookkeeper' },
+  }],
+});
+// position.retainedMinor === 1000; position.remainingPayableMinor === null
+```
+
+`completeSupplierPayableBasis()` can complete an originally unknown basis once,
+with explicit review evidence while preserving the original unknown snapshot.
+`recordSupplierPayableEvent()` appends a dated hold, release, supplier settlement
+or refund interpretation. Exact `recordedRetainedMinor` remains visible while `retainedMinor` is null if a
+linked refund lacks its allocation evidence. A settlement is evidence of money already paid; it is
+not a bank instruction. Current settlements require a known basis and every
+linked refund's explicit interpretation. Releases consume only retained capacity.
+The current caller remains responsible for host permissions and reviewer identity;
+these methods are not generated REST/MCP/CLI actions.
+
+A linked negative Expense does not establish how much supplier debt was reduced
+or how much cash was returned. Its explicit `refund` event therefore names
+`refundExpenseId`, `payableReductionMinor`, `retainedReductionMinor`, and
+`cashReturnedMinor`, each bounded by the owning source/capacity. Retained reduction
+cannot exceed payable reduction. Unknown refund interpretation makes the payable
+position unknown and prohibits new settlement or release; it never becomes zero or an
+inferred allocation. Expense refund gross/component caps continue to apply.
+
+Every chronological prefix conserves retained and paid capacity: obligation is
+basis minus explicit payable reductions; net paid is settlements minus cash
+returns; retained is holds minus releases and retained reductions; payable is
+obligation minus net paid and retained. No intermediate amount may be negative.
+An original unknown basis uses expense gross only as an upper validation bound,
+never as a reported payable amount. Source events precede neither the expense
+nor their exact linked refund date, and same-day events require unique sequence.
+`getSupplierPayablePosition({ asOfDate })` / collection `supplierPayablePosition`
+returns dated sums with the complete original/current authority for provenance.
+It returns null before the original Expense date, rather than projecting a future
+obligation into an earlier period.
+A later reviewed basis completion is explicit retrospective interpretation, not
+proof that the amount was known to the original author on an earlier date.
+
+Commands share Expense's transaction, source-row locks and revision guards with
+refunds. Exact retries return retained IDs; changed requests are refused. Original
+source and current completion/event evidence cannot be replaced or deleted;
+managed source money/payer/context and linked refund facts cannot be edited
+around the position. Caller rollback includes both evidence and source revision.
+Expenses with no supplier-payable authority keep their existing behavior.

@@ -318,6 +318,7 @@ export class InvoicingRecipe extends SmrtRecipe {
   static options = {
     Invoice: {
       fields: {
+        historicalSourceKeyHash: { visibility: 'hidden' },
         providerTaxAmount: { visibility: 'hidden' },
         arJournalId: { visibility: 'hidden' },
         revenueJournalId: { visibility: 'hidden' },

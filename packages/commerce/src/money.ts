@@ -34,6 +34,7 @@ export type MoneyValidationCode =
   | 'DISCOUNT_SIGN'
   | 'PERCENT_OUT_OF_RANGE'
   | 'COMPOUND_UNSUPPORTED'
+  | 'TAX_COMPONENT_DEPENDENCY_CYCLE'
   | 'INVALID_MONEY_INPUT'
   | 'TAX_CODE_DUPLICATE_COMPONENT'
   | 'TAX_CODE_KIND'
@@ -108,7 +109,12 @@ export interface MoneyLineResult {
   grossMinor: number;
   discountMinor: number;
   amountMinor: number;
-  components: { taxComponentId: string; taxMinor: number }[];
+  components: {
+    taxComponentId: string;
+    taxMinor: number;
+    compound?: boolean;
+    taxableMinor?: number;
+  }[];
   taxMinor: number;
   netMinor: number;
 }
@@ -118,6 +124,8 @@ export interface MoneyDocumentTaxResult {
   taxCodeId: string | null;
   taxComponentId: string | null;
   taxableMinor: number;
+  /** Net basis separately from a compound component's actual taxable basis. */
+  netMinor?: number;
   taxMinor: number;
 }
 
@@ -232,7 +240,7 @@ function percentUnits(value: string): bigint {
 function validateTaxCode(
   code: MoneyTaxCodeInput,
   rates: Map<string, bigint>,
-): { taxComponentId: string; rate: bigint }[] {
+): { taxComponentId: string; rate: bigint; compound: boolean }[] {
   if (!code || typeof code !== 'object')
     validationError('INVALID_MONEY_INPUT', 'Tax code must be an object');
   assertIdentifier(code.id, 'Tax code ID');
@@ -274,11 +282,6 @@ function validateTaxCode(
         'INVALID_MONEY_INPUT',
         'Tax component compound must be boolean',
       );
-    if (component.compound)
-      validationError(
-        'COMPOUND_UNSUPPORTED',
-        'Compound tax components are not supported',
-      );
     const rate = percentUnits(component.percent);
     const existing = rates.get(component.taxComponentId);
     if (existing !== undefined && existing !== rate)
@@ -287,7 +290,11 @@ function validateTaxCode(
         'Shared tax component has conflicting percentages',
       );
     rates.set(component.taxComponentId, rate);
-    return { taxComponentId: component.taxComponentId, rate };
+    return {
+      taxComponentId: component.taxComponentId,
+      rate,
+      compound: component.compound,
+    };
   });
 }
 
@@ -409,46 +416,104 @@ export function calculateMoneyDocument(input: {
         'None pricing requires an out-of-scope tax code',
       );
     const components = line.taxCode ? validateTaxCode(line.taxCode, rates) : [];
-    const totalRate = components.reduce(
-      (sum, component) => sum + component.rate,
-      0n,
-    );
-    const denominator =
-      explicitNet === null && input.lineAmountType === 'inclusive'
-        ? PERCENT_DENOMINATOR + totalRate
-        : PERCENT_DENOMINATOR;
+    // Inclusive extraction uses exact ordered factors; exclusive calculation
+    // below uses previously rounded/allocated taxes, not these exact factors.
+    let totalNumerator = 1n;
+    let totalDenominator = 1n;
+    const factors = components.map((component) => {
+      const numerator =
+        component.rate *
+        (component.compound ? totalNumerator : totalDenominator);
+      const denominator = PERCENT_DENOMINATOR * totalDenominator;
+      totalNumerator = totalNumerator * PERCENT_DENOMINATOR + numerator;
+      totalDenominator = denominator;
+      return { ...component, numerator, denominator };
+    });
+    const inclusive =
+      explicitNet === null && input.lineAmountType === 'inclusive';
     return {
       input: line,
       gross,
       discount,
       amount,
       explicitNet,
+      inclusive,
       exact:
         input.lineAmountType === 'none'
           ? []
-          : components.map((component) => ({
-              taxComponentId: component.taxComponentId,
-              numerator: amount * component.rate,
-              denominator,
+          : factors.map((component, index) => ({
+              ...component,
+              priorIds: component.compound
+                ? components
+                    .slice(0, index)
+                    .map((prior) => prior.taxComponentId)
+                : [],
+              numerator: amount * component.numerator * totalDenominator,
+              denominator: component.denominator * totalNumerator,
             })),
       taxes: new Map<string, bigint>(),
+      bases: new Map<string, bigint>(),
     };
   });
 
+  const dependencies = new Map(
+    [...rates.keys()].map((id) => [id, new Set<string>()]),
+  );
+  for (const line of working)
+    for (const component of line.exact)
+      for (const prior of component.priorIds)
+        dependencies.get(component.taxComponentId)?.add(prior);
+  const order: string[] = [];
+  while (dependencies.size) {
+    const ready = [...dependencies]
+      .filter(([, prior]) => prior.size === 0)
+      .map(([id]) => id)
+      .sort();
+    if (!ready.length)
+      validationError(
+        'TAX_COMPONENT_DEPENDENCY_CYCLE',
+        'Tax codes impose contradictory compound component order',
+      );
+    for (const id of ready) {
+      order.push(id);
+      dependencies.delete(id);
+      for (const prior of dependencies.values()) prior.delete(id);
+    }
+  }
+  const exactTax = (
+    line: (typeof working)[number],
+    component: (typeof working)[number]['exact'][number],
+  ) => {
+    if (line.inclusive) return component;
+    const basis =
+      line.amount +
+      component.priorIds.reduce(
+        (sum, id) => sum + (line.taxes.get(id) ?? 0n),
+        0n,
+      );
+    safeMoney(basis);
+    line.bases.set(component.taxComponentId, basis);
+    return {
+      numerator: basis * component.rate,
+      denominator: PERCENT_DENOMINATOR,
+    };
+  };
   if (input.roundingScope === 'line') {
     for (const line of working)
-      for (const component of line.exact)
+      for (const component of line.exact) {
+        const exact = exactTax(line, component);
         line.taxes.set(
           component.taxComponentId,
-          roundSignedRational(component.numerator, component.denominator),
+          roundSignedRational(exact.numerator, exact.denominator),
         );
+      }
   } else {
-    for (const componentId of [...rates.keys()].sort()) {
+    for (const componentId of order) {
       const eligible = working.flatMap((line) => {
-        const exact = line.exact.find(
-          (component) => component.taxComponentId === componentId,
+        const component = line.exact.find(
+          (item) => item.taxComponentId === componentId,
         );
-        return exact ? [{ line, exact }] : [];
+        return component ? [{ line, exact: exactTax(line, component) }] : [];
       });
       const allocated = allocateSignedRationals(
         eligible.map(({ line, exact }) => ({
@@ -476,6 +541,22 @@ export function calculateMoneyDocument(input: {
     const net =
       line.explicitNet ??
       (input.lineAmountType === 'inclusive' ? line.amount - tax : line.amount);
+    for (let index = 0; index < components.length; index++) {
+      const source = line.exact[index];
+      if (source.compound)
+        Object.assign(components[index], {
+          compound: true,
+          taxableMinor: safeMoney(
+            line.inclusive
+              ? net +
+                  source.priorIds.reduce(
+                    (sum, id) => sum + (line.taxes.get(id) ?? 0n),
+                    0n,
+                  )
+              : (line.bases.get(source.taxComponentId) ?? net),
+          ),
+        });
+    }
     const amount =
       line.explicitNet !== null && input.lineAmountType === 'inclusive'
         ? net + tax
@@ -527,8 +608,13 @@ export function calculateMoneyDocument(input: {
         taxMinor: 0,
       };
       row.taxableMinor = safeMoney(
-        BigInt(row.taxableMinor) + BigInt(result.netMinor),
+        BigInt(row.taxableMinor) +
+          BigInt(component.taxableMinor ?? result.netMinor),
       );
+      if (component.compound)
+        row.netMinor = safeMoney(
+          BigInt(row.netMinor ?? 0) + BigInt(result.netMinor),
+        );
       row.taxMinor = safeMoney(
         BigInt(row.taxMinor) + BigInt(component.taxMinor),
       );
