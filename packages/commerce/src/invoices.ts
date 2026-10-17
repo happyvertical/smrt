@@ -7,4 +7,27 @@
 
 export type { MoneyValidationCode } from './money.js';
 export { MoneyValidationError } from './money.js';
+export type {
+  ReconcileRetainedAccountingStepInput,
+  ReconcileRetainedCreditAccountingInput,
+  ReleaseRetainedInvoiceToAccountingInput,
+  RetainedInvoiceAccountingState,
+  SyncRetainedCreditToAccountingInput,
+  SyncRetainedInvoiceToAccountingInput,
+  SyncRetainedRefundToAccountingInput,
+} from './retention-accounting.js';
+export {
+  loadRetainedCreditAccountingSnapshot,
+  loadRetainedInvoiceAccountingSnapshot,
+  readRetainedInvoiceAccountingState,
+  reconcileRetainedAccountingStep,
+  reconcileRetainedBaseInvoice,
+  reconcileRetainedCreditAccounting,
+  releaseRetainedInvoiceToAccounting,
+  syncRetainedCreditToAccounting,
+  syncRetainedInvoiceToAccounting,
+  syncRetainedRefundToAccounting,
+  toRetainedCreditAccountingInput,
+  toRetainedInvoiceAccountingInput,
+} from './retention-accounting.js';
 export * from './svelte/invoices/calculations.js';

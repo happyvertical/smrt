@@ -303,9 +303,10 @@ describe('every recipe', () => {
               `${recipe.id} ${m.name}.${x.name}`,
             ),
         );
-        expect(glossary.filter((g) => g.model === m.name)).toHaveLength(
-          shown.length,
-        );
+        expect(
+          glossary.filter((g) => g.model === m.name),
+          `${recipe.id} ${m.name}`,
+        ).toHaveLength(shown.length);
       }
       // No developer vocabulary leaks into the prose.
       if (UPSTREAM_GAPS.developerVocabulary.has(recipe.id)) continue;

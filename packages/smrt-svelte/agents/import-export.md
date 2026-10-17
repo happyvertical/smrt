@@ -60,3 +60,32 @@ component.
 Native `.xlsx` read/write (save as CSV first), server-side dry-run endpoints,
 upsert-by-key, and recipe/nav wiring (offering the panel on list screens waits
 on the recipe surface contract, #3708).
+
+## Server CSV entry (#4080)
+
+Plain Node ingestion workers import the existing pure CSV API from
+`@happyvertical/smrt-svelte/import-export/csv`. This subpath exposes `parseTable`,
+`parseDelimited`, `formatDelimited`, delimiter/BOM helpers, formula helpers,
+`CsvParseError`, and their option/result types without loading Svelte or DOM code.
+The `./import-export` barrel remains the component-facing entry.
+
+```ts
+import { parseTable } from '@happyvertical/smrt-svelte/import-export/csv';
+
+const table = parseTable(csvText, { delimiter: ',', maxRecords: 10_001 });
+```
+
+The parser does not authorize, map, or persist business records. Hosts enforce
+input size and domain validation and retain source evidence independently.
+
+### Export validation
+
+| Behavior | Evidence |
+| --- | --- |
+| Existing parsing, escaping, bounds and spreadsheet helpers | Focused `src/components/import-export/__tests__/csv.test.ts` |
+| Node consumers can resolve public entry without a Svelte loader | Build and pack package, extract into an isolated `node_modules/@happyvertical/smrt-svelte`, and import `./import-export/csv` in plain Node; assert BOM/quoted-newline parse and row-limit error |
+| TypeScript consumers resolve declarations | Packed `exports` target and generated `csv.d.ts` exist; normal package export/type verifier |
+| Component entry remains compatible | Existing component export untouched; no parser or component behavior changed |
+
+No schema, authorization, transaction, or tenant mutation is introduced by
+this additive export; those behavioral test dimensions are not applicable.

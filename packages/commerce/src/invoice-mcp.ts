@@ -5,6 +5,7 @@ import { DocumentTaxCollection } from './collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
 import { getInvoiceMoneyFacts } from './document-money.js';
+import { readHistoricalSalesLines } from './historical-sales-money.js';
 import type { Invoice } from './models/Invoice.js';
 import { MoneyValidationError } from './money.js';
 import { withTenantMoneyRuntime } from './tenant-money-barrier.js';
@@ -26,6 +27,9 @@ const REQUIRED_INVOICE_MONEY_FIELDS = [
   'taxAmount',
   'providerTaxAmount',
   'totalAmount',
+  'retentionStateJson',
+  'amountPaid',
+  'creditedAmount',
 ] as const;
 
 const REQUIRED_LINE_MONEY_FIELDS = [
@@ -52,6 +56,7 @@ const REQUIRED_TAX_MONEY_FIELDS = [
   'percent',
   'liabilityAccountId',
   'taxableMinor',
+  'netMinor',
   'taxMinor',
   'recoverableMinor',
 ] as const;
@@ -79,6 +84,37 @@ async function mayExposeMoneyProjection(
     !exposesFields(invoice.toPublicJSON(options), REQUIRED_INVOICE_MONEY_FIELDS)
   )
     return false;
+  // Provider operation state is private and is never projected into money.
+  // Original source facts are projected, so respect both their owning header
+  // policy and every source-child field that appears in the retained snapshot.
+  if (invoice.moneyAuthority === 'historical') {
+    if (
+      !exposesFields(invoice.toPublicJSON(options), [
+        'moneyAuthority',
+        'historicalSalesMoneyJson',
+      ])
+    )
+      return false;
+    const originalLines = await readHistoricalSalesLines(invoice.db, invoice);
+    if (
+      originalLines.some(
+        (line) =>
+          !exposesFields(line.toPublicJSON(options), [
+            'id',
+            'sourceKey',
+            'creditedLineId',
+            'description',
+            'netMinor',
+            'taxMinor',
+            'grossMinor',
+            'quantityText',
+            'unitRateText',
+            'sourceFieldsJson',
+          ]),
+      )
+    )
+      return false;
+  }
   const lines = await (
     await InvoiceLineItemCollection.create({ db: invoice.db })
   ).findByInvoice(invoiceId);

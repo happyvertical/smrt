@@ -1,3 +1,9 @@
+import { assertContractScheduleInvoiceFreeze } from './contract-billing-schedule.js';
+import {
+  getHistoricalSalesMoney,
+  readHistoricalSalesLines,
+} from './historical-sales-money.js';
+import type { HistoricalSalesMoneySnapshot } from './historical-sales-types.js';
 /** Transactional Invoice money aggregate persistence. */
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -115,7 +121,12 @@ export interface GetInvoiceMoneyFactsInput {
 }
 
 export interface InvoiceMoneyFacts {
+  historical?: {
+    snapshot: HistoricalSalesMoneySnapshot;
+    lines: Array<{ sourceKey: string; lineId: string }>;
+  };
   source: 'stored';
+  payable?: ReturnType<Invoice['getPayableFacts']>;
   invoiceId: string;
   moneySnapshotId: string;
   kind: Invoice['kind'];
@@ -126,6 +137,9 @@ export interface InvoiceMoneyFacts {
 }
 
 const FROZEN_INVOICE_FIELDS = [
+  'moneyAuthority',
+  'historicalSalesMoneyJson',
+  'historicalSourceKeyHash',
   'kind',
   'creditedInvoiceId',
   'tenantId',
@@ -366,14 +380,21 @@ function issuedCredit(invoice: Invoice): boolean {
   );
 }
 
-async function refreshIssuedCreditBalance(
+/** @internal Refresh one economic credit effect, including historical issued credits. */
+export async function refreshIssuedCreditBalance(
   db: DatabaseInterface,
   source: Invoice,
 ): Promise<void> {
   const sourceId = requireId(source.id, 'Credited invoice');
   const credits = await (await InvoiceCollection.create({ db })).list({
     where: { tenantId: source.tenantId, creditedInvoiceId: sourceId },
+    limit: 100001,
   });
+  if (credits.length > 100000)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Issued credit scope exceeds its bounded source limit',
+    );
   const issued = credits.filter(issuedCredit).sort((left, right) => {
     const date = left.issueDate.getTime() - right.issueDate.getTime();
     if (date) return date;
@@ -396,11 +417,39 @@ async function refreshIssuedCreditBalance(
       ? Math.min(credit.totalAmount, remainingSource)
       : 0;
     if (included) remainingSource -= applied;
+    if (source.retentionAccountingStateJson) {
+      const providerState = JSON.parse(source.retentionAccountingStateJson);
+      const managedCredit = providerState.credits.find(
+        (entry: { creditId: string }) => entry.creditId === credit.id,
+      );
+      if (
+        managedCredit &&
+        (applied !== managedCredit.retainedMinor + managedCredit.appliedMinor ||
+          !included)
+      )
+        throw new MoneyValidationError(
+          'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+          'Provider-managed credit allocation cannot change without an explicit reversal contract',
+        );
+    }
     if (credit.creditedAmount !== applied) {
       credit.creditedAmount = applied;
       credit.updatePaymentStatus(credit.amountPaid);
       await credit.saveDerived(DOCUMENT_MONEY_WRITE);
     }
+  }
+  if (source.retentionAccountingStateJson && total !== source.creditedAmount) {
+    const state = JSON.parse(source.retentionAccountingStateJson);
+    if (
+      state.status !== 'ready' ||
+      state.steps.some(
+        (step: { status: string }) => step.status !== 'confirmed',
+      )
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+        'Provider retention operation must reconcile before changing source credits',
+      );
   }
   source.creditedAmount = total;
   source.updatePaymentStatus(source.amountPaid);
@@ -434,6 +483,11 @@ async function prepareCreditLines(
     throw new MoneyValidationError(
       'CREDIT_TARGET_NOT_ISSUED',
       'Credit target must be an issued, non-cancelled invoice in the same tenant',
+    );
+  if (sourceInvoice.moneyAuthority === 'historical')
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Historical source credits require exact original monetary facts and concrete historical source line lineage, not calculated quantity or inferred tax',
     );
   if (sourceInvoice.currency !== invoice.currency)
     throw new MoneyValidationError(
@@ -615,7 +669,7 @@ async function recomputeInvoiceAggregate(
         components: source.taxComponents.map((component) => ({
           taxComponentId: component.taxComponentId,
           percent: component.percent,
-          compound: false,
+          compound: component.compound ?? false,
         })),
       };
     }
@@ -795,6 +849,7 @@ async function recomputeInvoiceAggregate(
                     taxComponentId: part.taxComponentId,
                     name: component.name,
                     percent: component.percent,
+                    ...(part.compound ? { compound: true } : {}),
                     taxMinor: 0,
                   };
                 }),
@@ -852,6 +907,20 @@ async function recomputeInvoiceAggregate(
         const desiredTax = sourceComponent.taxMinor - priorTax;
         const taxDelta = desiredTax - component.taxMinor;
         component.taxMinor = desiredTax;
+        if (sourceComponent.compound) {
+          component.compound = true;
+          component.taxableMinor =
+            (sourceComponent.taxableMinor ?? 0) -
+            prior.reduce(
+              (sum, candidate) =>
+                sum +
+                (candidate.taxComponents.find(
+                  (part) =>
+                    part.taxComponentId === sourceComponent.taxComponentId,
+                )?.taxableMinor ?? 0),
+              0,
+            );
+        }
         result.taxMinor += taxDelta;
         if (invoice.lineAmountType === 'inclusive')
           result.amountMinor += taxDelta;
@@ -863,6 +932,7 @@ async function recomputeInvoiceAggregate(
         taxCodeId: string | null;
         taxComponentId: string | null;
         taxableMinor: number;
+        netMinor?: number;
         taxMinor: number;
       }
     >();
@@ -870,7 +940,14 @@ async function recomputeInvoiceAggregate(
       const metadata = resolvedCodes.get(result.id) ?? null;
       const parts = result.components.length
         ? result.components
-        : [{ taxComponentId: null, taxMinor: 0 }];
+        : [
+            {
+              taxComponentId: null,
+              taxMinor: 0,
+              compound: false,
+              taxableMinor: undefined,
+            },
+          ];
       for (const part of parts) {
         const key = `${metadata?.id ?? ''}\u0000${part.taxComponentId ?? ''}`;
         const row = rebuilt.get(key) ?? {
@@ -879,7 +956,8 @@ async function recomputeInvoiceAggregate(
           taxableMinor: 0,
           taxMinor: 0,
         };
-        row.taxableMinor += result.netMinor;
+        row.taxableMinor += part.taxableMinor ?? result.netMinor;
+        if (part.compound) row.netMinor = (row.netMinor ?? 0) + result.netMinor;
         row.taxMinor += part.taxMinor;
         rebuilt.set(key, row);
       }
@@ -953,14 +1031,21 @@ async function recomputeInvoiceAggregate(
         name: component.name,
         percent: component.percent,
         taxMinor: entry.taxMinor,
+        ...(entry.compound
+          ? { compound: true, taxableMinor: entry.taxableMinor }
+          : {}),
       };
     });
-    line.taxRate = code
-      ? code.components.reduce(
-          (sum, part) => sum + Number(part.percent) / 100,
-          0,
-        )
-      : 0;
+    line.taxRate = result.components.some((part) => part.compound)
+      ? result.netMinor === 0
+        ? 0
+        : result.taxMinor / result.netMinor
+      : code
+        ? code.components.reduce(
+            (sum, part) => sum + Number(part.percent) / 100,
+            0,
+          )
+        : 0;
     if (freezeSnapshotId) line.moneySnapshotId = freezeSnapshotId;
     if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE);
   }
@@ -1010,6 +1095,7 @@ async function recomputeInvoiceAggregate(
         currentComponent?.liabilityAccountId ||
         null,
       taxableMinor: tax.taxableMinor,
+      netMinor: tax.netMinor ?? null,
       taxMinor: tax.taxMinor,
       recoverableMinor: 0,
     };
@@ -1167,8 +1253,25 @@ async function getInvoiceMoneyFactsOnScope(
   const taxes = await (
     await DocumentTaxCollection.create({ db: input.db })
   ).findByDocument(input.tenantId, invoice.kind, input.invoiceId);
+  const historical = getHistoricalSalesMoney(invoice);
   return {
     source: 'stored',
+    ...(historical
+      ? {
+          historical: {
+            snapshot: historical,
+            lines: (await readHistoricalSalesLines(input.db, invoice)).map(
+              (line) => ({
+                sourceKey: line.sourceKey,
+                lineId: String(line.id),
+              }),
+            ),
+          },
+        }
+      : {}),
+    ...(invoice.retentionStateJson
+      ? { payable: invoice.getPayableFacts() }
+      : {}),
     invoiceId: input.invoiceId,
     moneySnapshotId: invoice.moneySnapshotId,
     kind: invoice.kind,
@@ -1207,6 +1310,7 @@ async function getInvoiceMoneyFactsOnScope(
       percent: row.percent,
       liabilityAccountId: row.liabilityAccountId,
       taxableMinor: row.taxableMinor,
+      ...(row.netMinor !== null ? { netMinor: row.netMinor } : {}),
       taxMinor: row.taxMinor,
       recoverableMinor: row.recoverableMinor,
     })),
@@ -1247,6 +1351,34 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
         const settings = await lockRuntimeSettings(tx, candidateTenantId);
         const existing = invoice.id ? await findInvoice(tx, invoice.id) : null;
         const tenantId = existing?.tenantId ?? candidateTenantId;
+        if (
+          invoice.retentionAccountingStateJson !==
+          (existing?.retentionAccountingStateJson ?? '')
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Retention accounting state is managed by provider commands',
+          );
+        if (
+          invoice.moneyAuthority !==
+            (existing?.moneyAuthority ?? 'calculated') ||
+          invoice.historicalSalesMoneyJson !==
+            (existing?.historicalSalesMoneyJson ?? '') ||
+          invoice.historicalSourceKeyHash !==
+            (existing?.historicalSourceKeyHash ?? null)
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Historical source authority is managed only by historical sales commands',
+          );
+        if (existing?.moneyAuthority === 'historical')
+          getHistoricalSalesMoney(existing);
+
+        if (invoice.retentionStateJson !== (existing?.retentionStateJson ?? ''))
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Retention state is managed by retention commands',
+          );
         if (
           candidateTenantId &&
           existing?.tenantId &&
@@ -1312,6 +1444,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           invoice.taxAmount = invoice.providerTaxAmount;
           invoice.totalAmount = invoice.providerTaxAmount;
           if (invoice.status !== InvoiceStatus.DRAFT || invoice.arJournalId) {
+            await assertContractScheduleInvoiceFreeze(tx, invoice);
             const customers = await CustomerCollection.create({ db: tx });
             const customer = invoice.customerId
               ? await customers.get(
@@ -1412,6 +1545,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           : '';
         await recomputeInvoiceAggregate(tx, invoice, settings, snapshotId);
         if (freezing) {
+          await assertContractScheduleInvoiceFreeze(tx, invoice);
           const customers = await CustomerCollection.create({ db: tx });
           const customer = invoice.customerId
             ? await customers.get({ id: invoice.customerId }, { cache: false })

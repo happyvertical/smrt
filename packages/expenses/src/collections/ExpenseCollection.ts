@@ -17,11 +17,19 @@ import type {
 } from '../actions/expense-actions.js';
 import { Expense } from '../models/Expense.js';
 import type { ExpenseReceipt } from '../models/ExpenseReceipt.js';
+import type {
+  CompleteSupplierPayableBasisInput,
+  RecordSupplierPayableEventInput,
+  RecordSupplierPayableInput,
+  SupplierPayablePosition,
+} from '../supplier-payable.js';
 import {
   type CommitmentPosition,
   type CurrencyTotals,
   ExpenseError,
   type ExpenseFinancialBreakdown,
+  type ExpenseRefundPosition,
+  type ExpenseReimbursementPosition,
   type ExpenseReviewStatus,
   type ExpenseTotalsOptions,
 } from '../types.js';
@@ -116,6 +124,78 @@ function addTo(totals: CurrencyTotals, currency: string, amount: number) {
 })
 export class ExpenseCollection extends SmrtCollection<Expense> {
   static readonly _itemClass = Expense;
+
+  /** Record immutable original supplier retention/payable evidence on its Expense. */
+  async recordSupplierPayable(
+    expenseId: string,
+    input: RecordSupplierPayableInput,
+  ): Promise<SupplierPayablePosition> {
+    const expense = await this.requireSupplierPayableExpense(expenseId);
+    return expense.recordSupplierPayable(input);
+  }
+
+  /** Append a dated supplier event; no external money movement is executed. */
+  async recordSupplierPayableEvent(
+    expenseId: string,
+    input: RecordSupplierPayableEventInput,
+  ): Promise<SupplierPayablePosition> {
+    return (
+      await this.requireSupplierPayableExpense(expenseId)
+    ).recordSupplierPayableEvent(input);
+  }
+
+  /** Independently review an originally unknown payable basis exactly once. */
+  async completeSupplierPayableBasis(
+    expenseId: string,
+    input: CompleteSupplierPayableBasisInput,
+  ): Promise<SupplierPayablePosition> {
+    return (
+      await this.requireSupplierPayableExpense(expenseId)
+    ).completeSupplierPayableBasis(input);
+  }
+
+  /** Dated supplier position is independent of incurred cost and reimbursement. */
+  async supplierPayablePosition(
+    expenseId: string,
+    input: { asOfDate?: string } = {},
+  ): Promise<SupplierPayablePosition | null> {
+    return (
+      await this.requireSupplierPayableExpense(expenseId)
+    ).getSupplierPayablePosition(input);
+  }
+
+  private async requireSupplierPayableExpense(
+    expenseId: string,
+  ): Promise<Expense> {
+    const expense = await this.get({ id: expenseId }, { cache: false });
+    if (!expense)
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Supplier payable source was not found.',
+      );
+    return expense;
+  }
+
+  /** Cash claim after explicit refund receipts and retained historical payments. */
+  async reimbursementPosition(
+    sourceId: string,
+  ): Promise<ExpenseReimbursementPosition> {
+    const source = await this.get({ id: sourceId }, { cache: false });
+    if (!source)
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Reimbursement source was not found.',
+      );
+    return source.getReimbursementPosition();
+  }
+
+  /** All persisted linked refunds reserve source capacity, irrespective of review. */
+  async refundPosition(sourceId: string): Promise<ExpenseRefundPosition> {
+    const source = await this.get({ id: sourceId }, { cache: false });
+    if (!source)
+      throw new ExpenseError('EXPENSE_INVALID', 'Refund source was not found.');
+    return source.getRefundPosition();
+  }
 
   /**
    * Record a new, unreviewed expense for the signed-in person in their

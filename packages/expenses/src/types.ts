@@ -91,8 +91,53 @@ export interface ExpenseCostBasis {
   costBasis: number;
 }
 
+/** Exact refund capacity; cash magnitudes are positive, financial reversals signed. */
+export interface ExpenseRefundPosition {
+  sourceId: string;
+  currency: string;
+  sourceAmount: number;
+  refundedAmount: number;
+  remainingAmount: number;
+  /** Every persisted linked refund reserves capacity, regardless of review state. */
+  refundIds: string[];
+  /** Null if any source/refund financial facts are unknown; never inferred zero. */
+  financialPosition: {
+    source: ExpenseFinancialBreakdown;
+    /** Negative cumulative reversal, with source component identities. */
+    refunded: ExpenseFinancialBreakdown;
+    remaining: ExpenseFinancialBreakdown;
+  } | null;
+}
+
+/** Who actually received a linked supplier refund; independent of original payer. */
+export type ExpenseRefundRecipient =
+  | { kind: 'company' }
+  | { kind: 'person'; profileId: string }
+  | { kind: 'third-party'; name: string };
+
+/** Cash reimbursement liability, distinct from supplier economic cost basis. */
+export interface ExpenseReimbursementPosition {
+  sourceId: string;
+  currency: string;
+  sourceAmount: number;
+  personRefundAmount: number | null;
+  companyRefundAmount: number | null;
+  reimbursedAmount: number | null;
+  remainingAmount: number | null;
+  /** Separate receivable; never a negative reimbursement or automatic settlement. */
+  owedToCompany: number | null;
+  unknownReason:
+    | 'unknown-refund-recipient'
+    | 'recipient-is-another-person'
+    | 'unknown-third-party-recipient'
+    | 'legacy-reimbursement-amount'
+    | null;
+}
+
 /** Constructor options for {@link Expense}. */
 export interface ExpenseOptions extends SmrtObjectOptions {
+  /** Hydration only; ordinary writes are rejected by the owning command guard. */
+  supplierPayableJson?: string | null;
   tenantId?: string | null;
   costObjectType?: string;
   costObjectId?: string;
@@ -115,6 +160,8 @@ export interface ExpenseOptions extends SmrtObjectOptions {
   commitmentId?: string | null;
   commitmentLineId?: string | null;
   reimbursable?: boolean;
+  refundRecipient?: string | null;
+  reimbursedAmount?: number | null;
   reimbursedAt?: Date | null;
   reimbursementReference?: string;
 }
@@ -171,6 +218,8 @@ export interface ReopenExpenseInput {
 
 /** Arguments for `Expense.markReimbursed()`. */
 export interface MarkReimbursedInput {
+  /** Optional expected cash amount; must equal the full remaining claim. */
+  amount?: number;
   /** When the person was paid back; defaults to now. */
   at?: Date;
   /** Payroll line, payables reference, or transfer id. */

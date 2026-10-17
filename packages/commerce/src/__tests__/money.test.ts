@@ -404,20 +404,6 @@ describe('validation and tax-code resolution', () => {
     expectCode(
       () =>
         calculate(
-          [
-            {
-              ...line,
-              taxCode: { ...gstCode, components: [{ ...gst, compound: true }] },
-            },
-          ],
-          'exclusive',
-          'line',
-        ),
-      'COMPOUND_UNSUPPORTED',
-    );
-    expectCode(
-      () =>
-        calculate(
           [{ ...line, taxCode: { ...gstCode, components: [gst, gst] } }],
           'exclusive',
           'line',

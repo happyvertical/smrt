@@ -25,6 +25,7 @@ import {
 } from '../document-money-internal.js';
 import type { FrozenInvoiceAccountingOptions } from '../invoice-accounting-sync.js';
 import { assertIntegerMinorUnits, MoneyValidationError } from '../money.js';
+import { calculateInvoicePayable } from '../retention-money.js';
 import {
   type AccountingInvoiceInput,
   type CancelRevenueOptions,
@@ -208,8 +209,26 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
     },
   },
   cli: { skipApiCheck: true },
+  indexes: [
+    {
+      name: 'invoice_historical_source_identity',
+      columns: ['tenantId', 'historicalSourceKeyHash'],
+      unique: true,
+    },
+  ],
 })
 export class Invoice extends SmrtObject {
+  /** Command-owned original sales authority; ordinary documents stay calculated. */
+  @field({
+    description:
+      'Whether amounts were calculated or retained from an original issued invoice.',
+  })
+  moneyAuthority: 'calculated' | 'historical' = 'calculated';
+  historicalSalesMoneyJson = '';
+  @field({ type: 'text', nullable: true }) historicalSourceKeyHash:
+    | string
+    | null = null;
+
   /** @internal Collection read guard returns this snapshot on its root DB. */
   rebindMoneyRead(
     capability: DocumentMoneyReadRebindCapability,
@@ -234,6 +253,17 @@ export class Invoice extends SmrtObject {
   /** Issued credit-note total cached under the source invoice lock. */
   @field({ ui: { format: 'money' } })
   creditedAmount = 0;
+
+  /** Server-owned immutable retention policy and append-only release evidence. */
+  retentionStateJson = '';
+
+  /** Command-owned durable provider retention bundle; never caller-writable. */
+  @field({ sensitive: true })
+  retentionAccountingStateJson = '';
+
+  getPayableFacts() {
+    return calculateInvoicePayable(this);
+  }
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -287,8 +317,13 @@ export class Invoice extends SmrtObject {
   /**
    * Payment due date
    */
-  @field({ description: 'The date payment is expected.' })
-  dueDate: Date = new Date();
+  @field({
+    type: 'datetime',
+    nullable: true,
+    description:
+      'The date payment is expected; null when the original source did not establish it.',
+  })
+  dueDate: Date | null = new Date();
 
   /**
    * Date invoice was fully paid
@@ -528,6 +563,12 @@ export class Invoice extends SmrtObject {
     if (options.kind !== undefined) this.kind = options.kind;
     if (options.creditedInvoiceId !== undefined)
       this.creditedInvoiceId = options.creditedInvoiceId;
+    if (options.moneyAuthority !== undefined)
+      this.moneyAuthority = options.moneyAuthority;
+    if (options.historicalSalesMoneyJson !== undefined)
+      this.historicalSalesMoneyJson = options.historicalSalesMoneyJson;
+    if (options.historicalSourceKeyHash !== undefined)
+      this.historicalSourceKeyHash = options.historicalSourceKeyHash;
     if (options.creditedAmount !== undefined)
       this.creditedAmount = options.creditedAmount;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -667,6 +708,36 @@ export class Invoice extends SmrtObject {
     this.assertNonNegativeAmounts();
     this.assertStatusTransition(prior);
     this.assertPaymentStatusConsistent();
+    const payable = calculateInvoicePayable(this);
+    if (
+      this.retentionAccountingStateJson &&
+      [InvoiceStatus.CANCELLED, InvoiceStatus.WRITTEN_OFF].includes(this.status)
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+        'Provider retention cannot be voided or written off without an explicit reconciled reversal contract',
+      );
+    if (
+      this.retentionAccountingStateJson &&
+      (this.collectionMethod || this.providerTaxAmount)
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Retention accounting does not support provider collection or tax overrides',
+      );
+    if (
+      payable.retainedRemainingMinor > 0 &&
+      !this.retentionAccountingStateJson &&
+      (this.externalId ||
+        this.externalProvider ||
+        this.accountingSyncStateJson ||
+        this.collectionMethod ||
+        this.providerTaxAmount)
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Unreleased retention requires an explicit provider retention contract',
+      );
     await this.assertDraftDeliveryHistory(persisted);
 
     await assertAllocationParent(this, 'invoice');
@@ -935,16 +1006,17 @@ export class Invoice extends SmrtObject {
    * Check if invoice is overdue
    */
   isOverdue(): boolean {
+    if (this.getAmountDue() === 0) return false;
     if (this.status === InvoiceStatus.OVERDUE) return true;
     if (this.isPaid() || this.status === InvoiceStatus.CANCELLED) return false;
-    return new Date() > this.dueDate;
+    return this.dueDate !== null && new Date() > this.dueDate;
   }
 
   /**
    * Get remaining amount due
    */
   getAmountDue(): number {
-    return Math.max(0, this.getBalance());
+    return this.getPayableFacts().currentlyDueMinor;
   }
 
   /** Signed amount still owed after payments and issued credit notes. */
@@ -1018,7 +1090,10 @@ export class Invoice extends SmrtObject {
     // exactly (e.g. 0.1×3 line items paid 0.3) is treated as PAID by both —
     // not PARTIAL here and then rejected on save (S5 audit #1390 follow-up).
     if (this.isFullyPaid()) {
-      if (this.status !== InvoiceStatus.PAID || !this.paidDate) {
+      if (
+        this.moneyAuthority !== 'historical' &&
+        (this.status !== InvoiceStatus.PAID || !this.paidDate)
+      ) {
         this.paidDate = new Date();
       }
       this.status = InvoiceStatus.PAID;
@@ -1030,7 +1105,7 @@ export class Invoice extends SmrtObject {
       this.paidDate = null;
       if (this.viewedAt) {
         this.status = InvoiceStatus.VIEWED;
-      } else if (this.sentAt) {
+      } else if (this.sentAt || this.moneyAuthority === 'historical') {
         this.status = InvoiceStatus.SENT;
       } else {
         this.status = InvoiceStatus.DRAFT;

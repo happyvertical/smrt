@@ -42,3 +42,39 @@ fraction. It takes no options. Its discount is signed minor units and passes
 through unchanged, and its ties round half away from zero for negative
 lines too. Editor magnitude normalization happens before constructing that
 input. See [invoice line calculation](invoice-calculations.md).
+
+## Ordered compound taxes
+
+`TaxComponentInput.compound: true` uses every preceding component in the same
+ordered tax code. Different applicable line/category subsets use different codes;
+no missing predecessor is invented. Exclusive and explicit-net credit inputs use
+prior rounded taxes at line scope or prior allocated taxes at document scope.
+Shared components retain one rate. Contradictory dependency orders across codes
+fail with `TAX_COMPONENT_DEPENDENCY_CYCLE`.
+
+Inclusive extraction computes exact ordered rational factors, then rounds or
+allocates the extracted component taxes. Net is the gross-minus-tax residual.
+This is not a promise that an inclusive extraction reverses an exclusive rounded
+calculation penny-for-penny. Signed reversals use the same symmetric rules.
+
+Compound result components and frozen line snapshots carry `compound: true` and
+`taxableMinor`. Component tax rows preserve this actual basis, with `netMinor`
+separate so kind/revenue summaries do not include tax-on-tax as net revenue.
+Historical additive snapshots omit these optional fields. Credits reconstruct the
+frozen ordered components; a final credit consumes the remaining frozen bases and
+taxes. The compatibility line `taxRate` is the observed effective tax/net ratio
+for compound lines, not a flattened statutory rate; never use it to reconstruct
+a document. Use component snapshots and canonical minor-unit totals.
+
+`DocumentTax.netMinor` is a nullable generated-schema field. Additive records use
+null and retain their previous reporting shape. Upgrade schemas before projecting
+reports. Received purchase components may declare a taxable basis above net;
+when that occurs their explicit `netMinor` is required for report classification.
+Recording evidence remains allowed without that classification.
+
+Compound accounting synchronization uses the public SDK ordered snapshot contract
+([SDK #1412](https://github.com/happyvertical/sdk/issues/1412)). The mapper preserves
+original rates, exact taxable bases and caller-verified realm TaxCode ordering.
+Missing or mismatched reviewed mapping still raises `ACCOUNTING_SYNC_UNSUPPORTED`.
+It never substitutes a flattened rate. Deployment requires the SDK release that
+contains this public contract; the prior additive-only SDK cannot accept it.

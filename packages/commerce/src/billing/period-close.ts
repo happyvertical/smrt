@@ -1547,6 +1547,10 @@ async function pushToProvider(
       await invoice.save();
     });
   }
+  if (!invoice.dueDate)
+    throw new Error(
+      'Billing provider invoice requires a known payment due date',
+    );
   const { providerInvoiceId } = await runtime.provider.pushInvoice({
     invoiceId: String(invoice.id),
     invoiceNumber: invoice.invoiceNumber,

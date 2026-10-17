@@ -3,10 +3,24 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  type SmrtDeleteOptions,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { allocationOwner, allocationTotal } from '../allocation-integrity.js';
 import { calculateAvailableRefund } from '../credit-allocation.js';
+import {
+  assertCustomerFundsWrite,
+  customerFundsState,
+} from '../customer-funds-internal.js';
+import {
+  historicalCreditRefundCommittedTotal,
+  historicalInvoiceAllocationTotal,
+} from '../historical-funds-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
 
@@ -191,6 +205,10 @@ export class PaymentAllocation extends SmrtObject {
       );
       if (!payment)
         throw new Error('PaymentAllocation referenced Payment does not exist');
+      if (payment.retentionAccountingBindingJson)
+        throw new Error('Provider-recorded refund allocation is immutable');
+      if (customerFundsState(payment.customerFundsJson))
+        assertCustomerFundsWrite(this);
       if (!payment.updated_at)
         throw new Error('Allocation parent has no persisted revision');
       await payment.claimRevision(payment.updated_at);
@@ -230,12 +248,14 @@ export class PaymentAllocation extends SmrtObject {
         allocationTotal(
           await allocations.findByInvoice(this.invoiceId),
           this.id,
-        ) + BigInt(this.amount);
+        ) +
+        BigInt(this.amount) +
+        BigInt(await historicalInvoiceAllocationTotal(this.db, this.invoiceId));
       if (paymentTotal > BigInt(payment.amount))
         throw new Error('PaymentAllocation would over-apply payment');
       const invoiceCap =
         invoice.kind === 'invoice'
-          ? invoice.totalAmount - invoice.creditedAmount
+          ? invoice.getPayableFacts().allocationCapMinor
           : invoice.totalAmount;
       if (invoiceTotal > BigInt(Math.max(0, invoiceCap)))
         throw new Error('PaymentAllocation would over-pay invoice');
@@ -253,14 +273,15 @@ export class PaymentAllocation extends SmrtObject {
         if (!source.updated_at)
           throw new Error('Refund source invoice has no persisted revision');
         await source.claimRevision(source.updated_at);
-        const credits = (
-          await invoices.list({
-            where: {
-              tenantId: owner,
-              creditedInvoiceId: source.id,
-            },
-          })
-        ).filter(
+        const creditRows = await invoices.list({
+          where: { tenantId: owner, creditedInvoiceId: source.id },
+          limit: 100001,
+        });
+        if (creditRows.length > 100000)
+          throw new Error(
+            'Refund credit scope exceeds its bounded source limit',
+          );
+        const credits = creditRows.filter(
           (credit) =>
             credit.kind === 'credit_note' &&
             credit.status !== 'draft' &&
@@ -273,6 +294,10 @@ export class PaymentAllocation extends SmrtObject {
         let settledRefunds = 0;
         for (const credit of credits) {
           if (!credit.id) continue;
+          settledRefunds += await historicalCreditRefundCommittedTotal(
+            this.db,
+            credit.id,
+          );
           for (const allocation of await allocations.findByInvoice(credit.id)) {
             if (allocation.id === this.id) continue;
             const refund = await payments.get(
@@ -295,6 +320,36 @@ export class PaymentAllocation extends SmrtObject {
           );
       }
       return (await super.save()) as this;
+    });
+  }
+  /** Managed application reversal must also post its inverse journal and retain evidence. */
+  override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    return this.withTransaction(async () => {
+      const persisted = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      const { PaymentCollection } = await import(
+        '../collections/PaymentCollection.js'
+      );
+      const payment = await (
+        await PaymentCollection.create({ db: this.db })
+      ).get(
+        { id: String(persisted?.payment_id ?? this.paymentId) },
+        { cache: false },
+      );
+      // Share the Payment revision boundary with provider refund reservation.
+      // A stale unbound read must fail before deleting its settlement evidence.
+      if (payment) {
+        if (!payment.updated_at)
+          throw new Error('Allocation parent has no persisted revision');
+        await payment.claimRevision(payment.updated_at);
+      }
+      if (payment?.retentionAccountingBindingJson)
+        throw new Error(
+          'Provider-recorded refund allocation cannot be deleted',
+        );
+      if (payment?.customerFundsJson) assertCustomerFundsWrite(this);
+      return super.delete(options);
     });
   }
 }

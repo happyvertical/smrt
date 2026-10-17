@@ -6,6 +6,10 @@ import {
   DOCUMENT_MONEY_WRITE,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
+import {
+  historicalSalesReportInvoices,
+  historicalSalesTaxReportFacts,
+} from '../historical-sales-reports.js';
 import { classifyContractPurchase } from '../models/Contract.js';
 import {
   type CommerceDocumentType,
@@ -13,6 +17,7 @@ import {
   type DocumentTaxOptions,
 } from '../models/DocumentTax.js';
 import { MoneyValidationError, type TaxCodeKind } from '../money.js';
+import { receivedPurchaseReportFacts } from '../received-purchase-money.js';
 import { ContractCollection } from './ContractCollection.js';
 
 export type DocumentTaxWriteInput = Required<
@@ -33,7 +38,7 @@ export type DocumentTaxWriteInput = Required<
     | 'taxMinor'
     | 'recoverableMinor'
   >
->;
+> & { netMinor?: number | null };
 
 /** Normalized immutable document-tax snapshots for tax-summary materialization. */
 export interface DocumentTaxReportFact {
@@ -54,6 +59,7 @@ export interface DocumentTaxReportFact {
   /** Null is an unassigned/unknown snapshot and must remain visible as a warning. */
   taxCodeKind: TaxCodeKind | null;
   taxableMinor: number;
+  netMinor?: number;
   taxMinor: number;
   recoverableMinor: number;
   taxComponentId: string | null;
@@ -177,6 +183,7 @@ const BUSINESS_FIELDS = [
   'percent',
   'liabilityAccountId',
   'taxableMinor',
+  'netMinor',
   'taxMinor',
   'recoverableMinor',
 ] as const;
@@ -229,7 +236,7 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
     const result = await this.db.query(
       `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
               d.tax_component_id, d.tax_component_name, d.liability_account_id,
-              d.taxable_minor, d.tax_minor, d.recoverable_minor,
+              d.taxable_minor, d.net_minor, d.tax_minor, d.recoverable_minor,
               i.kind AS invoice_kind, i.invoice_number, i.customer_id, i.issue_date, i.status
          FROM document_taxes d
          JOIN invoices i
@@ -251,36 +258,52 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
       options.to.toISOString(),
       ...(options.currency ? [options.currency] : []),
     );
-    return result.rows.map((row) => ({
-      tenantId: requiredText(row.tenant_id, 'tenant id'),
-      documentType: invoiceDocumentType(row.document_type),
-      documentId: requiredText(row.document_id, 'document id'),
-      documentNumber: requiredText(row.invoice_number, 'invoice number'),
-      partyId:
-        typeof row.customer_id === 'string' && row.customer_id.trim()
-          ? row.customer_id
-          : null,
-      documentKind: invoiceKind(row.invoice_kind),
-      issueDate: reportDate(row.issue_date, 'issue date'),
-      status: requiredText(row.status, 'invoice status'),
-      direction: 'sales' as const,
-      currency: requiredText(row.currency, 'currency'),
-      taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
-      taxCodeKind: taxCodeKind(row.kind),
-      taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
-      taxMinor: storedMinor(row.tax_minor, 'tax minor'),
-      recoverableMinor: storedMinor(row.recoverable_minor, 'recoverable minor'),
-      taxComponentId:
-        row.tax_component_id == null ? null : String(row.tax_component_id),
-      componentName:
-        row.tax_component_name == null ? null : String(row.tax_component_name),
-      liabilityAccountId:
-        row.liability_account_id == null
-          ? null
-          : String(row.liability_account_id),
-      commitmentId: null,
-      commitmentLineId: null,
-    }));
+    const ordinary = result.rows.map(
+      (row): DocumentTaxReportFact => ({
+        tenantId: requiredText(row.tenant_id, 'tenant id'),
+        documentType: invoiceDocumentType(row.document_type),
+        documentId: requiredText(row.document_id, 'document id'),
+        documentNumber: requiredText(row.invoice_number, 'invoice number'),
+        partyId:
+          typeof row.customer_id === 'string' && row.customer_id.trim()
+            ? row.customer_id
+            : null,
+        documentKind: invoiceKind(row.invoice_kind),
+        issueDate: reportDate(row.issue_date, 'issue date'),
+        status: requiredText(row.status, 'invoice status'),
+        direction: 'sales' as const,
+        currency: requiredText(row.currency, 'currency'),
+        taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
+        taxCodeKind: taxCodeKind(row.kind),
+        taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+        ...(row.net_minor != null
+          ? { netMinor: storedMinor(row.net_minor, 'net minor') }
+          : {}),
+        taxMinor: storedMinor(row.tax_minor, 'tax minor'),
+        recoverableMinor: storedMinor(
+          row.recoverable_minor,
+          'recoverable minor',
+        ),
+        taxComponentId:
+          row.tax_component_id == null ? null : String(row.tax_component_id),
+        componentName:
+          row.tax_component_name == null
+            ? null
+            : String(row.tax_component_name),
+        liabilityAccountId:
+          row.liability_account_id == null
+            ? null
+            : String(row.liability_account_id),
+        commitmentId: null,
+        commitmentLineId: null,
+      }),
+    );
+    return [
+      ...ordinary,
+      ...(await historicalSalesReportInvoices(this.db, options)).flatMap(
+        historicalSalesTaxReportFacts,
+      ),
+    ];
   }
 
   private async listPurchaseContractReportFacts(
@@ -295,11 +318,21 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
         }),
       ),
     );
-    const purchases = contracts.filter(classifyContractPurchase);
+    const candidates = contracts.filter(
+      (contract) =>
+        classifyContractPurchase(contract) &&
+        (!options.currency || contract.currency === options.currency),
+    );
+    const receivedFacts = candidates
+      .filter((contract) => contract.moneyAuthority === 'received')
+      .flatMap(receivedPurchaseReportFacts);
+    const purchases = candidates.filter(
+      (contract) => contract.moneyAuthority !== 'received',
+    );
     const ids = purchases.flatMap((contract) =>
       contract.id ? [contract.id] : [],
     );
-    if (ids.length === 0) return [];
+    if (ids.length === 0) return receivedFacts;
     const byId = new Map(
       purchases.flatMap((contract) =>
         contract.id ? ([[contract.id, contract]] as const) : [],
@@ -310,7 +343,7 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
     const result = await this.db.query(
       `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
               d.tax_component_id, d.tax_component_name, d.liability_account_id,
-              d.taxable_minor, d.tax_minor, d.recoverable_minor
+              d.taxable_minor, d.net_minor, d.tax_minor, d.recoverable_minor
          FROM document_taxes d
          JOIN contracts c
            ON CAST(c.id AS TEXT) = CAST(d.document_id AS TEXT)
@@ -326,51 +359,59 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
       ...ids,
       ...(options.currency ? [options.currency] : []),
     );
-    return result.rows.flatMap((row): DocumentTaxReportFact[] => {
-      const documentId = requiredText(row.document_id, 'contract id');
-      const contract = byId.get(documentId);
-      if (!contract) return [];
-      return [
-        {
-          tenantId: requiredText(row.tenant_id, 'tenant id'),
-          documentType: contractDocumentType(row.document_type),
-          documentId,
-          documentNumber: contract.reference.trim() || documentId,
-          partyId:
-            'vendorId' in contract &&
-            typeof contract.vendorId === 'string' &&
-            contract.vendorId.trim()
-              ? contract.vendorId
-              : null,
-          documentKind: 'contract',
-          issueDate: reportDate(contract.issueDate, 'contract issue date'),
-          status: requiredText(contract.status, 'contract status'),
-          direction: 'purchase',
-          currency: requiredText(row.currency, 'currency'),
-          taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
-          taxCodeKind: taxCodeKind(row.kind),
-          taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
-          taxMinor: storedMinor(row.tax_minor, 'tax minor'),
-          recoverableMinor: storedMinor(
-            row.recoverable_minor,
-            'recoverable minor',
-          ),
-          taxComponentId:
-            row.tax_component_id == null ? null : String(row.tax_component_id),
-          componentName:
-            row.tax_component_name == null
-              ? null
-              : String(row.tax_component_name),
-          liabilityAccountId:
-            row.liability_account_id == null
-              ? null
-              : String(row.liability_account_id),
-          // Expenses reference their PurchaseContract id as commitmentId.
-          commitmentId: documentId,
-          commitmentLineId: null,
-        },
-      ];
-    });
+    const calculatedFacts = result.rows.flatMap(
+      (row): DocumentTaxReportFact[] => {
+        const documentId = requiredText(row.document_id, 'contract id');
+        const contract = byId.get(documentId);
+        if (!contract) return [];
+        return [
+          {
+            tenantId: requiredText(row.tenant_id, 'tenant id'),
+            documentType: contractDocumentType(row.document_type),
+            documentId,
+            documentNumber: contract.reference.trim() || documentId,
+            partyId:
+              'vendorId' in contract &&
+              typeof contract.vendorId === 'string' &&
+              contract.vendorId.trim()
+                ? contract.vendorId
+                : null,
+            documentKind: 'contract',
+            issueDate: reportDate(contract.issueDate, 'contract issue date'),
+            status: requiredText(contract.status, 'contract status'),
+            direction: 'purchase',
+            currency: requiredText(row.currency, 'currency'),
+            taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
+            taxCodeKind: taxCodeKind(row.kind),
+            taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+            ...(row.net_minor != null
+              ? { netMinor: storedMinor(row.net_minor, 'net minor') }
+              : {}),
+            taxMinor: storedMinor(row.tax_minor, 'tax minor'),
+            recoverableMinor: storedMinor(
+              row.recoverable_minor,
+              'recoverable minor',
+            ),
+            taxComponentId:
+              row.tax_component_id == null
+                ? null
+                : String(row.tax_component_id),
+            componentName:
+              row.tax_component_name == null
+                ? null
+                : String(row.tax_component_name),
+            liabilityAccountId:
+              row.liability_account_id == null
+                ? null
+                : String(row.liability_account_id),
+            // Expenses reference their PurchaseContract id as commitmentId.
+            commitmentId: documentId,
+            commitmentLineId: null,
+          },
+        ];
+      },
+    );
+    return [...calculatedFacts, ...receivedFacts];
   }
 
   async findByDocument(

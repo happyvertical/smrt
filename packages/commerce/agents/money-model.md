@@ -27,7 +27,7 @@ line-ID code-unit order breaking ties. It leaves no document residual. Across
 `n` small lines, the two scopes can differ by up to `ceil(n / 2)` minor units
 per component. Store the chosen scope; do not silently substitute a later
 setting. `MoneyValidationError.code` is the public branch point for invalid
-money, discounts, tax-code state and scope, unsupported compound tax, frozen
+money, discounts, tax-code state and scope, contradictory compound dependencies, frozen
 records, and unsafe values.
 
 Tax-code resolution is pure once the caller has loaded authorized codes. It
@@ -105,5 +105,8 @@ mapper](accounting-snapshot-mapper.md).
 Upgrading data written by an earlier version is documented in
 [money data upgrade](money-upgrade.md). Contract money persistence remains a separate aggregate contract; production report
 hosting is an application opt-in over the public host described above. The
-model also does not provide currency conversion, cash-basis/deposit accounting,
-partial recoverability, period locking, or compound tax.
+model also does not provide currency conversion or general cash-basis accounting,
+partial recoverability or period locking. Ordered compound taxes are supported as
+documented in [money calculator](money-calculator.md). Explicit invoice-tax-point
+customer deposits and unallocated cash are provided by the separate
+[customer-funds authority](customer-funds.md), not by invoice pricing.
