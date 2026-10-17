@@ -386,9 +386,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     }
     const main = root.querySelector('.smrt-admin-shell__main') ?? root;
     cancelNavigationFocus?.();
+    // A named destination is focused as soon as it matches (it may be the
+    // page already open); the generic heading must be a new one.
     cancelNavigationFocus = focusWhenReady(
       main,
       detail.focus ?? SHELL_PAGE_HEADING,
+      3000,
+      { skipExisting: !detail.focus },
     );
   }
   let cancelNavigationFocus: (() => void) | null = null;

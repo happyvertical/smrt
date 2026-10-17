@@ -843,6 +843,22 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
     await waitFor(() => expect(document.activeElement).toBe(heading));
   });
 
+  it('a named destination already on the page is focused at once', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    const heading = main.querySelector('h1')!;
+    heading.dataset.reportId = 'a';
+    announceShellNavigation(document.getElementById('dock-card')!, {
+      focus: 'h1[data-report-id="a"]',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
   it('a host can keep an overlay open after navigation', async () => {
     setWidth(1100);
     const shell = createShellState({

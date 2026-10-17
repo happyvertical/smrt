@@ -91,7 +91,7 @@ The dock (right edge) defaults to `overlayMedia: '(max-width: 79.9375rem)'`
 area shrinks; below it slides over the page. A dock card that navigates calls
 `announceShellNavigation(element, { focus? })` (`admin-shell/navigation.ts`):
 the shell closes the dock only while it overlays the page (overlay or phone
-sheet; `closeOnNavigate: false` keeps it), then focuses the incoming page's heading (never one already on the page).
+sheet; `closeOnNavigate: false` keeps it), then focuses the announced `focus` target as soon as it matches, else the incoming page's heading (never one already on the page).
 Phone drawers and the bottom drawer offset themselves by the header and phone
 bar tracks. `shell.viewport` comes from `ADMIN_SHELL_PHONE_QUERY` (48rem, the
 same boundary as the CSS media query — never make one configurable without the

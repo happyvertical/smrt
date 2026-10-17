@@ -16,7 +16,13 @@
 export const SHELL_NAVIGATED_EVENT = 'smrt-shell-navigated';
 
 export interface ShellNavigatedDetail {
-  /** Selector of the element to focus once it appears (default: the page heading). */
+  /**
+   * Selector naming the destination's element to focus (e.g. the opened
+   * record's heading by its id). It is focused as soon as it matches, even
+   * when it is already on the page (navigating to the page already open).
+   * Omitted: the first page heading that was NOT on the page when the
+   * navigation was announced.
+   */
   focus?: string;
 }
 
@@ -40,7 +46,8 @@ export const SHELL_PAGE_HEADING = 'h1, h2';
 /**
  * Focus the first `selector` match inside `root` that was NOT already on the
  * page when called (the navigation may not have finished: the outgoing page's
- * heading must not take focus), polling for up to `timeoutMs` while the new
+ * heading must not take focus; `skipExisting: false` for a selector that
+ * names the destination itself), polling for up to `timeoutMs` while the new
  * page loads. A heading that is not focusable gets `tabindex="-1"` first.
  * Returns a cancel function.
  */
@@ -48,9 +55,10 @@ export function focusWhenReady(
   root: ParentNode,
   selector: string,
   timeoutMs = 3000,
+  { skipExisting = true }: { skipExisting?: boolean } = {},
 ): () => void {
   const started = Date.now();
-  const outgoing = new Set(root.querySelectorAll(selector));
+  const outgoing = new Set(skipExisting ? root.querySelectorAll(selector) : []);
   let timer: ReturnType<typeof setTimeout> | null = null;
   const attempt = () => {
     const target = [...root.querySelectorAll<HTMLElement>(selector)].find(
