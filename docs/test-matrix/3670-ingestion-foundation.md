@@ -121,3 +121,20 @@ Evidence: `/home/will/Work/tmp/s3670/r4-fixes`. Full core test/integration/build
 typecheck and affected repository gates run. Ingestion U/P, core PostgreSQL and
 full root runtime evidence carry forward because only test expectations and
 this matrix change; no numeric, UUID, conflict, timestamp or migration path changes.
+
+### #4116 retained dispatch routing
+
+`foundation.test.ts` and `foundation.postgres.test.ts` share the `dispatch route
+authority` cases: real TaskRunner failure followed by a differently configured
+host, in both routing directions and with an unrelated denied captured ceiling;
+no cross-host authorization, delivery consumption or enqueue; same-route revoked
+authority remains an error. They also cover receipt/revision pins, cross-host
+replay and analysis refusal, defensive host-target snapshots, exact legacy
+job-lineage verification, malformed/conflicting lineage, and deleted-job unknown
+recovery. Explicit operator recovery is tested closed by default, separately
+authorized, current/captured permission-bound, scoped to tenant/confidential
+context, fingerprint-checked under lock, bounded in evidence, atomic on rollback,
+idempotent under identical concurrent retry and conflicting under differing
+concurrent decisions, without enqueue or original-authority replacement.
+Historical route-less rows are constructed only in the owned test fixture;
+worker failures use the real public runner lifecycle, not edited job statuses.

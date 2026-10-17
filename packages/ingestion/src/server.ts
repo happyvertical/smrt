@@ -83,6 +83,17 @@ export interface AnalysisLease {
   fence: number;
   token: string;
 }
+/** A server-owned dispatch route, retained independently of source metadata. */
+export interface IntakeDispatchTarget {
+  version: 1;
+  objectType: string;
+  method: string;
+}
+export interface DispatchRouteInspection {
+  status: 'bound' | 'unknown' | 'conflict';
+  fingerprint: string;
+  target: IntakeDispatchTarget | null;
+}
 /** Trusted integration points; no provider or application-policy implementation. */
 export interface IngestionOptions {
   /** Optional server-owned interpretation configuration; independent of execution. */
@@ -103,6 +114,18 @@ export interface IngestionOptions {
   }): Promise<boolean>;
   /** Registered job handler supplied by the host; dispatch arguments contain IDs only. */
   jobTarget: { objectType: string; method: string };
+  /** Explicit operator authority for provenance-free legacy receipts; closed when omitted.
+   * Does not replace the normal current/captured process authorization.
+   */
+  dispatchRecovery?: {
+    authorize(input: {
+      scope: IngestionScope;
+      itemId: string;
+      capturedCeiling: Record<string, unknown>;
+      evidenceRef: string;
+      db: DatabaseInterface;
+    }): Promise<boolean>;
+  };
   /** Purge host-owned embeddings/previews/caches; retries must be idempotent. */
   purgeDerived(input: { tenantId: string; itemId: string }): Promise<void>;
   now?: () => Date;
@@ -193,6 +216,7 @@ function date(value: Date): string {
 export class IngestionService {
   private readonly db: DatabaseInterface;
   private readonly scope: IngestionScope;
+  private readonly dispatchTarget: IntakeDispatchTarget;
   constructor(private readonly options: IngestionOptions) {
     if (options.proposals) assertProposalLimits(options.proposals.limits);
     this.db = options.db;
@@ -213,6 +237,11 @@ export class IngestionService {
       throw new Error('Ingestion requires transactional SQLite or PostgreSQL');
     nonempty(options.jobTarget.objectType);
     nonempty(options.jobTarget.method);
+    this.dispatchTarget = Object.freeze({
+      version: 1,
+      objectType: options.jobTarget.objectType,
+      method: options.jobTarget.method,
+    });
   }
   private async execution() {
     if (!this.options.execution)
@@ -517,6 +546,7 @@ export class IngestionService {
             limits: input.limits,
             retentionVersion: input.retention.version,
             deliveredAt: date(input.deliveredAt),
+            dispatchTarget: this.dispatchTarget,
           }),
         },
         'tenant_id,source_id,delivery_key',
@@ -530,7 +560,8 @@ export class IngestionService {
       const item = matches.rows[0] as Row;
       if (
         item.scope_digest !== scopeDigest ||
-        item.payload_digest !== payloadDigest
+        item.payload_digest !== payloadDigest ||
+        !(await this.matchesDispatchRoute(db, item))
       )
         return { kind: 'conflict' as const };
       if (
@@ -630,7 +661,7 @@ export class IngestionService {
             state: 'pending',
             job_id: '',
             deliveries: 0,
-            data: '{}',
+            data: canonical({ dispatchTarget: this.dispatchTarget }),
           },
           'tenant_id,item_id,stage,revision',
         );
@@ -743,6 +774,221 @@ export class IngestionService {
       );
     });
   }
+  /** Inspect retained route provenance without changing state or enqueuing work. */
+  async inspectDispatchRoute(itemId: string): Promise<DispatchRouteInspection> {
+    const item = await this.item(itemId, 'read');
+    return this.dispatchRouteState(this.db, item);
+  }
+
+  /** Explicitly bind a provenance-free legacy receipt to this trusted host's route.
+   * Never accepts a route from the caller, rewrites original authority, or enqueues.
+   */
+  async recoverDispatchRoute(input: {
+    itemId: string;
+    expectedFingerprint: string;
+    evidenceRef: string;
+  }): Promise<DispatchRouteInspection> {
+    nonempty(input.evidenceRef);
+    if (!/^[a-f0-9]{64}$/.test(input.expectedFingerprint))
+      throw new Error('Invalid dispatch recovery fingerprint');
+    if (!this.options.dispatchRecovery)
+      throw new Error('Dispatch recovery unavailable');
+    return this.tx(async (db) => {
+      await this.lock(db, input.itemId);
+      const item = await this.item(input.itemId, 'process', db);
+      const data = object(item.data);
+      if (
+        !(await this.options.dispatchRecovery!.authorize({
+          scope: this.scope,
+          itemId: input.itemId,
+          capturedCeiling: object(data.capturedCeiling),
+          evidenceRef: input.evidenceRef,
+          db,
+        }))
+      )
+        throw new Error('Dispatch recovery unavailable');
+      const current = await this.dispatchRouteState(db, item);
+      const recovery =
+        data.dispatchRecovery === undefined
+          ? null
+          : object(data.dispatchRecovery);
+      if (
+        recovery &&
+        recovery.expectedFingerprint === input.expectedFingerprint &&
+        recovery.evidenceRef === input.evidenceRef &&
+        current.status === 'bound' &&
+        canonical(current.target) === canonical(this.dispatchTarget)
+      ) {
+        return current;
+      }
+      if (
+        current.status !== 'unknown' ||
+        current.fingerprint !== input.expectedFingerprint
+      )
+        throw new Error('Dispatch recovery conflict');
+      data.dispatchRecovery = {
+        version: 1,
+        expectedFingerprint: input.expectedFingerprint,
+        evidenceRef: input.evidenceRef,
+        actorId: this.scope.actorId,
+        recordedAt: date(this.now()),
+        target: this.dispatchTarget,
+      };
+      item.data = canonical(data);
+      await this.bindDispatchRoute(db, item);
+      await this.point('dispatch:recovered');
+      const [updated] = await this.rows(db, 'intake_items', 'id=?', [item.id]);
+      return this.dispatchRouteState(db, updated);
+    });
+  }
+
+  private async matchesDispatchRoute(
+    db: DatabaseInterface,
+    item: Row,
+  ): Promise<boolean> {
+    const route = await this.dispatchRouteState(db, item);
+    return (
+      route.status === 'bound' &&
+      canonical(route.target) === canonical(this.dispatchTarget)
+    );
+  }
+
+  private async bindDispatchRoute(
+    db: DatabaseInterface,
+    item: Row,
+  ): Promise<void> {
+    const data = object(item.data);
+    if (data.dispatchTarget === undefined) {
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
+        canonical({ ...data, dispatchTarget: this.dispatchTarget }),
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        item.id,
+      );
+    }
+    const intents = await this.rows(db, 'intake_dispatches', 'item_id=?', [
+      item.id,
+    ]);
+    for (const intent of intents) {
+      const retained = object(intent.data);
+      if (retained.dispatchTarget === undefined)
+        await db.query(
+          'UPDATE intake_dispatches SET data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
+          canonical({ ...retained, dispatchTarget: this.dispatchTarget }),
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          intent.id,
+        );
+    }
+  }
+
+  private async dispatchRouteState(
+    db: DatabaseInterface,
+    item: Row,
+  ): Promise<DispatchRouteInspection> {
+    let invalid = false;
+    const malformed: string[] = [];
+    const payload = (value: unknown): Row => {
+      try {
+        return object(value);
+      } catch {
+        invalid = true;
+        malformed.push(digest(value));
+        return {};
+      }
+    };
+    const data = payload(item.data);
+    const intents = (
+      await this.rows(db, 'intake_dispatches', 'item_id=?', [item.id])
+    ).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const targets: IntakeDispatchTarget[] = [];
+    const lineage: unknown[] = [];
+    const retain = (value: unknown) => {
+      if (value === undefined) return;
+      try {
+        const target = object(value);
+        nonempty(target.objectType);
+        nonempty(target.method);
+        if (target.version !== 1) throw new Error('Unsupported dispatch route');
+        targets.push({
+          version: 1,
+          objectType: target.objectType,
+          method: target.method,
+        });
+      } catch {
+        invalid = true;
+      }
+    };
+    retain(data.dispatchTarget);
+    if (data.dispatchRecovery !== undefined) {
+      const recovery = payload(data.dispatchRecovery);
+      if (recovery.version !== 1 || recovery.target === undefined)
+        invalid = true;
+      retain(recovery.target);
+    }
+    const jobs = await SmrtJobCollection.create({ db });
+    for (const intent of intents) {
+      retain(payload(intent.data).dispatchTarget);
+      if (!intent.job_id) continue;
+      const job = await withTenant({ tenantId: this.scope.tenantId }, () =>
+        jobs.get({ id: String(intent.job_id) }),
+      );
+      // Missing jobs are absent provenance, not affirmative conflicting authority.
+      // A retained route survives job retention; otherwise explicit recovery is required.
+      if (!job) {
+        lineage.push({ id: intent.job_id, missing: true });
+        continue;
+      }
+      const args = payload(job.args);
+      if (
+        job.tenantId !== this.scope.tenantId ||
+        job.queue !== 'ingestion' ||
+        job.objectId ||
+        args.itemId !== item.id ||
+        args.dispatchId !== intent.id ||
+        args.revision !== Number(intent.revision)
+      ) {
+        invalid = true;
+        lineage.push({ id: intent.job_id, valid: false });
+        continue;
+      }
+      const target = {
+        version: 1,
+        objectType: job.objectType,
+        method: job.method,
+      };
+      retain(target);
+      lineage.push({ id: job.id, target, args });
+    }
+    if (targets.some((target) => canonical(target) !== canonical(targets[0])))
+      invalid = true;
+    const status = invalid ? 'conflict' : targets.length ? 'bound' : 'unknown';
+    return {
+      status,
+      target: status === 'bound' ? targets[0] : null,
+      fingerprint: digest({
+        itemId: item.id,
+        tenantId: item.tenant_id,
+        confidentialScopeId: item.confidential_scope_id,
+        sourceId: item.source_id,
+        sourceVersion: item.source_version,
+        payloadDigest: item.payload_digest,
+        scopeDigest: item.scope_digest,
+        revision: item.analysis_revision,
+        data,
+        intents: intents.map((intent) => ({
+          id: intent.id,
+          revision: intent.revision,
+          data: payload(intent.data),
+          jobId: intent.job_id,
+        })),
+        lineage,
+        malformed,
+      }),
+    };
+  }
+
   /** Repair lost enqueue/mark writes and deleted/failed jobs. Duplicate jobs are safe. */
   async repairDispatches(): Promise<number> {
     let repaired = 0;
@@ -753,6 +999,13 @@ export class IngestionService {
     );
     const jobs = await SmrtJobCollection.create({ db: this.db });
     for (const intent of intents) {
+      // Scope and protected route are checked before this host's authorization:
+      // unrelated hosts must not spend budgets or block one another's receipt.
+      const [candidate] = await this.rows(this.db, 'intake_items', 'id=?', [
+        intent.item_id,
+      ]);
+      if (!candidate || !(await this.matchesDispatchRoute(this.db, candidate)))
+        continue;
       const item = await this.item(
         String(intent.item_id),
         'process',
@@ -765,17 +1018,14 @@ export class IngestionService {
         persistedDate(item.expires_at) <= this.now()
       )
         continue;
-      if (
-        intent.job_id &&
-        Number(intent.revision) === Math.max(1, Number(item.analysis_revision))
-      ) {
-        const job = await withTenant({ tenantId: this.scope.tenantId }, () =>
-          jobs.get({ id: String(intent.job_id) }),
-        );
-        if (job && ['pending', 'running'].includes(job.status)) continue;
-      }
       const allocation = await this.tx(async (db) => {
         await this.lock(db, String(item.id));
+        const [routedItem] = await this.rows(db, 'intake_items', 'id=?', [
+          item.id,
+        ]);
+        if (!routedItem || !(await this.matchesDispatchRoute(db, routedItem)))
+          return false;
+        await this.bindDispatchRoute(db, routedItem);
         const currentItem = await this.item(String(item.id), 'process', db);
         const [currentIntent] = await this.rows(
           db,
@@ -784,6 +1034,17 @@ export class IngestionService {
           [intent.id, item.id],
         );
         if (!currentIntent || currentIntent.state === 'completed') return false;
+        if (
+          currentIntent.job_id &&
+          Number(currentIntent.revision) ===
+            Math.max(1, Number(currentItem.analysis_revision))
+        ) {
+          const currentJobs = await SmrtJobCollection.create({ db });
+          const job = await withTenant({ tenantId: this.scope.tenantId }, () =>
+            currentJobs.get({ id: String(currentIntent.job_id) }),
+          );
+          if (job && ['pending', 'running'].includes(job.status)) return false;
+        }
         // Revision 1 is queued at receipt, before the first analysis exists.
         if (
           currentItem.cancelled ||
@@ -829,8 +1090,8 @@ export class IngestionService {
       const job = await withTenant({ tenantId: this.scope.tenantId }, () =>
         jobs.enqueueJob({
           tenantId: this.scope.tenantId,
-          objectType: this.options.jobTarget.objectType,
-          method: this.options.jobTarget.method,
+          objectType: this.dispatchTarget.objectType,
+          method: this.dispatchTarget.method,
           args: {
             itemId: intent.item_id,
             revision: Number(intent.revision),
@@ -957,6 +1218,9 @@ export class IngestionService {
     const configDigest = digest(configuration);
     await this.lock(db, itemId);
     const item = await this.item(itemId, 'process', db);
+    if (!(await this.matchesDispatchRoute(db, item)))
+      throw new Error('Intake dispatch route unavailable');
+    await this.bindDispatchRoute(db, item);
     if (item.receipt_state !== 'ready' || item.cancelled)
       throw new Error('Intake not processable');
     const previous = await this.rows(db, 'intake_analyses', 'item_id=?', [
@@ -1026,7 +1290,7 @@ export class IngestionService {
         state: 'pending',
         job_id: '',
         deliveries: 0,
-        data: '{}',
+        data: canonical({ dispatchTarget: this.dispatchTarget }),
       },
       'tenant_id,item_id,stage,revision',
     );
