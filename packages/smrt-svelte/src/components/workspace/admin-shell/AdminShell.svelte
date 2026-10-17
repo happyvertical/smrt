@@ -44,6 +44,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
 <script lang="ts">
   import { swipeDismiss } from '@happyvertical/smrt-ui/feedback';
+  import {
+    focusWhenReady,
+    SHELL_NAVIGATED_EVENT,
+    SHELL_PAGE_HEADING,
+    type ShellNavigatedDetail,
+  } from './navigation.js';
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
   import { Button } from '@happyvertical/smrt-ui/ui';
   import { onMount, tick, untrack } from 'svelte';
@@ -353,6 +359,48 @@ function buildLayoutStyle(shell: ModuleShellState): string {
    * Tablet/desktop: the side edge that is open as an overlay (its
    * `overlayMedia` matches), laid over the page above a scrim.
    */
+  /**
+   * A dock card navigated the page (`announceShellNavigation`, #4100): close
+   * the dock only while it is laid over the page (an overlay, a phone sheet),
+   * never one sitting beside it, then focus the opened page's heading.
+   */
+  function onShellNavigated(event: Event) {
+    const root = rootElement;
+    if (!root || !(event.target instanceof Node) || !root.contains(event.target)) {
+      return;
+    }
+    const detail = (event as CustomEvent<ShellNavigatedDetail>).detail ?? {};
+    const dock = sideElements.right;
+    const overlaying =
+      edgeExpanded('right') &&
+      (isPhone || shell.presentationFor('right') === 'overlay');
+    if (
+      dock?.contains(event.target) &&
+      overlaying &&
+      shell.config.panels.right.closeOnNavigate !== false
+    ) {
+      // The page is where focus goes, not back to the dock's toggle.
+      shell.dockReturnFocus = null;
+      overlayReturnFocus = null;
+      shell.collapsePanel('right');
+    }
+    const main = root.querySelector('.smrt-admin-shell__main') ?? root;
+    cancelNavigationFocus?.();
+    cancelNavigationFocus = focusWhenReady(
+      main,
+      detail.focus ?? SHELL_PAGE_HEADING,
+    );
+  }
+  let cancelNavigationFocus: (() => void) | null = null;
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    document.addEventListener(SHELL_NAVIGATED_EVENT, onShellNavigated);
+    return () => {
+      document.removeEventListener(SHELL_NAVIGATED_EVENT, onShellNavigated);
+      cancelNavigationFocus?.();
+    };
+  });
+
   const overlayEdge = $derived<SideEdge | null>(
     isPhone
       ? null

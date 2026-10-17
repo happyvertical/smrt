@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, flushSync, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
+import { announceShellNavigation } from '../admin-shell/navigation.js';
 import { createShellState } from '../admin-shell/state.svelte.js';
 import type {
   ShellPanelDefaults,
@@ -715,6 +716,104 @@ describe('AdminShell backward compatibility', () => {
     expect(
       document.getElementById(ADMIN_SHELL_REGION_IDS.bottom)?.textContent,
     ).toContain('system chips');
+  });
+});
+
+describe('AdminShell dock default (#4100): inline from xl, overlay below', () => {
+  function dockShell() {
+    return createShellState({
+      config: {
+        ...config,
+        right: { label: 'Assistant', initial: 'collapsed', hotkey: null },
+      },
+    });
+  }
+  function mount(shell: ReturnType<typeof dockShell>) {
+    return render(AdminShell, {
+      props: {
+        state: shell,
+        focusPanel: html('<button id="dock-card">Approve</button>'),
+        children: html('<h1>Invoices by month</h1>'),
+      },
+    });
+  }
+  const announce = () =>
+    announceShellNavigation(document.getElementById('dock-card')!);
+
+  it('docks beside the page at xl, so the content reflows', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    expect(shell.presentationFor('right')).toBe('push');
+    expect(shellRoot().getAttribute('style')).not.toContain(
+      '--smrt-admin-shell-right-track: 0rem',
+    );
+  });
+
+  it('slides over the page below xl', async () => {
+    setWidth(1100);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    expect(shell.presentationFor('right')).toBe('overlay');
+    expect(screen.getByTestId('admin-shell-overlay-scrim')).toBeTruthy();
+  });
+
+  it('a navigating dock card closes an overlay and focuses the page heading', async () => {
+    setWidth(1100);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    announce();
+    await settle();
+    expect(shell.panels.right).toBe('collapsed');
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toBe('Invoices by month'),
+    );
+  });
+
+  it('an inline dock stays open, and focus still moves to the heading', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    announce();
+    await settle();
+    expect(shell.panels.right).toBe('expanded');
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toBe('Invoices by month'),
+    );
+  });
+
+  it('a host can keep an overlay open after navigation', async () => {
+    setWidth(1100);
+    const shell = createShellState({
+      config: {
+        ...config,
+        right: {
+          label: 'Assistant',
+          initial: 'collapsed',
+          hotkey: null,
+          closeOnNavigate: false,
+        },
+      },
+    });
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    announce();
+    await settle();
+    expect(shell.panels.right).toBe('expanded');
   });
 });
 
