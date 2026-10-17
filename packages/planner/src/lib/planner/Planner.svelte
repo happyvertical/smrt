@@ -25,8 +25,10 @@ import ThemeBridge from '../components/ThemeBridge.svelte';
 import { cookbookStore, SHELL_STORAGE_KEY } from '../cookbook/store.svelte.ts';
 import type { Cookbook } from '../cookbook/types.ts';
 import { provideDataSource, tryUseDataSource } from '../data/context.ts';
+import { humanize, navNoun, pluralize } from '../data/format.ts';
 import { createPlannerDataSource } from '../data/planner-source.ts';
 import { activeForms } from '../forms/active.ts';
+import { cookbookView } from '../library/view.svelte.ts';
 import { runViewTransition } from '../motion/view-transition.ts';
 import { plannerLoaders, resolveRecipeExport } from '../overviews/registry.ts';
 import {
@@ -35,7 +37,8 @@ import {
   recipes,
   recipesById,
 } from '../recipes/index.ts';
-import { pageScope, scopePreset } from '../recipes/scope.ts';
+import { menuEntryWords, pageScope, scopePreset } from '../recipes/scope.ts';
+import { navItemId } from '../recipes/sections.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import { entryIndex } from '../sections/entries.ts';
 import { sectionInfo, sectionTitle } from '../sections/info.ts';
@@ -44,6 +47,7 @@ import { DEFAULT_PRESET } from '../theme/theme.ts';
 import { appHref, setBasePath } from './app.svelte.ts';
 import { PLANNER_TAB_IDS } from './commands/index.ts';
 import { CHEF_HAT_ICON, EXPORT_ICON } from './header-icons.ts';
+import { plannerRuntime } from './instance.ts';
 import PlannerControls from './PlannerControls.svelte';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { parseModelRoute, recordFilter, splitRoute } from './routes.ts';
@@ -211,6 +215,34 @@ const scope = $derived.by(() => {
   );
 });
 const preset = $derived(scopePreset(scope));
+// The list's heading and New noun follow its menu entry, as the static app's.
+const entryWords = $derived.by(() => {
+  if (!model || !modelRoute) return {};
+  return menuEntryWords(
+    model,
+    navItemId(modelRoute.packageId, modelRoute.modelName, modelRoute.view),
+    modelRoute.view,
+    recipeState.ids.flatMap((id) => {
+      const recipe = recipes.find((r) => r.id === id);
+      return recipe ? recipeNav(recipe) : [];
+    }),
+    cookbookStore.layout,
+    humanize,
+  );
+});
+// The document title for every route a section page does not title itself
+// (`CookbookSectionPage` sets its own): set as the route changes, so the
+// previous page's title never lingers.
+const pageTitle = $derived.by(() => {
+  if (model) return entryWords.label ?? pluralize(humanize(model.name));
+  if (packageId) return humanize(packageId);
+  if (pathParts[0] === 'advanced-styles') return 'Advanced styles';
+  if (pathParts[0] === 'ai') return 'AI models';
+  return title;
+});
+const listNoun = $derived(
+  entryWords.label ? navNoun(entryWords.label, entryWords.noun) : undefined,
+);
 // The planner's own pages (`#/configure/`, and any route no page above
 // claims) show the customization controls; the header marks them current.
 const configuring = $derived(
@@ -229,6 +261,47 @@ const routeTab = $derived(
 );
 $effect(() => {
   if (routeTab) plannerTab.active = routeTab;
+});
+// `#/configure/cookbooks/<id>/` opens that cookbook's detail on the Cookbooks
+// tab; the hash router's own view transition is the swap, so none here.
+// Opening one pushes the route, so browser Back returns to the grid.
+// Any other configure route (`#/configure/`, where the header's Planner link
+// and an empty app land, or another tab's) is the grid.
+const routeCookbook = $derived(
+  pathParts[0] === 'configure'
+    ? pathParts[1] === 'cookbooks'
+      ? (pathParts[2] ?? null)
+      : null
+    : undefined,
+);
+$effect(() => {
+  if (routeCookbook !== undefined) void cookbookView.set(routeCookbook, false);
+});
+let openedHere = false;
+onMount(() => {
+  // The controller's `focus` (the assistant's "take me to it") opens a
+  // section through this, as the static layout's does with its router.
+  const previousOpen = plannerRuntime.openSection;
+  plannerRuntime.openSection = (id) => {
+    location.hash = `#${shell.sectionPath(id)}`;
+  };
+  const previous = cookbookView.navigator;
+  cookbookView.navigator = {
+    open(id) {
+      openedHere = true;
+      location.hash = `#/configure/cookbooks/${encodeURIComponent(id)}/`;
+    },
+    close() {
+      if (openedHere) {
+        openedHere = false;
+        history.back();
+      } else location.replace('#/configure/cookbooks/');
+    },
+  };
+  return () => {
+    cookbookView.navigator = previous;
+    plannerRuntime.openSection = previousOpen;
+  };
 });
 const exporting = $derived(configuring && plannerTab.active === 'export');
 /** The mount's own way around: a fragment route. */
@@ -335,6 +408,10 @@ const dockToggles = $derived(
   (`CookbookSectionPage`, drawn `plain` with the planner's heading) to the
   sample data; `loaders.shortcuts` adds the record counts.
 -->
+<svelte:head>
+  {#if !sectionSlug}<title>{pageTitle}</title>{/if}
+</svelte:head>
+
 <CookbookApp
   cookbook={cookbook as ComponentProps<typeof CookbookApp>['cookbook']}
   catalog={shellCatalog}
@@ -385,7 +462,7 @@ const dockToggles = $derived(
         />
       {/key}
     {:else if applied && model}
-      <ModelWorkspace model={applied.model} fields={applied.fields} {forms} {scope} {preset} href={hashHref} />
+      <ModelWorkspace model={applied.model} fields={applied.fields} {forms} {scope} {preset} title={entryWords.heading} noun={listNoun} href={hashHref} />
     {:else}
       <PlannerControls {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
     {/if}

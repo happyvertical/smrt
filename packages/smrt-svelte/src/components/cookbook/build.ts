@@ -53,8 +53,12 @@ export function humanize(name: string): string {
   return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }
 
-/** `Customer` -> `Customers`, `Category` -> `Categories`. */
+/**
+ * `Customer` -> `Customers`, `Category` -> `Categories`. A noun that is its
+ * own plural stays as it is: `Event Series` -> `Event Series`.
+ */
 export function pluralize(noun: string): string {
+  if (/(series|species)$/i.test(noun)) return noun;
   if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
   if (/(s|x|z|ch|sh)$/i.test(noun)) return `${noun}es`;
   return `${noun}s`;

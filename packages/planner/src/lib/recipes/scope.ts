@@ -54,3 +54,35 @@ export function scopePreset(
 ): Record<string, unknown> {
   return scope?.equals !== undefined ? { [scope.field]: scope.equals } : {};
 }
+
+/**
+ * A model page's menu words: the label its menu entry shows (the layout's
+ * rename, a cookbook's or the visitor's, else the added recipe entry's own)
+ * and its declared New noun. `heading` is that label unless it only repeats
+ * the model's name. The static app reads the rendered menu (`ModelPage`); the
+ * mount, outside the shell's context, reads the same sources here.
+ */
+export function menuEntryWords(
+  model: { id: string; name: string },
+  itemId: string,
+  view: string | undefined,
+  added: readonly (Pick<RecipeNavTarget, 'key' | 'label' | 'noun'> & {
+    model: { id: string };
+  })[],
+  layout:
+    | { items?: Record<string, { label?: string } | undefined> }
+    | undefined,
+  humanize: (name: string) => string,
+): { label?: string; heading?: string; noun?: string } {
+  const entry = added.find((e) => e.model.id === model.id && e.key === view);
+  const label = layout?.items?.[itemId]?.label?.trim() || entry?.label;
+  if (!label) return {};
+  return {
+    label,
+    heading:
+      label.toLowerCase() === humanize(model.name).toLowerCase()
+        ? undefined
+        : label,
+    ...(entry?.noun ? { noun: entry.noun } : {}),
+  };
+}

@@ -98,6 +98,9 @@ function examples(
   ).map((e) => `"${e.says}" -> ${JSON.stringify(e.answer)}`);
 }
 
+/** The recipe a request for a report or a summary of the app's data needs. */
+export const REPORTS_RECIPE = 'reports.runtime';
+
 /** Tax is shown as a percent, the unit the person says it in. */
 export function formatTaxPercent(fraction: number): string {
   return `${Number((fraction * 100).toFixed(4))}%`;
@@ -121,6 +124,7 @@ export function buildSystemPrompt(
   settings?: AppSettings,
   matches?: readonly Match[],
   themeInfo?: { current: ThemeSetting | undefined },
+  menu: readonly { id: string; label: string }[] = [],
 ): string {
   const focused = matches !== undefined;
   const matchedRecipes = (matches ?? [])
@@ -155,6 +159,19 @@ export function buildSystemPrompt(
   if (themeInfo) {
     out.push(
       '"theme": only if they ask for a look: {"preset": material|glass|studio|smrt|happyvertical} or {"primary": "#rrggbb"}, optional "colorScheme": light|dark, "borderRadius": none|sm|md|lg|xl|full, "density": comfortable|touch, "contrast": auto|standard|more; else omit.',
+    );
+  }
+  if (menu.length) {
+    out.push(
+      '"open": a menu section id only when they ask to see or go to one, else null.',
+    );
+  }
+  out.push(
+    '"reply" never claims anything beyond add, remove, cookbook, settings, theme and open: the app reports what changed.',
+  );
+  if (recipes.some((r) => r.id === REPORTS_RECIPE)) {
+    out.push(
+      `A report or summary of their data needs ${REPORTS_RECIPE} (Reports): add it, and open only its section, never another. You cannot build the report itself yet.`,
     );
   }
   const shown = examples(
@@ -226,6 +243,9 @@ export function buildSystemPrompt(
   }
   if (themeInfo) {
     out.push(`Theme: ${describeTheme(themeInfo.current)}.`);
+  }
+  if (menu.length) {
+    out.push(`Menu: ${menu.map((s) => `${s.id} (${s.label})`).join(', ')}.`);
   }
   return out.join('\n');
 }

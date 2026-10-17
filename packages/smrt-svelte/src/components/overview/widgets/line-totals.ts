@@ -116,6 +116,19 @@ export function groupStoredTaxComponents(
   return [...groups.values()];
 }
 
+/**
+ * A tax component's name with its rate, for a totals line: "GST 5%". A name
+ * that already states the rate ("Canada GST 5%", as smrt-commerce's example
+ * pack and cookbook activation name theirs) is used as it is, so the rate is
+ * not repeated.
+ */
+export function taxComponentLabel(name: string, percent: string): string {
+  const rate = percent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\d.])${rate}\\s?%`).test(name)
+    ? name
+    : `${name} ${percent}%`;
+}
+
 export type LineTotalKey = 'subtotal' | 'discount' | 'tax' | 'total';
 
 export interface LineTotalLine {

@@ -1,7 +1,7 @@
 import { createSpeechModel } from '../assistant/voice-host.ts';
 import { browserStorage } from '../cookbook/storage.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
-import { plannerController } from '../planner/instance.ts';
+import { plannerController, plannerRuntime } from '../planner/instance.ts';
 import { recipes } from '../recipes/index.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import { AiState } from './state.svelte.ts';
@@ -21,6 +21,15 @@ export const aiState = new AiState({
       read: () => cookbookStore.snapshot().theme,
       write: (theme) => cookbookStore.setTheme(theme),
     },
+    // Only where the running app can open a section (the static layout and
+    // the mount set `openSection`), the visible ones.
+    menu: () =>
+      plannerRuntime.openSection
+        ? plannerController
+            .snapshot()
+            .sections.filter((section) => !section.hidden)
+            .map(({ id, label }) => ({ id, label }))
+        : [],
   },
   voice: { createModel: createSpeechModel },
 });

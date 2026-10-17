@@ -127,7 +127,6 @@
     "packages/planner/src/lib/components/AiStatusIcons.svelte": 1,
     "packages/planner/src/lib/components/BrowserAssistant.svelte": 2,
     "packages/planner/src/lib/components/ChildRecords.svelte": 2,
-    "packages/planner/src/lib/components/CookbooksPanel.svelte": 1,
     "packages/planner/src/lib/components/FormWorkspace.svelte": 2,
     "packages/planner/src/lib/components/ModelWorkspace.svelte": 2,
     "packages/planner/src/lib/components/ThemeSection.svelte": 6,

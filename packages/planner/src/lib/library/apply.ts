@@ -3,14 +3,26 @@ import type { Cookbook, CookbookResult } from '../cookbook/types.ts';
 import { parseCookbook } from '../cookbook/validate.ts';
 import { setSamplePack } from '../data/packs.ts';
 import type { AppSettings } from '../settings/app-settings.ts';
-import { isCookbookEmpty, resolveLibraryCookbook } from './document.ts';
+import {
+  resolveLibraryCookbook,
+  workFingerprint,
+  wouldLoseWork,
+} from './document.ts';
+import { libraryState } from './state.svelte.ts';
 import type { LibraryCookbook } from './types.ts';
 
 export { isCookbookEmpty } from './document.ts';
 
-/** Applying replaces the current recipes and menu, so it asks first unless empty. */
-export function needsConfirm(store: Pick<CookbookStore, 'snapshot'>): boolean {
-  return !isCookbookEmpty(store.snapshot());
+/**
+ * Applying replaces the current recipes and menu, so it asks first exactly
+ * when that would lose work: never for an empty app or one still as the last
+ * applied cookbook left it, always otherwise.
+ */
+export function needsConfirm(
+  store: Pick<CookbookStore, 'snapshot'>,
+  applied: string | null = libraryState.appliedWork,
+): boolean {
+  return wouldLoseWork(store.snapshot(), applied);
 }
 
 /**
@@ -22,16 +34,25 @@ export function needsConfirm(store: Pick<CookbookStore, 'snapshot'>): boolean {
  */
 export function applyLibraryCookbook(
   cookbook: LibraryCookbook,
-  store: Pick<CookbookStore, 'replace'> & Partial<Pick<CookbookStore, 'theme'>>,
+  store: Pick<CookbookStore, 'replace' | 'snapshot'> &
+    Partial<Pick<CookbookStore, 'theme'>>,
   settings?: AppSettings,
 ): CookbookResult {
   const result = resolveLibraryCookbook(cookbook, parseCookbook, settings);
   if (result.ok) {
-    // A cookbook without a theme leaves the visitor's own look alone.
-    const keep = result.cookbook.theme ? undefined : store.theme;
+    // A cookbook without a theme leaves the visitor's own look alone, and
+    // one that names no colour scheme keeps the visitor's light or dark.
+    const before = store.theme;
+    const theme = result.cookbook.theme;
+    const keep = theme
+      ? theme.colorScheme || !before?.colorScheme
+        ? undefined
+        : { ...theme, colorScheme: before.colorScheme }
+      : before;
     store.replace(result.cookbook);
     if (keep) store.theme = keep;
     setSamplePack(cookbook.id);
+    libraryState.select(cookbook.id, workFingerprint(store.snapshot()));
   }
   return result;
 }

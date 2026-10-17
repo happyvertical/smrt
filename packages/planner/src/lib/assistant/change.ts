@@ -64,6 +64,11 @@ export interface AssistantChange {
    * `commands: true`); the controller validates each one. Absent otherwise.
    */
   commands?: { name: string; input: unknown }[];
+  /**
+   * A menu section to open (`parseChange` with `sections`): only ids the
+   * running app can navigate to. Absent otherwise.
+   */
+  open?: string;
 }
 
 /** Most command calls one reply may carry. */
@@ -107,6 +112,7 @@ export function buildResponseSchema(
   cookbooks: readonly { id: string }[] = [],
   withSettings = false,
   withTheme = false,
+  sections: readonly string[] = [],
 ): Record<string, unknown> {
   const ids = recipes.map((recipe) => recipe.id);
   const list = { type: 'array', items: { enum: ids }, maxItems: ids.length };
@@ -145,6 +151,7 @@ export function buildResponseSchema(
       additionalProperties: false,
     };
   }
+  if (sections.length) properties.open = { enum: [...sections, null] };
   return {
     type: 'object',
     properties,
@@ -258,7 +265,7 @@ export function parseChange(
   input: string,
   recipes: readonly Pick<Recipe, 'id'>[],
   cookbooks: readonly { id: string }[] = [],
-  options: { commands?: boolean } = {},
+  options: { commands?: boolean; sections?: readonly string[] } = {},
 ): AssistantChange {
   const known = new Set(recipes.map((recipe) => recipe.id));
   const raw = stripThinking(input);
@@ -309,6 +316,10 @@ export function parseChange(
     settings: parseSettings(object.settings),
     theme: parseThemePatch(object.theme),
     ...(commands.length ? { commands } : {}),
+    ...(typeof object.open === 'string' &&
+    options.sections?.includes(object.open)
+      ? { open: object.open }
+      : {}),
   };
 }
 
@@ -326,16 +337,27 @@ function pickCommands(value: unknown): { name: string; input: unknown }[] {
   return out;
 }
 
-/** A sentence for the chat saying what changed, by recipe label. */
+/**
+ * A sentence for the chat saying what changed, by recipe label. A recipe that
+ * puts nothing in the menu says so, so an "Added" the visitor cannot see is
+ * not taken for one that failed.
+ */
 export function describeChange(
   applied: AppliedChange,
-  recipes: readonly Pick<Recipe, 'id' | 'label'>[],
+  recipes: readonly (Pick<Recipe, 'id' | 'label'> &
+    Partial<Pick<Recipe, 'nav'>>)[],
 ): string {
-  const label = (id: string) =>
-    recipes.find((recipe) => recipe.id === id)?.label ?? id;
+  const recipe = (id: string) => recipes.find((r) => r.id === id);
+  const label = (id: string) => recipe(id)?.label ?? id;
   const names = (ids: string[]) => ids.map(label).join(', ');
   const parts: string[] = [];
   if (applied.added.length) parts.push(`Added ${names(applied.added)}.`);
+  const unseen = applied.added.filter((id) => recipe(id)?.nav?.length === 0);
+  if (unseen.length) {
+    parts.push(
+      `${names(unseen)} ${unseen.length === 1 ? 'adds' : 'add'} nothing to the menu.`,
+    );
+  }
   if (applied.removed.length) parts.push(`Removed ${names(applied.removed)}.`);
   if (applied.kept.length) {
     parts.push(`Kept ${names(applied.kept)} (needed).`);

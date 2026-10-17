@@ -5,10 +5,16 @@ import type { LibraryCookbook, LibraryFile } from './types.ts';
 export { COOKBOOK_ICONS } from './icons.ts';
 export type * from './types.ts';
 
-/** The curated cookbooks, in the order the tab shows them. */
-export const libraryCookbooks: readonly LibraryCookbook[] = (
-  raw as unknown as LibraryFile
-).cookbooks;
+/** Cookbook names in alphabetical order, the same in every runtime. */
+const byName = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+
+/**
+ * The curated cookbooks, alphabetical by name: the order the Cookbooks tab,
+ * the assistant, the command catalog and the MCP widget all list them in.
+ */
+export const libraryCookbooks: readonly LibraryCookbook[] = [
+  ...(raw as unknown as LibraryFile).cookbooks,
+].sort((a, b) => byName.compare(a.name, b.name));
 
 export function getLibraryCookbook(id: string): LibraryCookbook | undefined {
   return libraryCookbooks.find((cookbook) => cookbook.id === id);

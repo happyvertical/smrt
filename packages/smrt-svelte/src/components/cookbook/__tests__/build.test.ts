@@ -1,7 +1,7 @@
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyShellLayout } from '../../workspace/admin-shell/layout.js';
-import { buildCookbookShell } from '../build.js';
+import { buildCookbookShell, humanize, pluralize } from '../build.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import {
@@ -444,5 +444,15 @@ describe('buildCookbookShell: recipe surfaces', () => {
         shell.routes.length +
         shell.settingsPanels.length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('pluralize', () => {
+  it('pluralizes model labels, leaving nouns that are their own plural', () => {
+    expect(pluralize(humanize('Customer'))).toBe('Customers');
+    expect(pluralize(humanize('Category'))).toBe('Categories');
+    expect(pluralize(humanize('Address'))).toBe('Addresses');
+    expect(pluralize(humanize('EventSeries'))).toBe('Event Series');
+    expect(pluralize('Species')).toBe('Species');
   });
 });

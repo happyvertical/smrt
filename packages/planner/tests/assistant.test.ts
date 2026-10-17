@@ -139,7 +139,8 @@ describe('transport', () => {
     expect(options?.history?.[0].content).toContain('commerce.sales');
     expect(recipeState.has('commerce.sales')).toBe(true);
     expect(result.inProgress).toBe(false);
-    expect(result.assistantMessage?.content).toContain('Here you go.');
+    // What ran, from the commands' results, never the model's own sentence.
+    expect(result.assistantMessage?.content).not.toContain('Here you go.');
     expect(result.assistantMessage?.content).toContain('Added');
   });
 

@@ -75,7 +75,7 @@ describe('sample tax codes', () => {
     const usd = defaultTaxCode(0.0825);
     expect(usd).toMatchObject({ code: 'default-8_25', name: 'Default 8.25%' });
     expect(usd.components).toMatchObject([
-      { name: 'Cookbook 8.25%', percent: '8.25' },
+      { name: 'Tax 8.25%', percent: '8.25' },
     ]);
     // Never an example-pack code, whatever the currency: an exported
     // cookbook's 12% is one component, so the planner's is too.

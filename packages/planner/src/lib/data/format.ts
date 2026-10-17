@@ -71,6 +71,8 @@ export function humanize(name: string): string {
 
 /** English plural of a model's label: "Agreement" -> "Agreements". */
 export function pluralize(label: string): string {
+  // Its own plural, as `singularize` treats it: "Event series".
+  if (/(series|species)$/i.test(label)) return label;
   if (/[^aeiou]y$/i.test(label)) return `${label.slice(0, -1)}ies`;
   if (/(s|x|z|ch|sh)$/i.test(label)) return `${label}es`;
   return `${label}s`;

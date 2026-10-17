@@ -17,6 +17,7 @@ import {
   isStoredLineItemsTotals,
   lineItemTotals,
   sumLineAmounts,
+  taxComponentLabel,
 } from './line-totals.js';
 import RecordTable from './RecordTable.svelte';
 import {
@@ -129,7 +130,7 @@ const LABELS = {
       {/if}
       {#each storedTaxes as tax (`${tax.taxComponentId}-${tax.name}-${tax.percent}`)}
         <div class="smrt-line-items__total smrt-line-items__total--muted">
-          <dt>{t(M[storedTotals.lineAmountType === 'inclusive' ? 'ui.overview.line_items.tax_included' : 'ui.overview.line_items.tax_on'], { name: tax.name, percent: tax.percent })} {money(storedTotals.lineAmountType === 'inclusive' ? tax.tax : tax.taxable)}</dt>
+          <dt>{t(M[storedTotals.lineAmountType === 'inclusive' ? 'ui.overview.line_items.tax_included' : 'ui.overview.line_items.tax_on'], { label: taxComponentLabel(tax.name, tax.percent) })} {money(storedTotals.lineAmountType === 'inclusive' ? tax.tax : tax.taxable)}</dt>
           {#if storedTotals.lineAmountType !== 'inclusive'}<dd>{money(tax.tax)}</dd>{/if}
         </div>
       {/each}

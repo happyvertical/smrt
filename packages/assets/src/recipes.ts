@@ -43,7 +43,8 @@ export class AssetLibraryRecipe extends SmrtRecipe {
   } as const;
   static nav = [
     {
-      label: 'Assets',
+      // Not "Assets": that is the section the recipe suggests.
+      label: 'Files & media',
       model: Asset,
       icon: 'archive',
       description: 'Files and media you can organize, reuse and share.',

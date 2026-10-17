@@ -10,7 +10,14 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `{ reply, add, remove }` schema (enums of RECIPE ids), parse and
   `applyChange` through `recipeState`, `prompt.ts` the recipe vocabulary,
   `models.ts` the offered models, `prefs.ts` the localStorage preference
-  (model choice and consent; not part of the cookbook). It never navigates.
+  (model choice and consent; not part of the cookbook). It navigates only to a menu section the
+  running app can open (`menu`: the snapshot's visible sections while `plannerRuntime.openSection`
+  is set, through `focus`; the schema then has `open`). What the chat says is the commands'
+  results (`honestReply`): the model's sentence stands only when nothing ran, followed by
+  "Nothing in the app changed." unless it asks a question; an added recipe with no menu entry says so.
+  A request for a report or a summary (the keyword match finds `reports.runtime`) is pointed at
+  Reports: an `open` of any other section is dropped, and the reply says the report itself is not
+  built yet (`REPORTS_PENDING`; the runtime report flow in the browser is smrt#4100).
 - `src/lib/inference/` (#23, #30): where the model runs. `config.ts` is `planner.config.json`
   (`inference: { mode: manual|browser|host|byo, alternatives?, credentialPersistence?, host?, byo? }`;
   an absent config keeps the standalone browser default, while an invalid present config fails visibly

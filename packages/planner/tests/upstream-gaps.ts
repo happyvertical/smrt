@@ -119,14 +119,15 @@ export const UPSTREAM_GAPS = {
       ])
       .concat(MONEY_MODEL_UNDESCRIBED, NEW_RECIPES_UNDESCRIBED),
   ),
+  /** Fewer than three match terms (none since #4086 gave `reports.runtime` synonyms). */
+  fewMatchTerms: new Set<string>(),
+  /** A recipe label another recipe also uses (none since #4086 renamed `reports.materialized`). */
+  sharedRecipeLabel: new Set<string>(),
   /**
-   * smrt 0.56's `reports.runtime` (smrt#4006): no `synonyms`, so fewer
-   * than three match terms; the label `Reports`, which `reports.materialized`
-   * also uses; no `section`, so its menu section has no icon or description;
-   * a nav entry with no `description`; and help with no sections or tasks.
+   * smrt 0.56's `reports.runtime` (smrt#4006): no `section`, so its menu
+   * section has no icon or description; a nav entry with no `description`;
+   * and help with no sections or tasks.
    */
-  fewMatchTerms: new Set(['reports.runtime']),
-  sharedRecipeLabel: new Set(['reports.runtime']),
   noSection: new Set(['reports.runtime']),
   undescribedNavEntry: new Set(['reports.runtime']),
   /** Help with fewer than two sections or tasks (`reports.runtime`: prose under one `#` title). */

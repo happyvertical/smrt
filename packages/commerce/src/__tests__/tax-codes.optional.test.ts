@@ -90,7 +90,7 @@ describePostgres('tax codes on PostgreSQL', () => {
         const codes = await TaxCodeCollection.create({ db });
         const settings = await TaxSettingsCollection.create({ db });
         expect(
-          await components.list({ where: { name: 'Cookbook 7.125%' } }),
+          await components.list({ where: { name: 'Tax 7.125%' } }),
         ).toHaveLength(1);
         for (const code of [
           'exempt',

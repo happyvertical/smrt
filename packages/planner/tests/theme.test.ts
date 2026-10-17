@@ -242,6 +242,26 @@ describe('cookbook themes', () => {
     expect(store.theme).toEqual({ preset: 'glass' });
   });
 
+  it('applying a cookbook keeps the colour scheme the visitor chose', () => {
+    const store = new CookbookStore();
+    const mechanic = getLibraryCookbook('mechanic');
+    if (!mechanic) throw new Error('mechanic missing');
+    store.setTheme({ colorScheme: 'light' });
+    expect(applyLibraryCookbook(mechanic, store, DEFAULT_SETTINGS).ok).toBe(
+      true,
+    );
+    expect(store.theme).toEqual({ preset: 'smrt', colorScheme: 'light' });
+    const dark = {
+      ...mechanic,
+      document: {
+        ...mechanic.document,
+        theme: { preset: 'smrt', colorScheme: 'dark' as const },
+      },
+    };
+    expect(applyLibraryCookbook(dark, store, DEFAULT_SETTINGS).ok).toBe(true);
+    expect(store.theme?.colorScheme).toBe('dark');
+  });
+
   it('resolves a brand colour to a registered theme id, reused per colour', () => {
     const first = resolveTheme({
       custom: { primary: '#b45309' },
@@ -356,7 +376,11 @@ describe('assistant theme', () => {
     expect(on).toContain('"make it warmer" -> ');
     expect(on).toContain('Theme: glass.');
     // Same allowance as the cookbook prompt test: a fixed part plus a line each.
-    expect(on.length).toBeLessThan(515 + 215 * recipes.length);
+    expect(on.length).toBeLessThan(
+      515 +
+        215 * recipes.length +
+        110 * Math.max(0, libraryCookbooks.length - 10),
+    );
     const off = buildSystemPrompt(
       recipes,
       [],
@@ -422,7 +446,7 @@ describe('assistant theme', () => {
       clientRequestId: 'r1',
     });
     expect(mem.get()?.custom?.primary).toBe('#d97706');
-    expect(result.assistantMessage?.content).toContain('Warmed it up.');
+    expect(result.assistantMessage?.content).not.toContain('Warmed it up.');
     expect(result.assistantMessage?.content).toContain(
       'Theme: brand colour #d97706.',
     );

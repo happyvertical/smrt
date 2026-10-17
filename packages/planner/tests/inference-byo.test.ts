@@ -397,7 +397,7 @@ describe('AiState in byo mode', () => {
         content: 'I sell things',
         clientRequestId: 'q1',
       } as never);
-      expect(result.assistantMessage?.content).toMatch(/Added sales/);
+      expect(result.assistantMessage?.content).toMatch(/Added .*Sales/);
       expect(recipeState.ids).toContain('commerce.sales');
       // The user's text and the planner prompt went to the stub, which is the only server.
       expect(stub.requests).toHaveLength(1);
