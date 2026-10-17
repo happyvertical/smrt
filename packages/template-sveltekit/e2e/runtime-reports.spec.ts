@@ -97,8 +97,12 @@ test('approves an assistant proposal with a browser gesture and renders it throu
     ownerPage.getByRole('heading', { name: 'Browser note count' }),
   ).toBeVisible();
   await ownerPage.getByRole('button', { name: 'Approve' }).click();
-  await expect(ownerPage.getByText('Report saved.')).toBeVisible();
-  const saved = ownerPage.getByRole('link', { name: 'Browser note count' });
+  // The answered card shows an outcome line with an Open link (#4100).
+  await expect(
+    ownerPage.getByText('Saved to Shared reports', { exact: false }),
+  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+  const saved = ownerPage.getByRole('link', { name: 'Open' });
   const detailPath = await saved.getAttribute('href');
   expect(detailPath).toMatch(/^\/reports\/[^/]+$/);
 
