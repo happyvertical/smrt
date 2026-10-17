@@ -1,6 +1,9 @@
 <script lang="ts">
 import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
-import { runtimeReportProposalFromMessage } from '@happyvertical/smrt-reports/svelte';
+import {
+  type ReportConfirmationOutcome,
+  runtimeReportProposalFromMessage,
+} from '@happyvertical/smrt-reports/svelte';
 import { Button } from '@happyvertical/smrt-ui';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { cancelsSpeech } from '../ai/echo-gate.ts';
@@ -102,7 +105,7 @@ $effect(() => {
 {#snippet reportCard(ref: unknown)}
   {@const proposal = runtimeReportProposalFromMessage({ toolCallData: ref })}
   {#if proposal}
-    <ReportProposalCard {proposal} />
+    <ReportProposalCard {proposal} reference={ref as { outcome?: ReportConfirmationOutcome }} />
   {/if}
 {/snippet}
 

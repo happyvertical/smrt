@@ -185,4 +185,51 @@ describe('report preview and shared reports (#4100)', () => {
     expect(target.querySelector('input[type="radio"]')).toBeNull();
     expect(target.textContent).toContain('Group by: Issue date by month');
   });
+
+  it('records a decline on the transcript data, and a reloaded card shows the answer', async () => {
+    const { data, reports } = app();
+    const defined = await reports.define({
+      source: 'invoices',
+      period: 'last_month',
+    });
+    if (!defined.ok) throw new Error(defined.question);
+    const reference: { outcome?: unknown } = {};
+    const first = render(
+      ReportProposalCard,
+      { proposal: defined.proposal, reference },
+      data,
+    );
+    await settle();
+    button(first, /decline/i).click();
+    await settle();
+    expect(reference.outcome).toEqual({ status: 'declined' });
+    // The same transcript data rendered again (a reload): no live buttons.
+    const again = render(
+      ReportProposalCard,
+      { proposal: defined.proposal, reference },
+      data,
+    );
+    await settle();
+    const actions = (root: HTMLElement) =>
+      [...root.querySelectorAll('button')].filter((b) =>
+        /approve|decline/i.test(b.textContent ?? ''),
+      );
+    expect(actions(again)).toEqual([]);
+    expect(again.textContent).toContain('Declined — nothing saved');
+    const saved = render(
+      ReportProposalCard,
+      {
+        proposal: defined.proposal,
+        reference: {
+          outcome: { status: 'saved', report: { id: 'r1', title: 'x' } },
+        },
+      },
+      data,
+    );
+    await settle();
+    expect(actions(saved)).toEqual([]);
+    expect(saved.querySelector('a')?.getAttribute('href')).toContain(
+      '/m/reports/RuntimeReport/r1/',
+    );
+  });
 });

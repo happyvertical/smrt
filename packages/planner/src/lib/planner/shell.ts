@@ -16,7 +16,9 @@ export const PLANNER_SHELL_EDGE_TOGGLES: Partial<Record<PanelEdge, boolean>> = {
 /** Panel defaults shared by Planner's static shell and embedding hosts. */
 export const PLANNER_SHELL_PANEL_DEFAULTS: ShellPanelDefaults = {
   left: { initial: 'expanded' },
-  right: { initial: 'collapsed', rail: false, presentation: 'overlay' },
+  // The dock follows the shell default: beside the page from xl, a
+  // slide-over below it (smrt-svelte's `overlayMedia`).
+  right: { initial: 'collapsed', rail: false },
   bottom: { initial: 'hidden' },
 };
 

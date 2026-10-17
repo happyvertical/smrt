@@ -38,6 +38,10 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   widgets and unknown ids are dropped and reported (`CookbookResult.dropped`), only canonical
   non-empty overrides are kept. `page.ts`: the controller wiring (`override` reads
   `cookbookStore.overview(id)`, `onchange` writes `setOverview`), shared by the page and the tests.
+- The dock follows smrt-svelte's default (beside the page from xl, a slide-over below);
+  `ReportProposalCard` records its outcome on the transcript's tool data and, after Approve
+  opens the report, calls `announceShellNavigation`, so an overlaying dock closes and focus
+  lands on the report heading.
 - Shared reports (`reports.runtime`'s RuntimeReport entry): `ModelPage` and the mounted `Planner`
   render `PlannerReports.svelte` instead of the generic list/record views: smrt-reports'
   `SavedReports` and `ReportDetail` over `PlannerReports.client` (list, get, run afresh in the

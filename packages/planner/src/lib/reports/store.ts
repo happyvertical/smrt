@@ -19,6 +19,7 @@
  */
 
 import {
+  describeRuntimeReportMemorySource,
   parseRuntimeReportSpec,
   RuntimeReportError,
   type RuntimeReportResult,
@@ -82,6 +83,10 @@ export interface PlannerReports {
   define(intent: ReportIntent, text?: string): Promise<DefineResult>;
   run(spec: RuntimeReportSpec): Promise<RuntimeReportResult>;
   save(proposal: RuntimeReportProposal): Promise<SavedRuntimeReport>;
+  /** A source's described fields (labels, money format) for a confirmation card. */
+  fieldsFor(
+    sourceId: string,
+  ): { name: string; label: string; format?: string }[];
   client: RuntimeReportsClient;
 }
 
@@ -252,5 +257,17 @@ export function createPlannerReports(
     confirm: save,
   };
 
-  return { sources, define, run, save, client };
+  function fieldsFor(sourceId: string) {
+    const offered = sources();
+    if (!offered.some((s) => s.id === sourceId)) return [];
+    return describeRuntimeReportMemorySource(offered, sourceId).fields.map(
+      ({ name, label, format }) => ({
+        name,
+        label,
+        ...(format ? { format } : {}),
+      }),
+    );
+  }
+
+  return { sources, define, run, save, client, fieldsFor };
 }
