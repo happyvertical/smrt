@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MaterializedReportTable from '../MaterializedReportTable.svelte';
@@ -84,22 +85,32 @@ describe('saved report screens', () => {
       onlyMine: false,
       includeArchived: false,
     });
-    await fireEvent.click(screen.getByLabelText('Only mine'));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Mine' }));
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith({
         onlyMine: true,
         includeArchived: false,
       }),
     );
-    await fireEvent.click(screen.getByLabelText('Show archived reports'));
+    await fireEvent.click(screen.getByLabelText('Show archived'));
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith({
         onlyMine: true,
         includeArchived: true,
       }),
     );
+    // Archive is a secondary action: the card's "more" menu, then a confirmation.
     await fireEvent.click(
-      await screen.findByRole('button', { name: 'Archive' }),
+      await screen.findByRole('button', {
+        name: `More actions for ${saved.title}`,
+      }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    expect(archive).not.toHaveBeenCalled();
+    await fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Archive',
+      }),
     );
     expect(archive).toHaveBeenCalledWith(saved.id, true);
   });
@@ -108,7 +119,9 @@ describe('saved report screens', () => {
       client: client({ list: async () => [{ ...saved, canArchive: false }] }),
     });
     await screen.findByRole('link', { name: saved.title });
-    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: `More actions for ${saved.title}` }),
+    ).toBeNull();
     await mounted.rerender({ client: client({ list: async () => [] }) });
     expect(await screen.findByText(/Ask the assistant/)).toBeTruthy();
   });
@@ -136,11 +149,15 @@ describe('saved report screens', () => {
       client: client({ run }),
       locale: 'en-US',
     });
-    await screen.findByText('$123.45');
+    expect((await screen.findAllByText('$123.45')).length).toBeGreaterThan(0);
     expect(run).toHaveBeenCalledWith(saved.id);
-    await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Table' }));
     expect(screen.getByRole('cell', { name: '$123.45' })).toBeTruthy();
-    await fireEvent.click(screen.getByRole('button', { name: 'Re-run' }));
+    // Re-run is in the "more" menu: the page runs afresh each time it opens.
+    await fireEvent.click(
+      screen.getByRole('button', { name: `More actions for ${saved.title}` }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Re-run' }));
     await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
   });
   it.each([
@@ -162,7 +179,7 @@ describe('saved report screens', () => {
   });
   it('renders empty data and rejects unsafe integer results', () => {
     render(ReportResult, { result: { ...result, rows: [], rowCount: 0 } });
-    expect(screen.getByText('No results match this report.')).toBeTruthy();
+    expect(screen.getByText('No matching records.')).toBeTruthy();
     expect(
       validReportResult({
         ...result,
@@ -197,7 +214,7 @@ describe('saved report screens', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull();
     expect(
-      screen.getByRole('link', { name: 'Open' }).getAttribute('href'),
+      screen.getByRole('link', { name: 'Open report' }).getAttribute('href'),
     ).toBe('/reports/report-1');
   });
   it('shows an earlier answer read-only, as after a transcript reload', () => {
@@ -249,8 +266,9 @@ describe('saved report screens', () => {
       dimension: '',
     });
     await mounted.rerender({ reportId: saved.id });
-    expect(screen.getByRole('option', { name: 'total' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'region' })).toBeTruthy();
+    // Named as the report names them, not by their aliases.
+    expect(screen.getByRole('option', { name: 'Sum of Amount' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Region' })).toBeTruthy();
   });
 });
 

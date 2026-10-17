@@ -7,6 +7,19 @@ export {
   type RuntimeReportsHttpClientOptions,
   RuntimeReportsHttpError,
 } from './client.js';
+export {
+  describeReport,
+  humanizeName,
+  type ReportDescription,
+  type ReportFieldInfo,
+  type ReportFigure,
+  type ReportPeriod,
+  type ReportSourceInfo,
+  relativeTime,
+  reportCsv,
+  reportFigures,
+  reportPeriod,
+} from './describe.js';
 export { default as MaterializedReportTable } from './MaterializedReportTable.svelte';
 export type {
   MaterializedReportCell,
@@ -25,7 +38,9 @@ export { default as RuntimeReportDetailRoute } from './RuntimeReportDetailRoute.
 export { default as RuntimeReportsRoute } from './RuntimeReportsRoute.svelte';
 export { default as RuntimeReportToolResult } from './RuntimeReportToolResult.svelte';
 export { default as RuntimeReportWidgetOptions } from './RuntimeReportWidgetOptions.svelte';
+export { default as SavedReportCard } from './SavedReportCard.svelte';
 export { default as SavedReports } from './SavedReports.svelte';
+export { default as SavedReportsWidget } from './SavedReportsWidget.svelte';
 export {
   runtimeReportProposalFromMessage,
   runtimeReportToolResultComponent,

@@ -148,6 +148,8 @@
     "packages/projects/src/svelte/components/DevelopmentRequestList.svelte": 2,
     "packages/projects/src/svelte/components/RejectDialog.svelte": 2,
     "packages/prompts/src/svelte/components/PromptSettingsPanel.svelte": 1,
+    "packages/reports/src/svelte/ReportDetail.svelte": 2,
+    "packages/reports/src/svelte/ReportResult.svelte": 2,
     "packages/sales/src/svelte/components/AttributionConflictQueue.svelte": 2,
     "packages/sales/src/svelte/components/LeadList.svelte": 2,
     "packages/sales/src/svelte/components/OpportunityBoard.svelte": 2,

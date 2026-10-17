@@ -1,7 +1,7 @@
 <script lang="ts">
-import { formatWidgetValue } from '@happyvertical/smrt-ui/charts';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { describeReport, type ReportFieldInfo } from './describe.js';
 import { M } from './messages.js';
 import ReportResult from './ReportResult.svelte';
 import { reportError, validReportProposal } from './result.js';
@@ -30,7 +30,7 @@ export interface Props {
    * groupings and filters read "Issue date", "Total amount" and money, not
    * model field names. Omitted, names are humanized.
    */
-  fields?: readonly { name: string; label: string; format?: string }[];
+  fields?: readonly ReportFieldInfo[];
   locale?: string;
   currency?: string;
 }
@@ -70,24 +70,21 @@ const answered = $derived<ReportConfirmationOutcome | null>(
         ? { status: 'declined' }
         : null),
 );
-const humanize = (name: string) =>
-  name
-    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .toLowerCase()
-    .replace(/^./, (c) => c.toUpperCase());
-const fieldOf = (name: string) => fields.find((f) => f.name === name);
-const label = (name: string) => fieldOf(name)?.label ?? humanize(name);
-/** A result column's own label ("Total amount", "Number of invoices"). */
-const columnLabel = (id: string) =>
-  proposal.preview.columns.find((c) => c.id === id)?.label ?? humanize(id);
-function value(field: string, raw: unknown) {
-  const show = (v: unknown) =>
-    fieldOf(field)?.format === 'money' && typeof v === 'number'
-      ? formatWidgetValue(v, { format: 'money', currency, locale })
-      : String(v ?? '');
-  return Array.isArray(raw) ? raw.map(show).join(', ') : show(raw);
-}
+const description = $derived(
+  valid
+    ? describeReport(proposal.spec, {
+        t,
+        locale,
+        currency,
+        source: {
+          id: proposal.spec.source,
+          label: proposal.sourceLabel,
+          fields,
+        },
+        columns: proposal.preview.columns,
+      })
+    : null,
+);
 async function approve(event: MouseEvent) {
   // Approval is an immediate local human action, never a model-callable tool.
   if (!event.isTrusted || status !== 'idle' || !valid || answered) return;
@@ -121,20 +118,22 @@ function decline() {
     <p role="alert">{t(M['reports.invalid'])}</p>
   {:else}
     {#if proposal.spec.description}<p class="report-confirmation-description">{proposal.spec.description}</p>{/if}
-    <dl class="report-confirmation-facts">
-      <div><dt>{t(M['reports.source'])}</dt><dd>{proposal.sourceLabel}</dd></div>
-      <div>
-        <dt>{t(M['reports.groupings'])}</dt>
-        <dd>{#if proposal.spec.dimensions.length}{proposal.spec.dimensions.map((d) => d.bucket ? t(M['reports.dimension_bucket'], { field: label(d.field), bucket: t(`reports.bucket_unit.${d.bucket}`) }) : label(d.field)).join(', ')}{:else}{t(M['reports.none'])}{/if}</dd>
-      </div>
-      <div><dt>{t(M['reports.measures'])}</dt><dd>{proposal.spec.measures.map((m) => columnLabel(m.as)).join(', ')}</dd></div>
-      {#if proposal.spec.filters.length}
-        <div><dt>{t(M['reports.filters'])}</dt><dd>{proposal.spec.filters.map((f) => `${label(f.field)} ${t(`reports.operator.${f.op}`)} ${value(f.field, f.value)}`.trim()).join('; ')}</dd></div>
-      {/if}
-      {#if proposal.spec.having.length}
-        <div><dt>{t(M['reports.having'])}</dt><dd>{proposal.spec.having.map((h) => `${columnLabel(h.measure)} ${t(`reports.operator.${h.op}`)} ${h.value}`).join('; ')}</dd></div>
-      {/if}
-    </dl>
+    {#if description}
+      <dl class="report-confirmation-facts">
+        <div><dt>{t(M['reports.source'])}</dt><dd>{description.source}</dd></div>
+        <div><dt>{t(M['reports.groupings'])}</dt><dd>{description.groupings || t(M['reports.none'])}</dd></div>
+        {#if description.period}
+          <div><dt>{t(M['reports.period'])}</dt><dd>{description.period.range}</dd></div>
+        {/if}
+        <div><dt>{t(M['reports.measures'])}</dt><dd>{description.measures.join(', ')}</dd></div>
+        {#if description.filters.length}
+          <div><dt>{t(M['reports.filters'])}</dt><dd>{description.filters.join('; ')}</dd></div>
+        {/if}
+        {#if description.having.length}
+          <div><dt>{t(M['reports.having'])}</dt><dd>{description.having.join('; ')}</dd></div>
+        {/if}
+      </dl>
+    {/if}
     <ReportResult result={proposal.preview} {locale} {currency} />
     {#if answered?.status === 'saved'}
       <p class="report-confirmation-outcome" role="status">{t(M['reports.saved'])} · <a href={reportHref(answered.report.id)}>{t(M['reports.open'])}</a></p>

@@ -10,6 +10,8 @@ export interface SavedRuntimeReport {
   createdByUserId: string;
   status: 'active' | 'archived';
   spec: RuntimeReportSpec;
+  /** When the report was saved (approved), when the host knows it. */
+  savedAt?: string;
   /** Browser-session hint only. Runtime result rows and run history are not persisted. */
   lastRunAt?: string;
   /** Host permission hint. The archive endpoint authorizes every mutation again. */
