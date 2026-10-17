@@ -208,6 +208,8 @@ the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
 
+Structured questions (#4100): [agents/assistant-questions.md](agents/assistant-questions.md).
+
 ## Recipes (#3719)
 
 `src/recipes.ts` declares `chat.assistant` (the AssistantDock as a `header.end`

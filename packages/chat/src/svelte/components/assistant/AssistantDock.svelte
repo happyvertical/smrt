@@ -30,9 +30,15 @@ import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
+import AssistantQuestionForm from './AssistantQuestionForm.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import { toolCallStatusForAction } from './action-status.js';
 import type { AssistantChoiceSourceRegistry } from './assistant-choices.svelte.js';
+import {
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  assistantQuestionFromMessage,
+} from './assistant-question.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -547,6 +553,21 @@ async function handleCreateThread() {
   }
 }
 
+// A structured question's form (`./assistant-question.ts`): the transport
+// continues the turn from the values, or they go out as a message. A failure
+// is surfaced on the dock and the form stays answerable.
+async function handleAnswerQuestion(
+  messageId: string,
+  question: AssistantQuestion,
+  values: AssistantQuestionAnswer,
+) {
+  try {
+    await controller.answerQuestion(messageId, question, values);
+  } catch (error) {
+    controller.setError(error instanceof Error ? error.message : String(error));
+  }
+}
+
 async function handleSend(
   content: string,
   attachments: AssistantAttachmentRef[],
@@ -783,6 +804,15 @@ async function handleConfirmAction(requestId: string) {
                   {:else}
                     <p class="assistant-dock-message-content">{message.content}</p>
                   {/if}
+                {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
+                {#if question}
+                  <AssistantQuestionForm
+                    {question}
+                    answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
+                    autofocus={message.id === controller.messages.at(-1)?.id}
+                    onsubmit={(values) => handleAnswerQuestion(message.id, question, values)}
+                  />
+                {/if}
                 {#if toolCall && message.toolCallData != null}
                   <div class="assistant-dock-tool-call">
                     {@render toolCall(message)}
