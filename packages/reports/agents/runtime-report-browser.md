@@ -42,6 +42,11 @@ The `./playground` entry has saved-list, detail, confirmation, picker, empty and
 unavailable previews. They use deterministic sample data, not a production
 backend. All component copy registers through `smrt-ui/i18n`.
 
+The smrt planner (#4100) renders `ReportConfirmation`, `SavedReports` and
+`ReportDetail` with its own `RuntimeReportsClient` over sample data and the
+in-memory runner from `./spec`; its `confirm` is a browser save, not this
+package's confirmation route.
+
 The template reference application exercises the generic dock selector, a real
 trusted browser approval click, authenticated confirmation and generated reads,
 detail execution, and the recipe-registered overview loader/renderer without
