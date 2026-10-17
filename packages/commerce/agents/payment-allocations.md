@@ -82,3 +82,42 @@ reloads, duplicate posting, rollback, concurrency and conflicting managed dates.
 Package typecheck/Svelte check (zero errors/warnings) and build pass. Initial
 failures retained in the MVP evidence identified the missing direct-save date
 freeze and an order-dependent journal assertion; both were corrected.
+
+## Allocation deletion versus retained-refund reservation (#4063 / PR #4101)
+
+Deletion claims the persisted Payment revision in its owning transaction before
+checking provider or customer-funds authority. It holds that revision through the
+allocation DELETE. A retained-refund reservation uses the same Payment revision
+claim when saving its binding, so a stale unbound parent read cannot authorize
+removal after the provider reservation commits. If deletion commits first, the
+provider reservation must fail its stale Payment claim before provider I/O.
+Ordinary deletion advances the Payment revision; reload held Payment instances
+before subsequent edits. Invoice status refresh remains caller-owned.
+
+The accepted review fix is high risk because concurrent deletion could remove
+settlement evidence already reserved by an external accounting operation. No API,
+schema, accounting mapping or bank execution contract changes.
+
+| Behavior / reachable trigger | Positive / negative case | Actor / executor / runtime | External edge / focused evidence |
+| --- | --- | --- | --- |
+| Direct allocation deletion | Ordinary unbound row deletes; failed outer transaction preserves row and parent revision | Active owning tenant; one caller transaction; SQLite and PostgreSQL | No bank I/O; dedicated allocation-delete suite |
+| Existing provider binding | Protected row remains and rejected delete rolls back parent revision; foreign tenant cannot delete | Owning versus foreign active tenant; transaction-bound parent claim; both dialects | Public retained-refund sync plus immutable binding readback |
+| Claimed deletion commits first | Provider reservation reaches its Payment revision claim, then fails without binding, refund reservation or provider I/O | Separate native PostgreSQL transactions; deterministic claim barriers | Public refund operation fails closed after its stale settlement evidence is removed |
+| Stale unbound parent read | Provider reservation commits while delete is paused, then stale delete fails and exact allocation remains | Separate native PostgreSQL transactions; deterministic read barrier | Real public provider saga with fake provider port; exact retry creates no extra provider operation |
+
+The PostgreSQL concurrency interleaving is intentionally not run on SQLite:
+SQLite serializes the owning write transaction instead of allowing PostgreSQL's
+stale-read interleaving. Shared mutation/rollback/tenant/binding cases run on both.
+The dedicated native test must fail against the pre-fix implementation before
+claiming regression coverage. External outcome recovery and malformed provider
+inputs are unchanged and covered by the retained-accounting suite; no new provider
+request shape is introduced here.
+
+Focused validation: the dedicated SQLite/PostgreSQL test file passes all four
+cases; both PostgreSQL races use real independent transactions and explicit
+method barriers, without sleeps or mocked database results. The stale deletion
+case fails against the unchanged base because deletion succeeds after provider
+reservation. Existing SQLite allocation-integrity and customer-funds suites also
+pass (19 cases), including the managed reversal caller. Scoped model/test
+TypeScript passes. Run the dedicated PostgreSQL proof with the standard managed
+`run-with-ci-postgres.mjs` wrapper; it creates and cleans its own database.

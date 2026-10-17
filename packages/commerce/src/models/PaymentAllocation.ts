@@ -337,6 +337,13 @@ export class PaymentAllocation extends SmrtObject {
         { id: String(persisted?.payment_id ?? this.paymentId) },
         { cache: false },
       );
+      // Share the Payment revision boundary with provider refund reservation.
+      // A stale unbound read must fail before deleting its settlement evidence.
+      if (payment) {
+        if (!payment.updated_at)
+          throw new Error('Allocation parent has no persisted revision');
+        await payment.claimRevision(payment.updated_at);
+      }
       if (payment?.retentionAccountingBindingJson)
         throw new Error(
           'Provider-recorded refund allocation cannot be deleted',
