@@ -20,12 +20,37 @@ export interface Props {
   title?: string;
   /** Locale used to format displayed numeric values. */
   locale?: string;
+  /**
+   * How much room the chart takes. `compact` is a sparkline for a card (a
+   * line with no axis, labels or readout); `tall` gives a page's main chart
+   * room. Default `regular`.
+   */
+  size?: 'compact' | 'regular' | 'tall';
+  /**
+   * Line: label the value axis (top, middle and bottom values, short form)
+   * with light gridlines. Default on for `tall`.
+   */
+  valueAxis?: boolean;
+  /**
+   * Line: let the pointer and the arrow keys read each value in a tooltip
+   * (a slider whose value text is the point). Default on for `tall`.
+   */
+  explore?: boolean;
+  /**
+   * Line: the peak and latest values under the chart. Default on; a page
+   * that shows its own headline figures turns it off.
+   */
+  readout?: boolean;
 }
 let {
   data,
   style: requestedStyle = 'bar',
   title = '',
   locale = 'en',
+  size = 'regular',
+  valueAxis,
+  explore,
+  readout = true,
 }: Props = $props();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -33,6 +58,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const { t } = useI18n();
+const uid = $props.id();
 const MAX_POINTS = 60;
 
 const chart = $derived(isRecord(data) ? data : null);
@@ -55,6 +81,10 @@ const STYLES = ['bar', 'line', 'table', 'pie', 'stat'] as const;
 const style = $derived(
   STYLES.find((candidate) => candidate === requestedStyle) ?? 'bar',
 );
+/** Whether the line draws its value axis (`showAxis`, readable before it). */
+function requestedAxis(): boolean {
+  return size !== 'compact' && (valueAxis ?? size === 'tall');
+}
 const fmt = (value: number): string =>
   formatWidgetValue(value, {
     format: chart?.format ?? 'integer',
@@ -63,7 +93,17 @@ const fmt = (value: number): string =>
   });
 const max = $derived(Math.max(0, ...points.map((point) => point.value)));
 const min = $derived(Math.min(0, ...points.map((point) => point.value)));
-const span = $derived(max - min || 1);
+/** A round number at or above `value` (1, 2, 2.5 or 5 times a power of ten). */
+function niceCeil(value: number): number {
+  if (value <= 0) return 0;
+  const power = 10 ** Math.floor(Math.log10(value));
+  const step = [1, 2, 2.5, 5, 10].find((n) => value / power <= n) ?? 10;
+  return step * power;
+}
+// The line's top: the peak, or with a value axis two round steps above zero
+// (so the ticks read $0 / $50K / $100K and the peak never meets the frame).
+const top = $derived(requestedAxis() && max > 0 ? niceCeil(max / 2) * 2 : max);
+const span = $derived(top - min || 1);
 const polyline = $derived(
   points
     .map((point, index) => {
@@ -138,6 +178,67 @@ const peak = $derived(
 const summary = $derived(
   `${title}. ${t(M['ui.overview.chart.summary'], { count: points.length })}`,
 );
+
+// Line extras: the value axis and the explorable readout.
+const compact = $derived(size === 'compact');
+const showAxis = $derived(requestedAxis());
+const explorable = $derived(!compact && (explore ?? size === 'tall'));
+const short = (value: number): string =>
+  formatWidgetValue(value, {
+    format: chart?.format ?? 'integer',
+    currency: chart?.currency,
+    locale,
+    compact: true,
+  });
+const axisValues = $derived([top, (top + min) / 2, min]);
+/** A point's place in the 100 x 40 plot. */
+function place(index: number): { x: number; y: number } {
+  const point = points[index];
+  const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
+  const y = 36 - (((point?.value ?? 0) - min) / span) * 32;
+  return { x, y };
+}
+let active = $state<number | null>(null);
+const activePoint = $derived(
+  active !== null && points[active]
+    ? { ...points[active], ...place(active) }
+    : null,
+);
+const activeText = $derived(
+  activePoint
+    ? t(M['ui.overview.chart.point'], {
+        label: activePoint.label,
+        value: fmt(activePoint.value),
+      })
+    : '',
+);
+function pointAt(event: PointerEvent) {
+  const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  if (box.width <= 0 || points.length === 0) return;
+  const ratio = Math.min(
+    1,
+    Math.max(0, (event.clientX - box.left) / box.width),
+  );
+  active = Math.round(ratio * (points.length - 1));
+}
+function step(event: KeyboardEvent) {
+  const last = points.length - 1;
+  if (last < 0) return;
+  const current = active ?? -1;
+  const next =
+    event.key === 'ArrowRight' || event.key === 'ArrowUp'
+      ? Math.min(last, current + 1)
+      : event.key === 'ArrowLeft' || event.key === 'ArrowDown'
+        ? Math.max(0, current < 0 ? last : current - 1)
+        : event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? last
+            : null;
+  if (next === null) return;
+  event.preventDefault();
+  active = next;
+}
 </script>
 
 {#snippet dataTable(hidden: boolean)}
@@ -155,6 +256,36 @@ const summary = $derived(
       {/each}
     </tbody>
   </table>
+{/snippet}
+
+{#snippet linePlot(interactive: boolean)}
+  <svg
+    class="smrt-chart__line"
+    viewBox="0 0 100 40"
+    preserveAspectRatio="none"
+    role={interactive ? undefined : 'img'}
+    aria-label={interactive ? undefined : summary}
+    aria-hidden={interactive ? 'true' : undefined}
+  >
+    {#if showAxis}
+      {#each [4, 20, 36] as y (y)}
+        <line class="smrt-chart__grid" x1="0" x2="100" y1={y} y2={y} vector-effect="non-scaling-stroke" />
+      {/each}
+    {/if}
+    <polyline points={polyline} fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
+    {#if activePoint}
+      <line class="smrt-chart__guide" x1={activePoint.x} x2={activePoint.x} y1="0" y2="40" vector-effect="non-scaling-stroke" />
+    {/if}
+  </svg>
+  {#if activePoint}
+    <span class="smrt-chart__dot" style:inset-inline-start="{activePoint.x}%" style:inset-block-start="{(activePoint.y / 40) * 100}%" aria-hidden="true"></span>
+    <span
+      class="smrt-chart__tip"
+      data-edge={activePoint.x < 15 ? 'start' : activePoint.x > 85 ? 'end' : undefined}
+      style:inset-inline-start="{activePoint.x}%"
+      aria-hidden="true"
+    ><span>{activePoint.label}</span><strong>{fmt(activePoint.value)}</strong></span>
+  {/if}
 {/snippet}
 
 {#if points.length === 0}
@@ -213,14 +344,45 @@ const summary = $derived(
     <p class="smrt-chart__empty" data-smrt-component="Chart">{t(M['ui.overview.no_data'])}</p>
   {/if}
 {:else if style === 'line'}
-  <div class="smrt-chart" data-smrt-component="Chart">
-    <svg class="smrt-chart__line" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={summary}>
-      <polyline points={polyline} fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
-    </svg>
-    <p class="smrt-chart__axis" aria-hidden="true">
-      {#each axisLabels as label, index (index)}<span>{label}</span>{/each}
-    </p>
-    {#if peak && latest}
+  <div class="smrt-chart smrt-chart--line" data-size={size} data-smrt-component="Chart">
+    <div class="smrt-chart__frame" class:smrt-chart__frame--axis={showAxis}>
+      {#if showAxis}
+        <p class="smrt-chart__values" aria-hidden="true">
+          {#each axisValues as value, index (index)}<span>{short(value)}</span>{/each}
+        </p>
+      {/if}
+      <div class="smrt-chart__body">
+        {#if explorable}
+          <div
+            class="smrt-chart__plot"
+            role="slider"
+            tabindex="0"
+            aria-label={summary}
+            aria-describedby="{uid}-explore"
+            aria-orientation="horizontal"
+            aria-valuemin={0}
+            aria-valuemax={Math.max(0, points.length - 1)}
+            aria-valuenow={active ?? points.length - 1}
+            aria-valuetext={activeText || (latest ? t(M['ui.overview.chart.point'], { label: latest.label, value: fmt(latest.value) }) : '')}
+            onpointermove={pointAt}
+            onpointerleave={() => (active = null)}
+            onkeydown={step}
+            onblur={() => (active = null)}
+          >
+            {@render linePlot(true)}
+          </div>
+        {:else}
+          <div class="smrt-chart__plot">{@render linePlot(false)}</div>
+        {/if}
+        {#if !compact}
+          <p class="smrt-chart__axis" aria-hidden="true">
+            {#each axisLabels as label, index (index)}<span>{label}</span>{/each}
+          </p>
+        {/if}
+      </div>
+    </div>
+    {#if explorable}<span id="{uid}-explore" class="smrt-chart__table">{t(M['ui.overview.chart.explore'])}</span>{/if}
+    {#if readout && !compact && peak && latest}
       <p class="smrt-chart__readout">
         <span>{t(M['ui.overview.chart.peak'], { value: fmt(peak.value), label: peak.label })}</span>
         <span>{t(M['ui.overview.chart.latest'], { value: fmt(latest.value), label: latest.label })}</span>
@@ -246,7 +408,24 @@ const summary = $derived(
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-chart { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-primary); }
-  .smrt-chart__line { inline-size: 100%; block-size: 7rem; overflow: visible; }
+  .smrt-chart__line { display: block; inline-size: 100%; block-size: 7rem; overflow: visible; }
+  .smrt-chart--line[data-size='compact'] .smrt-chart__line { block-size: 2.5rem; }
+  .smrt-chart--line[data-size='tall'] .smrt-chart__line { block-size: 14rem; }
+  .smrt-chart__frame { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-2); }
+  .smrt-chart__frame--axis { grid-template-columns: auto minmax(0, 1fr); }
+  .smrt-chart__body { display: grid; gap: var(--smrt-spacing-1); min-inline-size: 0; }
+  .smrt-chart__values { display: flex; flex-direction: column; justify-content: space-between; margin: 0; block-size: 14rem; padding-block: calc(14rem * 0.1 - 0.5lh) calc(14rem * 0.1 - 0.5lh); box-sizing: border-box; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-small-size); font-variant-numeric: tabular-nums; text-align: end; }
+  .smrt-chart--line:not([data-size='tall']) .smrt-chart__values { block-size: 7rem; padding-block: calc(7rem * 0.1 - 0.5lh); }
+  .smrt-chart__grid { stroke: var(--smrt-color-outline-variant); stroke-width: 1; stroke-dasharray: 2 3; }
+  .smrt-chart__plot { position: relative; border-radius: var(--smrt-radius-small); outline: none; touch-action: pan-y; }
+  .smrt-chart__plot[role='slider'] { cursor: crosshair; }
+  .smrt-chart__plot:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
+  .smrt-chart__guide { stroke: var(--smrt-color-outline); stroke-width: 1; }
+  .smrt-chart__dot { position: absolute; inline-size: 0.625rem; block-size: 0.625rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary); outline: var(--smrt-focus-ring-width) solid var(--smrt-color-surface); transform: translate(-50%, -50%); pointer-events: none; }
+  .smrt-chart__tip { position: absolute; inset-block-start: 0; display: grid; gap: 0; padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-inverse-surface); color: var(--smrt-color-inverse-on-surface); font-size: var(--smrt-typography-label-medium-size); line-height: 1.3; white-space: nowrap; transform: translate(-50%, calc(-100% - var(--smrt-spacing-1))); pointer-events: none; box-shadow: var(--smrt-elevation-2); font-variant-numeric: tabular-nums; }
+  .smrt-chart__tip[data-edge='start'] { transform: translate(0, calc(-100% - var(--smrt-spacing-1))); }
+  .smrt-chart__tip[data-edge='end'] { transform: translate(-100%, calc(-100% - var(--smrt-spacing-1))); }
+
   .smrt-chart__axis { display: flex; justify-content: space-between; gap: var(--smrt-spacing-2); margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); }
   .smrt-chart__axis span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .smrt-chart__axis span:last-child { text-align: end; }

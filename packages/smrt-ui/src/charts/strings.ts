@@ -10,4 +10,7 @@ export const M = defineMessages({
   'ui.overview.chart.value_column': 'Value',
   'ui.overview.chart.peak': 'Peak {value} · {label}',
   'ui.overview.chart.latest': 'Latest {value} · {label}',
+  'ui.overview.chart.explore':
+    'Use the arrow keys to read each value; Home and End jump to the first and last.',
+  'ui.overview.chart.point': '{label}: {value}',
 });

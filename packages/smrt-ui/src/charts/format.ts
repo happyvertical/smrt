@@ -16,6 +16,8 @@ export interface FormatWidgetValueOptions {
   /** ISO 4217 code for `money` (default USD). */
   currency?: string;
   locale: string;
+  /** Short form for tight spaces such as an axis (`$83K`, `1.2M`). */
+  compact?: boolean;
 }
 
 const EN_DASH = '–';
@@ -34,10 +36,18 @@ function safeLocale(locale: string): string {
  */
 export function formatWidgetValue(
   value: unknown,
-  { format = 'integer', currency = 'USD', locale }: FormatWidgetValueOptions,
+  {
+    format = 'integer',
+    currency = 'USD',
+    locale,
+    compact = false,
+  }: FormatWidgetValueOptions,
 ): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return EN_DASH;
   const tag = safeLocale(locale);
+  const short: Intl.NumberFormatOptions = compact
+    ? { notation: 'compact', maximumFractionDigits: 1 }
+    : {};
   switch (format) {
     case 'money': {
       const code = /^[A-Za-z]{3}$/.test(currency)
@@ -47,6 +57,7 @@ export function formatWidgetValue(
       return new Intl.NumberFormat(tag, {
         style: 'currency',
         currency: code,
+        ...short,
       }).format(value / 10 ** digits);
     }
     case 'percent':
@@ -55,13 +66,15 @@ export function formatWidgetValue(
         maximumFractionDigits: 1,
       }).format(value);
     case 'decimal':
-      return new Intl.NumberFormat(tag, { maximumFractionDigits: 2 }).format(
-        value,
-      );
+      return new Intl.NumberFormat(tag, {
+        maximumFractionDigits: 2,
+        ...short,
+      }).format(value);
     default:
-      return new Intl.NumberFormat(tag, { maximumFractionDigits: 0 }).format(
-        value,
-      );
+      return new Intl.NumberFormat(tag, {
+        maximumFractionDigits: 0,
+        ...short,
+      }).format(value);
   }
 }
 
