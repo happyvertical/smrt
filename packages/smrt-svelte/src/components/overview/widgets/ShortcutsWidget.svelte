@@ -3,7 +3,9 @@
  * Shortcuts widget (#3727): the section-overview cards as a widget. It draws
  * the cards a loader produced (see `shortcutsFromNav`), with the same look as
  * `ShellSectionMenu layout="cards"`, so a section's default overview is just
- * this widget.
+ * this widget. As there, the heading row is the icon and the title alone; the
+ * record count is meta, so it sits in the card's foot under the description
+ * rather than taking a slice of the title's row (#4120).
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../../i18n/strings.overview.js';
@@ -83,9 +85,12 @@ const cards = $derived.by((): Card[] => {
               <ShellSectionIcon name={card.icon} size={28} {iconComponent} />
             </span>
             <span class="smrt-shortcuts__title">{card.label}</span>
-            {#if card.count !== undefined}<span class="smrt-shortcuts__count">{countLabel(card.count)}</span>{/if}
           </span>
-          {#if card.description}<span class="smrt-shortcuts__desc">{card.description}</span>{/if}
+          <!-- Clamped to two lines; the tooltip carries the rest. -->
+          {#if card.description}<span class="smrt-shortcuts__desc" title={card.description}>{card.description}</span>{/if}
+          {#if card.count !== undefined}
+            <span class="smrt-shortcuts__foot"><span class="smrt-shortcuts__count">{countLabel(card.count)}</span></span>
+          {/if}
         </a>
       </li>
     {/each}
@@ -103,9 +108,10 @@ const cards = $derived.by((): Card[] => {
   .smrt-shortcuts__heading { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-inline-size: 0; }
   .smrt-shortcuts__icon { display: inline-grid; place-items: center; flex: 0 0 28px; inline-size: 28px; block-size: 28px; color: var(--smrt-color-primary); }
   .smrt-shortcuts__icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
-  .smrt-shortcuts__title { font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
+  .smrt-shortcuts__title { flex: 1 1 auto; min-inline-size: 0; font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: break-word; }
   .smrt-shortcuts__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-shortcuts__count { margin-inline-start: auto; flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .smrt-shortcuts__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); margin-block-start: auto; }
+  .smrt-shortcuts__count { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, 0.75rem); font-variant-numeric: tabular-nums; }
   /* Plain: entries sit directly on the panel, no frame per entry. */
   .smrt-shortcuts[data-presentation='plain'] { gap: var(--smrt-spacing-1); }
   .smrt-shortcuts[data-presentation='plain'] .smrt-shortcuts__card { border: 0; border-radius: var(--smrt-radius-medium); background: transparent; }
