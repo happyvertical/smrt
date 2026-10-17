@@ -86,7 +86,17 @@ const EXAMPLES: readonly PromptExample[] = [
       reply: 'Here is a summary of last month.',
       add: [],
       remove: [],
-      report: { source: 'invoices', period: 'last_month' },
+      report: { source: 'invoices', range: 'last month' },
+    },
+  },
+  {
+    says: 'show me a report of sales by month',
+    report: 'invoices',
+    answer: {
+      reply: 'Here are sales by month.',
+      add: [],
+      remove: [],
+      report: { source: 'invoices', bucket: 'month' },
     },
   },
   {
@@ -146,6 +156,7 @@ export function buildSystemPrompt(
   themeInfo?: { current: ThemeSetting | undefined },
   menu: readonly { id: string; label: string }[] = [],
   reports: readonly ReportSourceBrief[] = [],
+  pendingReport?: { source: string; prompt: string; options: string[] },
 ): string {
   const focused = matches !== undefined;
   const matchedRecipes = (matches ?? [])
@@ -189,7 +200,7 @@ export function buildSystemPrompt(
   }
   if (reports.length) {
     out.push(
-      '"report": only when they ask for a report, summary or totals of their records: {"source": a report source id, optional "measures": [{"fn": count|sum|avg|min|max, "field"}], "groupBy": field, "bucket": day|week|month|quarter|year, "period": today|yesterday|this_week|last_week|this_month|last_month|this_quarter|last_quarter|this_year|last_year|all_time, "filters": [{"field", "op": eq|ne|gt|gte|lt|lte|contains, "value"}]}; a summary needs only source and period; money values are in currency units (500 for $500). Else omit.',
+      '"report": only when they ask for a report, summary or totals of their records: {"source": a report source id, optional "measures": [{"fn": count|sum|avg|min|max, "field"}], "groupBy": a field (not a time word), "bucket": minute|hour|day|week|month|quarter|year for "by month"/"weekly"/"over time", "range": their period in words ("last month", "last 90 days", "Q3"), "filters": [{"field", "op": eq|ne|gt|gte|lt|lte|contains, "value"}]}; a summary needs only source and range; money values are in currency units (500 for $500). Else omit.',
     );
   }
   out.push(
@@ -281,6 +292,14 @@ export function buildSystemPrompt(
   if (reports.length) {
     out.push(
       `Report sources: ${reports.map((r) => `${r.id} (${r.label})`).join(', ')}.`,
+    );
+  }
+  if (pendingReport) {
+    // The follow-up the app just asked: an answer comes back as "report"
+    // with the same source plus what they chose; the app merges it.
+    out.push(
+      '',
+      `Pending report question: "${pendingReport.prompt}" Options: ${pendingReport.options.join(', ')}. If they answer it, set "report" with source "${pendingReport.source}" and what they chose (a grouping as "groupBy", a time grouping as "bucket").`,
     );
   }
   return out.join('\n');

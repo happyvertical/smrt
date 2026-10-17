@@ -38,6 +38,7 @@ import type { DataSource, ModelRecord } from '../data/source.ts';
 import type { Recipe } from '../recipes/types.ts';
 import {
   questionForError,
+  type ReportFollowUp,
   type ReportIntent,
   specFromIntent,
 } from './intent.ts';
@@ -73,11 +74,12 @@ export type DefineResult =
       proposal: RuntimeReportProposal;
       source: PlannerReportSource;
     }
-  | { ok: false; question: string };
+  | { ok: false; question: string; followUp?: ReportFollowUp };
 
 export interface PlannerReports {
   sources(): PlannerReportSource[];
-  define(intent: ReportIntent): Promise<DefineResult>;
+  /** `text` is what the person said; its time words fill gaps in the intent. */
+  define(intent: ReportIntent, text?: string): Promise<DefineResult>;
   run(spec: RuntimeReportSpec): Promise<RuntimeReportResult>;
   save(proposal: RuntimeReportProposal): Promise<SavedRuntimeReport>;
   client: RuntimeReportsClient;
@@ -139,8 +141,11 @@ export function createPlannerReports(
     });
   }
 
-  async function define(intent: ReportIntent): Promise<DefineResult> {
-    const built = specFromIntent(intent, sources(), options.now());
+  async function define(
+    intent: ReportIntent,
+    text = '',
+  ): Promise<DefineResult> {
+    const built = specFromIntent(intent, sources(), options.now(), text);
     if (!built.ok) return built;
     try {
       const preview = await run(built.spec);

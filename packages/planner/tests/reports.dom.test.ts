@@ -3,14 +3,18 @@
  * `ReportConfirmation`, and Shared reports are its `SavedReports` /
  * `ReportDetail`, all over the plan's sample data.
  */
+import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createBrowserAssistantTransport } from '../src/lib/assistant/transport.ts';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import PlannerReports from '../src/lib/components/PlannerReports.svelte';
 import ReportProposalCard from '../src/lib/components/ReportProposalCard.svelte';
 import { DATA_SOURCE_KEY } from '../src/lib/data/context.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { getLibraryCookbook } from '../src/lib/library/index.ts';
+import { recipes } from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 import { plannerReportsFor } from '../src/lib/reports/planner.ts';
 import {
@@ -116,5 +120,69 @@ describe('report preview and shared reports (#4100)', () => {
     expect(
       page.querySelector('[data-smrt-component="ReportResult"]'),
     ).not.toBeNull();
+  });
+
+  it('shows a report follow-up as a form, and its submit continues with no model call', async () => {
+    const { reports } = app();
+    let calls = 0;
+    const transport = createBrowserAssistantTransport({
+      model: () => ({
+        async message() {
+          calls += 1;
+          return JSON.stringify({
+            reply: 'Here.',
+            add: [],
+            remove: [],
+            report: { source: 'invoices', groupBy: 'flavour' },
+          });
+        },
+      }),
+      store: recipeState,
+      recipes,
+      reports: () => reports,
+    });
+    let controller:
+      | {
+          openThread(id: string): Promise<void>;
+          send(text: string): Promise<void>;
+        }
+      | undefined;
+    const target = document.createElement('div');
+    document.body.append(target);
+    mounted.push(
+      mount(AssistantDock as never, {
+        target,
+        props: {
+          transport,
+          registry: createDataSurfaceRegistry(),
+          oncontroller: (c: typeof controller) => {
+            controller = c;
+          },
+        },
+      }),
+    );
+    await settle();
+    await controller?.openThread('planner');
+    await controller?.send('a report of invoices by flavour and date');
+    await settle();
+    const fieldset = [...target.querySelectorAll('fieldset')].find((f) =>
+      f.querySelector('legend')?.textContent?.includes('Group Invoices by'),
+    );
+    expect(fieldset).toBeDefined();
+    // Eight groupings: a select, the natural date by month preselected.
+    const select = fieldset?.querySelector('select');
+    expect(select?.value).toBe('issueDate:month');
+    expect(
+      [...(select?.options ?? [])].map((o) => o.textContent?.trim()),
+    ).not.toContain('Historical source key hash');
+    expect(calls).toBe(1);
+    button(target, /continue/i).click();
+    await settle();
+    expect(calls).toBe(1);
+    expect(target.textContent).toContain(
+      'Here is a preview of Invoices by month',
+    );
+    expect(target.querySelector('input[type="radio"]')).toBeNull();
+    expect(target.textContent).toContain('Group by: Issue date by month');
   });
 });

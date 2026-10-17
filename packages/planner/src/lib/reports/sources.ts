@@ -9,10 +9,11 @@
  * rows. Nothing here is an authority boundary: it is sample data.
  */
 
-import type {
-  RuntimeReportColumnType,
-  RuntimeReportMemoryField,
-  RuntimeReportMemorySource,
+import {
+  describeRuntimeReportMemorySource,
+  type RuntimeReportColumnType,
+  type RuntimeReportMemoryField,
+  type RuntimeReportMemorySource,
 } from '@happyvertical/smrt-reports/spec';
 import type { CatalogField, CatalogModel } from '../catalog/types.ts';
 import { isMoneyField } from '../data/fakes.ts';
@@ -30,7 +31,7 @@ export interface PlannerReportSource extends RuntimeReportMemorySource {
   label: string;
   /** The catalog model the rows come from. */
   model: CatalogModel;
-  /** The business date a period or time grouping uses by default. */
+  /** The natural date (smrt-reports' `defaultTimeField`), for ranking. */
   dateField?: string;
   /** The money field a "summary" or "total" sums by default. */
   amountField?: string;
@@ -77,33 +78,42 @@ export function reportSourceFor(
   for (const field of model.fields) {
     const type = columnType(field);
     // System fields (tenant, snapshots, sync state) are framework plumbing;
-    // a person never reports on them. Timestamps stay reachable via dates.
+    // a person never reports on them.
     if (!type || field.system || schema.some((f) => f.name === field.name)) {
       continue;
     }
+    // The catalog's field metadata is what smrt-reports reads its time and
+    // grouping hints from: `ui.format` ('money', 'date') and `enum`.
+    const format = isMoneyField(field)
+      ? 'money'
+      : type === 'datetime' && field.ui?.format === 'date'
+        ? 'date'
+        : undefined;
     schema.push({
       name: field.name,
       type,
       label: fieldLabel(field),
-      ...(isMoneyField(field) ? { format: 'money' } : {}),
+      ...(format ? { format } : {}),
+      ...(type === 'string' && field.enum?.length ? { enum: field.enum } : {}),
     });
   }
-  const dates = schema.filter((field) => field.type === 'datetime');
   const money = schema.filter((field) => field.format === 'money');
   // Only a document's own total is "how much" by default; a customer's credit
   // limit or a product's price is not, so those sources default to a count.
   const amount = PREFERRED_AMOUNTS.map((name) =>
     money.find((f) => f.name === name),
   ).find(Boolean);
-  return {
+  const source: PlannerReportSource = {
     id,
     label,
     ...(model.description ? { description: model.description } : {}),
     schema,
     model,
-    ...(dates[0] ? { dateField: dates[0].name } : {}),
     ...(amount ? { amountField: amount.name } : {}),
   };
+  // The natural date comes from smrt-reports' descriptor, not a guess here.
+  const date = describeRuntimeReportMemorySource([source], id).defaultTimeField;
+  return date ? { ...source, dateField: date } : source;
 }
 
 /**

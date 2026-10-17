@@ -6,6 +6,7 @@
  * #4092: "a summary of all sales last month" could not be built at all.
  */
 
+import { assistantQuestionFromMessage } from '@happyvertical/smrt-chat/svelte';
 import {
   parseRuntimeReportSpec,
   runtimeReportSpecDigest,
@@ -93,7 +94,16 @@ function mechanic(...replies: object[]) {
       })
     ).assistantMessage;
   const saved = async () => data.list(model(RUNTIME_REPORT_MODEL));
-  return { data, reports, message, say, saved, setSection, controller };
+  return {
+    data,
+    reports,
+    message,
+    say,
+    saved,
+    setSection,
+    controller,
+    transport,
+  };
 }
 
 /** Sample invoices issued in December 2025, as the report should count them. */
@@ -199,7 +209,7 @@ describe('the assistant builds runtime reports (#4100)', () => {
     expect(await saved()).toEqual([]);
   });
 
-  it('asks a follow-up for an intent it cannot build, and turns nothing on', async () => {
+  it('asks a follow-up for an intent it cannot build, then never repeats it', async () => {
     const { say, saved } = mechanic(
       {
         reply: 'Here you go.',
@@ -213,18 +223,32 @@ describe('the assistant builds runtime reports (#4100)', () => {
       { reply: 'Sure.', add: [], remove: [] },
     );
     const first = await say('total mileage on invoices');
-    expect(first?.content).toMatch(
-      /^Which amount on Invoices should I total: .+\?$/,
-    );
-    expect(first?.toolCallData).toBeUndefined();
+    expect(first?.content).toBe('Which amount on Invoices should I total?');
+    // The choices are a form (smrt-chat's structured question), not prose,
+    // and the document total leads.
+    const amount = assistantQuestionFromMessage(first ?? {});
+    expect(amount?.fields[0].options[0].label).toBe('Total amount');
+    expect(amount?.fields[0].default).toBe('totalAmount');
     expect(recipeState.ids).not.toContain(REPORTS_RECIPE);
 
-    // A report request with no intent at all asks which records, never guesses.
-    const second = await say('can I get a sales report');
+    // A reply that answers nothing is a miss: the default is taken and said,
+    // never the identical question again.
+    const second = await say('hmm, not sure');
     expect(second?.content).toMatch(
-      /^Which records should the report cover: .*Invoices.*\?$/,
+      /^Added Reports\. I went with Total amount\. Here is a preview/,
     );
     expect(await saved()).toEqual([]);
+  });
+
+  it('a report request with no intent asks which records, as a form', async () => {
+    const { say } = mechanic({ reply: 'Sure.', add: [], remove: [] });
+    const answer = await say('can I get a sales report');
+    expect(answer?.content).toBe('Which records should the report cover?');
+    const question = assistantQuestionFromMessage(answer ?? {});
+    expect(question?.fields[0].options[0].label).not.toBe('Customers');
+    expect(question?.fields[0].options.map((o) => o.label)).toContain(
+      'Invoices',
+    );
   });
 
   it('adding Reports alone builds nothing, so it still asks which records', async () => {
@@ -235,7 +259,7 @@ describe('the assistant builds runtime reports (#4100)', () => {
     });
     const answer = await say('summarize sales last month');
     expect(answer?.content).toMatch(
-      /^Added Reports\. Which records should the report cover: .*Invoices.*\?$/,
+      /^Added Reports\. Which records should the report cover\?$/,
     );
   });
 
@@ -260,5 +284,115 @@ describe('the assistant builds runtime reports (#4100)', () => {
       REPORTS_RECIPE,
     ]);
     expect(controller.snapshot().focus?.section).not.toBe('section:products');
+  });
+
+  it('"sales by month": the invoice date by month, no follow-up, totals per month', async () => {
+    for (const report of [
+      { source: 'invoices' },
+      { source: 'invoices', groupBy: 'month' },
+      { source: 'invoices', groupBy: 'the date month' },
+    ]) {
+      recipeState.clear();
+      const { data, say } = mechanic({
+        reply: 'Here.',
+        add: [],
+        remove: [],
+        report,
+      });
+      const answer = await say('Show me a report of sales by month');
+      const proposal = runtimeReportProposalFromMessage(answer ?? {});
+      if (!proposal)
+        throw new Error(`no preview for ${JSON.stringify(report)}`);
+      expect(proposal.spec.dimensions).toEqual([
+        { field: 'issueDate', bucket: 'month', as: 'issue_date_month' },
+      ]);
+      // Totals per month match the sample invoices' issue dates.
+      const rows = await data.list(model(INVOICE));
+      const expected = new Map<string, { n: number; total: number }>();
+      for (const row of rows) {
+        if (typeof row.issueDate !== 'string') continue;
+        const month = `${row.issueDate.slice(0, 7)}-01T00:00:00.000Z`;
+        const entry = expected.get(month) ?? { n: 0, total: 0 };
+        entry.n += 1;
+        entry.total +=
+          typeof row.totalAmount === 'number' ? row.totalAmount : 0;
+        expected.set(month, entry);
+      }
+      expect(proposal.preview.rows).toEqual(
+        [...expected.entries()]
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([month, { n, total }]) => ({
+            issue_date_month: month,
+            number_of_invoices: n,
+            total_amount: total,
+          })),
+      );
+    }
+  });
+
+  it('offers human groupings, then resolves "the date month" without the model', async () => {
+    const { say, message } = mechanic({
+      reply: 'Here.',
+      add: [],
+      remove: [],
+      report: { source: 'invoices', groupBy: 'flavour' },
+    });
+    const first = await say('a report of invoices by flavour and date');
+    expect(first?.content).toBe('Group Invoices by…');
+    const question = assistantQuestionFromMessage(first ?? {});
+    const labels = question?.fields[0].options.map((o) => o.label) ?? [];
+    // Time came up, so the natural date by month leads.
+    expect(labels[0]).toBe('Issue date by month');
+    expect(labels).toEqual(expect.arrayContaining(['Status', 'Customer']));
+    for (const internal of [
+      'Id',
+      'Money authority',
+      'Historical source key hash',
+      'Invoice number',
+      'Reference',
+      'External',
+    ]) {
+      expect(labels).not.toContain(internal);
+    }
+    const calls = message.mock.calls.length;
+    const second = await say('the date month');
+    expect(message.mock.calls.length).toBe(calls);
+    expect(
+      runtimeReportProposalFromMessage(second ?? {})?.spec.dimensions,
+    ).toEqual([
+      { field: 'issueDate', bucket: 'month', as: 'issue_date_month' },
+    ]);
+  });
+
+  it('a submitted follow-up form continues with no model call and reads back as answered', async () => {
+    const { say, message, transport } = mechanic({
+      reply: 'Here.',
+      add: [],
+      remove: [],
+      report: { source: 'invoices', groupBy: 'flavour' },
+    });
+    const first = await say('a report of invoices by flavour');
+    const question = assistantQuestionFromMessage(first ?? {});
+    if (!question || !first) throw new Error('no form');
+    const calls = message.mock.calls.length;
+    const result = await transport.answerQuestion?.({
+      threadId: 'planner',
+      messageId: first.id,
+      questionId: question.id,
+      values: { groupBy: 'status' },
+      clientRequestId: 'answer-1',
+    });
+    expect(message.mock.calls.length).toBe(calls);
+    expect(
+      runtimeReportProposalFromMessage(result?.assistantMessage ?? {})?.spec
+        .dimensions,
+    ).toEqual([{ field: 'status', as: 'status' }]);
+    // The transcript keeps the question, now answered (a read-only summary).
+    const stored = (await transport.loadMessages('planner')).find(
+      (m) => m.id === first.id,
+    );
+    expect(assistantQuestionFromMessage(stored ?? {})?.answer).toEqual({
+      groupBy: 'status',
+    });
   });
 });

@@ -7,7 +7,6 @@ import { getLibraryCookbook } from '../src/lib/library/index.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import {
   parseReportIntent,
-  periodRange,
   specFromIntent,
 } from '../src/lib/reports/intent.ts';
 import {
@@ -79,21 +78,6 @@ describe('report intents', () => {
     });
   });
 
-  it('measure periods against the given clock, in UTC', () => {
-    expect(periodRange('last_month', NOW)).toEqual({
-      from: '2025-12-01',
-      to: '2026-01-01',
-    });
-    expect(
-      periodRange('last_quarter', new Date('2026-05-10T00:00:00Z')),
-    ).toEqual({ from: '2026-01-01', to: '2026-04-01' });
-    expect(periodRange('last_week', new Date('2026-01-07T12:00:00Z'))).toEqual({
-      from: '2025-12-29',
-      to: '2026-01-05',
-    });
-    expect(periodRange('all_time', NOW)).toBeNull();
-  });
-
   it('build "a summary of sales last month" as a count and total over the business date', () => {
     const built = specFromIntent(
       { source: 'invoices', period: 'last_month' },
@@ -147,6 +131,67 @@ describe('report intents', () => {
     ]);
   });
 
+  it.each([
+    [
+      'sales last quarter by week',
+      'week',
+      '2025-10-01',
+      '2026-01-01',
+      'Invoices by week, last quarter',
+    ],
+    [
+      'sales over the last 90 days',
+      undefined,
+      '2025-10-04',
+      '2026-01-02',
+      'Invoices, last 90 days',
+    ],
+    [
+      'sales this year',
+      undefined,
+      '2026-01-01',
+      '2027-01-01',
+      'Invoices, this year',
+    ],
+    ['sales in Q3', undefined, '2025-07-01', '2025-10-01', 'Invoices, Q3 2025'],
+    [
+      'monthly sales for 2025',
+      'month',
+      '2025-01-01',
+      '2026-01-01',
+      'Invoices by month, 2025',
+    ],
+  ])('reads "%s" against the sample clock', (text, bucket, from, to, title) => {
+    const built = specFromIntent(
+      { source: 'invoices' },
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+      text,
+    );
+    if (!built.ok) throw new Error(built.question);
+    expect(built.spec.title).toBe(title);
+    expect(built.spec.filters).toEqual([
+      { field: 'issueDate', op: 'gte', value: from },
+      { field: 'issueDate', op: 'lt', value: to },
+    ]);
+    expect(built.spec.dimensions.find((d) => d.bucket)?.bucket).toBe(bucket);
+  });
+
+  it('a range the code cannot read asks for a period, as choices', () => {
+    const built = specFromIntent(
+      { source: 'invoices', range: 'around easter' },
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    expect(built.ok).toBe(false);
+    if (!built.ok) {
+      expect(built.followUp?.field).toBe('period');
+      expect(built.followUp?.options.map((o) => o.label)).toContain(
+        'Last month',
+      );
+    }
+  });
+
   it('records what it could not read instead of dropping it', () => {
     const intent = parseReportIntent({
       source: 'invoices',
@@ -175,14 +220,14 @@ describe('report intents', () => {
       },
       /Which amount on .+ should I total/,
     ],
-    [{ source: 'invoices', groupBy: 'flavour' }, /Group .+ by what/],
+    [{ source: 'invoices', groupBy: 'flavour' }, /Group Invoices by…/],
     [
       {
         source: 'invoices',
         period: 'last_month' as const,
         dateField: 'birthday',
       },
-      /Which date on .+ should the period use/,
+      /Which date on .+ should the report use/,
     ],
   ])('ask a follow-up instead of guessing (%#)', (intent, question) => {
     const built = specFromIntent(
@@ -193,7 +238,7 @@ describe('report intents', () => {
     expect(built.ok).toBe(false);
     if (!built.ok) {
       expect(built.question).toMatch(question);
-      expect(built.question.endsWith('?')).toBe(true);
+      expect(built.question).toMatch(/[?…]$/);
     }
   });
 });

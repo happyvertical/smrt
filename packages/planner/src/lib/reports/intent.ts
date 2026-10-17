@@ -14,11 +14,14 @@
 import {
   describeRuntimeReportMemorySource,
   parseRuntimeReportSpec,
+  parseRuntimeReportTime,
   RUNTIME_REPORT_LIMITS,
   RuntimeReportError,
   type RuntimeReportMeasureFn,
   type RuntimeReportSourceDescription,
   type RuntimeReportSpec,
+  type RuntimeReportTimeRange,
+  resolveRuntimeReportTimeRange,
 } from '@happyvertical/smrt-reports/spec';
 import type { PlannerReportSource } from './sources.ts';
 
@@ -38,6 +41,8 @@ export const REPORT_PERIODS = [
 export type ReportPeriod = (typeof REPORT_PERIODS)[number];
 
 export const REPORT_BUCKETS = [
+  'minute',
+  'hour',
   'day',
   'week',
   'month',
@@ -75,6 +80,8 @@ export interface ReportIntent {
   /** Group by time on the date field instead (or as well). */
   bucket?: ReportBucket;
   period?: ReportPeriod;
+  /** A period in words ("last 90 days", "Q3", "December"); code resolves it. */
+  range?: string;
   /** The date a period and a time grouping use; defaults to the source's. */
   dateField?: string;
   filters?: {
@@ -116,6 +123,7 @@ export function reportIntentSchema(
       groupBy: name,
       bucket: { enum: [...REPORT_BUCKETS] },
       period: { enum: [...REPORT_PERIODS] },
+      range: { type: 'string', maxLength: 40 },
       dateField: name,
       filters: {
         type: 'array',
@@ -230,7 +238,9 @@ export function parseReportIntent(value: unknown): ReportIntent | null {
   const bucket = oneOf(raw.bucket, REPORT_BUCKETS);
   const period = oneOf(raw.period, REPORT_PERIODS);
   const dateField = shortText(raw.dateField);
+  const range = shortText(raw.range, 40);
   const title = shortText(raw.title, RUNTIME_REPORT_LIMITS.maxTitleLength);
+  if (stated('range') && !range) unreadable.push('the period');
   if (stated('groupBy') && !groupBy) unreadable.push('the grouping');
   if (stated('bucket') && !bucket) unreadable.push('the time grouping');
   if (stated('period') && !period) unreadable.push('the period');
@@ -241,63 +251,13 @@ export function parseReportIntent(value: unknown): ReportIntent | null {
     ...(groupBy ? { groupBy } : {}),
     ...(bucket ? { bucket } : {}),
     ...(period ? { period } : {}),
+    ...(range ? { range } : {}),
     ...(dateField ? { dateField } : {}),
     ...(filters.length ? { filters } : {}),
     ...(title ? { title } : {}),
     ...(unreadable.length ? { unreadable } : {}),
   };
 }
-
-// ---------------------------------------------------------------------------
-// Periods. UTC, like the runner's buckets; relative to the caller's clock.
-
-const DAY = 86_400_000;
-const ymd = (time: number) => new Date(time).toISOString().slice(0, 10);
-
-/** `[from, to)` as `YYYY-MM-DD`, or null for all time. */
-export function periodRange(
-  period: ReportPeriod,
-  now: Date,
-): { from: string; to: string } | null {
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const d = now.getUTCDate();
-  const today = Date.UTC(y, m, d);
-  const monday = today - ((now.getUTCDay() + 6) % 7) * DAY;
-  const quarter = Math.floor(m / 3) * 3;
-  const range = (from: number, to: number) => ({
-    from: ymd(from),
-    to: ymd(to),
-  });
-  switch (period) {
-    case 'today':
-      return range(today, today + DAY);
-    case 'yesterday':
-      return range(today - DAY, today);
-    case 'this_week':
-      return range(monday, monday + 7 * DAY);
-    case 'last_week':
-      return range(monday - 7 * DAY, monday);
-    case 'this_month':
-      return range(Date.UTC(y, m, 1), Date.UTC(y, m + 1, 1));
-    case 'last_month':
-      return range(Date.UTC(y, m - 1, 1), Date.UTC(y, m, 1));
-    case 'this_quarter':
-      return range(Date.UTC(y, quarter, 1), Date.UTC(y, quarter + 3, 1));
-    case 'last_quarter':
-      return range(Date.UTC(y, quarter - 3, 1), Date.UTC(y, quarter, 1));
-    case 'this_year':
-      return range(Date.UTC(y, 0, 1), Date.UTC(y + 1, 0, 1));
-    case 'last_year':
-      return range(Date.UTC(y - 1, 0, 1), Date.UTC(y, 0, 1));
-    case 'all_time':
-      return null;
-  }
-}
-
-/** "last month" for a title. */
-export const periodLabel = (period: ReportPeriod): string =>
-  period.replace(/_/g, ' ');
 
 // ---------------------------------------------------------------------------
 // Names. A small model writes "total", "Total amount" or "totalAmount".
@@ -328,29 +288,155 @@ function choices(labels: readonly string[]): string {
   return `${shown.slice(0, -1).join(', ')}${more} or ${shown[shown.length - 1]}`;
 }
 
+/** One option of a follow-up: picking it merges `apply` into the intent. */
+export interface ReportFollowUpOption {
+  value: string;
+  label: string;
+  /** Extra words a typed answer may use ("monthly", "date"). */
+  keywords?: string[];
+  apply: Partial<ReportIntent>;
+}
+
+/**
+ * A follow-up question built by code from the source descriptor (its human
+ * dimensions, time fields and amounts), never from a model's prose. The
+ * transport renders it as a form and merges the pick into the pending intent.
+ */
+export interface ReportFollowUp {
+  /** The intent slot it fills: `groupBy`, `source`, `measure`, `dateField`, `period`. */
+  field: string;
+  /** The form field's label ("Group by"). */
+  label: string;
+  /** The question ("Group Invoices by…"). */
+  prompt: string;
+  options: ReportFollowUpOption[];
+  /** The sensible pick, preselected and used after a second miss. */
+  default: string;
+}
+
 export type IntentResult =
   | { ok: true; spec: RuntimeReportSpec; source: PlannerReportSource }
-  | { ok: false; question: string };
+  | { ok: false; question: string; followUp?: ReportFollowUp };
 
 const ask = (question: string): IntentResult => ({ ok: false, question });
 
+const follow = (followUp: Omit<ReportFollowUp, 'default'>): IntentResult => ({
+  ok: false,
+  question: followUp.prompt,
+  followUp: { ...followUp, default: followUp.options[0].value },
+});
+
+/** Most options a follow-up offers. */
+const MAX_OPTIONS = 8;
+
+/** Records with amounts and dates (invoices, orders, payments) first. */
+function rankSources<T extends { amountField?: string; dateField?: string }>(
+  sources: readonly T[],
+): T[] {
+  const weight = (s: T) => (s.amountField ? 2 : 0) + (s.dateField ? 1 : 0);
+  return [...sources].sort((a, b) => weight(b) - weight(a));
+}
+
+/** "Which records should the report cover?", with the sources as options. */
+export function sourceFollowUp(
+  sources: readonly PlannerReportSource[],
+): ReportFollowUp | null {
+  const ranked = rankSources(sources).slice(0, MAX_OPTIONS);
+  if (!ranked.length) return null;
+  return {
+    field: 'source',
+    label: 'Records',
+    prompt: 'Which records should the report cover?',
+    options: ranked.map((source) => ({
+      value: source.id,
+      label: source.label,
+      apply: { source: source.id },
+    })),
+    default: ranked[0].id,
+  };
+}
+
 /** The question for records no source offers. */
 export function whichSourceQuestion(
-  sources: readonly {
-    label: string;
-    amountField?: string;
-    dateField?: string;
-  }[],
+  sources: readonly PlannerReportSource[],
 ): string {
-  // Records with amounts (invoices, orders, payments) are what reports are
-  // usually about, so they are named first.
-  const weight = (s: { amountField?: string; dateField?: string }) =>
-    (s.amountField ? 2 : 0) + (s.dateField ? 1 : 0);
-  const ordered = [...sources].sort((a, b) => weight(b) - weight(a));
-  return ordered.length
-    ? `Which records should the report cover: ${choices(ordered.map((s) => s.label))}?`
+  return sources.length
+    ? 'Which records should the report cover?'
     : 'Which records should the report cover? Add a recipe with records first, such as invoicing?';
 }
+
+const BUCKET_WORDS: Record<string, ReportBucket> = {
+  minute: 'minute',
+  minutely: 'minute',
+  hour: 'hour',
+  hourly: 'hour',
+  day: 'day',
+  daily: 'day',
+  week: 'week',
+  weekly: 'week',
+  month: 'month',
+  monthly: 'month',
+  quarter: 'quarter',
+  quarterly: 'quarter',
+  year: 'year',
+  yearly: 'year',
+  annual: 'year',
+  annually: 'year',
+};
+const TIME_FILLER = new Set([
+  'by',
+  'per',
+  'the',
+  'each',
+  'every',
+  'a',
+  'over',
+  'time',
+  'date',
+  'dates',
+  'in',
+]);
+
+/**
+ * A grouping the model wrote as time ("month", "by month", "the date month",
+ * "issue date monthly"): its bucket, and what is left once the time words go
+ * (a date field's name, or nothing).
+ */
+function timeGrouping(text: string): {
+  bucket?: ReportBucket;
+  rest: string;
+  time: boolean;
+} {
+  const words = text
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  let bucket: ReportBucket | undefined;
+  let time = false;
+  const rest: string[] = [];
+  for (const word of words) {
+    const singular = word.endsWith('s') ? word.slice(0, -1) : word;
+    const found = BUCKET_WORDS[word] ?? BUCKET_WORDS[singular];
+    if (found) {
+      bucket ??= found;
+      time = true;
+    } else if (TIME_FILLER.has(word)) {
+      if (word === 'date' || word === 'dates' || word === 'time') time = true;
+    } else rest.push(word);
+  }
+  return { ...(bucket ? { bucket } : {}), rest: rest.join(' '), time };
+}
+
+const PERIOD_OPTIONS: { value: string; label: string }[] = [
+  { value: 'this month', label: 'This month' },
+  { value: 'last month', label: 'Last month' },
+  { value: 'this quarter', label: 'This quarter' },
+  { value: 'last quarter', label: 'Last quarter' },
+  { value: 'this year', label: 'This year' },
+  { value: 'last year', label: 'Last year' },
+  { value: 'all time', label: 'All time' },
+];
 
 /** A readable output alias: `number_of_invoices`, `total_amount`, `average_subtotal`. */
 function measureAlias(
@@ -408,22 +494,35 @@ const isNumeric = (field: DescribedField) =>
 
 /**
  * Build a spec from an intent over the offered sources. `now` is the clock a
- * period is relative to (the planner passes its sample-data clock).
+ * period is relative to (the planner passes its sample-data clock); `text` is
+ * what the person said, whose time words ("by month", "last quarter", "over
+ * time") fill what the model left out. Anything else unresolved is a
+ * follow-up built from the source descriptor.
  */
 export function specFromIntent(
   intent: ReportIntent,
   sources: readonly PlannerReportSource[],
   now: Date,
+  text = '',
 ): IntentResult {
   const source = sources.find((s) => s.id === intent.source);
-  if (!source) return ask(whichSourceQuestion(sources));
-  const { fields } = describeRuntimeReportMemorySource(sources, source.id);
+  if (!source) {
+    const followUp = sourceFollowUp(sources);
+    return followUp
+      ? { ok: false, question: followUp.prompt, followUp }
+      : ask(whichSourceQuestion(sources));
+  }
+  const described = describeRuntimeReportMemorySource(sources, source.id);
+  const { fields } = described;
   const noun = source.label;
+  const labelOf = (name: string) =>
+    fields.find((f) => f.name === name)?.label ?? name;
   if (intent.unreadable?.length) {
     return ask(
       `I could not read ${choices(intent.unreadable).replace(/ or ([^,]+)$/, ' and $1')} for the ${noun} report. Can you say that again?`,
     );
   }
+  const said = parseRuntimeReportTime(text, now);
 
   // Measures: "a summary" is how many and how much.
   const requested = intent.measures?.length
@@ -450,20 +549,36 @@ export function specFromIntent(
       continue;
     }
     const named = measure.field ?? source.amountField;
-    const field = named
-      ? resolveField(named, fields, (f) =>
-          measure.fn === 'min' || measure.fn === 'max'
-            ? isNumeric(f) || f.type === 'datetime'
-            : isNumeric(f),
-        )
-      : undefined;
+    const accept = (f: DescribedField) =>
+      measure.fn === 'min' || measure.fn === 'max'
+        ? isNumeric(f) || f.type === 'datetime'
+        : isNumeric(f);
+    const field = named ? resolveField(named, fields, accept) : undefined;
     if (!field) {
-      const numeric = fields.filter(isNumeric).map((f) => f.label);
-      return ask(
-        numeric.length
-          ? `Which amount on ${noun} should I ${measure.fn === 'sum' ? 'total' : `take the ${measure.fn} of`}: ${choices(numeric)}?`
-          : `${noun} have no amounts to total. Should I count them instead?`,
-      );
+      const numeric = fields.filter((f) => isNumeric(f) && f.name !== 'id');
+      if (!numeric.length) {
+        return ask(
+          `${noun} have no amounts to total. Should I count them instead?`,
+        );
+      }
+      // The document total first, then money: "how much" is an amount.
+      const ranked = [
+        ...numeric.filter((f) => f.name === source.amountField),
+        ...numeric.filter(
+          (f) => f.format === 'money' && f.name !== source.amountField,
+        ),
+        ...numeric.filter((f) => f.format !== 'money'),
+      ].slice(0, MAX_OPTIONS);
+      return follow({
+        field: 'measure',
+        label: measure.fn === 'sum' ? 'Total' : 'Amount',
+        prompt: `Which amount on ${noun} should I ${measure.fn === 'sum' ? 'total' : `take the ${measure.fn} of`}?`,
+        options: ranked.map((f) => ({
+          value: f.name,
+          label: f.label,
+          apply: { measures: [{ fn: measure.fn, field: f.name }] },
+        })),
+      });
     }
     measures.push({
       fn: measure.fn,
@@ -472,51 +587,101 @@ export function specFromIntent(
     });
   }
 
-  // The business date, for a period and for time grouping.
-  const needsDate = Boolean(
-    intent.bucket || (intent.period && intent.period !== 'all_time'),
-  );
+  // Time: a grouping the model wrote as time words, else the person's words.
+  let groupBy = intent.groupBy;
+  let dateName = intent.dateField;
+  let bucket = intent.bucket;
+  if (groupBy) {
+    const timed = timeGrouping(groupBy);
+    const asDate = resolveField(groupBy, fields, (f) => f.type === 'datetime');
+    if (asDate) {
+      // "Group by issue date": its months.
+      dateName ??= asDate.name;
+      bucket ??= 'month';
+      groupBy = undefined;
+    } else if (timed.time) {
+      const restDate = timed.rest
+        ? resolveField(timed.rest, fields, (f) => f.type === 'datetime')
+        : undefined;
+      if (!timed.rest || restDate) {
+        if (restDate) dateName ??= restDate.name;
+        bucket ??= timed.bucket ?? said.bucket ?? 'month';
+        groupBy = undefined;
+      }
+    }
+  }
+  bucket ??= said.bucket;
+
+  let range: RuntimeReportTimeRange | null = null;
+  if (intent.range) {
+    range = resolveRuntimeReportTimeRange(intent.range, now);
+    if (!range && !/\ball\s*time\b|\bever\b/i.test(intent.range)) {
+      return follow({
+        field: 'period',
+        label: 'Period',
+        prompt: `Which period should the ${noun} report cover?`,
+        options: PERIOD_OPTIONS.map((p) => ({
+          ...p,
+          apply: { range: p.value, period: undefined },
+        })),
+      });
+    }
+  } else if (intent.period && intent.period !== 'all_time') {
+    range = resolveRuntimeReportTimeRange(intent.period, now);
+  } else if (!intent.period) {
+    range = said.range ?? null;
+  }
+
+  // The natural date (the descriptor's default) for a period or time grouping.
   let dateField: DescribedField | undefined;
-  if (needsDate) {
-    const named = intent.dateField ?? source.dateField;
-    dateField = named
-      ? resolveField(named, fields, (f) => f.type === 'datetime')
-      : undefined;
+  if (bucket || range) {
+    dateField = dateName
+      ? resolveField(dateName, fields, (f) => f.type === 'datetime')
+      : described.defaultTimeField
+        ? fields.find((f) => f.name === described.defaultTimeField)
+        : undefined;
     if (!dateField) {
-      const dates = fields.filter((f) => f.type === 'datetime');
-      return ask(
-        dates.length
-          ? `Which date on ${noun} should the period use: ${choices(dates.map((f) => f.label))}?`
-          : `${noun} have no date to filter by. Should the report cover all of them?`,
-      );
+      const dates = described.timeFields.slice(0, MAX_OPTIONS);
+      if (!dates.length) {
+        return ask(
+          `${noun} have no date to group or filter by. Should the report cover all of them?`,
+        );
+      }
+      return follow({
+        field: 'dateField',
+        label: 'Date',
+        prompt: `Which date on ${noun} should the report use?`,
+        options: dates.map((name) => ({
+          value: name,
+          label: labelOf(name),
+          apply: { dateField: name },
+        })),
+      });
     }
   }
 
   const dimensions: { field: string; bucket?: ReportBucket; as?: string }[] =
     [];
-  if (intent.groupBy) {
-    const field = resolveField(intent.groupBy, fields);
-    if (!field) {
-      const groupable = fields
-        .filter((f) => f.type === 'string' || f.type === 'boolean')
-        .map((f) => f.label);
-      return ask(
-        `Group ${noun} by what: ${choices(groupable.length ? groupable : fields.map((f) => f.label))}?`,
+  if (groupBy) {
+    const groupable = new Set(described.dimensions);
+    const field =
+      resolveField(groupBy, fields, (f) => groupable.has(f.name)) ??
+      resolveField(groupBy, fields, (f) => f.type !== 'datetime');
+    if (field) dimensions.push({ field: field.name });
+    // A word the time grouping already covers ("sales by month" read as
+    // groupBy "sales"): the bucket answers it. Otherwise ask, from the
+    // descriptor's human groupings.
+    else if (!(bucket && dateField)) {
+      return follow(
+        groupingFollowUp(described, noun, labelOf, said.mentionsTime),
       );
     }
-    // "By month" on the date itself is one time grouping, not the raw date
-    // plus its bucket (which would leave every date its own row).
-    if (!(intent.bucket && dateField && field.name === dateField.name)) {
-      dimensions.push({ field: field.name });
-    }
   }
-  if (intent.bucket && dateField) {
-    dimensions.push({ field: dateField.name, bucket: intent.bucket });
+  if (bucket && dateField) {
+    dimensions.push({ field: dateField.name, bucket });
   }
 
   const filters: { field: string; op: string; value: unknown }[] = [];
-  const range =
-    intent.period && dateField ? periodRange(intent.period, now) : null;
   if (range && dateField) {
     filters.push({ field: dateField.name, op: 'gte', value: range.from });
     filters.push({ field: dateField.name, op: 'lt', value: range.to });
@@ -551,10 +716,13 @@ export function specFromIntent(
   const title =
     intent.title ??
     [
-      noun,
-      intent.period && intent.period !== 'all_time'
-        ? periodLabel(intent.period)
-        : '',
+      [
+        noun,
+        ...dimensions.map((d) =>
+          d.bucket ? `by ${d.bucket}` : `by ${labelOf(d.field).toLowerCase()}`,
+        ),
+      ].join(' '),
+      range?.label ?? '',
     ]
       .filter(Boolean)
       .join(', ');
@@ -610,6 +778,48 @@ export function specFromIntent(
     }
     throw error;
   }
+}
+
+/**
+ * "Group Invoices by…": the descriptor's human groupings, never ids, hashes
+ * or plumbing. When time came up, the natural date by month leads.
+ */
+function groupingFollowUp(
+  described: RuntimeReportSourceDescription,
+  noun: string,
+  labelOf: (name: string) => string,
+  timeFirst: boolean,
+): Omit<ReportFollowUp, 'default'> {
+  const date = described.defaultTimeField;
+  const time: ReportFollowUpOption[] = date
+    ? (['month', 'week', 'quarter'] as const).map((bucket) => ({
+        value: `${date}:${bucket}`,
+        label: `${labelOf(date)} by ${bucket}`,
+        keywords: [`${bucket}ly`, 'date', 'time', 'per', bucket],
+        apply: { groupBy: undefined, bucket, dateField: date },
+      }))
+    : [];
+  const categories: ReportFollowUpOption[] = described.dimensions.map(
+    (name) => ({
+      value: name,
+      label: labelOf(name),
+      apply: { groupBy: name },
+    }),
+  );
+  const options = timeFirst
+    ? [...time, ...categories]
+    : [
+        ...categories.slice(0, 4),
+        ...time.slice(0, 1),
+        ...categories.slice(4),
+        ...time.slice(1),
+      ];
+  return {
+    field: 'groupBy',
+    label: 'Group by',
+    prompt: `Group ${noun} by…`,
+    options: options.slice(0, MAX_OPTIONS),
+  };
 }
 
 /**
