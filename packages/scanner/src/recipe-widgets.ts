@@ -39,6 +39,7 @@ export const RECIPE_WIDGET_KEYS = [
   'options',
   'data',
   'allowedIn',
+  'sectionDefault',
   'defaultSpan',
   'minSpan',
   'maxSpan',
@@ -443,6 +444,27 @@ export function readWidgetSurface(
         }
       });
       out.allowedIn = [...seen];
+    }
+  }
+
+  if (entry.sectionDefault !== undefined) {
+    if (typeof entry.sectionDefault !== 'boolean') {
+      bad('.sectionDefault must be a boolean');
+    } else if (entry.sectionDefault) {
+      // The section page places it with no options: each required option
+      // must be able to start from its default.
+      const missing = (
+        (out.options as RecipeWidgetOption[] | undefined) ?? []
+      ).filter((option) => option.required && option.default === undefined);
+      if (missing.length > 0) {
+        bad(
+          `.sectionDefault needs a \`default\` on every required option (${missing
+            .map((option) => option.key)
+            .join(', ')})`,
+        );
+      } else {
+        out.sectionDefault = true;
+      }
     }
   }
 
