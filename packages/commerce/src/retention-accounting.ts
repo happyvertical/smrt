@@ -1,5 +1,5 @@
 /** Durable retained-invoice provider orchestration. Every remote write is a separate recoverable step. */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   type AccountingProvider,
   type CreditMemoInput,
@@ -11,6 +11,11 @@ import {
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { mapFrozenAccountingSnapshot } from './accounting-snapshot.js';
+import {
+  type AccountingStep,
+  executeAccountingStep,
+  reconcileAccountingStep,
+} from './accounting-steps-internal.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { PaymentAllocationCollection } from './collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from './collections/PaymentCollection.js';
@@ -50,28 +55,6 @@ interface Scope {
   tenantId: string;
   invoiceId: string;
   provider: Provider;
-}
-interface ReconciliationEvidence {
-  outcome: 'found' | 'absent';
-  evidenceRef?: string;
-  externalId?: string;
-  recordedAt: string;
-  interruptedOwnerStopped: boolean;
-}
-interface Step {
-  key: string;
-  status: 'in_flight' | 'unknown' | 'rejected' | 'confirmed';
-  attemptId: string;
-  request: QuickBooksReceivableRequest;
-  startedAt: string;
-  result?: QuickBooksReceivableReadback;
-  reconciliation?: ReconciliationEvidence;
-  priorAttempts?: {
-    attemptId: string;
-    status: string;
-    startedAt: string;
-    reconciliation?: ReconciliationEvidence;
-  }[];
 }
 interface RefundRecording {
   paymentId: string;
@@ -116,7 +99,7 @@ export interface RetainedInvoiceAccountingState {
   mapping: QuickBooksReceivableMapping;
   invoiceMapping: QuickBooksFrozenInvoiceMapping;
   status: 'pending' | 'ready';
-  steps: Step[];
+  steps: AccountingStep[];
   releases: Release[];
   credits: CreditAdjustment[];
   refunds: RefundRecording[];
@@ -372,81 +355,16 @@ async function executeStep(
     invoice: Invoice,
     state: RetainedInvoiceAccountingState,
   ) => QuickBooksReceivableRequest,
-): Promise<QuickBooksReceivableReadback> {
-  const prepared = await locked(input, async (invoice, state) => {
-    if (!state) reject('Retention provider contract is missing');
-    const expected = make(invoice, state),
-      prior = state.steps.find((s) => s.key === key);
-    if (prior && prior.request.payloadHash !== expected.payloadHash)
-      reject('Retention operation identity reused with changed facts');
-    if (prior?.status === 'confirmed') {
-      if (!prior.result) reject('Confirmed retention step has no readback');
-      return { complete: prior.result } as const;
-    }
-    if (prior && prior.status !== 'rejected')
-      reject('Retention operation has an unresolved remote owner');
-    if (state.steps.some((s) => s.key !== key && s.status !== 'confirmed'))
-      reject('Another retention operation requires reconciliation');
-    const step: Step = {
-      key,
-      status: 'in_flight',
-      attemptId: randomUUID(),
-      request: expected,
-      startedAt: new Date().toISOString(),
-      priorAttempts: prior
-        ? [
-            ...(prior.priorAttempts ?? []),
-            {
-              attemptId: prior.attemptId,
-              status: prior.status,
-              startedAt: prior.startedAt,
-              reconciliation: prior.reconciliation,
-            },
-          ]
-        : [],
-    };
-    if (prior) state.steps[state.steps.indexOf(prior)] = step;
-    else state.steps.push(step);
-    await save(invoice, state);
-    return { step } as const;
-  });
-  if ('complete' in prepared && prepared.complete) return prepared.complete;
-  if (!prepared.step) reject('Prepared retention step is missing');
-  const step = prepared.step;
-  let result: QuickBooksReceivableReadback;
-  try {
-    result = await input.provider.receivableTransfers!.execute(step.request);
-  } catch (error) {
-    await locked(input, async (invoice, state) => {
-      const current = state?.steps.find((s) => s.key === key);
-      if (
-        !state ||
-        current?.attemptId !== step.attemptId ||
-        current.status !== 'in_flight'
-      )
-        reject('Retention step ownership changed after remote failure');
-      current.status =
-        (error as { outcome?: string })?.outcome === 'rejected'
-          ? 'rejected'
-          : 'unknown';
-      await save(invoice, state);
-    });
-    throw error;
-  }
-  return locked(input, async (invoice, state) => {
-    const current = state?.steps.find((s) => s.key === key);
-    if (
-      !state ||
-      current?.attemptId !== step.attemptId ||
-      current.status !== 'in_flight' ||
-      result.payloadHash !== step.request.payloadHash
-    )
-      reject('Retention step ownership or readback changed after write');
-    current.status = 'confirmed';
-    current.result = structuredClone(result);
-    await save(invoice, state);
-    return result;
-  });
+) {
+  return executeAccountingStep(
+    {
+      locked: (operation) => locked(input, operation),
+      save,
+      provider: input.provider.receivableTransfers!,
+    },
+    key,
+    make,
+  );
 }
 /** Export unchanged gross/tax, then reclassify and apply its exact retained amount. */
 export async function syncRetainedInvoiceToAccounting(
@@ -691,53 +609,14 @@ export async function reconcileRetainedAccountingStep(
   input: ReconcileRetainedAccountingStepInput,
 ): Promise<RetainedInvoiceAccountingState> {
   principal(input);
-  const step = await locked(input, async (_invoice, state) => {
-    const found = state?.steps.find((s) => s.key === input.stepKey);
-    if (
-      !found ||
-      found.request.requestId !== input.requestId ||
-      found.attemptId !== input.attemptId ||
-      !['in_flight', 'unknown'].includes(found.status)
-    )
-      reject('Observed retention reconciliation owner differs');
-    if (found.status === 'in_flight' && !input.confirmInterruptedOwnerStopped)
-      reject('Interrupted retention owner must be proven stopped');
-    return structuredClone(found);
-  });
-  const result =
-    input.outcome.status === 'found'
-      ? await input.provider.receivableTransfers!.read(
-          step.request,
-          input.outcome.externalId,
-        )
-      : null;
-  if (input.outcome.status === 'absent')
-    text(input.outcome.evidenceRef, 'Authoritative provider absence evidence');
-  return locked(input, async (invoice, state) => {
-    const current = state?.steps.find((s) => s.key === input.stepKey);
-    if (
-      !state ||
-      current?.attemptId !== step.attemptId ||
-      current.status !== step.status
-    )
-      reject('Retention reconciliation owner changed');
-    current.reconciliation = {
-      outcome: input.outcome.status,
-      recordedAt: new Date().toISOString(),
-      interruptedOwnerStopped: input.confirmInterruptedOwnerStopped === true,
-      ...(input.outcome.status === 'found'
-        ? { externalId: input.outcome.externalId }
-        : { evidenceRef: input.outcome.evidenceRef }),
-    };
-    if (result) {
-      if (result.payloadHash !== step.request.payloadHash)
-        reject('Retention reconciliation readback differs');
-      current.result = result;
-      current.status = 'confirmed';
-    } else current.status = 'rejected';
-    await save(invoice, state);
-    return state;
-  });
+  return reconcileAccountingStep(
+    {
+      locked: (operation) => locked(input, operation),
+      save,
+      provider: input.provider.receivableTransfers!,
+    },
+    input,
+  );
 }
 /** Reconcile the existing frozen invoice step using its established owner proof. */
 export async function reconcileRetainedBaseInvoice(

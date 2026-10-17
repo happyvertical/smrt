@@ -68,6 +68,7 @@ export async function runHostStage(
   db: DatabaseInterface,
   input: { itemId: string; revision: number },
 ): Promise<void> {
+  await hostOptions.checkpoint?.('worker:before-process');
   const service = new IngestionService({ ...hostOptions, db });
   const analysis = await service.analyze(
     input.itemId,
@@ -220,6 +221,509 @@ export function foundationSuite(
       }
       if (root) await rm(root, { recursive: true, force: true });
     });
+    describe('dispatch route authority', () => {
+      const json = (value: unknown): Record<string, unknown> =>
+        typeof value === 'string'
+          ? JSON.parse(value)
+          : (value as Record<string, unknown>);
+      async function intents(id: string) {
+        return (
+          await db.query(
+            'SELECT * FROM intake_dispatches WHERE item_id=? ORDER BY revision',
+            id,
+          )
+        ).rows;
+      }
+      async function legacy(id: string, keepJob = false) {
+        const [item] = (
+          await db.query('SELECT data FROM intake_items WHERE id=?', id)
+        ).rows;
+        const data = json(item.data);
+        delete data.dispatchTarget;
+        await db.query(
+          'UPDATE intake_items SET data=? WHERE id=?',
+          JSON.stringify(data),
+          id,
+        );
+        await db.query(
+          `UPDATE intake_dispatches SET data='{}'${keepJob ? '' : ",job_id=''"} WHERE item_id=?`,
+          id,
+        );
+      }
+      function recovery(dbOverride = db) {
+        return new IngestionService({
+          ...options,
+          db: dbOverride,
+          dispatchRecovery: { authorize: async () => true },
+        });
+      }
+      async function unknown() {
+        const id = await accepted(randomUUID());
+        await legacy(id);
+        const inspected = await service.inspectDispatchRoute(id);
+        expect(inspected.status).toBe('unknown');
+        return {
+          id,
+          input: {
+            itemId: id,
+            expectedFingerprint: inspected.fingerprint,
+            evidenceRef: 'operator-review:fixture',
+          },
+        };
+      }
+      it('pins receipt and every revision, rejects cross-host replay/analysis, and snapshots mutable host options', async () => {
+        const id = await accepted();
+        const foreign = new IngestionService({
+          ...options,
+          jobTarget: { objectType: workerType, method: 'otherProcess' },
+        });
+        expect(await foreign.receive(receive())).toEqual({
+          kind: 'rejected',
+          category: 'conflict',
+        });
+        await expect(foreign.analyze(id, {}, 'foreign')).rejects.toThrow(
+          'route',
+        );
+        const original = { ...options.jobTarget };
+        options.jobTarget.method = 'otherProcess';
+        await service.analyze(id, {}, 'initial');
+        await service.analyze(id, {}, 'next');
+        expect((await service.inspectDispatchRoute(id)).target).toEqual({
+          version: 1,
+          ...original,
+        });
+        expect(
+          (await intents(id)).map((row) => json(row.data).dispatchTarget),
+        ).toEqual([
+          { version: 1, ...original },
+          { version: 1, ...original },
+        ]);
+      });
+      for (const reverse of [false, true])
+        for (const denied of [false, true]) {
+          it(`isolates real failed workers before foreign authorization (reverse=${reverse}, denied=${denied})`, async () => {
+            const originalMethod = reverse ? 'otherProcess' : 'process';
+            const repairMethod = reverse ? 'process' : 'otherProcess';
+            const original = new IngestionService({
+              ...options,
+              jobTarget: { objectType: workerType, method: originalMethod },
+            });
+            const result = await original.receive(receive('source-a'));
+            expect(result.kind).toBe('accepted');
+            if (!('itemId' in result)) throw new Error('Missing receipt');
+            const id = result.itemId;
+            faults.add('worker:before-process');
+            const jobs = await SmrtJobCollection.create({ db });
+            const runner = createTaskRunner({
+              pollInterval: 20,
+              concurrency: 1,
+              queues: ['ingestion'],
+            });
+            try {
+              await runner.initialize(db);
+              await runner.start();
+              await vi.waitFor(
+                async () => {
+                  const failed = await withTenant({ tenantId: tenant }, () =>
+                    jobs.listByStatus('failed', { queue: 'ingestion' }),
+                  );
+                  expect(failed).toHaveLength(1);
+                  expect(failed[0].args.itemId).toBe(id);
+                },
+                { timeout: 10000, interval: 25 },
+              );
+            } finally {
+              await runner.stop();
+            }
+            const foreignAuthorization = vi.fn(
+              async ({
+                capturedCeiling,
+              }: Parameters<IngestionOptions['authorize']>[0]) =>
+                !denied || capturedCeiling.foreign === true,
+            );
+            const unrelated = new IngestionService({
+              ...options,
+              jobTarget: { objectType: workerType, method: repairMethod },
+              authorize: foreignAuthorization,
+            });
+            const input = receive('source-b');
+            input.capturedCeiling = { foreign: true };
+            expect((await unrelated.receive(input)).kind).toBe('accepted');
+            expect(
+              foreignAuthorization.mock.calls.every(
+                ([call]) => call.capturedCeiling.foreign === true,
+              ),
+            ).toBe(true);
+            expect(Number((await intents(id))[0].deliveries)).toBe(1);
+            const pending = await withTenant({ tenantId: tenant }, () =>
+              jobs.listByStatus('pending', { queue: 'ingestion' }),
+            );
+            expect(pending).toHaveLength(1);
+            expect(pending[0].method).toBe(repairMethod);
+            expect(pending[0].args.itemId).not.toBe(id);
+            // The matching host still sees revoked process access, rather than swallowing it.
+            const revoked = new IngestionService({
+              ...options,
+              jobTarget: { objectType: workerType, method: originalMethod },
+              authorize: async () => false,
+            });
+            await expect(revoked.repairDispatches()).rejects.toThrow(
+              'unavailable',
+            );
+            expect(await original.repairDispatches()).toBe(1);
+            expect(Number((await intents(id))[0].deliveries)).toBe(2);
+          });
+        }
+      it('rechecks the protected route after authorization and before locked delivery allocation', async () => {
+        const id = await accepted('route-snapshot-race');
+        await db.query('DELETE FROM _smrt_jobs');
+        let changed = false;
+        const racing = new IngestionService({
+          ...options,
+          authorize: async ({ operation, db: executor }) => {
+            if (operation === 'process' && executor === db && !changed) {
+              changed = true;
+              const [item] = (
+                await db.query('SELECT data FROM intake_items WHERE id=?', id)
+              ).rows;
+              await db.query(
+                'UPDATE intake_items SET data=? WHERE id=?',
+                JSON.stringify({
+                  ...json(item.data),
+                  dispatchTarget: {
+                    version: 1,
+                    objectType: workerType,
+                    method: 'otherProcess',
+                  },
+                }),
+                id,
+              );
+            }
+            return true;
+          },
+        });
+        expect(await racing.repairDispatches()).toBe(0);
+        expect(changed).toBe(true);
+        expect(Number((await intents(id))[0].deliveries)).toBe(1);
+        expect((await db.query('SELECT id FROM _smrt_jobs')).rows).toHaveLength(
+          0,
+        );
+      });
+      it('rejects two individually verified but conflicting historical job routes', async () => {
+        const id = await accepted('conflicting-exact-lineage');
+        await service.analyze(id, {}, 'one');
+        await service.analyze(id, {}, 'two');
+        const second = (await intents(id))[1];
+        const jobs = await SmrtJobCollection.create({ db });
+        const job = await withTenant({ tenantId: tenant }, () =>
+          jobs.enqueueJob({
+            tenantId: tenant,
+            objectType: workerType,
+            method: 'otherProcess',
+            queue: 'ingestion',
+            args: { itemId: id, revision: 2, dispatchId: second.id },
+          }),
+        );
+        await db.query(
+          'UPDATE intake_dispatches SET job_id=? WHERE id=?',
+          job.id,
+          second.id,
+        );
+        await legacy(id, true);
+        expect((await service.inspectDispatchRoute(id)).status).toBe(
+          'conflict',
+        );
+        expect(await service.repairDispatches()).toBe(0);
+      });
+      it('recovers uniquely verified legacy job lineage without trusting the current host', async () => {
+        const id = await accepted();
+        await legacy(id, true);
+        expect((await service.inspectDispatchRoute(id)).status).toBe('bound');
+        expect(await service.repairDispatches()).toBe(0);
+        expect(
+          json(
+            (await db.query('SELECT data FROM intake_items WHERE id=?', id))
+              .rows[0].data,
+          ).dispatchTarget,
+        ).toBeDefined();
+        const foreign = new IngestionService({
+          ...options,
+          jobTarget: { objectType: workerType, method: 'otherProcess' },
+          authorize: async () => {
+            throw new Error('Foreign authorization must not run');
+          },
+        });
+        expect(await foreign.repairDispatches()).toBe(0);
+        await expect(
+          recovery().recoverDispatchRoute({
+            itemId: id,
+            expectedFingerprint: (await service.inspectDispatchRoute(id))
+              .fingerprint,
+            evidenceRef: 'must-not-overwrite',
+          }),
+        ).rejects.toThrow('conflict');
+        await service.analyze(id, {}, 'legacy');
+        expect(
+          (await intents(id)).every(
+            (row) => json(row.data).dispatchTarget !== undefined,
+          ),
+        ).toBe(true);
+      });
+      it('refuses conflicting and malformed legacy job lineage without spending delivery budget', async () => {
+        for (const mode of ['conflicting', 'malformed', 'malformed-payload']) {
+          const id = await accepted(mode);
+          await legacy(id, true);
+          const [intent] = await intents(id);
+          if (mode === 'conflicting') {
+            const jobs = await SmrtJobCollection.create({ db });
+            const job = await withTenant({ tenantId: tenant }, () =>
+              jobs.enqueueJob({
+                tenantId: tenant,
+                objectType: workerType,
+                method: 'otherProcess',
+                queue: 'ingestion',
+                args: { itemId: id, revision: 2, dispatchId: randomUUID() },
+              }),
+            );
+            await db.query(
+              'UPDATE intake_dispatches SET job_id=? WHERE id=?',
+              job.id,
+              intent.id,
+            );
+          } else if (mode === 'malformed') {
+            await db.query(
+              'UPDATE intake_dispatches SET data=? WHERE id=?',
+              JSON.stringify({ dispatchTarget: { version: 2 } }),
+              intent.id,
+            );
+          } else {
+            await db.query(
+              'UPDATE intake_dispatches SET data=? WHERE id=?',
+              JSON.stringify('not-a-route-record'),
+              intent.id,
+            );
+          }
+          const current = await service.inspectDispatchRoute(id);
+          expect(current.status).toBe('conflict');
+          await expect(
+            recovery().recoverDispatchRoute({
+              itemId: id,
+              expectedFingerprint: current.fingerprint,
+              evidenceRef: mode,
+            }),
+          ).rejects.toThrow('conflict');
+          expect(await service.repairDispatches()).toBe(0);
+          expect(Number((await intents(id))[0].deliveries)).toBe(1);
+        }
+      });
+      it('leaves deleted legacy jobs unknown and explicitly recoverable without guessing their route', async () => {
+        const id = await accepted('deleted-legacy-job');
+        await legacy(id, true);
+        await db.query(
+          'UPDATE intake_dispatches SET job_id=? WHERE item_id=?',
+          randomUUID(),
+          id,
+        );
+        const current = await service.inspectDispatchRoute(id);
+        expect(current.status).toBe('unknown');
+        expect(await service.repairDispatches()).toBe(0);
+        expect(
+          (
+            await recovery().recoverDispatchRoute({
+              itemId: id,
+              expectedFingerprint: current.fingerprint,
+              evidenceRef: 'operator:deleted-job-review',
+            })
+          ).status,
+        ).toBe('bound');
+      });
+      it('requires separate recovery authority and current/captured grants, with foreign scope and stale rejection', async () => {
+        const { id, input } = await unknown();
+        await expect(service.recoverDispatchRoute(input)).rejects.toThrow(
+          'unavailable',
+        );
+        const denied = new IngestionService({
+          ...options,
+          dispatchRecovery: { authorize: async () => false },
+        });
+        await expect(denied.recoverDispatchRoute(input)).rejects.toThrow(
+          'unavailable',
+        );
+        allowed = false;
+        await expect(recovery().recoverDispatchRoute(input)).rejects.toThrow(
+          'unavailable',
+        );
+        allowed = true;
+        const capturedDenied = new IngestionService({
+          ...options,
+          authorize: async ({ capturedCeiling }) =>
+            capturedCeiling.operator === true,
+          dispatchRecovery: { authorize: async () => true },
+        });
+        await expect(
+          capturedDenied.recoverDispatchRoute(input),
+        ).rejects.toThrow('unavailable');
+        for (const scope of [
+          { ...options.scope, tenantId: otherTenant },
+          { ...options.scope, confidentialScopeId: 'other' },
+        ]) {
+          const foreign = new IngestionService({
+            ...options,
+            scope,
+            dispatchRecovery: { authorize: async () => true },
+          });
+          await expect(foreign.recoverDispatchRoute(input)).rejects.toThrow(
+            'unavailable',
+          );
+        }
+        await expect(
+          recovery().recoverDispatchRoute({
+            ...input,
+            evidenceRef: 'x'.repeat(513),
+          }),
+        ).rejects.toThrow('identifier');
+        await db.query(
+          'UPDATE intake_items SET analysis_revision=1 WHERE id=?',
+          id,
+        );
+        await expect(recovery().recoverDispatchRoute(input)).rejects.toThrow(
+          'conflict',
+        );
+        expect((await service.inspectDispatchRoute(id)).status).toBe('unknown');
+      });
+      it('rolls recovery back atomically and permits exact concurrent retry without enqueue or authority rewrites', async () => {
+        const id = await accepted('original-authority');
+        await service.analyze(
+          id,
+          { provider: 'original-version' },
+          'original-analysis',
+        );
+        await service.createAction(id, 'original-action', {
+          original: 'retained',
+        });
+        await legacy(id);
+        const inspected = await service.inspectDispatchRoute(id);
+        expect(inspected.status).toBe('unknown');
+        const input = {
+          itemId: id,
+          expectedFingerprint: inspected.fingerprint,
+          evidenceRef: 'operator-review:fixture',
+        };
+        const originalAnalyses = (
+          await db.query('SELECT * FROM intake_analyses WHERE item_id=?', id)
+        ).rows;
+        const originalActions = (
+          await db.query('SELECT * FROM intake_actions WHERE item_id=?', id)
+        ).rows;
+        const originalJobs = (
+          await db.query('SELECT id FROM _smrt_jobs ORDER BY id')
+        ).rows;
+        const before = (
+          await db.query('SELECT * FROM intake_items WHERE id=?', id)
+        ).rows[0];
+        const dispatchBefore = await intents(id);
+        faults.add('dispatch:recovered');
+        await expect(recovery().recoverDispatchRoute(input)).rejects.toThrow(
+          'Injected',
+        );
+        expect(
+          (await db.query('SELECT data FROM intake_items WHERE id=?', id))
+            .rows[0].data,
+        ).toEqual(before.data);
+        expect(await intents(id)).toEqual(dispatchBefore);
+        const results = await Promise.all([
+          recovery().recoverDispatchRoute(input),
+          recovery(peer).recoverDispatchRoute(input),
+        ]);
+        expect(results[0]).toEqual(results[1]);
+        expect(results[0].status).toBe('bound');
+        expect(await recovery().recoverDispatchRoute(input)).toEqual(
+          results[0],
+        );
+        await expect(
+          recovery().recoverDispatchRoute({
+            ...input,
+            evidenceRef: 'different-review',
+          }),
+        ).rejects.toThrow('conflict');
+        allowed = false;
+        await expect(recovery().recoverDispatchRoute(input)).rejects.toThrow(
+          'unavailable',
+        );
+        allowed = true;
+        const after = (
+          await db.query('SELECT * FROM intake_items WHERE id=?', id)
+        ).rows[0];
+        const originalData = json(before.data),
+          retained = json(after.data);
+        expect(retained).toMatchObject(originalData);
+        expect(retained.dispatchRecovery).toMatchObject({
+          actorId: 'owner',
+          evidenceRef: input.evidenceRef,
+          expectedFingerprint: input.expectedFingerprint,
+        });
+        expect(after.analysis_revision).toBe(before.analysis_revision);
+        expect(after.payload_digest).toBe(before.payload_digest);
+        expect((await intents(id))[0].deliveries).toBe(
+          dispatchBefore[0].deliveries,
+        );
+        expect((await intents(id))[0].job_id).toBe('');
+        expect(
+          (await db.query('SELECT * FROM intake_analyses WHERE item_id=?', id))
+            .rows,
+        ).toEqual(originalAnalyses);
+        expect(
+          (await db.query('SELECT * FROM intake_actions WHERE item_id=?', id))
+            .rows,
+        ).toEqual(originalActions);
+        expect(
+          (await db.query('SELECT id FROM _smrt_jobs ORDER BY id')).rows,
+        ).toEqual(originalJobs);
+      });
+      it('refuses recovery provenance that conflicts with its protected binding', async () => {
+        const { id, input } = await unknown();
+        await recovery().recoverDispatchRoute(input);
+        const [item] = (
+          await db.query('SELECT data FROM intake_items WHERE id=?', id)
+        ).rows;
+        const data = json(item.data);
+        data.dispatchRecovery = {
+          ...json(data.dispatchRecovery),
+          target: {
+            version: 1,
+            objectType: workerType,
+            method: 'otherProcess',
+          },
+        };
+        await db.query(
+          'UPDATE intake_items SET data=? WHERE id=?',
+          JSON.stringify(data),
+          id,
+        );
+        expect((await service.inspectDispatchRoute(id)).status).toBe(
+          'conflict',
+        );
+        await expect(recovery().recoverDispatchRoute(input)).rejects.toThrow(
+          'conflict',
+        );
+      });
+      it('permits only one conflicting recovery decision under the item lock', async () => {
+        const { input } = await unknown();
+        const results = await Promise.allSettled([
+          recovery().recoverDispatchRoute(input),
+          recovery(peer).recoverDispatchRoute({
+            ...input,
+            evidenceRef: 'other-decision',
+          }),
+        ]);
+        expect(
+          results.filter((result) => result.status === 'fulfilled'),
+        ).toHaveLength(1);
+        expect(
+          results.filter((result) => result.status === 'rejected'),
+        ).toHaveLength(1);
+      });
+    });
     it('review second regression: ready receipt returns retry when dispatch repair fails', async () => {
       const id = await accepted();
       const retrying = new IngestionService(options);
@@ -298,11 +802,9 @@ export function foundationSuite(
         expect((await service.receive(input)).kind).toBe('accepted');
       }
       const items = (await db.query('SELECT id,data FROM intake_items')).rows;
-      const permitted = items[0];
-      const denied = items[1];
-      const deniedData =
-        typeof denied.data === 'string' ? JSON.parse(denied.data) : denied.data;
-      const deniedKey = deniedData.capturedCeiling.key;
+      // SQL row order is not a contract (route pinning can move PG tuples).
+      // Deny the second distinct key actually visited by this sweep.
+      let permittedKey: unknown;
       const evidence = (
         await db.query('SELECT item_id,source_uri FROM intake_evidence')
       ).rows;
@@ -316,13 +818,21 @@ export function foundationSuite(
       const sweeping = new IngestionService({
         ...options,
         authorize: async ({ operation, capturedCeiling }) => {
-          if (operation === 'delete' && capturedCeiling.key === deniedKey)
-            throw failure;
+          if (operation === 'delete') {
+            permittedKey ??= capturedCeiling.key;
+            if (capturedCeiling.key !== permittedKey) throw failure;
+          }
           return true;
         },
       });
       clock = new Date(clock.getTime() + 100001);
       await expect(sweeping.sweepRetention()).rejects.toBe(failure);
+      const permitted = items.find(
+        (item) =>
+          (typeof item.data === 'string' ? JSON.parse(item.data) : item.data)
+            .capturedCeiling.key === permittedKey,
+      )!;
+      const denied = items.find((item) => item.id !== permitted.id)!;
       await expect(
         readFile(filenames.get(String(permitted.id))!),
       ).rejects.toThrow();

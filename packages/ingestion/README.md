@@ -207,3 +207,45 @@ Proposal limits must be positive safe integers. `maxHandlers`, `maxCandidates`
 and `maxSuggestions` are each capped at 20; `timeoutMs` is capped at 2147483647.
 Invalid limits are rejected when constructing `IngestionService`, before receipt
 or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.
+
+## Dispatch route ownership and legacy recovery
+
+A receipt retains a versioned, server-owned `jobTarget` snapshot, and every
+analysis dispatch retains the same route. Receipt replay and later analysis
+cannot retarget it. `repairDispatches()` filters by retained route before the
+calling host's authorization or delivery budget, then rechecks provenance under
+the item lock. A failed job for another host sharing the same tenant and
+confidential scope neither runs on this host nor blocks its unrelated receipt.
+Matching routes still require current access within the captured permission
+ceiling; their authorization and queue failures remain visible. Job arguments
+continue to contain identifiers only.
+
+Legacy receipts lacking route metadata can use existing recorded job authority
+only when all available provenance agrees. A linked job must match the tenant,
+ingestion queue, item, dispatch ID and revision exactly. This preserves recorded
+job authority, not a reconstruction of the host's historical intention. Conflicting
+or malformed provenance fails closed. Deleted jobs are absent provenance: an
+existing protected route survives deletion, but without one the route remains
+unknown and automatic repair skips it.
+
+`inspectDispatchRoute(itemId)` requires normal read authority and returns a
+status, fingerprint and verified target (or null). For genuinely provenance-free
+legacy receipts a host may opt into `dispatchRecovery.authorize`. Without this
+separate operator authorization callback recovery is disabled. Quiesce legacy
+workers and investigate their recorded job history before authorizing recovery;
+missing history is not proof of a particular intended handler. Call
+`recoverDispatchRoute({ itemId, expectedFingerprint, evidenceRef })` with the
+inspection fingerprint and a nonblank evidence reference of at most 512
+characters. The target comes exclusively from that service's trusted,
+constructor-snapshotted configuration, never from the request.
+
+Recovery acquires the item lock, rechecks current/captured process permissions
+and the separate host operator permission, and verifies the exact fingerprint.
+It refuses bound, conflicting or stale authority. It appends retained operator,
+date, evidence and original fingerprint provenance and binds missing dispatch
+metadata atomically; it does not enqueue, alter original receipt/analysis/action
+facts, or replace prior provenance. The exact original fingerprint/evidence retry
+returns the retained binding, including under concurrent delivery, but still
+rechecks both permissions. A different decision conflicts. Once reviewed,
+normal matching-host `repairDispatches()` may enqueue work separately. Hosts
+without legacy tenants need not configure recovery at all.

@@ -232,3 +232,6 @@ See [observed purchase prices](agents/observed-purchase-prices.md) for incomplet
 original supplier prices, explicit unknown totals and reviewed completion.
 See [received sales agreement money](agents/received-sales-contract-money.md) for
 exact complete source Order/Agreement evidence without synthetic lines or tax recognition.
+
+See [ordinary invoice accounting adjustments](agents/ordinary-accounting.md) for
+non-retained provider credit applications, recorded refunds and durable recovery.

@@ -166,3 +166,19 @@ wrapper `{ proposals: GenerationOutput }` under `analysis.result.output`.
 The factory unwraps this into `ItemReviewView.generation`. Stale generation is
 omitted while authorized saved reviews remain available; access denials propagate.
 The reference application still owns its fixture provisioning and HTTP transport.
+
+## Explicit upload retries
+
+The inbox retains selected original files and the receive request identity when
+upload fails or acknowledgment is lost. Retry Upload explicitly with the same
+selection; Refresh does not replace that identity. Selecting files again starts a
+new receipt identity, even when names match. Successful upload clears the selection
+and identity. Replacing the authenticated host/context or destroying the component
+discards both and fences late completion from the prior context. No automatic
+upload retry or authorization bypass occurs.
+
+The inbox clears only its native file-input value when opening the picker, so
+choosing the same local file explicitly starts a new upload identity. Opening
+then dismissing the chooser preserves the separately retained originals and
+request identity for retry; it does not clear the shared FilePicker's native-form
+behavior. Successful upload and host/context disposal still discard retry state.
