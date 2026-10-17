@@ -165,14 +165,27 @@ function readCell(
   switch (field.type) {
     case 'integer':
     case 'decimal': {
+      if (typeof value === 'bigint') {
+        // Past the safe range two integers become one Number, silently
+        // merging groups and distinct counts; refuse rather than mis-count.
+        if (
+          value > BigInt(Number.MAX_SAFE_INTEGER) ||
+          value < BigInt(Number.MIN_SAFE_INTEGER)
+        ) {
+          throw new RuntimeReportError(
+            'invalid_result',
+            field.name,
+            'integer value exceeds the JavaScript safe range',
+          );
+        }
+        return Number(value);
+      }
       const numeric =
         typeof value === 'number'
           ? value
-          : typeof value === 'bigint'
+          : typeof value === 'string' && value.trim() !== ''
             ? Number(value)
-            : typeof value === 'string' && value.trim() !== ''
-              ? Number(value)
-              : Number.NaN;
+            : Number.NaN;
       return Number.isFinite(numeric) ? numeric : null;
     }
     case 'boolean':
@@ -432,7 +445,9 @@ export async function runRuntimeReportInMemory(
   } else {
     for (const row of kept) {
       const key = dimensionReaders.map((read) => read(row));
-      const id = key.map(cellKey).join('|');
+      // A JSON array keeps tuple boundaries: a '|' inside a value cannot
+      // merge two groups.
+      const id = JSON.stringify(key.map(cellKey));
       const group = groups.get(id);
       if (group) group.rows.push(row);
       else groups.set(id, { key, rows: [row] });
