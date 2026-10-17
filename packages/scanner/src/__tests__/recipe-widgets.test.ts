@@ -414,6 +414,49 @@ ${statics}
     expect(await errorsFor(statics)).toContain(expected);
   });
 
+  it('accepts one sectionDefault widget whose required options have defaults', async () => {
+    write(
+      'src/recipes.ts',
+      RECIPE(
+        widget(
+          "sectionDefault: true, options: [{ key: 'limit', type: 'integer', label: 'Limit', required: true, default: 6 }]",
+        ),
+      ),
+    );
+    const { results } = await scan();
+    expect(results.errors).toEqual([]);
+    expect(results.recipes[0].surfaces?.[0]).toMatchObject({
+      sectionDefault: true,
+    });
+    expect(Object.keys(results.recipes[0].surfaces?.[0] ?? {})).toEqual([
+      'kind',
+      'type',
+      'export',
+      'label',
+      'options',
+      'sectionDefault',
+    ]);
+  });
+
+  it('rejects a sectionDefault widget that cannot start without options', async () => {
+    expect(await errorsFor(widget("sectionDefault: 'yes'"))).toContain(
+      '.sectionDefault must be a boolean',
+    );
+    expect(
+      await errorsFor(
+        widget(
+          "sectionDefault: true, options: [{ key: 'reportId', type: 'text', label: 'Report', required: true }]",
+        ),
+      ),
+    ).toContain('needs a `default` on every required option (reportId)');
+    expect(
+      await errorsFor(`static surfaces = [
+    { kind: 'widget', type: 'a-one', export: '@acme/shop/svelte#A', label: 'A', sectionDefault: true },
+    { kind: 'widget', type: 'b-two', export: '@acme/shop/svelte#B', label: 'B', sectionDefault: true },
+  ];`),
+    ).toContain('only one widget per recipe may lead its section');
+  });
+
   it('rejects the same widget type in two recipes of one package', async () => {
     write(
       'src/recipes.ts',

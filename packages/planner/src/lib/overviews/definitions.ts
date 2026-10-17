@@ -17,6 +17,7 @@ import {
   RECORD_OVERVIEW_MAX_METRICS,
   recordOverview,
   recordOverviewId,
+  sectionDefaultWidget,
 } from '@happyvertical/smrt-svelte/overview';
 import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
 import { catalog, getModel } from '../catalog/index.ts';
@@ -61,6 +62,14 @@ function leadModel(
 }
 
 function defaults(sectionId: string): OverviewWidget[] {
+  // A recipe that declares its own section page (smrt-reports' saved reports)
+  // replaces the generic shortcuts, count and records.
+  const page = sectionDefaultWidget(
+    NAV_SECTIONS.get(sectionId)?.recipes[0] as unknown as
+      | Parameters<typeof sectionDefaultWidget>[0]
+      | undefined,
+  );
+  if (page && RECIPE_WIDGET_TYPES.includes(page.type)) return [page];
   const widgets: OverviewWidget[] = [
     { id: 'shortcuts', type: 'shortcuts', span: 4, options: {} },
   ];

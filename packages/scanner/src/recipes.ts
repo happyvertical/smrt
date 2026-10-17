@@ -1304,6 +1304,14 @@ function readSurfaces(
       if (extras) Object.assign(surface, extras);
       if (typeof entry.type === 'string')
         identity = `widget-type:${entry.type}`;
+      if (extras?.sectionDefault === true) {
+        if (seen.has('widget-section-default')) {
+          fail(
+            `${at}.sectionDefault: only one widget per recipe may lead its section`,
+          );
+        }
+        seen.add('widget-section-default');
+      }
     }
     if (ref !== undefined) {
       if (seen.has(identity)) fail(`${at} repeats an earlier surface`);

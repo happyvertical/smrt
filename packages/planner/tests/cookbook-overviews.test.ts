@@ -68,7 +68,12 @@ describe('section overview definitions', () => {
       const id = `section:${section.id}`;
       expect(isOverviewId(id)).toBe(true);
       const def = definition(id);
-      expect(def.defaults[0]).toMatchObject({ id: 'shortcuts', span: 4 });
+      // A recipe that declares its own section page leads with it instead.
+      expect(def.defaults[0]).toMatchObject(
+        section.id === 'reports.runtime'
+          ? { id: 'saved-reports', type: 'saved-reports', span: 4 }
+          : { id: 'shortcuts', span: 4 },
+      );
       // Every default passes the page's own validation.
       const check = checkStoredOverride(id, null);
       expect(check.issues).toEqual([]);
@@ -91,6 +96,16 @@ describe('section overview definitions', () => {
       ['latest', 'records'],
     ]);
     expect(definition().defaults[1]?.options.model).toBe(lead);
+  });
+
+  it('the Reports section page is the saved reports themselves (#4100)', () => {
+    expect(
+      definition('section:reports.runtime').defaults.map((w) => [
+        w.id,
+        w.type,
+        w.span,
+      ]),
+    ).toEqual([['saved-reports', 'saved-reports', 4]]);
   });
 
   it('custom sections are overviews only when the layout has them', () => {

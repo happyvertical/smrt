@@ -8,7 +8,8 @@ export default {
     {
       id: 'saved-reports',
       title: 'Saved reports',
-      description: 'Shared reports, author filter, and archive controls.',
+      description:
+        'Saved reports as cards, whose and archived filters, and archive in a menu.',
       loadComponent: () =>
         import('./SavedReports.svelte').then((m) => m.default),
       props: { client: client() },

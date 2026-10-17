@@ -35,9 +35,9 @@ import {
 import {
   parseRuntimeReportSpec,
   RuntimeReportError,
-  runtimeReportSpecHash,
   serializeRuntimeReportSpec,
 } from '../runtime-spec.js';
+import { runtimeReportSpecHash } from '../runtime-spec-hash.js';
 
 class RtInvoice extends SmrtObject {}
 class RtGlobalNote extends SmrtObject {}

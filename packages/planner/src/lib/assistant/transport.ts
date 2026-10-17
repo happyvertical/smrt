@@ -1,15 +1,30 @@
-import type {
-  AssistantMessage,
-  AssistantSendMessageInput,
-  AssistantSendMessageResult,
-  AssistantThreadSummary,
-  AssistantTransport,
+import {
+  ASSISTANT_QUESTION_KIND,
+  type AssistantAnswerQuestionInput,
+  type AssistantMessage,
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  type AssistantSendMessageInput,
+  type AssistantSendMessageResult,
+  type AssistantThreadSummary,
+  type AssistantTransport,
+  matchAssistantQuestionText,
+  validateAssistantQuestionAnswer,
 } from '@happyvertical/smrt-chat/svelte';
+import { resolveRuntimeReportTimeRange } from '@happyvertical/smrt-reports/spec';
 import {
   createSliceController,
   type PlannerController,
 } from '../planner/commands/index.ts';
 import type { Recipe } from '../recipes/types.ts';
+import {
+  type ReportFollowUp,
+  type ReportFollowUpOption,
+  type ReportIntent,
+  sourceFollowUp,
+  whichSourceQuestion,
+} from '../reports/intent.ts';
+import type { PlannerReports } from '../reports/store.ts';
 import type { ThemeSetting } from '../theme/theme.ts';
 import {
   type AppliedChange,
@@ -90,11 +105,23 @@ export interface BrowserTransportOptions {
    * assistant cannot navigate and the schema has no `open`.
    */
   menu?: () => readonly { id: string; label: string }[];
+  /**
+   * Runtime reports over the app's sample data (#4100). With it the model may
+   * answer a report request with a `report` intent, which the transport turns
+   * into smrt-reports' `reports.runtime.*` steps: sources, define (preview),
+   * run; the person's approval saves. Null or omitted: no report building.
+   */
+  reports?: () => PlannerReports | null;
 }
 
 export interface BrowserAssistantTransport extends AssistantTransport {
   /** Stop the turn in flight, if any. */
   abort(): void;
+  /**
+   * Record how a report preview was answered on the transcript's own tool
+   * data, so a reloaded transcript shows the outcome, not live buttons.
+   */
+  recordReportOutcome(specHash: string, outcome: unknown): void;
 }
 
 const THREAD_TITLE = 'Plan your app';
@@ -150,9 +177,151 @@ function runCommands(
 /** Said when a turn changed nothing and the model's sentence was not a question. */
 export const NOTHING_CHANGED = 'Nothing in the app changed.';
 
-/** Said after a report request: the planner cannot build one yet (smrt#4100). */
-export const REPORTS_PENDING =
-  'Building the report itself is not available in the planner yet; it will live under Reports.';
+/** Said after a report request where this planner has no sample data to report on. */
+export const REPORTS_UNAVAILABLE =
+  'Building a report needs the planner app and its sample records; it will live under Reports.';
+
+/** The tool call a report preview rides on, as smrt-chat names it. */
+export const REPORT_DEFINE_TOOL = 'reports.runtime.define';
+
+/** A report follow-up as smrt-chat's structured question (a form in the dock). */
+export function reportQuestion(
+  followUp: ReportFollowUp,
+  id: string,
+): AssistantQuestion {
+  return {
+    kind: ASSISTANT_QUESTION_KIND,
+    id,
+    prompt: followUp.prompt,
+    fields: [
+      {
+        name: followUp.field,
+        label: followUp.label,
+        type: 'choice',
+        options: followUp.options.map(({ value, label, keywords }) => ({
+          value,
+          label,
+          ...(keywords ? { keywords } : {}),
+        })),
+        default: followUp.default,
+        required: true,
+      },
+    ],
+  };
+}
+
+/** Merge a follow-up pick or a model's partial answer into a pending intent. */
+function mergeIntent(
+  base: ReportIntent,
+  patch: Partial<ReportIntent>,
+): ReportIntent {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete out[key];
+    else out[key] = value;
+  }
+  return out as unknown as ReportIntent;
+}
+
+/** Words that are filler, or time words the report reads itself. */
+const ANSWER_FILLER = new Set([
+  'a',
+  'an',
+  'and',
+  'the',
+  'by',
+  'per',
+  'of',
+  'in',
+  'on',
+  'for',
+  'to',
+  'with',
+  'please',
+  'use',
+  'i',
+  'want',
+  'it',
+  'its',
+  'group',
+  'grouped',
+  'show',
+  'me',
+  'just',
+  'ok',
+  'okay',
+  'yes',
+  'that',
+  'one',
+  'option',
+  'last',
+  'this',
+  'past',
+  'previous',
+  'current',
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year',
+  'today',
+  'yesterday',
+  'ytd',
+  'date',
+  'time',
+]);
+const answerWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w));
+
+/**
+ * A typed reply that answers the pending question and says nothing else
+ * ("the date month", "status", "status last month"): every word is an
+ * option's word, filler, or a time word the report reads itself. Anything
+ * more ("invoices over $500", "add invoicing") goes to the model with the
+ * pending question in its prompt, so nothing the person said is dropped.
+ */
+function directAnswer(
+  followUp: ReportFollowUp,
+  question: AssistantQuestion,
+  text: string,
+): ReportFollowUpOption | undefined {
+  const values = matchAssistantQuestionText(question, text);
+  if (!values) return undefined;
+  const known = new Set(
+    followUp.options.flatMap((o) =>
+      answerWords([o.label, o.value, ...(o.keywords ?? [])].join(' ')),
+    ),
+  );
+  // A number counts only when it is part of a period the time parser read
+  // ("last 90 days", "Q3", "2025"); "over 500" is a threshold for the model.
+  const period = resolveRuntimeReportTimeRange(text, new Date()) !== null;
+  const extra = answerWords(text).filter(
+    (w) =>
+      !known.has(w) &&
+      !ANSWER_FILLER.has(w) &&
+      !(period && (/^\d+$/.test(w) || /^q[1-4]$/.test(w))),
+  );
+  if (extra.length) return undefined;
+  const chosen = values[followUp.field];
+  const value = Array.isArray(chosen) ? chosen[0] : chosen;
+  return followUp.options.find((o) => o.value === value);
+}
+
+const sameFollowUp = (a: ReportFollowUp, b: ReportFollowUp) =>
+  a.field === b.field &&
+  a.prompt === b.prompt &&
+  a.options.map((o) => o.value).join('|') ===
+    b.options.map((o) => o.value).join('|');
+
+/** What the chat says under a report preview. */
+export function reportPreviewText(title: string, rows: number): string {
+  return `Here is a preview of ${title} (${rows} ${rows === 1 ? 'row' : 'rows'}). Approve it to save it under Saved reports.`;
+}
 
 /** The Reports menu entry (reports.runtime's RuntimeReport). */
 const REPORTS_ITEM = 'item:reports:RuntimeReport';
@@ -236,6 +405,115 @@ export function createBrowserAssistantTransport(
   const messages: AssistantMessage[] = [];
   const seen = new Map<string, AssistantSendMessageResult>();
   let controller: AbortController | null = null;
+  /**
+   * The report follow-up waiting for an answer: the intent so far, the
+   * question asked (its options from the source descriptor), and the words
+   * of the original request (their time words still count).
+   */
+  let pending: {
+    intent: ReportIntent;
+    followUp: ReportFollowUp;
+    question: AssistantQuestion;
+    text: string;
+  } | null = null;
+  let questions = 0;
+
+  /**
+   * `reports.runtime.define` (preview) then `run`, by code. A follow-up the
+   * intent still needs becomes a form (and the pending question); asking the
+   * identical question twice is never done: the sensible default is taken
+   * and the reply says so.
+   */
+  async function buildReport(
+    reports: PlannerReports,
+    intent: ReportIntent,
+    text: string,
+    previous: ReportFollowUp | null,
+  ): Promise<{ text: string; ref?: unknown; added: string[] }> {
+    const defined = await reports.define(intent, text);
+    if (defined.ok) {
+      pending = null;
+      // Reports must be on to keep the report; turning it on is a command
+      // like any other, so the reply says it ran.
+      const added = options.store.ids.includes(REPORTS_RECIPE)
+        ? []
+        : applyRecipes(planner, { add: [REPORTS_RECIPE], remove: [] }).added;
+      return {
+        added,
+        ref: {
+          name: REPORT_DEFINE_TOOL,
+          phase: 'preview',
+          result: defined.proposal,
+        },
+        text: reportPreviewText(
+          defined.proposal.spec.title,
+          defined.proposal.preview.rowCount,
+        ),
+      };
+    }
+    const followUp = defined.followUp;
+    if (!followUp) {
+      pending = null;
+      return { added: [], text: defined.question };
+    }
+    if (previous && sameFollowUp(previous, followUp)) {
+      const pick = followUp.options.find((o) => o.value === followUp.default);
+      if (pick) {
+        const next = await buildReport(
+          reports,
+          mergeIntent(intent, pick.apply),
+          text,
+          followUp,
+        );
+        return { ...next, text: `I went with ${pick.label}. ${next.text}` };
+      }
+    }
+    const question = reportQuestion(followUp, `report-${++questions}`);
+    pending = { intent, followUp, question, text };
+    return { added: [], ref: question, text: followUp.prompt };
+  }
+
+  /** The option a form submission or a typed answer picked. */
+  function pickedOption(
+    followUp: ReportFollowUp,
+    values: AssistantQuestionAnswer,
+  ): ReportFollowUpOption | undefined {
+    const chosen = values[followUp.field];
+    const value = Array.isArray(chosen) ? chosen[0] : chosen;
+    return followUp.options.find((o) => o.value === value);
+  }
+
+  /** Continue a pending report with a picked option, with no model turn. */
+  async function answerPending(
+    reports: PlannerReports,
+    option: ReportFollowUpOption,
+    reply = '',
+  ): Promise<{ content: string; refs?: unknown }> {
+    const current = pending;
+    if (!current) return { content: '' };
+    const built = await buildReport(
+      reports,
+      mergeIntent(current.intent, option.apply),
+      `${current.text} ${reply}`.trim(),
+      current.followUp,
+    );
+    const content = [
+      describeChange(
+        { added: built.added, removed: [], kept: [] },
+        options.recipes,
+      ),
+      built.text,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (content) options.onReply?.(content);
+    return { content, refs: built.ref };
+  }
+
+  const reportsHost = () =>
+    options.recipes.some((r) => r.id === REPORTS_RECIPE)
+      ? (options.reports?.() ?? null)
+      : null;
 
   const push = (
     role: 'user' | 'assistant',
@@ -272,6 +550,15 @@ export function createBrowserAssistantTransport(
   async function turn(
     text: string,
   ): Promise<{ content: string; refs?: unknown }> {
+    // A typed answer to the pending report question resolves against its
+    // options in code: no model turn, and "the date month" means the date by
+    // month whatever the model would have made of it.
+    const pendingReports = pending ? reportsHost() : null;
+    if (pending && pendingReports) {
+      const option = directAnswer(pending.followUp, pending.question, text);
+      // The reply's own time words ("status last month") still count.
+      if (option) return answerPending(pendingReports, option, text);
+    }
     const model = options.model();
     if (!model) {
       return {
@@ -295,6 +582,10 @@ export function createBrowserAssistantTransport(
         }));
       const matches = matchText(index, text);
       const menu = options.menu?.() ?? [];
+      // `reports.runtime.sources`: what a report may cover in this app.
+      const reports = reportsHost();
+      const reportSources = reports?.sources() ?? [];
+      const asked = pending;
       const raw = await model.message(text, {
         history: [
           {
@@ -307,6 +598,14 @@ export function createBrowserAssistantTransport(
               matches,
               options.theme ? { current: options.theme.read() } : undefined,
               menu,
+              reportSources.map(({ id, label }) => ({ id, label })),
+              asked
+                ? {
+                    source: asked.intent.source,
+                    prompt: asked.followUp.prompt,
+                    options: asked.followUp.options.map((o) => o.label),
+                  }
+                : undefined,
             ),
           },
           ...prior,
@@ -317,6 +616,7 @@ export function createBrowserAssistantTransport(
           !!options.settings,
           !!options.theme,
           menu.map((section) => section.id),
+          reportSources.map((source) => source.id),
         ),
         temperature: 0,
         maxTokens: MAX_REPLY_TOKENS,
@@ -328,7 +628,16 @@ export function createBrowserAssistantTransport(
             ? options.acceptCommands()
             : options.acceptCommands,
         sections: menu.map((section) => section.id),
+        reports: reportSources.length > 0,
       });
+      // A report turn is driven by code, not by the model's other choices: a
+      // report is never a recipe to add or a section to open ("sales report"
+      // must not land in the product catalogue). Settings and theme still apply.
+      if (change.report) {
+        change.add = [];
+        change.remove = [];
+        delete change.open;
+      }
       const applied = applyRecipes(planner, change);
       const settingsText =
         options.settings && hasKeys(change.settings)
@@ -360,7 +669,59 @@ export function createBrowserAssistantTransport(
           ? change.open
           : undefined;
       const openText = open ? openSection(planner, open, menu) : '';
-      const summary = [
+      // `reports.runtime.define` (preview) then `reports.runtime.run`, by code
+      // (`buildReport`). An answer to a pending follow-up merges into its
+      // intent; a turn that answers nothing takes the sensible default rather
+      // than asking the same question again.
+      let reportText = '';
+      let reportRef: unknown;
+      let reportIntent: ReportIntent | null = null;
+      let reportWords = text;
+      if (asked && change.report) {
+        reportIntent = mergeIntent(asked.intent, change.report);
+        reportWords = `${asked.text} ${text}`;
+      } else if (change.report) {
+        reportIntent = change.report;
+      }
+      const didOther =
+        applied.added.length > 0 ||
+        applied.removed.length > 0 ||
+        !!settingsText ||
+        !!themed?.summary ||
+        !!commandText ||
+        !!openText ||
+        !!change.cookbook;
+      if (reports && reportIntent) {
+        const built = await buildReport(
+          reports,
+          reportIntent,
+          reportWords,
+          asked?.followUp ?? null,
+        );
+        applied.added.push(...built.added);
+        reportText = built.text;
+        reportRef = built.ref;
+      } else if (reports && asked && !didOther) {
+        // A second miss: never the identical question again.
+        const pick = asked.followUp.options.find(
+          (o) => o.value === asked.followUp.default,
+        );
+        if (pick) {
+          const built = await buildReport(
+            reports,
+            mergeIntent(asked.intent, pick.apply),
+            asked.text,
+            asked.followUp,
+          );
+          applied.added.push(...built.added);
+          reportText = `I went with ${pick.label}. ${built.text}`;
+          reportRef = built.ref;
+        }
+      } else if (asked) {
+        // The person moved on to something else.
+        pending = null;
+      }
+      const ran = [
         describeChange(applied, options.recipes),
         settingsText,
         themed?.summary ?? '',
@@ -369,6 +730,32 @@ export function createBrowserAssistantTransport(
       ]
         .filter(Boolean)
         .join(' ');
+      // The model adding Reports is a report request too, whatever the words.
+      const askedForReport =
+        reportRequest || applied.added.includes(REPORTS_RECIPE);
+      if (
+        askedForReport &&
+        !change.report &&
+        !asked &&
+        !openText &&
+        !applied.removed.length
+      ) {
+        // Asked for a report but named nothing to build (adding Reports alone
+        // builds nothing): ask which records, never guess, or say this planner
+        // cannot build one. Going to the Reports section needs no question.
+        const followUp = reports ? sourceFollowUp(reportSources) : null;
+        if (followUp) {
+          const question = reportQuestion(followUp, `report-${++questions}`);
+          pending = { intent: { source: '' }, followUp, question, text };
+          reportText = followUp.prompt;
+          reportRef = question;
+        } else {
+          reportText = reports
+            ? whichSourceQuestion(reportSources)
+            : REPORTS_UNAVAILABLE;
+        }
+      }
+      const summary = [ran, reportText].filter(Boolean).join(' ');
       // Backstop: a small model sometimes misses a plain "I run a bakery".
       // A strong cookbook match is offered anyway (never applied without the
       // click) when the model offered none and none is applied or pending.
@@ -388,15 +775,12 @@ export function createBrowserAssistantTransport(
         ? cookbooks.find((c) => c.id === cookbookId)
         : undefined;
       const line = change.reply || (offered ? `Set up ${offered.name}?` : '');
-      const reply = [
-        honestReply(line, summary, !!offer),
-        reportRequest ? REPORTS_PENDING : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
+      const reply = honestReply(line, summary, !!offer);
       if (reply) options.onReply?.(reply);
-      // One ref renders as is; a cookbook offer and a theme Undo in one turn ride together.
-      const refs = offer && undo ? [offer, undo] : (offer ?? undo);
+      // One ref renders as is; several in one turn (a cookbook offer, a theme
+      // Undo, a report preview) ride together.
+      const all = [offer, undo, reportRef].filter(Boolean);
+      const refs = all.length > 1 ? all : all[0];
       return { content: reply, refs };
     } catch (error) {
       if (controller?.signal.aborted) return { content: 'Stopped.' };
@@ -436,6 +820,75 @@ export function createBrowserAssistantTransport(
       };
       seen.set(input.clientRequestId, result);
       return result;
+    },
+    /**
+     * The report follow-up's form, submitted: its pick merges into the
+     * pending intent and the flow continues (preview, then confirmation) with
+     * no model turn. The question is marked answered for the transcript.
+     */
+    async answerQuestion(
+      input: AssistantAnswerQuestionInput,
+    ): Promise<AssistantSendMessageResult> {
+      const cached = seen.get(input.clientRequestId);
+      if (cached) return cached;
+      const reports = reportsHost();
+      if (!pending || !reports || pending.question.id !== input.questionId) {
+        throw new Error('That question is no longer open. Ask again?');
+      }
+      const values = validateAssistantQuestionAnswer(
+        pending.question,
+        input.values,
+      );
+      const option = values
+        ? pickedOption(pending.followUp, values)
+        : undefined;
+      if (!values || !option) throw new Error('Choose one of the options.');
+      const asked = messages.find((m) => m.id === input.messageId);
+      if (asked) {
+        const mark = (ref: unknown) => {
+          const item = ref as { kind?: string; id?: string } | null;
+          return item?.kind === ASSISTANT_QUESTION_KIND &&
+            item.id === input.questionId
+            ? { ...item, answer: values }
+            : ref;
+        };
+        asked.toolCallData = Array.isArray(asked.toolCallData)
+          ? asked.toolCallData.map(mark)
+          : mark(asked.toolCallData);
+      }
+      const reply = await answerPending(reports, option);
+      const result: AssistantSendMessageResult = {
+        inProgress: false,
+        ...(asked ? { messages: [asked] } : {}),
+        assistantMessage: push(
+          'assistant',
+          reply.content,
+          undefined,
+          reply.refs,
+        ),
+      };
+      seen.set(input.clientRequestId, result);
+      return result;
+    },
+    recordReportOutcome(specHash: string, outcome: unknown) {
+      for (const message of messages) {
+        const refs = Array.isArray(message.toolCallData)
+          ? message.toolCallData
+          : [message.toolCallData];
+        for (const ref of refs) {
+          const item = ref as {
+            name?: string;
+            result?: { specHash?: string };
+            outcome?: unknown;
+          } | null;
+          if (
+            item?.name === REPORT_DEFINE_TOOL &&
+            item.result?.specHash === specHash
+          ) {
+            item.outcome = outcome;
+          }
+        }
+      }
     },
     async uploadAttachment(file: File) {
       throw new Error(`The assistant cannot take attachments (${file.name}).`);

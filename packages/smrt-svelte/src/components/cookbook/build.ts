@@ -14,6 +14,7 @@ import {
   isEmptyOverride,
   parseOverviewOverride,
 } from '../overview/model.js';
+import { sectionDefaultWidget } from '../overview/recipe-widgets.js';
 import {
   OVERVIEW_PAGE_ID_PATTERN,
   type OverviewDefinition,
@@ -107,7 +108,11 @@ function leadModel(
 function overviewDefaults(
   lead: CookbookModelInfo | undefined,
   dataWidgets: boolean,
+  page?: OverviewWidget,
 ): OverviewWidget[] {
+  // The leading recipe's own section page (a `sectionDefault` widget) needs
+  // its loader on the host, as the count and records do.
+  if (dataWidgets && page) return [page];
   const widgets: OverviewWidget[] = [
     { id: 'shortcuts', type: 'shortcuts', span: 4, options: {} },
   ];
@@ -226,6 +231,8 @@ export function buildCookbookShell(
   // Recipe sections: a section none of whose recipes has a menu entry (an
   // assistant, a settings panel) is left out rather than shown empty.
   const leads = new Map<string, CookbookModelInfo | undefined>();
+  // A section led by a recipe that declares its own page (`sectionDefault`).
+  const pages = new Map<string, OverviewWidget>();
   for (const section of buildNavSections(recipes)) {
     const items: CookbookEntry[] = [];
     for (const recipe of section.recipes) {
@@ -249,6 +256,8 @@ export function buildCookbookShell(
     }
     if (items.length === 0) continue;
     leads.set(sectionLayoutId(section.id), leadModel(section.recipes, models));
+    const page = sectionDefaultWidget(section.recipes[0]);
+    if (page) pages.set(sectionLayoutId(section.id), page);
     pushSection(
       section.id,
       section.label,
@@ -300,7 +309,11 @@ export function buildCookbookShell(
     const definition: OverviewDefinition = defineOverview({
       id,
       ...(modelIds.length > 0 ? { models: modelIds } : {}),
-      defaults: overviewDefaults(leads.get(id), options.dataWidgets === true),
+      defaults: overviewDefaults(
+        leads.get(id),
+        options.dataWidgets === true,
+        pages.get(id),
+      ),
     });
     const stored = cookbook.overviews?.[id];
     const parsed = parseOverviewOverride(stored);

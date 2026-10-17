@@ -125,11 +125,11 @@ export const UPSTREAM_GAPS = {
   sharedRecipeLabel: new Set<string>(),
   /**
    * smrt 0.56's `reports.runtime` (smrt#4006): no `section`, so its menu
-   * section has no icon or description; a nav entry with no `description`;
-   * and help with no sections or tasks.
+   * section has no icon or description; and help with no sections or tasks.
+   * (Its nav entry is described since #4100.)
    */
   noSection: new Set(['reports.runtime']),
-  undescribedNavEntry: new Set(['reports.runtime']),
+  undescribedNavEntry: new Set<string>(),
   /** Help with fewer than two sections or tasks (`reports.runtime`: prose under one `#` title). */
   unstructuredHelp: new Set(['reports.runtime']),
   /** Help that names a field the recipe's models hide (none since smrt 0.56). */

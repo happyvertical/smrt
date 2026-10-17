@@ -16,8 +16,35 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   results (`honestReply`): the model's sentence stands only when nothing ran, followed by
   "Nothing in the app changed." unless it asks a question; an added recipe with no menu entry says so.
   A request for a report or a summary (the keyword match finds `reports.runtime`) is pointed at
-  Reports: an `open` of any other section is dropped, and the reply says the report itself is not
-  built yet (`REPORTS_PENDING`; the runtime report flow in the browser is smrt#4100).
+  Reports: an `open` of any other section is dropped.
+- Runtime reports (smrt#4100), driven by code so a 1-2B model can do it: the schema's optional
+  `report` is an INTENT (`src/lib/reports/intent.ts`: source enum of the app's report sources,
+  measures, groupBy, bucket, period, dateField, filters), never a spec. The transport runs the
+  steps smrt-chat names (`reports.runtime.sources` -> `define` preview -> `run`) through
+  `PlannerReports` (`src/lib/reports/store.ts`): `specFromIntent` resolves loose names, fills
+  defaults ("a summary" = count + the document total), reads time with smrt-reports'
+  `parseRuntimeReportTime` / `resolveRuntimeReportTimeRange` over the person's words and the intent's
+  `bucket`/`range` ("by month", "last quarter by week", "Q3"; relative to the sample clock `EPOCH`),
+  buckets the descriptor's `defaultTimeField` (an invoice's issue date), validates with smrt-reports' `parseRuntimeReportSpec`, runs
+  `runRuntimeReportInMemory` over the sample rows and returns smrt-reports' `awaiting_confirmation`
+  proposal as the message's `toolCallData` (`{ name: 'reports.runtime.define', result }`). Only then
+  is `reports.runtime` added (a command, so the reply says so). A report turn ignores the model's
+  `add`/`remove`/`open`. An unresolvable intent, or a report request with no intent, is a
+  follow-up (`ReportFollowUp`) built from the source descriptor's human groupings, time fields and
+  amounts (never ids, hashes or plumbing; the date by month first when time came up), sent as
+  smrt-chat's structured question, so the dock shows a form. It is the transport's `pending`
+  report: a typed answer resolves against its options in code (`matchAssistantQuestionText`, no
+  model turn), the form's submit is `answerQuestion` (no model turn; the question is marked
+  answered), a model answer merges into the pending intent, and a turn that answers nothing takes
+  the default and says "I went with …": the identical question is never asked twice. `BrowserAssistant` renders the proposal with smrt-reports'
+  `ReportConfirmation` (`ReportProposalCard`); Approve (a trusted click) is the browser's confirmed
+  save: `save` re-parses, checks the Web Crypto hash, reruns against the current sources and stores a
+  RuntimeReport row in the sample data, then `plannerRuntime.openPath` opens it (a promise
+  that resolves when the navigation has finished). Sources
+  (`sources.ts`) are the menu models of the recipes that are on (`packages.reports.runtime.sources`
+  in a generated app). Without a data source (`createPlannerAssistant` for a host's controller) the
+  capability is off and a report request says `REPORTS_UNAVAILABLE`. Not an authority boundary:
+  sample data has no principal or tenant.
 - `src/lib/inference/` (#23, #30): where the model runs. `config.ts` is `planner.config.json`
   (`inference: { mode: manual|browser|host|byo, alternatives?, credentialPersistence?, host?, byo? }`;
   an absent config keeps the standalone browser default, while an invalid present config fails visibly

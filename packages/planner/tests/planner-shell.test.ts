@@ -17,11 +17,13 @@ describe('Planner shell defaults', () => {
   });
 
   it('keeps the assistant dock available through its header toggle', () => {
-    expect(plannerShellProps().config.right).toMatchObject({
+    expect(plannerShellProps().config.right).toEqual({
       initial: 'collapsed',
       rail: false,
-      presentation: 'overlay',
     });
+    // No presentation of its own: the shell default docks the assistant
+    // beside the page from xl and slides it over the page below (#4100).
+    expect(plannerShellProps().config.right).not.toHaveProperty('presentation');
   });
 
   it('hides the separate bottom panel by default', () => {

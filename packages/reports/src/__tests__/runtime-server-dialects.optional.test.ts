@@ -21,10 +21,8 @@ import {
   loadRuntimeReportChart,
   runRuntimeReportForPrincipal,
 } from '../runtime-server.js';
-import {
-  parseRuntimeReportSpec,
-  runtimeReportSpecHash,
-} from '../runtime-spec.js';
+import { parseRuntimeReportSpec } from '../runtime-spec.js';
+import { runtimeReportSpecHash } from '../runtime-spec-hash.js';
 
 @TenantScoped({ mode: 'required' })
 @smrt({ tableName: 'runtime_server_test_sales' })

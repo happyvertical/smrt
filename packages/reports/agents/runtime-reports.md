@@ -10,8 +10,14 @@ grammar. Declared (`@report`) reports are unchanged and remain the way to get a
 
 | File | Role |
 | --- | --- |
-| `src/runtime-spec.ts` | `RuntimeReportSpec` grammar, strict parser, limits, stable hash |
+| `src/runtime-spec.ts` | `RuntimeReportSpec` grammar, strict parser, limits, canonical JSON, Web Crypto digest (browser-safe) |
+| `src/runtime-spec-hash.ts` | `runtimeReportSpecHash()` (`node:crypto`, server only) |
+| `src/runtime-plan.ts` | Column, operator, aggregate, coercion and cell rules shared by both runners (browser-safe) |
 | `src/runtime-compiler.ts` | `compileRuntimeReportSpec()`, `describeRuntimeReportSource()`, `runRuntimeReport()` |
+| `src/runtime-dimensions.ts` | Time and grouping hints in source descriptions (browser-safe) |
+| `src/runtime-time.ts` | Time language: buckets and periods from words, against `now` (browser-safe) |
+| `src/runtime-memory.ts` | `runRuntimeReportInMemory()`, `describeRuntimeReportMemorySource()` (browser-safe) |
+| `src/spec.ts` | The `./spec` subpath: the browser-safe exports above |
 | `src/runtime-server.ts` | Same-origin confirmation, principal-bound run/archive, chart loader |
 | `src/runtime-report.ts` | `RuntimeReport` model (`runtime_reports`), `saveRuntimeReport()`, list/get/archive, `runStoredRuntimeReport()` |
 
@@ -54,6 +60,59 @@ alias charset, reserved words) are in `RUNTIME_REPORT_LIMITS`.
 
 The parser normalizes defaults and derives aliases, so equal specs hash equally
 (`runtimeReportSpecHash`). The hash is what a human confirmation binds to.
+`runtimeReportSpecDigest` computes the same hex with Web Crypto for browsers
+(async; needs a secure context).
+
+## Browser grammar and in-memory runner (#4100)
+
+`@happyvertical/smrt-reports/spec` imports no Node built-in and, of
+smrt-core, only the import-free `@happyvertical/smrt-core/smrt-error` (the
+root entry still reaches the registry's manifest loader), so a browser parses
+specs with the server's own parser. `runRuntimeReportInMemory(spec,
+rows, { sources, maxRows?, now? })` evaluates a parsed spec over rows the
+caller already holds and returns the `RuntimeReportResult` shape (`specHash`
+included). A `RuntimeReportMemorySource` is `{ id, label?, description?,
+schema: [{ name, type, label?, format? }], fields?, excludeFields? }`: the same
+allow/deny semantics as a server source, `_`-prefixed names and `tenantId`
+never nameable, and a declared `deletedAt` soft-deletes.
+`describeRuntimeReportMemorySource()` is the `reports.runtime.sources`
+counterpart.
+
+Both runners call `runtime-plan.ts` for columns, operator/aggregate rules and
+value coercion, so errors carry the same codes and paths. SQL-shaped semantics:
+comparisons and `IN`/`NOT IN` never match NULL, `contains` is case-sensitive,
+groups without dimensions always yield one row, NULLs sort first ascending (as
+SQLite), weeks start Monday, buckets are UTC. Result datetimes are ISO-8601
+(PostgreSQL/DuckDB form; SQLite returns bucket TEXT). `runtime-memory-parity.test.ts`
+runs a spec matrix through both runners on SQLite and requires identical results.
+
+### Time and grouping hints
+
+Both source descriptions carry `timeFields`, `defaultTimeField` (the natural
+date "by month" buckets: an invoice's issue date, never `createdAt` when a
+business date exists) and `dimensions` (fields worth grouping by, most useful
+first), and each field a `dimension` kind (`time`, `category`, `relation`) when
+it is one, plus its declared `enum`. A source definition may declare
+`timeField` and `dimensions` (canonical names; unknown names are
+`unsupported_source`, hidden ones are dropped for that principal). Otherwise
+`runtime-dimensions.ts` derives them: a business date
+(`@field({ ui: { format: 'date' } })`) else the first non-bookkeeping datetime;
+closed text fields, booleans and foreign keys as groupings, never `id`, free
+text or names marking plumbing (`…Hash`, `…Json`, `…Authority`, `external…`,
+`historical…`). They are hints for choosing, not authority: a spec may still
+group by any exposed field.
+
+`parseRuntimeReportTime(text, now)` reads a request's time words ("by month",
+"weekly", "over time", "last quarter by week") into a bucket, a period and
+whether time came up; `resolveRuntimeReportTimeRange(phrase, now)` resolves
+"last month", "this year", "last 90 days", "Q3", "December" to `[from, to)`
+dates (UTC). Assistants resolve time with these rather than asking a model to
+do date arithmetic.
+
+**It is a browser preview and test runner, not an authority boundary.** It has
+no registry field policy, principal, RBAC or tenant: whoever supplies the rows
+has already decided they may be seen. Production reports compile on the server
+for the live principal and save only through the confirmed `saveRuntimeReport()`.
 
 ## Authority model
 

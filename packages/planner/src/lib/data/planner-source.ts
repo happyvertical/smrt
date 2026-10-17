@@ -8,6 +8,7 @@ import { ASSET, PRODUCT_ASSET } from '../products/media.ts';
 import { recipes } from '../recipes/index.ts';
 import { childLinks } from '../recipes/plumbing.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
+import { RUNTIME_REPORT_MODEL } from '../reports/sources.ts';
 import { DEFAULT_SAMPLE_TAX_RATE, fakeId } from './fakes.ts';
 import {
   defaultTaxCode,
@@ -63,7 +64,9 @@ export function createPlannerDataSource(): DataSource {
     // and stock are sampled together (one SKU per product).
     // A document's tax snapshot is kept on its lines (`taxComponentsJson`),
     // so `DocumentTax` holds no rows of its own.
-    empty: [VARIANT, PROFILE_TYPE, DOCUMENT_TAX],
+    // Saved reports exist only once a person approves one (#4100): random
+    // rows would carry specs no runner can read.
+    empty: [VARIANT, PROFILE_TYPE, DOCUMENT_TAX, RUNTIME_REPORT_MODEL],
     samples: {
       // The tax codes sample documents resolve against: the seeded ones,
       // the app default and smrt-commerce's example pack (`data/money.ts`).

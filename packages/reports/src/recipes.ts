@@ -71,9 +71,38 @@ export class RuntimeReportsRecipe extends SmrtRecipe {
   static models = [RuntimeReport];
   // Not "Reports": the recipe is its own section, and that is its name.
   static nav = [
-    { label: 'Shared reports', model: RuntimeReport, icon: 'fileText' },
+    {
+      label: 'Saved reports',
+      model: RuntimeReport,
+      icon: 'fileText',
+      noun: 'report',
+      description: 'Reports your team approved, kept up to date.',
+    },
   ];
   static surfaces = [
+    {
+      // The Reports section page: the saved reports themselves, not a count.
+      kind: 'widget',
+      type: 'saved-reports',
+      export: '@happyvertical/smrt-reports/svelte#SavedReportsWidget',
+      label: 'Saved reports',
+      description: 'Your team’s saved reports with their latest figures.',
+      icon: 'fileText',
+      options: [
+        {
+          key: 'limit',
+          type: 'integer',
+          label: 'Reports shown',
+          min: 1,
+          max: 24,
+          default: 6,
+        },
+      ],
+      sectionDefault: true,
+      defaultSpan: 4,
+      minSpan: 2,
+      maxSpan: 4,
+    },
     {
       kind: 'route',
       path: '/reports',

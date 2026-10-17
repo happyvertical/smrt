@@ -42,7 +42,7 @@ function save() {
 }
 </script>
 
-<div data-smrt-component="RuntimeReportWidgetOptions">
+<div class="report-widget-options" data-smrt-component="RuntimeReportWidgetOptions">
   <ReportPicker
     {client}
     reportId={value.reportId}
@@ -56,3 +56,11 @@ function save() {
     <Button type="button" variant="primary" onclick={save}>{t(M['reports.save'])}</Button>
   </FormActionBar>
 </div>
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+  .report-widget-options { display: grid; gap: var(--smrt-spacing-4); }
+  .report-widget-options > p { margin: 0; color: var(--smrt-color-error); }
+}
+</style>

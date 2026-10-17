@@ -11,6 +11,8 @@ import {
   commandSchemas,
   commandTools,
 } from '../planner/commands/schemas.ts';
+import { type ReportIntent, reportIntentSchema } from '../reports/intent.ts';
+import { REPORTS_RECIPE } from '../reports/sources.ts';
 import { defaultCatalog, type PromptCatalog } from './catalog.ts';
 
 /**
@@ -46,6 +48,11 @@ export interface HostReply {
   };
   /** Up to 8 planner commands, run in order by the planner. */
   commands?: { name: string; input: unknown }[];
+  /**
+   * A runtime report to build (`source` a report source id from the prompt):
+   * the planner builds, previews and, on the visitor's approval, saves it.
+   */
+  report?: ReportIntent;
 }
 
 /**
@@ -77,6 +84,11 @@ export function buildReplySchema(
       additionalProperties: false,
     },
   };
+  if (catalog.recipes.some((recipe) => recipe.id === REPORTS_RECIPE)) {
+    (schema.properties as Record<string, unknown>).report = reportIntentSchema(
+      [],
+    );
+  }
   return schema;
 }
 
@@ -103,6 +115,7 @@ function toHostReply(change: AssistantChange): HostReply {
     ...(nonEmpty(change.settings) ? { settings: change.settings } : {}),
     ...(nonEmpty(change.theme) ? { theme: change.theme } : {}),
     ...(change.commands?.length ? { commands: change.commands } : {}),
+    ...(change.report ? { report: change.report } : {}),
   };
 }
 
@@ -121,6 +134,7 @@ export function parseHostReply(
   const issues: string[] = [];
   const change = parseChange(text, catalog.recipes, catalog.cookbooks, {
     commands: true,
+    reports: catalog.recipes.some((recipe) => recipe.id === REPORTS_RECIPE),
   });
   let ok = true;
   try {
@@ -133,6 +147,12 @@ export function parseHostReply(
   if (!change.reply) {
     change.reply = FALLBACK_REPLY;
     issues.push('the reply had no "reply" sentence');
+  }
+  if (change.report?.unreadable?.length) {
+    // Passed on in `report.unreadable` so the planner asks about them.
+    issues.push(
+      `report parts it could not read: ${change.report.unreadable.join(', ')}`,
+    );
   }
   if (change.commands) {
     const valid: { name: string; input: unknown }[] = [];

@@ -102,6 +102,9 @@ export function createRuntimeReportsHttpClient(
       createdByUserId: row.createdByUserId,
       status: row.status,
       spec,
+      ...(typeof row.createdAt === 'string' && row.createdAt
+        ? { savedAt: row.createdAt }
+        : {}),
       ...(lastRuns.has(row.id) ? { lastRunAt: lastRuns.get(row.id) } : {}),
     };
     const canArchive =

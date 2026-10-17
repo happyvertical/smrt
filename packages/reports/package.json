@@ -39,6 +39,10 @@
       "types": "./dist/state.d.ts",
       "import": "./dist/state.js"
     },
+    "./spec": {
+      "types": "./dist/spec.d.ts",
+      "import": "./dist/spec.js"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./svelte": {

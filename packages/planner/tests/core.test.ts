@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseChange } from '../src/lib/assistant/change.ts';
 import { buildSystemPrompt } from '../src/lib/assistant/prompt.ts';
 import {
   buildHostPrompt,
@@ -11,7 +12,11 @@ import {
   parseHostRequest,
   replySchema,
 } from '../src/lib/core/index.ts';
+import { EPOCH } from '../src/lib/data/fakes.ts';
 import { commandSchemas as fromCommands } from '../src/lib/planner/commands/index.ts';
+import { recipes } from '../src/lib/recipes/index.ts';
+import { specFromIntent } from '../src/lib/reports/intent.ts';
+import { plannerReportSources } from '../src/lib/reports/sources.ts';
 
 const snapshot: PlanSnapshot = {
   version: 1,
@@ -121,6 +126,7 @@ describe('core', () => {
         'cookbook',
         'remove',
         'reply',
+        'report',
         'settings',
         'theme',
       ].sort(),
@@ -130,6 +136,10 @@ describe('core', () => {
     const small = buildReplySchema({ recipes: [], cookbooks: [] });
     expect(
       (small.properties as Record<string, unknown>).cookbook,
+    ).toBeUndefined();
+    // Reports only when the catalogue has reports.runtime (#4100).
+    expect(
+      (small.properties as Record<string, unknown>).report,
     ).toBeUndefined();
   });
 
@@ -155,6 +165,53 @@ describe('core', () => {
       commands: [{ name: 'hide', input: { id: 'nav:a' } }],
     });
     expect(parsed.issues).toHaveLength(2);
+  });
+
+  it('carries a report intent and names the report sources of the plan (#4100)', () => {
+    const { system } = buildHostPrompt({
+      message: 'a summary of sales last month',
+      snapshot,
+    });
+    expect(system).toContain('"report"');
+    expect(system).toMatch(/Report sources: .*invoices \(Invoices\)/);
+    const parsed = parseHostReply(
+      JSON.stringify({
+        reply: 'Here it is.',
+        report: { source: 'invoices', period: 'last_month', bogus: 1 },
+      }),
+    );
+    expect(parsed.reply).toEqual({
+      reply: 'Here it is.',
+      report: { source: 'invoices', period: 'last_month' },
+    });
+  });
+
+  it('passes unreadable report parts on, so the planner still asks (#4100)', () => {
+    const parsed = parseHostReply(
+      JSON.stringify({
+        reply: 'Here.',
+        report: {
+          source: 'invoices',
+          period: 'last_fortnight',
+          filters: [{ field: 'status', op: 'like', value: 'paid' }],
+        },
+      }),
+    );
+    expect(parsed.reply.report?.unreadable).toEqual([
+      'the status filter',
+      'the period',
+    ]);
+    expect(parsed.issues.join(' ')).toContain('could not read');
+    // The browser parses the host's body again and keeps the list.
+    const change = parseChange(JSON.stringify(parsed.reply), recipes, [], {
+      reports: true,
+    });
+    const built = specFromIntent(
+      change.report as NonNullable<typeof change.report>,
+      plannerReportSources(['commerce.invoicing'], recipes),
+      new Date(EPOCH),
+    );
+    expect(built.ok).toBe(false);
   });
 
   it('never returns raw model output', () => {

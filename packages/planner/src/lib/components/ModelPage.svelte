@@ -5,7 +5,7 @@ import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { catalog, getModel } from '../catalog/index.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
-import { humanize, navNoun } from '../data/format.ts';
+import { humanize, navNoun, pluralize } from '../data/format.ts';
 import { activeForms } from '../forms/active.ts';
 import { PRODUCT } from '../forms/stock.ts';
 import { appHref } from '../planner/app.svelte.ts';
@@ -29,9 +29,12 @@ import {
 import { pageScope, scopePreset } from '../recipes/scope.ts';
 import { navSectionOf } from '../recipes/sections.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
+import { RUNTIME_REPORT_MODEL } from '../reports/sources.ts';
+import { REPORT_LIST_PATH } from '../reports/store.ts';
 import { sectionPath } from '../sections/path.ts';
 import FormWorkspace from './FormWorkspace.svelte';
 import ModelWorkspace from './ModelWorkspace.svelte';
+import PlannerReports from './PlannerReports.svelte';
 import RecordView from './RecordView.svelte';
 import SectionIcons from './SectionIcons.svelte';
 
@@ -138,6 +141,31 @@ const listTitle = $derived(
     : undefined,
 );
 
+// An open saved report's title (PlannerReports binds it).
+let recordTitle = $state<string | undefined>();
+// A saved report's page names itself in the trail: "Reports / Saved reports /
+// Invoices by month", the list a link back.
+const reportCrumb = $derived(
+  recordId && catalogModel?.id === RUNTIME_REPORT_MODEL
+    ? recordTitle
+    : undefined,
+);
+
+// The document title in the menu's words: "Saved reports · Reports" for the
+// list, "<record> · Saved reports" for a record (a saved report names itself).
+const pageTitle = $derived.by(() => {
+  // Before the cookbook loads (the prerendered page) the recipe's own menu
+  // label still names it: "Saved reports", never "Runtime reports".
+  const declared = recipesWithModel
+    .flatMap((r) => recipeNav(r))
+    .find((e) => e.model.id === catalogModel?.id && !e.key)?.label;
+  const entry = navCrumb?.label ?? declared ?? pluralize(humanize(modelName));
+  if (recordId) {
+    return `${reportCrumb ?? `${humanize(modelName)} record`} · ${entry}`;
+  }
+  return `${entry} · ${navCrumb?.section ?? humanize(packageId)}`;
+});
+
 // What New creates, from the menu entry: "Sales Orders" -> "sales order".
 // An entry can declare its own noun ("Stock levels" -> "stock entry").
 const declaredNoun = $derived(
@@ -232,7 +260,7 @@ const inApp = $derived(
 </script>
 
 <svelte:head>
-  <title>{recordId ? `${humanize(modelName)} record · ` : ''}{modelName} · {humanize(packageId)} · smrt planner</title>
+  <title>{pageTitle} · smrt planner</title>
 </svelte:head>
 
 {#if model && applied}
@@ -244,7 +272,8 @@ const inApp = $derived(
           {navCrumb.label}
         {:else}
           <a href={appHref(sectionPath(navCrumb.sectionId))}>{navCrumb.section}</a>
-          / {navCrumb.label}
+          /
+          {#if reportCrumb}<a href={appHref(REPORT_LIST_PATH)}>{navCrumb.label}</a> / {reportCrumb}{:else}{navCrumb.label}{/if}
         {/if}
       {:else}
         {model.name}
@@ -258,7 +287,10 @@ const inApp = $derived(
     {/if}
     </div>
 
-    {#if recordId}
+    {#if catalogModel?.id === RUNTIME_REPORT_MODEL}
+      <!-- Saved reports: smrt-reports' screens over the plan's sample data. -->
+      <PlannerReports {recordId} bind:title={recordTitle} />
+    {:else if recordId}
       {#key recordId}
         <RecordView
           {packageId}
