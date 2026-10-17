@@ -158,6 +158,11 @@
       "import": "./dist/utils/database-url.js",
       "default": "./dist/utils/database-url.js"
     },
+    "./smrt-error": {
+      "types": "./dist/smrt-error.d.ts",
+      "import": "./dist/smrt-error.js",
+      "default": "./dist/smrt-error.js"
+    },
     "./utils/import-workspace-module": {
       "types": "./dist/utils/import-workspace-module.d.ts",
       "import": "./dist/utils/import-workspace-module.js",

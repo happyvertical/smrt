@@ -38,6 +38,9 @@ and repository rules.
   with `redactDatabaseUrl` / `redactDatabaseUrlsInText`
   (`src/utils/database-url.ts`, #3527): never the password or query string,
   and never the raw string when it cannot be parsed.
+- `SmrtError` lives in import-free `src/smrt-error.ts`, published as
+  `./smrt-error` (#4100) for browser-safe code that must not load the root
+  entry; `errors.ts` re-exports that one class. Keep it import-free.
 - Per-class registry work on the hydration path (manifest reconciliation in
   `ensureManifestLoaded()`, the simple-name index behind `findClass()`) is
   memoized per registry generation (`src/registry/generation.ts`, #3047). Any
