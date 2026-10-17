@@ -187,10 +187,13 @@ in the tooltip, there is no visible `<kbd>`), and off phones it closes the
 navigation region: it sits at the end of the nav (`margin-block-start: auto`),
 above the `leftSidebar.footer` slot, never below it. Order top to bottom, expanded
 and collapsed: nav, chevron, footer (the account menu; the compact avatar last
-in the collapsed rail). Expanded it lives inside the sidebar body
-(`tenant-stack`) and hugs the inner edge; collapsed it is the middle row of the
-rail stack (content, chevron, `tenantRailFooter`) and is centred. Only a rail
-with neither nav nor footer content draws it alone at the bottom. Phones replace it with the drawer's
+in the collapsed rail). It sits in the utility row
+(`.smrt-admin-shell__tenant-utilities`, after any `tenantUtilities` icons such
+as the color-scheme toggle). Expanded the row lives inside the sidebar body
+(`tenant-stack`) and the chevron hugs its inner edge; collapsed the row is the
+middle row of the rail stack (content, utilities, `tenantRailFooter`), stacked
+and centred. Only a rail with neither nav, utilities nor footer content draws
+the chevron alone at the bottom. Phones replace it with the drawer's
 icon-only "Close menu" at the top, so opening the drawer still focuses a close control. The
 header, footer and right toggles keep their region label and hotkey hint.
 
@@ -211,7 +214,7 @@ keep them stable), all movable in the layout editor like `item:brand`:
 | Item | Default slot | Phone | Opt out |
 | --- | --- | --- | --- |
 | `item:account` | `leftSidebar.footer` | compact avatar, last in the header band (`header.end`) | `accountMenu={false}`; `accountMenu={{ slot }}` sets the default |
-| `item:color-scheme` | `header.end` | icon-only (no label), accessible name kept | `colorSchemeToggle={false}`; `{ slot }` sets the default |
+| `item:color-scheme` | `leftSidebar.footer` (rendered in the sidebar utility row, see below) | icon button in the header band (`header.end`) | `colorSchemeToggle={false}`; `{ slot }` sets the default |
 | `item:command-palette` | `header.center` | search glyph button | off unless `commandPalette` is passed |
 
 `item:account` renders `WorkspaceAccountMenu` only when `user` is set (nothing
@@ -224,8 +227,18 @@ it shows the full identity (menu opens upward); everywhere else, and in the
 collapsed rail, it is the compact avatar. In the collapsed rail `AppShell`
 passes it as `tenantRailFooter` (outside the rail's scroll clip; the menu opens
 to the inline end over the workspace) instead of letting the footer slot fall
-back to another region. `item:color-scheme` reuses `ColorSchemeToggle` from
-`@happyvertical/smrt-ui/themes` (no second switcher). `item:command-palette`
+back to another region. `item:color-scheme` is `ShellColorSchemeToggle`
+(`src/components/app/`): an icon-only `ShellIconButton` over the
+`ThemeProvider` context (no second scheme store), named "Dark mode" with
+`aria-pressed`, showing the mode a press switches to (moon in light, sun in
+dark: `darkMode` / `lightMode` in the shell icon set) with a "Switch to dark
+mode" / "Switch to light mode" tooltip. Left in `leftSidebar.footer` on desktop
+it renders in `AdminShell`'s `tenantUtilities` row (#4107): toggle first, the
+collapse chevron at the inner edge, at the end of the nav region above the
+account; in the collapsed rail the row stacks (toggle, chevron) above the
+compact avatar. It never falls back to the header or footer while the left
+edge is shown; in edit mode it is an ordinary movable item in the footer drop
+zone. Will's standing default: never a labelled Light/Dark pill in the header. `item:command-palette`
 mounts the existing `CommandPalette` (`commandPalette: { providers, placeholder? }`,
 types `AppShellCommandPalette`/`AppShellAccountMenu` from `./app`): it owns the
 dialog and the global shortcut, so it mounts once. Planner-style hosts that
