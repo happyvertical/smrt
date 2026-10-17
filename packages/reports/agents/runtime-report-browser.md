@@ -20,6 +20,13 @@ chart and report results both consume it.
   `confirmPath` once while pending. Decline never calls the server. The server
   recompiles as the confirming principal and idempotently saves the approved
   spec; the hash carries no authority by itself.
+- Answered state (#4100): after Approve or Decline the card shows an outcome
+  line ("Saved to Shared reports · Open", "Declined — nothing saved") instead
+  of buttons; pass `outcome` from the transcript so a reloaded card does too.
+  `fields` (a source descriptor's names, labels, formats) labels groupings,
+  buckets ("Issue date by month") and money filters; measures use the result's
+  column labels. `ReportResult` labels time buckets by granularity
+  (smrt-ui `formatTimeBucket`) and keeps the table toggle quiet.
 - `ReportPicker`: offers readable active reports and their measures and
   dimensions; changing the report clears dependent choices.
 

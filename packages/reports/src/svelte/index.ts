@@ -13,7 +13,10 @@ export type {
   MaterializedReportDrilldown,
   MaterializedReportPage,
 } from './materialized.js';
-export { default as ReportConfirmation } from './ReportConfirmation.svelte';
+export {
+  default as ReportConfirmation,
+  type ReportConfirmationOutcome,
+} from './ReportConfirmation.svelte';
 export { default as ReportDetail } from './ReportDetail.svelte';
 export { default as ReportPicker } from './ReportPicker.svelte';
 export { default as ReportResult } from './ReportResult.svelte';

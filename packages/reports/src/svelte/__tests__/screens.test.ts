@@ -8,7 +8,7 @@ import {
 } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MaterializedReportTable from '../MaterializedReportTable.svelte';
-import { client, proposal, result, saved } from '../preview-data.js';
+import { client, proposal, result, saved, spec } from '../preview-data.js';
 import ReportConfirmation from '../ReportConfirmation.svelte';
 import ReportDetail from '../ReportDetail.svelte';
 import ReportPicker from '../ReportPicker.svelte';
@@ -179,13 +179,54 @@ describe('saved report screens', () => {
   it('describes the proposal and rejects synthetic approval; decline saves nothing', async () => {
     const confirm = vi.fn(async () => saved);
     render(ReportConfirmation, { proposal, confirm });
-    expect(screen.getByText('Sum of amount')).toBeTruthy();
+    // Measures read as the result's own column labels, not "Sum of amount".
+    expect(screen.getByText('Measures').nextElementSibling?.textContent).toBe(
+      'Total',
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(confirm).not.toHaveBeenCalled();
     await fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(screen.getByText('Declined — nothing saved')).toBeTruthy();
+  });
+  it('shows a saved answer as an outcome line with no buttons', () => {
+    render(ReportConfirmation, {
+      proposal,
+      confirm: async () => saved,
+      outcome: { status: 'saved', report: { id: 'report-1', title: 'x' } },
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull();
     expect(
-      screen.getByText('Report declined. Nothing was saved.'),
-    ).toBeTruthy();
+      screen.getByRole('link', { name: 'Open' }).getAttribute('href'),
+    ).toBe('/reports/report-1');
+  });
+  it('shows an earlier answer read-only, as after a transcript reload', () => {
+    render(ReportConfirmation, {
+      proposal,
+      confirm: async () => saved,
+      outcome: { status: 'declined' },
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.getByText('Declined — nothing saved')).toBeTruthy();
+  });
+  it('labels groupings, buckets and money filters from the source fields', () => {
+    render(ReportConfirmation, {
+      proposal: {
+        ...proposal,
+        spec: {
+          ...spec,
+          dimensions: [{ field: 'issueDate', bucket: 'month', as: 'region' }],
+          filters: [{ field: 'amount', op: 'gt', value: 50000 }],
+        },
+      },
+      confirm: async () => saved,
+      fields: [
+        { name: 'issueDate', label: 'Issue date' },
+        { name: 'amount', label: 'Amount', format: 'money' },
+      ],
+    });
+    expect(screen.getByText('Issue date by month')).toBeTruthy();
+    expect(screen.getByText('Amount is greater than $500.00')).toBeTruthy();
   });
   it('refuses a mismatching preview hash', () => {
     render(ReportConfirmation, {
