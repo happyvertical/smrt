@@ -29,6 +29,7 @@ describe('cookbook data', () => {
     expect(libraryCookbooks.map((c) => c.id)).toEqual([
       'agency',
       'bakery',
+      'band',
       'roaster',
       'electrician',
       'equipment-rental',
