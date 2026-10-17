@@ -72,4 +72,10 @@ export const COOKBOOK_ICONS: Record<string, readonly string[]> = {
     'M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7',
     'M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6',
   ],
+  music: [
+    'M3 17a3 3 0 1 0 6 0a3 3 0 0 0-6 0',
+    'M13 17a3 3 0 1 0 6 0a3 3 0 0 0-6 0',
+    'M9 17v-13h10v13',
+    'M9 8h10',
+  ],
 };
