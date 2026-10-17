@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 import { embeddedPDF } from '../../src/test-support/extraction-fixtures.js';
 import { twoPagePDF } from './fixtures.js';
@@ -464,4 +464,164 @@ test('human page regrouping preserves the original and forces new review after r
   expect(final.reviews.actions[0].review.revision).toBe(
     before.reviews.actions[0].review.revision + 1,
   );
+});
+
+test('same local file reselection starts a new upload while chooser cancellation retains retry', async ({
+  page,
+}) => {
+  await signIn(page);
+  const bytes = embeddedPDF('Explicit same-file selection evidence.');
+  const path = test.info().outputPath('same-original.pdf');
+  await writeFile(path, bytes);
+  const expectedHash = createHash('sha256').update(bytes).digest('hex');
+  const requests: { key: string; sourceHash: boolean }[] = [];
+  const receipts: string[] = [];
+  page.on('response', async (response) => {
+    if (
+      response.url().endsWith('/api/upload') &&
+      response.request().method() === 'POST' &&
+      response.ok()
+    )
+      receipts.push((await response.json()).itemId);
+  });
+  await page.route('**/api/upload', async (route) => {
+    const request = route.request();
+    requests.push({
+      key: request.headers()['idempotency-key'],
+      sourceHash: request.postData()!.includes(expectedHash),
+    });
+    if (requests.length <= 2) {
+      await route.fulfill({
+        status: 503,
+        body: 'Synthetic transport unavailable',
+      });
+      return;
+    }
+    await route.continue();
+  });
+  const input = page.locator('input[type=file]');
+  const picker = page.getByText('Choose intake files', { exact: true });
+  const upload = page.getByRole('button', { name: 'Upload', exact: true });
+  async function choose() {
+    const chooser = page.waitForEvent('filechooser');
+    await picker.click();
+    await (await chooser).setFiles(path);
+  }
+  await choose();
+  await upload.click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  expect(requests).toHaveLength(1);
+  const originalKey = requests[0].key;
+  expect(originalKey).toMatch(/^[0-9a-f-]{36}$/);
+
+  // Opening without selecting a new file must not discard the retained retry.
+  const cancelled = page.waitForEvent('filechooser');
+  await picker.click();
+  await cancelled;
+  await page.keyboard.press('Escape');
+  await expect(
+    page.getByText('1 file selected', { exact: true }),
+  ).toBeVisible();
+  await expect(upload).toBeEnabled();
+  await upload.click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole('alert')).toBeVisible();
+  expect(requests[1].key).toBe(originalKey);
+  expect(requests.every((request) => request.sourceHash)).toBe(true);
+
+  // Exact same path, name and bytes, selected through Chromium's native picker.
+  await choose();
+  await upload.click();
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2].key).not.toBe(originalKey);
+  await expect(page.getByTestId('intake-review')).toBeVisible();
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  await expect(upload).toBeDisabled();
+
+  // The successful selection's native FileList must not suppress another arrival.
+  expect(
+    await input.evaluate((element: HTMLInputElement) => element.files?.length),
+  ).toBe(1);
+  await choose();
+  await expect(upload).toBeEnabled();
+  await upload.click();
+  await expect.poll(() => receipts.length).toBe(2);
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  expect(requests[3].key).not.toBe(requests[2].key);
+  expect(new Set(receipts).size).toBe(2);
+  expect(requests.every((request) => request.sourceHash)).toBe(true);
+});
+
+test('switching intake context discards chooser retry state and fences a late real upload', async ({
+  page,
+}) => {
+  await signIn(page);
+  const path = test.info().outputPath('old-context.pdf');
+  await writeFile(
+    path,
+    embeddedPDF('Old context must not select this receipt.'),
+  );
+  let release!: () => void;
+  let started!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requested = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route('**/api/upload', async (route) => {
+    started();
+    await pending;
+    await route.continue();
+  });
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByText('Choose intake files', { exact: true }).click();
+  await (await chooser).setFiles(path);
+  await page.getByRole('button', { name: 'Upload', exact: true }).click();
+  await requested;
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'true',
+  );
+  await page
+    .getByRole('button', { name: 'Switch intake context', exact: true })
+    .click();
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Upload', exact: true }),
+  ).toBeDisabled();
+  expect(
+    await page
+      .locator('input[type=file]')
+      .evaluate((element: HTMLInputElement) => element.files?.length),
+  ).toBe(0);
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/upload') &&
+      response.request().method() === 'POST',
+  );
+  release();
+  const response = await uploaded;
+  expect(response.ok()).toBe(true);
+  const original = await response.json();
+  expect(original.itemId).toBeTruthy();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  await expect(page.getByTestId('intake-review')).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get('itemId')).toBeNull();
+  await expect(
+    page.getByRole('button', { name: 'Upload', exact: true }),
+  ).toBeDisabled();
 });

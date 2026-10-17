@@ -113,7 +113,8 @@ onMount(() => {
 <Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />
 <Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button>
 </div>
-<FilePicker bind:files onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
+<!-- Keep retry Files separately; an unchanged native FileList must not suppress a deliberate reselection. -->
+<FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
 <Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}

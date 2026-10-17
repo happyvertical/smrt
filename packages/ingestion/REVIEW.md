@@ -176,3 +176,9 @@ new receipt identity, even when names match. Successful upload clears the select
 and identity. Replacing the authenticated host/context or destroying the component
 discards both and fences late completion from the prior context. No automatic
 upload retry or authorization bypass occurs.
+
+The inbox clears only its native file-input value when opening the picker, so
+choosing the same local file explicitly starts a new upload identity. Opening
+then dismissing the chooser preserves the separately retained originals and
+request identity for retry; it does not clear the shared FilePicker's native-form
+behavior. Successful upload and host/context disposal still discard retry state.
