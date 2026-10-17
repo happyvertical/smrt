@@ -13,6 +13,7 @@
 import {
   Checkbox,
   Fieldset,
+  Form,
   Radio,
   RadioGroup,
   Select,
@@ -29,6 +30,7 @@ import {
 } from './assistant-question.js';
 
 export interface Props {
+  /** The structured question to ask: its prompt, fields and options. */
   question: AssistantQuestion;
   /** The answer, when given (from the question itself or the host). */
   answered?: AssistantQuestionAnswer | null;
@@ -36,6 +38,7 @@ export interface Props {
   onsubmit: (values: AssistantQuestionAnswer) => void | Promise<void>;
   /** Move focus into the form when it appears (the newest message). */
   autofocus?: boolean;
+  /** Lock the controls (a turn is in flight elsewhere). */
   disabled?: boolean;
 }
 
@@ -56,14 +59,14 @@ let values = $state<AssistantQuestionAnswer>(
 );
 let submitting = $state(false);
 let submitted = $state<AssistantQuestionAnswer | null>(null);
-let form = $state<HTMLFormElement | null>(null);
+let container = $state<HTMLDivElement | null>(null);
 
 const answer = $derived(answered ?? question.answer ?? submitted);
 const valid = $derived(validateAssistantQuestionAnswer(question, values));
 
 $effect(() => {
-  if (autofocus && form && !answer) {
-    form
+  if (autofocus && container && !answer) {
+    container
       .querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled)')
       ?.focus();
   }
@@ -89,8 +92,7 @@ const isChecked = (name: string, value: string) => {
   return Array.isArray(current) ? current.includes(value) : current === value;
 };
 
-async function submit(event: SubmitEvent) {
-  event.preventDefault();
+async function submit() {
   const chosen = validateAssistantQuestionAnswer(question, values);
   if (!chosen || submitting || answer) return;
   submitting = true;
@@ -105,14 +107,18 @@ async function submit(event: SubmitEvent) {
 }
 </script>
 
-<div class="assistant-question" data-smrt-component="AssistantQuestionForm">
+<div
+  bind:this={container}
+  class="assistant-question"
+  data-smrt-component="AssistantQuestionForm"
+>
   {#if answer}
     <p class="assistant-question-summary" role="status">
       <span class="assistant-question-prompt">{question.prompt}</span>
       {describeAssistantQuestionAnswer(question, answer)}
     </p>
   {:else}
-    <form bind:this={form} onsubmit={submit} aria-label={question.prompt}>
+    <Form class="assistant-question-form" onsubmit={submit} aria-label={question.prompt}>
       <Fieldset legend={question.prompt} stack>
         {#snippet children()}
           {#each question.fields as field (field.name)}
@@ -179,7 +185,7 @@ async function submit(event: SubmitEvent) {
           {question.submitLabel ?? t(M['chat.assistant_question.submit'])}
         </Button>
       </div>
-    </form>
+    </Form>
   {/if}
 </div>
 
@@ -190,7 +196,7 @@ async function submit(event: SubmitEvent) {
     margin-block-start: var(--smrt-spacing-2);
   }
 
-  .assistant-question form {
+  .assistant-question :global(.assistant-question-form) {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
