@@ -90,6 +90,15 @@ export interface RecipeWidgetSurface {
   data?: RecipeWidgetData;
   /** Overview ids the widget may appear in; omitted means any. */
   allowedIn?: readonly string[];
+  /**
+   * The widget is the recipe's section page: when this recipe leads a
+   * navigation section (the first recipe suggesting it), a host that renders
+   * data widgets defaults that section's overview to this widget at full
+   * width, in place of the generic shortcuts, count and latest records. At
+   * most one per recipe; every required option needs a `default`, because the
+   * default is placed with no options. The person can still edit the page.
+   */
+  sectionDefault?: boolean;
   /** Column spans, 1 to 4 (`minSpan <= defaultSpan <= maxSpan`). */
   defaultSpan?: number;
   minSpan?: number;
