@@ -120,9 +120,10 @@ Every field but `reply` is optional:
   only in host mode; a browser or bring-your-own model's `commands` are ignored.
 - `report` (#4100): a runtime report the visitor asked for, as an intent, never
   a spec: `{ "source": "invoices", "measures"?: [{ "fn": "count|sum|avg|min|max",
-  "field"? }], "groupBy"?, "bucket"?: "day|week|month|quarter|year", "period"?:
-  "last_month|...", "dateField"?, "filters"?: [{ "field", "op", "value" }],
-  "title"? }`. Money filter values are in currency units (`500` for $500); the
+  "field"? }], "groupBy"?, "bucket"?: "minute|hour|day|week|month|quarter|year",
+  "range"?: "last 90 days" (a period in words), "period"?: "last_month|...",
+  "dateField"?, "filters"?: [{ "field", "op", "value" }], "title"? }`. The planner
+  resolves time words in code against its clock. Money filter values are in currency units (`500` for $500); the
   planner scales them to integer minor units. `parseHostReply` keeps the parts
   it could not read in `report.unreadable` (a list of short phrases, also in
   `issues`); the planner asks about them instead of building a broader report.
