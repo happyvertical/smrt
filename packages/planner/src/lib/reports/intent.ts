@@ -64,6 +64,7 @@ export type ReportFilterOp = (typeof REPORT_FILTER_OPS)[number];
 const MAX_MEASURES = 4;
 const MAX_FILTERS = 3;
 const MAX_NAME = 64;
+const MAX_UNREADABLE = 8;
 
 /** What the model says it wants. Everything but `source` is optional. */
 export interface ReportIntent {
@@ -162,8 +163,24 @@ export function parseReportIntent(value: unknown): ReportIntent | null {
   if (!source) return null;
   // A part the model stated but that cannot be read is recorded, never
   // dropped: dropping a filter or a period would silently broaden the report.
-  const unreadable: string[] = [];
   const stated = (key: string) => raw[key] !== undefined && raw[key] !== null;
+  // A host server parses the model's reply first and passes on what it could
+  // not read; keep that (bounded) so the browser still asks about it.
+  const unreadable: string[] = Array.isArray(raw.unreadable)
+    ? raw.unreadable
+        .filter(
+          (entry): entry is string =>
+            typeof entry === 'string' && entry.trim().length > 0,
+        )
+        .slice(0, MAX_UNREADABLE)
+        .map((entry) => entry.trim().slice(0, MAX_NAME))
+    : [];
+  if (stated('measures') && !Array.isArray(raw.measures)) {
+    unreadable.push('the measures');
+  }
+  if (stated('filters') && !Array.isArray(raw.filters)) {
+    unreadable.push('the filters');
+  }
   const measures = Array.isArray(raw.measures)
     ? raw.measures.slice(0, MAX_MEASURES).flatMap((entry) => {
         const m = (entry && typeof entry === 'object' ? entry : {}) as Record<

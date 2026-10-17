@@ -123,7 +123,10 @@ Every field but `reply` is optional:
   "field"? }], "groupBy"?, "bucket"?: "day|week|month|quarter|year", "period"?:
   "last_month|...", "dateField"?, "filters"?: [{ "field", "op", "value" }],
   "title"? }`. Money filter values are in currency units (`500` for $500); the
-  planner scales them to integer minor units. `buildHostPrompt` lists the plan's report sources (`Report
+  planner scales them to integer minor units. `parseHostReply` keeps the parts
+  it could not read in `report.unreadable` (a list of short phrases, also in
+  `issues`); the planner asks about them instead of building a broader report.
+  `buildHostPrompt` lists the plan's report sources (`Report
   sources: invoices (Invoices), ...`). The planner builds the spec, validates
   it with smrt-reports' parser, turns on Reports, runs a preview over its
   sample records and saves it only when the visitor approves; a source or field

@@ -148,6 +148,12 @@ export function parseHostReply(
     change.reply = FALLBACK_REPLY;
     issues.push('the reply had no "reply" sentence');
   }
+  if (change.report?.unreadable?.length) {
+    // Passed on in `report.unreadable` so the planner asks about them.
+    issues.push(
+      `report parts it could not read: ${change.report.unreadable.join(', ')}`,
+    );
+  }
   if (change.commands) {
     const valid: { name: string; input: unknown }[] = [];
     for (const call of change.commands) {
