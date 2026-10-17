@@ -190,6 +190,25 @@ describe('CSV and times', () => {
     expect(csv).toBe('Region,Total\r\n"\'=HYPERLINK(""x"")",$123.45\r\n');
   });
 
+  it('leaves negative numbers as numbers (R14-F1)', () => {
+    const csv = reportCsv(
+      {
+        ...result,
+        rows: [
+          { region: '-West', total: -500 },
+          { region: 'East', total: -3 },
+        ],
+      },
+      (value, column) =>
+        column.id === 'total'
+          ? value === -500
+            ? '-$5.00'
+            : String(value)
+          : String(value ?? ''),
+    );
+    expect(csv).toBe("Region,Total\r\n'-West,-$5.00\r\nEast,-3\r\n");
+  });
+
   it('reads a time relative to now', () => {
     const now = new Date('2026-10-17T12:00:00Z');
     expect(relativeTime('2026-10-15T12:00:00Z', 'en', now)).toBe('2 days ago');

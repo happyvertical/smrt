@@ -344,9 +344,12 @@ export function relativeTime(
   return justNow ?? format.format(0, 'second');
 }
 
-/** A cell as CSV text: quoted when needed, and never read as a formula. */
-function csvCell(text: string): string {
-  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+/**
+ * A cell as CSV text: quoted when needed, and a text cell is never read as a
+ * formula. A number column's cell ("-$5.00", "-3") is left as a number.
+ */
+function csvCell(text: string, numeric = false): string {
+  const safe = !numeric && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
   return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
@@ -359,7 +362,13 @@ export function reportCsv(
     result.columns.map((column) => csvCell(column.label)).join(','),
     ...result.rows.map((row) =>
       result.columns
-        .map((column) => csvCell(cell(row[column.id], column)))
+        .map((column) =>
+          csvCell(
+            cell(row[column.id], column),
+            (column.type === 'integer' || column.type === 'decimal') &&
+              typeof row[column.id] === 'number',
+          ),
+        )
         .join(','),
     ),
   ];
