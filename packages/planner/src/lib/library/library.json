@@ -3219,6 +3219,512 @@
           }
         }
       }
+    },
+    {
+      "id": "music-teacher",
+      "name": "Music teacher",
+      "icon": "music",
+      "summary": "Students, lesson schedule, packages, recitals and billing for a music teacher or studio.",
+      "keywords": [
+        "music teacher",
+        "music lessons",
+        "music studio",
+        "music school",
+        "piano teacher",
+        "piano lessons",
+        "guitar lessons",
+        "violin lessons",
+        "voice lessons",
+        "singing lessons",
+        "drum lessons",
+        "recital",
+        "instrument rental",
+        "sheet music"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Due at the start of each month",
+        "taxRate": 0
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#6d28d9",
+            "fontFamily": "Georgia"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.invoicing",
+          "commerce.leases",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxExempt",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due at the start of each month\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:lessons",
+            "custom:students",
+            "custom:instruments",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:lessons": [
+              "item:events:Event",
+              "item:events:EventSeries",
+              "item:events:EventType"
+            ],
+            "custom:students": [
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:instruments": [
+              "item:commerce:Lease",
+              "item:products:Product",
+              "item:inventory:StockLevel"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:events:Event": "custom:lessons",
+            "item:events:EventSeries": "custom:lessons",
+            "item:events:EventType": "custom:lessons",
+            "item:commerce:Customer": "custom:students",
+            "item:commerce:Agreement": "custom:students",
+            "item:commerce:Lease": "custom:instruments",
+            "item:products:Product": "custom:instruments",
+            "item:inventory:StockLevel": "custom:instruments",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:lessons",
+              "label": "Lessons"
+            },
+            {
+              "id": "custom:students",
+              "label": "Students"
+            },
+            {
+              "id": "custom:instruments",
+              "label": "Rentals & shop"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:events:Event": {
+              "label": "Lesson calendar",
+              "description": "Every lesson, group class and recital, with the teacher and the room."
+            },
+            "item:events:EventSeries": {
+              "label": "Weekly slots",
+              "description": "A student’s regular lesson time, set up once for the term."
+            },
+            "item:events:EventType": {
+              "label": "Lesson types",
+              "description": "Private lessons, group classes and recitals, with their length."
+            },
+            "item:commerce:Customer": {
+              "label": "Students & families",
+              "description": "Your students, with a parent or guardian to contact for younger ones."
+            },
+            "item:commerce:Agreement": {
+              "label": "Lesson packages",
+              "description": "Term enrolments and lesson packs, with who holds them and when they renew."
+            },
+            "item:commerce:Lease": {
+              "label": "Instrument rentals",
+              "description": "Instruments out on rent, with the student, the dates and the monthly fee."
+            },
+            "item:products:Product": {
+              "label": "Books & instruments",
+              "description": "Method books, sheet music, accessories and rental instruments, with prices."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Stock",
+              "description": "Books, strings and rental instruments on the shelf."
+            }
+          },
+          "sections": {
+            "custom:lessons": {
+              "icon": "school"
+            },
+            "custom:students": {
+              "icon": "users"
+            },
+            "custom:instruments": {
+              "icon": "package"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      },
+      "sectionDescriptions": {
+        "custom:lessons": "Lessons, recitals and the weekly timetable.",
+        "custom:students": "Students, their families and the packages they hold.",
+        "custom:instruments": "Instrument rentals, books and sheet music on the shelf.",
+        "custom:billing": "Invoices and the payments against them."
+      }
+    },
+    {
+      "id": "band",
+      "name": "Band",
+      "icon": "microphone",
+      "summary": "Gigs, venues, booking contracts, merch and billing for a band.",
+      "keywords": [
+        "band",
+        "gigs",
+        "gigging",
+        "live music",
+        "musicians",
+        "ensemble",
+        "wedding band",
+        "cover band",
+        "venues",
+        "booking",
+        "promoter",
+        "merch",
+        "merchandise",
+        "tour",
+        "residency"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "50% deposit, balance on the night",
+        "taxRate": 0
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#b91c1c"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "expenses.tracking",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"50% deposit, balance on the night\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:gigs",
+            "custom:bookings",
+            "custom:merch",
+            "custom:money",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:gigs": [
+              "item:events:Event",
+              "item:events:EventSeries",
+              "item:events:EventType"
+            ],
+            "custom:bookings": [
+              "item:commerce:Customer",
+              "item:commerce:Estimate",
+              "item:commerce:Agreement"
+            ],
+            "custom:merch": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Order",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:money": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment",
+              "item:expenses:Expense"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:events:Event": "custom:gigs",
+            "item:events:EventSeries": "custom:gigs",
+            "item:events:EventType": "custom:gigs",
+            "item:commerce:Customer": "custom:bookings",
+            "item:commerce:Estimate": "custom:bookings",
+            "item:commerce:Agreement": "custom:bookings",
+            "item:products:Product": "custom:merch",
+            "item:inventory:StockLevel": "custom:merch",
+            "item:commerce:Order": "custom:merch",
+            "item:commerce:Vendor": "custom:merch",
+            "item:commerce:PurchaseOrder": "custom:merch",
+            "item:commerce:Invoice": "custom:money",
+            "item:commerce:Payment": "custom:money",
+            "item:expenses:Expense": "custom:money"
+          },
+          "customSections": [
+            {
+              "id": "custom:gigs",
+              "label": "Gigs"
+            },
+            {
+              "id": "custom:bookings",
+              "label": "Bookings"
+            },
+            {
+              "id": "custom:merch",
+              "label": "Merch"
+            },
+            {
+              "id": "custom:money",
+              "label": "Money"
+            }
+          ],
+          "items": {
+            "item:events:Event": {
+              "label": "Show calendar",
+              "description": "Every gig and rehearsal, with the venue, the call time and who is playing."
+            },
+            "item:events:EventSeries": {
+              "label": "Residencies",
+              "description": "Regular nights at the same venue, set up once."
+            },
+            "item:events:EventType": {
+              "label": "Show types",
+              "description": "The kinds of date you play, like a club night, a wedding, a festival set or a rehearsal."
+            },
+            "item:commerce:Customer": {
+              "label": "Venues & promoters",
+              "description": "The venues, promoters and private clients who book you, with how to reach them."
+            },
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Quotes for a booking, ready to become a contract when accepted."
+            },
+            "item:commerce:Agreement": {
+              "label": "Booking contracts",
+              "description": "The fee, deposit and terms agreed for each show."
+            },
+            "item:products:Product": {
+              "label": "Products",
+              "description": "Shirts, records, posters and anything else on the merch table, with prices."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Stock",
+              "description": "What is in the merch cases and what is left at the rehearsal space."
+            },
+            "item:commerce:Order": {
+              "label": "Sales",
+              "description": "Merch sold at shows and online."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The printers and pressing plants that make your merch."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Print & pressing orders",
+              "description": "Shirts and records you have ordered and when they arrive."
+            },
+            "item:commerce:Invoice": {
+              "label": "Invoices",
+              "description": "Bills for deposits and show fees, and which are still owed."
+            },
+            "item:commerce:Payment": {
+              "label": "Payments",
+              "description": "Fees, deposits and merch money that has come in."
+            },
+            "item:expenses:Expense": {
+              "label": "Expenses",
+              "description": "Van hire, strings, rehearsal space and travel, with who paid and what to pay back."
+            }
+          },
+          "sections": {
+            "custom:gigs": {
+              "icon": "calendar"
+            },
+            "custom:bookings": {
+              "icon": "fileText"
+            },
+            "custom:merch": {
+              "icon": "shoppingBag"
+            },
+            "custom:money": {
+              "icon": "receipt"
+            }
+          }
+        }
+      },
+      "sectionDescriptions": {
+        "custom:gigs": "Shows, rehearsals and residencies on the calendar.",
+        "custom:bookings": "Venues, quotes and the contract for each booking.",
+        "custom:merch": "Merch, stock, sales and who makes it for you.",
+        "custom:money": "Invoices, payments and what the band spends."
+      }
     }
   ]
 }

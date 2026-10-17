@@ -163,6 +163,8 @@ describe('library cookbooks', () => {
       roofer: 'exclusive line',
       painter: 'exclusive line',
       electrician: 'exclusive line',
+      'music-teacher': 'exclusive line',
+      band: 'exclusive line',
     });
   });
 
