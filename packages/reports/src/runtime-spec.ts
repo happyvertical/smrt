@@ -13,12 +13,13 @@
  * principal, a permission, a table, a column alias that is not a plain
  * identifier, or an SQL fragment.
  *
- * Browser-safe (#4100): this module imports no Node built-in, so the grammar
- * ships on the `./spec` subpath. The `node:crypto` hash lives in
+ * Browser-safe (#4100): this module imports no Node built-in and, of
+ * smrt-core, only the import-free `SmrtError` subpath (never the root entry),
+ * so the grammar ships on the `./spec` subpath. The `node:crypto` hash lives in
  * `runtime-spec-hash.ts`, which only server modules import.
  */
 
-import { SmrtError } from '@happyvertical/smrt-core';
+import { SmrtError } from '@happyvertical/smrt-core/smrt-error';
 
 export const RUNTIME_REPORT_SPEC_VERSION = 1 as const;
 

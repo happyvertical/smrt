@@ -63,8 +63,10 @@ The parser normalizes defaults and derives aliases, so equal specs hash equally
 
 ## Browser grammar and in-memory runner (#4100)
 
-`@happyvertical/smrt-reports/spec` imports no Node built-in, so a browser
-parses specs with the server's own parser. `runRuntimeReportInMemory(spec,
+`@happyvertical/smrt-reports/spec` imports no Node built-in and, of
+smrt-core, only the import-free `@happyvertical/smrt-core/smrt-error` (the
+root entry still reaches the registry's manifest loader), so a browser parses
+specs with the server's own parser. `runRuntimeReportInMemory(spec,
 rows, { sources, maxRows?, now? })` evaluates a parsed spec over rows the
 caller already holds and returns the `RuntimeReportResult` shape (`specHash`
 included). A `RuntimeReportMemorySource` is `{ id, label?, description?,

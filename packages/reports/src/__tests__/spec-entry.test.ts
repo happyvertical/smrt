@@ -15,11 +15,14 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENTRY = resolve(SRC, 'spec.ts');
 
 /**
- * Packages the entry may import at runtime. Each must resolve to a browser
- * build through its own export map; smrt-core's browser entry is guarded by
- * core's `browser-entry-parity` test.
+ * The only package module the entry may import at runtime: smrt-core's
+ * dependency-free `SmrtError`. Never smrt-core's root, whose browser entry
+ * still reaches the registry and manifest loader (`process.env` at load), so
+ * a browser bundle of it fails before any report code runs.
  */
-const BROWSER_SAFE_PACKAGES = new Set(['@happyvertical/smrt-core']);
+const ALLOWED_PACKAGE_IMPORTS = new Set([
+  '@happyvertical/smrt-core/smrt-error',
+]);
 
 const BUILTINS = new Set(builtinModules);
 
@@ -117,22 +120,32 @@ describe('./spec browser entry (#4100)', () => {
     expect(builtins).toEqual([]);
   });
 
-  it('imports only packages that publish a browser build', () => {
-    const packages = new Set(
-      graph.external.map(({ specifier }) => packageName(specifier)),
+  it('imports no package module but the dependency-free SmrtError', () => {
+    const specifiers = new Set(
+      graph.external.map(({ specifier }) => specifier),
     );
-    for (const name of packages) {
-      expect(BROWSER_SAFE_PACKAGES.has(name), name).toBe(true);
+    for (const specifier of specifiers) {
+      expect(ALLOWED_PACKAGE_IMPORTS.has(specifier), specifier).toBe(true);
     }
-    for (const name of BROWSER_SAFE_PACKAGES) {
-      const manifest = JSON.parse(
-        readFileSync(
-          resolve(SRC, '..', 'node_modules', name, 'package.json'),
-          'utf8',
-        ),
-      ) as { exports?: Record<string, Record<string, string>> };
-      expect(manifest.exports?.['.']?.browser, name).toBeTruthy();
-    }
+    // And that module itself imports nothing.
+    const core = resolve(
+      SRC,
+      '..',
+      'node_modules',
+      '@happyvertical',
+      'smrt-core',
+    );
+    const manifest = JSON.parse(
+      readFileSync(resolve(core, 'package.json'), 'utf8'),
+    ) as { exports: Record<string, { import?: string }> };
+    expect(manifest.exports['./smrt-error']?.import).toBe(
+      './dist/smrt-error.js',
+    );
+    expect(
+      runtimeSpecifiers(
+        readFileSync(resolve(core, 'src', 'smrt-error.ts'), 'utf8'),
+      ),
+    ).toEqual([]);
   });
 
   it('is published as the ./spec subpath', () => {

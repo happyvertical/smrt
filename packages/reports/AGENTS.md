@@ -91,7 +91,8 @@ contract, authority model, and deferred work are in
 `runRuntimeReportInMemory()`, which evaluates a spec over caller-held rows with
 the compiler's own rules (`runtime-plan.ts`). It is a preview and test runner,
 never an authority boundary. `spec-entry.test.ts` fails if that entry reaches a
-Node built-in; `runtime-memory-parity.test.ts` holds it to the SQL path.
+Node built-in or any package module but `@happyvertical/smrt-core/smrt-error`;
+`runtime-memory-parity.test.ts` holds it to the SQL path.
 
 ## Recipes (#3719)
 
