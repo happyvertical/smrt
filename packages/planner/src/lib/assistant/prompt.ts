@@ -98,6 +98,9 @@ function examples(
   ).map((e) => `"${e.says}" -> ${JSON.stringify(e.answer)}`);
 }
 
+/** The recipe a request for a report or a summary of the app's data needs. */
+export const REPORTS_RECIPE = 'reports.runtime';
+
 /** Tax is shown as a percent, the unit the person says it in. */
 export function formatTaxPercent(fraction: number): string {
   return `${Number((fraction * 100).toFixed(4))}%`;
@@ -166,6 +169,11 @@ export function buildSystemPrompt(
   out.push(
     '"reply" never claims anything beyond add, remove, cookbook, settings, theme and open: the app reports what changed.',
   );
+  if (recipes.some((r) => r.id === REPORTS_RECIPE)) {
+    out.push(
+      `A report or summary of their data needs ${REPORTS_RECIPE} (Reports): add it, and open only its section, never another. You cannot build the report itself yet.`,
+    );
+  }
   const shown = examples(
     new Set(recipes.map((r) => r.id)),
     new Set(cookbooks.map((c) => c.id)),

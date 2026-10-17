@@ -22,7 +22,11 @@ import {
 } from './change.ts';
 import { buildMatchIndex, matchText } from './match.ts';
 import type { OfferRef } from './offers.svelte.ts';
-import { buildSystemPrompt, type CookbookBrief } from './prompt.ts';
+import {
+  buildSystemPrompt,
+  type CookbookBrief,
+  REPORTS_RECIPE,
+} from './prompt.ts';
 import type { ThemeUndoRef } from './theme-undo.svelte.ts';
 
 /** The slice of `@happyvertical/ai`'s provider the transport uses. */
@@ -145,6 +149,13 @@ function runCommands(
 
 /** Said when a turn changed nothing and the model's sentence was not a question. */
 export const NOTHING_CHANGED = 'Nothing in the app changed.';
+
+/** Said after a report request: the planner cannot build one yet (smrt#4100). */
+export const REPORTS_PENDING =
+  'Building the report itself is not available in the planner yet; it will live under Reports.';
+
+/** The Reports menu entry (reports.runtime's RuntimeReport). */
+const REPORTS_ITEM = 'item:reports:RuntimeReport';
 
 /**
  * What the chat says for a turn. When something ran, the commands' own
@@ -335,9 +346,20 @@ export function createBrowserAssistantTransport(
       const commandText = (change.commands ?? []).length
         ? runCommands(planner, change.commands ?? [])
         : '';
-      const openText = change.open
-        ? openSection(planner, change.open, menu)
-        : '';
+      // A request for a report or a summary of the data (the keyword match
+      // finds reports.runtime) goes to Reports or nowhere: an `open` of any
+      // other section (the product catalogue, say) is dropped.
+      const reportRequest = matches.some(
+        (m) => m.kind === 'recipe' && m.id === REPORTS_RECIPE,
+      );
+      const reportsSection = planner
+        .snapshot()
+        .sections.find((s) => s.items.some((i) => i.id === REPORTS_ITEM))?.id;
+      const open =
+        change.open && (!reportRequest || change.open === reportsSection)
+          ? change.open
+          : undefined;
+      const openText = open ? openSection(planner, open, menu) : '';
       const summary = [
         describeChange(applied, options.recipes),
         settingsText,
@@ -366,7 +388,12 @@ export function createBrowserAssistantTransport(
         ? cookbooks.find((c) => c.id === cookbookId)
         : undefined;
       const line = change.reply || (offered ? `Set up ${offered.name}?` : '');
-      const reply = honestReply(line, summary, !!offer);
+      const reply = [
+        honestReply(line, summary, !!offer),
+        reportRequest ? REPORTS_PENDING : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
       if (reply) options.onReply?.(reply);
       // One ref renders as is; a cookbook offer and a theme Undo in one turn ride together.
       const refs = offer && undo ? [offer, undo] : (offer ?? undo);

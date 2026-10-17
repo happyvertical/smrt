@@ -11,6 +11,7 @@ import {
   type ChatModel,
   createBrowserAssistantTransport,
   NOTHING_CHANGED,
+  REPORTS_PENDING,
 } from '../src/lib/assistant/transport.ts';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import { createPlannerController } from '../src/lib/planner/commands/index.ts';
@@ -72,7 +73,7 @@ describe('assistant honesty', () => {
     );
     expect(await say('hm')).toBe(NOTHING_CHANGED);
     // A question asks; it claims nothing.
-    expect(await say('a summary')).toBe('Which month do you mean?');
+    expect(await say('which period?')).toBe('Which month do you mean?');
   });
 
   it('reports what ran from the results, not the model sentence', async () => {
@@ -158,7 +159,7 @@ describe('assistant honesty', () => {
         open: 'section:reports',
       }),
     );
-    expect(await say('take me to reports')).toBe(
+    expect(await say('take me to the invoices')).toBe(
       `Opening Reports. ${NOTHING_CHANGED}`,
     );
     expect(setSection).not.toHaveBeenCalled();
@@ -166,5 +167,59 @@ describe('assistant honesty', () => {
       properties: Record<string, unknown>;
     };
     expect(schema.properties.open).toBeUndefined();
+  });
+});
+
+describe('report requests (the runtime report flow is smrt#4100)', () => {
+  it('a sales-report request never opens the catalogue, and says the report itself is not built', async () => {
+    const { say, controller, setSection, message } = setup();
+    recipeState.add('commerce.sales', 'products.simple');
+    const catalog = controller
+      .snapshot()
+      .sections.find((s) =>
+        s.items.some((i) => i.id.startsWith('item:products:')),
+      );
+    if (!catalog) throw new Error('no catalogue section');
+    message.mockImplementationOnce(async () =>
+      JSON.stringify({
+        reply: 'Here is your sales report.',
+        add: [],
+        remove: [],
+        open: catalog.id,
+      }),
+    );
+    const reply = await say('can you give me a sales report?');
+    expect(setSection).not.toHaveBeenCalled();
+    expect(reply).not.toContain('Opened');
+    expect(reply).toContain(REPORTS_PENDING);
+    // The model was told where reports live.
+    expect(message.mock.calls[0][1]?.history?.[0].content).toContain(
+      'reports.runtime (Reports)',
+    );
+  });
+
+  it('a summary request adds Reports and may open it, honestly', async () => {
+    const { say, controller, setSection, message } = setup({
+      reply: 'Summary ready.',
+      add: ['reports.runtime'],
+      remove: [],
+    });
+    const first = await say('give me a summary of all sales last month');
+    expect(first).toMatch(/^Added /);
+    expect(first).toContain(REPORTS_PENDING);
+    expect(first).not.toContain('Summary ready');
+    const reports = controller
+      .snapshot()
+      .sections.find((s) =>
+        s.items.some((i) => i.id === 'item:reports:RuntimeReport'),
+      );
+    if (!reports) throw new Error('no Reports section');
+    message.mockImplementationOnce(async () =>
+      JSON.stringify({ reply: 'Here.', add: [], remove: [], open: reports.id }),
+    );
+    expect(await say('take me to the sales report')).toBe(
+      `Opened ${reports.label}. ${REPORTS_PENDING}`,
+    );
+    expect(setSection).toHaveBeenCalledWith(reports.id);
   });
 });
