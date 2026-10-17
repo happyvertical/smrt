@@ -1,3 +1,4 @@
+import { hasOrdinaryAccountingAuthority } from '../ordinary-accounting-internal.js';
 import { hasRetentionAccountingAuthority } from '../retention-accounting-internal.js';
 /**
  * Payment model - tracks payments with ledger integration
@@ -160,6 +161,10 @@ export class Payment extends SmrtObject {
   /** Immutable provider-refund source binding owned by retention commands. */
   @field({ sensitive: true })
   retentionAccountingBindingJson = '';
+
+  /** Immutable ordinary-provider refund reservation; command-owned. */
+  @field({ sensitive: true })
+  ordinaryAccountingBindingJson = '';
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -444,6 +449,19 @@ export class Payment extends SmrtObject {
       const priorRow = await this.loadPersistedRow();
       if (this.customerFundsJson || priorRow?.customer_funds_json)
         assertCustomerFundsWrite(this);
+      const ordinaryBinding =
+        this.ordinaryAccountingBindingJson ||
+        String(priorRow?.ordinary_accounting_binding_json ?? '');
+      if (
+        ordinaryBinding &&
+        !hasOrdinaryAccountingAuthority(
+          this.tenantId,
+          JSON.parse(ordinaryBinding).invoiceId,
+        )
+      )
+        throw new Error(
+          'Provider-recorded refund is immutable; use an explicit reversal workflow',
+        );
       const retainedBinding =
         this.retentionAccountingBindingJson ||
         String(priorRow?.retention_accounting_binding_json ?? '');
@@ -516,7 +534,9 @@ export class Payment extends SmrtObject {
     const persisted = await this.loadPersistedRow();
     if (
       this.retentionAccountingBindingJson ||
-      persisted?.retention_accounting_binding_json
+      persisted?.retention_accounting_binding_json ||
+      this.ordinaryAccountingBindingJson ||
+      persisted?.ordinary_accounting_binding_json
     )
       throw new Error('Provider-recorded refund history cannot be deleted');
     if (this.customerFundsJson || persisted?.customer_funds_json)

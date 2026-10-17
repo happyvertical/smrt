@@ -205,7 +205,10 @@ export class PaymentAllocation extends SmrtObject {
       );
       if (!payment)
         throw new Error('PaymentAllocation referenced Payment does not exist');
-      if (payment.retentionAccountingBindingJson)
+      if (
+        payment.retentionAccountingBindingJson ||
+        payment.ordinaryAccountingBindingJson
+      )
         throw new Error('Provider-recorded refund allocation is immutable');
       if (customerFundsState(payment.customerFundsJson))
         assertCustomerFundsWrite(this);
@@ -344,7 +347,10 @@ export class PaymentAllocation extends SmrtObject {
           throw new Error('Allocation parent has no persisted revision');
         await payment.claimRevision(payment.updated_at);
       }
-      if (payment?.retentionAccountingBindingJson)
+      if (
+        payment?.retentionAccountingBindingJson ||
+        payment?.ordinaryAccountingBindingJson
+      )
         throw new Error(
           'Provider-recorded refund allocation cannot be deleted',
         );

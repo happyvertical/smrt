@@ -8,5 +8,12 @@ class EmbeddedIntakeWorker extends SmrtObject {
   async process(input: { itemId: string; revision: number }): Promise<void> {
     await runHostStage(this.db, input);
   }
+  @backgroundEligible()
+  async otherProcess(input: {
+    itemId: string;
+    revision: number;
+  }): Promise<void> {
+    await runHostStage(this.db, input);
+  }
 }
 foundationSuite('sqlite', 'EmbeddedIntakeWorker');
