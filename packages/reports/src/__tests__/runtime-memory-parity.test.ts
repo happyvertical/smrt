@@ -192,7 +192,8 @@ function registerFixture(): void {
   field('customerId', { type: 'foreignKey', related: 'Customer' });
   field('status', { type: 'text' });
   field('memo', { type: 'text' });
-  field('totalAmount', { type: 'integer', format: 'money' });
+  // As `@field({ ui: { format: 'money' } })` registers it (`_meta.ui.format`).
+  field('totalAmount', { type: 'integer', ui: { format: 'money' } });
   field('taxRate', { type: 'decimal' });
   field('isPaid', { type: 'boolean' });
   field('issuedAt', { type: 'datetime' });

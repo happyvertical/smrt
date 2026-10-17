@@ -170,7 +170,9 @@ function explicitColumn(field: RegistryFieldShape): string | undefined {
 }
 
 function strictFormat(field: RegistryFieldShape): string | undefined {
-  const candidates = [field.format, field._meta?.format];
+  // Manifests carry `@field({ ui: { format } })` as `_meta.ui.format`.
+  const ui = field._meta?.ui as { format?: unknown } | undefined;
+  const candidates = [field.format, field._meta?.format, ui?.format];
   return candidates.find(
     (value): value is string => typeof value === 'string' && value.length > 0,
   );
