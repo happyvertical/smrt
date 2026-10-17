@@ -19,8 +19,8 @@ import {
   parseRuntimeReportSpec,
   RuntimeReportError,
   type RuntimeReportSpec,
-  runtimeReportSpecHash,
 } from './runtime-spec.js';
+import { runtimeReportSpecHash } from './runtime-spec-hash.js';
 
 /** Browser proposal; carries data, never proof or permission to write. */
 export interface RuntimeReportAwaitingConfirmation {

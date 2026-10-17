@@ -10,5 +10,6 @@ export default createPackageConfig('reports', {
     'refresh',
     'scheduler',
     'state',
+    'spec',
   ],
 });

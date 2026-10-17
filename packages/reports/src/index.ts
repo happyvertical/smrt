@@ -175,9 +175,10 @@ export {
   RUNTIME_REPORT_MEASURE_FNS,
   RUNTIME_REPORT_SPEC_VERSION,
   RuntimeReportError,
-  runtimeReportSpecHash,
+  runtimeReportSpecDigest,
   serializeRuntimeReportSpec,
 } from './runtime-spec.js';
+export { runtimeReportSpecHash } from './runtime-spec-hash.js';
 export type {
   EnqueueReportRefreshOptions,
   EnsureReportSchedulesOptions,

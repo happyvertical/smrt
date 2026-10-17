@@ -40,8 +40,8 @@ import {
   RuntimeReportError,
   type RuntimeReportFilter,
   type RuntimeReportSpec,
-  runtimeReportSpecHash,
 } from './runtime-spec.js';
+import { runtimeReportSpecHash } from './runtime-spec-hash.js';
 import type { AggregateSelectExpr, AggregateSpec } from './types.js';
 
 /** A server-owned report source. The spec refers to it only by `id`. */
