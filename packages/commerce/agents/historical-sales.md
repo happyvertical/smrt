@@ -103,3 +103,30 @@ A later original credit import on the release date uses the retained ordering:
 `release-before-credit` releases first, while `credit-before-release` applies
 the retained-first credit before checking remaining release capacity. Missing
 ordering remains ambiguous and is refused rather than inferred from record time.
+### Bounded historical report scope
+
+Historical header and tax reports apply the explicit tenant, historical money
+authority, inclusive issue-date period, optional currency, and non-draft/non-cancelled
+status predicates in the collection query before enforcing the 100,000-document
+scope limit. Unrelated archived invoices do not consume a smaller report's limit;
+more than 100,000 matching documents is refused rather than truncated.
+
+Regression design (#4063, PR #4101 comment 4300513731):
+
+| Invariant / trigger | Positive / refusal | Actor and executor | Runtime / evidence |
+| --- | --- | --- | --- |
+| Small matching period in a large tenant archive | Query-boundary fixture returns the single matching row only when all predicates precede the limit; matching scope above the cap still refuses | Explicit tenant and caller database; reads only | Focused Vitest; sparse overflow result avoids creating an archive |
+| Native collection scope | Exact inclusive boundaries, optional currency, historical authority and tenant isolation; draft/cancelled excluded | Active tenant, native test database | Focused SQLite and isolated PostgreSQL public historical-money + report proof |
+
+No persistence behavior changes; rollback/retry and external-provider edges are
+not applicable to this read-only query correction. The coordinator owns broader
+cohort validation and exact-head review under the resumed four-comment batch.
+
+Evidence on Node26/pnpm11.25.0: the focused archive-query regression failed against
+78f3ac856 (two failures, one pass), then passed after this query fix. The standard
+`node scripts/run-with-ci-postgres.mjs -- pnpm --filter @happyvertical/smrt-commerce exec vitest run src/__tests__/historical-sales-report-scope.test.ts src/__tests__/historical-sales-report-scope-native.test.ts`
+proof passed all five cases in9.80seconds, including actual SQLite and isolated
+PostgreSQL scope/tenant checks. No100,000-row fixture, production writes or schema
+changes were needed. Full logs remain external at the2026-10-16 MVP session's
+`nonfinancial-import/scoped-sales-regression-base.log`, `scoped-sales-focused.log`
+and `scoped-sales-postgres.log`. Native token usage was unavailable.

@@ -103,21 +103,21 @@ export async function historicalSalesReportInvoices(
   options: DocumentTaxReportFactsOptions,
 ) {
   const rows = await (await InvoiceCollection.create({ db })).list({
-    where: { tenantId: options.tenantId, moneyAuthority: 'historical' },
+    where: {
+      tenantId: options.tenantId,
+      moneyAuthority: 'historical',
+      'issueDate >=': options.from.toISOString(),
+      'issueDate <=': options.to.toISOString(),
+      'status not in': ['draft', 'cancelled'],
+      ...(options.currency ? { currency: options.currency } : {}),
+    },
     limit: 100001,
   });
   if (rows.length > 100000)
     throw new Error(
       'Historical sales report scope exceeds the bounded document limit; select a smaller scope',
     );
-  return rows.filter(
-    (invoice) =>
-      invoice.status !== 'draft' &&
-      invoice.status !== 'cancelled' &&
-      invoice.issueDate >= options.from &&
-      invoice.issueDate <= options.to &&
-      (!options.currency || invoice.currency === options.currency),
-  );
+  return rows;
 }
 /** Exact generic header reporting does not require a fabricated tax breakdown. */
 export async function listHistoricalSalesHeaderFacts(
