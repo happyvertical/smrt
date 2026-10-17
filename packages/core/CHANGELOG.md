@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.5
+
+### Patch Changes
+
+- ### Features
+  
+  - coordinate ordinary accounting and preserve intake recovery (#4113)
+  
+  ### Bug Fixes
+  
+  - preserve managed credit allocations on refresh (#4111) (commerce)
+- @happyvertical/smrt-config@0.57.5
+  - @happyvertical/smrt-scanner@0.57.5
+  - @happyvertical/smrt-types@0.57.5
+
 ## 0.57.4
 
 ### Patch Changes
