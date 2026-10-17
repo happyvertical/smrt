@@ -124,14 +124,15 @@ static surfaces = [
     ],
     data: { load: '@acme/shop/server#loadSalesTotal', models: ['@acme/shop:Order'] },
     allowedIn: ['shop.home'],                  // overview ids; omit for any
+    sectionDefault: true,                      // optional: this widget IS the section page
     defaultSpan: 2, minSpan: 1, maxSpan: 3,
   },
 ] as const;
 ```
 
 Emitted keys, in this order: `kind`, `type`, `export`, `label`, `description`,
-`icon`, `version`, `migrate`, `optionsEditor`, `options`, `data`, `allowedIn`, `defaultSpan`,
-`minSpan`, `maxSpan`; absent ones are omitted. Rules (each violation is a scan
+`icon`, `version`, `migrate`, `optionsEditor`, `options`, `data`, `allowedIn`,
+`sectionDefault`, `defaultSpan`, `minSpan`, `maxSpan`; absent ones are omitted. Rules (each violation is a scan
 error, same strictness as the other kinds):
 
 - `type` is a lowercase kebab id (`[a-z][a-z0-9-]{0,31}`), unique among a
@@ -147,6 +148,13 @@ error, same strictness as the other kinds):
   and unique; `default` must pass its field's own rule; `min`/`max` only on
   numbers, `maxLength` only on text. Only `key`, `type`, `label`, `help`,
   `required`, `default`, `min`, `max`, `maxLength`, `choices` are accepted.
+- `sectionDefault: true` makes the widget the section page of the recipe's
+  section: when the recipe leads a navigation section (the first recipe
+  suggesting it), a host rendering data widgets defaults that section's
+  overview to this widget alone, full width, instead of the generic shortcuts,
+  count and latest records (smrt-svelte `sectionDefaultWidget`). At most one per
+  recipe, and every required option needs a `default`, since it is placed with
+  no options. The person can still edit the page.
 - `data` takes `load` and/or `models` (qualified class names, distinct). The
   scanner cannot see other packages, so a model is checked for format only.
 - `allowedIn` is a non-empty list of distinct overview ids
