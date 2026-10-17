@@ -144,3 +144,7 @@ The reconciliation guard still rejects a missing/cancelled managed credit,
 changed retained/application amounts or frozen applications exceeding the
 source's remaining capacity. Ordinary refund saves and retries preserve the
 provider allocation snapshot; they do not authorize an external reversal.
+
+An issued unmanaged credit remains issued when residual application becomes zero,
+even when no sent/viewed delivery timestamp was recorded. Repeated refreshes retain
+its full credit effect; allocation changes do not cancel or return it to draft.

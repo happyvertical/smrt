@@ -638,5 +638,88 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     } finally {
       order.mockRestore();
     }
+
+    // Issuance is independent of delivery timestamps. Reallocating an issued
+    // unmanaged credit to zero must not silently retract its economic effect.
+    const ordinary = await invoices.create({
+      customerId: customer.id!,
+      currency: 'CAD',
+    });
+    const ordinaryLine = await lines.create({
+      invoiceId: ordinary.id!,
+      quantity: 100,
+      unitPrice: 1,
+    });
+    const ordinaryIssued = (await invoices.get(
+      { id: ordinary.id! },
+      { cache: false },
+    ))!;
+    ordinaryIssued.status = InvoiceStatus.SENT;
+    await ordinaryIssued.save();
+    const ordinaryPayment = await payments.create({
+      kind: 'payment',
+      customerId: customer.id!,
+      currency: 'CAD',
+      amount: 50,
+    });
+    await ordinaryPayment.recordPayment({
+      ledgerId: '',
+      cashAccountId: cash.id!,
+      receivablesAccountId: ar.id!,
+    });
+    await allocations.allocatePayment({
+      paymentId: ordinaryPayment.id!,
+      allocations: [{ id: randomUUID(), invoiceId: ordinary.id!, amount: 50 }],
+    });
+    const unmanagedIds: string[] = [];
+    for (const prefix of ['f', '0']) {
+      const unmanaged = await invoices.create({
+        id: `${prefix}${randomUUID().slice(1)}`,
+        kind: 'credit_note',
+        creditedInvoiceId: ordinary.id!,
+        customerId: customer.id!,
+        currency: 'CAD',
+        issueDate: new Date('2026-10-18T00:00:00Z'),
+      });
+      await lines.create({
+        invoiceId: unmanaged.id!,
+        creditedLineId: ordinaryLine.id!,
+        quantity: 50,
+        unitPrice: 0,
+      });
+      const current = (await invoices.get(
+        { id: unmanaged.id! },
+        { cache: false },
+      ))!;
+      current.status = InvoiceStatus.SENT;
+      await current.save();
+      unmanagedIds.push(unmanaged.id!);
+    }
+    expect(unmanagedIds[1] < unmanagedIds[0]).toBe(true);
+    for (let repeat = 0; repeat < 3; repeat++) {
+      const latest = (await invoices.get(
+        { id: unmanagedIds[1] },
+        { cache: false },
+      ))!;
+      await latest.save();
+      const first = (await invoices.get(
+        { id: unmanagedIds[0] },
+        { cache: false },
+      ))!;
+      const second = (await invoices.get(
+        { id: unmanagedIds[1] },
+        { cache: false },
+      ))!;
+      expect(
+        (await invoices.get({ id: ordinary.id! }, { cache: false }))!
+          .creditedAmount,
+      ).toBe(100);
+      expect(first.status).toBe(InvoiceStatus.SENT);
+      expect(first.sentAt).toBeNull();
+      expect(first.viewedAt).toBeNull();
+      expect(first.creditedAmount).toBe(0);
+      expect(second.creditedAmount).toBe(50);
+      expect(second.status).toBe(InvoiceStatus.PAID);
+    }
   });
 }

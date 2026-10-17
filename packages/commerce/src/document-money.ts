@@ -454,6 +454,10 @@ export async function refreshIssuedCreditBalance(
     if (credit.creditedAmount !== applied) {
       credit.creditedAmount = applied;
       credit.updatePaymentStatus(credit.amountPaid);
+      // A zero application is not an issuance reversal. SENT can be recorded
+      // without delivery timestamps, so payment status alone cannot restore it.
+      if (included && credit.status === InvoiceStatus.DRAFT)
+        credit.status = InvoiceStatus.SENT;
       await credit.saveDerived(DOCUMENT_MONEY_WRITE);
     }
   }
