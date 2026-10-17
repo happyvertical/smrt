@@ -412,18 +412,26 @@ export async function refreshIssuedCreditBalance(
     );
   let remainingSource = Math.max(0, source.totalAmount - source.amountPaid);
   const managed = new Map<string, number>();
-  if (source.retentionAccountingStateJson) {
-    const providerState = JSON.parse(source.retentionAccountingStateJson);
+  if (
+    source.retentionAccountingStateJson ||
+    source.ordinaryAccountingStateJson
+  ) {
+    const providerState = JSON.parse(
+      source.retentionAccountingStateJson || source.ordinaryAccountingStateJson,
+    );
     for (const entry of providerState.credits) {
       const credit = issued.find(
         (candidate) => candidate.id === entry.creditId,
       );
-      const frozen = entry.retainedMinor + entry.appliedMinor;
+      const retainedMinor = source.retentionAccountingStateJson
+        ? entry.retainedMinor
+        : 0;
+      const frozen = retainedMinor + entry.appliedMinor;
       if (
         !credit ||
         managed.has(entry.creditId) ||
-        !Number.isSafeInteger(entry.retainedMinor) ||
-        entry.retainedMinor < 0 ||
+        !Number.isSafeInteger(retainedMinor) ||
+        retainedMinor < 0 ||
         !Number.isSafeInteger(entry.appliedMinor) ||
         entry.appliedMinor < 0 ||
         !Number.isSafeInteger(frozen) ||
@@ -461,8 +469,14 @@ export async function refreshIssuedCreditBalance(
       await credit.saveDerived(DOCUMENT_MONEY_WRITE);
     }
   }
-  if (source.retentionAccountingStateJson && total !== source.creditedAmount) {
-    const state = JSON.parse(source.retentionAccountingStateJson);
+  if (
+    (source.retentionAccountingStateJson ||
+      source.ordinaryAccountingStateJson) &&
+    total !== source.creditedAmount
+  ) {
+    const state = JSON.parse(
+      source.retentionAccountingStateJson || source.ordinaryAccountingStateJson,
+    );
     if (
       state.status !== 'ready' ||
       state.steps.some(
@@ -1376,7 +1390,9 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
         const tenantId = existing?.tenantId ?? candidateTenantId;
         if (
           invoice.retentionAccountingStateJson !==
-          (existing?.retentionAccountingStateJson ?? '')
+            (existing?.retentionAccountingStateJson ?? '') ||
+          invoice.ordinaryAccountingStateJson !==
+            (existing?.ordinaryAccountingStateJson ?? '')
         )
           throw new MoneyValidationError(
             'FROZEN_DOCUMENT',

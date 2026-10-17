@@ -261,6 +261,10 @@ export class Invoice extends SmrtObject {
   @field({ sensitive: true })
   retentionAccountingStateJson = '';
 
+  /** Command-owned ordinary provider adjustments; no retention agreement. */
+  @field({ sensitive: true })
+  ordinaryAccountingStateJson = '';
+
   getPayableFacts() {
     return calculateInvoicePayable(this);
   }
@@ -710,7 +714,7 @@ export class Invoice extends SmrtObject {
     this.assertPaymentStatusConsistent();
     const payable = calculateInvoicePayable(this);
     if (
-      this.retentionAccountingStateJson &&
+      (this.retentionAccountingStateJson || this.ordinaryAccountingStateJson) &&
       [InvoiceStatus.CANCELLED, InvoiceStatus.WRITTEN_OFF].includes(this.status)
     )
       throw new MoneyValidationError(
@@ -718,7 +722,7 @@ export class Invoice extends SmrtObject {
         'Provider retention cannot be voided or written off without an explicit reconciled reversal contract',
       );
     if (
-      this.retentionAccountingStateJson &&
+      (this.retentionAccountingStateJson || this.ordinaryAccountingStateJson) &&
       (this.collectionMethod || this.providerTaxAmount)
     )
       throw new MoneyValidationError(

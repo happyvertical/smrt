@@ -1,3 +1,4 @@
+import { hasOrdinaryAccountingAuthority } from './ordinary-accounting-internal.js';
 import { hasRetentionAccountingAuthority } from './retention-accounting-internal.js';
 /** Frozen Invoice projection and guarded accounting-provider synchronization. */
 
@@ -387,6 +388,13 @@ async function loadSnapshot(
     )
       unsupported(
         'Provider-retained credit requires the retained-first accounting adjustment command',
+      );
+    if (
+      source.ordinaryAccountingStateJson &&
+      !hasOrdinaryAccountingAuthority(source.tenantId, source.id)
+    )
+      unsupported(
+        'Provider ordinary credit requires its owning accounting adjustment command',
       );
     const sourceState = parseSyncState(source.accountingSyncStateJson);
     if (
