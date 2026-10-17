@@ -95,6 +95,9 @@ plannerRuntime.onReplaced = () => dataSource.reset?.();
 plannerRuntime.openSection = (id) => {
   void goto(appHref(sectionPath(id)));
 };
+plannerRuntime.openPath = (path) => {
+  void goto(appHref(path));
+};
 
 // The Cookbooks tab's open cookbook lives in the address (`?cookbook=`):
 // opening one pushes a shallow history entry, so browser Back (or the detail's

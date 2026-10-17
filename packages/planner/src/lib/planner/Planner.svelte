@@ -19,6 +19,7 @@ import BrowserAssistant from '../components/BrowserAssistant.svelte';
 import HeaderIconLink from '../components/HeaderIconLink.svelte';
 import ModelWorkspace from '../components/ModelWorkspace.svelte';
 import PackagePage from '../components/PackagePage.svelte';
+import PlannerReports from '../components/PlannerReports.svelte';
 import RecordView from '../components/RecordView.svelte';
 import SectionHeading from '../components/SectionHeading.svelte';
 import ThemeBridge from '../components/ThemeBridge.svelte';
@@ -40,6 +41,7 @@ import {
 import { menuEntryWords, pageScope, scopePreset } from '../recipes/scope.ts';
 import { navItemId } from '../recipes/sections.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
+import { RUNTIME_REPORT_MODEL } from '../reports/sources.ts';
 import { entryIndex } from '../sections/entries.ts';
 import { sectionInfo, sectionTitle } from '../sections/info.ts';
 import { sectionIdFromSlug } from '../sections/path.ts';
@@ -282,8 +284,12 @@ onMount(() => {
   // The controller's `focus` (the assistant's "take me to it") opens a
   // section through this, as the static layout's does with its router.
   const previousOpen = plannerRuntime.openSection;
+  const previousOpenPath = plannerRuntime.openPath;
   plannerRuntime.openSection = (id) => {
     location.hash = `#${shell.sectionPath(id)}`;
+  };
+  plannerRuntime.openPath = (path) => {
+    location.hash = `#${path}`;
   };
   const previous = cookbookView.navigator;
   cookbookView.navigator = {
@@ -301,6 +307,7 @@ onMount(() => {
   return () => {
     cookbookView.navigator = previous;
     plannerRuntime.openSection = previousOpen;
+    plannerRuntime.openPath = previousOpenPath;
   };
 });
 const exporting = $derived(configuring && plannerTab.active === 'export');
@@ -450,6 +457,9 @@ const dockToggles = $derived(
       <AdvancedStyles backHref="#/configure/" />
     {:else if pathParts[0] === 'ai'}
       <AiModelsPage backHref="#/configure/" />
+    {:else if model?.id === RUNTIME_REPORT_MODEL}
+      <!-- Shared reports: smrt-reports' screens over the plan's sample data. -->
+      <PlannerReports recordId={modelRoute?.recordId} />
     {:else if applied && model && modelRoute?.recordId}
       {#key `${model.id}:${modelRoute.recordId}`}
         <RecordView

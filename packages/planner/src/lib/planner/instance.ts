@@ -11,6 +11,8 @@ export const plannerRuntime: {
   onReplaced?: () => void;
   /** Open a menu section's page (`focus` with a `section`). */
   openSection?: (sectionId: string) => void;
+  /** Open an in-app path (`/m/...`), e.g. a report the person just saved. */
+  openPath?: (path: string) => void;
 } = {};
 
 /**

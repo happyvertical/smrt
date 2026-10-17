@@ -10,6 +10,8 @@ import {
   type PlannerController,
 } from '../planner/commands/index.ts';
 import type { Recipe } from '../recipes/types.ts';
+import { whichSourceQuestion } from '../reports/intent.ts';
+import type { PlannerReports } from '../reports/store.ts';
 import type { ThemeSetting } from '../theme/theme.ts';
 import {
   type AppliedChange,
@@ -90,6 +92,13 @@ export interface BrowserTransportOptions {
    * assistant cannot navigate and the schema has no `open`.
    */
   menu?: () => readonly { id: string; label: string }[];
+  /**
+   * Runtime reports over the app's sample data (#4100). With it the model may
+   * answer a report request with a `report` intent, which the transport turns
+   * into smrt-reports' `reports.runtime.*` steps: sources, define (preview),
+   * run; the person's approval saves. Null or omitted: no report building.
+   */
+  reports?: () => PlannerReports | null;
 }
 
 export interface BrowserAssistantTransport extends AssistantTransport {
@@ -150,9 +159,17 @@ function runCommands(
 /** Said when a turn changed nothing and the model's sentence was not a question. */
 export const NOTHING_CHANGED = 'Nothing in the app changed.';
 
-/** Said after a report request: the planner cannot build one yet (smrt#4100). */
-export const REPORTS_PENDING =
-  'Building the report itself is not available in the planner yet; it will live under Reports.';
+/** Said after a report request where this planner has no sample data to report on. */
+export const REPORTS_UNAVAILABLE =
+  'Building a report needs the planner app and its sample records; it will live under Reports.';
+
+/** The tool call a report preview rides on, as smrt-chat names it. */
+export const REPORT_DEFINE_TOOL = 'reports.runtime.define';
+
+/** What the chat says under a report preview. */
+export function reportPreviewText(title: string, rows: number): string {
+  return `Here is a preview of ${title} (${rows} ${rows === 1 ? 'row' : 'rows'}). Approve it to save it under Shared reports.`;
+}
 
 /** The Reports menu entry (reports.runtime's RuntimeReport). */
 const REPORTS_ITEM = 'item:reports:RuntimeReport';
@@ -295,6 +312,11 @@ export function createBrowserAssistantTransport(
         }));
       const matches = matchText(index, text);
       const menu = options.menu?.() ?? [];
+      // `reports.runtime.sources`: what a report may cover in this app.
+      const reports = options.recipes.some((r) => r.id === REPORTS_RECIPE)
+        ? (options.reports?.() ?? null)
+        : null;
+      const reportSources = reports?.sources() ?? [];
       const raw = await model.message(text, {
         history: [
           {
@@ -307,6 +329,7 @@ export function createBrowserAssistantTransport(
               matches,
               options.theme ? { current: options.theme.read() } : undefined,
               menu,
+              reportSources.map(({ id, label }) => ({ id, label })),
             ),
           },
           ...prior,
@@ -317,6 +340,7 @@ export function createBrowserAssistantTransport(
           !!options.settings,
           !!options.theme,
           menu.map((section) => section.id),
+          reportSources.map((source) => source.id),
         ),
         temperature: 0,
         maxTokens: MAX_REPLY_TOKENS,
@@ -328,7 +352,16 @@ export function createBrowserAssistantTransport(
             ? options.acceptCommands()
             : options.acceptCommands,
         sections: menu.map((section) => section.id),
+        reports: reportSources.length > 0,
       });
+      // A report turn is driven by code, not by the model's other choices: a
+      // report is never a recipe to add or a section to open ("sales report"
+      // must not land in the product catalogue). Settings and theme still apply.
+      if (change.report) {
+        change.add = [];
+        change.remove = [];
+        delete change.open;
+      }
       const applied = applyRecipes(planner, change);
       const settingsText =
         options.settings && hasKeys(change.settings)
@@ -360,7 +393,37 @@ export function createBrowserAssistantTransport(
           ? change.open
           : undefined;
       const openText = open ? openSection(planner, open, menu) : '';
-      const summary = [
+      // `reports.runtime.define` (preview) then `reports.runtime.run`, by code:
+      // the spec is built from the intent, validated by smrt-reports' parser
+      // and run over the sample rows. Only a person's approval saves it.
+      let reportText = '';
+      let reportRef: unknown;
+      if (change.report && reports) {
+        const defined = await reports.define(change.report);
+        if (defined.ok) {
+          // Reports must be on to keep the report; turning it on is a command
+          // like any other, so the reply says it ran.
+          if (!options.store.ids.includes(REPORTS_RECIPE)) {
+            const enabled = applyRecipes(planner, {
+              add: [REPORTS_RECIPE],
+              remove: [],
+            });
+            applied.added.push(...enabled.added);
+          }
+          reportRef = {
+            name: REPORT_DEFINE_TOOL,
+            phase: 'preview',
+            result: defined.proposal,
+          };
+          reportText = reportPreviewText(
+            defined.proposal.spec.title,
+            defined.proposal.preview.rowCount,
+          );
+        } else {
+          reportText = defined.question;
+        }
+      }
+      const ran = [
         describeChange(applied, options.recipes),
         settingsText,
         themed?.summary ?? '',
@@ -369,6 +432,14 @@ export function createBrowserAssistantTransport(
       ]
         .filter(Boolean)
         .join(' ');
+      if (reportRequest && !change.report && !ran) {
+        // Asked for a report, named nothing to build and nothing else ran:
+        // ask which records, never guess (or say this planner cannot build one).
+        reportText = reports
+          ? whichSourceQuestion(reportSources)
+          : REPORTS_UNAVAILABLE;
+      }
+      const summary = [ran, reportText].filter(Boolean).join(' ');
       // Backstop: a small model sometimes misses a plain "I run a bakery".
       // A strong cookbook match is offered anyway (never applied without the
       // click) when the model offered none and none is applied or pending.
@@ -388,15 +459,12 @@ export function createBrowserAssistantTransport(
         ? cookbooks.find((c) => c.id === cookbookId)
         : undefined;
       const line = change.reply || (offered ? `Set up ${offered.name}?` : '');
-      const reply = [
-        honestReply(line, summary, !!offer),
-        reportRequest ? REPORTS_PENDING : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
+      const reply = honestReply(line, summary, !!offer);
       if (reply) options.onReply?.(reply);
-      // One ref renders as is; a cookbook offer and a theme Undo in one turn ride together.
-      const refs = offer && undo ? [offer, undo] : (offer ?? undo);
+      // One ref renders as is; several in one turn (a cookbook offer, a theme
+      // Undo, a report preview) ride together.
+      const all = [offer, undo, reportRef].filter(Boolean);
+      const refs = all.length > 1 ? all : all[0];
       return { content: reply, refs };
     } catch (error) {
       if (controller?.signal.aborted) return { content: 'Stopped.' };

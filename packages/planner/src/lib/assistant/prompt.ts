@@ -26,6 +26,8 @@ interface PromptExample {
   cookbook?: string;
   settings?: boolean;
   theme?: boolean;
+  /** The report source the example names. */
+  report?: string;
 }
 
 const EXAMPLES: readonly PromptExample[] = [
@@ -78,6 +80,16 @@ const EXAMPLES: readonly PromptExample[] = [
     },
   },
   {
+    says: 'give me a summary of all sales last month',
+    report: 'invoices',
+    answer: {
+      reply: 'Here is a summary of last month.',
+      add: [],
+      remove: [],
+      report: { source: 'invoices', period: 'last_month' },
+    },
+  },
+  {
     says: 'hello',
     answer: { reply: 'Hi. What kind of business is it?', add: [], remove: [] },
   },
@@ -88,18 +100,26 @@ function examples(
   cookbookIds: ReadonlySet<string>,
   withSettings: boolean,
   withTheme: boolean,
+  reportIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return EXAMPLES.filter(
     (e) =>
       (e.recipes ?? []).every((id) => recipeIds.has(id)) &&
       (!e.cookbook || cookbookIds.has(e.cookbook)) &&
       (!e.settings || withSettings) &&
-      (!e.theme || withTheme),
+      (!e.theme || withTheme) &&
+      (!e.report || reportIds.has(e.report)),
   ).map((e) => `"${e.says}" -> ${JSON.stringify(e.answer)}`);
 }
 
 /** The recipe a request for a report or a summary of the app's data needs. */
 export const REPORTS_RECIPE = 'reports.runtime';
+
+/** A runtime report source as the prompt names it. */
+export interface ReportSourceBrief {
+  id: string;
+  label: string;
+}
 
 /** Tax is shown as a percent, the unit the person says it in. */
 export function formatTaxPercent(fraction: number): string {
@@ -125,6 +145,7 @@ export function buildSystemPrompt(
   matches?: readonly Match[],
   themeInfo?: { current: ThemeSetting | undefined },
   menu: readonly { id: string; label: string }[] = [],
+  reports: readonly ReportSourceBrief[] = [],
 ): string {
   const focused = matches !== undefined;
   const matchedRecipes = (matches ?? [])
@@ -166,12 +187,21 @@ export function buildSystemPrompt(
       '"open": a menu section id only when they ask to see or go to one, else null.',
     );
   }
-  out.push(
-    '"reply" never claims anything beyond add, remove, cookbook, settings, theme and open: the app reports what changed.',
-  );
-  if (recipes.some((r) => r.id === REPORTS_RECIPE)) {
+  if (reports.length) {
     out.push(
-      `A report or summary of their data needs ${REPORTS_RECIPE} (Reports): add it, and open only its section, never another. You cannot build the report itself yet.`,
+      '"report": only when they ask for a report, summary or totals of their records: {"source": a report source id, optional "measures": [{"fn": count|sum|avg|min|max, "field"}], "groupBy": field, "bucket": day|week|month|quarter|year, "period": today|yesterday|this_week|last_week|this_month|last_month|this_quarter|last_quarter|this_year|last_year|all_time, "filters": [{"field", "op": eq|ne|gt|gte|lt|lte|contains, "value"}]}; a summary needs only source and period. Else omit.',
+    );
+  }
+  out.push(
+    `"reply" never claims anything beyond add, remove, cookbook, settings, theme, open${reports.length ? ' and report' : ''}: the app reports what changed.`,
+  );
+  if (reports.length) {
+    out.push(
+      `A report or summary of their data is "report", never a recipe to add or a section to open: the app turns on ${REPORTS_RECIPE} (Reports), builds the report, shows a preview and saves it only when they approve.`,
+    );
+  } else if (recipes.some((r) => r.id === REPORTS_RECIPE)) {
+    out.push(
+      `A report or summary of their data needs ${REPORTS_RECIPE} (Reports): add it, and open only its section, never another. You cannot build the report itself here.`,
     );
   }
   const shown = examples(
@@ -179,6 +209,7 @@ export function buildSystemPrompt(
     new Set(cookbooks.map((c) => c.id)),
     Boolean(settings),
     Boolean(themeInfo),
+    new Set(reports.map((r) => r.id)),
   );
   if (shown.length) out.push('', 'Examples:', ...shown);
   const themeHint =
@@ -246,6 +277,11 @@ export function buildSystemPrompt(
   }
   if (menu.length) {
     out.push(`Menu: ${menu.map((s) => `${s.id} (${s.label})`).join(', ')}.`);
+  }
+  if (reports.length) {
+    out.push(
+      `Report sources: ${reports.map((r) => `${r.id} (${r.label})`).join(', ')}.`,
+    );
   }
   return out.join('\n');
 }

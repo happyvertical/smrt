@@ -1,0 +1,235 @@
+import { runtimeReportSpecDigest } from '@happyvertical/smrt-reports/spec';
+import { describe, expect, it } from 'vitest';
+import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
+import { EPOCH } from '../src/lib/data/fakes.ts';
+import { createMemoryDataSource } from '../src/lib/data/source.ts';
+import { getLibraryCookbook } from '../src/lib/library/index.ts';
+import { recipes } from '../src/lib/recipes/index.ts';
+import {
+  parseReportIntent,
+  periodRange,
+  specFromIntent,
+} from '../src/lib/reports/intent.ts';
+import {
+  plannerReportSources,
+  REPORTS_RECIPE,
+  RUNTIME_REPORT_MODEL,
+} from '../src/lib/reports/sources.ts';
+import {
+  createPlannerReports,
+  PLANNER_REPORT_AUTHOR,
+} from '../src/lib/reports/store.ts';
+
+const NOW = new Date(EPOCH); // the sample clock: 1 Jan 2026
+const mechanic = () => {
+  const cookbook = getLibraryCookbook('mechanic');
+  if (!cookbook) throw new Error('mechanic');
+  return [...cookbook.document.recipes, REPORTS_RECIPE];
+};
+
+function setup() {
+  const data = createMemoryDataSource({
+    empty: [RUNTIME_REPORT_MODEL],
+  });
+  const reports = createPlannerReports({
+    data,
+    recipeIds: mechanic,
+    recipes,
+    now: () => NOW,
+  });
+  return { data, reports };
+}
+
+describe('report sources (#4100)', () => {
+  it('are the menu models of the recipes that are on, never saved reports', () => {
+    const sources = plannerReportSources(mechanic(), recipes);
+    const invoices = sources.find((s) => s.id === 'invoices');
+    expect(invoices).toMatchObject({
+      label: expect.any(String),
+      dateField: 'issueDate',
+      amountField: 'totalAmount',
+    });
+    expect(invoices?.schema.find((f) => f.name === 'totalAmount')?.format).toBe(
+      'money',
+    );
+    // System plumbing (tenant, snapshots) is not reportable.
+    expect(invoices?.schema.some((f) => f.name === 'tenantId')).toBe(false);
+    expect(sources.some((s) => s.model.id === RUNTIME_REPORT_MODEL)).toBe(
+      false,
+    );
+    expect(new Set(sources.map((s) => s.id)).size).toBe(sources.length);
+  });
+});
+
+describe('report intents', () => {
+  it('keep structure only and drop what is not an intent', () => {
+    expect(parseReportIntent(null)).toBeNull();
+    expect(parseReportIntent({ period: 'last_month' })).toBeNull();
+    expect(
+      parseReportIntent({
+        source: 'invoices',
+        period: 'last_fortnight',
+        measures: [{ fn: 'median' }, { fn: 'sum', field: 'total' }],
+        filters: [{ field: 'status', op: 'like', value: 'x' }],
+      }),
+    ).toEqual({
+      source: 'invoices',
+      measures: [{ fn: 'sum', field: 'total' }],
+    });
+  });
+
+  it('measure periods against the given clock, in UTC', () => {
+    expect(periodRange('last_month', NOW)).toEqual({
+      from: '2025-12-01',
+      to: '2026-01-01',
+    });
+    expect(
+      periodRange('last_quarter', new Date('2026-05-10T00:00:00Z')),
+    ).toEqual({ from: '2026-01-01', to: '2026-04-01' });
+    expect(periodRange('last_week', new Date('2026-01-07T12:00:00Z'))).toEqual({
+      from: '2025-12-29',
+      to: '2026-01-05',
+    });
+    expect(periodRange('all_time', NOW)).toBeNull();
+  });
+
+  it('build "a summary of sales last month" as a count and total over the business date', () => {
+    const built = specFromIntent(
+      { source: 'invoices', period: 'last_month' },
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    if (!built.ok) throw new Error(built.question);
+    expect(built.spec).toMatchObject({
+      source: 'invoices',
+      dimensions: [],
+      measures: [
+        { fn: 'count', as: 'number_of_invoices' },
+        { fn: 'sum', field: 'totalAmount', as: 'total_amount' },
+      ],
+      filters: [
+        { field: 'issueDate', op: 'gte', value: '2025-12-01' },
+        { field: 'issueDate', op: 'lt', value: '2026-01-01' },
+      ],
+      chart: { type: 'stat' },
+    });
+  });
+
+  it('resolve loosely written names and group by them', () => {
+    const built = specFromIntent(
+      {
+        source: 'invoices',
+        measures: [{ fn: 'sum', field: 'Total amount' }],
+        groupBy: 'STATUS',
+        bucket: 'month',
+      },
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    if (!built.ok) throw new Error(built.question);
+    expect(built.spec.dimensions.map((d) => [d.field, d.bucket])).toEqual([
+      ['status', undefined],
+      ['issueDate', 'month'],
+    ]);
+    expect(built.spec.chart).toMatchObject({ type: 'bar', x: 'status' });
+  });
+
+  it.each([
+    [{ source: 'orders_of_cake' }, /Which records should the report cover/],
+    [
+      {
+        source: 'invoices',
+        measures: [{ fn: 'sum' as const, field: 'colour' }],
+      },
+      /Which amount on .+ should I total/,
+    ],
+    [{ source: 'invoices', groupBy: 'flavour' }, /Group .+ by what/],
+    [
+      {
+        source: 'invoices',
+        period: 'last_month' as const,
+        dateField: 'birthday',
+      },
+      /Which date on .+ should the period use/,
+    ],
+  ])('ask a follow-up instead of guessing (%#)', (intent, question) => {
+    const built = specFromIntent(
+      intent,
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    expect(built.ok).toBe(false);
+    if (!built.ok) {
+      expect(built.question).toMatch(question);
+      expect(built.question.endsWith('?')).toBe(true);
+    }
+  });
+});
+
+describe('planner reports store', () => {
+  it('previews, then saves only on save, then runs the saved report afresh', async () => {
+    const { data, reports } = setup();
+    const defined = await reports.define({
+      source: 'invoices',
+      period: 'last_month',
+    });
+    if (!defined.ok) throw new Error(defined.question);
+    const { proposal } = defined;
+    expect(proposal.status).toBe('awaiting_confirmation');
+    expect(proposal.specHash).toBe(
+      await runtimeReportSpecDigest(proposal.spec),
+    );
+    const model = getModelByQualifiedName(RUNTIME_REPORT_MODEL)?.model;
+    if (!model) throw new Error('RuntimeReport');
+    expect(await data.list(model)).toEqual([]);
+
+    const saved = await reports.save(proposal);
+    expect(saved).toMatchObject({
+      title: 'Invoices, last month',
+      sourceId: 'invoices',
+      status: 'active',
+      createdByUserId: PLANNER_REPORT_AUTHOR,
+    });
+    // A retried approval saves once.
+    expect((await reports.save(proposal)).id).toBe(saved.id);
+    expect(await data.list(model)).toHaveLength(1);
+
+    const listed = await reports.client.list({
+      onlyMine: true,
+      includeArchived: false,
+    });
+    expect(listed.map((r) => r.id)).toEqual([saved.id]);
+    const result = await reports.client.run(saved.id);
+    expect(result.rows).toEqual(proposal.preview.rows);
+
+    await reports.client.archive(saved.id, true);
+    expect(
+      await reports.client.list({ onlyMine: false, includeArchived: false }),
+    ).toEqual([]);
+    await expect(reports.client.run(saved.id)).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it('refuses a proposal whose hash does not match its spec', async () => {
+    const { reports } = setup();
+    const defined = await reports.define({ source: 'invoices' });
+    if (!defined.ok) throw new Error(defined.question);
+    await expect(
+      reports.save({
+        ...defined.proposal,
+        spec: { ...defined.proposal.spec, title: 'Something else' },
+      }),
+    ).rejects.toMatchObject({ code: 'spec_hash_mismatch' });
+  });
+
+  it('turns a value the field cannot take into a question', async () => {
+    const { reports } = setup();
+    const defined = await reports.define({
+      source: 'invoices',
+      filters: [{ field: 'issueDate', op: 'gte', value: 'last spring' }],
+    });
+    expect(defined.ok).toBe(false);
+    if (!defined.ok) expect(defined.question).toMatch(/\?$/);
+  });
+});

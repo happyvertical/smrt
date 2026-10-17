@@ -121,6 +121,7 @@ describe('core', () => {
         'cookbook',
         'remove',
         'reply',
+        'report',
         'settings',
         'theme',
       ].sort(),
@@ -130,6 +131,10 @@ describe('core', () => {
     const small = buildReplySchema({ recipes: [], cookbooks: [] });
     expect(
       (small.properties as Record<string, unknown>).cookbook,
+    ).toBeUndefined();
+    // Reports only when the catalogue has reports.runtime (#4100).
+    expect(
+      (small.properties as Record<string, unknown>).report,
     ).toBeUndefined();
   });
 
@@ -155,6 +160,25 @@ describe('core', () => {
       commands: [{ name: 'hide', input: { id: 'nav:a' } }],
     });
     expect(parsed.issues).toHaveLength(2);
+  });
+
+  it('carries a report intent and names the report sources of the plan (#4100)', () => {
+    const { system } = buildHostPrompt({
+      message: 'a summary of sales last month',
+      snapshot,
+    });
+    expect(system).toContain('"report"');
+    expect(system).toMatch(/Report sources: .*invoices \(Invoices\)/);
+    const parsed = parseHostReply(
+      JSON.stringify({
+        reply: 'Here it is.',
+        report: { source: 'invoices', period: 'last_month', bogus: 1 },
+      }),
+    );
+    expect(parsed.reply).toEqual({
+      reply: 'Here it is.',
+      report: { source: 'invoices', period: 'last_month' },
+    });
   });
 
   it('never returns raw model output', () => {

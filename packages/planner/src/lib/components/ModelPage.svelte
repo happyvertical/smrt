@@ -29,9 +29,11 @@ import {
 import { pageScope, scopePreset } from '../recipes/scope.ts';
 import { navSectionOf } from '../recipes/sections.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
+import { RUNTIME_REPORT_MODEL } from '../reports/sources.ts';
 import { sectionPath } from '../sections/path.ts';
 import FormWorkspace from './FormWorkspace.svelte';
 import ModelWorkspace from './ModelWorkspace.svelte';
+import PlannerReports from './PlannerReports.svelte';
 import RecordView from './RecordView.svelte';
 import SectionIcons from './SectionIcons.svelte';
 
@@ -258,7 +260,10 @@ const inApp = $derived(
     {/if}
     </div>
 
-    {#if recordId}
+    {#if catalogModel?.id === RUNTIME_REPORT_MODEL}
+      <!-- Shared reports: smrt-reports' screens over the plan's sample data. -->
+      <PlannerReports {recordId} />
+    {:else if recordId}
       {#key recordId}
         <RecordView
           {packageId}

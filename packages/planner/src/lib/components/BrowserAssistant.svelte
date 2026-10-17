@@ -1,5 +1,6 @@
 <script lang="ts">
 import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
+import { runtimeReportProposalFromMessage } from '@happyvertical/smrt-reports/svelte';
 import { Button } from '@happyvertical/smrt-ui';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { cancelsSpeech } from '../ai/echo-gate.ts';
@@ -14,7 +15,9 @@ import { applyLibraryCookbook, needsConfirm } from '../library/apply.ts';
 import { getLibraryCookbook } from '../library/index.ts';
 import { previewMenu } from '../library/menu.ts';
 import { appHref } from '../planner/app.svelte.ts';
+import { plannerReportsFor } from '../reports/planner.ts';
 import { settingsOfCookbook } from '../settings/app-settings.ts';
+import ReportProposalCard from './ReportProposalCard.svelte';
 import VoiceTyping from './VoiceTyping.svelte';
 
 interface BrowserAssistantProps {
@@ -63,6 +66,14 @@ $effect(() => {
     offers.applier = null;
   };
 });
+
+// Reports the assistant builds run over this data source's sample rows.
+$effect(() => {
+  session.reports = plannerReportsFor(dataSource);
+  return () => {
+    session.reports = null;
+  };
+});
 </script>
 
 {#snippet themeUndo(ref: unknown)}
@@ -84,7 +95,15 @@ $effect(() => {
   {#each Array.isArray(message.toolCallData) ? message.toolCallData : [message.toolCallData] as ref, i (i)}
     {@render offerCard(ref)}
     {@render themeUndo(ref)}
+    {@render reportCard(ref)}
   {/each}
+{/snippet}
+
+{#snippet reportCard(ref: unknown)}
+  {@const proposal = runtimeReportProposalFromMessage({ toolCallData: ref })}
+  {#if proposal}
+    <ReportProposalCard {proposal} />
+  {/if}
 {/snippet}
 
 {#snippet offerCard(data: unknown)}

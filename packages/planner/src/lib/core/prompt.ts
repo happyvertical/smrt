@@ -11,6 +11,7 @@ import {
 } from '../inference/host.ts';
 import { commandTools } from '../planner/commands/schemas.ts';
 import type { PlanSnapshot } from '../planner/commands/types.ts';
+import { plannerReportSources, REPORTS_RECIPE } from '../reports/sources.ts';
 import type { ColorSchemeSetting, ThemeSetting } from '../theme/theme.ts';
 import { defaultCatalog, type PromptCatalog } from './catalog.ts';
 
@@ -141,6 +142,15 @@ export function buildHostPrompt(input: HostPromptInput): HostPrompt {
       },
       matchText(indexOf(catalog), message),
       { current: themeOf(snapshot) },
+      [],
+      // The report sources the plan offers (its menu models), so a report
+      // request names one the planner can build.
+      catalog.recipes.some((recipe) => recipe.id === REPORTS_RECIPE)
+        ? plannerReportSources(
+            snapshot.recipes.map((recipe) => recipe.id),
+            catalog.recipes,
+          ).map(({ id, label }) => ({ id, label }))
+        : [],
     ),
     ...commandSection(snapshot),
   ].join('\n');
