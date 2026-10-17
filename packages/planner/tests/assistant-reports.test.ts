@@ -437,4 +437,18 @@ describe('the assistant builds runtime reports (#4100)', () => {
     await say('add the invoicing recipe please');
     expect(message.mock.calls.length).toBe(before + 1);
   });
+
+  it('keeps a report answer on the transcript, so a reload shows it', async () => {
+    const { say, transport } = mechanic(SALES_LAST_MONTH);
+    const answer = await say('give me a summary of all sales last month');
+    const proposal = runtimeReportProposalFromMessage(answer ?? {});
+    if (!proposal || !answer) throw new Error('no preview');
+    transport.recordReportOutcome(proposal.specHash, { status: 'declined' });
+    const reloaded = (await transport.loadMessages('planner')).find(
+      (m) => m.id === answer.id,
+    );
+    expect((reloaded?.toolCallData as { outcome?: unknown }).outcome).toEqual({
+      status: 'declined',
+    });
+  });
 });

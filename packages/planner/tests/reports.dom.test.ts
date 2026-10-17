@@ -193,20 +193,23 @@ describe('report preview and shared reports (#4100)', () => {
       period: 'last_month',
     });
     if (!defined.ok) throw new Error(defined.question);
-    const reference: { outcome?: unknown } = {};
+    const recorded: unknown[] = [];
     const first = render(
       ReportProposalCard,
-      { proposal: defined.proposal, reference },
+      {
+        proposal: defined.proposal,
+        onoutcome: (o: unknown) => recorded.push(o),
+      },
       data,
     );
     await settle();
     button(first, /decline/i).click();
     await settle();
-    expect(reference.outcome).toEqual({ status: 'declined' });
+    expect(recorded).toEqual([{ status: 'declined' }]);
     // The same transcript data rendered again (a reload): no live buttons.
     const again = render(
       ReportProposalCard,
-      { proposal: defined.proposal, reference },
+      { proposal: defined.proposal, answered: recorded[0] },
       data,
     );
     await settle();
@@ -220,9 +223,7 @@ describe('report preview and shared reports (#4100)', () => {
       ReportProposalCard,
       {
         proposal: defined.proposal,
-        reference: {
-          outcome: { status: 'saved', report: { id: 'r1', title: 'x' } },
-        },
+        answered: { status: 'saved', report: { id: 'r1', title: 'x' } },
       },
       data,
     );

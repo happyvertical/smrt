@@ -105,7 +105,11 @@ $effect(() => {
 {#snippet reportCard(ref: unknown)}
   {@const proposal = runtimeReportProposalFromMessage({ toolCallData: ref })}
   {#if proposal}
-    <ReportProposalCard {proposal} reference={ref as { outcome?: ReportConfirmationOutcome }} />
+    <ReportProposalCard
+      {proposal}
+      answered={(ref as { outcome?: ReportConfirmationOutcome }).outcome ?? null}
+      onoutcome={(outcome) => session.transport.recordReportOutcome(proposal.specHash, outcome)}
+    />
   {/if}
 {/snippet}
 

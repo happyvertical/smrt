@@ -117,6 +117,11 @@ export interface BrowserTransportOptions {
 export interface BrowserAssistantTransport extends AssistantTransport {
   /** Stop the turn in flight, if any. */
   abort(): void;
+  /**
+   * Record how a report preview was answered on the transcript's own tool
+   * data, so a reloaded transcript shows the outcome, not live buttons.
+   */
+  recordReportOutcome(specHash: string, outcome: unknown): void;
 }
 
 const THREAD_TITLE = 'Plan your app';
@@ -864,6 +869,26 @@ export function createBrowserAssistantTransport(
       };
       seen.set(input.clientRequestId, result);
       return result;
+    },
+    recordReportOutcome(specHash: string, outcome: unknown) {
+      for (const message of messages) {
+        const refs = Array.isArray(message.toolCallData)
+          ? message.toolCallData
+          : [message.toolCallData];
+        for (const ref of refs) {
+          const item = ref as {
+            name?: string;
+            result?: { specHash?: string };
+            outcome?: unknown;
+          } | null;
+          if (
+            item?.name === REPORT_DEFINE_TOOL &&
+            item.result?.specHash === specHash
+          ) {
+            item.outcome = outcome;
+          }
+        }
+      }
     },
     async uploadAttachment(file: File) {
       throw new Error(`The assistant cannot take attachments (${file.name}).`);

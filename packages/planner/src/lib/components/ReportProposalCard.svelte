@@ -15,15 +15,21 @@ import { reportPath } from '../reports/store.ts';
 interface ReportProposalCardProps {
   /** The assistant's `reports.runtime.define` preview. */
   proposal: RuntimeReportProposal;
+  /** How the card was answered, from the transcript (a reload shows it). */
+  answered?: ReportConfirmationOutcome | null;
   /**
-   * The transcript's tool data this preview rides on: its `outcome` is how
-   * the card was answered, kept there so a re-rendered or reloaded card shows
-   * the answer instead of live buttons.
+   * Record an answer on the transcript itself (the transport's
+   * `recordReportOutcome`): the dock's message copies are reactive proxies,
+   * so writing to them would not survive a reload.
    */
-  reference?: { outcome?: ReportConfirmationOutcome };
+  onoutcome?: (outcome: ReportConfirmationOutcome) => void;
 }
 
-let { proposal, reference }: ReportProposalCardProps = $props();
+let {
+  proposal,
+  answered = null,
+  onoutcome,
+}: ReportProposalCardProps = $props();
 
 // smrt-reports' own confirmation card. Approve is the person's click and
 // nothing else: it saves the report into the plan (the browser's confirmed
@@ -32,13 +38,11 @@ let { proposal, reference }: ReportProposalCardProps = $props();
 const reports = plannerReportsFor(useDataSource());
 const currency = $derived(cookbookStore.settings().currency);
 const fields = $derived(reports.fieldsFor(proposal.spec.source));
-let outcome = $state<ReportConfirmationOutcome | null>(
-  (() => reference?.outcome ?? null)(),
-);
+let outcome = $state<ReportConfirmationOutcome | null>((() => answered)());
 let element = $state<HTMLDivElement | null>(null);
 function record(next: ReportConfirmationOutcome) {
   outcome = next;
-  if (reference) reference.outcome = next;
+  onoutcome?.(next);
 }
 function onsaved(report: SavedRuntimeReport) {
   record({ status: 'saved', report: { id: report.id, title: report.title } });
