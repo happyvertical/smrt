@@ -351,7 +351,7 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
       kind: 'payment',
       customerId: customer.id!,
       currency: 'CAD',
-      amount: 9800,
+      amount: 9700,
     });
     await received.recordPayment({
       ledgerId: '',
@@ -360,9 +360,11 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     });
     await allocations.allocatePayment({
       paymentId: received.id!,
-      allocations: [{ id: randomUUID(), invoiceId: invoice.id!, amount: 9800 }],
+      allocations: [{ id: randomUUID(), invoiceId: invoice.id!, amount: 9700 }],
     });
     const credit = await invoices.create({
+      id: `f${randomUUID().slice(1)}`,
+      issueDate: new Date('2026-10-18T00:00:00Z'),
       invoiceNumber: 'CR-1',
       kind: 'credit_note',
       creditedInvoiceId: invoice.id!,
@@ -450,13 +452,13 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     const adjusted = await syncRetainedCreditToAccounting(creditCommand);
     expect(adjusted.credits[0]).toMatchObject({
       retainedMinor: 700,
-      appliedMinor: 0,
+      appliedMinor: 100,
       committed: true,
     });
-    expect(execute).toHaveBeenCalledTimes(5);
+    expect(execute).toHaveBeenCalledTimes(6);
     expect(creditPush).toHaveBeenCalledTimes(1);
     await syncRetainedCreditToAccounting(creditCommand);
-    expect(execute).toHaveBeenCalledTimes(5);
+    expect(execute).toHaveBeenCalledTimes(6);
     row = await load();
     expect(row.getPayableFacts()).toMatchObject({
       retainedRemainingMinor: 0,
@@ -476,7 +478,7 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
       kind: 'refund',
       customerId: customer.id!,
       currency: 'CAD',
-      amount: 300,
+      amount: 200,
     });
     await refund.recordPayment({
       ledgerId: '',
@@ -485,7 +487,7 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     });
     const [refundAllocation] = await allocations.allocatePayment({
       paymentId: refund.id!,
-      allocations: [{ id: randomUUID(), invoiceId: credit.id!, amount: 300 }],
+      allocations: [{ id: randomUUID(), invoiceId: credit.id!, amount: 200 }],
     });
     const refundCommand = {
       db,
@@ -500,10 +502,10 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     };
     expect(
       (await syncRetainedRefundToAccounting(refundCommand)).refunds[0],
-    ).toMatchObject({ amountMinor: 300, committed: true });
-    expect(execute).toHaveBeenCalledTimes(7);
+    ).toMatchObject({ amountMinor: 200, committed: true });
+    expect(execute).toHaveBeenCalledTimes(8);
     await syncRetainedRefundToAccounting(refundCommand);
-    expect(execute).toHaveBeenCalledTimes(7);
+    expect(execute).toHaveBeenCalledTimes(8);
     await expect(refundAllocation.delete()).rejects.toThrow(
       'cannot be deleted',
     );
@@ -518,5 +520,206 @@ export async function proveRetentionAccounting(db: DatabaseInterface) {
     const cannotVoid = await invoices.get({ id: credit.id! }, { cache: false });
     if (!cannotVoid) throw new Error('Missing credit');
     expect(() => cannotVoid.cancel()).toThrow('Cannot cancel');
+
+    // Same calendar date and reverse UUID order must not reassign the already
+    // provider-managed retained AND currently-due applications.
+    const originalState = structuredClone(
+      readRetainedInvoiceAccountingState(await load())!.credits,
+    );
+    const later = await invoices.create({
+      id: `0${randomUUID().slice(1)}`,
+      invoiceNumber: 'CR-LATER',
+      kind: 'credit_note',
+      creditedInvoiceId: invoice.id!,
+      customerId: customer.id!,
+      customerExternalId: 'customer-1',
+      currency: 'CAD',
+      issueDate: new Date('2026-10-18T00:00:00Z'),
+    });
+    expect(later.id! < credit.id!).toBe(true);
+    const laterLine = await lines.create({
+      invoiceId: later.id!,
+      creditedLineId: line.id!,
+      quantity: 100,
+      unitPrice: 0,
+      description: 'Later independently refundable credit',
+    });
+    const collectionList = InvoiceCollection.prototype.list;
+    let laterFirst = false;
+    const order = vi
+      .spyOn(InvoiceCollection.prototype, 'list')
+      .mockImplementation(async function (
+        this: InvoiceCollection,
+        options: any,
+      ): Promise<any> {
+        const found = await collectionList.call(this, options);
+        if (options?.where?.creditedInvoiceId === invoice.id)
+          found.sort((a: any, b: any) =>
+            laterFirst
+              ? String(a.id).localeCompare(String(b.id))
+              : String(b.id).localeCompare(String(a.id)),
+          );
+        return found;
+      });
+    try {
+      const draft = await invoices.get({ id: later.id! }, { cache: false });
+      if (!draft) throw new Error('Missing later credit');
+      draft.status = InvoiceStatus.SENT;
+      await draft.save();
+      expect(
+        (await invoices.get({ id: later.id! }, { cache: false }))!
+          .creditedAmount,
+      ).toBe(0);
+      const laterCommand = {
+        ...creditCommand,
+        creditInvoiceId: later.id!,
+        requestId: 'later-credit',
+        creditMapping: {
+          ...invoiceMapping,
+          lines: {
+            [laterLine.id!]: { itemRef: 'item-1', taxCodeRef: 'non-tax' },
+          },
+        },
+      };
+      await syncRetainedCreditToAccounting(laterCommand);
+      const protectedState = readRetainedInvoiceAccountingState(
+        await load(),
+      )!.credits;
+      expect(protectedState[0]).toEqual(originalState[0]);
+      expect(protectedState[1]).toMatchObject({
+        retainedMinor: 0,
+        appliedMinor: 0,
+      });
+      laterFirst = true;
+      const laterRefund = await payments.create({
+        kind: 'refund',
+        customerId: customer.id!,
+        currency: 'CAD',
+        amount: 100,
+      });
+      await laterRefund.recordRefund({
+        ledgerId: '',
+        cashAccountId: cash.id!,
+        receivablesAccountId: ar.id!,
+        effectiveOn: '2026-10-18',
+      });
+      const split = {
+        paymentId: laterRefund.id!,
+        allocations: [{ id: randomUUID(), invoiceId: later.id!, amount: 100 }],
+      };
+      await expect(
+        db.transaction!(async (tx) => {
+          await (
+            await PaymentAllocationCollection.create({ db: tx })
+          ).allocatePayment(split);
+          throw new Error('caller rollback');
+        }),
+      ).rejects.toThrow('caller rollback');
+      expect(
+        (await invoices.get({ id: later.id! }, { cache: false }))!.amountPaid,
+      ).toBe(0);
+      await allocations.allocatePayment(split);
+      await allocations.allocatePayment(split);
+      expect(
+        (await invoices.get({ id: later.id! }, { cache: false }))!.amountPaid,
+      ).toBe(100);
+      expect(
+        (await invoices.get({ id: credit.id! }, { cache: false }))!
+          .creditedAmount,
+      ).toBe(800);
+      expect(
+        (await invoices.get({ id: later.id! }, { cache: false }))!
+          .creditedAmount,
+      ).toBe(0);
+      expect(readRetainedInvoiceAccountingState(await load())!.credits).toEqual(
+        protectedState,
+      );
+      expect((await load()).creditedAmount).toBe(1100);
+    } finally {
+      order.mockRestore();
+    }
+
+    // Issuance is independent of delivery timestamps. Reallocating an issued
+    // unmanaged credit to zero must not silently retract its economic effect.
+    const ordinary = await invoices.create({
+      customerId: customer.id!,
+      currency: 'CAD',
+    });
+    const ordinaryLine = await lines.create({
+      invoiceId: ordinary.id!,
+      quantity: 100,
+      unitPrice: 1,
+    });
+    const ordinaryIssued = (await invoices.get(
+      { id: ordinary.id! },
+      { cache: false },
+    ))!;
+    ordinaryIssued.status = InvoiceStatus.SENT;
+    await ordinaryIssued.save();
+    const ordinaryPayment = await payments.create({
+      kind: 'payment',
+      customerId: customer.id!,
+      currency: 'CAD',
+      amount: 50,
+    });
+    await ordinaryPayment.recordPayment({
+      ledgerId: '',
+      cashAccountId: cash.id!,
+      receivablesAccountId: ar.id!,
+    });
+    await allocations.allocatePayment({
+      paymentId: ordinaryPayment.id!,
+      allocations: [{ id: randomUUID(), invoiceId: ordinary.id!, amount: 50 }],
+    });
+    const unmanagedIds: string[] = [];
+    for (const prefix of ['f', '0']) {
+      const unmanaged = await invoices.create({
+        id: `${prefix}${randomUUID().slice(1)}`,
+        kind: 'credit_note',
+        creditedInvoiceId: ordinary.id!,
+        customerId: customer.id!,
+        currency: 'CAD',
+        issueDate: new Date('2026-10-18T00:00:00Z'),
+      });
+      await lines.create({
+        invoiceId: unmanaged.id!,
+        creditedLineId: ordinaryLine.id!,
+        quantity: 50,
+        unitPrice: 0,
+      });
+      const current = (await invoices.get(
+        { id: unmanaged.id! },
+        { cache: false },
+      ))!;
+      current.status = InvoiceStatus.SENT;
+      await current.save();
+      unmanagedIds.push(unmanaged.id!);
+    }
+    expect(unmanagedIds[1] < unmanagedIds[0]).toBe(true);
+    for (let repeat = 0; repeat < 3; repeat++) {
+      const latest = (await invoices.get(
+        { id: unmanagedIds[1] },
+        { cache: false },
+      ))!;
+      await latest.save();
+      const first = (await invoices.get(
+        { id: unmanagedIds[0] },
+        { cache: false },
+      ))!;
+      const second = (await invoices.get(
+        { id: unmanagedIds[1] },
+        { cache: false },
+      ))!;
+      expect(
+        (await invoices.get({ id: ordinary.id! }, { cache: false }))!
+          .creditedAmount,
+      ).toBe(100);
+      expect(first.status).toBe(InvoiceStatus.SENT);
+      expect(first.sentAt).toBeNull();
+      expect(first.viewedAt).toBeNull();
+      expect(first.creditedAmount).toBe(0);
+      expect(second.creditedAmount).toBe(50);
+      expect(second.status).toBe(InvoiceStatus.PAID);
+    }
   });
 }

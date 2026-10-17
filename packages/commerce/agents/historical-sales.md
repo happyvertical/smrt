@@ -130,3 +130,21 @@ PostgreSQL scope/tenant checks. No100,000-row fixture, production writes or sche
 changes were needed. Full logs remain external at the2026-10-16 MVP session's
 `nonfinancial-import/scoped-sales-regression-base.log`, `scoped-sales-focused.log`
 and `scoped-sales-postgres.log`. Native token usage was unavailable.
+
+### Stable managed credit applications
+
+Refreshing a source invoice's credit balance reserves each provider-managed
+credit's exact retained and currently-due applications before allocating any
+remaining capacity to unmanaged issued credits. A later same-day credit, a
+lower UUID or a different database enumeration order cannot take an already
+reserved application. This includes a zero-application credit whose excess is
+refunded in cash. Unmanaged residual allocation follows issue date and ID order.
+
+The reconciliation guard still rejects a missing/cancelled managed credit,
+changed retained/application amounts or frozen applications exceeding the
+source's remaining capacity. Ordinary refund saves and retries preserve the
+provider allocation snapshot; they do not authorize an external reversal.
+
+An issued unmanaged credit remains issued when residual application becomes zero,
+even when no sent/viewed delivery timestamp was recorded. Repeated refreshes retain
+its full credit effect; allocation changes do not cancel or return it to draft.
