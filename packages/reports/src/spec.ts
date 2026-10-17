@@ -29,6 +29,8 @@ export {
 export type {
   RuntimeReportColumn,
   RuntimeReportColumnType,
+  RuntimeReportDimensionHints,
+  RuntimeReportDimensionKind,
   RuntimeReportResult,
   RuntimeReportSourceDescription,
 } from './runtime-plan.js';
@@ -61,3 +63,12 @@ export {
   runtimeReportSpecDigest,
   serializeRuntimeReportSpec,
 } from './runtime-spec.js';
+export type {
+  RuntimeReportTimeIntent,
+  RuntimeReportTimeRange,
+} from './runtime-time.js';
+export {
+  parseRuntimeReportTime,
+  resolveRuntimeReportTimeRange,
+  runtimeReportBucketForSpan,
+} from './runtime-time.js';

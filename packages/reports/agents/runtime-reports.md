@@ -14,6 +14,8 @@ grammar. Declared (`@report`) reports are unchanged and remain the way to get a
 | `src/runtime-spec-hash.ts` | `runtimeReportSpecHash()` (`node:crypto`, server only) |
 | `src/runtime-plan.ts` | Column, operator, aggregate, coercion and cell rules shared by both runners (browser-safe) |
 | `src/runtime-compiler.ts` | `compileRuntimeReportSpec()`, `describeRuntimeReportSource()`, `runRuntimeReport()` |
+| `src/runtime-dimensions.ts` | Time and grouping hints in source descriptions (browser-safe) |
+| `src/runtime-time.ts` | Time language: buckets and periods from words, against `now` (browser-safe) |
 | `src/runtime-memory.ts` | `runRuntimeReportInMemory()`, `describeRuntimeReportMemorySource()` (browser-safe) |
 | `src/spec.ts` | The `./spec` subpath: the browser-safe exports above |
 | `src/runtime-server.ts` | Same-origin confirmation, principal-bound run/archive, chart loader |
@@ -83,6 +85,29 @@ groups without dimensions always yield one row, NULLs sort first ascending (as
 SQLite), weeks start Monday, buckets are UTC. Result datetimes are ISO-8601
 (PostgreSQL/DuckDB form; SQLite returns bucket TEXT). `runtime-memory-parity.test.ts`
 runs a spec matrix through both runners on SQLite and requires identical results.
+
+### Time and grouping hints
+
+Both source descriptions carry `timeFields`, `defaultTimeField` (the natural
+date "by month" buckets: an invoice's issue date, never `createdAt` when a
+business date exists) and `dimensions` (fields worth grouping by, most useful
+first), and each field a `dimension` kind (`time`, `category`, `relation`) when
+it is one, plus its declared `enum`. A source definition may declare
+`timeField` and `dimensions` (canonical names; unknown names are
+`unsupported_source`, hidden ones are dropped for that principal). Otherwise
+`runtime-dimensions.ts` derives them: a business date
+(`@field({ ui: { format: 'date' } })`) else the first non-bookkeeping datetime;
+closed text fields, booleans and foreign keys as groupings, never `id`, free
+text or names marking plumbing (`…Hash`, `…Json`, `…Authority`, `external…`,
+`historical…`). They are hints for choosing, not authority: a spec may still
+group by any exposed field.
+
+`parseRuntimeReportTime(text, now)` reads a request's time words ("by month",
+"weekly", "over time", "last quarter by week") into a bucket, a period and
+whether time came up; `resolveRuntimeReportTimeRange(phrase, now)` resolves
+"last month", "this year", "last 90 days", "Q3", "December" to `[from, to)`
+dates (UTC). Assistants resolve time with these rather than asking a model to
+do date arithmetic.
 
 **It is a browser preview and test runner, not an authority boundary.** It has
 no registry field policy, principal, RBAC or tenant: whoever supplies the rows

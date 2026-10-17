@@ -92,7 +92,9 @@ contract, authority model, and deferred work are in
 the compiler's own rules (`runtime-plan.ts`). It is a preview and test runner,
 never an authority boundary. `spec-entry.test.ts` fails if that entry reaches a
 Node built-in or any package module but `@happyvertical/smrt-core/smrt-error`;
-`runtime-memory-parity.test.ts` holds it to the SQL path.
+`runtime-memory-parity.test.ts` holds it to the SQL path. Source descriptions
+carry time and grouping hints and `./spec` exports the time-language helpers
+(`runtime-dimensions.ts`, `runtime-time.ts`); see the runtime contract.
 
 ## Recipes (#3719)
 

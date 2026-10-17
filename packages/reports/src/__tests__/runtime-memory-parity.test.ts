@@ -173,12 +173,12 @@ const MEMORY_SOURCES: RuntimeReportMemorySource[] = [
       { name: 'createdAt', type: 'datetime' },
       { name: 'updatedAt', type: 'datetime' },
       { name: 'customerId', type: 'id' },
-      { name: 'status', type: 'string' },
+      { name: 'status', type: 'string', enum: ['paid', 'open', 'void'] },
       { name: 'memo', type: 'string' },
       { name: 'totalAmount', type: 'integer', format: 'money' },
       { name: 'taxRate', type: 'decimal' },
       { name: 'isPaid', type: 'boolean' },
-      { name: 'issuedAt', type: 'datetime' },
+      { name: 'issuedAt', type: 'datetime', format: 'date' },
       { name: 'deletedAt', type: 'datetime' },
     ],
   },
@@ -190,13 +190,13 @@ function registerFixture(): void {
   const field = (name: string, def: Record<string, unknown>) =>
     ObjectRegistry.registerFieldDecorator('PmInvoice', name, def as never);
   field('customerId', { type: 'foreignKey', related: 'Customer' });
-  field('status', { type: 'text' });
+  field('status', { type: 'text', enum: ['paid', 'open', 'void'] });
   field('memo', { type: 'text' });
   // As `@field({ ui: { format: 'money' } })` registers it (`_meta.ui.format`).
   field('totalAmount', { type: 'integer', ui: { format: 'money' } });
   field('taxRate', { type: 'decimal' });
   field('isPaid', { type: 'boolean' });
-  field('issuedAt', { type: 'datetime' });
+  field('issuedAt', { type: 'datetime', ui: { format: 'date' } });
   field('deletedAt', { type: 'datetime', nullable: true });
   ObjectRegistry.register(PmInvoice, { tableName: 'pm_invoices' });
 }
@@ -720,5 +720,51 @@ describe('runRuntimeReportInMemory parity with the SQL runner (#4100)', () => {
     expect(memory.id).toBe(sql.id);
     expect(memory.label).toBe(sql.label);
     expect(byName(memory.fields)).toEqual(byName(sql.fields));
+    // Time and grouping hints (#4100) agree too.
+    expect(memory.defaultTimeField).toBe(sql.defaultTimeField);
+    expect(sql.defaultTimeField).toBe('issuedAt');
+    expect([...memory.timeFields].sort()).toEqual([...sql.timeFields].sort());
+    expect(memory.dimensions).toEqual(sql.dimensions);
+    expect(sql.dimensions.slice(0, 2)).toEqual(['status', 'customerId']);
+    for (const internal of ['id', 'memo', 'slug']) {
+      expect(sql.dimensions).not.toContain(internal);
+    }
+  });
+
+  it('applies declared time and grouping hints the same way', async () => {
+    const { describeRuntimeReportSource } = await import(
+      '../runtime-compiler.js'
+    );
+    const hints = { timeField: 'createdAt', dimensions: ['isPaid', 'status'] };
+    const sql = await describeRuntimeReportSource(
+      { sources: [{ ...SQL_SOURCES[0], ...hints }], tenantId: null },
+      'invoices',
+    );
+    const memory = describeRuntimeReportMemorySource(
+      [{ ...MEMORY_SOURCES[0], ...hints }],
+      'invoices',
+    );
+    for (const described of [sql, memory]) {
+      expect(described.defaultTimeField).toBe('createdAt');
+      expect(described.dimensions).toEqual(['isPaid', 'status']);
+      expect(
+        described.fields.find((f) => f.name === 'customerId')?.dimension,
+      ).toBeUndefined();
+    }
+    await expect(
+      describeRuntimeReportSource(
+        {
+          sources: [{ ...SQL_SOURCES[0], dimensions: ['nope'] }],
+          tenantId: null,
+        },
+        'invoices',
+      ),
+    ).rejects.toMatchObject({ code: 'unsupported_source' });
+    expect(() =>
+      describeRuntimeReportMemorySource(
+        [{ ...MEMORY_SOURCES[0], timeField: 'nope' }],
+        'invoices',
+      ),
+    ).toThrow(RuntimeReportError);
   });
 });

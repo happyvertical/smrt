@@ -132,6 +132,10 @@ export {
   runRuntimeReportInMemory,
 } from './runtime-memory.js';
 export type {
+  RuntimeReportDimensionHints,
+  RuntimeReportDimensionKind,
+} from './runtime-plan.js';
+export type {
   RuntimeReportStatus,
   RuntimeReportStoreOptions,
   SaveRuntimeReportOptions,
@@ -189,6 +193,15 @@ export {
   serializeRuntimeReportSpec,
 } from './runtime-spec.js';
 export { runtimeReportSpecHash } from './runtime-spec-hash.js';
+export type {
+  RuntimeReportTimeIntent,
+  RuntimeReportTimeRange,
+} from './runtime-time.js';
+export {
+  parseRuntimeReportTime,
+  resolveRuntimeReportTimeRange,
+  runtimeReportBucketForSpan,
+} from './runtime-time.js';
 export type {
   EnqueueReportRefreshOptions,
   EnsureReportSchedulesOptions,

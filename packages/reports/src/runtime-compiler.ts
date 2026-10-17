@@ -34,10 +34,10 @@ import {
 import type { DatabaseInterface, SqlAdapterType } from '@happyvertical/sql';
 import { buildAggregate } from './aggregate.js';
 import { adapterTypeFromDb, tenantColumn } from './refresh.js';
+import { describeRuntimeReportSourceFields } from './runtime-dimensions.js';
 import {
   assertRuntimeReportFilterOperator,
   coerceRuntimeReportValue,
-  describeRuntimeReportFields,
   humanizeRuntimeReportName,
   normalizeRuntimeReportCell,
   planRuntimeReportColumns,
@@ -82,6 +82,10 @@ export interface RuntimeReportSourceDefinition {
   fields?: readonly string[];
   /** Canonical public field names to remove; exclusions always win. */
   excludeFields?: readonly string[];
+  /** The natural date "by month" buckets (an invoice's issue date); derived when omitted. */
+  timeField?: string;
+  /** Fields worth grouping by, most useful first; derived when omitted. */
+  dimensions?: readonly string[];
 }
 
 export interface RuntimeReportCompileContext {
@@ -123,6 +127,7 @@ export interface CompiledRuntimeReport {
 const ALIAS_PREFIX = 'r_';
 interface RegistryFieldShape {
   type?: string;
+  enum?: unknown;
   transient?: boolean;
   sensitive?: boolean;
   sensitivity?: unknown;
@@ -139,6 +144,17 @@ interface SourceField {
   type: RuntimeReportColumnType;
   format?: string;
   label: string;
+  enum?: readonly string[];
+  businessDate?: boolean;
+}
+
+/** Declared values of a closed text field (manifest `enum`). */
+function enumOf(field: RegistryFieldShape): string[] | undefined {
+  const values = [field.enum, field._meta?.enum].find(Array.isArray) as
+    | unknown[]
+    | undefined;
+  const strings = values?.filter((v): v is string => typeof v === 'string');
+  return strings?.length ? strings : undefined;
 }
 
 function columnTypeFor(
@@ -289,11 +305,16 @@ async function loadSourceFields(
       const type = columnTypeFor(field.type);
       if (!type) continue;
       const format = strictFormat(field);
+      const values = type === 'string' ? enumOf(field) : undefined;
       fields.set(name, {
         name,
         column,
         type,
         ...(format ? { format } : {}),
+        ...(values ? { enum: values } : {}),
+        ...(type === 'datetime' && format === 'date'
+          ? { businessDate: true }
+          : {}),
         label:
           typeof field.description === 'string' && field.description.length > 0
             ? field.description
@@ -445,7 +466,7 @@ export async function describeRuntimeReportSource(
     ...(prepared.source.description
       ? { description: prepared.source.description }
       : {}),
-    fields: describeRuntimeReportFields(prepared.fields.values()),
+    ...describeRuntimeReportSourceFields(prepared.fields, prepared.source),
   };
 }
 

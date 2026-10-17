@@ -62,9 +62,38 @@ export interface RuntimeReportSourceDescription {
     label: string;
     type: RuntimeReportColumnType;
     format?: string;
+    /** Declared values of a closed text field (a status, a kind). */
+    enum?: readonly string[];
+    /**
+     * How the field reads as a grouping, when it is a useful one: a time axis
+     * (bucket it), a category (a status, a kind, a flag) or a relation (a
+     * customer). Absent: not offered as a grouping (ids, free text, hashes,
+     * internal bookkeeping), though a spec may still name it.
+     */
+    dimension?: RuntimeReportDimensionKind;
     filterOperators: readonly string[];
     aggregates: readonly string[];
   }[];
+  /** Datetime fields a report can bucket or filter by period, default first. */
+  timeFields: string[];
+  /** The source's natural date (an invoice's issue date): what "by month" buckets. */
+  defaultTimeField?: string;
+  /** Category and relation fields worth grouping by, most useful first. */
+  dimensions: string[];
+}
+
+/** How a field reads as a grouping; see `RuntimeReportSourceDescription`. */
+export type RuntimeReportDimensionKind = 'time' | 'category' | 'relation';
+
+/**
+ * Grouping hints a source definition may declare (#4100). `timeField` names
+ * the natural date; `dimensions` lists, in order, the fields worth grouping
+ * by. Both use canonical public names; unknown names reject the source.
+ * Omitted, both are derived from field metadata (`runtime-dimensions.ts`).
+ */
+export interface RuntimeReportDimensionHints {
+  timeField?: string;
+  dimensions?: readonly string[];
 }
 
 /** A nameable source field after every exposure rule has been applied. */
@@ -73,6 +102,10 @@ export interface RuntimeReportPlanField {
   type: RuntimeReportColumnType;
   format?: string;
   label: string;
+  /** Declared values of a closed text field. */
+  enum?: readonly string[];
+  /** `@field({ ui: { format: 'date' } })`: a business date, not a timestamp. */
+  businessDate?: boolean;
 }
 
 const UUID_PATTERN =
@@ -230,10 +263,14 @@ export function resolveRuntimeReportFieldPolicy(
   source: {
     fields?: readonly string[];
     excludeFields?: readonly string[];
+    timeField?: string;
+    dimensions?: readonly string[];
   },
   knownNames: ReadonlySet<string>,
 ): { included?: Set<string>; excluded?: Set<string> } {
-  const policy = (key: 'fields' | 'excludeFields'): Set<string> | undefined => {
+  const policy = (
+    key: 'fields' | 'excludeFields' | 'dimensions',
+  ): Set<string> | undefined => {
     const value = source[key];
     if (value === undefined) return undefined;
     if (
@@ -252,6 +289,17 @@ export function resolveRuntimeReportFieldPolicy(
   };
   const included = policy('fields');
   const excluded = policy('excludeFields');
+  policy('dimensions');
+  if (
+    source.timeField !== undefined &&
+    (typeof source.timeField !== 'string' || !knownNames.has(source.timeField))
+  ) {
+    throw new RuntimeReportError(
+      'unsupported_source',
+      'source.timeField',
+      'timeField must be a canonical field name declared on the source',
+    );
+  }
   return {
     ...(included ? { included } : {}),
     ...(excluded ? { excluded } : {}),
@@ -341,20 +389,6 @@ export function planRuntimeReportColumns(
     });
   }
   return columns;
-}
-
-/** Describe what a spec may reference on a source with these resolved fields. */
-export function describeRuntimeReportFields(
-  fields: Iterable<RuntimeReportPlanField>,
-): RuntimeReportSourceDescription['fields'] {
-  return [...fields].map((field) => ({
-    name: field.name,
-    label: field.label,
-    type: field.type,
-    ...(field.format ? { format: field.format } : {}),
-    filterOperators: RUNTIME_REPORT_OPERATORS_BY_TYPE[field.type],
-    aggregates: runtimeReportAggregatesFor(field.type),
-  }));
 }
 
 /** Normalize one result cell to the wire shape (safe integers, ISO datetimes). */

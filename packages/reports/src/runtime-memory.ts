@@ -16,10 +16,10 @@
  * `saveRuntimeReport()`.
  */
 
+import { describeRuntimeReportSourceFields } from './runtime-dimensions.js';
 import {
   assertRuntimeReportFilterOperator,
   coerceRuntimeReportValue,
-  describeRuntimeReportFields,
   humanizeRuntimeReportName,
   normalizeRuntimeReportCell,
   planRuntimeReportColumns,
@@ -47,8 +47,13 @@ export interface RuntimeReportMemoryField {
   name: string;
   type: RuntimeReportColumnType;
   label?: string;
-  /** Format hint carried onto result columns (for example `money`). */
+  /**
+   * Format hint carried onto result columns (`money`), as `@field({ ui:
+   * { format } })` declares it; `date` on a datetime marks a business date.
+   */
   format?: string;
+  /** Declared values of a closed text field (a status). */
+  enum?: readonly string[];
 }
 
 /**
@@ -66,6 +71,10 @@ export interface RuntimeReportMemorySource {
   schema: readonly RuntimeReportMemoryField[];
   fields?: readonly string[];
   excludeFields?: readonly string[];
+  /** The natural date "by month" buckets; derived when omitted. */
+  timeField?: string;
+  /** Fields worth grouping by, most useful first; derived when omitted. */
+  dimensions?: readonly string[];
 }
 
 export type RuntimeReportMemoryRow = Readonly<Record<string, unknown>>;
@@ -116,6 +125,12 @@ function memoryFields(
       name: field.name,
       type: field.type,
       ...(field.format ? { format: field.format } : {}),
+      ...(field.type === 'string' && field.enum?.length
+        ? { enum: field.enum }
+        : {}),
+      ...(field.type === 'datetime' && field.format === 'date'
+        ? { businessDate: true }
+        : {}),
       label: field.label ?? humanizeRuntimeReportName(field.name),
     });
   }
@@ -135,7 +150,7 @@ export function describeRuntimeReportMemorySource(
     id: source.id,
     label: source.label ?? humanizeRuntimeReportName(source.id),
     ...(source.description ? { description: source.description } : {}),
-    fields: describeRuntimeReportFields(memoryFields(source).values()),
+    ...describeRuntimeReportSourceFields(memoryFields(source), source),
   };
 }
 
