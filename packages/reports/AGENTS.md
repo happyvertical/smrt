@@ -86,6 +86,13 @@ persisted. Assistant tools are in `@happyvertical/smrt-chat`. The full
 contract, authority model, and deferred work are in
 [agents/runtime-reports.md](agents/runtime-reports.md).
 
+`./spec` (#4100) is the browser-safe half: the grammar, `runtimeReportSpecDigest`
+(Web Crypto twin of the server-only `runtimeReportSpecHash`) and
+`runRuntimeReportInMemory()`, which evaluates a spec over caller-held rows with
+the compiler's own rules (`runtime-plan.ts`). It is a preview and test runner,
+never an authority boundary. `spec-entry.test.ts` fails if that entry reaches a
+Node built-in; `runtime-memory-parity.test.ts` holds it to the SQL path.
+
 ## Recipes (#3719)
 
 `src/recipes.ts` declares `reports.materialized` (`MaterializedReportsRecipe`),

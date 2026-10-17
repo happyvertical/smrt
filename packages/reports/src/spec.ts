@@ -9,8 +9,29 @@
  * `compileRuntimeReportSpec` / `runRuntimeReport` (ObjectRegistry and SQL) and
  * the `RuntimeReport` model. `src/__tests__/spec-entry.test.ts` fails when
  * this entry's import graph reaches a Node built-in.
+ *
+ * `runRuntimeReportInMemory()` evaluates a spec over rows the caller holds,
+ * returning the `runRuntimeReport()` result shape. It is a browser preview
+ * and test runner, not an authority boundary: server compilation and RBAC
+ * still own production reports.
  */
 
+export type {
+  RunRuntimeReportInMemoryOptions,
+  RuntimeReportMemoryField,
+  RuntimeReportMemoryRow,
+  RuntimeReportMemorySource,
+} from './runtime-memory.js';
+export {
+  describeRuntimeReportMemorySource,
+  runRuntimeReportInMemory,
+} from './runtime-memory.js';
+export type {
+  RuntimeReportColumn,
+  RuntimeReportColumnType,
+  RuntimeReportResult,
+  RuntimeReportSourceDescription,
+} from './runtime-plan.js';
 export type {
   RuntimeReportBucket,
   RuntimeReportChart,

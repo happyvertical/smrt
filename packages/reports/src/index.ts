@@ -122,6 +122,16 @@ export {
   runRuntimeReport,
 } from './runtime-compiler.js';
 export type {
+  RunRuntimeReportInMemoryOptions,
+  RuntimeReportMemoryField,
+  RuntimeReportMemoryRow,
+  RuntimeReportMemorySource,
+} from './runtime-memory.js';
+export {
+  describeRuntimeReportMemorySource,
+  runRuntimeReportInMemory,
+} from './runtime-memory.js';
+export type {
   RuntimeReportStatus,
   RuntimeReportStoreOptions,
   SaveRuntimeReportOptions,

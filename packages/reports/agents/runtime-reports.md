@@ -10,8 +10,12 @@ grammar. Declared (`@report`) reports are unchanged and remain the way to get a
 
 | File | Role |
 | --- | --- |
-| `src/runtime-spec.ts` | `RuntimeReportSpec` grammar, strict parser, limits, stable hash |
+| `src/runtime-spec.ts` | `RuntimeReportSpec` grammar, strict parser, limits, canonical JSON, Web Crypto digest (browser-safe) |
+| `src/runtime-spec-hash.ts` | `runtimeReportSpecHash()` (`node:crypto`, server only) |
+| `src/runtime-plan.ts` | Column, operator, aggregate, coercion and cell rules shared by both runners (browser-safe) |
 | `src/runtime-compiler.ts` | `compileRuntimeReportSpec()`, `describeRuntimeReportSource()`, `runRuntimeReport()` |
+| `src/runtime-memory.ts` | `runRuntimeReportInMemory()`, `describeRuntimeReportMemorySource()` (browser-safe) |
+| `src/spec.ts` | The `./spec` subpath: the browser-safe exports above |
 | `src/runtime-server.ts` | Same-origin confirmation, principal-bound run/archive, chart loader |
 | `src/runtime-report.ts` | `RuntimeReport` model (`runtime_reports`), `saveRuntimeReport()`, list/get/archive, `runStoredRuntimeReport()` |
 
@@ -54,6 +58,34 @@ alias charset, reserved words) are in `RUNTIME_REPORT_LIMITS`.
 
 The parser normalizes defaults and derives aliases, so equal specs hash equally
 (`runtimeReportSpecHash`). The hash is what a human confirmation binds to.
+`runtimeReportSpecDigest` computes the same hex with Web Crypto for browsers
+(async; needs a secure context).
+
+## Browser grammar and in-memory runner (#4100)
+
+`@happyvertical/smrt-reports/spec` imports no Node built-in, so a browser
+parses specs with the server's own parser. `runRuntimeReportInMemory(spec,
+rows, { sources, maxRows?, now? })` evaluates a parsed spec over rows the
+caller already holds and returns the `RuntimeReportResult` shape (`specHash`
+included). A `RuntimeReportMemorySource` is `{ id, label?, description?,
+schema: [{ name, type, label?, format? }], fields?, excludeFields? }`: the same
+allow/deny semantics as a server source, `_`-prefixed names and `tenantId`
+never nameable, and a declared `deletedAt` soft-deletes.
+`describeRuntimeReportMemorySource()` is the `reports.runtime.sources`
+counterpart.
+
+Both runners call `runtime-plan.ts` for columns, operator/aggregate rules and
+value coercion, so errors carry the same codes and paths. SQL-shaped semantics:
+comparisons and `IN`/`NOT IN` never match NULL, `contains` is case-sensitive,
+groups without dimensions always yield one row, NULLs sort first ascending (as
+SQLite), weeks start Monday, buckets are UTC. Result datetimes are ISO-8601
+(PostgreSQL/DuckDB form; SQLite returns bucket TEXT). `runtime-memory-parity.test.ts`
+runs a spec matrix through both runners on SQLite and requires identical results.
+
+**It is a browser preview and test runner, not an authority boundary.** It has
+no registry field policy, principal, RBAC or tenant: whoever supplies the rows
+has already decided they may be seen. Production reports compile on the server
+for the live principal and save only through the confirmed `saveRuntimeReport()`.
 
 ## Authority model
 

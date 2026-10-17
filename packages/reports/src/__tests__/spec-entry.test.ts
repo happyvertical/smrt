@@ -91,7 +91,13 @@ describe('./spec browser entry (#4100)', () => {
   const graph = walk(ENTRY);
 
   it('reaches the grammar but none of the server modules', () => {
-    expect(graph.files).toContain('runtime-spec.ts');
+    expect(graph.files).toEqual(
+      expect.arrayContaining([
+        'runtime-spec.ts',
+        'runtime-plan.ts',
+        'runtime-memory.ts',
+      ]),
+    );
     for (const serverOnly of [
       'runtime-spec-hash.ts',
       'runtime-compiler.ts',
