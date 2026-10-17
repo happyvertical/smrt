@@ -32,3 +32,7 @@ calculated lines and frozen drafts, and preserves exact retry identity. Ordinary
 money mutations and deletion are guarded. Replays with changed evidence or facts
 require a separate contract revision. Competing requests cannot overwrite the
 first recorded authority; outer transaction rollback includes the entire record.
+
+The customer is frozen as soon as original money is recorded, including while
+the agreement or order is still a draft. Reassignment requires a new contract;
+acceptance and retry preserve the original customer and monetary evidence.

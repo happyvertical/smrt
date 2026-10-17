@@ -121,6 +121,32 @@ export async function proveReceivedSalesContractMoney(
         })
       ).facts.grossMinor,
     ).toBe(0);
+    const replacement = await (await CustomerCollection.create({ db })).create({
+      name: 'Replacement customer',
+    });
+    for (const original of [loaded, order]) {
+      for (const status of [ContractStatus.DRAFT, ContractStatus.ACCEPTED]) {
+        // The Agreement is already accepted; the Order proves the draft boundary too.
+        if (original === loaded && status === ContractStatus.DRAFT) continue;
+        const current = (await sales.get(
+          { id: original.id! },
+          { cache: false },
+        ))!;
+        current.status = status;
+        await current.save();
+        const snapshot = current.receivedPurchaseMoneyJson;
+        const snapshotId = current.moneySnapshotId;
+        current.customerId = replacement.id!;
+        await expect(current.save()).rejects.toThrow('frozen');
+        const retained = (await sales.get(
+          { id: original.id! },
+          { cache: false },
+        ))!;
+        expect(retained.customerId).toBe(customer.id);
+        expect(retained.receivedPurchaseMoneyJson).toBe(snapshot);
+        expect(retained.moneySnapshotId).toBe(snapshotId);
+      }
+    }
     const calculated = await create();
     await lines.create({
       contractId: calculated.id!,

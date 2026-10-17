@@ -471,7 +471,11 @@ export async function saveContract(input: Contract): Promise<Contract> {
             assertUnchanged(
               contract,
               stored,
-              [...FROZEN_CONTRACT_FIELDS, 'vendorId' as keyof Contract],
+              [
+                ...FROZEN_CONTRACT_FIELDS,
+                'vendorId' as keyof Contract,
+                'customerId' as keyof Contract,
+              ],
               'Received purchase money',
             );
             if (lines.length)
