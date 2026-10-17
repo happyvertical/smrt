@@ -122,6 +122,19 @@ const deltaText = $derived(
         },
       ),
 );
+// Line axis: at most three labels (first, middle, last), so long or many
+// labels never overflow the chart's width.
+const axisLabels = $derived.by(() => {
+  if (points.length <= 2) return points.map((point) => point.label);
+  const middle = points[Math.floor((points.length - 1) / 2)];
+  return [points[0].label, middle.label, points[points.length - 1].label];
+});
+const peak = $derived(
+  points.reduce<{ label: string; value: number } | null>(
+    (best, point) => (!best || point.value > best.value ? point : best),
+    null,
+  ),
+);
 const summary = $derived(
   `${title}. ${t(M['ui.overview.chart.summary'], { count: points.length })}`,
 );
@@ -205,9 +218,14 @@ const summary = $derived(
       <polyline points={polyline} fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
     </svg>
     <p class="smrt-chart__axis" aria-hidden="true">
-      <span>{points[0].label}</span>
-      <span>{points[points.length - 1].label}</span>
+      {#each axisLabels as label, index (index)}<span>{label}</span>{/each}
     </p>
+    {#if peak && latest}
+      <p class="smrt-chart__readout">
+        <span>{t(M['ui.overview.chart.peak'], { value: fmt(peak.value), label: peak.label })}</span>
+        <span>{t(M['ui.overview.chart.latest'], { value: fmt(latest.value), label: latest.label })}</span>
+      </p>
+    {/if}
     {@render dataTable(true)}
   </div>
 {:else}
@@ -229,7 +247,10 @@ const summary = $derived(
 @layer smrt.theme {
   .smrt-chart { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-primary); }
   .smrt-chart__line { inline-size: 100%; block-size: 7rem; overflow: visible; }
-  .smrt-chart__axis { display: flex; justify-content: space-between; margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); }
+  .smrt-chart__axis { display: flex; justify-content: space-between; gap: var(--smrt-spacing-2); margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); }
+  .smrt-chart__axis span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .smrt-chart__axis span:last-child { text-align: end; }
+  .smrt-chart__readout { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--smrt-spacing-1) var(--smrt-spacing-3); margin: 0; color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-body-small-size, 0.75rem); font-variant-numeric: tabular-nums; }
   .smrt-chart__bars { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .smrt-chart__row { display: grid; grid-template-columns: minmax(4rem, 30%) minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-2); font-size: var(--smrt-typography-body-medium-size, 0.875rem); color: var(--smrt-color-on-surface); }
   .smrt-chart__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -64,3 +64,53 @@ export function formatWidgetValue(
       );
   }
 }
+
+/** Time bucket granularities `formatTimeBucket` names. */
+export type TimeBucketUnit =
+  | 'minute'
+  | 'hour'
+  | 'day'
+  | 'week'
+  | 'month'
+  | 'quarter'
+  | 'year';
+
+/**
+ * A time bucket's start (an ISO-8601 instant, or a SQL `YYYY-MM-DD HH:MM:SS`)
+ * as a short label for its granularity, in UTC, so buckets read the same
+ * everywhere: `Jan 2025` for a month, `Q1 2025`, `2025`, `Jan 6` for a day or
+ * week, `Jan 6, 14:00` for an hour or minute. Unparseable input is returned
+ * unchanged.
+ */
+export function formatTimeBucket(
+  value: string,
+  unit: TimeBucketUnit,
+  locale: string,
+): string {
+  const date = new Date(
+    /^\d{4}-\d{2}-\d{2} \d/.test(value) ? `${value.replace(' ', 'T')}Z` : value,
+  );
+  if (Number.isNaN(date.getTime())) return value;
+  const tag = safeLocale(locale);
+  const format = (options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(tag, { timeZone: 'UTC', ...options }).format(date);
+  switch (unit) {
+    case 'year':
+      return format({ year: 'numeric' });
+    case 'quarter':
+      return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${date.getUTCFullYear()}`;
+    case 'month':
+      return format({ month: 'short', year: 'numeric' });
+    case 'week':
+    case 'day':
+      return format({ month: 'short', day: 'numeric' });
+    default:
+      return format({
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      });
+  }
+}

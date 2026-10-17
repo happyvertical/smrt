@@ -8,4 +8,6 @@ export const M = defineMessages({
   'ui.overview.chart.table': 'Chart data',
   'ui.overview.chart.label_column': 'Label',
   'ui.overview.chart.value_column': 'Value',
+  'ui.overview.chart.peak': 'Peak {value} · {label}',
+  'ui.overview.chart.latest': 'Latest {value} · {label}',
 });
