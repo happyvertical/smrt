@@ -38,9 +38,11 @@ export function announceShellNavigation(
 export const SHELL_PAGE_HEADING = 'h1, h2';
 
 /**
- * Focus the first `selector` match inside `root` once it exists, polling for
- * up to `timeoutMs` (the new page may still be loading). A heading that is
- * not focusable gets `tabindex="-1"` first. Returns a cancel function.
+ * Focus the first `selector` match inside `root` that was NOT already on the
+ * page when called (the navigation may not have finished: the outgoing page's
+ * heading must not take focus), polling for up to `timeoutMs` while the new
+ * page loads. A heading that is not focusable gets `tabindex="-1"` first.
+ * Returns a cancel function.
  */
 export function focusWhenReady(
   root: ParentNode,
@@ -48,9 +50,12 @@ export function focusWhenReady(
   timeoutMs = 3000,
 ): () => void {
   const started = Date.now();
+  const outgoing = new Set(root.querySelectorAll(selector));
   let timer: ReturnType<typeof setTimeout> | null = null;
   const attempt = () => {
-    const target = root.querySelector<HTMLElement>(selector);
+    const target = [...root.querySelectorAll<HTMLElement>(selector)].find(
+      (element) => !outgoing.has(element),
+    );
     if (target) {
       if (!target.hasAttribute('tabindex') && target.tabIndex < 0) {
         target.setAttribute('tabindex', '-1');

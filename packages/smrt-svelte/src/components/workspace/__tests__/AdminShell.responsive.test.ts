@@ -739,6 +739,15 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
   }
   const announce = () =>
     announceShellNavigation(document.getElementById('dock-card')!);
+  /** The page navigates: its heading is replaced by the opened page's. */
+  function navigate(): HTMLElement {
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    main.querySelector('h1')?.remove();
+    const heading = document.createElement('h1');
+    heading.textContent = 'Opened report';
+    main.append(heading);
+    return heading;
+  }
 
   it('docks beside the page at xl, so the content reflows', async () => {
     setWidth(1300);
@@ -774,9 +783,8 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
     announce();
     await settle();
     expect(shell.panels.right).toBe('collapsed');
-    await waitFor(() =>
-      expect(document.activeElement?.textContent).toBe('Invoices by month'),
-    );
+    const heading = navigate();
+    await waitFor(() => expect(document.activeElement).toBe(heading));
   });
 
   it('an inline dock stays open, and focus still moves to the heading', async () => {
@@ -789,9 +797,28 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
     announce();
     await settle();
     expect(shell.panels.right).toBe('expanded');
-    await waitFor(() =>
-      expect(document.activeElement?.textContent).toBe('Invoices by month'),
-    );
+    const heading = navigate();
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it("focuses the incoming heading, never the outgoing page's", async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    const old = main.querySelector('h1')!;
+    announce();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(document.activeElement).not.toBe(old);
+    // The navigation finishes: the old page's heading is replaced.
+    old.remove();
+    const incoming = document.createElement('h1');
+    incoming.textContent = 'Report B';
+    main.append(incoming);
+    await waitFor(() => expect(document.activeElement).toBe(incoming));
   });
 
   it('a host can keep an overlay open after navigation', async () => {
