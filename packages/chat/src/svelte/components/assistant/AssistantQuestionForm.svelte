@@ -97,6 +97,8 @@ async function submit(event: SubmitEvent) {
   try {
     await onsubmit(chosen);
     submitted = chosen;
+  } catch {
+    // The host surfaced the failure; the form stays answerable.
   } finally {
     submitting = false;
   }

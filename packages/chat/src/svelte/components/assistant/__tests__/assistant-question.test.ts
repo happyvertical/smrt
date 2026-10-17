@@ -64,7 +64,7 @@ function message(
   };
 }
 
-function transport(withAnswer: boolean) {
+function transport(withAnswer: boolean | 'fails') {
   const sent: AssistantSendMessageInput[] = [];
   const answered: AssistantAnswerQuestionInput[] = [];
   const base: AssistantTransport = {
@@ -91,6 +91,9 @@ function transport(withAnswer: boolean) {
       ? {
           async answerQuestion(input: AssistantAnswerQuestionInput) {
             answered.push(input);
+            if (withAnswer === 'fails') {
+              throw new Error('That question is no longer open.');
+            }
             return {
               inProgress: false,
               assistantMessage: message('a-answer', 'assistant', 'Grouped.'),
@@ -108,7 +111,7 @@ async function until(check: () => boolean) {
   }
 }
 
-async function mount(withAnswer: boolean) {
+async function mount(withAnswer: boolean | 'fails') {
   const t = transport(withAnswer);
   let controller: ReturnType<typeof createAssistantDockController> | undefined;
   render(AssistantDock, {
@@ -194,5 +197,18 @@ describe('dock question form', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await until(() => sent.length > 1);
     expect(sent[1].content).toBe('Group by: Issue date by month');
+  });
+
+  it('stays answerable when the answer fails', async () => {
+    const { answered } = await mount('fails');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await until(() => answered.length > 0);
+    await until(
+      () => screen.queryByText('That question is no longer open.') !== null,
+    );
+    expect(
+      screen.getByRole('radio', { name: 'Issue date by month' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
   });
 });

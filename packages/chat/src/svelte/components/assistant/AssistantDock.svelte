@@ -565,6 +565,8 @@ async function handleAnswerQuestion(
     await controller.answerQuestion(messageId, question, values);
   } catch (error) {
     controller.setError(error instanceof Error ? error.message : String(error));
+    // The form learns it failed, so it stays answerable.
+    throw error;
   }
 }
 
