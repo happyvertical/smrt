@@ -25,6 +25,12 @@ import { Payment } from '../../models/Payment.js';
 import { PaymentMethod } from '../../types/index.js';
 
 /** Native public commands and ordinary model paths share the same money authority. */
+// Journal row order is unspecified; retain exact cardinality and every entry.
+function expectExactEntries(actual: unknown[][], expected: unknown[][]): void {
+  expect(actual).toHaveLength(expected.length);
+  expect(actual).toEqual(expect.arrayContaining(expected));
+}
+
 export async function proveCustomerFunds(
   db: DatabaseInterface,
   concurrent = false,
@@ -114,17 +120,18 @@ export async function proveCustomerFunds(
     const journals = await JournalCollection.create({ db });
     const journal = (await journals.get(receipt.receiptJournalId))!;
     const entries = await journal.getEntries();
-    expect(
+    expectExactEntries(
       entries.map((entry) => [
         entry.accountId,
         entry.debit,
         entry.credit,
         entry.currency,
       ]),
-    ).toEqual([
-      [cash.id, 1000, 0, 'CAD'],
-      [liability.id, 0, 1000, 'CAD'],
-    ]);
+      [
+        [cash.id, 1000, 0, 'CAD'],
+        [liability.id, 0, 1000, 'CAD'],
+      ],
+    );
     expect(new Date(journal.date).toISOString().slice(0, 10)).toBe(
       '2026-10-01',
     );
@@ -303,14 +310,15 @@ export async function proveCustomerFunds(
     expect(JSON.parse(refundPayment.customerFundsJson).sourcePaymentId).toBe(
       receipt.paymentId,
     );
-    expect(
+    expectExactEntries(
       (await (await journals.get(refundPayment.journalId))!.getEntries()).map(
         (entry) => [entry.accountId, entry.debit, entry.credit],
       ),
-    ).toEqual([
-      [cash.id, 0, 400],
-      [liability.id, 400, 0],
-    ]);
+      [
+        [cash.id, 0, 400],
+        [liability.id, 400, 0],
+      ],
+    );
     await expect(refundPayment.save()).rejects.toThrow(/command/);
     await expect(refundPayment.delete()).rejects.toThrow(/cannot be deleted/);
     const reverse = {
@@ -348,16 +356,17 @@ export async function proveCustomerFunds(
     const reversalJournal = (await journals.get(
       reversed.receipt.operations[2].journalId!,
     ))!;
-    expect(
+    expectExactEntries(
       (await reversalJournal.getEntries()).map((entry) => [
         entry.accountId,
         entry.debit,
         entry.credit,
       ]),
-    ).toEqual([
-      [liability.id, 0, 600],
-      [ar.id, 600, 0],
-    ]);
+      [
+        [liability.id, 0, 600],
+        [ar.id, 600, 0],
+      ],
+    );
     const before = await getCustomerFundsFacts({
       db,
       tenantId,
@@ -455,14 +464,15 @@ export async function proveCustomerFunds(
         liabilityAccountId: null,
       },
     });
-    expect(
+    expectExactEntries(
       (
         await (await journals.get(arReceipt.receiptJournalId))!.getEntries()
       ).map((entry) => [entry.accountId, entry.debit, entry.credit]),
-    ).toEqual([
-      [cash.id, 1000, 0],
-      [ar.id, 0, 1000],
-    ]);
+      [
+        [cash.id, 1000, 0],
+        [ar.id, 0, 1000],
+      ],
+    );
     const arInvoice = await invoices.create({
       customerId: customer.id!,
       currency: 'CAD',
@@ -515,14 +525,15 @@ export async function proveCustomerFunds(
     const arRefundPayment = (await payments.get(
       arRefund.receipt.operations[2].refundPaymentId!,
     ))!;
-    expect(
+    expectExactEntries(
       (await (await journals.get(arRefundPayment.journalId))!.getEntries()).map(
         (entry) => [entry.accountId, entry.debit, entry.credit],
       ),
-    ).toEqual([
-      [cash.id, 0, 1000],
-      [ar.id, 1000, 0],
-    ]);
+      [
+        [cash.id, 0, 1000],
+        [ar.id, 1000, 0],
+      ],
+    );
     const foreignTenant = randomUUID();
     await withTenant({ tenantId: foreignTenant }, async () => {
       await expect(
