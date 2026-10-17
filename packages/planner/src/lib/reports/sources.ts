@@ -23,7 +23,7 @@ import { type Recipe, recipeNav } from '../recipes/index.ts';
 /** The RuntimeReport model saved reports are rows of. */
 export const RUNTIME_REPORT_MODEL = '@happyvertical/smrt-reports:RuntimeReport';
 
-/** The recipe that brings Reports (Shared reports). */
+/** The recipe that brings Reports (Saved reports). */
 export const REPORTS_RECIPE = 'reports.runtime';
 
 /** A source the planner offers, with what the assistant needs to fill gaps. */

@@ -43,10 +43,13 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `openSavedReportFrom` awaits `plannerRuntime.openPath` (which resolves once the router has
   landed and reset focus) before calling `announceShellNavigation`, so an overlaying dock
   closes and focus lands on the report heading, even when that report was already open.
-- Shared reports (`reports.runtime`'s RuntimeReport entry): `ModelPage` and the mounted `Planner`
+- Saved reports (`reports.runtime`'s RuntimeReport entry): `ModelPage` and the mounted `Planner`
   render `PlannerReports.svelte` instead of the generic list/record views: smrt-reports'
   `SavedReports` and `ReportDetail` over `PlannerReports.client` (list, get, run afresh in the
-  browser, archive). RuntimeReport starts with no sample rows (`planner-source.ts` `empty`); rows
+  browser, archive) with `sourceInfo()` labels; the report's title titles the page. The Reports
+  section page is the recipe's `sectionDefault` widget, `saved-reports`, resolved in
+  `overviews/registry.ts` to `PlannerSavedReportsWidget.svelte` (the same cards over the sample
+  data). RuntimeReport starts with no sample rows (`planner-source.ts` `empty`); rows
   whose spec no longer parses are skipped.
 - `src/lib/planner/`: the package selection (`?p=a,b`, the only URL state;
   `app.svelte.ts` `appHref` carries it; `selection.svelte.ts`

@@ -32,7 +32,7 @@ let {
 
 // smrt-reports' own confirmation card. Approve is the person's click and
 // nothing else: it saves the report into the plan (the browser's confirmed
-// save), then opens it under Shared reports; the shell closes a dock laid
+// save), then opens it under Saved reports; the shell closes a dock laid
 // over the page and focuses the report's heading. Decline saves nothing.
 const reports = plannerReportsFor(useDataSource());
 const currency = $derived(cookbookStore.settings().currency);

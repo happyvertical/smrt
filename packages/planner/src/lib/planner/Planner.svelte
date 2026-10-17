@@ -465,7 +465,7 @@ const dockToggles = $derived(
     {:else if pathParts[0] === 'ai'}
       <AiModelsPage backHref="#/configure/" />
     {:else if model?.id === RUNTIME_REPORT_MODEL}
-      <!-- Shared reports: smrt-reports' screens over the plan's sample data. -->
+      <!-- Saved reports: smrt-reports' screens over the plan's sample data. -->
       <PlannerReports recordId={modelRoute?.recordId} />
     {:else if applied && model && modelRoute?.recordId}
       {#key `${model.id}:${modelRoute.recordId}`}

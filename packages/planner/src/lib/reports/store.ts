@@ -29,6 +29,8 @@ import {
   serializeRuntimeReportSpec,
 } from '@happyvertical/smrt-reports/spec';
 import type {
+  ReportFieldInfo,
+  ReportSourceInfo,
   RuntimeReportProposal,
   RuntimeReportsClient,
   SavedRuntimeReport,
@@ -56,8 +58,11 @@ export const PLANNER_REPORT_AUTHOR = 'planner';
 export const CONFIRM_PATH = '/api/_reports/runtime/confirm';
 
 /** The in-app path of a saved report (the RuntimeReport record page). */
+/** Saved reports, the RuntimeReport list. */
+export const REPORT_LIST_PATH = '/m/reports/RuntimeReport/';
+
 export function reportPath(id: string): string {
-  return `/m/reports/RuntimeReport/${encodeURIComponent(id)}/`;
+  return `${REPORT_LIST_PATH}${encodeURIComponent(id)}/`;
 }
 
 export interface PlannerReportsOptions {
@@ -84,9 +89,9 @@ export interface PlannerReports {
   run(spec: RuntimeReportSpec): Promise<RuntimeReportResult>;
   save(proposal: RuntimeReportProposal): Promise<SavedRuntimeReport>;
   /** A source's described fields (labels, money format) for a confirmation card. */
-  fieldsFor(
-    sourceId: string,
-  ): { name: string; label: string; format?: string }[];
+  fieldsFor(sourceId: string): ReportFieldInfo[];
+  /** Every offered source by label with its fields, for the report screens. */
+  sourceInfo(): ReportSourceInfo[];
   client: RuntimeReportsClient;
 }
 
@@ -125,6 +130,9 @@ function savedFrom(row: ModelRecord): SavedRuntimeReport | null {
       typeof row.createdByUserId === 'string' ? row.createdByUserId : '',
     status: row.status === 'archived' ? 'archived' : 'active',
     spec,
+    ...(typeof row.createdAt === 'string' && row.createdAt
+      ? { savedAt: row.createdAt }
+      : {}),
     canArchive: true,
   };
 }
@@ -140,10 +148,8 @@ export function createPlannerReports(
     const offered = sources();
     const source = offered.find((s) => s.id === spec.source);
     const rows = source ? await options.data.list(source.model) : [];
-    return runRuntimeReportInMemory(spec, rows, {
-      sources: offered,
-      now: options.now,
-    });
+    // `ranAt` is when it really ran; periods use the sample clock in `define`.
+    return runRuntimeReportInMemory(spec, rows, { sources: offered });
   }
 
   async function define(
@@ -226,6 +232,8 @@ export function createPlannerReports(
       specHash,
       status: 'active',
       createdByUserId: PLANNER_REPORT_AUTHOR,
+      // When it was approved: real time, not the sample clock.
+      createdAt: new Date().toISOString(),
     });
     const saved = savedFrom(row);
     if (!saved) throw new PlannerReportError(500, 'invalid_result');
@@ -257,17 +265,35 @@ export function createPlannerReports(
     confirm: save,
   };
 
+  const fieldInfo = (
+    fields: ReturnType<typeof describeRuntimeReportMemorySource>['fields'],
+  ): ReportFieldInfo[] =>
+    fields.map(({ name, label, type, format }) => ({
+      name,
+      label,
+      type,
+      ...(format ? { format } : {}),
+    }));
+
   function fieldsFor(sourceId: string) {
     const offered = sources();
     if (!offered.some((s) => s.id === sourceId)) return [];
-    return describeRuntimeReportMemorySource(offered, sourceId).fields.map(
-      ({ name, label, format }) => ({
-        name,
-        label,
-        ...(format ? { format } : {}),
-      }),
+    return fieldInfo(
+      describeRuntimeReportMemorySource(offered, sourceId).fields,
     );
   }
 
-  return { sources, define, run, save, client, fieldsFor };
+  function sourceInfo(): ReportSourceInfo[] {
+    const offered = sources();
+    return offered.map((source) => {
+      const described = describeRuntimeReportMemorySource(offered, source.id);
+      return {
+        id: described.id,
+        label: described.label,
+        fields: fieldInfo(described.fields),
+      };
+    });
+  }
+
+  return { sources, define, run, save, client, fieldsFor, sourceInfo };
 }

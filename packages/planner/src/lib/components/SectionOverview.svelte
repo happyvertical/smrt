@@ -14,12 +14,15 @@ import {
   OverviewGrid,
   type OverviewModelChoice,
   type OverviewWidget,
+  resolveWidgetComponents,
+  type WidgetComponents,
 } from '@happyvertical/smrt-svelte/overview';
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
 import { onDestroy, untrack } from 'svelte';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { useDataSource } from '../data/context.ts';
 import { createSectionOverview } from '../overviews/page.ts';
+import { overviewRegistry } from '../overviews/registry.ts';
 import { appHref } from '../planner/app.svelte.ts';
 import type { SectionEntry } from '../sections/entries.ts';
 
@@ -55,6 +58,20 @@ const controller = createSectionOverview(
   () => ({ source, sections: shell.sections, entryIndex: entries, href }),
 );
 
+// Recipe widgets (smrt-reports' saved reports) load their component lazily:
+// resolve the ones on the page so the grid can draw them.
+let components = $state<WidgetComponents | undefined>();
+$effect(() => {
+  const types = controller.document.widgets.map((widget) => widget.type);
+  let active = true;
+  void resolveWidgetComponents(types, overviewRegistry).then((resolved) => {
+    if (active) components = resolved;
+  });
+  return () => {
+    active = false;
+  };
+});
+
 function reloadAll() {
   for (const widget of controller.document.widgets)
     controller.reload(widget.id);
@@ -82,7 +99,11 @@ onDestroy(() => controller.destroy());
   <span class="section-heading">{title}</span>
 {/snippet}
 
-<OverviewGrid {controller} {models} {label} {presentation} {heading} />
+<!-- Drawn once its widgets' components resolve, so a recipe widget never
+     flashes "not available" while its module loads. -->
+{#if components}
+  <OverviewGrid {controller} {models} {label} {presentation} {heading} {components} />
+{/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;

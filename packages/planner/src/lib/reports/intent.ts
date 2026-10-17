@@ -735,17 +735,10 @@ export function specFromIntent(
     ]
       .filter(Boolean)
       .join(', ');
-  // The description states every condition, so a saved report says what it
-  // counts (a threshold included), not only its period.
-  const description =
-    [
-      range
-        ? `${dateField?.label ?? 'Date'} from ${range.from} up to ${range.to}`
-        : '',
-      ...stated,
-    ]
-      .filter(Boolean)
-      .join('; ') || undefined;
+  // The description states the conditions beyond the period (a threshold, a
+  // status), so a saved report says what it counts; the report screens show
+  // the period itself, with its dates, from the spec's filters.
+  const description = stated.join('; ') || undefined;
   const measureAliases = (spec: RuntimeReportSpec) =>
     spec.measures.map((m) => m.as);
   try {

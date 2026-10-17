@@ -320,7 +320,7 @@ const sameFollowUp = (a: ReportFollowUp, b: ReportFollowUp) =>
 
 /** What the chat says under a report preview. */
 export function reportPreviewText(title: string, rows: number): string {
-  return `Here is a preview of ${title} (${rows} ${rows === 1 ? 'row' : 'rows'}). Approve it to save it under Shared reports.`;
+  return `Here is a preview of ${title} (${rows} ${rows === 1 ? 'row' : 'rows'}). Approve it to save it under Saved reports.`;
 }
 
 /** The Reports menu entry (reports.runtime's RuntimeReport). */

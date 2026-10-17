@@ -182,7 +182,7 @@ describe('the assistant builds runtime reports (#4100)', () => {
     const report = await reports.client.confirm(proposal);
     expect(await saved()).toHaveLength(1);
 
-    // Approval opens the saved report under Shared reports.
+    // Approval opens the saved report under Saved reports.
     const openPath = vi.fn();
     plannerRuntime.openPath = openPath;
     await openSavedReport(report);

@@ -275,6 +275,30 @@ describe('report intents', () => {
 });
 
 describe('planner reports store', () => {
+  it('names sources for the report screens and keeps when a report was saved, with real run times', async () => {
+    const { reports } = setup();
+    const invoices = reports.sourceInfo().find((s) => s.id === 'invoices');
+    expect(invoices?.label).toBeTruthy();
+    expect(invoices?.fields?.find((f) => f.name === 'issueDate')).toMatchObject(
+      {
+        type: 'datetime',
+      },
+    );
+    const defined = await reports.define({
+      source: 'invoices',
+      period: 'last_month',
+    });
+    if (!defined.ok) throw new Error(defined.question);
+    // The description holds conditions beyond the period, none here.
+    expect(defined.proposal.spec.description).toBeUndefined();
+    const before = Date.now();
+    const saved = await reports.save(defined.proposal);
+    expect(Date.parse(saved.savedAt ?? '')).toBeGreaterThanOrEqual(before);
+    // A run is stamped with the real time, not the sample clock.
+    const ran = await reports.client.run(saved.id);
+    expect(Date.parse(ran.ranAt)).toBeGreaterThanOrEqual(before);
+  });
+
   it('previews, then saves only on save, then runs the saved report afresh', async () => {
     const { data, reports } = setup();
     const defined = await reports.define({

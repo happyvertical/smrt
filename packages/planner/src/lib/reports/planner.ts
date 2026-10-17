@@ -1,7 +1,7 @@
 /**
  * The app's runtime reports: `createPlannerReports` over the planner's sample
  * data, the recipes that are on and the sample clock. The assistant, the
- * Shared reports page and a saved report's page all use one of these per
+ * Saved reports page and a saved report's page all use one of these per
  * data source.
  */
 
@@ -39,7 +39,7 @@ export function plannerReportsFor(data: DataSource): PlannerReports {
 }
 
 /**
- * After the person approved a report: open it under Shared reports, through
+ * After the person approved a report: open it under Saved reports, through
  * the running app's own navigation (the static layout's router or a mounted
  * planner's fragment). Unset, the confirmation card's link still reaches it.
  */

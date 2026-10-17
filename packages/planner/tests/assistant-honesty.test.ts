@@ -92,7 +92,7 @@ describe('assistant honesty', () => {
     const items = controller
       .snapshot()
       .sections.flatMap((s) => s.items.map((i) => i.label));
-    expect(items).toContain('Shared reports');
+    expect(items).toContain('Saved reports');
   });
 
   it('says when an added recipe puts nothing in the menu', () => {
@@ -114,7 +114,7 @@ describe('assistant honesty', () => {
     await say('a summary of sales');
     const section = controller
       .snapshot()
-      .sections.find((s) => s.items.some((i) => i.label === 'Shared reports'));
+      .sections.find((s) => s.items.some((i) => i.label === 'Saved reports'));
     if (!section) throw new Error('no reports section');
     message.mockImplementationOnce(async () =>
       JSON.stringify({

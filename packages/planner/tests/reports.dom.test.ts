@@ -1,6 +1,6 @@
 /**
  * #4100 in a DOM: the assistant's report preview is smrt-reports' own
- * `ReportConfirmation`, and Shared reports are its `SavedReports` /
+ * `ReportConfirmation`, and Saved reports are its `SavedReports` /
  * `ReportDetail`, all over the plan's sample data.
  */
 import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
@@ -11,10 +11,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createBrowserAssistantTransport } from '../src/lib/assistant/transport.ts';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import PlannerReports from '../src/lib/components/PlannerReports.svelte';
+import PlannerSavedReportsWidget from '../src/lib/components/PlannerSavedReportsWidget.svelte';
 import ReportProposalCard from '../src/lib/components/ReportProposalCard.svelte';
 import { DATA_SOURCE_KEY } from '../src/lib/data/context.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { getLibraryCookbook } from '../src/lib/library/index.ts';
+import { resolveRecipeExport } from '../src/lib/overviews/registry.ts';
 import { plannerRuntime } from '../src/lib/planner/instance.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
@@ -51,7 +53,10 @@ function app() {
 }
 
 function render(
-  component: typeof ReportProposalCard | typeof PlannerReports,
+  component:
+    | typeof ReportProposalCard
+    | typeof PlannerReports
+    | typeof PlannerSavedReportsWidget,
   props: Record<string, unknown>,
   data: ReturnType<typeof createMemoryDataSource>,
 ) {
@@ -75,7 +80,7 @@ const button = (root: HTMLElement, name: RegExp) => {
   return found;
 };
 
-describe('report preview and shared reports (#4100)', () => {
+describe('report preview and saved reports (#4100)', () => {
   it('declining the preview saves nothing; only a real click approves', async () => {
     const { data, reports } = app();
     const defined = await reports.define({
@@ -144,7 +149,35 @@ describe('report preview and shared reports (#4100)', () => {
     }
   });
 
-  it('lists a saved report under Shared reports and runs it on its page', async () => {
+  it('the Reports section page is the saved reports as cards, from the recipe widget', async () => {
+    const { data, reports } = app();
+    const defined = await reports.define({
+      source: 'invoices',
+      period: 'last_month',
+    });
+    if (!defined.ok) throw new Error(defined.question);
+    await reports.save(defined.proposal);
+    // The overview registry resolves smrt-reports' widget to the planner's.
+    const Widget = await resolveRecipeExport(
+      '@happyvertical/smrt-reports/svelte',
+      'SavedReportsWidget',
+    );
+    expect(Widget).toBe(PlannerSavedReportsWidget);
+    const root = render(
+      PlannerSavedReportsWidget as never,
+      { options: {} },
+      data,
+    );
+    await settle();
+    const card = root.querySelector('[data-smrt-component="SavedReportCard"]');
+    expect(card?.textContent).toContain('Invoices, last month');
+    expect(card?.textContent).toContain('Saved by you');
+    expect(card?.querySelector('a')?.getAttribute('href')).toMatch(
+      /\/m\/reports\/RuntimeReport\/.+\/$/,
+    );
+  });
+
+  it('lists a saved report under Saved reports and runs it on its page', async () => {
     const { data, reports } = app();
     const defined = await reports.define({
       source: 'invoices',
