@@ -28,3 +28,12 @@ works: `matchAssistantQuestionText` resolves free text against the options
 Options always come from code that knows the domain (a report source's
 dimensions, for example), never from a model's free text. The planner's
 runtime-report follow-ups are the first user.
+
+## Page requests
+
+`AssistantDock` takes smrt-ui's `requestAssistant(element, { prompt })` (the bubbling,
+cancelable `smrt-assistant-request` event), as a "New report" button sends: it fills the
+composer with the prompt and focuses it, never sends it, and marks the event taken
+(`preventDefault`), so the requester knows an assistant heard it. A request another listener
+already took is left alone. smrt-svelte's `AdminShell` opens a closed dock first and
+re-dispatches the request from inside it, because a dock's content mounts only when open.

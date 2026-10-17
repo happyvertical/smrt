@@ -8,7 +8,11 @@
  * `DataSurfaceRegistry` instance (already owned by the host shell) and an
  * `AssistantTransport`.
  */
-import { MessageBubble } from '@happyvertical/smrt-ui/chat';
+import {
+  ASSISTANT_REQUEST_EVENT,
+  type AssistantRequestDetail,
+  MessageBubble,
+} from '@happyvertical/smrt-ui/chat';
 import type {
   DataSurfaceActionRequest,
   DataSurfaceActionResult,
@@ -524,6 +528,23 @@ $effect(() => {
     return;
   }
   void tick().then(() => composerRef?.focus());
+});
+
+// The page asks the assistant (`requestAssistant` from smrt-ui: a "New
+// report" button, an empty state): put the prompt in the composer for the
+// person to edit and send, never sending it on their behalf. A shell that
+// opens this dock first re-dispatches the request from inside it.
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  const take = (event: Event) => {
+    const detail = (event as CustomEvent<AssistantRequestDetail>).detail;
+    if (event.defaultPrevented || typeof detail?.prompt !== 'string') return;
+    event.preventDefault();
+    controller.setDraft(detail.prompt);
+    void tick().then(() => composerRef?.focus());
+  };
+  document.addEventListener(ASSISTANT_REQUEST_EVENT, take);
+  return () => document.removeEventListener(ASSISTANT_REQUEST_EVENT, take);
 });
 
 async function handleClearConversation() {
