@@ -192,6 +192,37 @@ describe('report intents', () => {
     }
   });
 
+  it('an amount follow-up changes only the unresolved measure', () => {
+    const built = specFromIntent(
+      {
+        source: 'invoices',
+        measures: [{ fn: 'count' }, { fn: 'sum', field: 'mileage' }],
+      },
+      plannerReportSources(mechanic(), recipes),
+      NOW,
+    );
+    if (built.ok || !built.followUp) throw new Error('expected a follow-up');
+    expect(built.followUp.options[0].apply.measures).toEqual([
+      { fn: 'count' },
+      { fn: 'sum', field: 'totalAmount' },
+    ]);
+  });
+
+  it('a grouping follow-up with nothing to offer is a plain question', () => {
+    const source = {
+      id: 'things',
+      label: 'Things',
+      schema: [
+        { name: 'id', type: 'string' as const },
+        { name: 'note', type: 'string' as const },
+      ],
+      model: plannerReportSources(mechanic(), recipes)[0].model,
+    };
+    expect(
+      specFromIntent({ source: 'things', groupBy: 'flavour' }, [source], NOW),
+    ).toEqual({ ok: false, question: 'Group Things by what?' });
+  });
+
   it('records what it could not read instead of dropping it', () => {
     const intent = parseReportIntent({
       source: 'invoices',

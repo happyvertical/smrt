@@ -320,11 +320,15 @@ export type IntentResult =
 
 const ask = (question: string): IntentResult => ({ ok: false, question });
 
-const follow = (followUp: Omit<ReportFollowUp, 'default'>): IntentResult => ({
-  ok: false,
-  question: followUp.prompt,
-  followUp: { ...followUp, default: followUp.options[0].value },
-});
+/** A follow-up with options; with none to offer, a plain question. */
+const follow = (followUp: Omit<ReportFollowUp, 'default'>): IntentResult =>
+  followUp.options.length
+    ? {
+        ok: false,
+        question: followUp.prompt,
+        followUp: { ...followUp, default: followUp.options[0].value },
+      }
+    : { ok: false, question: followUp.prompt.replace(/…$/, ' what?') };
 
 /** Most options a follow-up offers. */
 const MAX_OPTIONS = 8;
@@ -538,7 +542,7 @@ export function specFromIntent(
     field?: string;
     as?: string;
   }[] = [];
-  for (const measure of requested) {
+  for (const [index, measure] of requested.entries()) {
     if (measure.fn === 'count') {
       if (!measures.some((m) => m.fn === 'count')) {
         measures.push({
@@ -576,7 +580,12 @@ export function specFromIntent(
         options: ranked.map((f) => ({
           value: f.name,
           label: f.label,
-          apply: { measures: [{ fn: measure.fn, field: f.name }] },
+          // Only the unresolved measure changes; the others stay.
+          apply: {
+            measures: requested.map((m, k) =>
+              k === index ? { fn: measure.fn, field: f.name } : m,
+            ),
+          },
         })),
       });
     }

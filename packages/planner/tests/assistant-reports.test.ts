@@ -395,4 +395,38 @@ describe('the assistant builds runtime reports (#4100)', () => {
       groupBy: 'status',
     });
   });
+
+  it('a typed answer keeps its own words, and a different request goes to the model', async () => {
+    const { say, message } = mechanic(
+      {
+        reply: 'Here.',
+        add: [],
+        remove: [],
+        report: { source: 'invoices', groupBy: 'flavour' },
+      },
+      { reply: 'Added invoicing.', add: ['commerce.invoicing'], remove: [] },
+      {
+        reply: 'Here.',
+        add: [],
+        remove: [],
+        report: { source: 'invoices', groupBy: 'flavour' },
+      },
+    );
+    await say('a report of invoices by flavour');
+    const calls = message.mock.calls.length;
+    const answer = await say('status last month');
+    expect(message.mock.calls.length).toBe(calls);
+    const spec = runtimeReportProposalFromMessage(answer ?? {})?.spec;
+    expect(spec?.dimensions).toEqual([{ field: 'status', as: 'status' }]);
+    expect(spec?.filters).toEqual([
+      { field: 'issueDate', op: 'gte', value: '2025-12-01' },
+      { field: 'issueDate', op: 'lt', value: '2026-01-01' },
+    ]);
+
+    // A new follow-up, then an unrelated request: the model sees it.
+    await say('a report of invoices by flavour');
+    const before = message.mock.calls.length;
+    await say('add the invoicing recipe please');
+    expect(message.mock.calls.length).toBe(before + 1);
+  });
 });
