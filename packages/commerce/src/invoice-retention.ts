@@ -68,6 +68,7 @@ async function mutate(
           'actorId',
           'reason',
           'effectiveOn',
+          'sameDayCreditOrder',
         ].some(
           (key) =>
             prior[key as keyof InvoiceRetentionEvidence] !==
@@ -102,6 +103,9 @@ async function mutate(
       ...(input.effectiveOn === undefined
         ? {}
         : { effectiveOn: input.effectiveOn }),
+      ...(input.sameDayCreditOrder === undefined
+        ? {}
+        : { sameDayCreditOrder: input.sameDayCreditOrder }),
       recordedAt: new Date().toISOString(),
     };
     let next: InvoiceRetentionState;

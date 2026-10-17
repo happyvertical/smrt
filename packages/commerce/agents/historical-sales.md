@@ -95,3 +95,11 @@ of source import order. Backdated insertion rechecks later application dates;
 ordinary public allocations retain their canonical allocatedAt chronology.
 Same-day credit ordering remains explicit. Later credits alone do not
 retroactively invalidate cash received before their issue date.
+
+Current `releaseInvoiceRetention` commands retain optional `sameDayCreditOrder`
+in their immutable evidence, alongside the effective calendar date. An exact
+retry must preserve that ordering; changing or removing it is a changed request.
+A later original credit import on the release date uses the retained ordering:
+`release-before-credit` releases first, while `credit-before-release` applies
+the retained-first credit before checking remaining release capacity. Missing
+ordering remains ambiguous and is refused rather than inferred from record time.
