@@ -821,6 +821,28 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
     await waitFor(() => expect(document.activeElement).toBe(incoming));
   });
 
+  it('a selector naming the opened page focuses it even when the heading node is reused', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    const heading = main.querySelector('h1')!;
+    const page = document.createElement('section');
+    page.dataset.reportId = 'a';
+    heading.replaceWith(page);
+    page.append(heading);
+    announceShellNavigation(document.getElementById('dock-card')!, {
+      focus: '[data-report-id="b"] h1',
+    });
+    // The route reuses the page: same heading node, new report id and text.
+    page.dataset.reportId = 'b';
+    heading.textContent = 'Report B';
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
   it('a host can keep an overlay open after navigation', async () => {
     setWidth(1100);
     const shell = createShellState({

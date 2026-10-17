@@ -55,7 +55,7 @@ $effect(() => {
 });
 </script>
 
-<section data-smrt-component="ReportDetail" aria-label={t(M['reports.title'])}>
+<section data-smrt-component="ReportDetail" data-report-id={id} aria-label={t(M['reports.title'])}>
   <h1>{report?.title ?? t(M['reports.title'])}</h1>
   {#if !client}
     <p>{t(M['reports.unavailable'])}</p>

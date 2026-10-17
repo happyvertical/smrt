@@ -49,7 +49,8 @@ function onsaved(report: SavedRuntimeReport) {
   openSavedReport(report);
   if (element) {
     announceShellNavigation(element, {
-      focus: '[data-smrt-component="ReportDetail"] h1',
+      // This report's own heading: never the page the person approved from.
+      focus: `[data-smrt-component="ReportDetail"][data-report-id="${CSS.escape(report.id)}"] h1`,
     });
   }
 }

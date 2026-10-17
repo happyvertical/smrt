@@ -25,7 +25,11 @@ const authorLabel = (id: string) => (id === PLANNER_REPORT_AUTHOR ? 'You' : id);
 <div class="reports">
   {#if recordId}
     <p><a href={appHref('/m/reports/RuntimeReport/')}>All shared reports</a></p>
-    <ReportDetail id={recordId} client={reports.client} {currency} />
+    <!-- A new report is a new page: its heading is a new node (focus after a
+         dock navigation targets it, #4100). -->
+    {#key recordId}
+      <ReportDetail id={recordId} client={reports.client} {currency} />
+    {/key}
   {:else}
     <SavedReports client={reports.client} {reportHref} {authorLabel} />
   {/if}
