@@ -514,23 +514,27 @@ async function historicalAllocationCap(
   invoice: Invoice,
   effectiveOn: string,
   sameDay: 'credit-before-payment' | 'payment-before-credit' | null,
+  cache?: { credits?: Invoice[] },
 ) {
-  const credits = (
-    await (
-      await InvoiceCollection.create({ db })
-    )
-      .list({
-        where: { tenantId: invoice.tenantId, creditedInvoiceId: invoice.id },
-        limit: 100001,
-      })
-      .then((rows) => {
-        if (rows.length > 100000)
-          invalid('Historical credit scope exceeds its bounded source limit');
-        return rows;
-      })
-  ).filter((row) => row.status !== 'draft' && row.status !== 'cancelled');
+  const credits =
+    cache?.credits ??
+    (
+      await (
+        await InvoiceCollection.create({ db })
+      )
+        .list({
+          where: { tenantId: invoice.tenantId, creditedInvoiceId: invoice.id },
+          limit: 100001,
+        })
+        .then((rows) => {
+          if (rows.length > 100000)
+            invalid('Historical credit scope exceeds its bounded source limit');
+          return rows;
+        })
+    ).filter((row) => row.status !== 'draft' && row.status !== 'cancelled');
   if (credits.length > 100000)
     invalid('Original credit chronology exceeds its bounded source limit');
+  if (cache) cache.credits = credits;
   let credited = 0;
   for (const credit of credits) {
     const on =
@@ -565,6 +569,98 @@ async function historicalAllocationCap(
     currency: invoice.currency,
     retentionStateJson: asOf ? JSON.stringify(asOf) : '',
   }).allocationCapMinor;
+}
+/** Validate actual application prefixes, never import order or receipt timestamps. */
+async function assertHistoricalAllocationPrefixes(
+  db: DatabaseInterface,
+  invoice: Invoice,
+  candidate: ReturnType<typeof allocationRequest>,
+) {
+  type Order = 'credit-before-payment' | 'payment-before-credit' | null;
+  type Event = { on: string; amount: number; order: Order };
+  const retained = await (
+    await HistoricalCustomerFundsAllocationCollection.create({ db })
+  ).list({
+    where: {
+      tenantId: invoice.tenantId,
+      invoiceId: invoice.id,
+      effect: 'payment',
+    },
+    limit: 100001,
+  });
+  if (retained.length > 100000)
+    invalid(
+      'Historical allocation chronology exceeds its bounded source limit',
+    );
+  const events: Event[] = retained.map((row) => {
+    const request = JSON.parse(row.snapshotJson).request;
+    const order = request.sameDayCreditOrder ?? null;
+    if (
+      order !== null &&
+      order !== 'credit-before-payment' &&
+      order !== 'payment-before-credit'
+    )
+      invalid('Historical allocation ordering evidence is invalid');
+    return {
+      on: historicalCalendarDate(row.effectiveOn),
+      amount: positive(row.amountMinor),
+      order,
+    };
+  });
+  // allocatedAt is the public allocation's own "when applied" authority, not a receipt/import date.
+  for (const row of await (
+    await PaymentAllocationCollection.create({ db })
+  ).findByInvoice(String(invoice.id))) {
+    const applied = new Date(row.allocatedAt);
+    if (
+      row.tenantId !== invoice.tenantId ||
+      !Number.isFinite(applied.getTime())
+    )
+      invalid('Current public allocation chronology is unavailable');
+    events.push({
+      on: applied.toISOString().slice(0, 10),
+      amount: positive(row.amount),
+      order: null,
+    });
+  }
+  events.push({
+    on: candidate.source.effectiveOn,
+    amount: candidate.amountMinor,
+    order: candidate.sameDayCreditOrder,
+  });
+  const phase = (order: Order) =>
+    order === 'payment-before-credit'
+      ? 0
+      : order === 'credit-before-payment'
+        ? 2
+        : 1;
+  events.sort(
+    (a, b) => a.on.localeCompare(b.on) || phase(a.order) - phase(b.order),
+  );
+  const cache: { credits?: Invoice[] } = {};
+  const caps = new Map<string, number>();
+  let prefix = 0n;
+  for (const event of events) {
+    prefix += BigInt(event.amount);
+    if (prefix > BigInt(Number.MAX_SAFE_INTEGER))
+      invalid('Historical customer funds capacity is unsafe');
+    const key = `${event.on}:${event.order}`;
+    let cap = caps.get(key);
+    if (cap === undefined) {
+      cap = await historicalAllocationCap(
+        db,
+        invoice,
+        event.on,
+        event.order,
+        cache,
+      );
+      caps.set(key, cap);
+    }
+    if (prefix > BigInt(cap))
+      invalid(
+        'Original cash allocation exceeds payable capacity at an application date',
+      );
+  }
 }
 async function updateInvoice(
   db: DatabaseInterface,
@@ -763,19 +859,7 @@ export async function recordHistoricalCustomerAllocation(
           invalid(
             'Original application requires explicit matching frozen release evidence',
           );
-        const current = await (
-          await PaymentAllocationCollection.create({ db })
-        ).getTotalAllocatedToInvoice(String(invoice.id));
-        const before = await historicalAllocationCap(
-          db,
-          invoice,
-          request.source.effectiveOn,
-          request.sameDayCreditOrder,
-        );
-        if (BigInt(current) + BigInt(request.amountMinor) > BigInt(before))
-          invalid(
-            'Original cash allocation exceeds payable capacity at its source date',
-          );
+        await assertHistoricalAllocationPrefixes(db, invoice, request);
         effect = 'payment';
       } else {
         if (

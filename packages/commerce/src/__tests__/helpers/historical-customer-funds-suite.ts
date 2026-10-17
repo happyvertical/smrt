@@ -427,6 +427,144 @@ export async function proveHistoricalCustomerFunds(
     expect(
       (await invoices.get({ id: retainedId }, { cache: false }))?.amountPaid,
     ).toBe(9500);
+    // Source ingestion order must not replace original allocation chronology.
+    const reverseId = await issued(
+      'reverse-retention',
+      1000,
+      '2020-01-01',
+      undefined,
+      {
+        retainedMinor: 500,
+        creditPolicy: 'retained-first',
+        policyRef: 'reviewed-retention',
+        effectiveOn: '2020-01-01',
+        evidenceRef: 'held-source',
+        originalActorRef: null,
+        releases: [
+          {
+            sourceKey: 'reverse-release',
+            amountMinor: 500,
+            effectiveOn: '2020-02-01',
+            evidenceRef: 'release-source',
+            originalActorRef: null,
+          },
+        ],
+      },
+    );
+    const reverseReceipt = await recordHistoricalCustomerFunds({
+      ...receiptInput,
+      requestId: 'reverse-receipt',
+      source: {
+        ...receiptInput.source,
+        key: 'reverse-receipt',
+        effectiveOn: '2020-01-01',
+      },
+      originalAmountMinor: 1200,
+    });
+    const reverseAllocation = (
+      key: string,
+      amountMinor: number,
+      effectiveOn: string,
+    ) => ({
+      ...retentionAllocation,
+      invoiceId: reverseId,
+      receiptId: String(reverseReceipt.id),
+      requestId: key,
+      source: { ...retentionAllocation.source, key, effectiveOn },
+      amountMinor,
+      release: {
+        ...retentionAllocation.release,
+        invoiceSnapshotId: reverseInvoice?.moneySnapshotId ?? '',
+      },
+    });
+    const reverseInvoice = await invoices.get(
+      { id: reverseId },
+      { cache: false },
+    );
+    await recordHistoricalCustomerAllocation(
+      reverseAllocation('reverse-late', 600, '2020-02-02'),
+    );
+    await expect(
+      recordHistoricalCustomerAllocation(
+        reverseAllocation('reverse-invalid-early', 501, '2020-01-15'),
+      ),
+    ).rejects.toThrow(/cap/);
+    if (!db.transaction) throw new Error('Missing prefix transaction fixture');
+    await expect(
+      db.transaction(async (tx) => {
+        await recordHistoricalCustomerAllocation({
+          ...reverseAllocation('reverse-rollback', 200, '2020-01-15'),
+          db: tx,
+        });
+        throw new Error('prefix rollback');
+      }),
+    ).rejects.toThrow('prefix rollback');
+    expect(
+      (await invoices.get({ id: reverseId }, { cache: false }))?.amountPaid,
+    ).toBe(600);
+    const reverseEarly = reverseAllocation('reverse-early', 400, '2020-01-15');
+    const reverseResult =
+      await recordHistoricalCustomerAllocation(reverseEarly);
+    expect((await recordHistoricalCustomerAllocation(reverseEarly)).id).toBe(
+      reverseResult.id,
+    );
+    expect(
+      (await invoices.get({ id: reverseId }, { cache: false }))?.amountPaid,
+    ).toBe(1000);
+    await expect(
+      recordHistoricalCustomerAllocation(
+        reverseAllocation('reverse-overflow', 1, '2020-02-03'),
+      ),
+    ).rejects.toThrow(/cap/);
+
+    const laterCapId = await issued('later-prefix-cap', 1000, '2020-01-01');
+    await issued('later-prefix-credit', 200, '2020-02-01', laterCapId);
+    const laterCapInvoice = await invoices.get(
+      { id: laterCapId },
+      { cache: false },
+    );
+    const laterCapReceipt = await recordHistoricalCustomerFunds({
+      ...receiptInput,
+      requestId: 'later-cap-receipt',
+      source: {
+        ...receiptInput.source,
+        key: 'later-cap-receipt',
+        effectiveOn: '2020-01-01',
+      },
+      originalAmountMinor: 1200,
+    });
+    const laterAllocation = (
+      key: string,
+      amountMinor: number,
+      effectiveOn: string,
+    ) => ({
+      ...retentionAllocation,
+      invoiceId: laterCapId,
+      receiptId: String(laterCapReceipt.id),
+      requestId: key,
+      source: { ...retentionAllocation.source, key, effectiveOn },
+      amountMinor,
+      release: {
+        ...retentionAllocation.release,
+        invoiceSnapshotId: laterCapInvoice?.moneySnapshotId ?? '',
+      },
+    });
+    await recordHistoricalCustomerAllocation(
+      laterAllocation('later-existing', 600, '2020-03-01'),
+    );
+    // The candidate fits January, but must not overrun the later March payment prefix after a February credit.
+    await expect(
+      recordHistoricalCustomerAllocation(
+        laterAllocation('later-prefix-overflow', 300, '2020-01-15'),
+      ),
+    ).rejects.toThrow(/cap/);
+    await recordHistoricalCustomerAllocation(
+      laterAllocation('later-prefix-valid', 200, '2020-01-15'),
+    );
+    expect(
+      (await invoices.get({ id: laterCapId }, { cache: false }))?.amountPaid,
+    ).toBe(800);
+
     const retainedState = JSON.parse(retainedInvoice.retentionStateJson);
     expect(retainedState.releases[0].effectiveOn).toBe('2020-02-01');
     expect(retainedState.releases[0].recordedAt.startsWith('2020')).toBe(false);
@@ -512,6 +650,39 @@ export async function proveHistoricalCustomerFunds(
         ],
       }),
     ).rejects.toThrow(/over-apply|over-pay/);
+    // Public current allocations are still real reservations in the dated combined timeline.
+    const mixedReceipt = await recordHistoricalCustomerFunds({
+      ...receiptInput,
+      requestId: 'mixed-current-receipt',
+      source: {
+        ...receiptInput.source,
+        key: 'mixed-current-receipt',
+        effectiveOn: '2020-01-01',
+      },
+      originalAmountMinor: 1000,
+    });
+    const manyInvoice = await invoices.get(
+      { id: manyInvoiceId },
+      { cache: false },
+    );
+    await expect(
+      recordHistoricalCustomerAllocation({
+        ...retentionAllocation,
+        invoiceId: manyInvoiceId,
+        receiptId: String(mixedReceipt.id),
+        requestId: 'mixed-current-overflow',
+        source: {
+          ...retentionAllocation.source,
+          key: 'mixed-current-overflow',
+          effectiveOn: '2020-01-15',
+        },
+        amountMinor: 1,
+        release: {
+          ...retentionAllocation.release,
+          invoiceSnapshotId: manyInvoice?.moneySnapshotId ?? '',
+        },
+      }),
+    ).rejects.toThrow(/cap/);
     const conservationReceipt = await recordHistoricalCustomerFunds({
       ...receiptInput,
       requestId: 'conservation-receipt',

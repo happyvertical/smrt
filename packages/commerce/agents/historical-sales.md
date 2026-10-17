@@ -89,3 +89,9 @@ complete release history. Provider releases retain their effective date in the
 canonical retention history as well as provider evidence. Shared SQLite and
 PostgreSQL retention suites verify reload, exact retry, original-prefix tamper
 refusal, and transactional rollback.
+
+Historical cash allocations are validated as dated payment prefixes, independent
+of source import order. Backdated insertion rechecks later application dates;
+ordinary public allocations retain their canonical allocatedAt chronology.
+Same-day credit ordering remains explicit. Later credits alone do not
+retroactively invalidate cash received before their issue date.
