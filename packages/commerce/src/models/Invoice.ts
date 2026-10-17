@@ -311,7 +311,11 @@ export class Invoice extends SmrtObject {
   /**
    * Date invoice was issued
    */
-  @field({ description: 'The date the invoice was issued.' })
+  @field({
+    description: 'The date the invoice was issued.',
+    // A business date: what "invoices by month" buckets (#4100).
+    ui: { format: 'date' },
+  })
   issueDate: Date = new Date();
 
   /**
