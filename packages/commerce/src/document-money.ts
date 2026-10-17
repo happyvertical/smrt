@@ -411,30 +411,53 @@ export async function refreshIssuedCreditBalance(
       'Issued credit total is not a nonnegative safe integer',
     );
   let remainingSource = Math.max(0, source.totalAmount - source.amountPaid);
-  for (const credit of credits) {
-    const included = issued.includes(credit);
-    const applied = included
-      ? Math.min(credit.totalAmount, remainingSource)
-      : 0;
-    if (included) remainingSource -= applied;
-    if (source.retentionAccountingStateJson) {
-      const providerState = JSON.parse(source.retentionAccountingStateJson);
-      const managedCredit = providerState.credits.find(
-        (entry: { creditId: string }) => entry.creditId === credit.id,
+  const managed = new Map<string, number>();
+  if (source.retentionAccountingStateJson) {
+    const providerState = JSON.parse(source.retentionAccountingStateJson);
+    for (const entry of providerState.credits) {
+      const credit = issued.find(
+        (candidate) => candidate.id === entry.creditId,
       );
+      const frozen = entry.retainedMinor + entry.appliedMinor;
       if (
-        managedCredit &&
-        (applied !== managedCredit.retainedMinor + managedCredit.appliedMinor ||
-          !included)
+        !credit ||
+        managed.has(entry.creditId) ||
+        !Number.isSafeInteger(entry.retainedMinor) ||
+        entry.retainedMinor < 0 ||
+        !Number.isSafeInteger(entry.appliedMinor) ||
+        entry.appliedMinor < 0 ||
+        !Number.isSafeInteger(frozen) ||
+        frozen > credit.totalAmount ||
+        frozen !== credit.creditedAmount ||
+        frozen > remainingSource
       )
         throw new MoneyValidationError(
           'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
           'Provider-managed credit allocation cannot change without an explicit reversal contract',
         );
+      managed.set(entry.creditId, frozen);
+      remainingSource -= frozen;
     }
+  }
+  // Provider applications are immutable authority, not a fresh allocation choice.
+  // Reserve them before assigning residual capacity; neither database order nor
+  // a later same-day credit's UUID may take an already committed application.
+  for (const credit of [
+    ...issued,
+    ...credits.filter((entry) => !issued.includes(entry)),
+  ]) {
+    const included = issued.includes(credit);
+    const frozen = managed.get(requireId(credit.id, 'Credit invoice'));
+    const applied =
+      frozen ?? (included ? Math.min(credit.totalAmount, remainingSource) : 0);
+    if (included && frozen === undefined) remainingSource -= applied;
     if (credit.creditedAmount !== applied) {
       credit.creditedAmount = applied;
       credit.updatePaymentStatus(credit.amountPaid);
+      // A zero application is not an issuance reversal. SENT can be recorded
+      // without delivery timestamps, so payment status alone cannot restore it.
+      if (included && credit.status === InvoiceStatus.DRAFT)
+        credit.status = InvoiceStatus.SENT;
       await credit.saveDerived(DOCUMENT_MONEY_WRITE);
     }
   }
