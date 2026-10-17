@@ -334,6 +334,27 @@ function measureAlias(
     .replace(/_+$/, '');
 }
 
+const OP_WORDS: Record<ReportFilterOp, string> = {
+  eq: 'is',
+  ne: 'is not',
+  gt: 'over',
+  gte: 'at least',
+  lt: 'under',
+  lte: 'at most',
+  contains: 'contains',
+};
+
+/** A money amount in currency units ("500", "$1,250.50", 500) as integer minor units. */
+function moneyAmount(value: string | number | boolean): number | null {
+  const units =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /\d/.test(value)
+        ? Number(value.replace(/[^0-9.-]/g, ''))
+        : Number.NaN;
+  return Number.isFinite(units) ? Math.round(units * 100) : null;
+}
+
 const isNumeric = (field: DescribedField) =>
   field.type === 'integer' || field.type === 'decimal';
 
@@ -443,6 +464,7 @@ export function specFromIntent(
     filters.push({ field: dateField.name, op: 'gte', value: range.from });
     filters.push({ field: dateField.name, op: 'lt', value: range.to });
   }
+  const stated: string[] = [];
   for (const filter of intent.filters ?? []) {
     const field = resolveField(filter.field, fields);
     if (!field) {
@@ -450,7 +472,23 @@ export function specFromIntent(
         `Which field on ${noun} should "${filter.field}" filter: ${choices(fields.map((f) => f.label))}?`,
       );
     }
+    if (field.format === 'money') {
+      // People state amounts in currency units ("over $500"); money is stored
+      // in integer minor units, so the threshold is scaled, never guessed.
+      const amount = moneyAmount(filter.value);
+      if (amount === null) {
+        return ask(`What amount should ${field.label} be compared with?`);
+      }
+      filters.push({ field: field.name, op: filter.op, value: amount });
+      stated.push(
+        `${field.label} ${OP_WORDS[filter.op]} ${(amount / 100).toFixed(2)}`,
+      );
+      continue;
+    }
     filters.push({ field: field.name, op: filter.op, value: filter.value });
+    stated.push(
+      `${field.label} ${OP_WORDS[filter.op]} ${String(filter.value)}`,
+    );
   }
 
   const title =
@@ -463,9 +501,17 @@ export function specFromIntent(
     ]
       .filter(Boolean)
       .join(', ');
-  const description = range
-    ? `${dateField?.label ?? 'Date'} from ${range.from} up to ${range.to}`
-    : undefined;
+  // The description states every condition, so a saved report says what it
+  // counts (a threshold included), not only its period.
+  const description =
+    [
+      range
+        ? `${dateField?.label ?? 'Date'} from ${range.from} up to ${range.to}`
+        : '',
+      ...stated,
+    ]
+      .filter(Boolean)
+      .join('; ') || undefined;
   const measureAliases = (spec: RuntimeReportSpec) =>
     spec.measures.map((m) => m.as);
   try {

@@ -223,6 +223,43 @@ describe('planner reports store', () => {
     ).rejects.toMatchObject({ code: 'spec_hash_mismatch' });
   });
 
+  it('reads money filter amounts in currency units and states them', async () => {
+    const { data, reports } = setup();
+    const defined = await reports.define({
+      source: 'invoices',
+      filters: [{ field: 'totalAmount', op: 'gt', value: '$500' }],
+    });
+    if (!defined.ok) throw new Error(defined.question);
+    const { spec, preview } = defined.proposal;
+    expect(spec.filters).toEqual([
+      { field: 'totalAmount', op: 'gt', value: 50000 },
+    ]);
+    expect(spec.description).toBe('Total amount over 500.00');
+    const model = getModelByQualifiedName(
+      '@happyvertical/smrt-commerce:Invoice',
+    )?.model;
+    if (!model) throw new Error('Invoice');
+    const over = (await data.list(model)).filter(
+      (row) => typeof row.totalAmount === 'number' && row.totalAmount > 50000,
+    );
+    expect(preview.rows).toEqual([
+      {
+        number_of_invoices: over.length,
+        total_amount: over.length
+          ? over.reduce((sum, row) => sum + (row.totalAmount as number), 0)
+          : null,
+      },
+    ]);
+    const unclear = await reports.define({
+      source: 'invoices',
+      filters: [{ field: 'totalAmount', op: 'gt', value: 'a lot' }],
+    });
+    expect(unclear).toEqual({
+      ok: false,
+      question: 'What amount should Total amount be compared with?',
+    });
+  });
+
   it('turns a value the field cannot take into a question', async () => {
     const { reports } = setup();
     const defined = await reports.define({

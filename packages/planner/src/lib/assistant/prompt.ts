@@ -189,7 +189,7 @@ export function buildSystemPrompt(
   }
   if (reports.length) {
     out.push(
-      '"report": only when they ask for a report, summary or totals of their records: {"source": a report source id, optional "measures": [{"fn": count|sum|avg|min|max, "field"}], "groupBy": field, "bucket": day|week|month|quarter|year, "period": today|yesterday|this_week|last_week|this_month|last_month|this_quarter|last_quarter|this_year|last_year|all_time, "filters": [{"field", "op": eq|ne|gt|gte|lt|lte|contains, "value"}]}; a summary needs only source and period. Else omit.',
+      '"report": only when they ask for a report, summary or totals of their records: {"source": a report source id, optional "measures": [{"fn": count|sum|avg|min|max, "field"}], "groupBy": field, "bucket": day|week|month|quarter|year, "period": today|yesterday|this_week|last_week|this_month|last_month|this_quarter|last_quarter|this_year|last_year|all_time, "filters": [{"field", "op": eq|ne|gt|gte|lt|lte|contains, "value"}]}; a summary needs only source and period; money values are in currency units (500 for $500). Else omit.',
     );
   }
   out.push(
