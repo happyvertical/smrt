@@ -28,7 +28,7 @@ section is what is left after it.
 | Need | Existing package | How it is used |
 |---|---|---|
 | Group → family tenants | `smrt-users` Tenant hierarchy, `smrt-tenancy` | The co-op is a tenant; each family is a child tenant. Existing `Tenant.getAncestorIds()` and `TenantCollection.getAncestors()`, `getDescendants()`, and `isAncestorOf()` remain the traversal source. Catalog rows are global (null tenant), group-shared, or family-private. |
-| Adults sign in, kids do not | `smrt-users` Membership, `DeviceCredentialService` | A guardian has a Membership in the family tenant and the group tenant. A learner is a Person profile with its own User (email optional) and family Membership. Shared-device learner access is a terminal/device grant verified with that User's PIN after host enrollment; a guardian password session alone is not that grant. |
+| Guardian and learner accounts | `smrt-users` Membership | A guardian has a Membership in the family tenant and the group tenant. A learner is a Person profile with a separate User (email optional) and family Membership. The application authenticates each account through its ordinary user flow. If a tablet is shared, operating-system user separation is outside the application contract. |
 | People and family relationships | `smrt-profiles` Person, `ProfileRelationship` | Learner and guardian are Profiles; guardianship is a relationship, not a field. |
 | Worksheets, scans, photos, videos | `smrt-assets` AssetRuntime, `@happyvertical/ocr`, `@happyvertical/pdf` | Printable lessons own a PDF asset. Scans are assets on a submission. OCR and PDF rendering run as background jobs. |
 | Discussion group, messaging | `smrt-chat` rooms and threads, `smrt-comments`, `smrt-messages` | Group rooms live in the group tenant. Comments attach to courses and lessons (reviews, suggestions). Messages deliver notifications and direct mail. |
@@ -46,7 +46,7 @@ section is what is left after it.
 anytown.ai and ergot.io each carry generic tenancy code that smrt still
 lacks. Both apps are pinned to older smrt and also carry things that have
 since landed upstream (mobile auth, camera capture, owner bootstrap, host
-tenant resolution, role seeding, device PINs); those are not ported. The
+tenant resolution, and role seeding); those are not ported. The
 genuine gaps are filed as Phase 0.5 under the epic and run alongside the
 catalog models:
 
@@ -59,8 +59,8 @@ catalog models:
 | [#3977](https://github.com/happyvertical/smrt/issues/3977) approval-based join | anytown reporter onboarding | a family asks to join the co-op |
 
 Neither app has anything for courses, lessons, sectioned authoring,
-markdown editing, PDF splitting, comments, person-to-person messaging, or
-shared-device user switching; those stay new work here.
+markdown editing, PDF splitting, comments, or person-to-person messaging;
+those stay new work here.
 
 ## New primitives
 
@@ -228,9 +228,9 @@ store is not supported; the free PDFs cover the same worksheets.
 Membership in the family tenant; email is optional on User, so a child
 needs none), `displayName`, `birthDate`, `level = 0` (current level in the
 same scale as course bands), `settings` JSON (guarded get/set helpers; tutor
-preferences, UI mode). A shared family device still signs the learner in by
-per-person PIN through `DeviceCredentialService`; the PIN is a credential on
-the learner's own User, not a substitute for one. Guardianship is a
+preferences, UI mode). Each learner uses that User through the application's
+ordinary account authentication; a shared tablet's operating-system user
+separation is outside this application's scope. Guardianship is a
 `ProfileRelationship`, so the package has no `parentId`.
 
 **Curriculum**. A learner's plan for a period: `learnerId`, `title`,
@@ -415,12 +415,11 @@ generated definitions, with bespoke Svelte only for the learner dashboard, the
 scan capture, and the grading screen.
 
 The application consumes a released `@happyvertical/smrt-education`; it does
-not use a workspace, file, or Git dependency as a release workaround. Explicit
-guardian terminal approval creates an enrolled-device parent session; only then
-does the learner PIN create the selected learner's child session. Each learner
-authentication rechecks terminal enrollment, revocation invalidates child
-sessions, and learner switching clears prior learner authority. A plain guardian
-password session cannot enroll a terminal or impersonate a learner.
+not use a workspace, file, or Git dependency as a release workaround. Guardians
+and learners authenticate as their separate application Users. A guardian
+session does not impersonate a learner, and the application neither enrolls
+tablets nor manages device-local user switching. When a family shares hardware,
+the operating system supplies any desired tablet-user separation.
 
 ## Delivery plan
 
@@ -433,8 +432,8 @@ Curriculum, Enrollment, LessonProgress, Submission (Scanned, External,
 Attestation), SubmissionAsset, Grade, CourseSource with the `easy-peasy`
 adapter importing the learner's current courses as private pointer lessons.
 Manual catalog entry for Khan and CrunchLabs links. App forked from
-smrt-start: family tenant, guardian login, terminal/device learner grant, a
-learner dashboard selecting the next unfinished lesson across active
+smrt-start: family tenant, separate guardian and learner accounts, a learner
+dashboard selecting the next unfinished lesson across active
 enrollments by `CourseSection.sortOrder`, then `Lesson.sortOrder`, then a
 deterministic ID tie-break, print-and-scan flow with guardian attestation and
 manual score, cookbook screens for the rest. Complete/skipped work is excluded;
@@ -494,10 +493,10 @@ is filed; later phases are filed when Phase 0 is usable.
 2. Rewards live in `src/rewards/` of the education package. Extraction
    trigger: a second consumer.
 3. The application is a separate repository forked from `smrt-start`.
-4. Every learner has a User row and a family-tenant Membership from v1.
-   Shared-device sign-in is a per-person PIN on that User. This keeps the
-   path open for a learner's own device and for group-room posting without
-   a migration.
+4. Every learner has a separate User row and a family-tenant Membership from
+   v1. Learner authentication uses the application's ordinary user flow.
+   Tablet user separation, when a family wants it, belongs to the operating
+   system rather than this application.
 
 ## Open questions
 
@@ -510,3 +509,6 @@ is filed; later phases are filed when Phase 0 is usable.
 - Whether skills should seed from an existing standard (Common Core, or Khan's
   public skill names) or start empty and grow from what gets taught.
 - Video lessons: host our own assets, link to YouTube, or both.
+- For a learner User without email, which supported ordinary login identifier
+  and provisioning flow will the application use? This must not introduce a
+  custom credential mechanism or PIN.
