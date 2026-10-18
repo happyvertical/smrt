@@ -37,9 +37,11 @@ import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
+  ensurePasswordPermissionsRegistered,
   MembershipCollection,
   MembershipStatus,
   PasswordCredentialService,
+  type PasswordPolicyOptions,
   RoleCollection,
   SessionCollection,
   SessionService,
@@ -201,6 +203,8 @@ export interface LocalApplicationRuntimeOptions
    * new tenant with slug `default`; see {@link LocalOwnerTenantOptions}.
    */
   ownerTenant?: LocalOwnerTenantOptions;
+  /** Server-only policy shared with the application password sign-in service. */
+  passwordPolicy?: PasswordPolicyOptions;
   /** Testable clock. */
   now?: () => Date;
 }
@@ -599,6 +603,7 @@ export async function initializeLocalApplicationRuntime(
       backgroundJobs: options.backgroundJobs === true,
       paidCapabilities: options.paidCapabilities === true,
       ownerTenant,
+      passwordPolicy: options.passwordPolicy,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
     });
@@ -653,6 +658,7 @@ interface LocalApplicationRuntimeState {
   backgroundJobs: boolean;
   paidCapabilities: boolean;
   ownerTenant: ResolvedOwnerTenant;
+  passwordPolicy?: PasswordPolicyOptions;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -693,6 +699,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   private readonly bootstrapTtlSeconds: number;
   private readonly sessionTtlSeconds: number;
   private readonly ownerTenant: ResolvedOwnerTenant;
+  private readonly passwordPolicy?: PasswordPolicyOptions;
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
 
@@ -704,6 +711,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.bootstrapTtlSeconds = state.bootstrapTtlSeconds;
     this.sessionTtlSeconds = state.sessionTtlSeconds;
     this.ownerTenant = state.ownerTenant;
+    this.passwordPolicy = state.passwordPolicy;
     this.backgroundJobsEnabled = state.backgroundJobs;
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
@@ -803,6 +811,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     // permission catalog, not only the role itself. Seeding is idempotent and
     // additive, and commits in its own transaction before the claim
     // transaction.
+    if (input.password) ensurePasswordPermissionsRegistered();
     const roles = await RoleCollection.create({ db: this.db });
     await roles.seedSystemRoles({ seedPermissions: true });
     return this.db.transaction(async (tx) => {
@@ -835,6 +844,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         input,
         this.sessionTtlSeconds,
         this.ownerTenant,
+        this.passwordPolicy,
       );
     });
   }
@@ -963,6 +973,7 @@ async function createLocalOwnerRecords(
   input: ClaimLocalOwnerInput,
   sessionTtlSeconds: number,
   ownerTenant: ResolvedOwnerTenant,
+  passwordPolicy?: PasswordPolicyOptions,
 ): Promise<LocalOwnerClaimResult> {
   // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
   // so creating over an existing slug would replace that row with a new id
@@ -1046,6 +1057,7 @@ async function createLocalOwnerRecords(
     const passwords = await PasswordCredentialService.create({
       db,
       sessionTtl: sessionTtlSeconds,
+      password: passwordPolicy,
     });
     await passwords.setPassword({
       actor: {

@@ -247,6 +247,22 @@ Password-based applications should pass `{ requirePassword: true }` to
 `createOwnerSetupPage` and include a password field in their setup form. The
 password is stored in the owner-claim transaction; a rejected password leaves
 the token available for retry. Existing bootstrap consumers may omit it.
+Use one server-only `PasswordPolicyOptions` value for bootstrap and sign-in,
+including any pepper, length constraints, or custom rejection hook:
+
+```typescript
+const passwordPolicy = { pepper: serverSecrets.passwordPepper, minLength: 16 };
+const runtime = createSmrtSvelteKitRuntime({ passwordPolicy });
+const passwords = await PasswordCredentialService.create({
+  ...runtime.classOptions('User'),
+  password: passwordPolicy,
+});
+```
+
+`initializeLocalApplicationRuntime` accepts the same `passwordPolicy` option.
+It is never taken from form data or included in diagnostics. Bootstrap uses the
+policy on its transaction-bound service, and registers password-management
+permissions before seeding the owner's grants.
 
 `resolveApplicationId()` and `runtimeConfigurationFingerprint()` (root entry)
 are the canonical app ID and secret-free configuration fingerprint shared by

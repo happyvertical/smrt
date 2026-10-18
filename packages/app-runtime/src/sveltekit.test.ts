@@ -22,6 +22,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
+  PasswordCredentialService,
   RoleCollection,
   TenantCollection,
   TenantStatus,
@@ -522,7 +523,8 @@ describe('local SvelteKit runtime', () => {
     const onOwnerClaimed = vi.fn(() => {
       throw new Error('cleanup failure must not surface');
     });
-    const { runtime } = await localRuntime('bootstrap');
+    const passwordPolicy = { pepper: 'test-only-sveltekit-pepper' };
+    const { runtime } = await localRuntime('bootstrap', { passwordPolicy });
     await runtime.init();
     const page = createOwnerSetupPage(runtime, {
       onOwnerClaimed,
@@ -631,6 +633,17 @@ describe('local SvelteKit runtime', () => {
         maxAge: 7 * 24 * 60 * 60,
       },
     });
+    const passwords = await PasswordCredentialService.create({
+      db: local.db,
+      password: passwordPolicy,
+    });
+    await expect(
+      passwords.signIn({
+        identifier: validForm.email,
+        password: validForm.password,
+        tenantId: 'unique-active-membership',
+      }),
+    ).resolves.toMatchObject({ authMethod: 'password' });
     expect(onOwnerClaimed).toHaveBeenCalledOnce();
     expect(await ownerCount(local.db)).toBe(1);
 

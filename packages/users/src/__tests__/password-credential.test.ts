@@ -14,6 +14,13 @@ import {
   ObjectRegistry,
   registerChangeFeedWriter,
 } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  registerTenantScopedClass,
+  unregisterTenantScopedClass,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
@@ -299,6 +306,31 @@ describe('PasswordCredentialService', () => {
       ipAddress: '198.51.100.87',
     });
     expect(result).toMatchObject({ userId: personId, tenantId });
+  });
+
+  it('counts memberships outside an ambient tenant filter after password verification', async () => {
+    await addMember(personId, otherTenantId);
+    registerTenantScopedClass('Membership', {
+      field: 'tenantId',
+      mode: 'required',
+    });
+    enableTenancy();
+    try {
+      await withTenant({ tenantId }, async () => {
+        expect(await memberships.findActiveByUser(personId)).toHaveLength(1);
+        await expect(
+          service.signIn({
+            identifier: 'pat@example.com',
+            password: PASSWORD,
+            tenantId: 'unique-active-membership',
+          }),
+        ).rejects.toBeInstanceOf(PasswordCredentialError);
+        expect(await activeSessionIds(personId)).toEqual([]);
+      });
+    } finally {
+      unregisterTenantScopedClass('Membership');
+      disableTenancy();
+    }
   });
 
   it('refuses unique-membership sign-in for no or multiple active memberships', async () => {

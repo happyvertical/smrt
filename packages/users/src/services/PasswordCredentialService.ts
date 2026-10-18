@@ -1128,7 +1128,9 @@ export class PasswordCredentialService {
   private async resolveUniqueActiveMembershipTenant(
     userId: string,
   ): Promise<string | null> {
-    const memberships = await this.memberships.findActiveByUser(userId);
+    const memberships = await withSystemContext(() =>
+      this.memberships.findActiveByUser(userId),
+    );
     return memberships.length === 1 && memberships[0]?.tenantId
       ? memberships[0].tenantId
       : null;
