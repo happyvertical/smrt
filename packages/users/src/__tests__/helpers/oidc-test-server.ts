@@ -130,12 +130,15 @@ CREATE TABLE IF NOT EXISTS "users" (
   "profile_id" TEXT DEFAULT '',
   "email" TEXT DEFAULT '',
   "email_key" TEXT,
+  "username" TEXT,
+  "username_key" TEXT,
   "status" TEXT,
   "last_login_at" TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "users_slug_context_idx" ON "users" ("slug", "context");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_profile_id_idx" ON "users" ("profile_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key_idx" ON "users" ("email_key");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key_idx" ON "users" ("username_key");
 
 CREATE TABLE IF NOT EXISTS "sessions" (
   "id" TEXT PRIMARY KEY NOT NULL,

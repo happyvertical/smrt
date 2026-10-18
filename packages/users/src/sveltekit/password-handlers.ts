@@ -65,17 +65,29 @@ import type { SessionContext } from '../services/SessionService.js';
 
 const logger = createLogger({ level: 'info' });
 
+/**
+ * Structural cookie subset. Options are always supplied by this module and
+ * match SvelteKit's required cookie path without making it a root dependency.
+ */
+type CookieOptions = {
+  path: string;
+  domain?: string;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: 'strict' | 'lax' | 'none';
+  maxAge?: number;
+};
 type Cookies = {
   get: (name: string) => string | undefined;
-  set: (name: string, value: string, options?: Record<string, unknown>) => void;
-  delete: (name: string, options?: Record<string, unknown>) => void;
+  set: (name: string, value: string, options: CookieOptions) => void;
+  delete: (name: string, options: CookieOptions) => void;
 };
 
 /** The parts of a SvelteKit `RequestEvent` these handlers use. */
 export type PasswordRequestEvent = {
   cookies: Cookies;
   getClientAddress?: () => string;
-  locals?: Record<string, unknown>;
+  locals?: object;
   request: Request;
   url: URL;
 };
@@ -90,9 +102,15 @@ export interface CreatePasswordCredentialHandlersOptions
   tenantId?:
     | string
     | null
+    | 'unique-active-membership'
     | ((
         event: PasswordRequestEvent,
-      ) => string | null | undefined | Promise<string | null | undefined>);
+      ) =>
+        | string
+        | null
+        | undefined
+        | 'unique-active-membership'
+        | Promise<string | null | undefined | 'unique-active-membership'>);
   /** Session cookie name; must match `createSessionHandler`. Default `sid`. */
   cookieName?: string;
   cookiePath?: string;
@@ -217,7 +235,7 @@ function errorResponse(error: unknown): Response {
  * forgot to copy the field.
  */
 function resolveActor(event: PasswordRequestEvent): SessionContext | null {
-  const locals = event.locals ?? {};
+  const locals = (event.locals ?? {}) as Record<string, unknown>;
   const user = locals.user as SessionContext['user'] | null | undefined;
   const sessionId = locals.sessionId as string | null | undefined;
   if (!user || !sessionId) return null;

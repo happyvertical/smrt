@@ -14,6 +14,13 @@ import {
   ObjectRegistry,
   registerChangeFeedWriter,
 } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  registerTenantScopedClass,
+  unregisterTenantScopedClass,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
@@ -286,6 +293,132 @@ describe('PasswordCredentialService', () => {
     expect(audit.map((entry) => entry.outcome)).toEqual(['succeeded']);
   });
 
+  it('signs in by a canonical username and selects one active membership only after verification', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'Pat.Learner';
+    await user.save();
+
+    const result = await service.signIn({
+      identifier: '  PAT.LEARNER ',
+      password: PASSWORD,
+      tenantId: 'unique-active-membership',
+      ipAddress: '198.51.100.87',
+    });
+    expect(result).toMatchObject({ userId: personId, tenantId });
+  });
+
+  it('counts memberships outside an ambient tenant filter after password verification', async () => {
+    await addMember(personId, otherTenantId);
+    registerTenantScopedClass('Membership', {
+      field: 'tenantId',
+      mode: 'required',
+    });
+    enableTenancy();
+    try {
+      await withTenant({ tenantId }, async () => {
+        expect(await memberships.findActiveByUser(personId)).toHaveLength(1);
+        await expect(
+          service.signIn({
+            identifier: 'pat@example.com',
+            password: PASSWORD,
+            tenantId: 'unique-active-membership',
+          }),
+        ).rejects.toBeInstanceOf(PasswordCredentialError);
+        expect(await activeSessionIds(personId)).toEqual([]);
+      });
+    } finally {
+      unregisterTenantScopedClass('Membership');
+      disableTenancy();
+    }
+  });
+
+  it('refuses unique-membership sign-in for no or multiple active memberships', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'pat-learner';
+    await user.save();
+    await addMember(personId, otherTenantId);
+
+    await expect(
+      service.signIn({
+        identifier: 'pat-learner',
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+        ipAddress: '198.51.100.88',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+  });
+
+  it.each([
+    'email',
+    'username',
+  ])('keeps %s tenant refusals generic, budgeted, and sessionless', async (kind) => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'pat-learner';
+    await user.save();
+    const identifier = kind === 'email' ? user.email : 'PAT-LEARNER';
+    const membership = await memberships.findByUserAndTenant(
+      personId,
+      tenantId,
+    );
+    if (!membership) throw new Error('missing membership');
+    membership.status = MembershipStatus.INACTIVE;
+    await membership.save();
+    const attempt = () =>
+      service.signIn({
+        identifier,
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+        ipAddress: '198.51.100.90',
+      });
+    for (let index = 0; index < 3; index += 1) {
+      await expect(attempt()).rejects.toMatchObject({
+        name: 'PasswordCredentialError',
+      });
+    }
+    expect(await activeSessionIds(personId)).toEqual([]);
+    await expect(attempt()).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(verified.encodings).toHaveLength(3);
+  });
+
+  it('verifies the password before querying unique memberships and rejects inactive users', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.email = '';
+    user.username = 'learner-only';
+    await user.save();
+    const lookup = vi.spyOn(MembershipCollection.prototype, 'findActiveByUser');
+    await expect(
+      service.signIn({
+        identifier: 'learner-only',
+        password: 'wrong password',
+        tenantId: 'unique-active-membership',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(lookup).not.toHaveBeenCalled();
+    const result = await service.signIn({
+      identifier: ' LEARNER-ONLY ',
+      password: PASSWORD,
+      tenantId: 'unique-active-membership',
+    });
+    expect(result).toMatchObject({ userId: personId, tenantId });
+    expect(lookup).toHaveBeenCalledWith(personId);
+    user.status = UserStatus.INACTIVE;
+    await user.save();
+    lookup.mockClear();
+    await expect(
+      service.signIn({
+        identifier: 'learner-only',
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(lookup).not.toHaveBeenCalled();
+    lookup.mockRestore();
+  });
+
   it('signs in without a tenant context when none is given', async () => {
     const result = await signIn('pat@example.com', PASSWORD, {
       tenantId: null,
@@ -316,6 +449,7 @@ describe('PasswordCredentialService', () => {
 
     const attempts: Array<[string, string, string]> = [
       ['unknown identifier', 'nobody@example.com', PASSWORD],
+      ['unknown username', 'unknown-learner', PASSWORD],
       ['no password set', 'nopass@example.com', PASSWORD],
       ['wrong password', 'pat@example.com', 'wrong horse battery'],
       ['inactive user', 'gone@example.com', PASSWORD],
@@ -348,6 +482,7 @@ describe('PasswordCredentialService', () => {
   it('runs one scrypt verification under the current policy whether or not the account or password exists', async () => {
     for (const [index, [identifier, password]] of [
       ['nobody@example.com', PASSWORD],
+      ['unknown-learner', PASSWORD],
       ['nopass@example.com', PASSWORD],
       ['pat@example.com', 'wrong horse battery'],
       ['pat@example.com', PASSWORD],
@@ -894,6 +1029,58 @@ describe('PasswordCredentialService', () => {
     await expect(
       signIn('pat@example.com', PASSWORD, { ipAddress: '192.0.2.99' }),
     ).rejects.toBeInstanceOf(LoginRateLimitError);
+  });
+
+  it.each([
+    'change',
+    'clear',
+  ] as const)('shares username sign-in and self-%s guesses without a source budget', async (operation) => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.email = '';
+    user.username = 'Pat.Learner';
+    await user.save();
+    const accountOnly = await make({
+      limiter: {
+        maxAttempts: 3,
+        windowSeconds: 60,
+        source: false,
+        audit: false,
+      },
+    });
+    const current = await accountOnly.signIn({
+      identifier: 'PAT.LEARNER',
+      password: PASSWORD,
+      tenantId,
+    });
+    const actor = await sessionService.loadSessionContext(current.sessionId);
+    if (!actor) throw new Error('missing session');
+    const loginGuess = () =>
+      accountOnly.signIn({
+        identifier: ' PAT.LEARNER ',
+        password: 'wrong horse battery',
+        tenantId,
+      });
+    const managementGuess = () =>
+      operation === 'change'
+        ? accountOnly.changePassword({
+            actor,
+            currentPassword: 'wrong horse battery',
+            newPassword: 'a brand new secret',
+          })
+        : accountOnly.clearPassword({
+            actor,
+            userId: personId,
+            currentPassword: 'wrong horse battery',
+          });
+    await expect(loginGuess()).rejects.toBeInstanceOf(PasswordCredentialError);
+    await expect(managementGuess()).rejects.toBeInstanceOf(
+      PasswordCredentialError,
+    );
+    await expect(loginGuess()).rejects.toBeInstanceOf(PasswordCredentialError);
+    await expect(managementGuess()).rejects.toBeInstanceOf(LoginRateLimitError);
+    await expect(loginGuess()).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(await activeSessionIds(personId)).toEqual([current.sessionId]);
   });
 
   it('never lets a change or self-clear proven with the old password overwrite a reset that landed meanwhile', async () => {

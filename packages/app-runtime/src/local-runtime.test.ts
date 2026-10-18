@@ -20,6 +20,7 @@ import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import {
   MembershipCollection,
   MembershipStatus,
+  PasswordCredentialService,
   RoleCollection,
   TenantCollection,
   UserCollection,
@@ -404,6 +405,53 @@ describe('local application runtime', () => {
     expect((await initialized.runtime.diagnostics()).bootstrap.status).toBe(
       'claimed',
     );
+  });
+
+  it('rolls back an invalid initial password and allows retry with the same bootstrap token', async () => {
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'owner-password',
+      ...(await localDirectories('owner-password')),
+    });
+    const input = {
+      token: initialized.bootstrap?.token as string,
+      name: 'Owner',
+      email: 'owner@example.com',
+    };
+    await expect(
+      initialized.runtime.claimOwner({ ...input, password: 'short' }),
+    ).rejects.toThrow();
+    for (const table of [
+      'users',
+      'profiles',
+      'tenants',
+      'memberships',
+      'sessions',
+      'users_password_credentials',
+    ]) {
+      expect(await countRows(initialized.runtime.db, table)).toBe(0);
+    }
+    expect((await initialized.runtime.diagnostics()).bootstrap.status).toBe(
+      'available',
+    );
+    const claim = await initialized.runtime.claimOwner({
+      ...input,
+      password: 'a durable owner password',
+    });
+    const passwords = await PasswordCredentialService.create({
+      db: initialized.runtime.db,
+    });
+    const result = await passwords.signIn({
+      identifier: input.email,
+      password: 'a durable owner password',
+      tenantId: 'unique-active-membership',
+    });
+    expect(result).toMatchObject({
+      userId: claim.userId,
+      tenantId: claim.tenantId,
+    });
+    expect(
+      (await initialized.runtime.restoreSession(result.sessionId))?.authMethod,
+    ).toBe('password');
   });
 
   describe('owner tenant (#3032)', () => {

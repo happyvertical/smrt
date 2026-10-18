@@ -43,6 +43,7 @@ import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   MembershipCollection,
+  type PasswordPolicyOptions,
   PermissionResolver,
   SessionService,
   type SessionServiceOptions,
@@ -224,6 +225,8 @@ export interface SmrtSvelteKitRuntimeOptions {
    * with the slug fails the claim closed unless adoption is enabled.
    */
   readonly ownerTenant?: LocalOwnerTenantOptions;
+  /** Server-only policy shared with the application password sign-in service. */
+  readonly passwordPolicy?: PasswordPolicyOptions;
   /**
    * Local single-writer lease held for the web process, released when local
    * startup fails. Defaults to the state-root writer lease shared with
@@ -634,6 +637,7 @@ export function composeSmrtSvelteKitRuntime(
       bootstrapTtlSeconds: options.bootstrapTtlSeconds,
       sessionTtlSeconds: options.sessionTtlSeconds,
       ownerTenant: options.ownerTenant,
+      passwordPolicy: options.passwordPolicy,
       prepareDatabase: options.prepareDatabase,
       now: options.now,
     })
@@ -1108,6 +1112,8 @@ export function composeSmrtSvelteKitRuntime(
             locals.permissions = context.permissions;
             locals.tenantId = context.tenantId;
             locals.sessionId = context.sessionId;
+            locals.authMethod = context.session.authMethod ?? null;
+            locals.sessionParent = context.session.parent ?? null;
             if (context.tenantId) {
               verifiedSessionTenants.set(locals, context.tenantId);
             }
@@ -1230,6 +1236,8 @@ function clearSessionLocals(locals: SmrtRuntimeLocals): void {
   locals.permissions = [];
   locals.tenantId = null;
   locals.sessionId = null;
+  locals.authMethod = null;
+  locals.sessionParent = null;
   locals.tenantContext = undefined;
   verifiedSessionTenants.delete(locals);
 }

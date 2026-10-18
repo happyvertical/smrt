@@ -20,6 +20,7 @@ import { UserStatus } from '../types/index.js';
 export interface UserOptions extends SmrtObjectOptions {
   profileId?: string;
   email?: string;
+  username?: string | null;
   status?: UserStatus;
   lastLoginAt?: Date | null;
 }
@@ -29,6 +30,7 @@ export interface UserOptions extends SmrtObjectOptions {
  * Validates format: local@domain.tld
  */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
 
 /**
  * Validate email format.
@@ -48,6 +50,13 @@ export function isValidEmail(email: string): boolean {
 export function normalizeEmail(email: string): string {
   if (!email || typeof email !== 'string') return '';
   return email.trim() ? normalizeIdentityEmail(email) : '';
+}
+
+/** Normalize a username into its globally unique login identity. */
+export function normalizeUsername(username: string | null | undefined): string {
+  if (typeof username !== 'string') return '';
+  const normalized = username.normalize('NFKC').trim().toLowerCase();
+  return USERNAME_REGEX.test(normalized) ? normalized : '';
 }
 
 /**
@@ -108,6 +117,27 @@ export class User extends SmrtObject implements UserContract {
   })
   emailKey: string | null = null;
 
+  /** Optional globally unique username login identity. */
+  @field({
+    description:
+      'Optional username used to sign in; lowercase and globally unique.',
+    type: 'text',
+    nullable: true,
+    indexed: true,
+  })
+  username: string | null = null;
+
+  /** Durable canonical username key used for cross-connection uniqueness. */
+  @field({
+    description:
+      'The standardized username used to recognize this account; maintained automatically.',
+    type: 'text',
+    nullable: true,
+    unique: true,
+    readonly: true,
+  })
+  usernameKey: string | null = null;
+
   /**
    * User account status
    */
@@ -128,6 +158,8 @@ export class User extends SmrtObject implements UserContract {
     super(options);
     if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.email !== undefined) this.email = normalizeEmail(options.email);
+    if (options.username !== undefined)
+      this.username = normalizeUsername(options.username) || null;
     if (options.status !== undefined) this.status = options.status;
     if (options.lastLoginAt !== undefined)
       this.lastLoginAt = options.lastLoginAt;
@@ -173,6 +205,8 @@ export class User extends SmrtObject implements UserContract {
   override async save(): Promise<this> {
     this.email = normalizeEmail(this.email);
     this.emailKey = this.email || null;
+    this.username = normalizeUsername(this.username) || null;
+    this.usernameKey = this.username;
     return super.save();
   }
 }
