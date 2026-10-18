@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.57.6
+
+### Patch Changes
+
+- ### Features
+  
+  - add Music teacher and Band library cookbooks (#4117) (planner)
+  - theme toggle as an icon in the sidebar utility row (#4108) (smrt-svelte)
+  
+  ### Bug Fixes
+  
+  - give overview card titles their own row (#4121) (smrt-svelte)
+- @happyvertical/smrt-config@0.57.6
+  - @happyvertical/smrt-scanner@0.57.6
+  - @happyvertical/smrt-types@0.57.6
+
 ## 0.57.5
 
 ### Patch Changes

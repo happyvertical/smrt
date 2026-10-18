@@ -1,5 +1,15 @@
 # @happyvertical/smrt-mcp-openai
 
+## 0.57.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.6
+  - @happyvertical/smrt-jobs@0.57.6
+  - @happyvertical/smrt-mcp-apps@0.57.6
+  - @happyvertical/smrt-app-mcp@0.57.6
+
 ## 0.57.5
 
 ### Patch Changes
