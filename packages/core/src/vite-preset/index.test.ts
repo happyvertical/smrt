@@ -179,7 +179,9 @@ describe('smrt() Vite preset', () => {
       const plugins = (await smrt({ packages: [] })) as AnyPlugin[];
       const shared = plugins.find((p) => p.name === 'smrt:shared-runtime');
       expect(shared).toBeDefined();
-      expect(callHook(shared as AnyPlugin, 'config', {})).toEqual({
+      expect(
+        callHook(shared as AnyPlugin, 'config', {}, { command: 'build' }),
+      ).toEqual({
         resolve: { dedupe: ['@sveltejs/kit'] },
         ssr: {
           noExternal: ['@happyvertical/smrt-app-runtime'],
@@ -192,6 +194,7 @@ describe('smrt() Vite preset', () => {
       const shared = (await smrt({ packages: [] })).find(
         (p) => p.name === 'smrt:shared-runtime',
       ) as AnyPlugin;
+      callHook(shared, 'config', {}, { command: 'build' });
       expect(
         callHook(
           shared,
@@ -217,6 +220,24 @@ describe('smrt() Vite preset', () => {
           '@happyvertical/smrt-app-runtime',
           undefined,
           { ssr: false },
+        ),
+      ).toBeUndefined();
+    });
+
+    it('keeps normal development SSR externalization while deduping Kit', async () => {
+      const shared = (await smrt({ packages: [] })).find(
+        (p) => p.name === 'smrt:shared-runtime',
+      ) as AnyPlugin;
+      expect(callHook(shared, 'config', {}, { command: 'serve' })).toEqual({
+        resolve: { dedupe: ['@sveltejs/kit'] },
+      });
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: true },
         ),
       ).toBeUndefined();
     });

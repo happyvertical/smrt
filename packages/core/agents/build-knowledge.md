@@ -200,6 +200,8 @@ Vite matches `ssr.noExternal` by package name, so a pre-resolver keeps the
 exact runtime root external and `ssr.external` keeps `./sveltekit-runtime`
 external. That implementation subpath is an internal composition boundary;
 apps keep importing `./sveltekit`. This avoids bundling native SQL dependencies.
+This split applies only to builds; development keeps normal SSR externalization
+and Kit dedupe because Vite's dev module runner ignores resolver external flags.
 Other runtime dependencies retain their normal externalization. Do not explicitly
 externalize app-runtime in an app config. The production regression in
 `packages/app-runtime/src/sveltekit-production.test.ts` exercises the final

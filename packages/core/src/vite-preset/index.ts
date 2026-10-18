@@ -139,23 +139,31 @@ function decoratorPlugin(): Plugin {
 export const SMRT_SHARED_RUNTIME_PACKAGES = ['@sveltejs/kit'] as const;
 
 function sharedRuntimePlugin(): Plugin {
+  let isBuild = false;
   return {
     name: 'smrt:shared-runtime',
     enforce: 'pre',
     resolveId(id, _importer, options) {
       // ssr.external on the package root would externalize every subpath.
       // Keep only this exact entry external, preserving native dependencies.
-      if (options.ssr && id === '@happyvertical/smrt-app-runtime') {
+      if (isBuild && options.ssr && id === '@happyvertical/smrt-app-runtime') {
         return { id, external: true };
       }
     },
-    config() {
+    config(_user, { command }) {
+      // Only adapter builds need this split. Dev import analysis ignores a
+      // resolver's external flag, so it must retain normal externalization.
+      isBuild = command === 'build';
       return {
         resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] },
-        ssr: {
-          noExternal: ['@happyvertical/smrt-app-runtime'],
-          external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
-        },
+        ...(isBuild
+          ? {
+              ssr: {
+                noExternal: ['@happyvertical/smrt-app-runtime'],
+                external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+              },
+            }
+          : {}),
       };
     },
   };

@@ -118,6 +118,31 @@ const shared = (await smrt({ packages: [] })).filter(plugin => plugin.name === '
 export default { ssr: { external: ['@happyvertical/smrt-users', '@happyvertical/smrt-core', '@happyvertical/smrt-config', '@happyvertical/smrt-profiles', '@happyvertical/smrt-tenancy'] }, plugins: [sveltekit(), ...shared] };
 `,
   );
+  write(
+    'dev-probe.mjs',
+    `
+import { createServer } from 'vite';
+const server = await createServer({ server: { host: '127.0.0.1', port: 0 } });
+try {
+  await server.listen();
+  const origin = 'http://127.0.0.1:' + server.httpServer.address().port;
+  const response = await fetch(origin + '/setup?signed-in', { redirect: 'manual' });
+  console.log(JSON.stringify({ status: response.status, location: response.headers.get('location') }));
+} finally { await server.close(); }
+`,
+  );
+  const devProbe = await exec(process.execPath, ['dev-probe.mjs'], {
+    cwd: root,
+    timeout: 30000,
+    maxBuffer: 1024 * 1024,
+  });
+  expect(
+    JSON.parse(devProbe.stdout.trim().split('\n').at(-1) as string),
+    devProbe.stderr,
+  ).toEqual({
+    status: 303,
+    location: '/',
+  });
   const viteCli = resolve(
     import.meta.dirname,
     '../node_modules/vite/bin/vite.js',
