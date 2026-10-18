@@ -246,6 +246,68 @@ describe('core widget components', () => {
     expect(document.querySelectorAll('.smrt-shortcuts__count')).toHaveLength(3);
   });
 
+  it('shortcuts keep the heading row to icon and title, with the count in the foot (#4120)', () => {
+    const { container } = render(ShortcutsWidget, {
+      props: {
+        ...base,
+        data: {
+          items: [
+            {
+              id: 'a',
+              label: 'Equipment',
+              href: '/equipment/',
+              icon: 'box',
+              description: 'The machines you hire out.',
+              count: 8,
+            },
+            { id: 'b', label: 'Suppliers', href: '/suppliers/', count: 5 },
+          ],
+        },
+      },
+    });
+    const links = container.querySelectorAll('.smrt-shortcuts__link');
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      const heading = link.querySelector('.smrt-shortcuts__heading');
+      expect(
+        Array.from(heading?.children ?? [], (node) => node.className),
+      ).toEqual([
+        expect.stringContaining('smrt-shortcuts__icon'),
+        expect.stringContaining('smrt-shortcuts__title'),
+      ]);
+      expect(heading?.querySelector('.smrt-shortcuts__count')).toBeNull();
+      // The count is the link's last row: under the description when there
+      // is one, otherwise directly under the title.
+      const foot = link.lastElementChild;
+      expect(foot).toHaveClass('smrt-shortcuts__foot');
+      expect(foot?.querySelector('.smrt-shortcuts__count')).not.toBeNull();
+    }
+    const [first, second] = links;
+    expect(first.children[1]).toHaveClass('smrt-shortcuts__desc');
+    expect(first.querySelector('.smrt-shortcuts__foot')).toHaveTextContent(
+      '8 records',
+    );
+    expect(second.children[1]).toHaveClass('smrt-shortcuts__foot');
+    expect(second.querySelector('.smrt-shortcuts__foot')).toHaveTextContent(
+      '5 records',
+    );
+  });
+
+  it('shortcuts show a long title in full and leave out the foot with no count', () => {
+    const long = 'Equipment and parts orders awaiting supplier confirmation';
+    const { container } = render(ShortcutsWidget, {
+      props: {
+        ...base,
+        data: { items: [{ id: 'a', label: long, href: '/orders/' }] },
+      },
+    });
+    expect(container.querySelector('.smrt-shortcuts__title')).toHaveTextContent(
+      long,
+    );
+    expect(screen.getByRole('link', { name: long })).toBeInTheDocument();
+    expect(container.querySelector('.smrt-shortcuts__foot')).toBeNull();
+  });
+
   it('shortcuts drop the per-entry frame under plain presentation', () => {
     render(ShortcutsWidget, {
       props: {

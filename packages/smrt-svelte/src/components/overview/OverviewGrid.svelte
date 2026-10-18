@@ -454,7 +454,8 @@ const headingTag = $derived(`h${headingLevel}`);
                 ondragstart={(event) => sortable.dragStart(event, row.widget.id)}
                 ondragend={() => sortable.dragEnd()}
               ><span aria-hidden="true">⠿</span></button>
-              <span class="smrt-overview__chrome-title" aria-hidden="true">{row.title}</span>
+              <!-- Truncated to one line beside the controls; the tooltip carries the full title. -->
+              <span class="smrt-overview__chrome-title" aria-hidden="true" title={row.title}>{row.title}</span>
               {#if row.def && row.def.options.length > 0}
                 <ShellIconButton
                   icon="settings"
@@ -561,7 +562,7 @@ const headingTag = $derived(`h${headingLevel}`);
   [data-presentation='plain']:not([data-editing]) .smrt-overview__tile { padding: 0; border: 0; border-radius: 0; background: transparent; }
   [data-editing] .smrt-overview__tile { border-style: dashed; }
   .smrt-overview__widget { display: grid; gap: var(--smrt-spacing-2); align-content: start; min-inline-size: 0; }
-  .smrt-overview__title { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-title-small-size, 0.875rem); font-weight: var(--smrt-typography-weight-medium, 500); }
+  .smrt-overview__title { margin: 0; overflow-wrap: break-word; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-title-small-size, 0.875rem); font-weight: var(--smrt-typography-weight-medium, 500); }
   .smrt-overview__state { margin: 0; color: var(--smrt-color-on-surface-variant); }
   .smrt-overview__chrome { display: flex; align-items: center; gap: var(--smrt-spacing-1); margin-block-end: var(--smrt-spacing-2); }
   .smrt-overview__chrome-title { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.875rem); }

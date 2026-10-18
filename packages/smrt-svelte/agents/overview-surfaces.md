@@ -182,7 +182,13 @@ Call `destroy()` when the owner unmounts.
 The core shortcuts widget draws each shortcut with an inline icon/title heading.
 The icon uses `--smrt-color-primary` from the active theme, matching the
 `ShellSectionMenu` card layout; descriptions remain below the heading. Hosts
-may still provide an icon component for their own glyphs.
+may still provide an icon component for their own glyphs. The heading row is
+the icon and the title alone: the record count is meta, so like
+`ShellSectionMenu`'s card foot it sits on its own muted row at the card's foot
+(#4120). Never put a count or other meta back on a title row — it takes a
+fixed slice of the row and forces the title to wrap. Grid widget headings are
+the same: the title owns its row and wraps rather than truncating; the
+one-line edit-mode chrome label carries the full title as a tooltip.
 
 Props in `grid-types.ts`. `editing` defaults to the shell's layout editor
 (`tryUseShellLayout()?.editing`), so the same pencil edits the grid under an
