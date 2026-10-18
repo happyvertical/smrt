@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.9
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - preserve SvelteKit control flow in production apps (#4135) (core)
+- @happyvertical/smrt-config@0.57.9
+  - @happyvertical/smrt-scanner@0.57.9
+  - @happyvertical/smrt-types@0.57.9
+
 ## 0.57.8
 
 ### Patch Changes
