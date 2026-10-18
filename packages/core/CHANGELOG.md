@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.8
+
+### Patch Changes
+
+- ### Features
+  
+  - support ordinary email and username password accounts (#4127) (auth)
+  
+  ### Other Changes
+  
+  - docs: remove shared-device learner PIN requirements (#4124) (education)
+- @happyvertical/smrt-config@0.57.8
+  - @happyvertical/smrt-scanner@0.57.8
+  - @happyvertical/smrt-types@0.57.8
+
 ## 0.57.7
 
 ### Patch Changes

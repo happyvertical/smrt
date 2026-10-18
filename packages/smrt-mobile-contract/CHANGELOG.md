@@ -1,5 +1,9 @@
 # @happyvertical/smrt-mobile-contract
 
+## 0.57.8
+
+No changes in this release.
+
 ## 0.57.7
 
 No changes in this release.

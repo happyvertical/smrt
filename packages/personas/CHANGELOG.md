@@ -1,5 +1,18 @@
 # @happyvertical/smrt-personas
 
+## 0.57.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.8
+  - @happyvertical/smrt-agents@0.57.8
+  - @happyvertical/smrt-messages@0.57.8
+  - @happyvertical/smrt-prompts@0.57.8
+  - @happyvertical/smrt-tenancy@0.57.8
+  - @happyvertical/smrt-users@0.57.8
+  - @happyvertical/smrt-ui@0.57.8
+
 ## 0.57.7
 
 ### Patch Changes
