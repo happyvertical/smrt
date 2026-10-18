@@ -60,6 +60,7 @@ export const OWNER_SETUP_FIELDS = Object.freeze({
   token: 'token',
   name: 'name',
   email: 'email',
+  password: 'password',
   tenantName: 'tenantName',
 } as const);
 
@@ -132,7 +133,7 @@ export interface OwnerSetupPage {
  * ```
  *
  * The form posts to the `default` action with fields `token` (hidden),
- * `name`, `email`, and optional `tenantName`. Success sets the session cookie
+ * `name`, `email`, `password`, and optional `tenantName`. Success sets the session cookie
  * and redirects 303; failures return `fail(status, { code, message })`.
  */
 export function createOwnerSetupPage(
@@ -190,8 +191,9 @@ export function createOwnerSetupPage(
     const token = field(OWNER_SETUP_FIELDS.token);
     const name = field(OWNER_SETUP_FIELDS.name);
     const email = field(OWNER_SETUP_FIELDS.email);
+    const password = field(OWNER_SETUP_FIELDS.password);
     const tenantName = field(OWNER_SETUP_FIELDS.tenantName).trim();
-    if (!token || !name.trim() || !email.includes('@')) {
+    if (!token || !name.trim() || !email.includes('@') || !password) {
       return failure(400, 'setup_invalid_input');
     }
 
@@ -202,6 +204,7 @@ export function createOwnerSetupPage(
         token,
         name,
         email,
+        password,
         ...(tenantName ? { tenantName } : {}),
         userAgent: event.request.headers.get('user-agent') || undefined,
         ipAddress: event.getClientAddress(),

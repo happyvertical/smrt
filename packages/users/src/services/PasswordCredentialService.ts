@@ -64,7 +64,11 @@ import {
   SESSION_DATA_KEYS,
   type SessionAuthMethod,
 } from '../models/Session.js';
-import { normalizeEmail, type User } from '../models/User.js';
+import {
+  normalizeEmail,
+  normalizeUsername,
+  type User,
+} from '../models/User.js';
 import { SessionStatus } from '../types/index.js';
 import { withoutListBounds } from './authorization-read-options.js';
 import {
@@ -110,6 +114,25 @@ const NON_RECOVERY_AUTH_METHODS: ReadonlySet<string> = new Set([
 ]);
 /** Longest identifier accepted (RFC 5321 path limit). */
 const MAX_IDENTIFIER_LENGTH = 320;
+
+type LoginIdentity = Readonly<{
+  kind: 'email' | 'username';
+  key: string;
+}>;
+
+/**
+ * `@` is reserved to email identities; valid usernames cannot contain it.
+ * This keeps the public password identifier unambiguous without a tenant or
+ * family locator.
+ */
+function normalizeLoginIdentifier(identifier: string): LoginIdentity | null {
+  if (identifier.includes('@')) {
+    const key = normalizeEmail(identifier);
+    return key ? { kind: 'email', key } : null;
+  }
+  const key = normalizeUsername(identifier);
+  return key ? { kind: 'username', key } : null;
+}
 
 /**
  * Built-in denylist: a few of the most common passwords that pass a
@@ -196,6 +219,8 @@ export interface PasswordPolicyContext {
   userId: string;
   /** Their normalized email, when they have one. */
   email: string | null;
+  /** Their canonical username, when they have one. */
+  username: string | null;
 }
 
 export interface PasswordPolicyOptions {
@@ -312,7 +337,7 @@ export interface PasswordCredentialServiceOptions extends SmrtClassOptions {
 }
 
 export interface PasswordSignInInput {
-  /** What the person typed as their email; normalized like `User.emailKey`. */
+  /** What the person typed as an email or username. */
   identifier: string;
   password: string;
   /**
@@ -320,7 +345,7 @@ export interface PasswordSignInInput {
    * in it; when null/omitted the session carries no tenant context (and so
    * no tenant permissions) until `switchSessionTenant`.
    */
-  tenantId?: string | null;
+  tenantId?: string | null | 'unique-active-membership';
   ipAddress?: string;
   userAgent?: string;
   /**
@@ -576,27 +601,32 @@ export class PasswordCredentialService {
   async signIn(input: PasswordSignInInput): Promise<PasswordSignInResult> {
     const identifier =
       typeof input.identifier === 'string' ? input.identifier : '';
-    const emailKey =
+    const identity =
       identifier.length <= MAX_IDENTIFIER_LENGTH
-        ? normalizeEmail(identifier)
-        : '';
+        ? normalizeLoginIdentifier(identifier)
+        : null;
     const password = typeof input.password === 'string' ? input.password : '';
     const source = input.ipAddress?.trim() || null;
     // Nothing to key any budget on (a disabled source budget keys nothing):
     // refuse like a wrong password. Every other request, malformed or not,
     // reserves before anything else.
-    if (!emailKey && !(source && this.limiter.limitsSource)) {
+    if (!identity && !(source && this.limiter.limitsSource)) {
       throw new PasswordCredentialError();
     }
 
-    const tenantId = input.tenantId || null;
+    const requestedTenantId = input.tenantId || null;
     const lease = await this.limiter.reserve({
       kind: PASSWORD_LOGIN_KIND,
-      subject: emailKey || null,
+      subject: identity?.key || null,
       source,
       // Never the identifier, the user id, or a session id: the subject and
       // source hashes already correlate the attempt.
-      metadata: { tenantId },
+      metadata: {
+        tenantId:
+          requestedTenantId === 'unique-active-membership'
+            ? null
+            : requestedTenantId,
+      },
     });
     if (!lease.allowed) throw new LoginRateLimitError(lease);
 
@@ -604,7 +634,7 @@ export class PasswordCredentialService {
     let mintedSessionId: string | null = null;
     try {
       // A missing identifier or password is a failed attempt like any other.
-      if (!emailKey || !password) {
+      if (!identity || !password) {
         credentialFailed = true;
         throw new PasswordCredentialError();
       }
@@ -613,7 +643,7 @@ export class PasswordCredentialService {
       // the hash rather than let the client choose its cost.
       const tooLong = codePointLength(candidate) > this.policy.maxLength;
 
-      const user = tooLong ? null : await this.findUserByEmailKey(emailKey);
+      const user = tooLong ? null : await this.findUserByIdentity(identity);
       const credential =
         user?.id && UUID_PATTERN.test(user.id)
           ? await this.credentials.findByUserId(user.id)
@@ -631,6 +661,14 @@ export class PasswordCredentialService {
       }
       const userId = user.id;
 
+      const tenantId =
+        requestedTenantId === 'unique-active-membership'
+          ? await this.resolveUniqueActiveMembershipTenant(userId)
+          : requestedTenantId;
+      if (!tenantId && requestedTenantId === 'unique-active-membership') {
+        credentialFailed = true;
+        throw new PasswordCredentialError();
+      }
       if (tenantId) {
         const membership = await this.memberships.findByUserAndTenant(
           userId,
@@ -1068,9 +1106,32 @@ export class PasswordCredentialService {
   // Internals
   // -------------------------------------------------------------------------
 
-  private async findUserByEmailKey(emailKey: string): Promise<User | null> {
-    const [user] = await this.users.list({ where: { emailKey }, limit: 1 });
+  private async findUserByIdentity(
+    identity: LoginIdentity,
+  ): Promise<User | null> {
+    const [user] = await this.users.list({
+      where:
+        identity.kind === 'email'
+          ? { emailKey: identity.key }
+          : { usernameKey: identity.key },
+      limit: 1,
+    });
     return user ?? null;
+  }
+
+  /**
+   * Select a tenant only when a password-authenticated person has exactly one
+   * active direct membership. This is resolved after credential verification:
+   * callers never need a tenant locator before sign-in, and ambiguity cannot
+   * turn a successful password check into an unscoped session.
+   */
+  private async resolveUniqueActiveMembershipTenant(
+    userId: string,
+  ): Promise<string | null> {
+    const memberships = await this.memberships.findActiveByUser(userId);
+    return memberships.length === 1 && memberships[0]?.tenantId
+      ? memberships[0].tenantId
+      : null;
   }
 
   private async requireUser(userId: string): Promise<User> {
@@ -1188,10 +1249,16 @@ export class PasswordCredentialService {
     if (email && (folded === email || folded === email.split('@')[0])) {
       throw new PasswordPolicyError('Password must not be your email address.');
     }
+    const username =
+      user.usernameKey || normalizeUsername(user.username) || null;
+    if (username && folded === username) {
+      throw new PasswordPolicyError('Password must not be your username.');
+    }
     if (this.policy.reject) {
       const refusal = await this.policy.reject(normalized, {
         userId: user.id as string,
         email,
+        username,
       });
       if (refusal) throw new PasswordPolicyError(refusal);
     }

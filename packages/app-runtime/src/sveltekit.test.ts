@@ -550,7 +550,12 @@ describe('local SvelteKit runtime', () => {
       });
     }
 
-    const validForm = { token, name: 'Will Owner', email: 'will@example.com' };
+    const validForm = {
+      token,
+      name: 'Will Owner',
+      email: 'will@example.com',
+      password: 'correct horse battery staple',
+    };
     // action: non-loopback attempts are refused before any claim.
     const claimSpy = vi.spyOn(local, 'claimOwner');
     for (const event of [
@@ -579,6 +584,7 @@ describe('local SvelteKit runtime', () => {
       { name: 'Will', email: 'will@example.com' },
       { token, name: '   ', email: 'will@example.com' },
       { token, name: 'Will', email: 'not-an-email' },
+      { token, name: 'Will', email: 'will@example.com' },
     ]) {
       const { failure } = await runAction(page, testEvent(SETUP_URL, { form }));
       expect(failure).toMatchObject({

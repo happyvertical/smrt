@@ -286,6 +286,38 @@ describe('PasswordCredentialService', () => {
     expect(audit.map((entry) => entry.outcome)).toEqual(['succeeded']);
   });
 
+  it('signs in by a canonical username and selects one active membership only after verification', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'Pat.Learner';
+    await user.save();
+
+    const result = await service.signIn({
+      identifier: '  PAT.LEARNER ',
+      password: PASSWORD,
+      tenantId: 'unique-active-membership',
+      ipAddress: '198.51.100.87',
+    });
+    expect(result).toMatchObject({ userId: personId, tenantId });
+  });
+
+  it('refuses unique-membership sign-in for no or multiple active memberships', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'pat-learner';
+    await user.save();
+    await addMember(personId, otherTenantId);
+
+    await expect(
+      service.signIn({
+        identifier: 'pat-learner',
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+        ipAddress: '198.51.100.88',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+  });
+
   it('signs in without a tenant context when none is given', async () => {
     const result = await signIn('pat@example.com', PASSWORD, {
       tenantId: null,

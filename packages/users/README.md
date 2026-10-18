@@ -905,7 +905,7 @@ Other credential kinds (a fob or badge reader, say) implement
 ### Password sign-in
 
 `PasswordCredentialService` (#3274) gives an app without an identity provider
-email + password sign-in for **existing, active** users. It never creates a
+email-or-username + password sign-in for **existing, active** users. It never creates a
 user. The password lives in its own object, `UsersPasswordCredential`
 (`users_password_credentials`, one row per person), not on `User`: it is
 `sensitive`, has no generated REST/MCP/CLI surface, never enters the change

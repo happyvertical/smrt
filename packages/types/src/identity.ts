@@ -47,6 +47,8 @@ export interface User extends SmrtEntityFields {
   profileId: string;
   /** Lower-cased email; globally unique. */
   email: string;
+  /** Optional globally unique canonical username used for password sign-in. */
+  username: string | null;
   status: UserStatus;
   lastLoginAt: Date | null;
 }

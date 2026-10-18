@@ -232,7 +232,7 @@ Diagnostics authorize (owner role or `runtime_diagnostics.read` on an active,
 session-matching membership) before reading the runtime and return only stable
 `{ schemaVersion: 1, error: { code } }` failures. Owner setup is local-only and
 re-checks on every request that both the peer address and the URL host are
-loopback; its `default` action reads `token`, `name`, `email`, and optional
+loopback; its `default` action reads `token`, `name`, `email`, `password`, and optional
 `tenantName`, sets the session cookie, and redirects 303, or returns
 `fail(status, { code, message })` with `setup_disabled` (404),
 `setup_unavailable` (403), `setup_invalid_input` (400), `setup_invalid`

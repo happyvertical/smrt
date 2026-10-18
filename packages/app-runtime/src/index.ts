@@ -39,6 +39,7 @@ import {
   DEFAULT_ROLE_SLUGS,
   MembershipCollection,
   MembershipStatus,
+  PasswordCredentialService,
   RoleCollection,
   SessionCollection,
   SessionService,
@@ -405,6 +406,8 @@ export interface ClaimLocalOwnerInput {
   token: string;
   name: string;
   email: string;
+  /** Optional initial owner password. The SvelteKit setup page requires it. */
+  password?: string;
   tenantName?: string;
   userAgent?: string;
   ipAddress?: string;
@@ -1036,7 +1039,28 @@ async function createLocalOwnerRecords(
     userAgent: input.userAgent,
     ipAddress: input.ipAddress,
     data: { localOwner: true },
+    authMethod: input.password ? 'password' : 'local-bootstrap',
   });
+
+  if (input.password) {
+    const passwords = await PasswordCredentialService.create({
+      db,
+      sessionTtl: sessionTtlSeconds,
+    });
+    await passwords.setPassword({
+      actor: {
+        user,
+        membership: membership as never,
+        permissions: [],
+        tenantId: requireId(tenant.id, 'Tenant'),
+        sessionId: requireId(session.id, 'Session'),
+        authMethod: 'password',
+        parent: null,
+      },
+      userId,
+      password: input.password,
+    });
+  }
 
   return Object.freeze({
     profileId: requireId(person.id, 'Person'),

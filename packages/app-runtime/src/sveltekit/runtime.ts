@@ -1108,6 +1108,8 @@ export function composeSmrtSvelteKitRuntime(
             locals.permissions = context.permissions;
             locals.tenantId = context.tenantId;
             locals.sessionId = context.sessionId;
+            locals.authMethod = context.session.authMethod ?? null;
+            locals.sessionParent = context.session.parent ?? null;
             if (context.tenantId) {
               verifiedSessionTenants.set(locals, context.tenantId);
             }
@@ -1230,6 +1232,8 @@ function clearSessionLocals(locals: SmrtRuntimeLocals): void {
   locals.permissions = [];
   locals.tenantId = null;
   locals.sessionId = null;
+  locals.authMethod = null;
+  locals.sessionParent = null;
   locals.tenantContext = undefined;
   verifiedSessionTenants.delete(locals);
 }
