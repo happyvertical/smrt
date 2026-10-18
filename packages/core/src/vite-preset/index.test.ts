@@ -175,13 +175,50 @@ describe('smrt() Vite preset', () => {
       ).toEqual({ oxc: { decorator: { emitDecoratorMetadata: true } } });
     });
 
-    it('dedupes @sveltejs/kit so SMRT SvelteKit entries share the app copy', async () => {
+    it('bundles the runtime and dedupes Kit so production control flow shares identity', async () => {
       const plugins = (await smrt({ packages: [] })) as AnyPlugin[];
       const shared = plugins.find((p) => p.name === 'smrt:shared-runtime');
       expect(shared).toBeDefined();
       expect(callHook(shared as AnyPlugin, 'config', {})).toEqual({
         resolve: { dedupe: ['@sveltejs/kit'] },
+        ssr: {
+          noExternal: ['@happyvertical/smrt-app-runtime'],
+          external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+        },
       });
+    });
+
+    it('externalizes only the exact server root without overriding browser resolution', async () => {
+      const shared = (await smrt({ packages: [] })).find(
+        (p) => p.name === 'smrt:shared-runtime',
+      ) as AnyPlugin;
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: true },
+        ),
+      ).toEqual({ id: '@happyvertical/smrt-app-runtime', external: true });
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime/sveltekit',
+          undefined,
+          { ssr: true },
+        ),
+      ).toBeUndefined();
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: false },
+        ),
+      ).toBeUndefined();
     });
 
     it('omits the decorator plugin when decorators is false', async () => {

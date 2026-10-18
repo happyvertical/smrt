@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./sveltekit-runtime": {
+      "types": "./dist/sveltekit-runtime.d.ts",
+      "import": "./dist/sveltekit-runtime.js"
+    },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
       "import": "./dist/sveltekit.js"

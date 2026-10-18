@@ -116,6 +116,11 @@ Application infrastructure composition for the validated runtime profiles in
 
 - Server-only subpath; `@sveltejs/kit` is an optional peer and is externalized
   in `vite.config.ts` (kit recognizes `redirect`/`fail` by class identity).
+  Consumer apps use core's `smrt()` preset to bundle the Kit-facing entry into
+  their SSR output and dedupe Kit; `./sveltekit-runtime` and the root stay external
+  to preserve native dependency loading. The implementation subpath is for
+  build composition; apps keep importing `./sveltekit`.
+  Package-build externalization alone does not preserve class identity through adapter-node's final production bundle.
   The root entry must never import kit or Svelte.
 - Without a `runtime` option the profile comes from smrt-config's
   `resolveEffectiveApplicationRuntime(await loadConfig())`, the same rule as
@@ -210,8 +215,11 @@ Application infrastructure composition for the validated runtime profiles in
 
 ## Validation
 
+Build first: `sveltekit-production.test.ts` copies the published `dist` entry
+and exercises the final adapter-node HTTP handler in a separate process.
+
 ```bash
+pnpm --filter @happyvertical/smrt-app-runtime build
 pnpm --filter @happyvertical/smrt-app-runtime test
 pnpm --filter @happyvertical/smrt-app-runtime typecheck
-pnpm --filter @happyvertical/smrt-app-runtime build
 ```

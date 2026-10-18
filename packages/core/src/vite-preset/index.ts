@@ -131,17 +131,32 @@ function decoratorPlugin(): Plugin {
  * Packages SMRT's SvelteKit entries share with the app by identity. SvelteKit
  * recognizes `redirect()`/`fail()` results by class, so a server entry such as
  * `@happyvertical/smrt-app-runtime/sveltekit` must import the app's own copy.
- * A registry install already resolves that peer from the app; a linked or
- * workspace package resolves it from its own directory instead, and its
- * redirects then surface as 500s. Deduping makes both layouts identical.
+ * Deduping selects the app peer for linked/workspace packages. The runtime
+ * must also enter the SSR bundle: adapter-node bundles Kit itself, so leaving
+ * runtime external would import a second Kit class through Node even when
+ * both resolve to the same installed version.
  */
 export const SMRT_SHARED_RUNTIME_PACKAGES = ['@sveltejs/kit'] as const;
 
 function sharedRuntimePlugin(): Plugin {
   return {
     name: 'smrt:shared-runtime',
+    enforce: 'pre',
+    resolveId(id, _importer, options) {
+      // ssr.external on the package root would externalize every subpath.
+      // Keep only this exact entry external, preserving native dependencies.
+      if (options.ssr && id === '@happyvertical/smrt-app-runtime') {
+        return { id, external: true };
+      }
+    },
     config() {
-      return { resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] } };
+      return {
+        resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] },
+        ssr: {
+          noExternal: ['@happyvertical/smrt-app-runtime'],
+          external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+        },
+      };
     },
   };
 }

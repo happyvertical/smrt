@@ -192,7 +192,18 @@ conventions. Its package list comes only from the `smrt({ packages })` option, o
 byte-identical to the two-plugin form (`src/vite-preset/index.test.ts`). It
 also dedupes `@sveltejs/kit` (`smrt:shared-runtime`): SvelteKit matches
 `redirect()`/`fail()` by class, and a linked/workspace SMRT SvelteKit entry
-would otherwise import its own copy and turn redirects into 500s.
+would otherwise import its own copy and turn redirects into 500s. The preset
+also keeps the thin `@happyvertical/smrt-app-runtime/sveltekit` entry inside
+the SSR bundle: adapter-node bundles Kit itself, and an external runtime
+would load a separate class through Node even at the same installed version.
+Vite matches `ssr.noExternal` by package name, so a pre-resolver keeps the
+exact runtime root external and `ssr.external` keeps `./sveltekit-runtime`
+external. That implementation subpath is an internal composition boundary;
+apps keep importing `./sveltekit`. This avoids bundling native SQL dependencies.
+Other runtime dependencies retain their normal externalization. Do not explicitly
+externalize app-runtime in an app config. The production regression in
+`packages/app-runtime/src/sveltekit-production.test.ts` exercises the final
+adapter-node HTTP handler using an installed copy of the published dist entry.
 
 **Package models over REST (#3749).** `consumer.packages` registers a package's
 models and gives `@smrt/web` (the consumer's `collectionDefinitions`, one per

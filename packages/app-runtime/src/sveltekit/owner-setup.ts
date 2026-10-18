@@ -7,10 +7,13 @@
  * every request instead of trusting the bind host alone.
  */
 
+import {
+  type LocalOwnerClaimResult,
+  LocalRuntimeError,
+  removeOnboardingHandoff,
+} from '@happyvertical/smrt-app-runtime';
 import type { Cookies } from '@sveltejs/kit';
 import { type ActionFailure, fail, redirect } from '@sveltejs/kit';
-import { type LocalOwnerClaimResult, LocalRuntimeError } from '../index.js';
-import { removeOnboardingHandoff } from '../state-root.js';
 import type { SmrtSvelteKitRuntime } from './runtime.js';
 
 /** Data returned by the setup page `load`. */
