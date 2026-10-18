@@ -232,7 +232,7 @@ Diagnostics authorize (owner role or `runtime_diagnostics.read` on an active,
 session-matching membership) before reading the runtime and return only stable
 `{ schemaVersion: 1, error: { code } }` failures. Owner setup is local-only and
 re-checks on every request that both the peer address and the URL host are
-loopback; its `default` action reads `token`, `name`, `email`, `password`, and optional
+loopback; its `default` action reads `token`, `name`, `email`, and optional `password` and
 `tenantName`, sets the session cookie, and redirects 303, or returns
 `fail(status, { code, message })` with `setup_disabled` (404),
 `setup_unavailable` (403), `setup_invalid_input` (400), `setup_invalid`
@@ -242,6 +242,11 @@ runtime removes the `smrt app setup` / `recover` hand-off files
 `runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent
 invitation; failed claims leave them untouched. `onOwnerClaimed` remains for
 extra app cleanup and `removeOnboardingHandoff: false` opts out.
+
+Password-based applications should pass `{ requirePassword: true }` to
+`createOwnerSetupPage` and include a password field in their setup form. The
+password is stored in the owner-claim transaction; a rejected password leaves
+the token available for retry. Existing bootstrap consumers may omit it.
 
 `resolveApplicationId()` and `runtimeConfigurationFingerprint()` (root entry)
 are the canonical app ID and secret-free configuration fingerprint shared by

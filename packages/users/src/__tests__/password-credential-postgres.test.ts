@@ -247,6 +247,62 @@ describePostgres('PasswordCredentialService on PostgreSQL', () => {
     ).rejects.toBeInstanceOf(LoginRateLimitError);
   });
 
+  it('signs in a username-only learner into exactly one active tenant', async () => {
+    isolated = await createIsolatedTestDbFromManifest({
+      includeObjects: [
+        'User',
+        'Tenant',
+        'Role',
+        'Membership',
+        'Session',
+        'UsersPasswordCredential',
+        'UsersLoginAttempt',
+        'UsersLoginAuditEvent',
+      ],
+    });
+    const options = { db: isolated.db };
+    const users = await UserCollection.create(options);
+    const tenants = await TenantCollection.create(options);
+    const roles = await RoleCollection.create(options);
+    const memberships = await MembershipCollection.create(options);
+    const user = await users.create({ username: 'Learner.No.Email' });
+    const tenant = await tenants.create({ name: 'Family' });
+    const role = await roles.create({ name: 'Learner' });
+    await memberships.create({
+      userId: user.id as string,
+      tenantId: tenant.id as string,
+      roleId: role.id as string,
+    });
+    const service = await PasswordCredentialService.create({
+      ...options,
+      password: { scrypt: { N: 2 ** 10 } },
+      limiter: { audit: false },
+    });
+    const sessions = await SessionService.create(options);
+    const setup = await sessions.createSession(
+      user.id as string,
+      tenant.id as string,
+      { authMethod: 'oidc' },
+    );
+    const actor = await sessions.loadSessionContext(setup);
+    if (!actor) throw new Error('missing actor');
+    await service.setPassword({
+      actor,
+      userId: user.id as string,
+      password: 'a learner secret password',
+    });
+    const result = await service.signIn({
+      identifier: ' LEARNER.NO.EMAIL ',
+      password: 'a learner secret password',
+      tenantId: 'unique-active-membership',
+    });
+    expect(result).toMatchObject({ userId: user.id, tenantId: tenant.id });
+    expect(
+      (await sessions.loadSessionContext(result.sessionId))?.authMethod,
+    ).toBe('password');
+    expect(user.emailKey).toBeNull();
+  });
+
   it('replaces a forgotten password from a stamped recovery session (#3905)', async () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [

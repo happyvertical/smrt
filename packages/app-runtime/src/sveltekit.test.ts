@@ -524,7 +524,10 @@ describe('local SvelteKit runtime', () => {
     });
     const { runtime } = await localRuntime('bootstrap');
     await runtime.init();
-    const page = createOwnerSetupPage(runtime, { onOwnerClaimed });
+    const page = createOwnerSetupPage(runtime, {
+      onOwnerClaimed,
+      requirePassword: true,
+    });
     const local = await runtime.localRuntime();
     const token = await bootstrapToken(runtime);
 
@@ -724,6 +727,8 @@ describe('local SvelteKit runtime', () => {
         testEvent('http://127.0.0.1:5173/', { sid }),
       );
       expect(before.locals.user).not.toBeNull();
+      expect(before.locals.authMethod).toBe('local-bootstrap');
+      expect(before.locals.sessionParent).toBeNull();
 
       const { event, deleted } = signOutEvent(sid, 'POST', {
         origin: 'http://127.0.0.1:5173',
@@ -736,6 +741,8 @@ describe('local SvelteKit runtime', () => {
         testEvent('http://127.0.0.1:5173/', { sid }),
       );
       expect(after.locals.user).toBeNull();
+      expect(after.locals.authMethod).toBeNull();
+      expect(after.locals.sessionParent).toBeNull();
 
       // Already-gone session row: the cookie is still cleared.
       const again = signOutEvent(sid, 'POST', {
@@ -804,7 +811,9 @@ describe('local SvelteKit runtime', () => {
       const onOwnerClaimed = vi.fn(() => {
         seen.push(present(files));
       });
-      const page = createOwnerSetupPage(runtime, { onOwnerClaimed });
+      const page = createOwnerSetupPage(runtime, {
+        onOwnerClaimed,
+      });
       const token = await bootstrapToken(runtime);
       const { redirect } = await runAction(
         page,

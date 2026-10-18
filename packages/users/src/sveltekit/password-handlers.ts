@@ -87,7 +87,7 @@ type Cookies = {
 export type PasswordRequestEvent = {
   cookies: Cookies;
   getClientAddress?: () => string;
-  locals?: Record<string, unknown>;
+  locals?: object;
   request: Request;
   url: URL;
 };
@@ -235,7 +235,7 @@ function errorResponse(error: unknown): Response {
  * forgot to copy the field.
  */
 function resolveActor(event: PasswordRequestEvent): SessionContext | null {
-  const locals = event.locals ?? {};
+  const locals = (event.locals ?? {}) as Record<string, unknown>;
   const user = locals.user as SessionContext['user'] | null | undefined;
   const sessionId = locals.sessionId as string | null | undefined;
   if (!user || !sessionId) return null;

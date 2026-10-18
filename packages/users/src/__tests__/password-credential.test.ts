@@ -318,6 +318,75 @@ describe('PasswordCredentialService', () => {
     ).rejects.toBeInstanceOf(PasswordCredentialError);
   });
 
+  it.each([
+    'email',
+    'username',
+  ])('keeps %s tenant refusals generic, budgeted, and sessionless', async (kind) => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'pat-learner';
+    await user.save();
+    const identifier = kind === 'email' ? user.email : 'PAT-LEARNER';
+    const membership = await memberships.findByUserAndTenant(
+      personId,
+      tenantId,
+    );
+    if (!membership) throw new Error('missing membership');
+    membership.status = MembershipStatus.INACTIVE;
+    await membership.save();
+    const attempt = () =>
+      service.signIn({
+        identifier,
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+        ipAddress: '198.51.100.90',
+      });
+    for (let index = 0; index < 3; index += 1) {
+      await expect(attempt()).rejects.toMatchObject({
+        name: 'PasswordCredentialError',
+      });
+    }
+    expect(await activeSessionIds(personId)).toEqual([]);
+    await expect(attempt()).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(verified.encodings).toHaveLength(3);
+  });
+
+  it('verifies the password before querying unique memberships and rejects inactive users', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.email = '';
+    user.username = 'learner-only';
+    await user.save();
+    const lookup = vi.spyOn(MembershipCollection.prototype, 'findActiveByUser');
+    await expect(
+      service.signIn({
+        identifier: 'learner-only',
+        password: 'wrong password',
+        tenantId: 'unique-active-membership',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(lookup).not.toHaveBeenCalled();
+    const result = await service.signIn({
+      identifier: ' LEARNER-ONLY ',
+      password: PASSWORD,
+      tenantId: 'unique-active-membership',
+    });
+    expect(result).toMatchObject({ userId: personId, tenantId });
+    expect(lookup).toHaveBeenCalledWith(personId);
+    user.status = UserStatus.INACTIVE;
+    await user.save();
+    lookup.mockClear();
+    await expect(
+      service.signIn({
+        identifier: 'learner-only',
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(lookup).not.toHaveBeenCalled();
+    lookup.mockRestore();
+  });
+
   it('signs in without a tenant context when none is given', async () => {
     const result = await signIn('pat@example.com', PASSWORD, {
       tenantId: null,
@@ -348,6 +417,7 @@ describe('PasswordCredentialService', () => {
 
     const attempts: Array<[string, string, string]> = [
       ['unknown identifier', 'nobody@example.com', PASSWORD],
+      ['unknown username', 'unknown-learner', PASSWORD],
       ['no password set', 'nopass@example.com', PASSWORD],
       ['wrong password', 'pat@example.com', 'wrong horse battery'],
       ['inactive user', 'gone@example.com', PASSWORD],
@@ -380,6 +450,7 @@ describe('PasswordCredentialService', () => {
   it('runs one scrypt verification under the current policy whether or not the account or password exists', async () => {
     for (const [index, [identifier, password]] of [
       ['nobody@example.com', PASSWORD],
+      ['unknown-learner', PASSWORD],
       ['nopass@example.com', PASSWORD],
       ['pat@example.com', 'wrong horse battery'],
       ['pat@example.com', PASSWORD],

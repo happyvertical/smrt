@@ -912,6 +912,23 @@ user. The password lives in its own object, `UsersPasswordCredential`
 feed, and `toPublicJSON()` omits the hash. The service and the handlers below
 are its only read and write paths.
 
+Username rollout: run the normal explicit application schema migration before
+serving the updated users package. The additive nullable `username` and unique
+`username_key` columns leave existing accounts unchanged; no username is inferred
+from an email or profile, and no data backfill is needed. Assign usernames through
+`User.save()` so the canonical key is maintained. Usernames are global, NFKC
+normalized, trimmed, lowercased, and limited to 1–64 ASCII letters/digits with
+internal dots, underscores or hyphens; `@` remains reserved for email sign-in.
+
+Pass `{ identifier, password }` to the handler for either email or username
+(the existing `{ email, password }` body remains supported). Applications that
+need no workspace chooser can configure `tenantId: 'unique-active-membership'`.
+The service verifies the password first, then requires exactly one active direct
+membership before minting a tenant-bound session. Zero or multiple active
+memberships return the same generic refusal as other invalid credentials; an
+ambiguous login never returns an unscoped session. Explicit tenant IDs and
+omitting the tenant option retain their existing behavior.
+
 **Hashing.** scrypt from `node:crypto` (no native dependency) with a random
 per-hash salt; the parameters are stored in each hash
 (`scrypt$N$r$p$salt$hash`) and compared with `timingSafeEqual`. Raising

@@ -89,6 +89,8 @@ export interface OwnerSetupActionEvent extends OwnerSetupEvent {
 }
 
 export interface OwnerSetupPageOptions {
+  /** Require an initial owner password. Default false for existing bootstrap consumers. */
+  readonly requirePassword?: boolean;
   /** Where a signed-in visitor or a successful claim is sent. Default `/`. */
   readonly redirectTo?: string;
   /** Replace fixed failure messages (for example app-specific recovery steps). */
@@ -133,7 +135,8 @@ export interface OwnerSetupPage {
  * ```
  *
  * The form posts to the `default` action with fields `token` (hidden),
- * `name`, `email`, `password`, and optional `tenantName`. Success sets the session cookie
+ * `name`, `email`, and optional `password` and `tenantName`. Set
+ * `requirePassword: true` for password-based applications. Success sets the session cookie
  * and redirects 303; failures return `fail(status, { code, message })`.
  */
 export function createOwnerSetupPage(
@@ -193,7 +196,12 @@ export function createOwnerSetupPage(
     const email = field(OWNER_SETUP_FIELDS.email);
     const password = field(OWNER_SETUP_FIELDS.password);
     const tenantName = field(OWNER_SETUP_FIELDS.tenantName).trim();
-    if (!token || !name.trim() || !email.includes('@') || !password) {
+    if (
+      !token ||
+      !name.trim() ||
+      !email.includes('@') ||
+      (options.requirePassword && !password)
+    ) {
       return failure(400, 'setup_invalid_input');
     }
 

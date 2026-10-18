@@ -406,7 +406,7 @@ export interface ClaimLocalOwnerInput {
   token: string;
   name: string;
   email: string;
-  /** Optional initial owner password. The SvelteKit setup page requires it. */
+  /** Optional initial owner password, stored atomically with the owner claim. */
   password?: string;
   tenantName?: string;
   userAgent?: string;

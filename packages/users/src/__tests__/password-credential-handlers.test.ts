@@ -232,6 +232,10 @@ describe('createPasswordCredentialHandlers', () => {
     const bodies = new Set<string>();
     const cases: Array<[string, unknown]> = [
       ['unknown', { email: 'nobody@example.com', password: PASSWORD }],
+      [
+        'unknown username',
+        { identifier: 'unknown-learner', password: PASSWORD },
+      ],
       ['wrong', { email: 'pat@example.com', password: 'wrong horse battery' }],
       ['no password', { email: 'admin@example.com', password: PASSWORD }],
       ['inactive', { email: 'gone@example.com', password: PASSWORD }],
