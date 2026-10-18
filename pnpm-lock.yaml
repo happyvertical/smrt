@@ -2508,6 +2508,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte
@@ -2623,9 +2626,6 @@ importers:
       '@happyvertical/smrt-properties':
         specifier: workspace:*
         version: link:../properties
-      '@happyvertical/smrt-reports':
-        specifier: workspace:*
-        version: link:../reports
       '@happyvertical/smrt-sales':
         specifier: workspace:*
         version: link:../sales

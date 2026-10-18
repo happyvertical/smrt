@@ -10,6 +10,7 @@ import {
   parseRecipeExportRef,
   type RecipeExportResolver,
   registerRecipeWidgets,
+  sectionDefaultWidget,
 } from '../recipe-widgets.js';
 import {
   createWidgetRegistry,
@@ -404,5 +405,52 @@ describe('parseRecipeExportRef', () => {
     'pk g#Name',
   ])('refuses %s', (ref) => {
     expect(parseRecipeExportRef(ref)).toBeNull();
+  });
+});
+
+describe('sectionDefaultWidget (#4100)', () => {
+  it("places the recipe's section page full width with no options", () => {
+    expect(
+      sectionDefaultWidget({
+        id: 'reports.runtime',
+        surfaces: [
+          {
+            kind: 'route',
+            path: '/reports',
+            export: '@acme/r/svelte#R',
+            label: 'R',
+          },
+          {
+            kind: 'widget',
+            type: 'saved-reports',
+            export: '@acme/r/svelte#SavedReports',
+            label: 'Saved reports',
+            sectionDefault: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      id: 'saved-reports',
+      type: 'saved-reports',
+      span: 4,
+      options: {},
+    });
+  });
+
+  it('is undefined for a recipe without one', () => {
+    expect(
+      sectionDefaultWidget({
+        id: 'shop.sales',
+        surfaces: [
+          {
+            kind: 'widget',
+            type: 'sales',
+            export: '@acme/s/svelte#S',
+            label: 'S',
+          },
+        ],
+      }),
+    ).toBeUndefined();
+    expect(sectionDefaultWidget(undefined)).toBeUndefined();
   });
 });

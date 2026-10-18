@@ -1,4 +1,9 @@
 import type { Recipe } from '../recipes/types.ts';
+import {
+  parseReportIntent,
+  type ReportIntent,
+  reportIntentSchema,
+} from '../reports/intent.ts';
 import type { AppSettings } from '../settings/app-settings.ts';
 import { CURRENCY_CODES } from '../settings/currencies.ts';
 import {
@@ -69,6 +74,12 @@ export interface AssistantChange {
    * running app can navigate to. Absent otherwise.
    */
   open?: string;
+  /**
+   * A runtime report the person asked for (`parseChange` with `reports`):
+   * the intent the planner's code builds, validates and previews as a spec.
+   * Absent otherwise.
+   */
+  report?: ReportIntent;
 }
 
 /** Most command calls one reply may carry. */
@@ -113,6 +124,7 @@ export function buildResponseSchema(
   withSettings = false,
   withTheme = false,
   sections: readonly string[] = [],
+  reportSources: readonly string[] = [],
 ): Record<string, unknown> {
   const ids = recipes.map((recipe) => recipe.id);
   const list = { type: 'array', items: { enum: ids }, maxItems: ids.length };
@@ -152,6 +164,8 @@ export function buildResponseSchema(
     };
   }
   if (sections.length) properties.open = { enum: [...sections, null] };
+  if (reportSources.length)
+    properties.report = reportIntentSchema(reportSources);
   return {
     type: 'object',
     properties,
@@ -265,7 +279,12 @@ export function parseChange(
   input: string,
   recipes: readonly Pick<Recipe, 'id'>[],
   cookbooks: readonly { id: string }[] = [],
-  options: { commands?: boolean; sections?: readonly string[] } = {},
+  options: {
+    commands?: boolean;
+    sections?: readonly string[];
+    /** Read a `report` intent (the app offers runtime reports). */
+    reports?: boolean;
+  } = {},
 ): AssistantChange {
   const known = new Set(recipes.map((recipe) => recipe.id));
   const raw = stripThinking(input);
@@ -304,6 +323,7 @@ export function parseChange(
   const remove = pick(object.remove);
   const both = new Set(add.filter((id) => remove.includes(id)));
   const commands = options.commands ? pickCommands(object.commands) : [];
+  const report = options.reports ? parseReportIntent(object.report) : null;
   return {
     reply: typeof object.reply === 'string' ? object.reply.trim() : '',
     add: add.filter((id) => !both.has(id)),
@@ -320,6 +340,7 @@ export function parseChange(
     options.sections?.includes(object.open)
       ? { open: object.open }
       : {}),
+    ...(report ? { report } : {}),
   };
 }
 

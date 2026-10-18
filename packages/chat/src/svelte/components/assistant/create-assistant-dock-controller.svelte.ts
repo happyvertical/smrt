@@ -58,6 +58,12 @@ import {
   type AssistantChoiceSourceRegistry,
   AssistantChoices,
 } from './assistant-choices.svelte.js';
+import {
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  describeAssistantQuestionAnswer,
+  validateAssistantQuestionAnswer,
+} from './assistant-question.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -445,6 +451,18 @@ export interface AssistantDockController {
   createThread(title: string): Promise<AssistantThreadSummary>;
   send(content: string, attachments?: AssistantAttachmentRef[]): Promise<void>;
   retry(clientRequestId: string): Promise<void>;
+  /** Answers recorded for structured questions, by `<messageId>:<questionId>`. */
+  readonly answeredQuestions: Readonly<Record<string, AssistantQuestionAnswer>>;
+  /**
+   * Answer a structured question on `messageId` with its form's values: the
+   * transport's `answerQuestion` when it has one (the turn continues in code),
+   * else the answer goes out as an ordinary message. Answers once.
+   */
+  answerQuestion(
+    messageId: string,
+    question: AssistantQuestion,
+    values: AssistantQuestionAnswer,
+  ): Promise<void>;
   previewAction(request: DataSurfaceActionRequest): Promise<void>;
   /** Applies the action using the idempotency key minted at preview time
    * (`AssistantActionState.idempotencyKey`) — never a fresh key per call. */
@@ -521,6 +539,7 @@ export function createAssistantDockController(
   let threadsLoading = $state(true);
   let activeThreadId = $state<string | null>(null);
   let messages = $state<AssistantMessage[]>([]);
+  let answeredQuestions = $state<Record<string, AssistantQuestionAnswer>>({});
   let pendingSends = $state<AssistantPendingSend[]>([]);
   let surfaces = $state<DataSurfaceIdentity[]>(options.surfaces ?? []);
   let models = $state<ModelOption[]>([]);
@@ -962,6 +981,7 @@ export function createAssistantDockController(
     threadsLoading = true;
     activeThreadId = null;
     messages = [];
+    answeredQuestions = {};
     pendingSends = [];
     actions.clear();
     choices.clear();
@@ -1917,6 +1937,51 @@ export function createAssistantDockController(
       })
     : null;
 
+  async function answerQuestion(
+    messageId: string,
+    question: AssistantQuestion,
+    values: AssistantQuestionAnswer,
+  ) {
+    if (!activeThreadId) {
+      throw new Error(
+        'AssistantDock: answerQuestion() called with no active thread',
+      );
+    }
+    const key = `${messageId}:${question.id}`;
+    const chosen = validateAssistantQuestionAnswer(question, values);
+    if (!chosen || answeredQuestions[key]) return;
+    const threadId = activeThreadId;
+    const epoch = contextEpoch;
+    answeredQuestions = { ...answeredQuestions, [key]: chosen };
+    const answer = options.transport.answerQuestion;
+    if (!answer) {
+      await send(describeAssistantQuestionAnswer(question, chosen));
+      return;
+    }
+    try {
+      const result = await answer.call(options.transport, {
+        threadId,
+        messageId,
+        questionId: question.id,
+        values: chosen,
+        clientRequestId:
+          options.createClientRequestId?.() ?? defaultClientRequestId(threadId),
+      });
+      if (!disposed && epoch === contextEpoch) {
+        mergeResultMessages(threadId, result);
+        error = null;
+      }
+    } catch (err) {
+      if (!disposed && epoch === contextEpoch) {
+        // The person may answer again after a failure.
+        const { [key]: _failed, ...rest } = answeredQuestions;
+        answeredQuestions = rest;
+        error = err instanceof Error ? err.message : String(err);
+      }
+      throw err;
+    }
+  }
+
   async function send(content: string, attachments?: AssistantAttachmentRef[]) {
     if (!activeThreadId) {
       throw new Error('AssistantDock: send() called with no active thread');
@@ -2435,6 +2500,10 @@ export function createAssistantDockController(
     createThread,
     send,
     retry,
+    get answeredQuestions() {
+      return answeredQuestions;
+    },
+    answerQuestion,
     previewAction,
     applyAction,
     rejectAction,

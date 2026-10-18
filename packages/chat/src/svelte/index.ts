@@ -84,6 +84,7 @@ export { default as ToolCallDisplay } from './components/agent/ToolCallDisplay.s
 export { default as AssistantChoiceCards } from './components/assistant/AssistantChoiceCards.svelte';
 export { default as AssistantComposer } from './components/assistant/AssistantComposer.svelte';
 export { default as AssistantDock } from './components/assistant/AssistantDock.svelte';
+export { default as AssistantQuestionForm } from './components/assistant/AssistantQuestionForm.svelte';
 export { default as AssistantThreadList } from './components/assistant/AssistantThreadList.svelte';
 export {
   ASSISTANT_CHOICE_MAX_OPTIONS,
@@ -111,6 +112,20 @@ export {
   createAssistantHttpActionClient,
   createAssistantHttpTransport,
 } from './components/assistant/assistant-http-client.js';
+export {
+  ASSISTANT_QUESTION_KIND,
+  type AssistantAnswerQuestionInput,
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  type AssistantQuestionField,
+  type AssistantQuestionOption,
+  assistantQuestionDefaults,
+  assistantQuestionFromMessage,
+  describeAssistantQuestionAnswer,
+  matchAssistantQuestionText,
+  parseAssistantQuestion,
+  validateAssistantQuestionAnswer,
+} from './components/assistant/assistant-question.js';
 export {
   type AssistantAttachmentRef,
   type AssistantMessage,

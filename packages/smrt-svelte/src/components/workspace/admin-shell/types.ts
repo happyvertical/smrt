@@ -63,6 +63,13 @@ export interface ShellPanelConfig {
    */
   overlayMedia?: string;
   /**
+   * Right edge (the dock): close it when a card inside announces that it
+   * navigated the page (`announceShellNavigation`), but only while the dock
+   * is laid over the page (an overlay or a phone sheet). Default `true`; a
+   * dock beside the page always stays open.
+   */
+  closeOnNavigate?: boolean;
+  /**
    * Drag-to-resize for a `push` side edge on tablet/desktop: a separator on
    * the edge's inner border (pointer drag, arrow keys, Home/End, double-click
    * or Enter to reset). `true` uses the default limits.

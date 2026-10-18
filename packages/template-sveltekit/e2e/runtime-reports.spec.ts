@@ -97,8 +97,12 @@ test('approves an assistant proposal with a browser gesture and renders it throu
     ownerPage.getByRole('heading', { name: 'Browser note count' }),
   ).toBeVisible();
   await ownerPage.getByRole('button', { name: 'Approve' }).click();
-  await expect(ownerPage.getByText('Report saved.')).toBeVisible();
-  const saved = ownerPage.getByRole('link', { name: 'Browser note count' });
+  // The answered card shows an outcome line with an Open link (#4100).
+  await expect(
+    ownerPage.getByText('Report saved', { exact: false }),
+  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+  const saved = ownerPage.getByRole('link', { name: 'Open report' });
   const detailPath = await saved.getAttribute('href');
   expect(detailPath).toMatch(/^\/reports\/[^/]+$/);
 
@@ -112,7 +116,7 @@ test('approves an assistant proposal with a browser gesture and renders it throu
   await expect(
     ownerPage.getByRole('heading', { name: 'Browser note count', level: 1 }),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('button', { name: 'Table view' })).toBeVisible();
+  await expect(ownerPage.getByRole('radio', { name: 'Table' })).toBeAttached();
 
   const reportId = detailPath?.split('/').at(-1);
   if (!reportId) throw new Error('Saved report link did not include an id');
@@ -130,5 +134,5 @@ test('approves an assistant proposal with a browser gesture and renders it throu
   const approvedOption = form.locator(`option[value="${reportId}"]`);
   await expect(approvedOption).toHaveText('Browser note count');
   await form.getByLabel('Report').selectOption(reportId);
-  await expect(form.getByRole('option', { name: 'notes' })).toBeAttached();
+  await expect(form.locator('option[value="notes"]')).toBeAttached();
 });

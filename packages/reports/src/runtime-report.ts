@@ -53,9 +53,9 @@ import {
   parseRuntimeReportSpec,
   RuntimeReportError,
   type RuntimeReportSpec,
-  runtimeReportSpecHash,
   serializeRuntimeReportSpec,
 } from './runtime-spec.js';
+import { runtimeReportSpecHash } from './runtime-spec-hash.js';
 
 export type RuntimeReportStatus = 'active' | 'archived';
 

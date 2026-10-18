@@ -333,6 +333,7 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
 | `migrate` | `migrate`, **resolved eagerly** because the registry's `migrate` is synchronous |
 | `allowedIn`, `defaultSpan`, `minSpan`, `maxSpan` | same names |
 | `data.models` | not registered: documentation of what the loader reads; confine with the page's `models` |
+| `sectionDefault` | not registered: `sectionDefaultWidget(recipe)` places it as the section page's default (the cookbook builder with `dataWidgets`, the planner) |
 
 - **The module resolver is injected.** `resolveExport(specifier, exportName)` is
   the host's: a static map of dynamic imports in a bundled app, a stub in tests.

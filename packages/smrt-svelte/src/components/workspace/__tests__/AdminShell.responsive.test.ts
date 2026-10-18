@@ -3,10 +3,16 @@
  * and bottom bars, form action bars, scrim, navigation, phone presentations
  * of the right edge, and resizable side edges.
  */
+
+import {
+  ASSISTANT_REQUEST_EVENT,
+  requestAssistant,
+} from '@happyvertical/smrt-ui/chat';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, flushSync, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
+import { announceShellNavigation } from '../admin-shell/navigation.js';
 import { createShellState } from '../admin-shell/state.svelte.js';
 import type {
   ShellPanelDefaults,
@@ -715,6 +721,216 @@ describe('AdminShell backward compatibility', () => {
     expect(
       document.getElementById(ADMIN_SHELL_REGION_IDS.bottom)?.textContent,
     ).toContain('system chips');
+  });
+});
+
+describe('AdminShell dock default (#4100): inline from xl, overlay below', () => {
+  function dockShell() {
+    return createShellState({
+      config: {
+        ...config,
+        right: { label: 'Assistant', initial: 'collapsed', hotkey: null },
+      },
+    });
+  }
+  function mount(shell: ReturnType<typeof dockShell>) {
+    return render(AdminShell, {
+      props: {
+        state: shell,
+        focusPanel: html('<button id="dock-card">Approve</button>'),
+        children: html('<h1>Invoices by month</h1>'),
+      },
+    });
+  }
+  const announce = () =>
+    announceShellNavigation(document.getElementById('dock-card')!);
+  /** The page navigates: its heading is replaced by the opened page's. */
+  function navigate(): HTMLElement {
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    main.querySelector('h1')?.remove();
+    const heading = document.createElement('h1');
+    heading.textContent = 'Opened report';
+    main.append(heading);
+    return heading;
+  }
+
+  it('docks beside the page at xl, so the content reflows', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    expect(shell.presentationFor('right')).toBe('push');
+    expect(shellRoot().getAttribute('style')).not.toContain(
+      '--smrt-admin-shell-right-track: 0rem',
+    );
+  });
+
+  it('slides over the page below xl', async () => {
+    setWidth(1100);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    expect(shell.presentationFor('right')).toBe('overlay');
+    expect(screen.getByTestId('admin-shell-overlay-scrim')).toBeTruthy();
+  });
+
+  it('a navigating dock card closes an overlay and focuses the page heading', async () => {
+    setWidth(1100);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    announce();
+    await settle();
+    expect(shell.panels.right).toBe('collapsed');
+    const heading = navigate();
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it('an inline dock stays open, and focus still moves to the heading', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    announce();
+    await settle();
+    expect(shell.panels.right).toBe('expanded');
+    const heading = navigate();
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it("focuses the incoming heading, never the outgoing page's", async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    const old = main.querySelector('h1')!;
+    announce();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(document.activeElement).not.toBe(old);
+    // The navigation finishes: the old page's heading is replaced.
+    old.remove();
+    const incoming = document.createElement('h1');
+    incoming.textContent = 'Report B';
+    main.append(incoming);
+    await waitFor(() => expect(document.activeElement).toBe(incoming));
+  });
+
+  it('a selector naming the opened page focuses it even when the heading node is reused', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    const heading = main.querySelector('h1')!;
+    const page = document.createElement('section');
+    page.dataset.reportId = 'a';
+    heading.replaceWith(page);
+    page.append(heading);
+    announceShellNavigation(document.getElementById('dock-card')!, {
+      focus: '[data-report-id="b"] h1',
+    });
+    // The route reuses the page: same heading node, new report id and text.
+    page.dataset.reportId = 'b';
+    heading.textContent = 'Report B';
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it('a named destination already on the page is focused at once', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    const main = document.querySelector('.smrt-admin-shell__main')!;
+    const heading = main.querySelector('h1')!;
+    heading.dataset.reportId = 'a';
+    announceShellNavigation(document.getElementById('dock-card')!, {
+      focus: 'h1[data-report-id="a"]',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it('opens the dock for a page request and hands it on from inside (#4100)', async () => {
+    setWidth(1300);
+    const shell = dockShell();
+    mount(shell);
+    await settle();
+    const seen: { prompt: string; inDock: boolean }[] = [];
+    const listener = (event: Event) => {
+      const dock = document.getElementById('dock-card');
+      seen.push({
+        prompt: (event as CustomEvent<{ prompt: string }>).detail.prompt,
+        inDock: Boolean(
+          dock?.closest('.smrt-admin-shell')?.contains(event.target as Node) &&
+            (event.target as Element).contains(dock),
+        ),
+      });
+      event.preventDefault();
+    };
+    document.addEventListener(ASSISTANT_REQUEST_EVENT, listener);
+    try {
+      const main = document.querySelector('.smrt-admin-shell__main')!;
+      const button = document.createElement('button');
+      button.textContent = 'New report';
+      main.append(button);
+      // Taken at once (the shell opens the dock), so the page says nothing.
+      expect(requestAssistant(button, { prompt: 'Make a report of ' })).toBe(
+        true,
+      );
+      await waitFor(() => expect(shell.panels.right).toBe('expanded'));
+      await waitFor(() =>
+        expect(seen).toEqual([{ prompt: 'Make a report of ', inDock: true }]),
+      );
+    } finally {
+      document.removeEventListener(ASSISTANT_REQUEST_EVENT, listener);
+    }
+  });
+
+  it('leaves a page request alone when the shell has no dock', async () => {
+    setWidth(1300);
+    render(AdminShell, {
+      props: { state: createShellState(), children: html('<p>page</p>') },
+    });
+    await settle();
+    const button = document.createElement('button');
+    document.querySelector('.smrt-admin-shell__main')!.append(button);
+    expect(requestAssistant(button, { prompt: 'x' })).toBe(false);
+  });
+
+  it('a host can keep an overlay open after navigation', async () => {
+    setWidth(1100);
+    const shell = createShellState({
+      config: {
+        ...config,
+        right: {
+          label: 'Assistant',
+          initial: 'collapsed',
+          hotkey: null,
+          closeOnNavigate: false,
+        },
+      },
+    });
+    mount(shell);
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    announce();
+    await settle();
+    expect(shell.panels.right).toBe('expanded');
   });
 });
 

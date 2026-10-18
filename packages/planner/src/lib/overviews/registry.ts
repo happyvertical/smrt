@@ -766,12 +766,18 @@ export const CORE_WIDGET_TYPES = [
 
 /**
  * How a recipe widget's `'<specifier>#<Export>'` becomes a module: a static map
- * of dynamic imports, one entry per package that ships widgets. The only
- * published widget surface (smrt-reports' `runtime-report-chart`) needs a
- * server, so the map is empty and every lookup is `undefined` (the widget then
- * renders as unavailable).
+ * of dynamic imports, one entry per package that ships widgets. smrt-reports'
+ * `saved-reports` (the Reports section page) resolves to the planner's
+ * wrapper over the sample data; its `runtime-report-chart` needs a server, so
+ * that export is missing and the widget renders as unavailable.
  */
-const RECIPE_WIDGET_MODULES: Record<string, () => Promise<unknown>> = {};
+const RECIPE_WIDGET_MODULES: Record<string, () => Promise<unknown>> = {
+  '@happyvertical/smrt-reports/svelte': async () => ({
+    SavedReportsWidget: (
+      await import('../components/PlannerSavedReportsWidget.svelte')
+    ).default,
+  }),
+};
 
 export const resolveRecipeExport: RecipeExportResolver = async (
   specifier,

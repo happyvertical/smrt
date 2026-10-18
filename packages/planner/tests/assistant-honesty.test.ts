@@ -11,7 +11,7 @@ import {
   type ChatModel,
   createBrowserAssistantTransport,
   NOTHING_CHANGED,
-  REPORTS_PENDING,
+  REPORTS_UNAVAILABLE,
 } from '../src/lib/assistant/transport.ts';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import { createPlannerController } from '../src/lib/planner/commands/index.ts';
@@ -92,7 +92,7 @@ describe('assistant honesty', () => {
     const items = controller
       .snapshot()
       .sections.flatMap((s) => s.items.map((i) => i.label));
-    expect(items).toContain('Shared reports');
+    expect(items).toContain('Saved reports');
   });
 
   it('says when an added recipe puts nothing in the menu', () => {
@@ -114,7 +114,7 @@ describe('assistant honesty', () => {
     await say('a summary of sales');
     const section = controller
       .snapshot()
-      .sections.find((s) => s.items.some((i) => i.label === 'Shared reports'));
+      .sections.find((s) => s.items.some((i) => i.label === 'Saved reports'));
     if (!section) throw new Error('no reports section');
     message.mockImplementationOnce(async () =>
       JSON.stringify({
@@ -170,8 +170,8 @@ describe('assistant honesty', () => {
   });
 });
 
-describe('report requests (the runtime report flow is smrt#4100)', () => {
-  it('a sales-report request never opens the catalogue, and says the report itself is not built', async () => {
+describe('report requests without sample data to report on (#4100)', () => {
+  it('a sales-report request never opens the catalogue, and says the report needs the planner app', async () => {
     const { say, controller, setSection, message } = setup();
     recipeState.add('commerce.sales', 'products.simple');
     const catalog = controller
@@ -191,7 +191,7 @@ describe('report requests (the runtime report flow is smrt#4100)', () => {
     const reply = await say('can you give me a sales report?');
     expect(setSection).not.toHaveBeenCalled();
     expect(reply).not.toContain('Opened');
-    expect(reply).toContain(REPORTS_PENDING);
+    expect(reply).toContain(REPORTS_UNAVAILABLE);
     // The model was told where reports live.
     expect(message.mock.calls[0][1]?.history?.[0].content).toContain(
       'reports.runtime (Reports)',
@@ -206,7 +206,8 @@ describe('report requests (the runtime report flow is smrt#4100)', () => {
     });
     const first = await say('give me a summary of all sales last month');
     expect(first).toMatch(/^Added /);
-    expect(first).toContain(REPORTS_PENDING);
+    // Adding Reports builds nothing; without sample data it says so.
+    expect(first).toContain(REPORTS_UNAVAILABLE);
     expect(first).not.toContain('Summary ready');
     const reports = controller
       .snapshot()
@@ -218,7 +219,7 @@ describe('report requests (the runtime report flow is smrt#4100)', () => {
       JSON.stringify({ reply: 'Here.', add: [], remove: [], open: reports.id }),
     );
     expect(await say('take me to the sales report')).toBe(
-      `Opened ${reports.label}. ${REPORTS_PENDING}`,
+      `Opened ${reports.label}.`,
     );
     expect(setSection).toHaveBeenCalledWith(reports.id);
   });

@@ -317,6 +317,29 @@ describe('buildCookbookShell: overviews', () => {
     );
   });
 
+  it('opens a section led by a recipe with its own page on that widget (#4100)', () => {
+    const withReports = cookbook({
+      recipes: [...fixture('bakery').recipes, 'reports.runtime'],
+    });
+    const plain = buildCookbookShell({ cookbook: withReports, catalog });
+    // Without data widgets the host has no loaders: the shortcuts stay.
+    expect(
+      plain.overviews['section:reports.runtime']?.definition.defaults.map(
+        (w) => w.type,
+      ),
+    ).toEqual(['shortcuts']);
+    const rich = buildCookbookShell({
+      cookbook: withReports,
+      catalog,
+      dataWidgets: true,
+    });
+    expect(
+      rich.overviews['section:reports.runtime']?.definition.defaults,
+    ).toEqual([
+      { id: 'saved-reports', type: 'saved-reports', span: 4, options: {} },
+    ]);
+  });
+
   it("carries the cookbook's stored override, drops an empty one, and reports unknown pages", () => {
     const override = {
       version: 1 as const,

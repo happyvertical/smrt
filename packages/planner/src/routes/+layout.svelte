@@ -95,6 +95,9 @@ plannerRuntime.onReplaced = () => dataSource.reset?.();
 plannerRuntime.openSection = (id) => {
   void goto(appHref(sectionPath(id)));
 };
+// `goto` resolves after SvelteKit has rendered and reset focus, so a caller
+// that awaits it can focus the opened page without the router undoing it.
+plannerRuntime.openPath = (path) => goto(appHref(path));
 
 // The Cookbooks tab's open cookbook lives in the address (`?cookbook=`):
 // opening one pushes a shallow history entry, so browser Back (or the detail's

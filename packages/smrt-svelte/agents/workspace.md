@@ -86,6 +86,12 @@ icon-only "Close menu". While the right edge has focus tools, phones get a
 presents as a drawer (or sheet) with an icon-only "Close tools". Chrome buttons,
 rail tool buttons and dock toggles use `--smrt-touch-target-min` on phones. A
 tool without an icon uses the generic tool icon, never its first letter.
+The dock (right edge) defaults to `overlayMedia: '(max-width: 79.9375rem)'`
+(#4100): from the xl breakpoint (80rem) it sits beside the page and the main
+area shrinks; below it slides over the page. A dock card that navigates calls
+`announceShellNavigation(element, { focus? })` (`admin-shell/navigation.ts`):
+the shell closes the dock only while it overlays the page (overlay or phone
+sheet; `closeOnNavigate: false` keeps it), then focuses the announced `focus` target as soon as it matches, else the incoming page's heading (never one already on the page).
 Phone drawers and the bottom drawer offset themselves by the header and phone
 bar tracks. `shell.viewport` comes from `ADMIN_SHELL_PHONE_QUERY` (48rem, the
 same boundary as the CSS media query — never make one configurable without the

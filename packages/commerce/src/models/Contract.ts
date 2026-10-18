@@ -250,7 +250,11 @@ export class Contract extends SmrtObject {
   /**
    * Date contract was issued
    */
-  @field({ description: 'The date it was issued or placed.' })
+  @field({
+    description: 'The date it was issued or placed.',
+    // A business date: the natural time axis of contract reports (#4100).
+    ui: { format: 'date' },
+  })
   issueDate: Date = new Date();
 
   /**

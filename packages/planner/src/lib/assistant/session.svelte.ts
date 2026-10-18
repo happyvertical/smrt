@@ -3,6 +3,7 @@ import type { InferenceMode } from '../inference/config.ts';
 import { getLibraryCookbook, libraryCookbooks } from '../library/index.ts';
 import type { PlannerController } from '../planner/commands/index.ts';
 import type { Recipe } from '../recipes/types.ts';
+import type { PlannerReports } from '../reports/store.ts';
 import type { RecipeStore, SettingsStore, ThemeStore } from './change.ts';
 import {
   browserHost,
@@ -79,6 +80,11 @@ export class AssistantSession {
   readonly offers = new CookbookOffers(getLibraryCookbook);
   /** Theme changes the assistant made, each undoable from the chat. */
   readonly themeUndos: ThemeUndos | null;
+  /**
+   * Runtime reports over the app's sample data, set by the component that
+   * has the data source (`BrowserAssistant`); null, the assistant builds none.
+   */
+  reports: PlannerReports | null = null;
   private loaded: LoadedModel | null = null;
   private chat: ChatModel | null = null;
   private abort: AbortController | null = null;
@@ -115,6 +121,7 @@ export class AssistantSession {
               : 'Download a model first, then I can help. The cards on the Planner page work without one.',
       onReply: (text) => options.onReply?.(text),
       menu: options.menu,
+      reports: () => this.reports,
     });
   }
 

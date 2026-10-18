@@ -12,10 +12,14 @@
  * The parser accepts no authority. Nothing in a spec names a tenant, a
  * principal, a permission, a table, a column alias that is not a plain
  * identifier, or an SQL fragment.
+ *
+ * Browser-safe (#4100): this module imports no Node built-in and, of
+ * smrt-core, only the import-free `SmrtError` subpath (never the root entry),
+ * so the grammar ships on the `./spec` subpath. The `node:crypto` hash lives in
+ * `runtime-spec-hash.ts`, which only server modules import.
  */
 
-import { createHash } from 'node:crypto';
-import { SmrtError } from '@happyvertical/smrt-core';
+import { SmrtError } from '@happyvertical/smrt-core/smrt-error';
 
 export const RUNTIME_REPORT_SPEC_VERSION = 1 as const;
 
@@ -659,14 +663,31 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-/** Stable fingerprint of a NORMALIZED spec; equal specs hash equally. */
-export function runtimeReportSpecHash(spec: RuntimeReportSpec): string {
-  return createHash('sha256')
-    .update(JSON.stringify(canonicalize(spec)))
-    .digest('hex');
-}
-
-/** Stable JSON text for storage (sorted keys). */
+/**
+ * Stable JSON text for storage (sorted keys). It is also the exact input of
+ * `runtimeReportSpecHash` (server) and `runtimeReportSpecDigest` (browser).
+ */
 export function serializeRuntimeReportSpec(spec: RuntimeReportSpec): string {
   return JSON.stringify(canonicalize(spec));
+}
+
+/**
+ * Browser-safe twin of the server's `runtimeReportSpecHash`: the same SHA-256
+ * hex over the same canonical JSON, computed with Web Crypto. Asynchronous
+ * because `crypto.subtle` is; it needs a secure context (https or localhost).
+ */
+export async function runtimeReportSpecDigest(
+  spec: RuntimeReportSpec,
+): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error(
+      'runtimeReportSpecDigest needs Web Crypto (crypto.subtle), which browsers offer only in a secure context',
+    );
+  }
+  const bytes = new TextEncoder().encode(serializeRuntimeReportSpec(spec));
+  const digest = new Uint8Array(await subtle.digest('SHA-256', bytes));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }

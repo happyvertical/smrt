@@ -118,6 +118,21 @@ Every field but `reply` is optional:
   `./commands`), run in order through the controller, which validates each.
   The first refused one stops the rest and is reported in the chat. They apply
   only in host mode; a browser or bring-your-own model's `commands` are ignored.
+- `report` (#4100): a runtime report the visitor asked for, as an intent, never
+  a spec: `{ "source": "invoices", "measures"?: [{ "fn": "count|sum|avg|min|max",
+  "field"? }], "groupBy"?, "bucket"?: "minute|hour|day|week|month|quarter|year",
+  "range"?: "last 90 days" (a period in words), "period"?: "last_month|...",
+  "dateField"?, "filters"?: [{ "field", "op", "value" }], "title"? }`. The planner
+  resolves time words in code against its clock. Money filter values are in currency units (`500` for $500); the
+  planner scales them to integer minor units. `parseHostReply` keeps the parts
+  it could not read in `report.unreadable` (a list of short phrases, also in
+  `issues`); the planner asks about them instead of building a broader report.
+  `buildHostPrompt` lists the plan's report sources (`Report
+  sources: invoices (Invoices), ...`). The planner builds the spec, validates
+  it with smrt-reports' parser, turns on Reports, runs a preview over its
+  sample records and saves it only when the visitor approves; a source or field
+  it cannot resolve becomes a follow-up question. Sent only when the catalogue
+  has `reports.runtime`.
 - A non-JSON body is shown as the reply text. A non-2xx status shows "the model
   could not answer: the server answered <status>".
 - Streaming is not part of version 1. A later version may add

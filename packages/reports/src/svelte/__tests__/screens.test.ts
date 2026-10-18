@@ -5,10 +5,11 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MaterializedReportTable from '../MaterializedReportTable.svelte';
-import { client, proposal, result, saved } from '../preview-data.js';
+import { client, proposal, result, saved, spec } from '../preview-data.js';
 import ReportConfirmation from '../ReportConfirmation.svelte';
 import ReportDetail from '../ReportDetail.svelte';
 import ReportPicker from '../ReportPicker.svelte';
@@ -84,22 +85,32 @@ describe('saved report screens', () => {
       onlyMine: false,
       includeArchived: false,
     });
-    await fireEvent.click(screen.getByLabelText('Only mine'));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Mine' }));
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith({
         onlyMine: true,
         includeArchived: false,
       }),
     );
-    await fireEvent.click(screen.getByLabelText('Show archived reports'));
+    await fireEvent.click(screen.getByLabelText('Show archived'));
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith({
         onlyMine: true,
         includeArchived: true,
       }),
     );
+    // Archive is a secondary action: the card's "more" menu, then a confirmation.
     await fireEvent.click(
-      await screen.findByRole('button', { name: 'Archive' }),
+      await screen.findByRole('button', {
+        name: `More actions for ${saved.title}`,
+      }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    expect(archive).not.toHaveBeenCalled();
+    await fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Archive',
+      }),
     );
     expect(archive).toHaveBeenCalledWith(saved.id, true);
   });
@@ -108,7 +119,9 @@ describe('saved report screens', () => {
       client: client({ list: async () => [{ ...saved, canArchive: false }] }),
     });
     await screen.findByRole('link', { name: saved.title });
-    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: `More actions for ${saved.title}` }),
+    ).toBeNull();
     await mounted.rerender({ client: client({ list: async () => [] }) });
     expect(await screen.findByText(/Ask the assistant/)).toBeTruthy();
   });
@@ -136,11 +149,15 @@ describe('saved report screens', () => {
       client: client({ run }),
       locale: 'en-US',
     });
-    await screen.findByText('$123.45');
+    expect((await screen.findAllByText('$123.45')).length).toBeGreaterThan(0);
     expect(run).toHaveBeenCalledWith(saved.id);
-    await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Table' }));
     expect(screen.getByRole('cell', { name: '$123.45' })).toBeTruthy();
-    await fireEvent.click(screen.getByRole('button', { name: 'Re-run' }));
+    // Re-run is in the "more" menu: the page runs afresh each time it opens.
+    await fireEvent.click(
+      screen.getByRole('button', { name: `More actions for ${saved.title}` }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Re-run' }));
     await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
   });
   it.each([
@@ -162,7 +179,7 @@ describe('saved report screens', () => {
   });
   it('renders empty data and rejects unsafe integer results', () => {
     render(ReportResult, { result: { ...result, rows: [], rowCount: 0 } });
-    expect(screen.getByText('No results match this report.')).toBeTruthy();
+    expect(screen.getByText('No matching records.')).toBeTruthy();
     expect(
       validReportResult({
         ...result,
@@ -179,13 +196,54 @@ describe('saved report screens', () => {
   it('describes the proposal and rejects synthetic approval; decline saves nothing', async () => {
     const confirm = vi.fn(async () => saved);
     render(ReportConfirmation, { proposal, confirm });
-    expect(screen.getByText('Sum of amount')).toBeTruthy();
+    // Measures read as the result's own column labels, not "Sum of amount".
+    expect(screen.getByText('Measures').nextElementSibling?.textContent).toBe(
+      'Total',
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(confirm).not.toHaveBeenCalled();
     await fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(screen.getByText('Declined — nothing saved')).toBeTruthy();
+  });
+  it('shows a saved answer as an outcome line with no buttons', () => {
+    render(ReportConfirmation, {
+      proposal,
+      confirm: async () => saved,
+      outcome: { status: 'saved', report: { id: 'report-1', title: 'x' } },
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull();
     expect(
-      screen.getByText('Report declined. Nothing was saved.'),
-    ).toBeTruthy();
+      screen.getByRole('link', { name: 'Open report' }).getAttribute('href'),
+    ).toBe('/reports/report-1');
+  });
+  it('shows an earlier answer read-only, as after a transcript reload', () => {
+    render(ReportConfirmation, {
+      proposal,
+      confirm: async () => saved,
+      outcome: { status: 'declined' },
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.getByText('Declined — nothing saved')).toBeTruthy();
+  });
+  it('labels groupings, buckets and money filters from the source fields', () => {
+    render(ReportConfirmation, {
+      proposal: {
+        ...proposal,
+        spec: {
+          ...spec,
+          dimensions: [{ field: 'issueDate', bucket: 'month', as: 'region' }],
+          filters: [{ field: 'amount', op: 'gt', value: 50000 }],
+        },
+      },
+      confirm: async () => saved,
+      fields: [
+        { name: 'issueDate', label: 'Issue date' },
+        { name: 'amount', label: 'Amount', format: 'money' },
+      ],
+    });
+    expect(screen.getByText('Issue date by month')).toBeTruthy();
+    expect(screen.getByText('Amount is greater than $500.00')).toBeTruthy();
   });
   it('refuses a mismatching preview hash', () => {
     render(ReportConfirmation, {
@@ -208,8 +266,9 @@ describe('saved report screens', () => {
       dimension: '',
     });
     await mounted.rerender({ reportId: saved.id });
-    expect(screen.getByRole('option', { name: 'total' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'region' })).toBeTruthy();
+    // Named as the report names them, not by their aliases.
+    expect(screen.getByRole('option', { name: 'Sum of Amount' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Region' })).toBeTruthy();
   });
 });
 

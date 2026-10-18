@@ -81,6 +81,11 @@ export {
   installShellViewport,
   watchFormActionBar,
 } from './admin-shell/mobile-shell-dom.js';
+export {
+  announceShellNavigation,
+  SHELL_NAVIGATED_EVENT,
+  type ShellNavigatedDetail,
+} from './admin-shell/navigation.js';
 export { default as PhoneBottomBar } from './admin-shell/PhoneBottomBar.svelte';
 export { default as PhoneTopBar } from './admin-shell/PhoneTopBar.svelte';
 export { default as ShellCorner } from './admin-shell/ShellCorner.svelte';

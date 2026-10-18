@@ -122,6 +122,20 @@ export {
   runRuntimeReport,
 } from './runtime-compiler.js';
 export type {
+  RunRuntimeReportInMemoryOptions,
+  RuntimeReportMemoryField,
+  RuntimeReportMemoryRow,
+  RuntimeReportMemorySource,
+} from './runtime-memory.js';
+export {
+  describeRuntimeReportMemorySource,
+  runRuntimeReportInMemory,
+} from './runtime-memory.js';
+export type {
+  RuntimeReportDimensionHints,
+  RuntimeReportDimensionKind,
+} from './runtime-plan.js';
+export type {
   RuntimeReportStatus,
   RuntimeReportStoreOptions,
   SaveRuntimeReportOptions,
@@ -175,9 +189,19 @@ export {
   RUNTIME_REPORT_MEASURE_FNS,
   RUNTIME_REPORT_SPEC_VERSION,
   RuntimeReportError,
-  runtimeReportSpecHash,
+  runtimeReportSpecDigest,
   serializeRuntimeReportSpec,
 } from './runtime-spec.js';
+export { runtimeReportSpecHash } from './runtime-spec-hash.js';
+export type {
+  RuntimeReportTimeIntent,
+  RuntimeReportTimeRange,
+} from './runtime-time.js';
+export {
+  parseRuntimeReportTime,
+  resolveRuntimeReportTimeRange,
+  runtimeReportBucketForSpan,
+} from './runtime-time.js';
 export type {
   EnqueueReportRefreshOptions,
   EnsureReportSchedulesOptions,

@@ -90,6 +90,9 @@ export const M = defineMessages({
   'chat.assistant_dock.choose_conversation_hint':
     'Select a conversation to start chatting with the assistant.',
   'chat.assistant_dock.view_conversations': 'View conversations',
+  // AssistantQuestionForm
+  'chat.assistant_question.submit': 'Continue',
+  'chat.assistant_question.choose': 'Choose…',
   'chat.assistant_dock.start_conversation': 'Start a conversation',
   'chat.assistant_dock.start_conversation_hint':
     'Create a conversation to start chatting with the assistant.',

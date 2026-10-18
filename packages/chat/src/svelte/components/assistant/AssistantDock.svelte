@@ -8,7 +8,11 @@
  * `DataSurfaceRegistry` instance (already owned by the host shell) and an
  * `AssistantTransport`.
  */
-import { MessageBubble } from '@happyvertical/smrt-ui/chat';
+import {
+  ASSISTANT_REQUEST_EVENT,
+  type AssistantRequestDetail,
+  MessageBubble,
+} from '@happyvertical/smrt-ui/chat';
 import type {
   DataSurfaceActionRequest,
   DataSurfaceActionResult,
@@ -30,9 +34,15 @@ import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
+import AssistantQuestionForm from './AssistantQuestionForm.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import { toolCallStatusForAction } from './action-status.js';
 import type { AssistantChoiceSourceRegistry } from './assistant-choices.svelte.js';
+import {
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  assistantQuestionFromMessage,
+} from './assistant-question.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -520,6 +530,23 @@ $effect(() => {
   void tick().then(() => composerRef?.focus());
 });
 
+// The page asks the assistant (`requestAssistant` from smrt-ui: a "New
+// report" button, an empty state): put the prompt in the composer for the
+// person to edit and send, never sending it on their behalf. A shell that
+// opens this dock first re-dispatches the request from inside it.
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  const take = (event: Event) => {
+    const detail = (event as CustomEvent<AssistantRequestDetail>).detail;
+    if (event.defaultPrevented || typeof detail?.prompt !== 'string') return;
+    event.preventDefault();
+    controller.setDraft(detail.prompt);
+    void tick().then(() => composerRef?.focus());
+  };
+  document.addEventListener(ASSISTANT_REQUEST_EVENT, take);
+  return () => document.removeEventListener(ASSISTANT_REQUEST_EVENT, take);
+});
+
 async function handleClearConversation() {
   closeThreads();
   controller.setError(null);
@@ -544,6 +571,23 @@ async function handleCreateThread() {
     await controller.openThread(thread.id);
   } catch {
     // Already surfaced via controller.error.
+  }
+}
+
+// A structured question's form (`./assistant-question.ts`): the transport
+// continues the turn from the values, or they go out as a message. A failure
+// is surfaced on the dock and the form stays answerable.
+async function handleAnswerQuestion(
+  messageId: string,
+  question: AssistantQuestion,
+  values: AssistantQuestionAnswer,
+) {
+  try {
+    await controller.answerQuestion(messageId, question, values);
+  } catch (error) {
+    controller.setError(error instanceof Error ? error.message : String(error));
+    // The form learns it failed, so it stays answerable.
+    throw error;
   }
 }
 
@@ -771,23 +815,21 @@ async function handleConfirmAction(requestId: string) {
 
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
+            {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
+            {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
             <li data-role={message.role}>
-              <MessageBubble
-                variant={bubbleVariant(message.role)}
-                own={message.role === 'user'}
-              >
-                {#snippet children()}
-                  {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
-                  {#if ResultComponent}
-                    <ResultComponent {message} />
-                  {:else}
+              {#if ResultComponent}
+                <!-- Structured results are cards spanning the thread, not bubbles. -->
+                <div class="assistant-dock-card">
+                  <ResultComponent {message} />
+                </div>
+              {:else}
+                <MessageBubble
+                  variant={bubbleVariant(message.role)}
+                  own={message.role === 'user'}
+                >
+                  {#snippet children()}
                     <p class="assistant-dock-message-content">{message.content}</p>
-                  {/if}
-                {#if toolCall && message.toolCallData != null}
-                  <div class="assistant-dock-tool-call">
-                    {@render toolCall(message)}
-                  </div>
-                {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="assistant-dock-attachments"
@@ -819,8 +861,26 @@ async function handleConfirmAction(requestId: string) {
                       {/each}
                     </ul>
                   {/if}
-                {/snippet}
-              </MessageBubble>
+                  {/snippet}
+                </MessageBubble>
+              {/if}
+              {#if question}
+                <div class="assistant-dock-card">
+                  <AssistantQuestionForm
+                    {question}
+                    answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
+                    autofocus={message.id === controller.messages.at(-1)?.id}
+                    onsubmit={(values) => handleAnswerQuestion(message.id, question, values)}
+                  />
+                </div>
+              {/if}
+              {#if toolCall && message.toolCallData != null}
+                <!-- A host's cards (a report preview, an offer) span the thread
+                     under the message's text bubble. -->
+                <div class="assistant-dock-card assistant-dock-tool-call">
+                  {@render toolCall(message)}
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -1267,9 +1327,13 @@ async function handleConfirmAction(requestId: string) {
     min-height: 4rem;
   }
 
-  .assistant-dock-tool-call {
+  /* Structured cards (results, questions, a host's previews) use the full
+   * thread width; the components inside draw their own card surface. */
+  .assistant-dock-card {
+    align-self: stretch;
+    inline-size: 100%;
+    min-inline-size: 0;
     margin-top: var(--smrt-spacing-2);
-    min-width: 0;
   }
 
   .assistant-dock-message-content {
