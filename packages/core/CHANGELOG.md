@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.7
+
+### Patch Changes
+
+- ### Features
+  
+  - runtime reports in the browser assistant (#4106) (planner)
+- @happyvertical/smrt-config@0.57.7
+  - @happyvertical/smrt-scanner@0.57.7
+  - @happyvertical/smrt-types@0.57.7
+
 ## 0.57.6
 
 ### Patch Changes
