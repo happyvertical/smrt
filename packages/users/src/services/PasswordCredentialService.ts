@@ -1158,7 +1158,7 @@ export class PasswordCredentialService {
     }
     const lease = await this.limiter.reserve({
       kind: PASSWORD_LOGIN_KIND,
-      subject: user.emailKey || (user.id as string),
+      subject: user.emailKey || user.usernameKey || (user.id as string),
       source: ipAddress,
       metadata: { purpose },
     });

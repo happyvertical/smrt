@@ -999,6 +999,58 @@ describe('PasswordCredentialService', () => {
     ).rejects.toBeInstanceOf(LoginRateLimitError);
   });
 
+  it.each([
+    'change',
+    'clear',
+  ] as const)('shares username sign-in and self-%s guesses without a source budget', async (operation) => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.email = '';
+    user.username = 'Pat.Learner';
+    await user.save();
+    const accountOnly = await make({
+      limiter: {
+        maxAttempts: 3,
+        windowSeconds: 60,
+        source: false,
+        audit: false,
+      },
+    });
+    const current = await accountOnly.signIn({
+      identifier: 'PAT.LEARNER',
+      password: PASSWORD,
+      tenantId,
+    });
+    const actor = await sessionService.loadSessionContext(current.sessionId);
+    if (!actor) throw new Error('missing session');
+    const loginGuess = () =>
+      accountOnly.signIn({
+        identifier: ' PAT.LEARNER ',
+        password: 'wrong horse battery',
+        tenantId,
+      });
+    const managementGuess = () =>
+      operation === 'change'
+        ? accountOnly.changePassword({
+            actor,
+            currentPassword: 'wrong horse battery',
+            newPassword: 'a brand new secret',
+          })
+        : accountOnly.clearPassword({
+            actor,
+            userId: personId,
+            currentPassword: 'wrong horse battery',
+          });
+    await expect(loginGuess()).rejects.toBeInstanceOf(PasswordCredentialError);
+    await expect(managementGuess()).rejects.toBeInstanceOf(
+      PasswordCredentialError,
+    );
+    await expect(loginGuess()).rejects.toBeInstanceOf(PasswordCredentialError);
+    await expect(managementGuess()).rejects.toBeInstanceOf(LoginRateLimitError);
+    await expect(loginGuess()).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(await activeSessionIds(personId)).toEqual([current.sessionId]);
+  });
+
   it('never lets a change or self-clear proven with the old password overwrite a reset that landed meanwhile', async () => {
     const internals = service as unknown as {
       hashPassword: (password: string) => Promise<string>;
