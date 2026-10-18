@@ -509,3 +509,6 @@ is filed; later phases are filed when Phase 0 is usable.
 - Whether skills should seed from an existing standard (Common Core, or Khan's
   public skill names) or start empty and grow from what gets taught.
 - Video lessons: host our own assets, link to YouTube, or both.
+- For a learner User without email, which supported ordinary login identifier
+  and provisioning flow will the application use? This must not introduce a
+  custom credential mechanism or PIN.
