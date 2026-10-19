@@ -29,6 +29,9 @@ actor's User Profile to the learner's Profile. `authorizeLearner` receives
 that the type represents guardianship, its terms are effective, and that
 its permission policy allows the action. An arbitrary relationship is not a
 guardian grant. Missing relationships and host denials/exceptions fail closed.
+The authorizer also receives `executor`, the service's active database
+executor. Host policy reads, including relationship and revocation checks, must
+use that executor so they share a `withTransaction` or `withExecutor` boundary.
 Same-tenant membership alone never grants sibling access.
 
 ## Supported workflow

@@ -240,8 +240,21 @@ export async function assertDelegatedGuardianReview(db: DatabaseInterface) {
     let principalPermissions = ['lessons.read', 'grades.create'];
     const submissions = new SubmissionService(
       db,
-      ({ own, relationshipTypeId }) =>
-        own || (guardianAllowed && relationshipTypeId === f.guardianType.id),
+      async ({ own, relationshipTypeId, executor }) => {
+        if (own) return true;
+        // The host relationship lookup must share the active review executor.
+        const relationship = await executor.get('profile_relationships', {
+          id: f.relationship.id,
+          tenant_id: f.parent.tenantId,
+          from_profile_id: f.relationship.fromProfileId,
+          to_profile_id: f.relationship.toProfileId,
+        });
+        return (
+          guardianAllowed &&
+          Boolean(relationship) &&
+          relationshipTypeId === f.guardianType.id
+        );
+      },
       () => true,
       { storage },
     );

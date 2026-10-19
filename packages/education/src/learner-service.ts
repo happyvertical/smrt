@@ -35,6 +35,8 @@ export interface LearnerRequest {
 /** The host validates relationship type/terms and its own permission policy. */
 export type LearnerAuthorizer = (
   request: LearnerRequest & {
+    /** The active service executor; host policy reads must share its transaction. */
+    executor: DatabaseInterface;
     action:
       | 'education.learner.read'
       | 'education.learner.plan'
@@ -331,6 +333,7 @@ export class LearnerService {
     if (
       (await this.authorize({
         ...request,
+        executor: this.db,
         action,
         own,
         relationshipTypeId,
@@ -452,6 +455,7 @@ export class LearnerService {
         (await service.authorize({
           ...request,
           learnerId: '',
+          executor: service.db,
           action: 'education.learner.plan',
           own: false,
           relationshipTypeId: String(relationship.type_id),
