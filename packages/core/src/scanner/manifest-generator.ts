@@ -3028,9 +3028,15 @@ export class ManifestGenerator {
       const parentObj = lookupInManifest(externalManifest, parentClassName);
 
       if (parentObj) {
-        // Cache the loaded parent object for future lookups
-        objectsByName.set(parentObj.className, parentObj);
-        objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+        // Cache the loaded parent object for future lookups, but never over
+        // a local class of the same simple name: that entry is this
+        // package's own parent for its other subclasses (#4145).
+        if (!objectsByName.has(parentObj.className)) {
+          objectsByName.set(parentObj.className, parentObj);
+        }
+        if (!objectsByName.has(parentObj.className.toLowerCase())) {
+          objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+        }
 
         return parentObj;
       }

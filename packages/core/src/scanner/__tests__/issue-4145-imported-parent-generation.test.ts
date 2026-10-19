@@ -105,4 +105,44 @@ describe('#4145 import-qualified parent in manifest generation', () => {
     expect(child?.extendsQualified).toBeUndefined();
     expect(child?.decoratorConfig.tableName).toBe('agreements');
   });
+
+  it('keeps a local same-named parent for its own subclasses', () => {
+    const local = (
+      className: string,
+      extra: Partial<SmartObjectDefinition>,
+    ): SmartObjectDefinition =>
+      ({
+        name: className.toLowerCase(),
+        className,
+        collection: `${className.toLowerCase()}s`,
+        filePath: `/app/src/lib/models/${className}.ts`,
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        packageName: APP,
+        ...extra,
+      }) as SmartObjectDefinition;
+    const objects = [
+      local('Agreement', {
+        fields: { localTerms: { type: 'text' } },
+        decoratorConfig: { tableStrategy: 'sti', tableName: 'app_agreements' },
+      }),
+      local('Imported', {
+        extends: 'Agreement',
+        extendsQualified: `${COMMERCE}:Agreement`,
+      }),
+      local('LocalChild', { extends: 'Agreement' }),
+    ];
+    const manifest = new ManifestGenerator().generateManifest(
+      [{ filePath: '/app/src/lib/models', objects, errors: [] }],
+      { packageName: APP, smrtDependencies: [SALES, COMMERCE] },
+    );
+    const imported = manifest.objects[`${APP}:Imported`];
+    const localChild = manifest.objects[`${APP}:LocalChild`];
+    expect(imported?.decoratorConfig.tableName).toBe('contracts');
+    expect(imported?.fields.localTerms).toBeUndefined();
+    expect(localChild?.decoratorConfig.tableName).toBe('app_agreements');
+    expect(localChild?.fields.localTerms).toBeDefined();
+    expect(localChild?.fields.contractType).toBeUndefined();
+  });
 });
