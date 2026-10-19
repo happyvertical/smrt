@@ -7,6 +7,7 @@ import type { FeedbackSelection } from './feedback-dto.js';
 import {
   createSDKProposalDecisionClient,
   createSDKProposalGenerator,
+  proposalResponseSchema,
 } from './proposal-sdk.js';
 
 const identity = {
@@ -55,6 +56,58 @@ const feedback: FeedbackSelection = {
   ],
 };
 describe('real AI SDK transport against local HTTP fixture (not model quality)', () => {
+  it('supplies a closed schema with record IDs for args and opaque keys for alternatives', () => {
+    const schema = proposalResponseSchema({
+      ...input,
+      offered: [
+        {
+          handler: {
+            id: 'identify-assignment',
+            version: '1',
+            description: 'Identify assignment',
+            kind: 'operation',
+            capability: { effect: 'read', idempotent: true, openWorld: false },
+            argsSchema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['lessonId'],
+              properties: { lessonId: { type: 'string' } },
+            },
+            references: {
+              lessonId: { kind: 'candidate', model: 'Lesson' },
+            },
+            operation: { model: 'Lesson', action: 'get', version: '1' },
+          },
+          candidates: [
+            {
+              key: 'opaque-candidate-key',
+              model: 'Lesson',
+              id: 'lesson-id',
+              revision: '7',
+              label: 'Addition worksheet',
+            },
+          ],
+        },
+      ],
+    });
+    const suggestion = (
+      schema.properties as unknown as Record<
+        string,
+        { items: { oneOf: Array<{ properties: Record<string, unknown> }> } }
+      >
+    ).suggestions.items.oneOf[0].properties;
+    expect(
+      (suggestion.args as { properties: { lessonId: { enum: string[] } } })
+        .properties.lessonId.enum,
+    ).toEqual(['lesson-id']);
+    expect(
+      (suggestion.alternatives as { items: { enum: string[] } }).items.enum,
+    ).toContain('opaque-candidate-key');
+    expect(
+      (suggestion.alternatives as { items: { enum: string[] } }).items.enum,
+    ).toContain('identify-assignment@1');
+  });
+
   it.each([
     'stop',
     'feedback',
@@ -166,6 +219,18 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
           },
         ]);
         expect(requestBody).not.toHaveProperty('tools');
+        expect(requestBody).toMatchObject({
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'ingestion_proposal',
+              strict: false,
+              schema: {
+                required: ['outcome', 'suggestions', 'splits'],
+              },
+            },
+          },
+        });
       } else await expect(result).rejects.toThrow();
     } finally {
       server.closeAllConnections();
