@@ -2342,8 +2342,17 @@ export class SchemaGenerator {
         continue;
       }
       // obj.extends is a simple class name (e.g., 'PolyEvent')
-      // Compare with the simple (non-qualified) version of the base class name
-      if (obj.extends?.toLowerCase() === baseClassLower) {
+      // Compare with the simple (non-qualified) version of the base class name.
+      // An import-qualified parent names its package, so a same-named base of
+      // another package is not this class's ancestor (#4145).
+      if (
+        obj.extends?.toLowerCase() === baseClassLower &&
+        !(
+          obj.extendsQualified &&
+          baseClassName.includes(':') &&
+          obj.extendsQualified !== baseClassName
+        )
+      ) {
         descendants.push(name);
         // Recursively find descendants of this class
         // Pass the qualified name (manifest key) for recursive lookup

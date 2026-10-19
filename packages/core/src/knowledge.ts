@@ -338,6 +338,9 @@ function buildKnowledgeObject(
     tableName: object.schema?.tableName,
     packageName: object.packageName,
     extends: object.extends,
+    ...(object.extendsQualified
+      ? { extendsQualified: object.extendsQualified }
+      : {}),
     visibility: object.visibility,
     fields,
     relationships,

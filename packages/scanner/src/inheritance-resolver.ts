@@ -32,7 +32,7 @@ import type {
  * `FRAMEWORK_ABSTRACT_BASE_NAMES`, far cheaper than the generalization's
  * new failure surface. Extend this list instead.
  */
-const FRAMEWORK_BASE_CLASSES = new Set([
+export const FRAMEWORK_BASE_CLASSES: ReadonlySet<string> = new Set([
   'SmrtObject',
   'SmrtClass',
   'SmrtCollection',

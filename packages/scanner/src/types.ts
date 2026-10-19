@@ -31,6 +31,15 @@ export interface RawClassDefinition {
   /** Generic type argument from extends (e.g., "Meeting" from SmrtCollection<Meeting>) */
   extendsTypeArg: string | null;
 
+  /**
+   * Module specifier the `extends` identifier is imported from, through a
+   * named (possibly aliased) or namespace import (#4145). Absent when the
+   * parent is declared in this file, default-imported, or not imported.
+   * `extendsClause` is then the parent's exported name, so a bare package
+   * specifier names the parent's package.
+   */
+  extendsSource?: string;
+
   /** Parsed @smrt() decorator configuration object */
   decoratorConfig: RawDecoratorConfig | null;
 
