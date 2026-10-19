@@ -35,7 +35,10 @@ executes the source.
 - `parseFile` / `parseSource` — parse a single file or a source string to a
   `FileScanResult` (classes, errors, type aliases, SMRT imports). Each class
   carries the parser's `bodyStart` offset; core's library build inserts its
-  package stamp there and never rescans source text (#3490).
+  package stamp there and never rescans source text (#3490). A class whose
+  parent is a named, aliased, or namespace value import carries
+  `extendsSource`; `ManifestAdapter` turns a scoped package other than its own
+  into `extendsQualified` (#4145). Never infer it from relative paths or names.
 - `extractSmrtImports` — pull SMRT-related imports from a parsed file.
 - `lintNumericPrecision(classes, sourceText?)` — flags persisted `number` fields
   whose declared precision contradicts their name (#2361), returning a `kind`

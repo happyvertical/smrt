@@ -124,6 +124,29 @@ function pluralizeCollection(className: string): string {
 }
 
 /**
+ * The registry key of the class `ctor` actually extends, when that parent is
+ * registered under a qualified name and (if the manifest names a parent) has
+ * the manifest's simple name (#4145). Constructor identity is exact: two
+ * packages may export a same-named class, and only the prototype says which
+ * one this class extends, even when the manifest predates `extendsQualified`.
+ */
+function registeredParentKey(
+  ctor: typeof SmrtObject,
+  manifestParent: string | undefined,
+): string | undefined {
+  const parentKey = getConstructorIndex().get(Object.getPrototypeOf(ctor));
+  if (!parentKey || !isQualifiedName(parentKey)) return undefined;
+  if (
+    manifestParent &&
+    manifestParent !== parentKey &&
+    parseQualifiedName(parentKey).className !== manifestParent
+  ) {
+    return undefined;
+  }
+  return parentKey;
+}
+
+/**
  * The collection an STI subtype shares with its STI base, for a class that
  * registers with no manifest `collection` (#3125). The manifest generator
  * gives every STI subtype its base's collection (`findSTIBase`: the oldest
@@ -1912,7 +1935,9 @@ function registerUntracked(
   // Derive extends from prototype chain if not available from manifest
   // This is critical for inline test classes that use decorators
   let extendsClass: string | undefined =
-    manifestEntry?.extendsQualified ?? manifestEntry?.extends;
+    manifestEntry?.extendsQualified ??
+    registeredParentKey(ctor, manifestEntry?.extends) ??
+    manifestEntry?.extends;
   assertRegisteredStiParent(ctor);
   if (!extendsClass) {
     const proto = Object.getPrototypeOf(ctor);
@@ -2582,9 +2607,18 @@ function mergeManifestIntoExistingRegistration(
 
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
   if (manifestParent) {
-    existing.extends = packageName
+    const qualifiedParent = packageName
       ? qualifyExtendsName(manifestParent, packageName)
       : manifestParent;
+    // A simple name the registry cannot qualify (another package declares
+    // the same class name) never replaces the parent the decorator already
+    // took from the real constructor's registration (#4145).
+    const keepConstructorParent =
+      !isQualifiedName(qualifiedParent) &&
+      !!existing.extends &&
+      isQualifiedName(existing.extends) &&
+      parseQualifiedName(existing.extends).className === qualifiedParent;
+    if (!keepConstructorParent) existing.extends = qualifiedParent;
   }
 
   if (!existing.sourceFilePath && objectDef.filePath) {

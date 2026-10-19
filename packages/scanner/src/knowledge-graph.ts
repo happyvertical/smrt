@@ -158,9 +158,9 @@ export function buildKnowledgeGraph(
   // duplicate would make resolveTarget's `.length === 1` uniqueness check
   // see a false ambiguity for an otherwise-unique name (#2872 review).
   const idBySimpleName = new Map<string, Set<string>>();
-  // A `tableStrategy: 'sti'` object's `extends` is an unqualified simple name
-  // (its own package's base class, never a cross-package reference — STI
-  // shares one table within a package), so a same-package simple-name match
+  // A `tableStrategy: 'sti'` object's `extends` is an unqualified simple name;
+  // a parent imported from another package also carries `extendsQualified`
+  // (#4145), which resolves first. Otherwise a same-package simple-name match
   // must win over an ambiguous or wrong-package GLOBAL simple-name match:
   // two packages both declaring `Account` must not point one package's
   // subclass at the other package's `Account` (#2863 review).
@@ -283,6 +283,7 @@ export function buildKnowledgeGraph(
           type: 'sti',
           from: id,
           to:
+            resolveTarget(object.extendsQualified) ??
             resolveTarget(object.extends, objectPackageName) ??
             `${objectPackageName}#${object.extends}`,
         });
