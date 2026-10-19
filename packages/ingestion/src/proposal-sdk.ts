@@ -106,6 +106,36 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
         ]),
     ).values(),
   ];
+  const splitVariants = input.evidence.flatMap(({ evidenceId, segments }) => {
+    const pages = [
+      ...new Set(
+        segments.flatMap(({ location }) =>
+          location.kind === 'page' ? [location.page] : [],
+        ),
+      ),
+    ];
+    return pages.length
+      ? [
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['evidenceId', 'groups'],
+            properties: {
+              evidenceId: { type: 'string', enum: [evidenceId] },
+              groups: {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  type: 'array',
+                  minItems: 1,
+                  items: { type: 'integer', enum: pages },
+                },
+              },
+            },
+          },
+        ]
+      : [];
+  });
   const suggestionVariants = input.offered.map(({ handler, candidates }) => {
     const args = structuredClone(handler.argsSchema) as Record<string, unknown>;
     if (!args.properties) args.properties = {};
@@ -204,18 +234,9 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
       },
       splits: {
         type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['evidenceId', 'groups'],
-          properties: {
-            evidenceId: { type: 'string', enum: evidenceIds },
-            groups: {
-              type: 'array',
-              items: { type: 'array', items: { type: 'integer', minimum: 1 } },
-            },
-          },
-        },
+        ...(splitVariants.length
+          ? { items: { anyOf: splitVariants } }
+          : { maxItems: 0 }),
       },
     },
   };

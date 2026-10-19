@@ -122,6 +122,43 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
         properties: { kind: { type: 'string', enum: ['source'] } },
       },
     ]);
+    expect(
+      (schema.properties as Record<string, { maxItems?: number }>).splits
+        .maxItems,
+    ).toBe(0);
+  });
+
+  it('allows splits only for page locations actually extracted', () => {
+    const schema = proposalResponseSchema({
+      ...input,
+      evidence: [
+        {
+          ...input.evidence[0],
+          segments: [
+            {
+              ...input.evidence[0].segments[0],
+              location: { kind: 'page' as const, page: 7 },
+            },
+          ],
+        },
+      ],
+    });
+    const split = (
+      schema.properties as unknown as Record<
+        string,
+        { items: { anyOf: Array<{ properties: Record<string, unknown> }> } }
+      >
+    ).splits.items.anyOf[0].properties;
+    expect((split.evidenceId as { enum: string[] }).enum).toEqual([
+      'evidence-1',
+    ]);
+    expect(
+      (
+        split.groups as {
+          items: { items: { enum: number[] } };
+        }
+      ).items.items.enum,
+    ).toEqual([7]);
   });
 
   it.each([

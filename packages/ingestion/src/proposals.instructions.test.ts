@@ -8,6 +8,8 @@ describe('proposal instructions', () => {
     expect(proposalInstructions).toContain('Always include splits');
     expect(proposalInstructions).toContain('must never contain segments');
     expect(proposalInstructions).toContain('exact offered key');
+    expect(proposalInstructions).toContain('explicitly eligible page evidence');
+    expect(proposalInstructions).not.toContain('"groups":[[1],[2]]');
     expect(proposalInstructions).not.toContain('Splits are optional');
   });
 
@@ -45,5 +47,7 @@ describe('proposal instructions', () => {
     expect(instructions).toContain('"key":"opaque-candidate-key"');
     expect(instructions).toContain("candidate's id into args");
     expect(instructions).toContain('never emit a bare handlerId');
+    expect(instructions).toContain('Split eligibility: []');
+    expect(instructions).toContain('splits must be []');
   });
 });
