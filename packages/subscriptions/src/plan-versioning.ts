@@ -102,11 +102,15 @@ function persistedCreatedAt(plan: SubscriptionPlan): Date {
  *
  * - A new subscription, or a legacy row without a pin, pins the version in
  *   force at its period start (`currentPeriodStart ?? startedAt`).
- * - Moving `currentPeriodStart` is a renewal: it re-pins the version in force
- *   at the new boundary, for the (possibly changed) plan.
- * - Within an unchanged period, a different plan or version is accepted only
- *   when it is an entitlement upgrade of the frozen version, when the period
- *   no longer entitles, or through an explicit authorized replacement.
+ * - A renewal re-pins the version in force at the new boundary, for the
+ *   (possibly changed) plan. A save is a renewal only when the new period
+ *   starts at or after the stored `currentPeriodEnd` (or, without one, after
+ *   the stored start); moving the start within a paid period is not.
+ * - At creation and renewal the boundary decides the version: a caller may
+ *   name only that version, unless the save is an authorized replacement.
+ * - Within a paid period, a different plan or version is accepted only when
+ *   it is an entitlement upgrade of the frozen terms, when the period no
+ *   longer entitles, or through an explicit authorized replacement.
  *
  * A plan without versions (an unmigrated legacy plan) leaves the pin empty;
  * resolution then falls back to the live plan.
@@ -126,6 +130,11 @@ export async function pinSubscriptionPlanVersion(
     subscription.planVersionId !== (persisted?.planVersionId ?? null)
       ? subscription.planVersionId
       : replacement?.planVersionId;
+  const authorizedReason =
+    replacement?.policy === 'authorized' ? replacement.reason?.trim() : '';
+  if (replacement?.policy === 'authorized' && !authorizedReason) {
+    throw new Error('An authorized plan version replacement needs a reason');
+  }
   const pin = (
     version: SubscriptionPlanVersion | null,
     reason: PlanVersionPinReason,
@@ -136,30 +145,51 @@ export async function pinSubscriptionPlanVersion(
     subscription.planVersionPinReason = version ? reason : null;
     subscription.planVersionPinNote = version ? note : '';
   };
-  const target = async (at: Date) => {
-    const version = requested
-      ? await loadVersion(versions, requested)
-      : await versions.findInForce(subscription.planId, at);
-    if (version && version.planId !== subscription.planId) {
+  const load = async (id: string) => {
+    const version = await loadVersion(versions, id);
+    if (!version) throw new Error('Plan version is unavailable');
+    if (version.planId !== subscription.planId) {
       throw new Error('Plan version does not belong to the subscription plan');
     }
-    if (requested && !version) throw new Error('Plan version is unavailable');
     return version;
+  };
+  // Creation and renewal: the version in force at the boundary.
+  const atBoundary = async (reason: PlanVersionPinReason) => {
+    const inForce = await versions.findInForce(subscription.planId, boundary);
+    if (requested && requested !== inForce?.id) {
+      const chosen = await load(requested);
+      if (!authorizedReason) {
+        throw new Error(
+          'A period pins the plan version in force at its start; pinning ' +
+            "another version needs replacePlanVersion({ policy: 'authorized', reason }).",
+        );
+      }
+      pin(chosen, 'authorized', authorizedReason);
+      return;
+    }
+    if (authorizedReason && inForce) {
+      pin(inForce, 'authorized', authorizedReason);
+      return;
+    }
+    pin(inForce, reason);
   };
 
   if (!persisted) {
-    pin(await target(boundary), 'period_start');
+    await atBoundary('period_start');
     return;
   }
-  if (periodBoundary(persisted).getTime() !== boundary.getTime()) {
-    pin(await target(boundary), 'renewal');
+  if (isRenewal(persisted, boundary)) {
+    await atBoundary('renewal');
     return;
   }
   const planChanged = persisted.planId !== subscription.planId;
   if (!planChanged && !requested && !replacement) {
-    // A row written before versioning: pin what its period was sold under.
     if (!persisted.planVersionId) {
-      pin(await target(boundary), 'migration');
+      // A row written before versioning: pin what its period was sold under.
+      pin(
+        await versions.findInForce(subscription.planId, boundary),
+        'migration',
+      );
       return;
     }
     // Nothing moved: keep the pin and its audit trail exactly as stored.
@@ -170,32 +200,48 @@ export async function pinSubscriptionPlanVersion(
     return;
   }
 
-  const next = await target(now);
-  if (!next) {
-    pin(null, 'period_start');
-    return;
-  }
-  if (replacement?.policy === 'authorized') {
-    const reason = replacement.reason?.trim() ?? '';
-    if (!reason) {
-      throw new Error('An authorized plan version replacement needs a reason');
-    }
-    pin(next, 'authorized', reason);
+  // An in-period change: the target is the named version, else the version
+  // of the (new) plan in force now, else that plan's live terms.
+  const next = requested
+    ? await load(requested)
+    : await versions.findInForce(subscription.planId, now);
+  if (authorizedReason) {
+    pin(next, 'authorized', authorizedReason);
     return;
   }
   if (!persisted.isEntitled(now)) {
     pin(next, 'period_start');
     return;
   }
+  const target: PlanTerms | null =
+    next ??
+    (await (
+      await SubscriptionPlanCollection.create({ db: subscription.db })
+    ).get({ id: subscription.planId }, { cache: false }));
   const frozen = await frozenTerms(versions, persisted, boundary);
-  if (frozen && !isEntitlementUpgrade(frozen, next)) {
+  if (frozen && (!target || !isEntitlementUpgrade(frozen, target))) {
     throw new Error(
       'This plan change would remove entitlements from a paid period. It ' +
-        'takes effect at renewal (when currentPeriodStart moves), or through ' +
-        "replacePlanVersion({ policy: 'authorized', reason }).",
+        'takes effect at renewal (a new period starting at or after ' +
+        "currentPeriodEnd), or through replacePlanVersion({ policy: 'authorized', reason }).",
     );
   }
   pin(next, 'upgrade', replacement?.reason?.trim() ?? '');
+}
+
+/**
+ * Whether moving to `boundary` starts a new period: at or after the stored
+ * period end, or — for an open-ended row — after the stored start.
+ */
+function isRenewal(persisted: TenantSubscription, boundary: Date): boolean {
+  const previous = periodBoundary(persisted).getTime();
+  if (boundary.getTime() === previous) return false;
+  const end = persisted.currentPeriodEnd
+    ? new Date(persisted.currentPeriodEnd).getTime()
+    : null;
+  return end === null
+    ? boundary.getTime() > previous
+    : boundary.getTime() >= end;
 }
 
 /** The terms the persisted subscription's current period paid for. */
@@ -220,11 +266,7 @@ async function loadVersion(
   versions: SubscriptionPlanVersionCollection,
   id: string,
 ): Promise<SubscriptionPlanVersion | null> {
-  const scoped = await versions.get({ id }, { cache: false });
-  if (scoped) return scoped;
-  return withSystemContext(() =>
-    versions.get({ id, tenantId: null }, { cache: false }),
-  );
+  return versions.findVisibleById(id);
 }
 
 /** Start of a subscription's current period. */

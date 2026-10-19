@@ -107,6 +107,14 @@ export class TenantSubscription extends SmrtObject {
   planVersionPinReason: PlanVersionPinReason | null = null;
   /** Caller-supplied reason for an `upgrade`/`authorized` replacement. */
   planVersionPinNote: string = '';
+  /**
+   * Set when the row was canceled while it entitled (`active`/`trialing`
+   * within its period), so the paid period runs to `currentPeriodEnd`.
+   * Derived on save from the stored row and never taken from the caller: a
+   * subscription canceled while `incomplete`, `past_due` or `unpaid` (for
+   * example a provider's `incomplete_expired`) entitles nothing.
+   */
+  retainsPaidPeriod: boolean = false;
   externalProvider: string | null = null;
   stripeCustomerId: string = '';
   stripeSubscriptionId: string = '';
@@ -154,6 +162,8 @@ export class TenantSubscription extends SmrtObject {
       this.planVersionPinReason = options.planVersionPinReason;
     if (options.planVersionPinNote !== undefined)
       this.planVersionPinNote = options.planVersionPinNote;
+    if (options.retainsPaidPeriod !== undefined)
+      this.retainsPaidPeriod = options.retainsPaidPeriod;
     if (options.externalProvider !== undefined) {
       this.externalProvider = options.externalProvider;
     }
@@ -246,6 +256,16 @@ export class TenantSubscription extends SmrtObject {
               limit: 1,
             })
           )[0] ?? null));
+    if (this.status !== 'canceled') {
+      this.retainsPaidPeriod = false;
+    } else if (persisted?.status === 'canceled') {
+      this.retainsPaidPeriod = persisted.retainsPaidPeriod;
+    } else {
+      this.retainsPaidPeriod =
+        persisted !== null &&
+        (persisted.status === 'active' || persisted.status === 'trialing') &&
+        persisted.isEntitled();
+    }
     await pinSubscriptionPlanVersion(this, persisted, replacement);
   }
 
@@ -278,17 +298,18 @@ export class TenantSubscription extends SmrtObject {
 
   /**
    * Whether the subscription grants entitlements at `now`. Active and
-   * trialing subscriptions entitle until `currentPeriodEnd`. A canceled
-   * subscription keeps its paid period: it entitles until `currentPeriodEnd`
-   * and never without one (#4032). For an immediate cancellation (for
-   * example with a refund) set `currentPeriodEnd` to the cancellation time.
+   * trialing subscriptions entitle until `currentPeriodEnd`. A subscription
+   * canceled while it entitled keeps its paid period ({@link
+   * retainsPaidPeriod}) until `currentPeriodEnd`, never without one (#4032).
+   * For an immediate cancellation (for example with a refund) set
+   * `currentPeriodEnd` to the cancellation time.
    */
   isEntitled(now = new Date()): boolean {
     const end = this.currentPeriodEnd
       ? new Date(this.currentPeriodEnd).getTime()
       : null;
     if (this.status === 'canceled') {
-      return end !== null && now.getTime() <= end;
+      return this.retainsPaidPeriod && end !== null && now.getTime() <= end;
     }
     if (this.status !== 'active' && this.status !== 'trialing') {
       return false;

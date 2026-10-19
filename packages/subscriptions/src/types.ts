@@ -29,7 +29,7 @@ export type PricingMode = 'free' | 'fixed' | 'pay_what_you_can';
  * - `upgrade`: replaced in-period by a version whose entitlements cover the
  *   frozen one ({@link isEntitlementUpgrade}).
  * - `authorized`: replaced in-period through an explicit, reasoned
- *   `TenantSubscription.authorizePlanVersionReplacement()` call.
+ *   `TenantSubscription.replacePlanVersion({ policy: 'authorized', reason })` call.
  * - `migration`: pinned by `migrateSubscriptionPlanVersions()`.
  */
 export type PlanVersionPinReason =
@@ -332,6 +332,7 @@ export interface TenantSubscriptionOptions extends SmrtObjectOptions {
   planVersionPinnedAt?: Date | null;
   planVersionPinReason?: PlanVersionPinReason | null;
   planVersionPinNote?: string;
+  retainsPaidPeriod?: boolean;
   externalProvider?: string | null;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;

@@ -14,6 +14,17 @@ import { SubscriptionPlanVersion } from '../models/SubscriptionPlanVersion.js';
 export class SubscriptionPlanVersionCollection extends SmrtCollection<SubscriptionPlanVersion> {
   static readonly _itemClass = SubscriptionPlanVersion;
 
+  /**
+   * One version by id, through the caller's tenancy plus the bounded
+   * fallback to legacy global plans' versions.
+   */
+  async findVisibleById(id: string): Promise<SubscriptionPlanVersion | null> {
+    const rows = await this.withGlobalFallback((where) =>
+      this.list({ where: { ...where, id }, limit: 1 }),
+    );
+    return rows[0] ?? null;
+  }
+
   /** Every version of a plan, oldest first. */
   async listForPlan(planId: string): Promise<SubscriptionPlanVersion[]> {
     return this.withGlobalFallback((where) =>

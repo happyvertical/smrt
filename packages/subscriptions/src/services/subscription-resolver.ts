@@ -120,7 +120,12 @@ export class SubscriptionResolver {
       plans,
       subscriptions,
       usage,
-      planVersions,
+      // Pinned versions of legacy global plans stay readable under a tenant
+      // context through the collection's bounded global fallback.
+      planVersions: {
+        get: ({ id }) => planVersions.findVisibleById(id),
+        findInForce: (planId, at) => planVersions.findInForce(planId, at),
+      },
     });
   }
 

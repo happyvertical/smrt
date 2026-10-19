@@ -40,7 +40,8 @@ const PRICING_MODES: PricingMode[] = ['free', 'fixed', 'pay_what_you_can'];
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  conflictColumns: ['tenant_id', 'plan_id', 'version'],
+  // plan_id is globally unique, so this key needs no (nullable) tenant_id.
+  conflictColumns: ['plan_id', 'version'],
   hooks: { beforeDelete: 'refuseDelete' },
 })
 export class SubscriptionPlanVersion extends SmrtObject implements PlanTerms {

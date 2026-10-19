@@ -1,3 +1,8 @@
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { describe, expect, it } from 'vitest';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { SubscriptionPlanVersionCollection } from '../collections/SubscriptionPlanVersionCollection.js';
@@ -6,7 +11,7 @@ import { SubscriptionPlanVersion } from '../models/SubscriptionPlanVersion.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
 import { isEntitlementUpgrade } from '../plan-terms.js';
 import { SubscriptionResolver } from '../services/subscription-resolver.js';
-import type { PlanTerms, PlanThreshold } from '../types.js';
+import type { PlanTerms, PlanThreshold, Subscriber } from '../types.js';
 import {
   NORTH,
   runPlanVersionScenario,
@@ -73,7 +78,11 @@ async function rootCause(run: () => Promise<unknown>): Promise<string> {
   return 'resolved';
 }
 
-const rio = { kind: 'external', tenantId: NORTH, externalId: 'member:rio' };
+const rio: Subscriber = {
+  kind: 'external',
+  tenantId: NORTH,
+  externalId: 'member:rio',
+};
 
 describe('effective-dated plan versions (#4032)', () => {
   it('runs the worker co-op amendment/renewal/cancellation scenario on SQLite', async () => {
@@ -251,6 +260,195 @@ describe('effective-dated plan versions (#4032)', () => {
       expect(
         (await subscriptions.get({ id: String(subscription.id) }))?.planId,
       ).toBe(plan.id);
+    } finally {
+      await plans.db.close?.();
+    }
+  });
+
+  it('treats only a period starting at or after the paid end as a renewal', async () => {
+    const { plans, versions, subscriptions, plan, subscription } =
+      await fixture();
+    try {
+      const v1 = await versions.findLatest(String(plan.id), NORTH);
+      const observer = await plans.create({
+        tenantId: NORTH,
+        planKey: 'observer',
+        name: 'Observer',
+      });
+      plan.setFeatureGrants(['coop:vote']);
+      const v2 = await plan.publishTerms();
+      // Moving the start inside the paid period, forward or back, is not a
+      // renewal and cannot carry a downgrade.
+      for (const start of [at(1), at(-20)]) {
+        expect(
+          await rootCause(() =>
+            subscriptions.update(String(subscription.id), {
+              currentPeriodStart: start,
+              planId: String(observer.id),
+            }),
+          ),
+        ).toMatch(/remove entitlements from a paid period/);
+      }
+      const moved = await subscriptions.update(String(subscription.id), {
+        currentPeriodStart: at(1),
+      });
+      expect(moved?.planVersionId).toBe(v1?.id);
+      // A real renewal re-pins the boundary's version even when the caller
+      // echoes the stale pin back …
+      const stored = await subscriptions.get(
+        { id: String(subscription.id) },
+        { cache: false },
+      );
+      if (!stored) throw new Error('missing subscription');
+      stored.currentPeriodStart = at(25);
+      stored.currentPeriodEnd = at(55);
+      stored.planVersionId = String(v1?.id);
+      await stored.save();
+      expect(stored).toMatchObject({
+        planVersionId: v2.id,
+        planVersionPinReason: 'renewal',
+      });
+      // … and only an authorized replacement grandfathers the old terms.
+      await stored.replacePlanVersion({
+        policy: 'authorized',
+        reason: 'founding member keeps original terms',
+        planVersionId: String(v1?.id),
+      });
+      expect(stored).toMatchObject({
+        planVersionId: v1?.id,
+        planVersionPinReason: 'authorized',
+      });
+      expect(v2.version).toBe(2);
+      // A new subscription cannot name a version the boundary does not pick.
+      expect(
+        await rootCause(() =>
+          subscriptions.create({
+            tenantId: NORTH,
+            subscriberKind: 'external',
+            subscriberExternalId: 'member:new',
+            planId: String(plan.id),
+            planVersionId: String(v1?.id),
+            status: 'active',
+            currentPeriodStart: new Date(),
+          }),
+        ),
+      ).toMatch(/pins the plan version in force at its start/);
+    } finally {
+      await plans.db.close?.();
+    }
+  });
+
+  it('refuses a mid-period switch to a smaller unversioned legacy plan', async () => {
+    const { plans, subscriptions, subscription } = await fixture();
+    try {
+      const legacy = await plans.create({
+        tenantId: NORTH,
+        planKey: 'legacy-observer',
+        name: 'Legacy observer',
+      });
+      await plans.db.query(
+        `DELETE FROM "_smrt_subscription_plan_versions" WHERE plan_id = '${legacy.id}'`,
+      );
+      expect(
+        await rootCause(() =>
+          subscriptions.update(String(subscription.id), {
+            planId: String(legacy.id),
+          }),
+        ),
+      ).toMatch(/remove entitlements from a paid period/);
+    } finally {
+      await plans.db.close?.();
+    }
+  });
+
+  it('only keeps a paid period for a subscription canceled while entitled', async () => {
+    const { plans, subscriptions, resolver, plan, subscription } =
+      await fixture();
+    try {
+      const canceled = await subscriptions.update(String(subscription.id), {
+        status: 'canceled',
+        canceledAt: new Date(),
+      });
+      expect(canceled?.retainsPaidPeriod).toBe(true);
+      expect(
+        (await resolver.resolveEntitlements(rio, { now: at(10) })).allowed,
+      ).toBe(true);
+      for (const prior of ['incomplete', 'past_due', 'unpaid'] as const) {
+        const row = await subscriptions.create({
+          tenantId: NORTH,
+          subscriberKind: 'external',
+          subscriberExternalId: `member:${prior}`,
+          planId: String(plan.id),
+          status: prior,
+          currentPeriodStart: at(-1),
+          currentPeriodEnd: at(29),
+        });
+        const expired = await subscriptions.update(String(row.id), {
+          status: 'canceled',
+          canceledAt: new Date(),
+        });
+        expect(expired?.retainsPaidPeriod).toBe(false);
+        expect(expired?.isEntitled(at(1))).toBe(false);
+        // The flag is derived, never taken from the caller.
+        const forged = await subscriptions.update(String(row.id), {
+          retainsPaidPeriod: true,
+        });
+        expect(forged?.retainsPaidPeriod).toBe(false);
+      }
+      // Created already canceled: nothing to keep.
+      const born = await subscriptions.create({
+        tenantId: NORTH,
+        subscriberKind: 'external',
+        subscriberExternalId: 'member:born-canceled',
+        planId: String(plan.id),
+        status: 'canceled',
+        retainsPaidPeriod: true,
+        currentPeriodEnd: at(29),
+      });
+      expect(born.isEntitled(at(1))).toBe(false);
+    } finally {
+      await plans.db.close?.();
+    }
+  });
+
+  it('resolves a pinned version of a legacy global plan under tenant context', async () => {
+    const plans = await SubscriptionPlanCollection.create({
+      db: { type: 'sqlite', url: ':memory:' },
+    });
+    const subscriptions = await TenantSubscriptionCollection.create({
+      db: plans.db,
+    });
+    try {
+      const global = await plans.create({
+        planKey: 'network-supporter',
+        name: 'Network supporter',
+        features: JSON.stringify(['coop:directory']),
+      });
+      const member = await subscriptions.create({
+        tenantId: NORTH,
+        subscriberKind: 'external',
+        subscriberExternalId: 'member:rio',
+        planId: String(global.id),
+        status: 'active',
+        currentPeriodStart: at(-1),
+        currentPeriodEnd: at(29),
+      });
+      expect(member.planVersionId).not.toBeNull();
+      enableTenancy();
+      try {
+        await withTenant({ tenantId: NORTH }, async () => {
+          const resolver = await SubscriptionResolver.create({ db: plans.db });
+          expect(
+            await resolver.resolveEntitlements(rio, { now: at(1) }),
+          ).toMatchObject({
+            allowed: true,
+            planVersion: 1,
+            featureKeys: ['coop:directory'],
+          });
+        });
+      } finally {
+        disableTenancy();
+      }
     } finally {
       await plans.db.close?.();
     }

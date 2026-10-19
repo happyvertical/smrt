@@ -129,9 +129,14 @@ feature grants and thresholds — are published as immutable
   `planVersionPinNote` audit it). It is maintained on every save:
   - a new subscription pins the version in force at its period start
     (`currentPeriodStart ?? startedAt`);
-  - **renewal** — any save that moves `currentPeriodStart` — re-pins the
-    version in force at the new boundary, for the plan the row now names. A
-    downgrade or a plan change that removes features is applied this way;
+  - **renewal** — a save whose new `currentPeriodStart` is at or after the
+    stored `currentPeriodEnd` (or, for an open-ended row, after the stored
+    start) — re-pins the version in force at the new boundary, for the plan
+    the row now names. A downgrade or a plan change that removes features is
+    applied this way. Moving the start within a paid period is not a renewal;
+  - at creation and renewal the boundary decides the version: naming any
+    other `planVersionId` (for example to grandfather an import) needs an
+    authorized replacement;
   - within an unchanged period, a different plan or version is accepted only
     when it is an **upgrade** (`isEntitlementUpgrade()`: every enabled feature
     stays enabled and no threshold is added, lowered or made stricter), or
@@ -140,10 +145,13 @@ feature grants and thresholds — are published as immutable
     explicit, audited escape hatch for an approved in-period downgrade or
     correction. `policy: 'upgrade'` applies an amended version of the same
     plan mid-period when it only adds.
-- **Cancellation** keeps the paid period: a `canceled` subscription entitles
-  until `currentPeriodEnd`, then resolves nothing. For an immediate
-  cancellation (e.g. with a refund) set `currentPeriodEnd` to the
-  cancellation time.
+- **Cancellation** keeps the paid period: a subscription canceled while it
+  entitled (`active`/`trialing` within its period) records
+  `retainsPaidPeriod` and entitles until `currentPeriodEnd`, then resolves
+  nothing. A subscription canceled from `incomplete`, `past_due` or `unpaid`
+  (for example a provider's `incomplete_expired`) entitles nothing. For an
+  immediate cancellation of a paid period (e.g. with a refund) set
+  `currentPeriodEnd` to the cancellation time.
 
 `SubscriptionResolver` resolves entitlements at `options.now` from the pinned
 version, not the live plan: editing, archiving, or removing a feature from a
@@ -159,14 +167,19 @@ live-plan behavior.
 plan.setFeatureGrants(['coop:vote']);
 await plan.save(); // publishes version 2, effective now
 
-// Schedule a price change for the next cycle.
-plan.priceAmount = 1500;
+// Schedule an entitlement change from a future date.
+plan.setFeatureGrants(['coop:vote', 'coop:shift-swap']);
 await plan.publishTerms({ effectiveFrom: new Date('2027-01-01T00:00:00Z') });
 
 // Resolve what a member is entitled to at an instant.
 const result = await resolver.resolveEntitlements(subscriber, { now });
 result.planVersion; // the version their current period paid for
 ```
+
+The plan row always shows the latest published terms, including a scheduled
+version's. Hosts that charge from the plan row must price from the pinned
+version instead; commerce period-close still reads the live row until #4146,
+so do not schedule a price change ahead of time while relying on it.
 
 The plan row is written before its version. If publishing fails, the save
 rejects with the row already updated and the next save publishes the missing
@@ -178,8 +191,10 @@ atomic.
 1. Run the ordinary manifest migration (`smrt db:migrate`). It adds the
    `_smrt_subscription_plan_versions` table and the nullable `plan_version_id`,
    `plan_version_pinned_at`, `plan_version_pin_reason` and
-   `plan_version_pin_note` columns on `_smrt_tenant_subscriptions`. Nothing is
-   dropped or rewritten.
+   `plan_version_pin_note` and `retains_paid_period` columns on
+   `_smrt_tenant_subscriptions`. Nothing is dropped or rewritten. Existing
+   `canceled` rows default to `retains_paid_period = false`, so they stay
+   unentitled exactly as before.
 2. Run `migrateSubscriptionPlanVersions(db)` once. Every plan without versions
    gets version 1 — its current terms, effective from the plan's creation —
    and every unpinned subscription is pinned to it with
