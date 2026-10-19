@@ -140,4 +140,49 @@ describe('CatalogSyncService', () => {
     expect(current).toMatchObject({ complete: true });
     expect(current).not.toHaveProperty('runId');
   });
+
+  it('returns a persisted paused checkpoint for unavailable configuration without looping', async () => {
+    const state = store();
+    const adapter = {
+      enumerate: vi.fn(async () => ({
+        records: [],
+        complete: false,
+        paused: true,
+        exclusions: [
+          { code: 'drive_not_configured', message: 'Drive is not configured.' },
+        ],
+      })),
+    };
+    const result = await new CatalogSyncService(state).sync('drive', adapter);
+    expect(result).toMatchObject({ complete: false, paused: true });
+    expect(adapter.enumerate).toHaveBeenCalledOnce();
+    expect(state.withdrawUnseen).not.toHaveBeenCalled();
+    expect(state.saved.at(-1)).toMatchObject({ paused: true, complete: false });
+  });
+
+  it('pauses a cursor cycle rather than repeatedly fetching a partial page', async () => {
+    const state = store();
+    const adapter = {
+      enumerate: vi
+        .fn()
+        .mockResolvedValueOnce({
+          records: [record('one')],
+          nextCursor: 'same',
+          complete: false,
+        })
+        .mockResolvedValueOnce({
+          records: [record('two')],
+          nextCursor: 'same',
+          complete: false,
+        }),
+    };
+    const result = await new CatalogSyncService(state).sync('im', adapter);
+    expect(result).toMatchObject({
+      complete: false,
+      paused: true,
+      pauseReason: expect.stringContaining('did not advance'),
+    });
+    expect(adapter.enumerate).toHaveBeenCalledTimes(2);
+    expect(state.withdrawUnseen).not.toHaveBeenCalled();
+  });
 });

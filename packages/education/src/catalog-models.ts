@@ -48,6 +48,8 @@ export class CatalogSyncState extends SmrtObject {
   /** Persists across interrupted pages so terminal withdrawal is safe on resume. */
   runId = '';
   complete = false;
+  paused = false;
+  pauseReason = '';
   importedCount = 0;
   failures = '[]';
   lastSuccessfulAt = '';

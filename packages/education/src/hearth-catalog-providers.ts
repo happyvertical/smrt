@@ -36,18 +36,28 @@ export interface ProviderMetadataResponse {
 }
 export type ProviderMetadataFetch = (
   url: string,
-  options: { redirect: 'error'; headers: { accept: string } },
+  options: {
+    redirect: 'error';
+    headers: { accept: string };
+    signal?: AbortSignal;
+  },
 ) => Promise<ProviderMetadataResponse>;
+
+const DEFAULT_METADATA_TIMEOUT_MS = 10_000;
 
 export interface PublicIllustrativeMathematicsK5Config {
   /** The official K-5 curriculum index; defaults to the published index. */
   indexUrl?: string;
   fetch: ProviderMetadataFetch;
+  /** Bounds both the provider request and response-body read. */
+  timeoutMs?: number;
 }
 export interface OerCommonsRssConfig {
   /** An ISKME/OER Commons-approved RSS or DC feed URL for an agreed collection. */
   feedUrl: string;
   fetch: ProviderMetadataFetch;
+  /** Bounds both the provider request and response-body read. */
+  timeoutMs?: number;
   /** Only set after the feed owner confirms this snapshot is terminal for its scope. */
   terminalSnapshot?: true;
 }
@@ -82,6 +92,7 @@ function unavailablePage(providerId: HearthCatalogProviderId): CatalogSyncPage {
   return {
     records: [],
     complete: false,
+    paused: true,
     exclusions: [
       {
         code: 'provider_feed_not_configured',
@@ -116,14 +127,39 @@ async function fetchMetadata(
   fetch: ProviderMetadataFetch,
   url: string,
   accept: string,
+  timeoutMs = DEFAULT_METADATA_TIMEOUT_MS,
 ): Promise<{ body: string; revision: string } | CatalogSyncPage> {
+  const controller = new AbortController();
+  const bounded = async <T>(operation: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<T>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Provider metadata request timed out.'));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
   let response: ProviderMetadataResponse;
   try {
-    response = await fetch(url, { redirect: 'error', headers: { accept } });
+    response = await bounded(
+      fetch(url, {
+        redirect: 'error',
+        headers: { accept },
+        signal: controller.signal,
+      }),
+    );
   } catch (error) {
     return {
       records: [],
       complete: false,
+      paused: true,
       exclusions: [
         {
           code: 'provider_feed_failed',
@@ -168,7 +204,23 @@ async function fetchMetadata(
         },
       ],
     };
-  const body = await response.text();
+  let body: string;
+  try {
+    body = await bounded(response.text());
+  } catch (error) {
+    return {
+      records: [],
+      complete: false,
+      paused: true,
+      exclusions: [
+        {
+          code: 'provider_feed_failed',
+          message:
+            error instanceof Error ? error.message : 'Metadata read failed.',
+        },
+      ],
+    };
+  }
   if (new TextEncoder().encode(body).byteLength > 2_000_000)
     return {
       records: [],
@@ -323,6 +375,7 @@ export function createPublicIllustrativeMathematicsK5Adapter(
         config.fetch,
         url,
         'text/html,application/xhtml+xml',
+        config.timeoutMs,
       );
       if ('complete' in result) return result;
       try {
@@ -396,6 +449,7 @@ export function createOerCommonsRssAdapter(
         config.fetch,
         url,
         'application/rss+xml, application/xml, text/xml',
+        config.timeoutMs,
       );
       if ('complete' in result) return result;
       try {

@@ -40,6 +40,7 @@ export class CatalogSyncService {
   constructor(
     private readonly store: CatalogSyncStore,
     private readonly retries = 2,
+    private readonly maxPages = 100,
   ) {}
 
   async sync(
@@ -59,7 +60,9 @@ export class CatalogSyncService {
       runId,
     };
     let withdrawnCount = 0;
-    for (;;) {
+    const cursors = new Set<string>();
+    if (checkpoint.cursor) cursors.add(checkpoint.cursor);
+    for (let pageCount = 0; pageCount < this.maxPages; pageCount++) {
       let page:
         | Awaited<ReturnType<CatalogSyncAdapter['enumerate']>>
         | undefined;
@@ -88,9 +91,15 @@ export class CatalogSyncService {
         await this.store.saveCheckpoint(checkpoint);
         return { ...checkpoint, withdrawnCount };
       }
+      const previousCursor = checkpoint.cursor;
       if (page.complete && page.nextCursor)
         throw new Error('A terminal catalog page cannot have a next cursor.');
-      if (!page.complete && !page.nextCursor)
+      if (
+        !page.complete &&
+        !page.nextCursor &&
+        !page.paused &&
+        !page.exclusions?.length
+      )
         throw new Error('A partial catalog page requires a next cursor.');
       for (const record of page.records) {
         if (
@@ -105,12 +114,43 @@ export class CatalogSyncService {
       }
       checkpoint = {
         ...checkpoint,
-        cursor: page.nextCursor,
+        cursor: page.nextCursor ?? (page.complete ? undefined : previousCursor),
         complete: page.complete,
+        paused: false,
+        pauseReason: undefined,
         importedCount: checkpoint.importedCount + page.records.length,
         failures: [...checkpoint.failures, ...(page.exclusions ?? [])],
       };
+      const pause = (reason: string, code: string): CatalogSyncReport => {
+        checkpoint = {
+          ...checkpoint,
+          complete: false,
+          paused: true,
+          pauseReason: reason,
+          failures: [
+            ...checkpoint.failures,
+            { cursor: checkpoint.cursor, code, message: reason },
+          ],
+        };
+        return { ...checkpoint, withdrawnCount };
+      };
+      if (page.paused || (!page.nextCursor && !page.complete)) {
+        const reason =
+          page.exclusions?.[0]?.message ?? 'Catalog source is paused.';
+        const report = pause(reason, page.exclusions?.[0]?.code ?? 'paused');
+        await this.store.saveCheckpoint(checkpoint);
+        return report;
+      }
       if (!page.complete) {
+        if (checkpoint.cursor && cursors.has(checkpoint.cursor)) {
+          const report = pause(
+            'Catalog source did not advance its cursor.',
+            'cursor-cycle',
+          );
+          await this.store.saveCheckpoint(checkpoint);
+          return report;
+        }
+        if (checkpoint.cursor) cursors.add(checkpoint.cursor);
         await this.store.saveCheckpoint(checkpoint);
         continue;
       }
@@ -125,5 +165,21 @@ export class CatalogSyncService {
       await this.store.saveCheckpoint(checkpoint);
       return { ...checkpoint, withdrawnCount };
     }
+    checkpoint = {
+      ...checkpoint,
+      complete: false,
+      paused: true,
+      pauseReason: 'Catalog page limit reached; resume in a later invocation.',
+      failures: [
+        ...checkpoint.failures,
+        {
+          cursor: checkpoint.cursor,
+          code: 'page-limit',
+          message: 'Catalog page limit reached; resume in a later invocation.',
+        },
+      ],
+    };
+    await this.store.saveCheckpoint(checkpoint);
+    return { ...checkpoint, withdrawnCount };
   }
 }

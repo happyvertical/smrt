@@ -172,6 +172,25 @@ describe('Hearth catalog providers', () => {
     });
   });
 
+  it('bounds provider fetch and body reads as a paused incomplete page', async () => {
+    let signal: AbortSignal | undefined;
+    const fetch = async (_url: string, options: { signal?: AbortSignal }) => {
+      signal = options.signal;
+      return await new Promise<never>(() => {});
+    };
+    await expect(
+      createPublicIllustrativeMathematicsK5Adapter({
+        fetch,
+        timeoutMs: 1,
+      }).enumerate({ checkpoint }),
+    ).resolves.toMatchObject({
+      complete: false,
+      paused: true,
+      exclusions: [{ code: 'provider_feed_failed' }],
+    });
+    expect(signal?.aborted).toBe(true);
+  });
+
   it('makes core import pointers available but never imports all shared themes', async () => {
     const calls: unknown[] = [];
     const service = {

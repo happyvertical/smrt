@@ -57,6 +57,8 @@ export interface CatalogSyncPage {
   records: CatalogSourceRecord[];
   nextCursor?: string;
   complete: boolean;
+  /** Honest non-terminal stop, e.g. missing source authorization. */
+  paused?: boolean;
   exclusions?: CatalogSyncFailure[];
 }
 
@@ -67,6 +69,8 @@ export interface CatalogSyncCheckpoint {
   cursor?: string;
   lastSuccessfulAt?: string;
   complete: boolean;
+  paused?: boolean;
+  pauseReason?: string;
   importedCount: number;
   failures: CatalogSyncFailure[];
 }

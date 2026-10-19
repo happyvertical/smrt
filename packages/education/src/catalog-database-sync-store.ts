@@ -18,6 +18,8 @@ function checkpoint(row: {
   runId: string;
   cursor: string;
   complete: boolean;
+  paused: boolean;
+  pauseReason: string;
   importedCount: number;
   failures: string;
   lastSuccessfulAt: string;
@@ -40,6 +42,8 @@ function checkpoint(row: {
     ...(row.runId ? { runId: row.runId } : {}),
     ...(row.cursor ? { cursor: row.cursor } : {}),
     complete: row.complete,
+    ...(row.paused ? { paused: true } : {}),
+    ...(row.pauseReason ? { pauseReason: row.pauseReason } : {}),
     importedCount: row.importedCount,
     failures,
     ...(row.lastSuccessfulAt ? { lastSuccessfulAt: row.lastSuccessfulAt } : {}),
@@ -73,6 +77,8 @@ export class CatalogDatabaseSyncStore implements CatalogSyncStore {
       runId: value.runId ?? '',
       cursor: value.cursor ?? '',
       complete: value.complete,
+      paused: value.paused ?? false,
+      pauseReason: value.pauseReason ?? '',
       importedCount: value.importedCount,
       failures: json(value.failures),
       lastSuccessfulAt: value.lastSuccessfulAt ?? '',
