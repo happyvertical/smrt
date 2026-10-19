@@ -15,7 +15,10 @@ import type { LearnerRequest } from './learner-service.js';
 export interface CatalogMaterializationStore {
   getResource(
     resourceId: string,
-  ): Promise<(CatalogSourceRecord & { id: string }) | undefined>;
+  ): Promise<
+    | (CatalogSourceRecord & { id: string; withdrawnAt?: Date | null })
+    | undefined
+  >;
   getAcquisition(input: {
     tenantId: string;
     acquisitionId: string;
@@ -133,6 +136,8 @@ export class CatalogMaterializationService {
     const resource = await this.store.getResource(acquisition.resourceId);
     if (!resource || resource.revision !== acquisition.revision)
       throw new Error('Pinned catalog resource revision was not found.');
+    if (resource.withdrawnAt)
+      throw new Error('Withdrawn catalog resource cannot be materialized.');
     // A teacher may inspect restricted metadata, but this learner-material
     // workflow never promotes it into a course, printable, or asset link.
     if (resource.visibility === 'teacher')

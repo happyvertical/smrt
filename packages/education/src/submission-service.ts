@@ -417,10 +417,25 @@ export class SubmissionService extends LearnerService {
               { id: binding.submissionId, tenantId: request.tenantId },
               { cache: false },
             )
-          : undefined;
+          : await submissions.get(
+              {
+                tenantId: request.tenantId,
+                intakeItemId: request.intake.intakeItemId,
+              },
+              { cache: false },
+            );
         if (binding && !intake)
           throw new Error('Submission intake binding is corrupt');
         if (intake) {
+          // Backfill a legacy pre-binding receipt atomically before returning
+          // it. A conflicting winner fails closed instead of rebinding it.
+          if (!binding)
+            await bindings.create({
+              tenantId: request.tenantId,
+              intakeItemId: request.intake.intakeItemId,
+              submissionId: String(intake.id),
+              _insertOnly: true,
+            });
           if (
             intake.kind !== kind ||
             intake.progressId !== String(progress.id) ||

@@ -106,6 +106,31 @@ describe('GoogleDriveCurriculumAdapter', () => {
     expect(drive.acquireById).not.toHaveBeenCalled();
   });
 
+  it('classifies common answer and teacher name variants, including inherited folders', async () => {
+    const drive = client({
+      'root:': [
+        folder('answers', 'Answer_Key', ['root']),
+        file('a', 'Answers.pdf', ['root']),
+        file('b', 'TeachersGuide.pdf', ['root']),
+        file('c', 'Educators.pdf', ['root']),
+      ],
+      'answers:': [file('d', 'worksheet.pdf', ['answers'])],
+    });
+    const adapter = new GoogleDriveCurriculumAdapter(drive, {
+      roots: [{ id: 'root' }],
+    });
+    const page = await adapter.discover({
+      roots: [{ id: 'root' }],
+      pageSize: 100,
+    });
+    expect(
+      page.records.every((record) => record.visibility === 'teacher'),
+    ).toBe(true);
+    expect(
+      page.records.find((record) => record.stableId === 'answers')?.visibility,
+    ).toBe('teacher');
+  });
+
   it('deduplicates duplicate names and roots by stable Drive ID', async () => {
     const drive = client({
       'root:': [

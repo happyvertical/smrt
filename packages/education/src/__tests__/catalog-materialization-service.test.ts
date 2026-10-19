@@ -165,6 +165,19 @@ describe('CatalogMaterializationService', () => {
     expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
   });
 
+  it('rejects a currently withdrawn resource before private side effects', async () => {
+    const { service: materializer, storage } = service({
+      getResource: vi.fn(async () => ({
+        ...resource,
+        withdrawnAt: new Date(),
+      })),
+    });
+    await withTenant({ tenantId: 'tenant', userId: 'guardian' }, async () =>
+      expect(materializer.materialize(request)).rejects.toThrow('Withdrawn'),
+    );
+    expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
+  });
+
   it('requires the pinned source revision before copying bytes', async () => {
     const { service: materializer, storage } = service({
       getResource: vi.fn(async () => ({ ...resource, revision: 'r2' })),

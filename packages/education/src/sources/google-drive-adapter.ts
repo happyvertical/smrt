@@ -149,9 +149,12 @@ function classify(
   name: string,
   inherited: 'catalog' | 'teacher',
 ): 'catalog' | 'teacher' {
-  const normalized = name.toLowerCase();
-  if (/\b(answer|solutions?|key)\b/.test(normalized)) return 'teacher';
-  if (/\b(teacher|educator|instructor|facilitator)\b/.test(normalized))
+  const normalized = name
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_./-]+/g, ' ')
+    .toLowerCase();
+  if (/\b(answers?|solutions?|keys?)\b/.test(normalized)) return 'teacher';
+  if (/\b(teachers?|educators?|instructors?|facilitators?)\b/.test(normalized))
     return 'teacher';
   return inherited;
 }
