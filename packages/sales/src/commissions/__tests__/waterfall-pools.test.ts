@@ -485,6 +485,43 @@ describe('waterfall pool recipients (#3834)', () => {
     ).toThrow(/total weight exceeds/);
   });
 
+  it('refuses pool snapshots whose weighting disagrees with the plan step', async () => {
+    const prepared = await prepareWaterfallPools(farmPlan(), sale(10_000), {
+      resolver: registry(),
+      poolMembers: members(),
+      metricProvider: metrics(kgDelivered),
+    });
+    // Metric-weighted inputs cannot drive an equal-weight step...
+    expect(() =>
+      calculateWaterfall(farmPlan({}), sale(10_000), {
+        resolver: registry(),
+        pools: prepared,
+      }),
+    ).toThrow(/uses metric "kg_delivered" but the plan step declares null/);
+    // ...and equal-weight inputs cannot stand in for a named metric.
+    const equal = await prepareWaterfallPools(farmPlan({}), sale(10_000), {
+      resolver: registry(),
+      poolMembers: members(),
+    });
+    expect(() =>
+      calculateWaterfall(farmPlan(), sale(10_000), {
+        resolver: registry(),
+        pools: equal,
+      }),
+    ).toThrow(/uses metric null but the plan step declares "kg_delivered"/);
+    // Frozen replay evidence is held to the same rule.
+    const first = calculateWaterfall(farmPlan(), sale(10_000), {
+      resolver: registry(),
+      pools: prepared,
+    });
+    const frozen = structuredClone(first.trace.frozenInputs);
+    if (!frozen.poolsByStep) throw new Error('expected pools');
+    frozen.poolsByStep.growers.metric = 'items_published';
+    expect(() =>
+      calculateWaterfall(farmPlan(), sale(10_000), { frozenInputs: frozen }),
+    ).toThrow(/uses metric "items_published"/);
+  });
+
   it('validates pool options at plan validation and activation', () => {
     const bad = (pool: unknown) => {
       const plan = farmPlan();

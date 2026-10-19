@@ -408,6 +408,7 @@ function resolvePoolStep(
       throw new Error(
         `Waterfall frozen pool snapshot for step '${step.key}' does not match its frozen recipient`,
       );
+    assertSnapshotMetric(step, snapshot);
     return { recipient: freezeRecipient(recipient), snapshot };
   }
   if (!options.pools || !Object.hasOwn(options.pools, step.key))
@@ -416,6 +417,7 @@ function resolvePoolStep(
     );
   const prepared = options.pools[step.key];
   const snapshot = prepared ? normalizePoolSnapshot(prepared, step.key) : null;
+  if (snapshot) assertSnapshotMetric(step, snapshot);
   const recipient = snapshot ? freezeRecipient(snapshot.pool) : null;
   Object.defineProperty(frozen.recipientByStep, step.key, {
     value: recipient,
@@ -425,6 +427,18 @@ function resolvePoolStep(
   });
   if (snapshot) poolsByStep[step.key] = snapshot;
   return { recipient, snapshot };
+}
+
+/** A snapshot may only carry the weighting the plan step declares. */
+function assertSnapshotMetric(
+  step: WaterfallStep,
+  snapshot: WaterfallPoolSnapshot,
+): void {
+  const expected = step.pool?.metric ?? null;
+  if (snapshot.metric !== expected)
+    throw new Error(
+      `Waterfall pool snapshot for step '${step.key}' uses metric ${JSON.stringify(snapshot.metric)} but the plan step declares ${JSON.stringify(expected)}`,
+    );
 }
 
 /**

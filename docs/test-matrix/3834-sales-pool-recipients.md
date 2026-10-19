@@ -11,6 +11,12 @@
 | Stripe Connect and crypto payout descriptors | `setPayoutDestination` | Connect `acct_…` and crypto address persist; batch copies method | Missing destination on active earner, method mismatch, malformed JSON, non-`acct_` id, extra (secret) fields rejected | Operator | Model save | SQLite | No provider is called | Integration | same |
 | Manifest migration adds `kind` and `payout_destination` | `migrateSmrtSchemas` over a populated pre-#3834 `earners` table | Legacy row reads back `person`, no destination; second run converges; new kinds persist | — | Operator `db:migrate` | Migration tracker transaction | SQLite + PostgreSQL (disposable database) | `public`-schema differ, so PostgreSQL uses a disposable database | Integration | `pnpm --filter @happyvertical/smrt-sales test` and `pnpm --filter @happyvertical/smrt-sales test:postgres` |
 
+## Round 1 accepted blocker
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor / context | Data executor / transaction | Runtime / dialect | External contract edge | Test level | Validation command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Pool snapshot weighting is bound to the plan step's declared metric | Prepared or frozen snapshot from a different weighting policy | Matching snapshots allocate as before | Metric snapshot on an equal-weight step, equal snapshot on a metric step, and a frozen snapshot with an edited metric all reject before allocation | Host prepared inputs / replay | Pure | Node | Snapshot `metric` vs `step.pool.metric ?? null` | Unit regression | `pnpm --filter @happyvertical/smrt-sales exec vitest run src/commissions/__tests__/waterfall-pools.test.ts` |
+
 Idempotent `EarningEvent` ingestion is unchanged (existing `dedupeKey` suites);
 the calculator persists nothing, so transaction rollback rows are N/A for the
 pool path.

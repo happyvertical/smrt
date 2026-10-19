@@ -147,7 +147,11 @@ fractional remainders. Ties go to the larger weight, then to member `kind`
 and `id` order. An empty pool goes to the sink. So does a pool whose weights
 are all zero, unless the step sets `zeroWeight: 'equal'`. The trace freezes
 the members, weights, and metric period, so a replay with `frozenInputs` never
-calls the providers again. `calculateWaterfall()` stays synchronous; pass it
+calls the providers again. A snapshot must also match the step's declared
+`metric`. Replay trusts the frozen inputs it receives, so store them where
+they cannot be edited, such as an immutable calculation trace; a consistent
+edit to the stored evidence cannot be detected here. `calculateWaterfall()`
+stays synchronous; pass it
 `pools` from `prepareWaterfallPools()` when you need the two phases apart.
 
 ### Organisation and treasury earners
