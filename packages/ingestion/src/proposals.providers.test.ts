@@ -93,9 +93,9 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     const suggestion = (
       schema.properties as unknown as Record<
         string,
-        { items: { oneOf: Array<{ properties: Record<string, unknown> }> } }
+        { items: { anyOf: Array<{ properties: Record<string, unknown> }> } }
       >
-    ).suggestions.items.oneOf[0].properties;
+    ).suggestions.items.anyOf[0].properties;
     expect(
       (suggestion.args as { properties: { lessonId: { enum: string[] } } })
         .properties.lessonId.enum,
@@ -106,6 +106,22 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     expect(
       (suggestion.alternatives as { items: { enum: string[] } }).items.enum,
     ).toContain('identify-assignment@1');
+    expect(
+      (
+        (
+          suggestion.evidence as {
+            items: { properties: { location: unknown } };
+          }
+        ).items.properties.location as { anyOf: Array<Record<string, unknown>> }
+      ).anyOf,
+    ).toEqual([
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind'],
+        properties: { kind: { type: 'string', enum: ['source'] } },
+      },
+    ]);
   });
 
   it.each([

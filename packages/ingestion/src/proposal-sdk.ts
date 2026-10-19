@@ -31,6 +31,53 @@ function acceptsResponseModel(
 
 const string = { type: 'string', minLength: 1, maxLength: 512 };
 
+function locationSchema(location: unknown): Record<string, unknown> {
+  const value = location as Record<string, unknown>;
+  switch (value.kind) {
+    case 'source':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind'],
+        properties: { kind: { type: 'string', enum: ['source'] } },
+      };
+    case 'page':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'page'],
+        properties: {
+          kind: { type: 'string', enum: ['page'] },
+          page: { type: 'integer', enum: [value.page] },
+        },
+      };
+    case 'pages':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'startPage', 'endPage'],
+        properties: {
+          kind: { type: 'string', enum: ['pages'] },
+          startPage: { type: 'integer', enum: [value.startPage] },
+          endPage: { type: 'integer', enum: [value.endPage] },
+        },
+      };
+    case 'time':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'startMs', 'endMs'],
+        properties: {
+          kind: { type: 'string', enum: ['time'] },
+          startMs: { type: 'number', enum: [value.startMs] },
+          endMs: { type: 'number', enum: [value.endMs] },
+        },
+      };
+    default:
+      throw new Error('Unsupported evidence location');
+  }
+}
+
 /**
  * The provider receives the same catalog as the validator, but JSON mode alone
  * does not distinguish an opaque candidate key from the record id an operation
@@ -55,7 +102,7 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
         .flatMap(({ segments }) => segments.map(({ location }) => location))
         .map((location) => [
           JSON.stringify(location),
-          structuredClone(location),
+          locationSchema(location),
         ]),
     ).values(),
   ];
@@ -82,7 +129,9 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
           ...(property as Record<string, unknown>),
           enum: ids,
         };
-      else properties[field] = false;
+      // An empty candidate page cannot offer a valid value. Keep the original
+      // schema so the model sees the field, while the prompt and validator fail
+      // closed if it attempts to supply one.
     }
     return {
       type: 'object',
@@ -97,8 +146,8 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
         'explanation',
       ],
       properties: {
-        handlerId: { const: handler.id },
-        handlerVersion: { const: handler.version },
+        handlerId: { type: 'string', enum: [handler.id] },
+        handlerVersion: { type: 'string', enum: [handler.version] },
         args,
         evidence: {
           type: 'array',
@@ -109,8 +158,8 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
             additionalProperties: false,
             required: ['evidenceId', 'location'],
             properties: {
-              evidenceId: { enum: evidenceIds },
-              location: { enum: evidenceLocations },
+              evidenceId: { type: 'string', enum: evidenceIds },
+              location: { anyOf: evidenceLocations },
             },
           },
         },
@@ -119,7 +168,7 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
               type: 'array',
               uniqueItems: true,
               maxItems: 20,
-              items: { enum: alternativeKeys },
+              items: { type: 'string', enum: alternativeKeys },
             }
           : { type: 'array', maxItems: 0 },
         missingFields: {
@@ -138,6 +187,7 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
     required: ['outcome', 'suggestions', 'splits'],
     properties: {
       outcome: {
+        type: 'string',
         enum: [
           'proposals',
           'unknown',
@@ -148,9 +198,9 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
       },
       suggestions: {
         type: 'array',
-        items: suggestionVariants.length
-          ? { oneOf: suggestionVariants }
-          : false,
+        ...(suggestionVariants.length
+          ? { items: { anyOf: suggestionVariants } }
+          : { maxItems: 0 }),
       },
       splits: {
         type: 'array',
@@ -159,7 +209,7 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
           additionalProperties: false,
           required: ['evidenceId', 'groups'],
           properties: {
-            evidenceId: { enum: evidenceIds },
+            evidenceId: { type: 'string', enum: evidenceIds },
             groups: {
               type: 'array',
               items: { type: 'array', items: { type: 'integer', minimum: 1 } },
