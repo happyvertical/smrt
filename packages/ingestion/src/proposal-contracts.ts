@@ -61,6 +61,8 @@ export interface ProposalGenerator {
     output: unknown;
     completion: 'complete' | 'unknown';
     usage?: Record<string, number>;
+    /** Provider-reported immutable model revision, when it safely resolves a configured alias. */
+    responseModel?: string;
   }>;
 }
 export interface ProposalConfiguration {

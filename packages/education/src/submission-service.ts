@@ -16,6 +16,7 @@ import {
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
   SubmissionCollection,
+  SubmissionIntakeBindingCollection,
 } from './collections.js';
 import {
   LearnerAuthorizationError,
@@ -23,7 +24,7 @@ import {
   type LearnerRequest,
   LearnerService,
 } from './learner-service.js';
-import type { Grade, Submission } from './submissions.js';
+import type { Grade, Submission, SubmissionKind } from './submissions.js';
 
 /** A single captured page. No model patches or pre-existing asset IDs are accepted. */
 export interface SubmissionPage {
@@ -40,6 +41,12 @@ export interface SubmissionAssetClaim {
   assetId: string;
   expiresAt: Date;
 }
+/** Immutable external receipt binding for a scan; supplied only by a trusted host. */
+export interface SubmissionIntake {
+  intakeItemId: string;
+  kind: SubmissionKind;
+  previousSubmissionId?: string;
+}
 /** Server configuration; never populate this from request JSON. */
 export interface SubmissionServiceOptions {
   storage: AssetRuntimeOptions['storage'];
@@ -55,6 +62,9 @@ export type SubmissionView = Readonly<{
   status: Submission['status'];
   submittedAt: Date;
   notes: string;
+  kind: SubmissionKind;
+  previousSubmissionId: string | null;
+  intakeItemId: string | null;
   pages: ReadonlyArray<{ assetId: string; sortOrder: number }>;
   grade: null | {
     id: string;
@@ -315,6 +325,9 @@ export class SubmissionService extends LearnerService {
       status: row.status,
       submittedAt: row.submittedAt,
       notes: row.notes,
+      kind: row.kind,
+      previousSubmissionId: row.previousSubmissionId,
+      intakeItemId: row.intakeItemId,
       pages,
       grade: grade
         ? {
@@ -326,17 +339,42 @@ export class SubmissionService extends LearnerService {
         : null,
     };
   }
+  /** Recheck the exact assignment without creating progress or accepting bytes.
+   * Trusted intake bridges call this before reading retained evidence.
+   */
+  async assertLessonAssignment(request: LessonRequest): Promise<void> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.submit',
+    );
+    const catalog = await this.catalog(request, enrollment.courseId);
+    if (
+      !catalog.sections.some((section) =>
+        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
+      )
+    )
+      throw new LearnerAuthorizationError();
+  }
+
   async captureSubmission(
     request: LessonRequest & {
       requestKey: string;
       pages: readonly SubmissionPage[];
       notes?: string;
+      /** Trusted ingestion identity; ordinary host upload omits this. */
+      intake?: SubmissionIntake;
     },
   ): Promise<SubmissionView> {
     return this.mutate(async (service) => {
       service.validatePages(request.pages);
       if (request.notes !== undefined && typeof request.notes !== 'string')
         throw new Error('Notes must be text');
+      if (
+        request.intake &&
+        (!request.intake.intakeItemId?.trim() ||
+          !['blank_reference', 'completed_work'].includes(request.intake.kind))
+      )
+        throw new Error('Invalid submission intake binding');
       if (
         typeof request.requestKey !== 'string' ||
         !request.requestKey.trim() ||
@@ -347,6 +385,7 @@ export class SubmissionService extends LearnerService {
         request,
         'education.learner.submit',
       );
+      const kind = request.intake?.kind ?? 'completed_work';
       const crypto =
         typeof process !== 'undefined' &&
         process.getBuiltinModule?.('node:crypto');
@@ -357,10 +396,96 @@ export class SubmissionService extends LearnerService {
           .update(JSON.stringify([page.name, page.mimeType, page.data.length]))
           .update(page.data);
       digest.update(JSON.stringify(request.notes ?? ''));
+      digest.update(JSON.stringify(request.intake ?? null));
       const captureDigest = digest.digest('hex');
       const submissions = await ScannedSubmissionCollection.create({
         db: service.db,
       });
+      const intakeRequest = request.intake;
+      if (intakeRequest) {
+        const bindings = await SubmissionIntakeBindingCollection.create({
+          db: service.db,
+        });
+        const binding = await bindings.get(
+          {
+            tenantId: request.tenantId,
+            intakeItemId: intakeRequest.intakeItemId,
+          },
+          { cache: false },
+        );
+        const intake = binding
+          ? await submissions.get(
+              { id: binding.submissionId, tenantId: request.tenantId },
+              { cache: false },
+            )
+          : await (async () => {
+              const legacy = await submissions.list({
+                where: {
+                  tenantId: request.tenantId,
+                  intakeItemId: intakeRequest.intakeItemId,
+                },
+                limit: 2,
+              });
+              if (legacy.length > 1)
+                throw new Error('Legacy intake item has ambiguous submissions');
+              return legacy[0];
+            })();
+        if (binding && !intake)
+          throw new Error('Submission intake binding is corrupt');
+        if (intake) {
+          // Backfill a legacy pre-binding receipt atomically before returning
+          // it. A conflicting winner fails closed instead of rebinding it.
+          if (!binding)
+            await bindings.create({
+              tenantId: request.tenantId,
+              intakeItemId: intakeRequest.intakeItemId,
+              submissionId: String(intake.id),
+              _insertOnly: true,
+            });
+          if (
+            intake.kind !== kind ||
+            intake.progressId !== String(progress.id) ||
+            intake.learnerId !== request.learnerId ||
+            intake.lessonId !== request.lessonId ||
+            intake.previousSubmissionId !==
+              (intakeRequest.previousSubmissionId ?? null)
+          )
+            throw new Error(
+              'Intake item is already bound to another assignment',
+            );
+          if (intake.captureDigest !== captureDigest)
+            throw new Error('Capture retry changed its content');
+          return service.view(intake);
+        }
+      }
+      if (request.intake?.previousSubmissionId) {
+        const predecessor = await (
+          await SubmissionCollection.create({ db: service.db })
+        ).get(
+          {
+            id: request.intake.previousSubmissionId,
+            tenantId: request.tenantId,
+            progressId: String(progress.id),
+            learnerId: request.learnerId,
+            lessonId: request.lessonId,
+          },
+          { cache: false },
+        );
+        if (predecessor?.kind !== 'completed_work')
+          throw new Error(
+            'Submission predecessor is not current progress evidence',
+          );
+        const successors = await (
+          await SubmissionCollection.create({ db: service.db })
+        ).list({
+          where: {
+            tenantId: request.tenantId,
+            previousSubmissionId: String(predecessor.id),
+          },
+        });
+        if (successors.length)
+          throw new Error('Submission predecessor is stale');
+      }
       const prior = await submissions.get(
         {
           progressId: String(progress.id),
@@ -379,6 +504,8 @@ export class SubmissionService extends LearnerService {
         return service.view(prior);
       }
       if (
+        kind === 'completed_work' &&
+        !request.intake?.previousSubmissionId &&
         ['submitted', 'needs_review', 'complete', 'skipped'].includes(
           progress.status,
         )
@@ -394,7 +521,23 @@ export class SubmissionService extends LearnerService {
         notes: request.notes ?? '',
         captureKey: request.requestKey,
         captureDigest,
+        kind,
+        previousSubmissionId: request.intake?.previousSubmissionId ?? null,
+        intakeItemId: request.intake?.intakeItemId ?? null,
       });
+      if (request.intake) {
+        // INSERT-only lets the database arbitrate concurrent captures across
+        // different enrollments. The transaction rolls this attempt back on a
+        // collision, so no pages or progress mutations escape.
+        await (
+          await SubmissionIntakeBindingCollection.create({ db: service.db })
+        ).create({
+          tenantId: request.tenantId,
+          intakeItemId: request.intake.intakeItemId,
+          submissionId: String(row.id),
+          _insertOnly: true,
+        });
+      }
       const links = await SubmissionAssetCollection.create({ db: service.db });
       for (const [sortOrder, page] of request.pages.entries()) {
         const asset = await service.storePage(request, learner.profileId, page);
@@ -406,10 +549,45 @@ export class SubmissionService extends LearnerService {
           sortOrder,
         });
       }
-      progress.status = 'submitted';
-      progress.attempts += 1;
-      await progress.save();
+      if (kind === 'completed_work') {
+        progress.status = 'submitted';
+        progress.attempts += 1;
+        await progress.save();
+      }
       return service.view(row);
+    });
+  }
+  /** Capture a blank workbook scan without claiming completion or a grade. */
+  async captureBlankReference(
+    request: LessonRequest & {
+      requestKey: string;
+      pages: readonly SubmissionPage[];
+      notes?: string;
+      intakeItemId: string;
+    },
+  ): Promise<SubmissionView> {
+    return this.captureSubmission({
+      ...request,
+      intake: { intakeItemId: request.intakeItemId, kind: 'blank_reference' },
+    });
+  }
+  /** Rescan corrections as a new immutable completed-work attempt. */
+  async resubmitSubmission(
+    request: LessonRequest & {
+      previousSubmissionId: string;
+      requestKey: string;
+      pages: readonly SubmissionPage[];
+      notes?: string;
+      intakeItemId: string;
+    },
+  ): Promise<SubmissionView> {
+    return this.captureSubmission({
+      ...request,
+      intake: {
+        intakeItemId: request.intakeItemId,
+        kind: 'completed_work',
+        previousSubmissionId: request.previousSubmissionId,
+      },
     });
   }
   async getSubmission(request: SubmissionRequest): Promise<SubmissionView> {
@@ -477,6 +655,18 @@ export class SubmissionService extends LearnerService {
         request,
         'education.learner.grade',
       );
+      if (row.kind !== 'completed_work')
+        throw new Error('Blank workbook references cannot be graded');
+      const successors = await (
+        await SubmissionCollection.create({ db: service.db })
+      ).list({
+        where: {
+          tenantId: request.tenantId,
+          previousSubmissionId: String(row.id),
+        },
+      });
+      if (successors.some((successor) => successor.kind === 'completed_work'))
+        throw new Error('Only the current submission attempt can be graded');
       return service.grade(
         request,
         row,
@@ -484,6 +674,52 @@ export class SubmissionService extends LearnerService {
         request.score ?? null,
         request.feedback ?? '',
       );
+    });
+  }
+  /** Bridge-only alias: uses the same guardian authorization and current-attempt checks. */
+  async applyReviewedSubmission(
+    request: SubmissionRequest & { score?: number | null; feedback?: string },
+  ): Promise<SubmissionView> {
+    if (!this.executorBorrowed) return this.reviewSubmission(request);
+    return this.reviewSubmission(request);
+  }
+  /** Record a non-authoritative automated proposal; it never completes progress. */
+  async proposeSubmissionGrade(
+    request: SubmissionRequest & { score?: number | null; feedback?: string },
+  ): Promise<SubmissionView> {
+    return this.mutate(async (service) => {
+      const { row } = await service.requireSubmission(
+        request,
+        'education.learner.grade',
+      );
+      if (row.kind !== 'completed_work')
+        throw new Error(
+          'Blank workbook references cannot be proposed for grading',
+        );
+      const score = request.score ?? null;
+      if (
+        score !== null &&
+        (typeof score !== 'number' ||
+          !Number.isFinite(score) ||
+          score < 0 ||
+          score > 1)
+      )
+        throw new Error('Score must be null or a number from zero to one');
+      if (
+        request.feedback !== undefined &&
+        typeof request.feedback !== 'string'
+      )
+        throw new Error('Feedback must be text');
+      await (await GradeCollection.create({ db: service.db })).create({
+        tenantId: request.tenantId,
+        submissionId: String(row.id),
+        graderKind: 'ai',
+        score,
+        feedback: request.feedback ?? '',
+      });
+      row.status = 'needs_review';
+      await row.save();
+      return service.view(row);
     });
   }
   async attestLesson(
@@ -566,6 +802,49 @@ export class SubmissionService extends LearnerService {
         actorUserId: request.actorUserId,
         learnerId: request.learnerId,
         submissionId: request.submissionId,
+        assetId: request.assetId,
+        expiresAt,
+      }),
+    );
+    return { url, expiresAt };
+  }
+  /** Sign only an exact authorized printable join; answer keys never qualify. */
+  async signLessonPrintable(
+    request: LessonRequest & { assetId: string },
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    const catalog = await this.catalog(request, enrollment.courseId);
+    if (
+      !catalog.sections.some((section) =>
+        section.lessons.some(
+          ({ lesson }) => String(lesson.id) === request.lessonId,
+        ),
+      )
+    )
+      throw new LearnerAuthorizationError();
+    const link = await (
+      await LessonAssetCollection.create({ db: this.db })
+    ).get(
+      {
+        tenantId: request.tenantId,
+        lessonId: request.lessonId,
+        assetId: request.assetId,
+        relationship: 'printable',
+      },
+      { cache: false },
+    );
+    if (!link || !this.options.signAsset) throw new LearnerAuthorizationError();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const url = await this.options.signAsset(
+      Object.freeze({
+        enrollmentId: request.enrollmentId,
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        learnerId: request.learnerId,
+        submissionId: `lesson:${request.lessonId}`,
         assetId: request.assetId,
         expiresAt,
       }),

@@ -14,9 +14,11 @@
  * objects AND its consumed packages' objects (via the `.smrt/register.js` it
  * imports), with each class's package-qualified identity and isolated
  * manifest exactly as the web server registers them. Application sources are
- * bundled; every package import stays external and is resolved from
- * `node_modules` at runtime, like the rest of the deployed image — so the
- * worker and `@happyvertical/smrt-core` share one registry.
+ * bundled; package imports stay external and are resolved from `node_modules`
+ * at runtime, except Oxc's decorator helper. Oxc injects that helper into
+ * transformed application classes but applications do not declare it, so the
+ * artifact bundles it. `@happyvertical/*` packages stay external so the worker
+ * and `@happyvertical/smrt-core` share one registry.
  */
 
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -76,6 +78,15 @@ export function createWorkerRegistrationExternal(
       return false;
     }
     if (aliases.some((alias) => matchesAlias(id, alias))) return false;
+    // Vite/Oxc lowers legacy decorators to imports from this package. It is a
+    // core build dependency, not a consumer dependency, so bundle its root and
+    // helper subpaths into the standalone worker artifact.
+    if (
+      id === '@oxc-project/runtime' ||
+      id.startsWith('@oxc-project/runtime/')
+    ) {
+      return false;
+    }
     return true;
   };
 }

@@ -66,9 +66,13 @@ import {
   ScannedSubmission,
   Submission,
   SubmissionAsset,
+  SubmissionIntakeBinding,
 } from './submissions.js';
 export class SubmissionCollection extends SmrtCollection<Submission> {
   static readonly _itemClass = Submission;
+}
+export class SubmissionIntakeBindingCollection extends SmrtCollection<SubmissionIntakeBinding> {
+  static readonly _itemClass = SubmissionIntakeBinding;
 }
 export class ScannedSubmissionCollection extends SmrtCollection<ScannedSubmission> {
   static readonly _itemClass = ScannedSubmission;

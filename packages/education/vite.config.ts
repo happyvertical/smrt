@@ -1,2 +1,2 @@
 import { createPackageConfig } from '../../vite.config.base.js';
-export default createPackageConfig('education');
+export default createPackageConfig('education', { entries: ['ingestion'] });

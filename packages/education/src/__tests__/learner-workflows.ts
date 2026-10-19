@@ -301,6 +301,67 @@ export async function assertLearnerAuthorization(f: Fixture) {
   ).rejects.toBeInstanceOf(LearnerAuthorizationError);
 }
 
+export async function assertLearnerSetupStatus(f: Fixture) {
+  const ownStatus = await f.as(f.own, () =>
+    f.service.getLearnerSetupStatus({
+      tenantId: f.own.tenantId,
+      actorUserId: f.own.actorUserId,
+      learnerUserId: String(f.alice.user.id),
+    }),
+  );
+  expect(ownStatus).toEqual({ needsSetup: false });
+  const pendingStatus = await f.as(
+    { ...f.own, actorUserId: String(f.guardian.user.id) },
+    () =>
+      f.service.getLearnerSetupStatus({
+        tenantId: f.own.tenantId,
+        actorUserId: String(f.guardian.user.id),
+        learnerUserId: String(f.guardian.user.id),
+      }),
+  );
+  expect(pendingStatus).toEqual({ needsSetup: true });
+
+  const calls: Array<Record<string, unknown>> = [];
+  const denied = new LearnerService(
+    f.db,
+    async (request) => {
+      calls.push({
+        action: request.action,
+        executor: request.executor,
+        learnerUserId: request.learnerUserId,
+      });
+      return false;
+    },
+    () => true,
+  );
+  await expect(
+    f.as(f.own, () =>
+      denied.getLearnerSetupStatus({
+        tenantId: f.own.tenantId,
+        actorUserId: f.own.actorUserId,
+        learnerUserId: String(f.alice.user.id),
+      }),
+    ),
+  ).rejects.toBeInstanceOf(LearnerAuthorizationError);
+  expect(calls).toMatchObject([
+    {
+      action: 'education.learner.setup',
+      executor: f.db,
+      learnerUserId: String(f.alice.user.id),
+    },
+  ]);
+
+  await expect(
+    f.as(f.own, () =>
+      f.service.getLearnerSetupStatus({
+        tenantId: f.own.tenantId,
+        actorUserId: f.own.actorUserId,
+        learnerUserId: String(f.stranger.user.id),
+      }),
+    ),
+  ).rejects.toBeInstanceOf(LearnerAuthorizationError);
+}
+
 export async function assertProgressHistory(f: Fixture) {
   const { service, own, parent, as, enrollment, lesson, db } = f;
   const request = {

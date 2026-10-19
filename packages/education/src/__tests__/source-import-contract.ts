@@ -76,8 +76,68 @@ export async function sourceFixture(db: DatabaseInterface) {
 
 type Fixture = Awaited<ReturnType<typeof sourceFixture>>;
 
+export async function assertEasyPeasySourceProvisioning(
+  f: Fixture,
+): Promise<void> {
+  const first = await f.run(() =>
+    f.service.ensureEasyPeasyCourseSource({
+      tenantId: f.request.tenantId,
+      actorUserId: f.request.actorUserId,
+    }),
+  );
+  const second = await f.run(() =>
+    f.service.ensureEasyPeasyCourseSource({
+      tenantId: f.request.tenantId,
+      actorUserId: f.request.actorUserId,
+    }),
+  );
+  expect(second).toEqual(first);
+  await f.run(async () => {
+    const source = await (
+      await CourseSourceCollection.create({ db: f.db })
+    ).get(first.sourceId);
+    expect(source).toMatchObject({
+      tenantId: f.request.tenantId,
+      key: 'easy-peasy',
+      kind: 'adapter',
+      adapterKey: 'easy-peasy',
+      sharing: 'private',
+    });
+  });
+  expect(f.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: 'education.source.ensure',
+      actorTenantId: f.request.tenantId,
+      actorUserId: f.request.actorUserId,
+      sourceId: first.sourceId,
+    }),
+  );
+  await withTenant(
+    { tenantId: f.request.tenantId, userId: 'other-actor' },
+    async () => {
+      await expect(
+        f.service.ensureEasyPeasyCourseSource({
+          tenantId: f.request.tenantId,
+          actorUserId: f.request.actorUserId,
+        }),
+      ).rejects.toThrow('not authorized');
+    },
+  );
+  const unregistered = new SourceImportService(f.db, () => true);
+  await f.run(async () => {
+    await expect(
+      unregistered.ensureEasyPeasyCourseSource({
+        tenantId: f.request.tenantId,
+        actorUserId: f.request.actorUserId,
+      }),
+    ).rejects.toThrow('not registered');
+  });
+}
+
 export async function assertRefreshAndPrivacy(f: Fixture): Promise<void> {
-  const first = await f.run(() => f.service.importCourse(f.request));
+  const first = await f.run(() =>
+    f.service.importCourse({ ...f.request, subject: 'language-arts' }),
+  );
   const courses = await CourseCollection.create({ db: f.db });
   const lessons = await LessonCollection.create({ db: f.db });
   const sentinel = `source_history_${randomUUID().replaceAll('-', '')}`;
@@ -121,6 +181,7 @@ export async function assertRefreshAndPrivacy(f: Fixture): Promise<void> {
     expect(course).toMatchObject({
       tenantId: f.request.tenantId,
       status: 'draft',
+      subject: 'language-arts',
       licenseKind: 'personal-use-copy',
     });
   });

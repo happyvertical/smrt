@@ -53,6 +53,62 @@ describe('parseEasyPeasyPage', () => {
     });
   });
 
+  it('parses the official daily-container marker layout without retaining lesson content', () => {
+    expect(
+      parseEasyPeasyPage(
+        fixture('easy-peasy-day-container.html'),
+        'https://allinonehomeschool.com/ep-math-4/',
+      ),
+    ).toMatchObject({
+      title: 'EP Math 4 – Easy Peasy All-in-One Homeschool',
+      lessons: [
+        { day: 1, worksheet: false },
+        { day: 2, worksheet: false },
+        { day: 3, worksheet: false },
+        {
+          day: 4,
+          worksheet: true,
+          printableUrl:
+            'https://allinonehomeschool.com/wp-content/uploads/2022/03/ep-math-4-lesson-4.pdf',
+        },
+        {
+          day: 5,
+          worksheet: true,
+          printableUrl:
+            'https://allinonehomeschool.com/wp-content/uploads/2022/03/ep-math-4-lesson-5.pdf',
+        },
+        {
+          day: 6,
+          title: 'Week 6',
+          externalUrl: 'https://allinonehomeschool.com/ep-math-4/#week6',
+        },
+      ],
+    });
+  });
+
+  it('selects the official Level 1-4 daily block and associates its detached marker', () => {
+    const html = `
+      <h1>Course</h1>
+      <div id="day7"><strong>Lesson 7</strong><p><strong>Level 1-4</strong></p></div>
+      <div id="day7"><p><strong>Level 5-8</strong></p></div>
+      <div id="day8"><strong class="scraper-hide">Topic</strong></div>
+      <div><strong><br></strong><strong>Lesson 8</strong></div>
+      <div id="day9"><strong>Lesson 9</strong><p><strong>Level 1-4</strong></p></div>
+      <div id="day9"><strong>Lesson 9</strong><p><strong>Level 1-4</strong></p></div>`;
+    const withoutConflict = html.slice(0, html.indexOf('<div id="day9"'));
+    expect(parseEasyPeasyPage(withoutConflict, pageUrl).lessons).toEqual([
+      expect.objectContaining({
+        day: 7,
+        externalUrl: expect.stringMatching(/#day7$/),
+      }),
+      expect.objectContaining({
+        day: 8,
+        externalUrl: expect.stringMatching(/#day8$/),
+      }),
+    ]);
+    expect(() => parseEasyPeasyPage(html, pageUrl)).toThrow('duplicated: 9');
+  });
+
   it('uses day identities and stable fragments when the source page URL changes', () => {
     const html = fixture('easy-peasy-course.html');
     const first = parseEasyPeasyPage(html, pageUrl).lessons[0];
@@ -90,9 +146,14 @@ describe('parseEasyPeasyPage', () => {
   });
 
   it('rejects unsafe URLs and does not retain answer links', () => {
-    expect(() =>
+    expect(
       parseEasyPeasyPage(fixture('easy-peasy-unsafe.html'), pageUrl),
-    ).toThrow('approved HTTPS source host');
+    ).toMatchObject({
+      lessons: [expect.objectContaining({ day: 1, worksheet: true })],
+    });
+    expect(
+      parseEasyPeasyPage(fixture('easy-peasy-unsafe.html'), pageUrl).lessons[0],
+    ).not.toHaveProperty('printableUrl');
     expect(() =>
       validateEasyPeasyUrl('http://allinonehomeschool.com/course/'),
     ).toThrow('approved HTTPS source host');
@@ -101,12 +162,14 @@ describe('parseEasyPeasyPage', () => {
     );
   });
 
-  it('rejects multiple printable PDFs for one lesson', () => {
+  it('retains the lesson pointer but no printable when source metadata has multiple PDFs', () => {
     const html = `
       <h1>Course</h1><p><strong>Lesson 1 *</strong></p>
       <a href="/wp-content/uploads/one.pdf">One</a>
       <a href="/wp-content/uploads/two.pdf">Two</a>`;
-    expect(() => parseEasyPeasyPage(html, pageUrl)).toThrow('ambiguous');
+    const lesson = parseEasyPeasyPage(html, pageUrl).lessons[0];
+    expect(lesson).toMatchObject({ day: 1, worksheet: true });
+    expect(lesson).not.toHaveProperty('printableUrl');
   });
 
   it('keeps a lesson segment open through unrelated bold instructions', () => {
@@ -135,6 +198,19 @@ describe('parseEasyPeasyPage', () => {
     expect(parseEasyPeasyPage(html, pageUrl).lessons[0]).not.toHaveProperty(
       'printableUrl',
     );
+  });
+
+  it('keeps the canonical URL when an official worksheet has numbered pages', () => {
+    const parsed = parseEasyPeasyPage(
+      '<h1>Course</h1><div id="day9"><p><strong>Lesson 9*</strong></p><a href="/wp-content/lesson-9.pdf">worksheet</a><a href="/wp-content/lesson-9-2.pdf">page two</a></div>',
+      pageUrl,
+    );
+    expect(parsed.lessons).toEqual([
+      expect.objectContaining({
+        day: 9,
+        printableUrl: 'https://allinonehomeschool.com/wp-content/lesson-9.pdf',
+      }),
+    ]);
   });
 
   it('keeps generic printable labels on their lesson rather than the course packet', () => {
@@ -169,8 +245,16 @@ describe('parseEasyPeasyPage', () => {
       <h1>Course</h1>
       <div><span><strong>Lesson 3 *</strong></span>
       <a href="/wp-content/uploads/day-3.pdf">Worksheet</a></div>`;
+    const loneBareDiv = `
+      <h1>Course</h1>
+      <p><strong>Lesson 1 *</strong></p>
+      <div><strong>Lesson 2 *</strong>
+      <a href="/wp-content/uploads/day-2.pdf">Worksheet</a></div>`;
     expect(() => parseEasyPeasyPage(compact, pageUrl)).toThrow('unsupported');
     expect(() => parseEasyPeasyPage(genericContainer, pageUrl)).toThrow(
+      'unsupported',
+    );
+    expect(() => parseEasyPeasyPage(loneBareDiv, pageUrl)).toThrow(
       'unsupported',
     );
   });

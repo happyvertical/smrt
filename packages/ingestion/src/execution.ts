@@ -2177,32 +2177,47 @@ export class IntakeExecutionService {
             this.scope.tenantId,
             this.scope.confidentialScopeId,
           );
-          if (bound.handler.execution.kind === 'external') {
+          const domainExecution = bound.handler.execution;
+          if (domainExecution.kind === 'external') {
             reserved = { bound, execution, args };
             return { state: 'executing', actionId };
           }
-          await db.query('SAVEPOINT ingestion_domain_effect');
           try {
-            const effect = await bound.handler.execution.apply(args, context);
-            this.validate(
-              bound.handler.resultSchema,
-              effect,
-              context.policy.maxBytes,
+            return await withEmbeddedWriteTransaction(
+              db,
+              isEmbeddedDatabase(db),
+              async (effectDb) =>
+                this.principal(
+                  effectDb,
+                  bound.item,
+                  bound.handler,
+                  'execute',
+                  async (effectContext) => {
+                    const effect = await domainExecution.apply(
+                      args,
+                      effectContext,
+                    );
+                    this.validate(
+                      bound.handler.resultSchema,
+                      effect,
+                      effectContext.policy.maxBytes,
+                    );
+                    for (const [field, model] of Object.entries(
+                      bound.handler.resultModels,
+                    )) {
+                      id(effect[field]);
+                      await effectContext.assertTarget(
+                        model,
+                        effect[field] as string,
+                      );
+                    }
+                    return this.finish(effectDb, bound, execution, effect);
+                  },
+                ),
             );
-            for (const [field, model] of Object.entries(
-              bound.handler.resultModels,
-            )) {
-              id(effect[field]);
-              await context.assertTarget(model, effect[field] as string);
-            }
-            const completed = await this.finish(db, bound, execution, effect);
-            await db.query('RELEASE SAVEPOINT ingestion_domain_effect');
-            return completed;
           } catch {
             // Keep the item lock and reserved budget while undoing all domain
             // writes. A competing worker cannot enter a rollback/accounting gap.
-            await db.query('ROLLBACK TO SAVEPOINT ingestion_domain_effect');
-            await db.query('RELEASE SAVEPOINT ingestion_domain_effect');
             const deadline = this.retentionIntents
               .getStore()
               ?.get(String(bound.item.id));

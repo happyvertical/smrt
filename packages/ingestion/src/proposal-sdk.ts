@@ -5,8 +5,242 @@ import type {
 } from '@happyvertical/ai';
 import type { DecisionClient } from '@happyvertical/smrt-core';
 import { type ProviderIdentity, providerIdentity } from './extraction-types.js';
-import type { ProposalGenerator } from './proposal-contracts.js';
+import type {
+  GenerativeProposalInput,
+  ProposalGenerator,
+} from './proposal-contracts.js';
 import { safeUsage } from './proposal-validation.js';
+
+function escapesRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** OpenAI reports dated revisions for configured stable aliases. */
+function acceptsResponseModel(
+  identity: ProviderIdentity,
+  model?: string,
+): boolean {
+  if (!model || model === identity.model) return true;
+  return (
+    identity.provider === 'openai' &&
+    new RegExp(`^${escapesRegExp(identity.model)}-\\d{4}-\\d{2}-\\d{2}$`).test(
+      model,
+    )
+  );
+}
+
+const string = { type: 'string', minLength: 1, maxLength: 512 };
+
+function locationSchema(location: unknown): Record<string, unknown> {
+  const value = location as Record<string, unknown>;
+  switch (value.kind) {
+    case 'source':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind'],
+        properties: { kind: { type: 'string', enum: ['source'] } },
+      };
+    case 'page':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'page'],
+        properties: {
+          kind: { type: 'string', enum: ['page'] },
+          page: { type: 'integer', enum: [value.page] },
+        },
+      };
+    case 'pages':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'startPage', 'endPage'],
+        properties: {
+          kind: { type: 'string', enum: ['pages'] },
+          startPage: { type: 'integer', enum: [value.startPage] },
+          endPage: { type: 'integer', enum: [value.endPage] },
+        },
+      };
+    case 'time':
+      return {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'startMs', 'endMs'],
+        properties: {
+          kind: { type: 'string', enum: ['time'] },
+          startMs: { type: 'number', enum: [value.startMs] },
+          endMs: { type: 'number', enum: [value.endMs] },
+        },
+      };
+    default:
+      throw new Error('Unsupported evidence location');
+  }
+}
+
+/**
+ * The provider receives the same catalog as the validator, but JSON mode alone
+ * does not distinguish an opaque candidate key from the record id an operation
+ * accepts. Give providers a closed response schema as well as the catalog.
+ * Validation remains the authority because non-grammar providers may ignore it.
+ */
+export function proposalResponseSchema(input: GenerativeProposalInput) {
+  const alternativeKeys = [
+    ...new Set(
+      input.offered.flatMap(({ handler, candidates }) => [
+        `${handler.id}@${handler.version}`,
+        ...candidates.map((candidate) => candidate.key),
+      ]),
+    ),
+  ];
+  const evidenceIds = [
+    ...new Set(input.evidence.map(({ evidenceId }) => evidenceId)),
+  ];
+  const evidenceLocations = [
+    ...new Map(
+      input.evidence
+        .flatMap(({ segments }) => segments.map(({ location }) => location))
+        .map((location) => [
+          JSON.stringify(location),
+          locationSchema(location),
+        ]),
+    ).values(),
+  ];
+  const splitVariants = input.evidence.flatMap(({ evidenceId, segments }) => {
+    const pages = [
+      ...new Set(
+        segments.flatMap(({ location }) =>
+          location.kind === 'page' ? [location.page] : [],
+        ),
+      ),
+    ];
+    return pages.length
+      ? [
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['evidenceId', 'groups'],
+            properties: {
+              evidenceId: { type: 'string', enum: [evidenceId] },
+              groups: {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  type: 'array',
+                  minItems: 1,
+                  items: { type: 'integer', enum: pages },
+                },
+              },
+            },
+          },
+        ]
+      : [];
+  });
+  const suggestionVariants = input.offered.map(({ handler, candidates }) => {
+    const args = structuredClone(handler.argsSchema) as Record<string, unknown>;
+    if (!args.properties) args.properties = {};
+    const properties = args.properties as Record<string, unknown>;
+    // Missing required fields are intentionally represented by missingFields.
+    // Keep each offered handler's other closed-schema constraints intact.
+    delete args.required;
+    for (const [field, reference] of Object.entries(handler.references)) {
+      if (reference.kind !== 'candidate') continue;
+      const ids = [
+        ...new Set(
+          candidates
+            .filter((candidate) => candidate.model === reference.model)
+            .map((candidate) => candidate.id),
+        ),
+      ];
+      const property = properties[field];
+      if (!property) continue;
+      if (ids.length)
+        properties[field] = {
+          ...(property as Record<string, unknown>),
+          enum: ids,
+        };
+      // An empty candidate page cannot offer a valid value. Keep the original
+      // schema so the model sees the field, while the prompt and validator fail
+      // closed if it attempts to supply one.
+    }
+    return {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'handlerId',
+        'handlerVersion',
+        'args',
+        'evidence',
+        'alternatives',
+        'missingFields',
+        'explanation',
+      ],
+      properties: {
+        handlerId: { type: 'string', enum: [handler.id] },
+        handlerVersion: { type: 'string', enum: [handler.version] },
+        args,
+        evidence: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 100,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['evidenceId', 'location'],
+            properties: {
+              evidenceId: { type: 'string', enum: evidenceIds },
+              location: { anyOf: evidenceLocations },
+            },
+          },
+        },
+        alternatives: alternativeKeys.length
+          ? {
+              type: 'array',
+              uniqueItems: true,
+              maxItems: 20,
+              items: { type: 'string', enum: alternativeKeys },
+            }
+          : { type: 'array', maxItems: 0 },
+        missingFields: {
+          type: 'array',
+          uniqueItems: true,
+          maxItems: 30,
+          items: string,
+        },
+        explanation: { type: 'string', maxLength: 2000 },
+      },
+    };
+  });
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['outcome', 'suggestions', 'splits'],
+    properties: {
+      outcome: {
+        type: 'string',
+        enum: [
+          'proposals',
+          'unknown',
+          'ambiguous',
+          'no_action',
+          'needs_review',
+        ],
+      },
+      suggestions: {
+        type: 'array',
+        ...(suggestionVariants.length
+          ? { items: { anyOf: suggestionVariants } }
+          : { maxItems: 0 }),
+      },
+      splits: {
+        type: 'array',
+        ...(splitVariants.length
+          ? { items: { anyOf: splitVariants } }
+          : { maxItems: 0 }),
+      },
+    },
+  };
+}
 
 /** Use an existing SDK client; credentials/configuration never enter persisted provenance. */
 export function createSDKProposalGenerator(
@@ -24,6 +258,7 @@ export function createSDKProposalGenerator(
   return {
     identity,
     async generate(input, options) {
+      const responseSchema = proposalResponseSchema(input);
       const response = await client.chat(
         [
           { role: 'system', content: input.instructions },
@@ -42,7 +277,19 @@ export function createSDKProposalGenerator(
           timeout: limits.timeoutMs,
           signal: options.signal,
           toolChoice: 'none',
-          responseFormat: { type: 'json_object' },
+          responseFormat: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'ingestion_proposal',
+              description:
+                'A bounded proposal over the supplied handler catalog.',
+              schema: responseSchema,
+              // Handler arguments can omit required values only when they are
+              // named in missingFields, which OpenAI strict schemas cannot model.
+              strict: false,
+            },
+          },
+          responseSchema,
           continueOnLength: false,
         },
       );
@@ -50,7 +297,7 @@ export function createSDKProposalGenerator(
         response.finishReason !== 'stop' ||
         response.truncated ||
         response.toolCalls?.length ||
-        (response.model && response.model !== identity.model)
+        !acceptsResponseModel(identity, response.model)
       )
         throw new Error('Incomplete or unexpected proposal response');
       if (
@@ -63,6 +310,9 @@ export function createSDKProposalGenerator(
         // The SDK normalizes absent/unknown finish reasons to stop.
         completion: 'unknown',
         usage: safeUsage(response.usage),
+        ...(response.model && response.model !== identity.model
+          ? { responseModel: response.model }
+          : {}),
       };
     },
   };

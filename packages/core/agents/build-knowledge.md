@@ -86,8 +86,11 @@ task/schedule worker registers the app's local objects (and, through the
 `.smrt/register.js` it imports, consumed packages' objects) with the same
 qualified identities and isolated manifests as the web server. It is a nested
 SSR build with no consumer plugins: only aliases pointing into the project
-sources (e.g. `$lib`) apply, and every other bare import stays external so the
-worker shares the installed `@happyvertical/smrt-core` registry. SvelteKit
+sources (e.g. `$lib`) apply, and bare imports stay external so the worker
+shares the installed `@happyvertical/smrt-core` registry. The sole exception is
+`@oxc-project/runtime` and its helper subpaths: Vite injects them when lowering
+decorators, but applications do not declare that compiler support dependency,
+so the artifact bundles them. SvelteKit
 virtual modules (`$env/*`, `$app/*`) are not available to a worker; an object
 importing one fails at worker startup. A failure fails the build.
 

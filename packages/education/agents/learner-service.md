@@ -29,10 +29,19 @@ actor's User Profile to the learner's Profile. `authorizeLearner` receives
 that the type represents guardianship, its terms are effective, and that
 its permission policy allows the action. An arbitrary relationship is not a
 guardian grant. Missing relationships and host denials/exceptions fail closed.
+The authorizer also receives `executor`, the service's active database
+executor. Host policy reads, including relationship and revocation checks, must
+use that executor so they share a `withTransaction` or `withExecutor` boundary.
 Same-tenant membership alone never grants sibling access.
 
 ## Supported workflow
 
+- `getLearnerSetupStatus({ tenantId, actorUserId, learnerUserId })` is a
+  host-authorized onboarding probe for an active tenant member. It returns only
+  `{ needsSetup }`; it neither returns learner or relationship data nor grants
+  relationships. The host authorizer receives `education.learner.setup`, the
+  target user id, and the active executor. `provisionLearner` remains the write
+  path and still requires a directed guardian relationship.
 - `getLearner` returns authorized learner metadata and parsed settings.
 - `createCurriculum` creates a **planned** curriculum for an authorized guardian.
   A learner cannot plan their own curriculum. Title is required.

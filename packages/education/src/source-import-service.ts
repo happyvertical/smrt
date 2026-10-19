@@ -31,11 +31,13 @@ export interface SourceImportRequest {
   sourceId: string;
   /** Host-stable identity, independent of the page's current URL. */
   courseRef: string;
+  /** Optional trusted catalog classification retained on the tenant course. */
+  subject?: string;
   pageUrl: string;
   destination: 'private' | 'group';
 }
 export interface SourceImportAuthorization {
-  action: 'education.source.import';
+  action: 'education.source.import' | 'education.source.ensure';
   actorTenantId: string;
   actorUserId: string;
   sourceId: string;
@@ -60,6 +62,13 @@ export interface SourceImportResult {
   lessonIds: string[];
   /** Source-hosted packet link, returned without fetching or persisting its content. */
   packetUrl?: string;
+}
+export interface EnsureEasyPeasyCourseSourceRequest {
+  tenantId: string;
+  actorUserId: string;
+}
+export interface EnsureEasyPeasyCourseSourceResult {
+  sourceId: string;
 }
 
 async function identity(...parts: string[]): Promise<string> {
@@ -137,6 +146,86 @@ export class SourceImportService {
     });
   }
 
+  async ensureEasyPeasyCourseSource(
+    input: EnsureEasyPeasyCourseSourceRequest,
+  ): Promise<EnsureEasyPeasyCourseSourceResult> {
+    const request = Object.freeze({ ...input });
+    const active = getCurrentTenant();
+    if (
+      !request.tenantId?.trim() ||
+      !request.actorUserId?.trim() ||
+      active?.tenantId !== request.tenantId ||
+      active.userId !== request.actorUserId ||
+      active.superAdminBypass
+    )
+      throw new CatalogAuthorizationError();
+    if (!this.easyPeasy)
+      throw new Error('Easy Peasy is not registered by this host.');
+    const sourceId = await identity(request.tenantId, 'easy-peasy');
+    if (
+      (await this.authorize({
+        action: 'education.source.ensure',
+        actorTenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        sourceId,
+        sourceSharing: 'private',
+        destination: 'private',
+        licenseEvidence: '',
+      })) !== true
+    )
+      throw new CatalogAuthorizationError();
+    if (!this.db.transaction)
+      throw new Error('Source provisioning requires real transactions.');
+    const transaction = this.db.transaction;
+    return withEmbeddedWriteQueue(
+      this.db,
+      isEmbeddedDatabase(this.db),
+      async () => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await transaction(async (tx) => {
+              if (isPostgresDatabase(this.db))
+                await tx.query(
+                  'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+                  sourceId,
+                );
+              const sources = await CourseSourceCollection.create({ db: tx });
+              const existing = await sources.get(sourceId);
+              if (existing) {
+                if (
+                  existing.tenantId !== request.tenantId ||
+                  existing.key !== 'easy-peasy' ||
+                  existing.kind !== 'adapter' ||
+                  existing.adapterKey !== 'easy-peasy' ||
+                  existing.sharing !== 'private'
+                )
+                  throw new Error(
+                    'Existing Easy Peasy source policy cannot be changed by provisioning.',
+                  );
+              } else {
+                await sources.create({
+                  id: sourceId,
+                  tenantId: request.tenantId,
+                  key: 'easy-peasy',
+                  name: 'Easy Peasy All-in-One Homeschool',
+                  kind: 'adapter',
+                  adapterKey: 'easy-peasy',
+                  sharing: 'private',
+                });
+              }
+              return { sourceId };
+            });
+          } catch (error) {
+            if (attempt >= 3 || !retryable(error)) throw error;
+            await new Promise((resolve) =>
+              setTimeout(resolve, 5 * 2 ** attempt),
+            );
+          }
+        }
+      },
+    );
+  }
+
   private actor(request: SourceImportRequest): void {
     const active = getCurrentTenant();
     if (
@@ -154,7 +243,9 @@ export class SourceImportService {
     if (
       !request.sourceId?.trim() ||
       !request.courseRef?.trim() ||
-      request.courseRef.length > 256
+      request.courseRef.length > 256 ||
+      (request.subject !== undefined &&
+        (!request.subject.trim() || request.subject.length > 256))
     )
       throw new Error('A source and stable course reference are required.');
   }
@@ -265,12 +356,14 @@ export class SourceImportService {
               if (existing) {
                 existing.title = parsed.title;
                 existing.sourceUrl = pageUrl;
+                if (request.subject) existing.subject = request.subject.trim();
                 await existing.save();
               } else {
                 await courses.create({
                   id: courseId,
                   tenantId: request.tenantId,
                   title: parsed.title,
+                  subject: request.subject?.trim() ?? '',
                   sourceKey: source.key,
                   sourceRef: request.courseRef,
                   sourceUrl: pageUrl,
