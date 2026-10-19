@@ -3,6 +3,7 @@ import type {
   SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
 import type { SubscriptionPlan } from './models/SubscriptionPlan.js';
+import type { SubscriptionPlanVersion } from './models/SubscriptionPlanVersion.js';
 import type { TenantSubscription } from './models/TenantSubscription.js';
 
 export type SubscriptionStatus =
@@ -19,6 +20,43 @@ export type BillingInterval = 'day' | 'week' | 'month' | 'year';
 
 /** How a subscriber agrees to pay for a plan. Amounts are integer minor units. */
 export type PricingMode = 'free' | 'fixed' | 'pay_what_you_can';
+
+/**
+ * Why a subscription is bound to its current plan version (#4032).
+ *
+ * - `period_start`: pinned to the version in force when the period began.
+ * - `renewal`: re-pinned at a renewal boundary (`currentPeriodStart` moved).
+ * - `upgrade`: replaced in-period by a version whose entitlements cover the
+ *   frozen one ({@link isEntitlementUpgrade}).
+ * - `authorized`: replaced in-period through an explicit, reasoned
+ *   `TenantSubscription.authorizePlanVersionReplacement()` call.
+ * - `migration`: pinned by `migrateSubscriptionPlanVersions()`.
+ */
+export type PlanVersionPinReason =
+  | 'period_start'
+  | 'renewal'
+  | 'upgrade'
+  | 'authorized'
+  | 'migration';
+
+/**
+ * The versioned terms of a plan: what a subscriber paid for. Editing any of
+ * these on a persisted `SubscriptionPlan` publishes a new immutable
+ * `SubscriptionPlanVersion` (#4032). Amounts are integer minor units.
+ */
+export interface PlanTerms {
+  status: SubscriptionPlanStatus;
+  priceAmount: number;
+  currency: string;
+  billingInterval: BillingInterval;
+  pricingMode: PricingMode;
+  minimumAmount: number;
+  suggestedAmount: number;
+  /** JSON-encoded `PlanFeatureGrant[]`. */
+  features: string;
+  /** JSON-encoded `PlanThreshold[]`. */
+  thresholds: string;
+}
 
 export type ThresholdEnforcement = 'observe' | 'warn' | 'block';
 
@@ -139,6 +177,14 @@ export interface EntitlementResolution {
   subscriber?: Subscriber;
   planId: string | null;
   planKey: string | null;
+  /**
+   * The immutable plan version whose terms produced this resolution, or null
+   * when none applies (no subscription, or a legacy plan with no versions).
+   * Optional on the interface so pre-#4032 mocks keep typechecking.
+   */
+  planVersionId?: string | null;
+  /** Sequence number of {@link planVersionId} within its plan. */
+  planVersion?: number | null;
   subscriptionId: string | null;
   status: SubscriptionStatus | 'none';
   featureKeys: string[];
@@ -158,6 +204,12 @@ export interface EntitlementResolutionContext {
    * resolved the plan as absent or inactive.
    */
   plan?: SubscriptionPlan | null;
+  /**
+   * Plan version frozen for the subscription's current period (#4032). Must
+   * match `subscription.planVersionId` when that is set. Set to `null` when
+   * the caller has already resolved the version as absent.
+   */
+  planVersion?: SubscriptionPlanVersion | null;
 }
 
 export interface SubscriptionResolverOptions {
@@ -236,6 +288,29 @@ export interface SubscriptionPlanOptions extends SmrtObjectOptions {
 }
 
 /**
+ * Constructor options for {@link SubscriptionPlanVersion}. Versions are
+ * normally published by saving a `SubscriptionPlan`; construct one directly
+ * only in tests or migrations.
+ */
+export interface SubscriptionPlanVersionOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  planId?: string;
+  planKey?: string;
+  version?: number;
+  effectiveFrom?: Date;
+  name?: string;
+  status?: SubscriptionPlanStatus;
+  priceAmount?: number;
+  currency?: string;
+  billingInterval?: BillingInterval;
+  pricingMode?: PricingMode;
+  minimumAmount?: number;
+  suggestedAmount?: number;
+  features?: string;
+  thresholds?: string;
+}
+
+/**
  * Constructor options for {@link TenantSubscription}. Each field mirrors a
  * persisted column and is optional; unspecified values fall back to the class
  * initializers.
@@ -253,6 +328,10 @@ export interface TenantSubscriptionOptions extends SmrtObjectOptions {
   cancelAtPeriodEnd?: boolean;
   canceledAt?: Date | null;
   agreedAmount?: number | null;
+  planVersionId?: string | null;
+  planVersionPinnedAt?: Date | null;
+  planVersionPinReason?: PlanVersionPinReason | null;
+  planVersionPinNote?: string;
   externalProvider?: string | null;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
