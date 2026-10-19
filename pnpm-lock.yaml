@@ -30,7 +30,7 @@ overrides:
   '@happyvertical/documents': ^0.105.2
   '@happyvertical/email': ^0.105.2
   '@happyvertical/encryption': ^0.105.2
-  '@happyvertical/files': ^0.105.2
+  '@happyvertical/files': ^0.105.3
   '@happyvertical/geo': ^0.105.2
   '@happyvertical/images': ^0.105.2
   '@happyvertical/jobs': ^0.105.2
@@ -226,8 +226,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -471,8 +471,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -868,8 +868,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -1106,8 +1106,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/geo':
         specifier: ^0.105.2
         version: 0.105.2(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -1230,8 +1230,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/json':
         specifier: ^0.105.2
         version: 0.105.2
@@ -1327,8 +1327,8 @@ importers:
   packages/education:
     dependencies:
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1376,8 +1376,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/icalendar':
         specifier: ^0.100.2
         version: 0.100.2
@@ -1501,8 +1501,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -1645,8 +1645,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -2213,8 +2213,8 @@ importers:
   packages/mcp-conformance-fixture:
     dependencies:
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -2326,8 +2326,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -2454,8 +2454,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@opentelemetry/api@1.9.1)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/geo':
         specifier: ^0.105.2
         version: 0.105.2(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -2788,8 +2788,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -2873,8 +2873,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -3912,8 +3912,8 @@ importers:
         specifier: ^0.105.2
         version: 0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.105.2
-        version: 0.105.2(supports-color@10.2.2)
+        specifier: ^0.105.3
+        version: 0.105.3(supports-color@10.2.2)
       '@happyvertical/logger':
         specifier: ^0.105.2
         version: 0.105.2(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -5539,8 +5539,8 @@ packages:
     resolution: {integrity: sha512-4wYZ12PYu1esaa2Iw9lAv40XraM71Jk/Y2TvrDek/qNKhxcsTLroz0BVaFb23k3jF0B+URoyIxw6ez8ZJhX1nA==}
     hasBin: true
 
-  '@happyvertical/files@0.105.2':
-    resolution: {integrity: sha512-PV702/erqTV4A6wjx6h8VEffh22G325jyzdSRtShEWzPZbWDSWV7TV4p3cm5oezlK7ukTKnrVtS+2MDUONJGqA==}
+  '@happyvertical/files@0.105.3':
+    resolution: {integrity: sha512-R8cyAGjb2m6F0pEH4gTQVBsRprZKYul1oOFzvEHmKCnx+0OhxNlTXP8wYxLv3G5mZx7btrGWsd5VMjVYD8gCjA==}
     hasBin: true
 
   '@happyvertical/geo@0.105.2':
@@ -13439,7 +13439,7 @@ snapshots:
 
   '@happyvertical/documents@0.105.2(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
-      '@happyvertical/files': 0.105.2(supports-color@10.2.2)
+      '@happyvertical/files': 0.105.3(supports-color@10.2.2)
       '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/pdf': 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/spider': 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)
@@ -13490,7 +13490,7 @@ snapshots:
       - '@types/node'
       - typescript
 
-  '@happyvertical/files@0.105.2(supports-color@10.2.2)':
+  '@happyvertical/files@0.105.3(supports-color@10.2.2)':
     dependencies:
       '@aws-sdk/client-s3': 3.1066.0
       '@happyvertical/utils': 0.105.2
