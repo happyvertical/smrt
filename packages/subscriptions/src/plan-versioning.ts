@@ -187,7 +187,8 @@ export async function pinSubscriptionPlanVersion(
       boundary.getTime() > now.getTime() &&
       !authorizedReason &&
       persisted.isEntitled(now) &&
-      subscription.planVersionId !== persisted.planVersionId
+      (subscription.planVersionId !== persisted.planVersionId ||
+        subscription.planId !== persisted.planId)
     ) {
       const frozen = await frozenTerms(
         versions,

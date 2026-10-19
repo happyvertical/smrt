@@ -135,7 +135,10 @@ feature grants and thresholds — are published as immutable
     the row now names. A downgrade or a plan change that removes features is
     applied this way. Moving the start within a paid period is not a renewal,
     and a renewal saved before its start date may change the pinned terms
-    only as an upgrade (otherwise save it once the period has started).
+    only as an upgrade (otherwise save it once the period has started). It
+    pins the version scheduled for its boundary at save time; an amendment
+    published later but effective before that boundary applies from the
+    following renewal (or re-save the renewal after the period starts).
     Period dates are host/provider-owned: shortening `currentPeriodEnd` ends
     the paid period;
   - at creation and renewal the boundary decides the version: naming any

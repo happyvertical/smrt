@@ -369,6 +369,22 @@ describe('effective-dated plan versions (#4032)', () => {
           }),
         ),
       ).toMatch(/remove entitlements from a paid period/);
+      // Nor ahead of time, as an advance renewal, between unversioned plans.
+      await plans.db.query(
+        `UPDATE "_smrt_tenant_subscriptions" SET plan_version_id = NULL`,
+      );
+      await plans.db.query(
+        `DELETE FROM "_smrt_subscription_plan_versions" WHERE plan_id = '${subscription.planId}'`,
+      );
+      expect(
+        await rootCause(() =>
+          subscriptions.update(String(subscription.id), {
+            planId: String(legacy.id),
+            currentPeriodStart: at(25),
+            currentPeriodEnd: at(55),
+          }),
+        ),
+      ).toMatch(/once its period has started/);
     } finally {
       await plans.db.close?.();
     }
