@@ -54,4 +54,5 @@ export {
   type TaxSummaryReportMeasure,
   type TaxSummaryReportRefreshResult,
 } from './TaxSummaryReportCollection.js';
+export { TenantPaymentAccountCollection } from './TenantPaymentAccountCollection.js';
 export { VendorCollection } from './VendorCollection.js';

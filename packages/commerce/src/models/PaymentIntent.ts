@@ -272,6 +272,21 @@ export class PaymentIntent extends SmrtObject {
    */
   notes: string = '';
 
+  /**
+   * Connected provider account (for example a Stripe `acct_...`) the
+   * checkout was created on as a direct charge (#3831). Empty for
+   * platform-account intents. Server-managed: set only by
+   * `createConnectedCheckout()`, and the settling Payment must carry the same
+   * account.
+   */
+  connectedAccountId: string = '';
+
+  /**
+   * Platform application fee requested on the direct charge, in integer
+   * minor units of the option's currency (#3831). Server-managed.
+   */
+  applicationFeeCents: number = 0;
+
   constructor(options: PaymentIntentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -311,6 +326,10 @@ export class PaymentIntent extends SmrtObject {
     if (options.retiredAt !== undefined)
       this.retiredAt = PaymentIntent.coerceDate(options.retiredAt);
     if (options.notes !== undefined) this.notes = options.notes;
+    if (options.connectedAccountId !== undefined)
+      this.connectedAccountId = options.connectedAccountId;
+    if (options.applicationFeeCents !== undefined)
+      this.applicationFeeCents = options.applicationFeeCents;
   }
 
   /**
@@ -379,6 +398,17 @@ export class PaymentIntent extends SmrtObject {
       ? (priorRow.status as PaymentIntentStatus)
       : loadedIntentStatus.get(this);
     this.assertStatusTransition(prior);
+    if (
+      !Number.isSafeInteger(this.applicationFeeCents) ||
+      this.applicationFeeCents < 0
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: applicationFeeCents must be a non-negative integer of minor units`,
+      );
+    if (this.applicationFeeCents > 0 && !this.connectedAccountId)
+      throw new Error(
+        `PaymentIntent ${this.id}: applicationFeeCents requires a connectedAccountId`,
+      );
 
     // Freeze the backing fields once the intent is already PAID/ISSUED in the
     // database (codex HIGH#2). Round 3 re-verified the backing Payment but did
@@ -454,6 +484,16 @@ export class PaymentIntent extends SmrtObject {
         'usdPriceLocked',
         Number(priorRow.usd_price_locked ?? 0),
         Number(this.usdPriceLocked ?? 0),
+      ],
+      [
+        'connectedAccountId',
+        priorRow.connected_account_id ?? '',
+        this.connectedAccountId,
+      ],
+      [
+        'applicationFeeCents',
+        Number(priorRow.application_fee_cents ?? 0),
+        Number(this.applicationFeeCents ?? 0),
       ],
     ];
     for (const [field, prior, next] of frozen) {
@@ -569,10 +609,24 @@ export class PaymentIntent extends SmrtObject {
       currency?: string;
       nativeAmount?: number;
       amount?: number;
+      connectedAccountId?: string;
+      applicationFeeCents?: number;
     },
     option: PaymentOption,
     paymentIdLabel: string,
   ): void {
+    // A connected direct charge settles only with a Payment made on the same
+    // connected account with the same application fee (#3831), so funds on
+    // another tenant's account (or the platform's) never satisfy it.
+    if (
+      (payment.connectedAccountId ?? '') !== this.connectedAccountId ||
+      Number(payment.applicationFeeCents ?? 0) !== this.applicationFeeCents
+    ) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' was not made on ` +
+          'the connected account and application fee this intent was created with',
+      );
+    }
     // Only enforce the rail check when the Payment actually recorded a backend
     // (PaymentBackend-routed flows). Manually-recorded payments may carry no
     // backendId; the amount + currency checks still apply.

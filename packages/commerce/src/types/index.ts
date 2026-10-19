@@ -300,6 +300,12 @@ export interface RecordPaymentOptions {
   receivablesAccountId: string;
   /** Account ID for cash/bank (debit side) */
   cashAccountId: string;
+  /**
+   * Expense account for a connected charge's application fee (#3831).
+   * Required when the payment carries `applicationFeeCents`: cash is debited
+   * net of the fee and the fee is debited here.
+   */
+  applicationFeeAccountId?: string;
 }
 
 /**
@@ -762,6 +768,9 @@ export interface PaymentOptions extends SmrtObjectOptions {
   nativeCurrency?: string;
   usdAtQuote?: number;
   usdAtConfirmation?: number;
+  connectedAccountId?: string;
+  applicationFeeCents?: number;
+  refundOfPaymentId?: string;
 }
 
 /**
@@ -818,6 +827,8 @@ export interface PaymentIntentOptions extends SmrtObjectOptions {
   cancelledAt?: Date | number | string | null;
   retiredAt?: Date | number | string | null;
   notes?: string;
+  connectedAccountId?: string;
+  applicationFeeCents?: number;
 }
 
 /**

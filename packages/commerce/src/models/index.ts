@@ -56,4 +56,16 @@ export {
   TaxSummaryReport,
   type TaxSummaryReportRowKind,
 } from './TaxSummaryReport.js';
+export {
+  deriveTenantPaymentAccountStatus,
+  TenantPaymentAccount,
+  type TenantPaymentAccountOptions,
+  type TenantPaymentAccountStatus,
+  type TenantPaymentCapabilitySnapshot,
+  type TenantPaymentEnvironment,
+} from './TenantPaymentAccount.js';
+export {
+  TenantPaymentWebhookEvent,
+  type TenantPaymentWebhookOutcome,
+} from './TenantPaymentWebhookEvent.js';
 export { Vendor } from './Vendor.js';

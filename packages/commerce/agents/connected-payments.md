@@ -1,0 +1,106 @@
+# Tenant-owned connected payment accounts (#3831)
+
+A tenant (for example a co-op) is paid into its own Stripe Connect **Standard**
+account. Checkouts are direct charges on that account, the platform's share is
+an application fee, and the platform never holds the tenant's money. Source:
+`src/connected-payments.ts`, `src/models/TenantPaymentAccount.ts`,
+`src/models/TenantPaymentWebhookEvent.ts`.
+
+## Model
+
+`TenantPaymentAccount { tenantId, backendId, environment, providerAccountId,
+status, chargesEnabled, detailsSubmitted, payoutsEnabled, capabilitiesJson,
+capabilitiesObservedAt, feePolicyRef, disabledAt, disabledReason }`.
+
+- Tenant-scoped (`required`), native UUID tenant ids. Two unique indexes:
+  `(tenantId, backendId, environment)` and
+  `(backendId, environment, providerAccountId)`, so the database refuses a
+  second owner of a provider account even if a command check were bypassed.
+- `status`: `pending` (details not submitted), `restricted` (details
+  submitted, charges or payouts off), `enabled` (charges, details and payouts
+  all on), `disabled` (operator; refreshes keep it off). Only `enabled` takes
+  new charges.
+- Read-only generated surface. `save()` refuses any write outside the
+  commands, any change of tenant/backend/environment, and a provider account
+  change outside the relink command.
+- `TenantPaymentWebhookEvent` (`_smrt_tenant_payment_webhook_events`, system
+  table, unique `(backendId, environment, eventId)`) stores processed event ids;
+  the SDK's dedupe is in memory only.
+- `PaymentIntent` and `Payment` gain server-managed `connectedAccountId` and
+  `applicationFeeCents` (`Payment` also `refundOfPaymentId`), frozen once
+  settled. A connected intent settles only with a Payment on the same account
+  and fee.
+
+## Commands
+
+All take an explicit `tenantId` and check ownership against it, so a
+privileged or system caller is refused the same way. There is no fallback to
+the platform account.
+
+| Command | Does |
+|---|---|
+| `onboardTenantPaymentAccount` | Create the Standard account (per-tenant idempotency key) and store it; returns the existing one on retry. |
+| `createTenantOnboardingLink` | Single-use onboarding URL. A bearer secret: redirect, never log or store. |
+| `linkTenantPaymentAccount` | Link an existing account; `replace: true` relinks. Refused (`ACCOUNT_IN_USE`) when another tenant holds it. |
+| `refreshTenantPaymentAccount` | Snapshot from `getAccountCapabilities`, re-derive status. |
+| `setTenantPaymentAccountDisabled`, `setTenantPaymentFeePolicy` | Operator switches. |
+| `requireEnabledTenantPaymentAccount` | Throws `NO_ENABLED_ACCOUNT` unless enabled. |
+| `createConnectedCheckout` | Checkout on the tenant's account with `stripeAccount` + `applicationFeeAmount` (integer minor units from the caller's fee policy; `0` for none; must be below the amount). Records the intent with the session id in the option's `memo`. Idempotent on the intent natural key. |
+| `handleConnectedPaymentWebhook` | See below. |
+| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full; a full refund marks the payment `REFUNDED` and retires the intent. |
+| `createStripeConnectGateway` | Platform `StripeAdapter` from smrt-secrets. |
+
+## Webhooks
+
+`handleConnectedPaymentWebhook({ db, gateway, environment, endpoint, payload,
+signature, resolveSettlementAccounts })`:
+
+1. The SDK verifies the signature **before** routing, then maps the event's
+   connected account to its `TenantPaymentAccount` (cross-tenant read under
+   `withSystemContext`, the one reviewed cross-tenant path). Unknown accounts
+   throw the SDK's `PaymentNotOwnedError`.
+2. The event's `livemode` must match `environment` (`ENVIRONMENT_MISMATCH`).
+3. A stored event id returns `{ duplicate: true }` with its first outcome.
+4. `account.updated` applies the snapshot unless an earlier second than the
+   stored one (`stale_account_update`). `application_fee.*` (platform endpoint,
+   `endpoint: 'platform'`) is routed to the tenant and reported, not booked.
+   A payment event loads the quote **in the resolved tenant** and refuses
+   (`QUOTE_NOT_OWNED`) unless it belongs to that tenant and account, then
+   re-reads the Checkout Session from the provider, so delivery order never
+   matters. Settlement records a `Payment` (deterministic id from the intent)
+   through `recordPayment()` and marks the intent paid. `refunded` events are
+   reported (`refund_reported`), never booked automatically.
+5. The event id is stored only after processing succeeds; a refusal throws,
+   so respond non-2xx and nothing unprocessed is acknowledged.
+
+## Accounting
+
+The direct charge arrives net of the fee, which the provider withheld at
+source: `recordPayment()` debits cash `amount - fee`, debits
+`applicationFeeAccountId` `fee`, and credits receivables `amount`. The fee is
+an expense already paid, never a payable to the platform. A payment with a fee
+and no `applicationFeeAccountId` is refused. Refund journals reverse the
+refunded amount; a refunded application fee is reported by
+`application_fee.refunded` for the host to book.
+
+## Operator setup
+
+- smrt-secrets (held by the installation tenant, `secretsTenantId`):
+  `stripe-connect-<env>-secret-key` (`sk_`/`rk_` key of that environment),
+  `stripe-connect-<env>-webhook-secret` (platform endpoint),
+  `stripe-connect-<env>-connect-webhook-secret` (Connect endpoint). Values
+  never appear in errors.
+- Stripe: one platform endpoint (`application_fee.created`,
+  `application_fee.refunded`) and one Connect endpoint (`account.updated`,
+  `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+  `checkout.session.async_payment_failed`, `checkout.session.expired`,
+  `charge.refunded`), per environment.
+- Each tenant needs ledger accounts for cash, receivables and the platform fee
+  expense, returned by `resolveSettlementAccounts`.
+
+## Known limits
+
+Relinking strands open checkouts on the old account and refuses refunds of
+its payments (`ACCOUNT_NOT_OWNED`). Concurrent refunds with different keys are
+capped by the provider, not locally. Payments confirmed after an intent
+expired or was cancelled are reported `ignored` for an operator.
