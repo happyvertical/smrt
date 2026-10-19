@@ -75,6 +75,11 @@ async function identity(...parts: string[]): Promise<string> {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+/** Both adapter file extensions and MIME media types preserve PDF layout. */
+export function isPrintableAcquisitionFormat(format: string): boolean {
+  return format === 'pdf' || format === 'application/pdf';
+}
+
 /** Creates a private course from an already-authorized, pinned acquisition. */
 export class CatalogMaterializationService {
   constructor(
@@ -185,7 +190,7 @@ export class CatalogMaterializationService {
         });
       // Acquisition formats are MIME types. Only a layout-preserving PDF is
       // printable; all other formats remain attachments for host-specific use.
-      const printable = acquisition.format === 'application/pdf';
+      const printable = isPrintableAcquisitionFormat(acquisition.format);
       const lessons = printable ? worksheets : readings;
       if (!(await lessons.get(lessonId)))
         await lessons.create({

@@ -1,7 +1,10 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { describe, expect, it, vi } from 'vitest';
-import { CatalogMaterializationService } from '../catalog-materialization-service.js';
+import {
+  CatalogMaterializationService,
+  isPrintableAcquisitionFormat,
+} from '../catalog-materialization-service.js';
 import { CourseCollection } from '../collections.js';
 
 const acquisition = {
@@ -48,6 +51,12 @@ const request = {
 };
 
 describe('CatalogMaterializationService', () => {
+  it('recognizes extension and MIME PDF acquisition formats without rewriting them', () => {
+    expect(isPrintableAcquisitionFormat('pdf')).toBe(true);
+    expect(isPrintableAcquisitionFormat('application/pdf')).toBe(true);
+    expect(isPrintableAcquisitionFormat('text/html')).toBe(false);
+  });
+
   it('refuses a cross-tenant acquisition before any private asset materialization', async () => {
     const { service: materializer, storage } = service({
       getAcquisition: vi.fn(async () => undefined),
