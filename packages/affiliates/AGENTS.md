@@ -30,7 +30,7 @@ imports `@happyvertical/smrt-sales` directly.
 - `PayoutStatus` values are a subset of the `CommissionPayoutStatus` union
   (which adds `'rejected'`; legacy affiliates had no reject) — the shared
   string values align exactly. `PayoutMethod` values align with the new
-  `PayoutMethod` union (which adds `'other'`).
+  `PayoutMethod` union (which adds `'other'`, `'stripe_connect'`, and `'crypto'`).
 - `CommissionStatus.INCLUDED` (`'included'`) has **no direct equivalent**;
   the nearest new state is `'payable'` with `payoutId` set. `PENDING`/`PAID`
   align.

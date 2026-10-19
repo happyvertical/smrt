@@ -45,6 +45,9 @@ export {
 export {
   type CalculateWaterfallOptions,
   calculateWaterfall,
+  calculateWaterfallWithPools,
+  type PrepareWaterfallPoolsOptions,
+  prepareWaterfallPools,
   validateWaterfallPlan,
   type WaterfallRecipientResolver,
   WaterfallRecipientResolverRegistry,
