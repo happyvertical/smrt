@@ -47,6 +47,8 @@ interface HeadingMatch {
   fragment?: string;
   title?: string;
   containerEnd?: number;
+  levelRange?: readonly [number, number];
+  hasLessonMarker?: boolean;
 }
 
 interface LinkMatch {
@@ -92,6 +94,19 @@ function attribute(attributes: string, name: string): string | undefined {
   return match?.[1] ?? match?.[2] ?? match?.[3];
 }
 
+/** Return the end of a div without mistaking a nested layout div for its end. */
+function closingDivEnd(html: string, start: number): number {
+  const tags = /<\/?div\b[^>]*>/gi;
+  tags.lastIndex = start;
+  let depth = 1;
+  for (let tag = tags.exec(html); tag; tag = tags.exec(html)) {
+    if (/^<\/div\b/i.test(tag[0])) depth -= 1;
+    else depth += 1;
+    if (depth === 0) return tag.index + tag[0].length;
+  }
+  return start;
+}
+
 function lessonHeadings(html: string): HeadingMatch[] {
   const containers: HeadingMatch[] = [];
   const divs = /<div\b([^>]*)>/gi;
@@ -105,7 +120,9 @@ function lessonHeadings(html: string): HeadingMatch[] {
     const weekly = marker[1].toLowerCase() === 'week';
     const index = match.index ?? 0;
     const end = index + match[0].length;
-    const closing = /<\/div\s*>/i.exec(html.slice(end));
+    const containerEnd = closingDivEnd(html, end);
+    const body = html.slice(end, containerEnd);
+    const level = /\blevels?\s+(\d+)\s*[-–]\s*(\d+)\b/i.exec(textContent(body));
     containers.push({
       index,
       end,
@@ -113,20 +130,80 @@ function lessonHeadings(html: string): HeadingMatch[] {
       day: number,
       fragment: `${weekly ? 'week' : 'day'}${number}`,
       ...(weekly ? { title: `Week ${number}` } : {}),
-      containerEnd: closing
-        ? end + (closing.index ?? 0) + closing[0].length
-        : end,
+      containerEnd,
+      ...(level
+        ? {
+            levelRange: [
+              Number.parseInt(level[1], 10),
+              Number.parseInt(level[2], 10),
+            ] as const,
+          }
+        : {}),
+      hasLessonMarker: new RegExp(
+        `\\bLessons?\\s+${number}(?:\\D|$)`,
+        'i',
+      ).test(textContent(body)),
     });
   }
   containers.sort((left, right) => left.index - right.index);
+  const grade = 4;
+  const gradeContainers = containers.filter(
+    (container) =>
+      !container.levelRange ||
+      (container.levelRange[0] <= grade && grade <= container.levelRange[1]),
+  );
+  const selectedContainers: HeadingMatch[] = [];
+  for (const container of gradeContainers) {
+    const peers = gradeContainers.filter(
+      (candidate) => candidate.day === container.day,
+    );
+    if (peers[0] !== container) continue;
+    if (peers.length === 1) selectedContainers.push(container);
+    else {
+      const marked = peers.filter((candidate) => candidate.hasLessonMarker);
+      if (marked.length !== 1)
+        throw new Error(
+          `Easy Peasy lesson day is invalid or duplicated: ${container.day}`,
+        );
+      selectedContainers.push(marked[0]);
+    }
+  }
   const isInDailyContainer = (index: number): boolean =>
-    containers.some(
+    selectedContainers.some(
       (container) =>
         container.index <= index &&
         index < (container.containerEnd ?? container.end),
     );
+  const isDetachedDailyMarker = (index: number, text: string): boolean => {
+    const day = /^lesson\s+(\d+)\b/i.exec(text)?.[1];
+    if (!day) return false;
+    return selectedContainers.some(
+      (container) =>
+        container.day === Number.parseInt(day, 10) &&
+        (container.containerEnd ?? container.end) <= index &&
+        !textContent(
+          html.slice(container.containerEnd ?? container.end, index),
+        ),
+    );
+  };
 
-  const matches: HeadingMatch[] = [...containers];
+  const matches: HeadingMatch[] = [...selectedContainers];
+  // Some older official pages use a bare layout div for each lesson instead of
+  // a day id. Accept only a direct bold child: a nested generic block remains
+  // ambiguous and is rejected below.
+  const directDivLessons =
+    /<div\b[^>]*>\s*<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)\s*>/gi;
+  for (const match of html.matchAll(directDivLessons)) {
+    if (isInDailyContainer(match.index ?? 0)) continue;
+    const text = textContent(match[1]);
+    if (!/^lesson\b/i.test(text)) continue;
+    if (isDetachedDailyMarker(match.index ?? 0, text)) continue;
+    matches.push({
+      index: match.index ?? 0,
+      end: (match.index ?? 0) + match[0].length,
+      text,
+    });
+  }
   const weeks = /<(?:strong|b)\b([^>]*)>([\s\S]*?)<\/(?:strong|b)\s*>/gi;
   for (const match of html.matchAll(weeks)) {
     if (isInDailyContainer(match.index ?? 0)) continue;
@@ -169,6 +246,7 @@ function lessonHeadings(html: string): HeadingMatch[] {
     if (!bold) continue;
     const text = textContent(bold[1]);
     if (!/^lesson\b/i.test(text)) continue;
+    if (isDetachedDailyMarker(block.index ?? 0, text)) continue;
     const boldIndex = (block.index ?? 0) + block[0].indexOf(bold[0]);
     matches.push({
       index: block.index ?? 0,
@@ -184,6 +262,7 @@ function lessonHeadings(html: string): HeadingMatch[] {
     const end = index + marker[0].length;
     const accountedFor =
       isInDailyContainer(index) ||
+      isDetachedDailyMarker(index, textContent(marker[2])) ||
       sorted.some(
         (heading) =>
           /^lesson\b/i.test(heading.text) &&

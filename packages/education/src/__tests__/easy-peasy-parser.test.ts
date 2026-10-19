@@ -86,6 +86,29 @@ describe('parseEasyPeasyPage', () => {
     });
   });
 
+  it('selects the official Level 1-4 daily block and associates its detached marker', () => {
+    const html = `
+      <h1>Course</h1>
+      <div id="day7"><strong>Lesson 7</strong><p><strong>Level 1-4</strong></p></div>
+      <div id="day7"><p><strong>Level 5-8</strong></p></div>
+      <div id="day8"><strong class="scraper-hide">Topic</strong></div>
+      <div><strong><br></strong><strong>Lesson 8</strong></div>
+      <div id="day9"><strong>Lesson 9</strong><p><strong>Level 1-4</strong></p></div>
+      <div id="day9"><strong>Lesson 9</strong><p><strong>Level 1-4</strong></p></div>`;
+    const withoutConflict = html.slice(0, html.indexOf('<div id="day9"'));
+    expect(parseEasyPeasyPage(withoutConflict, pageUrl).lessons).toEqual([
+      expect.objectContaining({
+        day: 7,
+        externalUrl: expect.stringMatching(/#day7$/),
+      }),
+      expect.objectContaining({
+        day: 8,
+        externalUrl: expect.stringMatching(/#day8$/),
+      }),
+    ]);
+    expect(() => parseEasyPeasyPage(html, pageUrl)).toThrow('duplicated: 9');
+  });
+
   it('uses day identities and stable fragments when the source page URL changes', () => {
     const html = fixture('easy-peasy-course.html');
     const first = parseEasyPeasyPage(html, pageUrl).lessons[0];
