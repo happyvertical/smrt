@@ -6,6 +6,7 @@ import {
   assertAmbiguousMarkersAtomicity,
   assertAuthorizationAndSharing,
   assertBoldInstructionRefresh,
+  assertEasyPeasySourceProvisioning,
   assertExactHrefRefresh,
   assertInputAndIdentityGuards,
   assertPrintableLabelRefresh,
@@ -23,6 +24,10 @@ describe('source import (SQLite)', () => {
     [
       'retains identities and history; real catalog excludes other owners',
       assertRefreshAndPrivacy,
+    ],
+    [
+      'provisions the authorized Easy Peasy source idempotently',
+      assertEasyPeasySourceProvisioning,
     ],
     ['enforces actor and source sharing matrix', assertAuthorizationAndSharing],
     [

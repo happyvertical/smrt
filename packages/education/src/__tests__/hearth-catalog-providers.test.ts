@@ -10,7 +10,9 @@ import {
 } from '../hearth-catalog-providers.js';
 import {
   grade4Courses,
+  grade4Theme,
   importEasyPeasyGrade4Course,
+  importEasyPeasyGrade4Theme,
 } from '../hearth-easy-peasy-grade4.js';
 import { parseIllustrativeMathematicsK5Index } from '../sources/illustrative-mathematics-parser.js';
 import { parseOerCommonsRssFeed } from '../sources/oer-commons-rss-parser.js';
@@ -221,5 +223,38 @@ describe('Hearth catalog providers', () => {
       }),
     ).rejects.toThrow('Theme choices');
     expect(grade4Courses('shared-theme-choice')).toHaveLength(4);
+  });
+
+  it('imports exactly one selected lower-elementary theme as official pointers', async () => {
+    const calls: Array<{ courseRef: string; pageUrl: string }> = [];
+    const service = {
+      async importCourse(input: { courseRef: string; pageUrl: string }) {
+        calls.push(input);
+        return { courseId: input.courseRef, lessonIds: [] };
+      },
+    };
+    await expect(
+      importEasyPeasyGrade4Theme(service, {
+        tenantId: 'tenant',
+        actorUserId: 'guardian',
+        sourceId: 'source',
+        destination: 'private',
+        themeId: 'theme-3',
+      }),
+    ).resolves.toEqual({
+      themeId: 'theme-3',
+      courseIds: [
+        'theme-3-science',
+        'theme-3-history',
+        'theme-3-bible',
+        'theme-3-art',
+        'theme-3-music',
+        'theme-3-pe-health',
+      ],
+    });
+    expect(calls).toHaveLength(6);
+    expect(
+      grade4Theme('theme-3').courses.map((course) => course.pageUrl),
+    ).toContain('https://allinonehomeschool.com/geography-and-cultures/');
   });
 });

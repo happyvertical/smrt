@@ -127,6 +127,20 @@ export {
   providerFeedRequirements,
 } from './hearth-catalog-providers.js';
 export type {
+  EasyPeasyGrade4Course,
+  EasyPeasyGrade4Theme,
+  EasyPeasyGrade4Variant,
+  EasyPeasyThemeImportResult,
+} from './hearth-easy-peasy-grade4.js';
+export {
+  easyPeasyGrade4Courses,
+  easyPeasyGrade4Themes,
+  grade4Courses,
+  grade4Theme,
+  importEasyPeasyGrade4Course,
+  importEasyPeasyGrade4Theme,
+} from './hearth-easy-peasy-grade4.js';
+export type {
   CurriculumView,
   EnrollmentView,
   LearnerAuthorizer,
@@ -145,6 +159,8 @@ export { LessonAsset } from './lesson-assets.js';
 export { EducationCatalogRecipe, EducationLearnerRecipe } from './recipes.js';
 export type {
   EasyPeasyRegistration,
+  EnsureEasyPeasyCourseSourceRequest,
+  EnsureEasyPeasyCourseSourceResult,
   SourceImportAuthorization,
   SourceImportAuthorizer,
   SourceImportRequest,
