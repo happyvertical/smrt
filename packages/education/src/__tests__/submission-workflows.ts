@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +14,9 @@ import {
   CourseSectionCollection,
   GradeCollection,
   LessonProgressCollection,
+  ScannedSubmissionCollection,
   SubmissionAssetCollection,
+  SubmissionIntakeBindingCollection,
   WorksheetCollection,
 } from '../collections.js';
 import type { LearnerAuthorizer, LearnerRequest } from '../learner-service.js';
@@ -234,6 +237,106 @@ export async function assertCapture(f: Fixture) {
       ),
     ).rejects.toThrow();
     expect(e.claims).toHaveLength(1);
+  } finally {
+    await e.cleanup();
+  }
+}
+
+function captureDigest(input: {
+  pages: readonly { name: string; mimeType: string; data: Buffer }[];
+  notes?: string;
+  intake: unknown;
+}): string {
+  const digest = createHash('sha256');
+  for (const page of input.pages)
+    digest
+      .update(JSON.stringify([page.name, page.mimeType, page.data.length]))
+      .update(page.data);
+  digest.update(JSON.stringify(input.notes ?? ''));
+  digest.update(JSON.stringify(input.intake));
+  return digest.digest('hex');
+}
+
+/** Legacy receipts predate the durable intake binding table. */
+export async function assertLegacyIntakeFallback(f: Fixture) {
+  const e = await environment(f);
+  const scans = await ScannedSubmissionCollection.create({ db: f.db });
+  const bindings = await SubmissionIntakeBindingCollection.create({ db: f.db });
+  const request = (intakeItemId: string, lessonId = String(f.lesson.id)) => ({
+    ...e.request,
+    lessonId,
+    intake: { intakeItemId, kind: 'blank_reference' as const },
+  });
+  const bindingsFor = (intakeItemId: string) =>
+    f.as(f.own, () =>
+      bindings.list({
+        where: { tenantId: f.own.tenantId, intakeItemId },
+      }),
+    );
+  const seed = async (input: ReturnType<typeof request>) => {
+    const progress = await f.as(f.own, () =>
+      f.service.startLesson({
+        ...f.own,
+        enrollmentId: f.enrollment.id,
+        lessonId: input.lessonId,
+      }),
+    );
+    return f.as(f.own, () =>
+      scans.create({
+        tenantId: f.own.tenantId,
+        learnerId: f.own.learnerId,
+        lessonId: input.lessonId,
+        progressId: String(progress.id),
+        pageCount: input.pages.length,
+        captureKey: `legacy-${input.intake.intakeItemId}-${Math.random()}`,
+        captureDigest: captureDigest(input),
+        kind: input.intake.kind,
+        intakeItemId: input.intake.intakeItemId,
+      }),
+    );
+  };
+  try {
+    const sameAssignment = request('legacy-same');
+    const original = await seed(sameAssignment);
+    const retried = await f.as(f.own, () =>
+      e.service.captureSubmission(sameAssignment),
+    );
+    expect(retried.id).toBe(String(original.id));
+    expect(await bindingsFor('legacy-same')).toHaveLength(1);
+
+    const wrongLesson = request('legacy-wrong', String(f.lesson.id));
+    await seed(wrongLesson);
+    await expect(
+      f.as(f.own, () =>
+        e.service.captureSubmission({
+          ...wrongLesson,
+          lessonId: String(f.secondLesson.id),
+        }),
+      ),
+    ).rejects.toThrow('another assignment');
+    expect(await bindingsFor('legacy-wrong')).toEqual([]);
+
+    const concurrent = request('legacy-concurrent');
+    const concurrentOriginal = await seed(concurrent);
+    const retries = await f.as(f.own, () =>
+      Promise.all([
+        e.service.captureSubmission(concurrent),
+        e.service.captureSubmission(concurrent),
+      ]),
+    );
+    expect(retries.map((row) => row.id)).toEqual([
+      String(concurrentOriginal.id),
+      String(concurrentOriginal.id),
+    ]);
+    expect(await bindingsFor('legacy-concurrent')).toHaveLength(1);
+
+    const duplicate = request('legacy-duplicate');
+    await seed(duplicate);
+    await seed(duplicate);
+    await expect(
+      f.as(f.own, () => e.service.captureSubmission(duplicate)),
+    ).rejects.toThrow('ambiguous');
+    expect(await bindingsFor('legacy-duplicate')).toEqual([]);
   } finally {
     await e.cleanup();
   }

@@ -101,6 +101,11 @@ export interface DriveDiscoveryOptions {
   checkpoint?: DriveDiscoveryCheckpoint;
   pageSize?: number;
   /**
+   * Exact Drive file IDs the trusted host has reviewed as learner-safe.
+   * Folder IDs never grant visibility to their contents.
+   */
+  studentSafeFileIds?: readonly string[];
+  /**
    * Shortcut targets are re-read by ID and must pass this host boundary check
    * before a folder can enter traversal. The secure default is deny.
    */
@@ -199,6 +204,7 @@ function toRecord(
   metadata: DriveFileMetadata,
   parentStableId: string,
   inheritedVisibility: 'catalog' | 'teacher',
+  studentSafeFileIds: ReadonlySet<string>,
 ): DriveCatalogRecord {
   const revision =
     metadata.revisionId ??
@@ -225,7 +231,12 @@ function toRecord(
     ...(metadata.modifiedTime
       ? { modifiedTime: metadata.modifiedTime.toISOString() }
       : {}),
-    visibility: classify(metadata.name, inheritedVisibility),
+    visibility:
+      !isFolder(metadata) &&
+      studentSafeFileIds.has(metadata.id) &&
+      classify(metadata.name, inheritedVisibility) === 'catalog'
+        ? 'catalog'
+        : 'teacher',
     licenseEvidence: { state: 'unknown' },
   };
 }
@@ -322,11 +333,44 @@ export class GoogleDriveCurriculumAdapter
     const seenFolders = new Set(checkpoint.visitedFolders);
     seenFolders.add(current.folderId);
 
+    const studentSafeFileIds = new Set(options.studentSafeFileIds ?? []);
     for (const entry of page.entries) {
       if (!entry.id || seenRecordIds.has(entry.id)) continue;
       seenRecordIds.add(entry.id);
+      const inheritedVisibility = classify(entry.name, current.visibility);
+      let recordEntry = entry;
+      if (
+        entry.shortcutDetails &&
+        entry.shortcutDetails.targetMimeType !== GOOGLE_FOLDER_MIME
+      ) {
+        try {
+          recordEntry = await this.drive.getMetadataById(
+            entry.shortcutDetails.targetId,
+          );
+        } catch {
+          exclusions.push({
+            stableId: entry.shortcutDetails.targetId,
+            reason: 'shortcut-target-inaccessible',
+          });
+          continue;
+        }
+        if (isFolder(recordEntry)) {
+          exclusions.push({
+            stableId: recordEntry.id,
+            reason: 'shortcut-target-unsupported',
+          });
+          continue;
+        }
+      }
       try {
-        records.push(toRecord(entry, current.folderId, current.visibility));
+        records.push(
+          toRecord(
+            recordEntry,
+            current.folderId,
+            inheritedVisibility,
+            studentSafeFileIds,
+          ),
+        );
       } catch {
         exclusions.push({
           stableId: entry.id,
@@ -334,7 +378,7 @@ export class GoogleDriveCurriculumAdapter
         });
         continue;
       }
-      const visibility = classify(entry.name, current.visibility);
+      const visibility = inheritedVisibility;
       if (entry.shortcutDetails) {
         await this.resolveShortcut(
           entry.shortcutDetails,

@@ -131,6 +131,73 @@ describe('GoogleDriveCurriculumAdapter', () => {
     ).toBe('teacher');
   });
 
+  it('defaults Drive to teacher and requires an exact safe file ID', async () => {
+    const drive = client({
+      'root:': [
+        folder('materials', 'Worksheets', ['root']),
+        file('direct', 'Worksheet.pdf', ['root']),
+        file('answer', 'Answer Key.pdf', ['root']),
+      ],
+      'materials:': [file('nested', 'Worksheet.pdf', ['materials'])],
+    });
+    const adapter = new GoogleDriveCurriculumAdapter(drive, {
+      roots: [{ id: 'root' }],
+      studentSafeFileIds: ['direct', 'answer', 'materials'],
+    });
+    const first = await adapter.discover({
+      roots: [{ id: 'root' }],
+      studentSafeFileIds: ['direct', 'answer', 'materials'],
+    });
+    expect(first.records).toMatchObject([
+      { stableId: 'materials', visibility: 'teacher' },
+      { stableId: 'direct', visibility: 'catalog' },
+      { stableId: 'answer', visibility: 'teacher' },
+    ]);
+    const second = await adapter.discover({
+      roots: [{ id: 'root' }],
+      checkpoint: first.checkpoint,
+      studentSafeFileIds: ['direct', 'answer', 'materials'],
+    });
+    const third = await adapter.discover({
+      roots: [{ id: 'root' }],
+      checkpoint: second.checkpoint,
+      studentSafeFileIds: ['direct', 'answer', 'materials'],
+    });
+    expect(third.records).toMatchObject([
+      { stableId: 'nested', visibility: 'teacher' },
+    ]);
+  });
+
+  it('uses a file shortcut target as the canonical allowlist identity', async () => {
+    const target = file('canonical-file', 'Worksheet.pdf', ['elsewhere']);
+    const drive = client(
+      {
+        'root:': [
+          {
+            ...file('shortcut', 'Worksheet shortcut', ['root']),
+            mimeType: 'application/vnd.google-apps.shortcut',
+            shortcutDetails: {
+              targetId: 'canonical-file',
+              targetMimeType: 'application/pdf',
+            },
+          },
+        ],
+      },
+      { target },
+    );
+    const page = await new GoogleDriveCurriculumAdapter(drive, {
+      roots: [{ id: 'root' }],
+      studentSafeFileIds: ['canonical-file'],
+    }).discover({
+      roots: [{ id: 'root' }],
+      studentSafeFileIds: ['canonical-file'],
+    });
+    expect(page.records).toMatchObject([
+      { stableId: 'canonical-file', visibility: 'catalog' },
+    ]);
+    expect(drive.getMetadataById).toHaveBeenCalledWith('canonical-file');
+  });
+
   it('deduplicates duplicate names and roots by stable Drive ID', async () => {
     const drive = client({
       'root:': [

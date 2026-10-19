@@ -16,8 +16,7 @@ export interface CatalogMaterializationStore {
   getResource(
     resourceId: string,
   ): Promise<
-    | (CatalogSourceRecord & { id: string; withdrawnAt?: Date | null })
-    | undefined
+    (CatalogSourceRecord & { id: string; withdrawnAt: Date | null }) | undefined
   >;
   getAcquisition(input: {
     tenantId: string;

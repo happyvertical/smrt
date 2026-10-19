@@ -401,14 +401,15 @@ export class SubmissionService extends LearnerService {
       const submissions = await ScannedSubmissionCollection.create({
         db: service.db,
       });
-      if (request.intake) {
+      const intakeRequest = request.intake;
+      if (intakeRequest) {
         const bindings = await SubmissionIntakeBindingCollection.create({
           db: service.db,
         });
         const binding = await bindings.get(
           {
             tenantId: request.tenantId,
-            intakeItemId: request.intake.intakeItemId,
+            intakeItemId: intakeRequest.intakeItemId,
           },
           { cache: false },
         );
@@ -417,13 +418,18 @@ export class SubmissionService extends LearnerService {
               { id: binding.submissionId, tenantId: request.tenantId },
               { cache: false },
             )
-          : await submissions.get(
-              {
-                tenantId: request.tenantId,
-                intakeItemId: request.intake.intakeItemId,
-              },
-              { cache: false },
-            );
+          : await (async () => {
+              const legacy = await submissions.list({
+                where: {
+                  tenantId: request.tenantId,
+                  intakeItemId: intakeRequest.intakeItemId,
+                },
+                limit: 2,
+              });
+              if (legacy.length > 1)
+                throw new Error('Legacy intake item has ambiguous submissions');
+              return legacy[0];
+            })();
         if (binding && !intake)
           throw new Error('Submission intake binding is corrupt');
         if (intake) {
@@ -432,7 +438,7 @@ export class SubmissionService extends LearnerService {
           if (!binding)
             await bindings.create({
               tenantId: request.tenantId,
-              intakeItemId: request.intake.intakeItemId,
+              intakeItemId: intakeRequest.intakeItemId,
               submissionId: String(intake.id),
               _insertOnly: true,
             });
@@ -442,7 +448,7 @@ export class SubmissionService extends LearnerService {
             intake.learnerId !== request.learnerId ||
             intake.lessonId !== request.lessonId ||
             intake.previousSubmissionId !==
-              (request.intake.previousSubmissionId ?? null)
+              (intakeRequest.previousSubmissionId ?? null)
           )
             throw new Error(
               'Intake item is already bound to another assignment',

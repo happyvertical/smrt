@@ -25,6 +25,7 @@ const resource = {
   title: 'Material',
   subjects: ['Science'],
   visibility: 'catalog' as const,
+  withdrawnAt: null,
   licenseEvidence: {
     state: 'verified' as const,
     identifier: 'CC-BY',

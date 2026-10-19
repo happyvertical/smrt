@@ -28,7 +28,9 @@ export interface CatalogSelectionRecord {
 export interface CatalogAcquisitionStore {
   getResource(
     resourceId: string,
-  ): Promise<(CatalogSourceRecord & { id: string }) | undefined>;
+  ): Promise<
+    (CatalogSourceRecord & { id: string; withdrawnAt: Date | null }) | undefined
+  >;
   getSelection(input: {
     tenantId: string;
     selectionId: string;
@@ -83,6 +85,8 @@ export class CatalogAcquisitionService {
       throw new Error('Trusted tenant and actor identity are required.');
     const resource = await this.store.getResource(request.resourceId);
     if (!resource) throw new Error('Catalog resource was not found.');
+    if (resource.withdrawnAt)
+      throw new Error('Withdrawn catalog resource cannot be acquired.');
     if (resource.revision !== request.revision)
       throw new Error(
         'Catalog resource revision is no longer current; reselect it.',

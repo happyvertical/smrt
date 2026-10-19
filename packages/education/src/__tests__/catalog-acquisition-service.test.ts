@@ -13,6 +13,7 @@ const resource = {
   canonicalUrl: 'https://example.test',
   title: 'Worksheet',
   visibility: 'catalog' as const,
+  withdrawnAt: null,
   availableFormats: ['pdf'],
   licenseEvidence: {
     state: 'verified' as const,

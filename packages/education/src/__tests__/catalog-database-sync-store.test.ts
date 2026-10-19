@@ -62,4 +62,27 @@ describe('CatalogDatabaseSyncStore', () => {
       await db.close?.();
     }
   });
+
+  it('rewrites visibility on resync so revoked Drive allowlists take effect', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['CatalogResource', 'CatalogSyncState'],
+    });
+    try {
+      const store = new CatalogDatabaseSyncStore(db);
+      await store.upsert(record('worksheet'), 'first');
+      await store.upsert(
+        { ...record('worksheet'), visibility: 'teacher' },
+        'second',
+      );
+      const rows = await (await CatalogResourceCollection.create({ db })).list({
+        where: { stableId: 'worksheet' },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.visibility).toBe('teacher');
+    } finally {
+      await db.close?.();
+    }
+  });
 });
