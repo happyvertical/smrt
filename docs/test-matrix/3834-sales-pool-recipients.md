@@ -17,6 +17,13 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pool snapshot weighting is bound to the plan step's declared metric | Prepared or frozen snapshot from a different weighting policy | Matching snapshots allocate as before | Metric snapshot on an equal-weight step, equal snapshot on a metric step, and a frozen snapshot with an edited metric all reject before allocation | Host prepared inputs / replay | Pure | Node | Snapshot `metric` vs `step.pool.metric ?? null` | Unit regression | `pnpm --filter @happyvertical/smrt-sales exec vitest run src/commissions/__tests__/waterfall-pools.test.ts` |
 
+## PR #4150 review threads (accepted)
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor / context | Data executor / transaction | Runtime / dialect | External contract edge | Test level | Validation command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Prepared pools are bound to the current plan step | Pools prepared for plan A passed to plan B with the same step key and metric | Pools prepared for the same plan allocate | Mismatched pool identity, or a `null` marker for a pool that resolves, rejects before allocation | Host two-phase API | Pure | Node | Registry resolution at calculation | Unit regression | `pnpm --filter @happyvertical/smrt-sales exec vitest run src/commissions/__tests__/waterfall-pools.test.ts` |
+| Connect/crypto batches need a matching destination | `createPayoutBatch({ payoutMethod: 'crypto' \| 'stripe_connect' })` override on a PayPal earner | Earner whose destination matches the effective method batches | Override without a destination, or with a destination of the other method, rejects before any batch row | Operator / payout service | Service read before batch creation; SQLite | SQLite | Descriptor only; no provider | Integration regression | `pnpm --filter @happyvertical/smrt-sales exec vitest run src/commissions/__tests__/earner-kinds.test.ts` |
+
 Idempotent `EarningEvent` ingestion is unchanged (existing `dedupeKey` suites);
 the calculator persists nothing, so transaction rollback rows are N/A for the
 pool path.

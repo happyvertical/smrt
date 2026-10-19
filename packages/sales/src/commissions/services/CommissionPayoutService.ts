@@ -37,6 +37,7 @@ import {
   ADJUSTMENT_SETTLEABLE_COMMISSION_STATUSES,
   type CommissionPayoutStatus,
   type CommissionStatus,
+  PAYOUT_METHODS_REQUIRING_DESTINATION,
   type PayoutMethod,
 } from '../types.js';
 
@@ -349,6 +350,19 @@ export class CommissionPayoutService {
         `CommissionPayoutService: earner '${input.earnerId}' not found`,
       );
     }
+    // Stripe Connect / crypto batches are only routeable to a matching
+    // destination on the earner — including when the method is an override.
+    const payoutMethod = input.payoutMethod ?? earner.payoutMethod;
+    if (
+      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
+        payoutMethod,
+      ) &&
+      earner.getPayoutDestination()?.method !== payoutMethod
+    ) {
+      throw new Error(
+        `CommissionPayoutService: earner '${input.earnerId}' has no ${payoutMethod} payoutDestination`,
+      );
+    }
 
     const idempotencyKey =
       input.idempotencyKey ??
@@ -435,7 +449,7 @@ export class CommissionPayoutService {
       currency: input.currency,
       periodStart: input.periodStart ?? null,
       periodEnd: input.periodEnd ?? null,
-      payoutMethod: input.payoutMethod ?? earner.payoutMethod,
+      payoutMethod,
       status: 'pending',
       commissionTotalCents,
       adjustmentTotalCents,

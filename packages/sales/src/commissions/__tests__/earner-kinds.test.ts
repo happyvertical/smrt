@@ -145,6 +145,54 @@ describe('Earner kinds and payout destinations (#3834)', () => {
     expect(payout?.payoutMethod).toBe('stripe_connect');
   });
 
+  it('refuses a Connect or crypto batch override without a matching destination', async () => {
+    const earner = await earners.create({
+      kind: 'organisation',
+      status: 'active',
+      payoutMethod: 'paypal',
+      payoutThresholdCents: 0,
+    });
+    await commissions.create({
+      earnerId: earner.id as string,
+      amountCents: 800,
+      currency: 'USD',
+      status: 'payable',
+      dedupeKey: 'override-share',
+    });
+    for (const payoutMethod of ['crypto', 'stripe_connect'] as const) {
+      await expect(
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          idempotencyKey: `override-${payoutMethod}`,
+          payoutMethod,
+        }),
+      ).rejects.toThrow(new RegExp(`has no ${payoutMethod} payoutDestination`));
+    }
+    earner.setPayoutDestination({
+      method: 'crypto',
+      network: 'bitcoin',
+      asset: 'BTC',
+      address: 'bc1qbirchfarm',
+    });
+    await earner.save();
+    // A crypto destination does not make a Connect override routeable.
+    await expect(
+      payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'override-connect-after',
+        payoutMethod: 'stripe_connect',
+      }),
+    ).rejects.toThrow(/has no stripe_connect payoutDestination/);
+    const { payout } = await payoutService.createPayoutBatch({
+      earnerId: earner.id as string,
+      currency: 'USD',
+      idempotencyKey: 'override-crypto-after',
+    });
+    expect(payout?.payoutMethod).toBe('crypto');
+  });
+
   it('stores a crypto destination', async () => {
     const earner = await earners.create({ kind: 'organisation' });
     earner.setPayoutDestination({

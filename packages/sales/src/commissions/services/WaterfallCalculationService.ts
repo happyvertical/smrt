@@ -257,6 +257,7 @@ export function calculateWaterfall(
     if (step.pool) {
       const { recipient, snapshot } = resolvePoolStep(
         step,
+        calculationEvent,
         options,
         frozenInputs,
       );
@@ -384,6 +385,7 @@ function resolveStepRecipient(
 
 function resolvePoolStep(
   step: WaterfallStep,
+  event: WaterfallEvent,
   options: CalculateWaterfallOptions,
   frozen: WaterfallFrozenInputs,
 ): {
@@ -418,6 +420,18 @@ function resolvePoolStep(
   const prepared = options.pools[step.key];
   const snapshot = prepared ? normalizePoolSnapshot(prepared, step.key) : null;
   if (snapshot) assertSnapshotMetric(step, snapshot);
+  // Prepared inputs are bound to THIS plan step: the pool they describe
+  // must be what the step's descriptor resolves to now.
+  const current = options.resolver?.resolve(step.recipient, event) ?? null;
+  if (
+    !isDeepStrictEqual(
+      current ? freezeRecipient(current) : null,
+      snapshot ? snapshot.pool : null,
+    )
+  )
+    throw new Error(
+      `Waterfall prepared pool for step '${step.key}' does not match the pool its recipient descriptor resolves to`,
+    );
   const recipient = snapshot ? freezeRecipient(snapshot.pool) : null;
   Object.defineProperty(frozen.recipientByStep, step.key, {
     value: recipient,

@@ -522,6 +522,33 @@ describe('waterfall pool recipients (#3834)', () => {
     ).toThrow(/uses metric "items_published"/);
   });
 
+  it('binds prepared pools to the pool the step descriptor resolves to', async () => {
+    const otherSeason = farmPlan();
+    otherSeason.steps[1] = {
+      ...otherSeason.steps[1],
+      recipient: { kind: 'grower_pool', id: '2025-season' },
+    } as (typeof otherSeason.steps)[1];
+    const prepared = await prepareWaterfallPools(otherSeason, sale(10_000), {
+      resolver: registry(),
+      poolMembers: members(),
+      metricProvider: metrics(kgDelivered),
+    });
+    // Same step key and metric, different plan: refused, not reallocated.
+    expect(() =>
+      calculateWaterfall(farmPlan(), sale(10_000), {
+        resolver: registry(),
+        pools: prepared,
+      }),
+    ).toThrow(/does not match the pool its recipient descriptor resolves to/);
+    // An "unresolved" marker cannot hide a pool that now resolves.
+    expect(() =>
+      calculateWaterfall(farmPlan(), sale(10_000), {
+        resolver: registry(),
+        pools: { growers: null },
+      }),
+    ).toThrow(/does not match the pool its recipient descriptor resolves to/);
+  });
+
   it('validates pool options at plan validation and activation', () => {
     const bad = (pool: unknown) => {
       const plan = farmPlan();
