@@ -12,7 +12,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import { SubscriptionPlanCollection } from '../../collections/SubscriptionPlanCollection.js';
 import { SubscriptionPlanVersionCollection } from '../../collections/SubscriptionPlanVersionCollection.js';
 import { TenantSubscriptionCollection } from '../../collections/TenantSubscriptionCollection.js';
@@ -37,7 +37,8 @@ export async function runPlanVersionScenario(
   const versions = await SubscriptionPlanVersionCollection.create({ db });
   const subscriptions = await TenantSubscriptionCollection.create({ db });
   const resolver = await SubscriptionResolver.create({ db });
-  const at = (offsetDays: number) => new Date(Date.now() + offsetDays * DAY);
+  const t0 = Date.now();
+  const at = (offsetDays: number) => new Date(t0 + offsetDays * DAY);
   const periodStart = at(-10);
   const periodEnd = at(20);
 
@@ -174,37 +175,59 @@ export async function runPlanVersionScenario(
   ).rejects.toThrow();
 
   // --- Renewal moves to the version in force at the boundary. ------------
-  const renewed = await subscriptions.update(String(alex.id), {
-    currentPeriodStart: periodEnd,
-    currentPeriodEnd: at(50),
-  });
-  expect(renewed?.planVersionId).toBe(northV2?.id);
-  expect(renewed?.planVersionPinReason).toBe('renewal');
-  expect(
-    await resolver.resolveEntitlements(member(NORTH, 'member:alex'), {
-      now: at(25),
+  // Saved ahead of its start, a renewal onto smaller terms is refused and
+  // the running paid period keeps resolving version 1.
+  await expect(
+    subscriptions.update(String(alex.id), {
+      currentPeriodStart: periodEnd,
+      currentPeriodEnd: at(50),
     }),
-  ).toMatchObject({ planVersion: 2, featureKeys: ['coop:vote'] });
+  ).rejects.toThrow();
+  expect(
+    (
+      await resolver.resolveEntitlements(member(NORTH, 'member:alex'), {
+        now: at(0),
+      })
+    ).planVersion,
+  ).toBe(1);
+  // Once the new period has started it applies.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(at(21));
+  try {
+    const renewed = await subscriptions.update(String(alex.id), {
+      currentPeriodStart: periodEnd,
+      currentPeriodEnd: at(50),
+    });
+    expect(renewed?.planVersionId).toBe(northV2?.id);
+    expect(renewed?.planVersionPinReason).toBe('renewal');
+    expect(
+      await resolver.resolveEntitlements(member(NORTH, 'member:alex'), {
+        now: at(25),
+      }),
+    ).toMatchObject({ planVersion: 2, featureKeys: ['coop:vote'] });
 
-  // --- Cancellation keeps the paid period, then resolves nothing. --------
-  await subscriptions.update(String(bea.id), {
-    status: 'canceled',
-    canceledAt: new Date(),
-  });
-  expect(
-    await resolver.resolveEntitlements(member(NORTH, 'member:bea'), {
-      now: at(29),
-    }),
-  ).toMatchObject({
-    status: 'canceled',
-    allowed: true,
-    featureKeys: ['coop:vote'],
-  });
-  expect(
-    await resolver.resolveEntitlements(member(NORTH, 'member:bea'), {
-      now: at(31),
-    }),
-  ).toMatchObject({ allowed: false, featureKeys: [] });
+    // --- Cancellation keeps the paid period, then resolves nothing. --------
+    await subscriptions.update(String(bea.id), {
+      status: 'canceled',
+      canceledAt: new Date(),
+    });
+    expect(
+      await resolver.resolveEntitlements(member(NORTH, 'member:bea'), {
+        now: at(29),
+      }),
+    ).toMatchObject({
+      status: 'canceled',
+      allowed: true,
+      featureKeys: ['coop:vote'],
+    });
+    expect(
+      await resolver.resolveEntitlements(member(NORTH, 'member:bea'), {
+        now: at(31),
+      }),
+    ).toMatchObject({ allowed: false, featureKeys: [] });
+  } finally {
+    vi.useRealTimers();
+  }
 
   // --- Tenancy: each co-op sees only its own versions. -------------------
   enableTenancy();

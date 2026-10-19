@@ -180,6 +180,32 @@ export async function pinSubscriptionPlanVersion(
   }
   if (isRenewal(persisted, boundary)) {
     await atBoundary('renewal');
+    // Saved ahead of its start, a renewal must not change what the still
+    // running paid period resolves to: allow it only when the pin is
+    // unchanged, the change is an upgrade, or it was authorized.
+    if (
+      boundary.getTime() > now.getTime() &&
+      !authorizedReason &&
+      persisted.isEntitled(now) &&
+      subscription.planVersionId !== persisted.planVersionId
+    ) {
+      const frozen = await frozenTerms(
+        versions,
+        persisted,
+        periodBoundary(persisted),
+      );
+      const target: PlanTerms | null = subscription.planVersionId
+        ? await loadVersion(versions, subscription.planVersionId)
+        : await (
+            await SubscriptionPlanCollection.create({ db: subscription.db })
+          ).get({ id: subscription.planId }, { cache: false });
+      if (frozen && (!target || !isEntitlementUpgrade(frozen, target))) {
+        throw new Error(
+          'A renewal that changes plan terms can be saved once its period ' +
+            'has started; the current paid period keeps its terms until then.',
+        );
+      }
+    }
     return;
   }
   const planChanged = persisted.planId !== subscription.planId;

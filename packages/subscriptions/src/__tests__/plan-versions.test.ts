@@ -3,7 +3,7 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { SubscriptionPlanVersionCollection } from '../collections/SubscriptionPlanVersionCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
@@ -19,7 +19,18 @@ import {
 } from './helpers/plan-version-scenario.js';
 
 const DAY = 24 * 60 * 60 * 1000;
-const at = (offsetDays: number) => new Date(Date.now() + offsetDays * DAY);
+const T0 = Date.now();
+const at = (offsetDays: number) => new Date(T0 + offsetDays * DAY);
+
+/** Move the clock (Date only) so a renewal's period has started. */
+function travel(to: Date) {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(to);
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 async function fixture() {
   const plans = await SubscriptionPlanCollection.create({
@@ -211,6 +222,7 @@ describe('effective-dated plan versions (#4032)', () => {
       });
       expect(switched?.planVersionPinReason).toBe('upgrade');
       // The deferred downgrade lands with the renewal that carries it.
+      travel(at(26));
       const renewed = await subscriptions.update(String(subscription.id), {
         planId: String(small.id),
         currentPeriodStart: at(25),
@@ -295,6 +307,7 @@ describe('effective-dated plan versions (#4032)', () => {
       expect(moved?.planVersionId).toBe(v1?.id);
       // A real renewal re-pins the boundary's version even when the caller
       // echoes the stale pin back …
+      travel(at(26));
       const stored = await subscriptions.get(
         { id: String(subscription.id) },
         { cache: false },
@@ -463,6 +476,7 @@ describe('effective-dated plan versions (#4032)', () => {
       expect(
         await resolver.resolveEntitlements(rio, { now: at(1) }),
       ).toMatchObject({ allowed: true, planVersion: 1 });
+      travel(at(26));
       await subscriptions.update(String(subscription.id), {
         currentPeriodStart: at(25),
         currentPeriodEnd: at(55),
@@ -491,6 +505,7 @@ describe('effective-dated plan versions (#4032)', () => {
         currentPeriodEnd: at(40),
       });
       expect(first?.planVersionId).not.toBe(scheduled.id);
+      travel(at(41));
       const second = await subscriptions.update(String(subscription.id), {
         currentPeriodStart: at(40),
         currentPeriodEnd: at(70),

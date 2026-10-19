@@ -133,7 +133,11 @@ feature grants and thresholds — are published as immutable
     stored `currentPeriodEnd` (or, for an open-ended row, after the stored
     start) — re-pins the version in force at the new boundary, for the plan
     the row now names. A downgrade or a plan change that removes features is
-    applied this way. Moving the start within a paid period is not a renewal;
+    applied this way. Moving the start within a paid period is not a renewal,
+    and a renewal saved before its start date may change the pinned terms
+    only as an upgrade (otherwise save it once the period has started).
+    Period dates are host/provider-owned: shortening `currentPeriodEnd` ends
+    the paid period;
   - at creation and renewal the boundary decides the version: naming any
     other `planVersionId` (for example to grandfather an import) needs an
     authorized replacement;
