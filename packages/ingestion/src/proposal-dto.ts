@@ -90,6 +90,8 @@ export interface GenerationOutput {
     catalogDigest: string;
     policyVersions: string[];
     generative: ProviderIdentity;
+    /** Canonical provider revision for the configured generative alias. */
+    generativeResponseModel?: string;
     decision: {
       configured: boolean;
       provider?: string;

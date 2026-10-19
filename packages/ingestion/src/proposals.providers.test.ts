@@ -64,6 +64,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     'unknown',
     'malformed',
     'model',
+    'canonical-model',
   ] as const)('checks SDK completion/schema edge %s', async (mode) => {
     let requestBody: Record<string, unknown> | undefined;
     const server = createServer(async (request, response) => {
@@ -76,7 +77,12 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
           id: 'fixture',
           object: 'chat.completion',
           created: 1,
-          model: mode === 'model' ? 'unexpected-model' : identity.model,
+          model:
+            mode === 'model'
+              ? 'unexpected-model'
+              : mode === 'canonical-model'
+                ? `${identity.model}-2025-04-14`
+                : identity.model,
           choices: [
             {
               index: 0,
@@ -136,12 +142,16 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
         mode === 'stop' ||
         mode === 'missing' ||
         mode === 'unknown' ||
-        mode === 'feedback'
+        mode === 'feedback' ||
+        mode === 'canonical-model'
       ) {
         expect(await result).toEqual({
           output: { outcome: 'no_action', suggestions: [], splits: [] },
           completion: 'unknown',
           usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 },
+          ...(mode === 'canonical-model'
+            ? { responseModel: `${identity.model}-2025-04-14` }
+            : {}),
         });
         expect(generator.identity).toEqual(identity);
         expect(requestBody?.messages).toEqual([

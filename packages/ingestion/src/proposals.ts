@@ -726,6 +726,8 @@ export class IngestionProposalService {
           }
         }
         output.provenance.usage = safeUsage(generated.usage);
+        if (generated.responseModel)
+          output.provenance.generativeResponseModel = generated.responseModel;
         if (this.config.decision && output.suggestions.length)
           await this.decide(lease, output, input);
         if (

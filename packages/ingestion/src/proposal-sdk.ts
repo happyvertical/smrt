@@ -8,6 +8,24 @@ import { type ProviderIdentity, providerIdentity } from './extraction-types.js';
 import type { ProposalGenerator } from './proposal-contracts.js';
 import { safeUsage } from './proposal-validation.js';
 
+function escapesRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** OpenAI reports dated revisions for configured stable aliases. */
+function acceptsResponseModel(
+  identity: ProviderIdentity,
+  model?: string,
+): boolean {
+  if (!model || model === identity.model) return true;
+  return (
+    identity.provider === 'openai' &&
+    new RegExp(`^${escapesRegExp(identity.model)}-\\d{4}-\\d{2}-\\d{2}$`).test(
+      model,
+    )
+  );
+}
+
 /** Use an existing SDK client; credentials/configuration never enter persisted provenance. */
 export function createSDKProposalGenerator(
   client: Pick<AIInterface, 'chat'>,
@@ -50,7 +68,7 @@ export function createSDKProposalGenerator(
         response.finishReason !== 'stop' ||
         response.truncated ||
         response.toolCalls?.length ||
-        (response.model && response.model !== identity.model)
+        !acceptsResponseModel(identity, response.model)
       )
         throw new Error('Incomplete or unexpected proposal response');
       if (
@@ -63,6 +81,9 @@ export function createSDKProposalGenerator(
         // The SDK normalizes absent/unknown finish reasons to stop.
         completion: 'unknown',
         usage: safeUsage(response.usage),
+        ...(response.model && response.model !== identity.model
+          ? { responseModel: response.model }
+          : {}),
       };
     },
   };
