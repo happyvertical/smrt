@@ -53,8 +53,11 @@ export { CommentCollection } from './collections/Comments';
 export { DevelopmentRequestHistoryCollection } from './collections/DevelopmentRequestHistories';
 export { DevelopmentRequestCollection } from './collections/DevelopmentRequests';
 export { IssueCollection } from './collections/Issues';
+export { ProjectDecisionCollection } from './collections/ProjectDecisions';
+export { ProjectGovernanceEventCollection } from './collections/ProjectGovernanceEvents';
 export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
 export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
+export { ProjectQuestionCollection } from './collections/ProjectQuestions';
 export { ProjectCollection } from './collections/Projects';
 export { PullRequestCollection } from './collections/PullRequests';
 export { RepositoryCollection } from './collections/Repositories';
@@ -87,6 +90,14 @@ export {
 export { Label, type LabelOptions } from './models/Label';
 export { Project, type ProjectOptions } from './models/Project';
 export {
+  ProjectDecision,
+  type ProjectDecisionOptions,
+} from './models/ProjectDecision';
+export {
+  ProjectGovernanceEvent,
+  type ProjectGovernanceEventOptions,
+} from './models/ProjectGovernanceEvent';
+export {
   ProjectIntegration,
   type ProjectIntegrationOptions,
 } from './models/ProjectIntegration';
@@ -94,10 +105,30 @@ export {
   ProjectIntegrationAudit,
   type ProjectIntegrationAuditOptions,
 } from './models/ProjectIntegrationAudit';
+export {
+  ProjectQuestion,
+  type ProjectQuestionOptions,
+} from './models/ProjectQuestion';
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
 export * from './models/service-evidence.js';
 export type { ProjectBoardMoveIntent } from './project-board-types.js';
+export type {
+  ProjectContextReference,
+  ProjectContextReferenceKind,
+  ProjectDecisionCreateInput,
+  ProjectDecisionOption,
+  ProjectDecisionStatus,
+  ProjectGovernanceAction,
+  ProjectGovernanceActor,
+  ProjectGovernanceActorType,
+  ProjectGovernanceOwner,
+  ProjectGovernanceRecordKind,
+  ProjectGovernanceScope,
+  ProjectGovernanceVisibility,
+  ProjectQuestionCreateInput,
+  ProjectQuestionStatus,
+} from './project-governance-types.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
 export { ProjectTrackerRecipe } from './recipes';
 export {

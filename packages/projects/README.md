@@ -63,6 +63,9 @@ await issue.rollback();
 | `Issue` | Issue/ticket (STI base). Methods: `sync()`, `incorporateFeedback()`, `rollback()`, `suggestLabels()`, `close()`, `addLabels()`, `addComment()` |
 | `PullRequest` | Pull request (STI subclass of Issue). Methods: `sync()`, `summarize()`, `merge()`, `markReady()`, `convertToDraft()`, `requestReviewers()`, `findLinkedIssue()` |
 | `Project` | Project board (GitHub Projects V2). Methods: `sync()`, `addItem()`, `moveItem()`, `listItems()`, `updateItemStatus()`, `analyzeHealth()` |
+| `ProjectQuestion` | A requested fact whose lifecycle is `open`, `answered`, `deferred`, or `superseded`. |
+| `ProjectDecision` | An owner choice with options, outcome, and rationale whose lifecycle is `open`, `decided`, `deferred`, or `superseded`. |
+| `ProjectGovernanceEvent` | Immutable question/decision history with actor, action, status transition, and revision. |
 | `Comment` | Comment on an issue or PR. AI methods: `isQuestion()`, `isApproval()`, `requestsChanges()`, `extractActionItems()`, `summarize()`, `getSentiment()` |
 | `Label` | Label/tag for issues; optionally scoped to a repository or a `Project`. Methods: `isTypeLabel()`, `isPriorityLabel()`, `getCategory()`, `createInRepository()` |
 
@@ -75,6 +78,33 @@ await issue.rollback();
 | `IssueCollection` | `discover()`, `findByProject()`, `findByRepository()`, `findOpen()`, `findByLabel()`, `findByAssignee()`, `findNeedingReview()`, `findWithUnincorporatedFeedback()`, `batchSync()` |
 | `PullRequestCollection` | `discover()`, `findByRepository()`, `findOpen()`, `batchSync()` |
 | `ProjectCollection` | Standard CRUD, `findByTitle()` |
+| `ProjectQuestionCollection` | Tenant-safe project listing and lookup. |
+| `ProjectDecisionCollection` | Tenant-safe project listing and lookup. |
+| `ProjectGovernanceEventCollection` | Ordered history for a question or decision. |
+
+### Project questions and decisions
+
+`ProjectGovernanceService` is the write boundary for owner questions and
+decisions. Host applications pass a qualified project record type and id, so
+the same contract can attach to the provider-backed `Project` in this package
+or to an application-owned project model. The service requires a tenant scope,
+a trusted actor projection, and an `expectedRevision` for every mutation. Only
+the assigned owner or a host-authorized manager may answer or decide;
+assignment, deferral, reopening, and supersession require manager authority.
+
+Records default to `visibility: 'internal'`; explicitly choose `client` for
+client-facing records and pass `{ visibility: 'client' }` to `listForProject`.
+Hosts authorize project access and strip private context references before
+projecting client views. Lifecycle history rejects updates and deletion.
+
+Questions and decisions retain typed references to the spec, cookbook,
+conversation, asset, or URL that raised them. They do not replace facts: an
+extracted `open_question` fact may seed a `ProjectQuestion`, but fact provenance
+and question answer state remain separate lifecycles.
+
+`ProjectQuestionsAndDecisions` from `@happyvertical/smrt-projects/svelte`
+renders authorized projections and emits typed answer/decision callbacks. It
+does not fetch records or decide application permissions.
 
 ### STI Hierarchy
 
