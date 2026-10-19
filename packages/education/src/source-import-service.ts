@@ -174,13 +174,14 @@ export class SourceImportService {
       throw new CatalogAuthorizationError();
     if (!this.db.transaction)
       throw new Error('Source provisioning requires real transactions.');
+    const transaction = this.db.transaction;
     return withEmbeddedWriteQueue(
       this.db,
       isEmbeddedDatabase(this.db),
       async () => {
         for (let attempt = 0; ; attempt++) {
           try {
-            return await this.db.transaction(async (tx) => {
+            return await transaction(async (tx) => {
               if (isPostgresDatabase(this.db))
                 await tx.query(
                   'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
