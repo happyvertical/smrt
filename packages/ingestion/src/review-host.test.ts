@@ -62,14 +62,22 @@ describe('published review host projection', () => {
     f.last.nextCursor = 'next';
     await expect(f.host.list({})).rejects.toThrow('Repeated review cursor');
   });
-  it('reacquires saved reviews after a typed stale generation failure', async () => {
+  it('keeps successful review history but omits stale generation output', async () => {
     const f = fixture();
+    f.first.actions.push({
+      review: { actionId: 'completed-action', state: 'succeeded' },
+    } as ReviewPage['actions'][number]);
     f.service.getCompletedAnalysis.mockRejectedValue(
       new GenerationSnapshotStaleError(),
     );
     const view = await f.host.load('item');
     expect(view.generation).toBeUndefined();
+    expect(view.analysis).toBeUndefined();
     expect(view.reviews).toBe(f.first);
+    expect(view.reviews.actions[0].review).toMatchObject({
+      actionId: 'completed-action',
+      state: 'succeeded',
+    });
     expect(f.service.listReviews).toHaveBeenCalledTimes(3);
   });
   it('propagates denial rather than returning prior saved reviews', async () => {
