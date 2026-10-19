@@ -61,9 +61,10 @@ Tests use synthetic local HTML and an injected fetch callback, never the network
 Google Drive discovery defaults every record to `teacher`. A trusted host may
 make only an exact reviewed file ID visible by passing `studentSafeFileIds`;
 folder IDs and descendant membership never grant visibility. A teacher-marked
-folder or name still wins over that allowlist. File shortcuts are canonicalized
-to their target file ID before this check. Resync after changing the allowlist:
-the durable sync upsert rewrites existing visibility rather than retaining a
+folder or name still wins over that allowlist. File shortcuts are excluded: a
+shortcut does not prove the target remains under a reviewed root or retains the
+target's teacher-path classification. Resync after changing the allowlist: the
+durable sync upsert rewrites existing visibility rather than retaining a
 previous learner classification.
 
 Generic “Printable” and “Printables” labels identify lesson PDFs; course packets

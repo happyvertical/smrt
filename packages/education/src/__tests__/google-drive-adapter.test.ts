@@ -168,7 +168,7 @@ describe('GoogleDriveCurriculumAdapter', () => {
     ]);
   });
 
-  it('uses a file shortcut target as the canonical allowlist identity', async () => {
+  it('excludes file shortcuts before reading potentially out-of-root metadata', async () => {
     const target = file('canonical-file', 'Worksheet.pdf', ['elsewhere']);
     const drive = client(
       {
@@ -192,10 +192,52 @@ describe('GoogleDriveCurriculumAdapter', () => {
       roots: [{ id: 'root' }],
       studentSafeFileIds: ['canonical-file'],
     });
-    expect(page.records).toMatchObject([
-      { stableId: 'canonical-file', visibility: 'catalog' },
+    expect(page.records).toEqual([]);
+    expect(page.exclusions).toEqual([
+      { stableId: 'canonical-file', reason: 'shortcut-target-unsupported' },
     ]);
-    expect(drive.getMetadataById).toHaveBeenCalledWith('canonical-file');
+    expect(drive.getMetadataById).not.toHaveBeenCalled();
+  });
+
+  it('keeps an allowlisted teacher-folder file teacher when a neutral shortcut appears first', async () => {
+    const drive = client({
+      'root:': [
+        {
+          ...file('shortcut', 'Worksheet shortcut', ['root']),
+          mimeType: 'application/vnd.google-apps.shortcut',
+          shortcutDetails: {
+            targetId: 'teacher-file',
+            targetMimeType: 'application/pdf',
+          },
+        },
+        folder('answers', 'Answer Keys', ['root']),
+      ],
+      'answers:': [file('teacher-file', 'Worksheet.pdf', ['answers'])],
+    });
+    const options = {
+      roots: [{ id: 'root' }],
+      studentSafeFileIds: ['teacher-file'],
+    };
+    const first = await new GoogleDriveCurriculumAdapter(drive).discover(
+      options,
+    );
+    expect(first.records).toMatchObject([
+      { stableId: 'answers', visibility: 'teacher' },
+    ]);
+    expect(first.exclusions).toEqual([
+      { stableId: 'teacher-file', reason: 'shortcut-target-unsupported' },
+    ]);
+    const second = await new GoogleDriveCurriculumAdapter(drive).discover({
+      ...options,
+      checkpoint: first.checkpoint,
+    });
+    const third = await new GoogleDriveCurriculumAdapter(drive).discover({
+      ...options,
+      checkpoint: second.checkpoint,
+    });
+    expect(third.records).toMatchObject([
+      { stableId: 'teacher-file', visibility: 'teacher' },
+    ]);
   });
 
   it('deduplicates duplicate names and roots by stable Drive ID', async () => {

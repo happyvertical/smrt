@@ -233,6 +233,7 @@ function toRecord(
       : {}),
     visibility:
       !isFolder(metadata) &&
+      !metadata.shortcutDetails &&
       studentSafeFileIds.has(metadata.id) &&
       classify(metadata.name, inheritedVisibility) === 'catalog'
         ? 'catalog'
@@ -337,35 +338,25 @@ export class GoogleDriveCurriculumAdapter
     for (const entry of page.entries) {
       if (!entry.id || seenRecordIds.has(entry.id)) continue;
       seenRecordIds.add(entry.id);
-      const inheritedVisibility = classify(entry.name, current.visibility);
-      let recordEntry = entry;
       if (
         entry.shortcutDetails &&
         entry.shortcutDetails.targetMimeType !== GOOGLE_FOLDER_MIME
       ) {
-        try {
-          recordEntry = await this.drive.getMetadataById(
-            entry.shortcutDetails.targetId,
-          );
-        } catch {
-          exclusions.push({
-            stableId: entry.shortcutDetails.targetId,
-            reason: 'shortcut-target-inaccessible',
-          });
-          continue;
-        }
-        if (isFolder(recordEntry)) {
-          exclusions.push({
-            stableId: recordEntry.id,
-            reason: 'shortcut-target-unsupported',
-          });
-          continue;
-        }
+        // A file shortcut does not establish that its target belongs under a
+        // reviewed root or that the target's real parent is learner-safe.
+        // Actual files encountered through trusted folder traversal remain
+        // eligible for exact-ID allowlisting.
+        exclusions.push({
+          stableId: entry.shortcutDetails.targetId,
+          reason: 'shortcut-target-unsupported',
+        });
+        continue;
       }
+      const inheritedVisibility = classify(entry.name, current.visibility);
       try {
         records.push(
           toRecord(
-            recordEntry,
+            entry,
             current.folderId,
             inheritedVisibility,
             studentSafeFileIds,
