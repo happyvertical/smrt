@@ -193,6 +193,53 @@ describe('Earner kinds and payout destinations (#3834)', () => {
     expect(payout?.payoutMethod).toBe('crypto');
   });
 
+  it('replays an existing batch key after the destination changes', async () => {
+    const earner = await earners.create({
+      kind: 'organisation',
+      payoutThresholdCents: 0,
+    });
+    earner.setPayoutDestination({
+      method: 'stripe_connect',
+      connectedAccountId: 'acct_1Replay',
+    });
+    earner.status = 'active';
+    await earner.save();
+    await commissions.create({
+      earnerId: earner.id as string,
+      amountCents: 900,
+      currency: 'USD',
+      status: 'payable',
+      dedupeKey: 'replay-share',
+    });
+    const request = {
+      earnerId: earner.id as string,
+      currency: 'USD',
+      idempotencyKey: 'replay-connect',
+      payoutMethod: 'stripe_connect' as const,
+    };
+    const first = await payoutService.createPayoutBatch(request);
+    expect(first.created).toBe(true);
+
+    earner.setPayoutDestination({
+      method: 'crypto',
+      network: 'bitcoin',
+      asset: 'BTC',
+      address: 'bc1qreplay',
+    });
+    await earner.save();
+    const replay = await payoutService.createPayoutBatch(request);
+    expect(replay.created).toBe(false);
+    expect(replay.payout?.id).toBe(first.payout?.id);
+    expect(replay.payout?.payoutMethod).toBe('stripe_connect');
+    // A NEW Connect batch is still refused.
+    await expect(
+      payoutService.createPayoutBatch({
+        ...request,
+        idempotencyKey: 'replay-connect-new',
+      }),
+    ).rejects.toThrow(/has no stripe_connect payoutDestination/);
+  });
+
   it('stores a crypto destination', async () => {
     const earner = await earners.create({ kind: 'organisation' });
     earner.setPayoutDestination({

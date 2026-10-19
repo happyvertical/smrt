@@ -350,19 +350,6 @@ export class CommissionPayoutService {
         `CommissionPayoutService: earner '${input.earnerId}' not found`,
       );
     }
-    // Stripe Connect / crypto batches are only routeable to a matching
-    // destination on the earner — including when the method is an override.
-    const payoutMethod = input.payoutMethod ?? earner.payoutMethod;
-    if (
-      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
-        payoutMethod,
-      ) &&
-      earner.getPayoutDestination()?.method !== payoutMethod
-    ) {
-      throw new Error(
-        `CommissionPayoutService: earner '${input.earnerId}' has no ${payoutMethod} payoutDestination`,
-      );
-    }
 
     const idempotencyKey =
       input.idempotencyKey ??
@@ -398,6 +385,22 @@ export class CommissionPayoutService {
         settledCommissionIds: [],
         settledAdjustmentIds: [],
       };
+    }
+
+    // A NEW Stripe Connect / crypto batch is only routeable to a matching
+    // destination on the earner — including when the method is an override.
+    // Checked after the replay lookup so an existing key still returns (or
+    // repairs) its payout after the earner's preference changes.
+    const payoutMethod = input.payoutMethod ?? earner.payoutMethod;
+    if (
+      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
+        payoutMethod,
+      ) &&
+      earner.getPayoutDestination()?.method !== payoutMethod
+    ) {
+      throw new Error(
+        `CommissionPayoutService: earner '${input.earnerId}' has no ${payoutMethod} payoutDestination`,
+      );
     }
 
     // Gather the exact rows this batch would settle (honoring any source /
