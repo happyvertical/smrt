@@ -78,6 +78,8 @@ export type SubmissionStatus =
 export type ExternalCompletionReporter = 'learner' | 'guardian' | 'source';
 export type SubmissionAssetRelationship = 'page' | 'attachment';
 export type GraderKind = 'auto' | 'ai' | 'guardian' | 'instructor';
+/** Blank workbook evidence is deliberately distinct from completed work. */
+export type SubmissionKind = 'blank_reference' | 'completed_work';
 
 /** Evidence that a learner completed one progress item. */
 @TenantScoped({ mode: 'required' })
@@ -94,6 +96,14 @@ export class Submission extends SmrtObject {
   captureKey = '';
   /** Service-owned content digest used to detect changed retry payloads. */
   captureDigest = '';
+  /** A retained blank workbook reference never becomes a completed attempt. */
+  @field({ required: true }) kind: SubmissionKind = 'completed_work';
+  /** Immutable predecessor for a correction/rescan chain. */
+  @foreignKey('Submission', { nullable: true }) previousSubmissionId:
+    | string
+    | null = null;
+  /** Stable external intake identity, unique in service scope when supplied. */
+  @field({ type: 'text', nullable: true }) intakeItemId: string | null = null;
 
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -113,6 +123,25 @@ export class Submission extends SmrtObject {
       'graded',
       'rejected',
     ]);
+    requireEnum(this.kind, ['blank_reference', 'completed_work']);
+    if (
+      this.intakeItemId !== null &&
+      (!this.intakeItemId.trim() || this.intakeItemId.length > 200)
+    )
+      throw new Error('Submission intake item id is invalid');
+    if (this.previousSubmissionId === String(this.id))
+      throw new Error('Submission cannot precede itself');
+    if (
+      this.previousSubmissionId &&
+      !(await this.db.get('submissions', {
+        id: this.previousSubmissionId,
+        tenant_id: this.tenantId,
+        learner_id: this.learnerId,
+        lesson_id: this.lessonId,
+        progress_id: this.progressId,
+      }))
+    )
+      throw new Error('Submission predecessor must match its tenant progress');
     if (
       !(await this.db.get('lesson_progress', {
         id: this.progressId,

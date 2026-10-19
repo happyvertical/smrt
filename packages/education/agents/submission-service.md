@@ -28,6 +28,16 @@ the existing submission; altered retries fail. Submitted/review/complete/skipped
 progress rejects new captures. Content includes ordered filenames, MIME types,
 bytes and notes. Hosts should impose tighter request/body limits as needed.
 
+`captureBlankReference` records a workbook-page scan as immutable
+`blank_reference` evidence without advancing completion or creating a grade.
+Trusted ingestion may supply a stable `intakeItemId`; it is bound once to the
+tenant, learner, lesson, progress, kind and predecessor, and an altered retry
+fails. `resubmitSubmission` requires the current completed-work predecessor and
+creates a new immutable `completed_work` attempt. Old pages, grades and feedback
+remain history; stale predecessors cannot be graded or replaced. A correction may
+reopen submitted, review or complete progress, while an AI proposal remains a
+non-authoritative Grade until guardian review.
+
 `reviewSubmission` accepts an existing authorized submission and optional score
 and feedback. `attestLesson` creates/reuses an Attestation for a matching progress
 item without requiring uploads. Both require a verified guardian and create a
@@ -72,6 +82,10 @@ enrollment, submission, asset and a five-minute expiry; no static source URI is
 returned. The host signs every claim and its serving endpoint must verify the
 signature, expiry, current actor/tenant and object authorization before serving.
 A bearer URL must never become a cross-family or sibling access bypass.
+
+`signLessonPrintable` signs only the exact authorized `printable` LessonAsset
+join for an enrolled lesson. It never accepts an answer-key join and carries the
+same tenant, actor, learner and enrollment scope as a submission claim.
 
 ## Personal worksheet packets
 

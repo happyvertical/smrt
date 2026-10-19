@@ -132,6 +132,8 @@ export class LearnerService {
   private writeFailure: { error: unknown } | undefined;
   private writeTail: Promise<void> = Promise.resolve();
   private postgres: boolean;
+  /** A trusted host transaction; capture/storage is forbidden on this scope. */
+  protected executorBorrowed = false;
   constructor(
     protected readonly db: DatabaseInterface,
     protected readonly authorize: LearnerAuthorizer,
@@ -181,6 +183,31 @@ export class LearnerService {
       await bound?.rollbackResources(error, this.db);
       throw error;
     });
+  }
+
+  /**
+   * Compose database-only education operations with a host-owned transaction.
+   * The callback service is closed when it returns and never opens a nested unit.
+   */
+  async withExecutor<T>(
+    executor: DatabaseInterface,
+    operation: (service: this) => Promise<T>,
+  ): Promise<T> {
+    if (this.transactionState)
+      throw new Error('Learner transaction scope is already active');
+    const service = this.createTransactionService(executor);
+    service.transactionState = 'active';
+    service.executorBorrowed = true;
+    service.postgres = isPostgresDatabase(executor);
+    try {
+      const result = await operation(service);
+      service.transactionState = 'draining';
+      await service.writeTail;
+      if (service.writeFailure) throw service.writeFailure.error;
+      return result;
+    } finally {
+      service.transactionState = 'closed';
+    }
   }
 
   /** Internal subclass hook: preserve the concrete owning service in a transaction. */
@@ -324,6 +351,149 @@ export class LearnerService {
       level: row.level,
       settings: row.getSettings(),
     };
+  }
+
+  /** Resolve the authenticated learner identity without exposing collections. */
+  async getOwnLearner(
+    request: Pick<LearnerRequest, 'tenantId' | 'actorUserId'>,
+  ): Promise<LearnerView | null> {
+    const context = getCurrentTenant();
+    if (
+      !context ||
+      context.tenantId !== request.tenantId ||
+      context.userId !== request.actorUserId ||
+      context.superAdminBypass
+    )
+      throw new LearnerAuthorizationError();
+    const row = await (await LearnerCollection.create({ db: this.db })).get(
+      { tenantId: request.tenantId, userId: request.actorUserId },
+      { cache: false },
+    );
+    return row
+      ? this.getLearner({ ...request, learnerId: String(row.id) })
+      : null;
+  }
+
+  /** Resolve a relationship-selected Person Profile through the normal guard. */
+  async getLearnerForProfile(
+    request: Pick<
+      LearnerRequest,
+      'tenantId' | 'actorUserId' | 'guardianRelationshipId'
+    > & { learnerProfileId: string },
+  ): Promise<LearnerView> {
+    const row = await (await LearnerCollection.create({ db: this.db })).get(
+      { tenantId: request.tenantId, profileId: request.learnerProfileId },
+      { cache: false },
+    );
+    if (!row) throw new LearnerAuthorizationError();
+    return this.getLearner({
+      tenantId: request.tenantId,
+      actorUserId: request.actorUserId,
+      guardianRelationshipId: request.guardianRelationshipId,
+      learnerId: String(row.id),
+    });
+  }
+
+  /**
+   * Trusted host provisioning after it has created the User, Person Profile and
+   * active Membership. It never creates credentials or relationship grants.
+   */
+  async provisionLearner(
+    request: Omit<LearnerRequest, 'learnerId'> & {
+      learnerUserId: string;
+      learnerProfileId: string;
+      displayName: string;
+      level?: number;
+    },
+  ): Promise<LearnerView> {
+    return this.mutate(async (service) => {
+      const context = getCurrentTenant();
+      if (
+        !context ||
+        context.tenantId !== request.tenantId ||
+        context.userId !== request.actorUserId ||
+        context.superAdminBypass
+      )
+        throw new LearnerAuthorizationError();
+      const actor = await service.db.get('users', { id: request.actorUserId });
+      if (
+        !actor ||
+        !(await service.db.get('memberships', {
+          tenant_id: request.tenantId,
+          user_id: request.actorUserId,
+          status: 'active',
+        })) ||
+        !(await service.db.get('memberships', {
+          tenant_id: request.tenantId,
+          user_id: request.learnerUserId,
+          status: 'active',
+        })) ||
+        !(await service.db.get('users', {
+          id: request.learnerUserId,
+          profile_id: request.learnerProfileId,
+        })) ||
+        !(await service.db.get('profiles', {
+          id: request.learnerProfileId,
+          _meta_type: '@happyvertical/smrt-profiles:Person',
+        }))
+      )
+        throw new LearnerAuthorizationError();
+      const relationship =
+        request.guardianRelationshipId && actor.profile_id
+          ? await service.db.get('profile_relationships', {
+              id: request.guardianRelationshipId,
+              tenant_id: request.tenantId,
+              from_profile_id: actor.profile_id,
+              to_profile_id: request.learnerProfileId,
+            })
+          : null;
+      if (
+        !relationship ||
+        (await service.authorize({
+          ...request,
+          learnerId: '',
+          action: 'education.learner.plan',
+          own: false,
+          relationshipTypeId: String(relationship.type_id),
+        })) !== true
+      )
+        throw new LearnerAuthorizationError();
+      const learners = await LearnerCollection.create({ db: service.db });
+      let row = await learners.get(
+        { tenantId: request.tenantId, userId: request.learnerUserId },
+        { cache: false },
+      );
+      if (row) {
+        if (row.profileId !== request.learnerProfileId)
+          throw new LearnerAuthorizationError();
+        return {
+          id: String(row.id),
+          tenantId: row.tenantId,
+          userId: row.userId,
+          profileId: row.profileId,
+          displayName: row.displayName,
+          level: row.level,
+          settings: row.getSettings(),
+        };
+      }
+      row = await learners.create({
+        tenantId: request.tenantId,
+        userId: request.learnerUserId,
+        profileId: request.learnerProfileId,
+        displayName: request.displayName,
+        level: request.level ?? 0,
+        _insertOnly: true,
+      });
+      return {
+        id: String(row.id),
+        tenantId: row.tenantId,
+        userId: row.userId,
+        profileId: row.profileId,
+        displayName: row.displayName,
+        level: row.level,
+        settings: row.getSettings(),
+      };
+    });
   }
 
   async createCurriculum(
@@ -478,6 +648,144 @@ export class LearnerService {
     )
       .filter((progress) => lessons.has(progress.lessonId))
       .map(progressView);
+  }
+
+  /** All exact-tenant enrollments visible to this learner or authorized guardian. */
+  async listEnrollments(request: LearnerRequest): Promise<EnrollmentView[]> {
+    const learner = await this.requireActor(request, 'education.learner.read');
+    const rows = await (
+      await EnrollmentCollection.create({ db: this.db })
+    ).list({
+      where: { tenantId: request.tenantId, learnerId: String(learner.id) },
+      orderBy: 'sortOrder',
+    });
+    return rows.map(enrollmentView);
+  }
+
+  /**
+   * Projects the first unfinished lesson in each authorized enrollment. No
+   * catalog assets, answer material, model handles, or source locators escape.
+   */
+  async nextLessons(
+    request: LearnerRequest & { enrollmentId?: string },
+  ): Promise<
+    ReadonlyArray<{
+      enrollment: EnrollmentView;
+      progress: LessonProgressView | null;
+      lesson: {
+        id: string;
+        title: string;
+        kind: string;
+        requiresOnlineResource: boolean;
+      };
+    }>
+  > {
+    const enrollments = request.enrollmentId
+      ? [
+          await this.requireEnrollment(
+            request as LearnerRequest & { enrollmentId: string },
+            'education.learner.read',
+          ),
+        ]
+      : await (await EnrollmentCollection.create({ db: this.db })).list({
+          where: { tenantId: request.tenantId, learnerId: request.learnerId },
+          orderBy: 'sortOrder',
+        });
+    await this.requireActor(request, 'education.learner.read');
+    const result: Array<{
+      enrollment: EnrollmentView;
+      progress: LessonProgressView | null;
+      lesson: {
+        id: string;
+        title: string;
+        kind: string;
+        requiresOnlineResource: boolean;
+      };
+    }> = [];
+    for (const enrollment of enrollments) {
+      const catalog = await this.catalog(request, enrollment.courseId);
+      const progresses = await (
+        await LessonProgressCollection.create({ db: this.db })
+      ).list({
+        where: {
+          tenantId: request.tenantId,
+          enrollmentId: String(enrollment.id),
+          learnerId: request.learnerId,
+        },
+      });
+      const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
+      const lesson = catalog.sections
+        .flatMap((section) => section.lessons.map(({ lesson }) => lesson))
+        .find((candidate) => {
+          const progress = byLesson.get(String(candidate.id));
+          return (
+            !progress || !['complete', 'skipped'].includes(progress.status)
+          );
+        });
+      if (!lesson) continue;
+      const progress = byLesson.get(String(lesson.id));
+      result.push({
+        enrollment: enrollmentView(enrollment),
+        progress: progress ? progressView(progress) : null,
+        lesson: {
+          id: String(lesson.id),
+          title: lesson.title,
+          kind: lesson.constructor.name,
+          requiresOnlineResource:
+            catalog.course.modality === 'online' ||
+            lesson.constructor.name === 'Video',
+        },
+      });
+    }
+    return result;
+  }
+
+  /** All lesson summaries for one authorized assignment/enrollment. */
+  async assignmentLessons(
+    request: LearnerRequest & { enrollmentId: string },
+  ): Promise<
+    ReadonlyArray<{
+      enrollment: EnrollmentView;
+      progress: LessonProgressView | null;
+      lesson: {
+        id: string;
+        title: string;
+        kind: string;
+        requiresOnlineResource: boolean;
+      };
+    }>
+  > {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    const catalog = await this.catalog(request, enrollment.courseId);
+    const progresses = await (
+      await LessonProgressCollection.create({ db: this.db })
+    ).list({
+      where: {
+        tenantId: request.tenantId,
+        enrollmentId: String(enrollment.id),
+        learnerId: request.learnerId,
+      },
+    });
+    const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
+    return catalog.sections.flatMap((section) =>
+      section.lessons.map(({ lesson }) => ({
+        enrollment: enrollmentView(enrollment),
+        progress: byLesson.get(String(lesson.id))
+          ? progressView(byLesson.get(String(lesson.id))!)
+          : null,
+        lesson: {
+          id: String(lesson.id),
+          title: lesson.title,
+          kind: lesson.constructor.name,
+          requiresOnlineResource:
+            catalog.course.modality === 'online' ||
+            lesson.constructor.name === 'Video',
+        },
+      })),
+    );
   }
 
   /** Start once. Caller-supplied learner/status/score/counter patches are never applied. */

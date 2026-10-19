@@ -1326,12 +1326,18 @@ importers:
 
   packages/education:
     dependencies:
+      '@happyvertical/files':
+        specifier: ^0.105.2
+        version: 0.105.2(supports-color@10.2.2)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-ingestion':
+        specifier: workspace:*
+        version: link:../ingestion
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles

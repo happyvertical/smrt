@@ -18,6 +18,55 @@ export {
   Worksheet,
 } from './catalog.js';
 export type {
+  CatalogAcquisitionRecord,
+  CatalogAcquisitionRequest,
+  CatalogAcquisitionStore,
+} from './catalog-acquisition-service.js';
+export { CatalogAcquisitionService } from './catalog-acquisition-service.js';
+export {
+  CatalogAcquisitionCollection,
+  CatalogProviderCollection,
+  CatalogResourceCollection,
+  CatalogSelectionCollection,
+  CatalogSyncStateCollection,
+} from './catalog-collections.js';
+export type {
+  CatalogAcquireAdapter,
+  CatalogActor,
+  CatalogLicenseEvidence,
+  CatalogLicenseState,
+  CatalogOperation,
+  CatalogSourceRecord,
+  CatalogSyncAdapter,
+  CatalogSyncCheckpoint,
+  CatalogSyncFailure,
+  CatalogSyncPage,
+  CatalogVisibility,
+} from './catalog-contracts.js';
+export { CatalogDatabaseSyncStore } from './catalog-database-sync-store.js';
+export type {
+  CatalogEnrollmentPort,
+  CatalogMaterializationRequest,
+  CatalogMaterializationResult,
+  CatalogMaterializationStorage,
+  CatalogMaterializationStore,
+} from './catalog-materialization-service.js';
+export { CatalogMaterializationService } from './catalog-materialization-service.js';
+export {
+  CatalogAcquisition,
+  CatalogProvider,
+  CatalogResource,
+  CatalogSelection,
+  CatalogSyncState,
+} from './catalog-models.js';
+export type { CatalogPolicyDecision } from './catalog-policy.js';
+export { CatalogPolicy } from './catalog-policy.js';
+export type {
+  CatalogReadStore,
+  CatalogResourceView,
+} from './catalog-read-service.js';
+export { CatalogReadService } from './catalog-read-service.js';
+export type {
   CatalogActorContext,
   CatalogAuthorizer,
   CatalogReadRequest,
@@ -27,6 +76,11 @@ export {
   CatalogAuthorizationError,
   CatalogService,
 } from './catalog-service.js';
+export type {
+  CatalogSyncReport,
+  CatalogSyncStore,
+} from './catalog-sync-service.js';
+export { CatalogSyncService } from './catalog-sync-service.js';
 export {
   AttestationCollection,
   AuthoredCourseCollection,
@@ -55,6 +109,23 @@ export type {
   SourceSharing,
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
+export type {
+  AuthorizedCatalogFeed,
+  HearthCatalogProviderId,
+  OerCommonsRssConfig,
+  ProviderFeedRequirement,
+  ProviderMetadataFetch,
+  ProviderMetadataResponse,
+  PublicIllustrativeMathematicsK5Config,
+} from './hearth-catalog-providers.js';
+export {
+  createCk12Adapter,
+  createIllustrativeMathematicsAdapter,
+  createOerCommonsAdapter,
+  createOerCommonsRssAdapter,
+  createPublicIllustrativeMathematicsK5Adapter,
+  providerFeedRequirements,
+} from './hearth-catalog-providers.js';
 export type {
   CurriculumView,
   EnrollmentView,
@@ -89,7 +160,24 @@ export {
   validateEasyPeasyUrl,
 } from './sources/easy-peasy-parser.js';
 export type {
+  DriveCatalogRecord,
+  DriveDiscoveryCheckpoint,
+  DriveDiscoveryOptions,
+  DriveDiscoveryPage,
+  DriveExclusion,
+  DriveSelectionAuthorization,
+  GoogleDriveFilesClient,
+  PinnedDriveContent,
+} from './sources/google-drive-adapter.js';
+export {
+  DRIVE_CURRICULUM_SEED_ROOTS,
+  GoogleDriveCurriculumAdapter,
+} from './sources/google-drive-adapter.js';
+export { parseIllustrativeMathematicsK5Index } from './sources/illustrative-mathematics-parser.js';
+export { parseOerCommonsRssFeed } from './sources/oer-commons-rss-parser.js';
+export type {
   SubmissionAssetClaim,
+  SubmissionIntake,
   SubmissionPage,
   SubmissionServiceOptions,
   SubmissionView,
@@ -102,6 +190,7 @@ export type {
   ExternalCompletionReporter,
   GraderKind,
   SubmissionAssetRelationship,
+  SubmissionKind,
   SubmissionStatus,
 } from './submissions.js';
 export {
