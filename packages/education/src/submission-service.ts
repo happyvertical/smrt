@@ -16,6 +16,7 @@ import {
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
   SubmissionCollection,
+  SubmissionIntakeBindingCollection,
 } from './collections.js';
 import {
   LearnerAuthorizationError,
@@ -338,6 +339,23 @@ export class SubmissionService extends LearnerService {
         : null,
     };
   }
+  /** Recheck the exact assignment without creating progress or accepting bytes.
+   * Trusted intake bridges call this before reading retained evidence.
+   */
+  async assertLessonAssignment(request: LessonRequest): Promise<void> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.submit',
+    );
+    const catalog = await this.catalog(request, enrollment.courseId);
+    if (
+      !catalog.sections.some((section) =>
+        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
+      )
+    )
+      throw new LearnerAuthorizationError();
+  }
+
   async captureSubmission(
     request: LessonRequest & {
       requestKey: string;
@@ -384,13 +402,24 @@ export class SubmissionService extends LearnerService {
         db: service.db,
       });
       if (request.intake) {
-        const intake = await submissions.get(
+        const bindings = await SubmissionIntakeBindingCollection.create({
+          db: service.db,
+        });
+        const binding = await bindings.get(
           {
             tenantId: request.tenantId,
             intakeItemId: request.intake.intakeItemId,
           },
           { cache: false },
         );
+        const intake = binding
+          ? await submissions.get(
+              { id: binding.submissionId, tenantId: request.tenantId },
+              { cache: false },
+            )
+          : undefined;
+        if (binding && !intake)
+          throw new Error('Submission intake binding is corrupt');
         if (intake) {
           if (
             intake.kind !== kind ||
@@ -421,7 +450,7 @@ export class SubmissionService extends LearnerService {
           },
           { cache: false },
         );
-        if (!predecessor || predecessor.kind !== 'completed_work')
+        if (predecessor?.kind !== 'completed_work')
           throw new Error(
             'Submission predecessor is not current progress evidence',
           );
@@ -475,6 +504,19 @@ export class SubmissionService extends LearnerService {
         previousSubmissionId: request.intake?.previousSubmissionId ?? null,
         intakeItemId: request.intake?.intakeItemId ?? null,
       });
+      if (request.intake) {
+        // INSERT-only lets the database arbitrate concurrent captures across
+        // different enrollments. The transaction rolls this attempt back on a
+        // collision, so no pages or progress mutations escape.
+        await (
+          await SubmissionIntakeBindingCollection.create({ db: service.db })
+        ).create({
+          tenantId: request.tenantId,
+          intakeItemId: request.intake.intakeItemId,
+          submissionId: String(row.id),
+          _insertOnly: true,
+        });
+      }
       const links = await SubmissionAssetCollection.create({ db: service.db });
       for (const [sortOrder, page] of request.pages.entries()) {
         const asset = await service.storePage(request, learner.profileId, page);

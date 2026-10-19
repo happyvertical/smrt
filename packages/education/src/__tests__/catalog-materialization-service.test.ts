@@ -39,14 +39,19 @@ function service(overrides: Record<string, unknown> = {}) {
   };
   const storage = { ensurePrivateAsset: vi.fn() };
   return {
-    service: new CatalogMaterializationService({} as never, store, storage),
+    service: new CatalogMaterializationService(
+      {} as never,
+      store,
+      storage,
+      undefined,
+      vi.fn(async () => ({ allowed: true, roles: ['guardian'] })),
+    ),
     storage,
   };
 }
 const request = {
   tenantId: 'tenant',
   actorUserId: 'guardian',
-  roles: ['guardian'],
   acquisitionId: 'acquisition',
 };
 
@@ -80,7 +85,6 @@ describe('CatalogMaterializationService', () => {
       expect(
         materializer.materialize({
           ...request,
-          roles: ['guardian', 'teacher'],
         }),
       ).rejects.toThrow('Teacher-only'),
     );
@@ -105,6 +109,8 @@ describe('CatalogMaterializationService', () => {
           })),
         },
         storage,
+        undefined,
+        vi.fn(async () => ({ allowed: true, roles: ['guardian', 'teacher'] })),
       );
       await withTenant({ tenantId: 'tenant', userId: 'guardian' }, async () =>
         expect(
@@ -119,6 +125,44 @@ describe('CatalogMaterializationService', () => {
     } finally {
       await db.close?.();
     }
+  });
+
+  it('requires host-derived guardian authorization before private side effects', async () => {
+    const storage = { ensurePrivateAsset: vi.fn() };
+    const materializer = new CatalogMaterializationService(
+      {} as never,
+      {
+        getAcquisition: vi.fn(async () => acquisition),
+        getResource: vi.fn(async () => resource),
+      },
+      storage,
+      undefined,
+      vi.fn(async () => ({ allowed: true, roles: ['learner'] })),
+    );
+    await withTenant({ tenantId: 'tenant', userId: 'guardian' }, async () =>
+      expect(materializer.materialize(request)).rejects.toThrow('guardian'),
+    );
+    expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'restricted',
+    'conflicting',
+  ] as const)('rechecks current %s license evidence before private side effects', async (state) => {
+    const { service: materializer, storage } = service({
+      getResource: vi.fn(async () => ({
+        ...resource,
+        licenseEvidence: {
+          state,
+          identifier: 'CC-BY',
+          permittedOperations: ['print'],
+        },
+      })),
+    });
+    await withTenant({ tenantId: 'tenant', userId: 'guardian' }, async () =>
+      expect(materializer.materialize(request)).rejects.toThrow('license'),
+    );
+    expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
   });
 
   it('requires the pinned source revision before copying bytes', async () => {

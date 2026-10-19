@@ -36,7 +36,7 @@ function fixture() {
     readEvidence: vi.fn(async () => bytes),
   };
   const submissions = {
-    getLearner: vi.fn(async () => ({})),
+    assertLessonAssignment: vi.fn(async () => undefined),
     captureSubmission: vi.fn(async (value) => value),
     captureBlankReference: vi.fn(async (value) => value),
     resubmitSubmission: vi.fn(async (value) => value),
@@ -48,7 +48,7 @@ function fixture() {
     scope: {
       tenantId: 'tenant',
       actorId: 'actor',
-      confidentialScopeId: 'family',
+      confidentialScopeId: 'enrollment',
     },
   };
   return { ...input, input };
@@ -90,6 +90,7 @@ describe('education ingestion capture boundary', () => {
     for (const patch of [
       { actorUserId: 'other' },
       { tenantId: 'other' },
+      { enrollmentId: 'sibling-enrollment' },
       { kind: 'unknown' },
       { kind: 'blank_reference', previousSubmissionId: 'old' },
     ]) {
@@ -101,6 +102,7 @@ describe('education ingestion capture boundary', () => {
       ).rejects.toThrow();
     }
     expect(f.ingestion.getEvidence).not.toHaveBeenCalled();
+    expect(f.submissions.assertLessonAssignment).not.toHaveBeenCalled();
   });
   it('fails closed on tampered bytes and provider errors without capture', async () => {
     const f = fixture();

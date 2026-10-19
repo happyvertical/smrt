@@ -245,8 +245,16 @@ describe('parseEasyPeasyPage', () => {
       <h1>Course</h1>
       <div><span><strong>Lesson 3 *</strong></span>
       <a href="/wp-content/uploads/day-3.pdf">Worksheet</a></div>`;
+    const loneBareDiv = `
+      <h1>Course</h1>
+      <p><strong>Lesson 1 *</strong></p>
+      <div><strong>Lesson 2 *</strong>
+      <a href="/wp-content/uploads/day-2.pdf">Worksheet</a></div>`;
     expect(() => parseEasyPeasyPage(compact, pageUrl)).toThrow('unsupported');
     expect(() => parseEasyPeasyPage(genericContainer, pageUrl)).toThrow(
+      'unsupported',
+    );
+    expect(() => parseEasyPeasyPage(loneBareDiv, pageUrl)).toThrow(
       'unsupported',
     );
   });

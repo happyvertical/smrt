@@ -157,6 +157,42 @@ export class Submission extends SmrtObject {
   }
 }
 
+/** Durable tenant/item claim for trusted ingestion receipts. This separate table
+ * keeps ordinary uploads (which have no intake item) out of the uniqueness key.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'submission_intake_bindings',
+  ...closed,
+  conflictColumns: ['tenant_id', 'intake_item_id'],
+})
+export class SubmissionIntakeBinding extends SmrtObject {
+  @tenantId() tenantId = '';
+  @field({ required: true, type: 'text' }) intakeItemId = '';
+  @foreignKey('Submission', { required: true }) submissionId = '';
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    applyOptions(this, options);
+  }
+
+  override async save(): Promise<this> {
+    if (!this.tenantId?.trim() || !this.intakeItemId?.trim())
+      throw new Error('Submission intake binding requires tenant and item');
+    if (this.intakeItemId.length > 200)
+      throw new Error('Submission intake item id is invalid');
+    if (
+      !(await this.db.get('submissions', {
+        id: this.submissionId,
+        tenant_id: this.tenantId,
+        intake_item_id: this.intakeItemId,
+      }))
+    )
+      throw new Error('Submission intake binding must match its submission');
+    return super.save();
+  }
+}
+
 /** Photos or scans of work submitted for review. */
 @smrt({ tableName: 'submissions', ...closed })
 export class ScannedSubmission extends Submission {

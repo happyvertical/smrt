@@ -22,8 +22,12 @@ provider on retry. Catalog browsing and synchronization must never call it.
 
 `CatalogMaterializationService` is the only framework path from an acquired
 selection to learner material. It requires a tenant-owned acquisition whose
-resource revision still matches, an active guardian actor, and a host storage
-adapter that creates an authorized private Asset from the pinned bytes. It
+resource revision still matches, current host-derived guardian authorization
+(`education.catalog.materialize`), and a host storage adapter that creates an
+authorized private Asset from the pinned bytes. Caller-provided roles are never
+authorized. Before private storage side effects it re-runs `CatalogPolicy` on
+the current resource and its current license evidence (`print` for PDF,
+`download` otherwise); restricted or conflicting evidence denies promotion. It
 creates a `personal-use-copy` external course, its section and lesson, and the
 sole `LessonAsset` join; it never makes a browsed resource assignable. A host
 may then supply curriculum and learner identifiers so the service calls the

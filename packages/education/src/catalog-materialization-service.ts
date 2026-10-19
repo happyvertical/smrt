@@ -2,6 +2,7 @@ import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CatalogAcquisitionRecord } from './catalog-acquisition-service.js';
 import type { CatalogActor, CatalogSourceRecord } from './catalog-contracts.js';
+import { CatalogPolicy } from './catalog-policy.js';
 import {
   CourseSectionCollection,
   ExternalCourseCollection,
@@ -42,7 +43,6 @@ export interface CatalogEnrollmentPort {
 export interface CatalogMaterializationRequest {
   tenantId: string;
   actorUserId: string;
-  roles: readonly string[];
   acquisitionId: string;
   /** Required when provider metadata does not classify a subject. */
   subject?: string;
@@ -52,6 +52,14 @@ export interface CatalogMaterializationRequest {
   learnerId?: string;
   guardianRelationshipId?: string;
 }
+
+/** Host derives this from current memberships and guardian terms; callers never supply roles. */
+export type CatalogMaterializationAuthorizer = (input: {
+  tenantId: string;
+  actorUserId: string;
+  executor: DatabaseInterface;
+  action: 'education.catalog.materialize';
+}) => Promise<Readonly<{ allowed: boolean; roles: readonly string[] }>>;
 
 export interface CatalogMaterializationResult {
   courseId: string;
@@ -86,22 +94,36 @@ export class CatalogMaterializationService {
     private readonly db: DatabaseInterface,
     private readonly store: CatalogMaterializationStore,
     private readonly storage: CatalogMaterializationStorage,
-    private readonly learner?: CatalogEnrollmentPort,
+    private readonly learner: CatalogEnrollmentPort | undefined,
+    private readonly authorize: CatalogMaterializationAuthorizer,
+    private readonly policy = new CatalogPolicy(),
   ) {}
 
   async materialize(
     request: CatalogMaterializationRequest,
   ): Promise<CatalogMaterializationResult> {
-    const actor: CatalogActor = request;
     const active = getCurrentTenant();
     if (
-      !actor.tenantId?.trim() ||
-      !actor.actorUserId?.trim() ||
-      active?.tenantId !== actor.tenantId ||
-      active.userId !== actor.actorUserId ||
+      !request.tenantId?.trim() ||
+      !request.actorUserId?.trim() ||
+      active?.tenantId !== request.tenantId ||
+      active.userId !== request.actorUserId ||
       active.superAdminBypass
     )
       throw new Error('Trusted active tenant and actor identity are required.');
+    const authorization = await this.authorize({
+      tenantId: request.tenantId,
+      actorUserId: request.actorUserId,
+      executor: this.db,
+      action: 'education.catalog.materialize',
+    });
+    if (!authorization.allowed || !authorization.roles.includes('guardian'))
+      throw new Error('Active guardian authorization is required.');
+    const actor: CatalogActor = {
+      tenantId: request.tenantId,
+      actorUserId: request.actorUserId,
+      roles: authorization.roles,
+    };
     const acquisition = await this.store.getAcquisition({
       tenantId: actor.tenantId,
       acquisitionId: request.acquisitionId,
@@ -117,6 +139,12 @@ export class CatalogMaterializationService {
       throw new Error(
         'Teacher-only material cannot be materialized for learners.',
       );
+    const operation = isPrintableAcquisitionFormat(acquisition.format)
+      ? 'print'
+      : 'download';
+    const decision = this.policy.authorize(resource, operation, actor);
+    if (!decision.allowed)
+      throw new Error(`Current catalog license does not permit ${operation}.`);
     const subject =
       resource.subjects?.find((value) => value.trim()) ??
       request.subject?.trim();

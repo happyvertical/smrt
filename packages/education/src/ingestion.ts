@@ -116,12 +116,14 @@ export async function captureEducationIntake(input: {
   if (
     request.tenantId !== scope.tenantId ||
     request.actorUserId !== scope.actorId ||
+    request.enrollmentId !== scope.confidentialScopeId ||
     !['blank_reference', 'completed_work'].includes(request.kind) ||
     (request.kind === 'blank_reference' && request.previousSubmissionId)
   )
     throw new Error('Invalid education intake binding');
-  // Authorize learner before consuming potentially expensive retained evidence.
-  await submissions.getLearner(request);
+  // Prove the exact active learner/enrollment/lesson assignment before reading
+  // any family-private retained evidence. Intake scopes are enrollment-bound.
+  await submissions.assertLessonAssignment(request);
   const evidence = (await ingestion.getEvidence(request.itemId)).filter(
     (entry) => entry.parentEvidenceId === null,
   );

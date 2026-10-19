@@ -193,17 +193,22 @@ function lessonHeadings(html: string): HeadingMatch[] {
   // ambiguous and is rejected below.
   const directDivLessons =
     /<div\b[^>]*>\s*<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)\s*>/gi;
+  const bareDivMarkers: HeadingMatch[] = [];
   for (const match of html.matchAll(directDivLessons)) {
     if (isInDailyContainer(match.index ?? 0)) continue;
     const text = textContent(match[1]);
     if (!/^lesson\b/i.test(text)) continue;
     if (isDetachedDailyMarker(match.index ?? 0, text)) continue;
-    matches.push({
+    bareDivMarkers.push({
       index: match.index ?? 0,
       end: (match.index ?? 0) + match[0].length,
       text,
     });
   }
+  // A lone unlabelled div marker cannot establish a course structure. Older
+  // Easy Peasy course pages use a sequence of these divs; accepting a single
+  // marker would turn malformed refresh input into a partial import.
+  if (bareDivMarkers.length > 1) matches.push(...bareDivMarkers);
   const weeks = /<(?:strong|b)\b([^>]*)>([\s\S]*?)<\/(?:strong|b)\s*>/gi;
   for (const match of html.matchAll(weeks)) {
     if (isInDailyContainer(match.index ?? 0)) continue;

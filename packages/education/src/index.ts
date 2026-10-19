@@ -46,6 +46,7 @@ export type {
 export { CatalogDatabaseSyncStore } from './catalog-database-sync-store.js';
 export type {
   CatalogEnrollmentPort,
+  CatalogMaterializationAuthorizer,
   CatalogMaterializationRequest,
   CatalogMaterializationResult,
   CatalogMaterializationStorage,
@@ -100,6 +101,7 @@ export {
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
   SubmissionCollection,
+  SubmissionIntakeBindingCollection,
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
@@ -218,4 +220,5 @@ export {
   ScannedSubmission,
   Submission,
   SubmissionAsset,
+  SubmissionIntakeBinding,
 } from './submissions.js';

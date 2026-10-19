@@ -30,9 +30,13 @@ bytes and notes. Hosts should impose tighter request/body limits as needed.
 
 `captureBlankReference` records a workbook-page scan as immutable
 `blank_reference` evidence without advancing completion or creating a grade.
-Trusted ingestion may supply a stable `intakeItemId`; it is bound once to the
-tenant, learner, lesson, progress, kind and predecessor, and an altered retry
-fails. `resubmitSubmission` requires the current completed-work predecessor and
+Trusted ingestion scopes each receipt to the exact `enrollmentId` and calls
+`assertLessonAssignment` before reading retained evidence; it proves the active
+tenant, actor, learner, enrollment, and lesson without creating progress. A
+stable `intakeItemId` is claimed once in the durable tenant/item binding table,
+then bound to the tenant, learner, lesson, progress, kind and predecessor; an
+altered retry fails. The binding is database-unique across enrollments while
+ordinary uploads remain unbound. `resubmitSubmission` requires the current completed-work predecessor and
 creates a new immutable `completed_work` attempt. Old pages, grades and feedback
 remain history; stale predecessors cannot be graded or replaced. A correction may
 reopen submitted, review or complete progress, while an AI proposal remains a

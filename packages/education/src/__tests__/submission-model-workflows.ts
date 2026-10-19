@@ -6,12 +6,14 @@ import {
   GradeCollection,
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
+  SubmissionIntakeBindingCollection,
 } from '../collections.js';
 import {
   Attestation,
   ExternalCompletion,
   Grade,
   ScannedSubmission,
+  SubmissionIntakeBinding,
 } from '../submissions.js';
 import type { learnerFixture } from './learner-workflows.js';
 
@@ -57,6 +59,38 @@ export async function assertSubmissionModels(f: Fixture): Promise<void> {
   expect(scanned.captureKey).toBe('capture-1');
   expect(new ScannedSubmission().captureKey).toBe('');
   expect(new ScannedSubmission().captureDigest).toBe('');
+
+  const bindings = await SubmissionIntakeBindingCollection.create({ db: f.db });
+  scanned.intakeItemId = 'receipt-one';
+  await as(own, () => scanned.save());
+  const binding = await as(own, () =>
+    bindings.create({
+      tenantId: own.tenantId,
+      intakeItemId: 'receipt-one',
+      submissionId: String(scanned.id),
+      _insertOnly: true,
+    }),
+  );
+  expect(binding).toBeInstanceOf(SubmissionIntakeBinding);
+  const duplicate = await as(own, () =>
+    scans.create({
+      ...input,
+      pageCount: 1,
+      captureKey: 'capture-duplicate-intake',
+      captureDigest: 'b'.repeat(64),
+      intakeItemId: 'receipt-one',
+    }),
+  );
+  await expect(
+    as(own, () =>
+      bindings.create({
+        tenantId: own.tenantId,
+        intakeItemId: 'receipt-one',
+        submissionId: String(duplicate.id),
+        _insertOnly: true,
+      }),
+    ),
+  ).rejects.toThrow();
 
   scanned.setExtracted({ answer: { value: '7', confidence: 0.9 } });
   expect(scanned.getExtracted()).toMatchObject({ answer: { value: '7' } });

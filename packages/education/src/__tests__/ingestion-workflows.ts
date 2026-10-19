@@ -33,7 +33,7 @@ export async function assertIngestionBridge(db: DatabaseInterface) {
     const scope = {
       tenantId: f.parent.tenantId,
       actorId: f.parent.actorUserId,
-      confidentialScopeId: f.learner.id!,
+      confidentialScopeId: String(f.enrollment.id),
     };
     const submissions = new SubmissionService(
       db,
@@ -265,7 +265,7 @@ export async function assertDelegatedGuardianReview(db: DatabaseInterface) {
     const ownScope = {
       tenantId: f.own.tenantId,
       actorId: f.own.actorUserId,
-      confidentialScopeId: String(f.learner.id),
+      confidentialScopeId: String(f.enrollment.id),
     };
     const parentScope = { ...ownScope, actorId: f.parent.actorUserId };
     const options = {

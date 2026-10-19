@@ -27,6 +27,7 @@ import { learnerClasses, type learnerFixture } from './learner-workflows.js';
 export const submissionClasses = [
   ...learnerClasses,
   'Submission',
+  'SubmissionIntakeBinding',
   'ScannedSubmission',
   'ExternalCompletion',
   'Attestation',
