@@ -2,7 +2,6 @@ import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CatalogAcquisitionRecord } from './catalog-acquisition-service.js';
 import type { CatalogActor, CatalogSourceRecord } from './catalog-contracts.js';
-import { CatalogPolicy } from './catalog-policy.js';
 import {
   CourseSectionCollection,
   ExternalCourseCollection,
@@ -83,7 +82,6 @@ export class CatalogMaterializationService {
     private readonly store: CatalogMaterializationStore,
     private readonly storage: CatalogMaterializationStorage,
     private readonly learner?: CatalogEnrollmentPort,
-    private readonly policy = new CatalogPolicy(),
   ) {}
 
   async materialize(
@@ -108,9 +106,11 @@ export class CatalogMaterializationService {
     const resource = await this.store.getResource(acquisition.resourceId);
     if (!resource || resource.revision !== acquisition.revision)
       throw new Error('Pinned catalog resource revision was not found.');
-    if (!this.policy.canView(resource, actor))
+    // A teacher may inspect restricted metadata, but this learner-material
+    // workflow never promotes it into a course, printable, or asset link.
+    if (resource.visibility === 'teacher')
       throw new Error(
-        'Teacher-only material cannot be materialized for this actor.',
+        'Teacher-only material cannot be materialized for learners.',
       );
     const subject =
       resource.subjects?.find((value) => value.trim()) ??
@@ -183,7 +183,9 @@ export class CatalogMaterializationService {
           title: 'Materials',
           sortOrder: 0,
         });
-      const printable = acquisition.format === 'pdf';
+      // Acquisition formats are MIME types. Only a layout-preserving PDF is
+      // printable; all other formats remain attachments for host-specific use.
+      const printable = acquisition.format === 'application/pdf';
       const lessons = printable ? worksheets : readings;
       if (!(await lessons.get(lessonId)))
         await lessons.create({

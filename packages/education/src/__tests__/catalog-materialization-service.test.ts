@@ -1,6 +1,8 @@
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { describe, expect, it, vi } from 'vitest';
 import { CatalogMaterializationService } from '../catalog-materialization-service.js';
+import { CourseCollection } from '../collections.js';
 
 const acquisition = {
   id: 'acquisition',
@@ -58,7 +60,7 @@ describe('CatalogMaterializationService', () => {
     expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
   });
 
-  it('rejects teacher material for a guardian before copying bytes', async () => {
+  it('rejects teacher material even when the guardian also has a teacher role', async () => {
     const { service: materializer, storage } = service({
       getResource: vi.fn(async () => ({
         ...resource,
@@ -66,9 +68,48 @@ describe('CatalogMaterializationService', () => {
       })),
     });
     await withTenant({ tenantId: 'tenant', userId: 'guardian' }, async () =>
-      expect(materializer.materialize(request)).rejects.toThrow('Teacher-only'),
+      expect(
+        materializer.materialize({
+          ...request,
+          roles: ['guardian', 'teacher'],
+        }),
+      ).rejects.toThrow('Teacher-only'),
     );
     expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
+  });
+
+  it('leaves no course or asset side effect when a teacher resource is forged into learner materialization', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['Course'],
+    });
+    try {
+      const storage = { ensurePrivateAsset: vi.fn() };
+      const materializer = new CatalogMaterializationService(
+        db,
+        {
+          getAcquisition: vi.fn(async () => acquisition),
+          getResource: vi.fn(async () => ({
+            ...resource,
+            visibility: 'teacher' as const,
+          })),
+        },
+        storage,
+      );
+      await withTenant({ tenantId: 'tenant', userId: 'guardian' }, async () =>
+        expect(
+          materializer.materialize({
+            ...request,
+            roles: ['guardian', 'teacher'],
+          }),
+        ).rejects.toThrow('Teacher-only'),
+      );
+      expect(storage.ensurePrivateAsset).not.toHaveBeenCalled();
+      expect(await (await CourseCollection.create({ db })).list()).toEqual([]);
+    } finally {
+      await db.close?.();
+    }
   });
 
   it('requires the pinned source revision before copying bytes', async () => {
