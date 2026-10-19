@@ -100,7 +100,7 @@ export const easyPeasyGrade4Courses: readonly EasyPeasyGrade4Course[] = [
     courseRef: 'lower-elementary-thinking',
     title: 'Thinking',
     subject: 'thinking',
-    pageUrl: 'https://allinonehomeschool.com/thinking/',
+    pageUrl: 'https://allinonehomeschool.com/thinking-levels-4-6/',
     variant: 'once-weekly',
     enrollmentMode: 'individual',
   },
