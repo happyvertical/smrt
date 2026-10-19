@@ -181,9 +181,9 @@ export type PayoutStatus = (typeof PayoutStatus)[keyof typeof PayoutStatus];
  * Legacy payout method values.
  *
  * @deprecated Use the `PayoutMethod` union
- * (`'bank_transfer' | 'check' | 'paypal' | 'credit' | 'other'`) from
- * `@happyvertical/smrt-sales` — the legacy values align exactly; the new
- * union adds `'other'`.
+ * (`PAYOUT_METHODS`) from `@happyvertical/smrt-sales` — the legacy values
+ * align exactly; the new union adds `'other'`, `'stripe_connect'`, and
+ * `'crypto'`.
  */
 export const PayoutMethod = Object.freeze({
   BANK_TRANSFER: 'bank_transfer',

@@ -37,8 +37,26 @@ export type EarnerSourceAttributionStatus =
   (typeof EARNER_SOURCE_ATTRIBUTION_STATUSES)[number];
 
 /**
+ * What kind of party an {@link Earner} pays out to (#3834).
+ *
+ * - `person` (default; every pre-existing earner) — an individual, normally
+ *   linked to a smrt-profiles person Profile through `profileId`.
+ * - `organisation` — a legal entity (a member business, outlet, farm, …).
+ *   It needs no person Profile; `profileId` stays empty unless the host
+ *   links an organisation Profile.
+ * - `treasury` — an entity's own retained-funds account (for example a
+ *   co-operative's treasury used as a waterfall remainder sink). It never
+ *   has a person Profile.
+ */
+export const EARNER_KINDS = ['person', 'organisation', 'treasury'] as const;
+export type EarnerKind = (typeof EARNER_KINDS)[number];
+
+/**
  * How a payout is delivered. Shared between {@link Earner} (preference) and
  * {@link CommissionPayout} (what a specific batch will use).
+ *
+ * `stripe_connect` and `crypto` (#3834) are descriptors only: this package
+ * records where a payout should go and never calls a payment provider.
  */
 export const PAYOUT_METHODS = [
   'bank_transfer',
@@ -46,8 +64,51 @@ export const PAYOUT_METHODS = [
   'paypal',
   'credit',
   'other',
+  'stripe_connect',
+  'crypto',
 ] as const;
 export type PayoutMethod = (typeof PAYOUT_METHODS)[number];
+
+/**
+ * Payout methods whose destination must be described by a typed
+ * {@link PayoutDestination} before the earner can be `active`.
+ */
+export const PAYOUT_METHODS_REQUIRING_DESTINATION = [
+  'stripe_connect',
+  'crypto',
+] as const satisfies readonly PayoutMethod[];
+
+/**
+ * A Stripe Connect connected account that receives transfers. Only the
+ * public account identifier is stored — never an API key or secret.
+ */
+export interface StripeConnectPayoutDestination {
+  method: 'stripe_connect';
+  /** Connected account id (`acct_…`). */
+  connectedAccountId: string;
+}
+
+/**
+ * A public crypto receiving address. `network` and `asset` are open
+ * lowercase/uppercase strings (`bitcoin`/`BTC`, `lightning`/`BTC`,
+ * `ethereum`/`USDC`, …) so hosts choose their own rails.
+ */
+export interface CryptoPayoutDestination {
+  method: 'crypto';
+  /** Settlement network, e.g. `bitcoin`, `lightning`, `ethereum`. */
+  network: string;
+  /** Asset ticker on that network, e.g. `BTC`, `USDC`. */
+  asset: string;
+  /** Public receiving address, invoice, or payment code. */
+  address: string;
+  /** Optional destination tag / memo required by some networks. */
+  memo?: string;
+}
+
+/** Typed payout-rail descriptor stored on an {@link Earner}. */
+export type PayoutDestination =
+  | StripeConnectPayoutDestination
+  | CryptoPayoutDestination;
 
 /**
  * Lifecycle of a versioned {@link CommissionPlan} row.
@@ -219,6 +280,112 @@ export interface WaterfallStepConditions {
   member?: string[];
 }
 
+/**
+ * Pool distribution for a waterfall step (#3834). The step's `recipient`
+ * descriptor identifies the pool and resolves through the recipient
+ * registry like any other recipient; the pool's members and their metric
+ * weights come from host-injected providers and are frozen in the trace.
+ */
+export interface WaterfallPoolSpec {
+  /**
+   * Metric key passed to the injected {@link MetricProvider} (for example
+   * `deliveries`, `items_published`, `referrals_sent`). Omitted means equal
+   * weights and no metric provider call.
+   */
+  metric?: string;
+  /**
+   * Where indivisible minor units go after the floor allocation:
+   * `remainder_sink` (default) redirects them to the plan's remainder sink;
+   * `largest_remainder` hands them out one unit at a time by largest
+   * fractional remainder (ties: larger weight, then member `kind`, then
+   * member `id`, ascending by UTF-16 code unit).
+   */
+  residual?: WaterfallPoolResidualRule;
+  /**
+   * What to do when the pool has members but every weight is zero:
+   * `remainder_sink` (default) sends the whole step to the remainder sink;
+   * `equal` splits it equally instead. An empty pool always uses the sink.
+   */
+  zeroWeight?: WaterfallPoolZeroWeightRule;
+}
+
+export const WATERFALL_POOL_RESIDUAL_RULES = [
+  'remainder_sink',
+  'largest_remainder',
+] as const;
+export type WaterfallPoolResidualRule =
+  (typeof WATERFALL_POOL_RESIDUAL_RULES)[number];
+
+export const WATERFALL_POOL_ZERO_WEIGHT_RULES = [
+  'remainder_sink',
+  'equal',
+] as const;
+export type WaterfallPoolZeroWeightRule =
+  (typeof WATERFALL_POOL_ZERO_WEIGHT_RULES)[number];
+
+/** Half-open metric measurement window, frozen as ISO-8601 strings. */
+export interface WaterfallMetricPeriod {
+  start: string;
+  end: string;
+}
+
+/** One member's frozen weight inside a {@link WaterfallPoolSnapshot}. */
+export interface WaterfallPoolMemberWeight {
+  recipient: WaterfallResolvedRecipient;
+  /** Non-negative safe-integer metric value (`1` for equal weights). */
+  weight: number;
+}
+
+/**
+ * The authoritative pool inputs for one step: the resolved pool identity,
+ * its members in canonical `(kind, id)` order, and their weights. Frozen in
+ * {@link WaterfallFrozenInputs.poolsByStep} so replay never re-reads metrics.
+ */
+export interface WaterfallPoolSnapshot {
+  pool: WaterfallResolvedRecipient;
+  /** `null` when the step uses equal weights. */
+  metric: string | null;
+  period: WaterfallMetricPeriod | null;
+  members: WaterfallPoolMemberWeight[];
+}
+
+/** Request passed to a {@link MetricProvider}. */
+export interface MetricProviderRequest {
+  metric: string;
+  pool: WaterfallResolvedRecipient;
+  members: readonly WaterfallResolvedRecipient[];
+  period: WaterfallMetricPeriod | null;
+  event: WaterfallEvent;
+}
+
+/** One member's metric value returned by a {@link MetricProvider}. */
+export interface MetricValue {
+  kind: string;
+  id: string;
+  /** Non-negative safe integer (count, minor units, …). */
+  value: number;
+}
+
+/**
+ * Host-injected metric source for pool weights. Members it omits weigh
+ * zero; values for non-members, duplicates, and non-integer or negative
+ * values are rejected. Fractional metrics must be scaled to integers by the
+ * host so allocation stays exact.
+ */
+export interface MetricProvider {
+  getMetricValues(
+    request: MetricProviderRequest,
+  ): Promise<readonly MetricValue[]> | readonly MetricValue[];
+}
+
+/** Host-injected resolver for the members of a resolved pool. */
+export type WaterfallPoolMembershipResolver = (
+  pool: WaterfallResolvedRecipient,
+  event: WaterfallEvent,
+) =>
+  | Promise<readonly WaterfallResolvedRecipient[]>
+  | readonly WaterfallResolvedRecipient[];
+
 /** A single ordered allocation in a version-two commission plan. */
 export interface WaterfallStep {
   key: string;
@@ -231,6 +398,8 @@ export interface WaterfallStep {
   capCents?: number;
   conditions?: WaterfallStepConditions;
   recipient: WaterfallRecipientDescriptor;
+  /** Distribute this step across the members of the recipient pool. */
+  pool?: WaterfallPoolSpec;
 }
 
 /** Version-two terms consumed by `calculateWaterfall`. */
@@ -267,6 +436,40 @@ export interface WaterfallFrozenInputs {
   recipientByStep: Record<string, WaterfallResolvedRecipient | null>;
   remainderSink: WaterfallResolvedRecipient;
   applicationFeeSettledCents: number;
+  /**
+   * Frozen pool inputs by step key. Present only when the plan has pool
+   * steps, so traces of pool-free plans are unchanged.
+   */
+  poolsByStep?: Record<string, WaterfallPoolSnapshot>;
+}
+
+/** One member's allocation inside a {@link WaterfallPoolStepTrace}. */
+export interface WaterfallPoolMemberTrace {
+  recipient: WaterfallResolvedRecipient;
+  weight: number;
+  /**
+   * `weight / totalWeight` as a decimal (informational; amounts are exact
+   * integer arithmetic). Maps to `Commission.shareFraction` when a host
+   * persists member allocations under one `splitGroupId`.
+   */
+  shareFraction: number;
+  amountCents: number;
+}
+
+/** How a pool step was distributed. */
+export interface WaterfallPoolStepTrace {
+  metric: string | null;
+  period: WaterfallMetricPeriod | null;
+  totalWeight: number;
+  /**
+   * `weighted` / `equal` distributed to members; `remainder_sink` means the
+   * pool was empty or every weight was zero under the default rule.
+   */
+  distribution: 'weighted' | 'equal' | 'remainder_sink';
+  residualRule: WaterfallPoolResidualRule;
+  /** Indivisible units redirected to the sink by the residual rule. */
+  residualToSinkCents: number;
+  members: WaterfallPoolMemberTrace[];
 }
 
 export interface WaterfallStepTrace {
@@ -278,6 +481,8 @@ export interface WaterfallStepTrace {
   applicationFeeOffsetCents: number;
   payableCents: number;
   skipped?: 'condition_not_met';
+  /** Present for pool steps whose pool resolved. */
+  pool?: WaterfallPoolStepTrace;
 }
 
 export interface WaterfallCalculationTrace {
@@ -362,10 +567,12 @@ export interface EarnerBalance {
 /** Options for constructing an {@link Earner}. */
 export interface EarnerOptions extends SmrtObjectOptions {
   tenantId?: string | null;
+  kind?: EarnerKind;
   profileId?: string;
   displayName?: string;
   status?: EarnerStatus;
   payoutMethod?: PayoutMethod;
+  payoutDestination?: string;
   payoutThresholdCents?: number;
   payoutScheduleKey?: string;
   currency?: string;

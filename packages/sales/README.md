@@ -98,6 +98,67 @@ v1 snapshots keep governing earnings. To recover, activate and bind compatible
 component terms, then retry qualification; use `calculateWaterfall()` directly
 for v2 allocations. Switching a plan key's engine does not migrate referrals.
 
+### Pool recipients
+
+A step can share its amount across a pool of members, weighted by a metric
+such as deliveries, items published, or referrals sent. The step's
+`recipient` names the pool and resolves like any other recipient; the host
+injects who belongs to it and how much each member contributed:
+
+```ts
+import {
+  calculateWaterfallWithPools,
+  WaterfallRecipientResolverRegistry,
+} from '@happyvertical/smrt-sales/commissions';
+
+const resolver = new WaterfallRecipientResolverRegistry();
+resolver.register('treasury', () => ({ kind: 'treasury', id: 'valley-coop' }));
+resolver.register('grower_pool', (d) => ({ kind: 'grower_pool', id: d.id ?? 'all' }));
+
+const { trace } = await calculateWaterfallWithPools(
+  {
+    planKey: 'valley-coop-wholesale',
+    version: 1,
+    currency: 'USD',
+    steps: [
+      { key: 'treasury', base: 'gross', amount: { kind: 'percent', rate: 0.1 },
+        recipient: { kind: 'treasury' } },
+      { key: 'growers', base: 'previous_remainder', amount: { kind: 'percent', rate: 1 },
+        recipient: { kind: 'grower_pool', id: '2026-season' },
+        pool: { metric: 'kg_delivered' } },
+    ],
+    remainderSink: { kind: 'treasury' },
+  },
+  { grossAmountCents: 10_000, currency: 'USD' },
+  {
+    resolver,
+    poolMembers: async (pool) => loadGrowers(pool.id),
+    metricProvider: { getMetricValues: async (req) => loadKgDelivered(req) },
+    metricPeriod: { start: '2026-09-01', end: '2026-10-01' },
+  },
+);
+```
+
+Omit `metric` for equal shares. Weights are non-negative integers, and
+members the provider leaves out weigh zero. Shares are exact integer minor
+units. The cents that cannot be divided go to the remainder sink by default.
+With `residual: 'largest_remainder'`, they go one at a time to the largest
+fractional remainders. Ties go to the larger weight, then to member `kind`
+and `id` order. An empty pool goes to the sink. So does a pool whose weights
+are all zero, unless the step sets `zeroWeight: 'equal'`. The trace freezes
+the members, weights, and metric period, so a replay with `frozenInputs` never
+calls the providers again. `calculateWaterfall()` stays synchronous; pass it
+`pools` from `prepareWaterfallPools()` when you need the two phases apart.
+
+### Organisation and treasury earners
+
+`Earner.kind` is `person` (the default), `organisation`, or `treasury`.
+Organisation and treasury earners need no person Profile. Payout methods
+include `stripe_connect` and `crypto`; `setPayoutDestination()` stores the
+connected account id or the public receiving address, and an active earner
+using either method must have one. The package records where money should
+go and never calls a payment provider.
+
 ## Core model
 
 - **Roles are separate from money.** `SalesRepresentative` and `Referrer` are
