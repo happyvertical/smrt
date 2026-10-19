@@ -36,6 +36,12 @@ Same-tenant membership alone never grants sibling access.
 
 ## Supported workflow
 
+- `getLearnerSetupStatus({ tenantId, actorUserId, learnerUserId })` is a
+  host-authorized onboarding probe for an active tenant member. It returns only
+  `{ needsSetup }`; it neither returns learner or relationship data nor grants
+  relationships. The host authorizer receives `education.learner.setup`, the
+  target user id, and the active executor. `provisionLearner` remains the write
+  path and still requires a directed guardian relationship.
 - `getLearner` returns authorized learner metadata and parsed settings.
 - `createCurriculum` creates a **planned** curriculum for an authorized guardian.
   A learner cannot plan their own curriculum. Title is required.

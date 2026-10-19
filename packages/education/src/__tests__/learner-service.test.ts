@@ -8,6 +8,7 @@ import {
   assertLearnerAuthorization,
   assertLearnerModels,
   assertLearnerRollback,
+  assertLearnerSetupStatus,
   assertProgressHistory,
   assertQueuedRollbackAndClosure,
   assertTransactionDrain,
@@ -20,6 +21,7 @@ afterAll(() => disableTenancy());
 describe('LearnerService SQLite', () => {
   for (const [name, assertion] of Object.entries({
     authorization: assertLearnerAuthorization,
+    setupStatus: assertLearnerSetupStatus,
     history: assertProgressHistory,
     rollback: assertLearnerRollback,
     models: assertLearnerModels,

@@ -32,6 +32,14 @@ export interface LearnerRequest {
   guardianRelationshipId?: string;
 }
 
+/** A host-owned onboarding probe; it exposes no learner or relationship data. */
+export interface LearnerSetupStatusRequest {
+  tenantId: string;
+  actorUserId: string;
+  learnerUserId: string;
+}
+export type LearnerSetupStatus = Readonly<{ needsSetup: boolean }>;
+
 /** The host validates relationship type/terms and its own permission policy. */
 export type LearnerAuthorizer = (
   request: LearnerRequest & {
@@ -43,9 +51,12 @@ export type LearnerAuthorizer = (
       | 'education.learner.start'
       | 'education.learner.submit'
       | 'education.learner.grade'
-      | 'education.learner.packet';
+      | 'education.learner.packet'
+      | 'education.learner.setup';
     own: boolean;
     relationshipTypeId?: string;
+    /** Present only for the setup-status probe; it is not a relationship grant. */
+    learnerUserId?: string;
   },
 ) => boolean | Promise<boolean>;
 
@@ -354,6 +365,58 @@ export class LearnerService {
       level: row.level,
       settings: row.getSettings(),
     };
+  }
+
+  /**
+   * Checks whether an active tenant member still needs a Learner row.
+   * The host authorizer decides who may run this onboarding probe; no learner
+   * metadata or guardian relationship is returned or created here.
+   */
+  async getLearnerSetupStatus(
+    request: LearnerSetupStatusRequest,
+  ): Promise<LearnerSetupStatus> {
+    const context = getCurrentTenant();
+    if (
+      !context ||
+      !request.tenantId ||
+      !request.actorUserId ||
+      !request.learnerUserId ||
+      context.tenantId !== request.tenantId ||
+      context.userId !== request.actorUserId ||
+      context.superAdminBypass
+    )
+      throw new LearnerAuthorizationError();
+    if (
+      (await this.authorize({
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        learnerId: '',
+        learnerUserId: request.learnerUserId,
+        executor: this.db,
+        action: 'education.learner.setup',
+        own: request.learnerUserId === request.actorUserId,
+      })) !== true
+    )
+      throw new LearnerAuthorizationError();
+    if (
+      !(await this.db.get('memberships', {
+        tenant_id: request.tenantId,
+        user_id: request.actorUserId,
+        status: 'active',
+      })) ||
+      !(await this.db.get('memberships', {
+        tenant_id: request.tenantId,
+        user_id: request.learnerUserId,
+        status: 'active',
+      })) ||
+      !(await this.db.get('users', { id: request.learnerUserId }))
+    )
+      throw new LearnerAuthorizationError();
+    const learner = await (await LearnerCollection.create({ db: this.db })).get(
+      { tenantId: request.tenantId, userId: request.learnerUserId },
+      { cache: false },
+    );
+    return { needsSetup: !learner };
   }
 
   /** Resolve the authenticated learner identity without exposing collections. */

@@ -145,6 +145,8 @@ export type {
   EnrollmentView,
   LearnerAuthorizer,
   LearnerRequest,
+  LearnerSetupStatus,
+  LearnerSetupStatusRequest,
   LearnerView,
   LessonProgressView,
 } from './learner-service.js';
