@@ -211,6 +211,7 @@ describe('Hearth catalog providers', () => {
     expect(calls).toEqual([
       expect.objectContaining({
         pageUrl: 'https://allinonehomeschool.com/ep-math-4/',
+        subject: 'math',
       }),
     ]);
     await expect(
@@ -226,9 +227,17 @@ describe('Hearth catalog providers', () => {
   });
 
   it('imports exactly one selected lower-elementary theme as official pointers', async () => {
-    const calls: Array<{ courseRef: string; pageUrl: string }> = [];
+    const calls: Array<{
+      courseRef: string;
+      pageUrl: string;
+      subject: string;
+    }> = [];
     const service = {
-      async importCourse(input: { courseRef: string; pageUrl: string }) {
+      async importCourse(input: {
+        courseRef: string;
+        pageUrl: string;
+        subject: string;
+      }) {
         calls.push(input);
         return { courseId: input.courseRef, lessonIds: [] };
       },
@@ -253,6 +262,14 @@ describe('Hearth catalog providers', () => {
       ],
     });
     expect(calls).toHaveLength(6);
+    expect(calls.map((call) => call.subject)).toEqual([
+      'science',
+      'history',
+      'bible',
+      'art',
+      'music',
+      'pe-health',
+    ]);
     expect(
       grade4Theme('theme-3').courses.map((course) => course.pageUrl),
     ).toContain('https://allinonehomeschool.com/geography-and-cultures/');

@@ -31,6 +31,8 @@ export interface SourceImportRequest {
   sourceId: string;
   /** Host-stable identity, independent of the page's current URL. */
   courseRef: string;
+  /** Optional trusted catalog classification retained on the tenant course. */
+  subject?: string;
   pageUrl: string;
   destination: 'private' | 'group';
 }
@@ -241,7 +243,9 @@ export class SourceImportService {
     if (
       !request.sourceId?.trim() ||
       !request.courseRef?.trim() ||
-      request.courseRef.length > 256
+      request.courseRef.length > 256 ||
+      (request.subject !== undefined &&
+        (!request.subject.trim() || request.subject.length > 256))
     )
       throw new Error('A source and stable course reference are required.');
   }
@@ -352,12 +356,14 @@ export class SourceImportService {
               if (existing) {
                 existing.title = parsed.title;
                 existing.sourceUrl = pageUrl;
+                if (request.subject) existing.subject = request.subject.trim();
                 await existing.save();
               } else {
                 await courses.create({
                   id: courseId,
                   tenantId: request.tenantId,
                   title: parsed.title,
+                  subject: request.subject?.trim() ?? '',
                   sourceKey: source.key,
                   sourceRef: request.courseRef,
                   sourceUrl: pageUrl,

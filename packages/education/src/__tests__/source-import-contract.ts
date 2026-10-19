@@ -135,7 +135,9 @@ export async function assertEasyPeasySourceProvisioning(
 }
 
 export async function assertRefreshAndPrivacy(f: Fixture): Promise<void> {
-  const first = await f.run(() => f.service.importCourse(f.request));
+  const first = await f.run(() =>
+    f.service.importCourse({ ...f.request, subject: 'language-arts' }),
+  );
   const courses = await CourseCollection.create({ db: f.db });
   const lessons = await LessonCollection.create({ db: f.db });
   const sentinel = `source_history_${randomUUID().replaceAll('-', '')}`;
@@ -179,6 +181,7 @@ export async function assertRefreshAndPrivacy(f: Fixture): Promise<void> {
     expect(course).toMatchObject({
       tenantId: f.request.tenantId,
       status: 'draft',
+      subject: 'language-arts',
       licenseKind: 'personal-use-copy',
     });
   });

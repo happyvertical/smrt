@@ -331,7 +331,11 @@ export async function importEasyPeasyGrade4Course(
     throw new Error(
       'Theme choices are catalog pointers; select an official constituent course before importing lessons.',
     );
-  return service.importCourse({ ...request, pageUrl: course.pageUrl });
+  return service.importCourse({
+    ...request,
+    pageUrl: course.pageUrl,
+    subject: course.subject,
+  });
 }
 
 export async function importEasyPeasyGrade4Theme(
@@ -347,6 +351,7 @@ export async function importEasyPeasyGrade4Theme(
         ...request,
         courseRef: course.courseRef,
         pageUrl: course.pageUrl,
+        subject: course.subject,
       }),
     ),
   );
