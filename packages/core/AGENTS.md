@@ -128,7 +128,13 @@ and repository rules.
   discriminator, so manifest generation (`generateManifest`,
   `applyGenerationPasses`, hence `pnpm build`) throws
   `CONFIG_UNSCOPED_PACKAGE_NAME` for an unscoped `package.json` name (#3408).
-  Instance and collection registry lookups pass the qualified name. The schema
+  Instance and collection registry lookups pass the qualified name. A parent
+  imported from another scoped package is emitted as `extendsQualified`
+  (scanner traces named, aliased, and namespace imports; `extends` stays the
+  simple name), kept only when that package's manifest declares it
+  (`verifyImportedParents`); decorator registration takes the parent from the
+  real constructor's registration, which a stale simple manifest parent never
+  overwrites (#4145, `issue-4145-*.test.ts`). The schema
   planner rejects a table claimed by two unrelated classes
   (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);
   collections (including `SmrtReportCollection`) never claim one. Consumer

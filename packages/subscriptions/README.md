@@ -55,7 +55,8 @@ subscription and plan.
   their agreed amount for pay-what-you-can, never the suggested amount, and
   skips free plans. External subscriber invoice routing remains host-owned. Pricing
   mode and minimum are immutable after the plan is saved; create a
-  new plan instead (effective-dated transitions are tracked in #4032).
+  new plan instead. Other term changes publish a new plan version (see
+  [Plan versions](#plan-versions-and-paid-periods)).
   Invalid legacy pricing fails only its payer group at period close and reports
   the subscription ID while other payer groups continue. Ordinary subscription
   writes resolve only their own tenant's plans or legacy global plans; trusted
@@ -63,6 +64,8 @@ subscription and plan.
   Entitlement resolution validates plan ownership on both reader and supplied
   context paths; trusted seller-to-child resolution requires explicit system
   context too.
+- `SubscriptionPlanVersion` is an immutable, effective-dated snapshot of a
+  plan's terms; subscriptions pin the version their period paid for.
 - `TenantUsageMetric` is immutable, idempotent usage evidence.
 - `SubscriptionResolver` combines current subscription, plan, and batched usage
   summaries into one entitlement decision.
@@ -87,8 +90,8 @@ pass `null` explicitly for legacy global plans. Update callers from the old
 single-argument signature. Pricing mode and minimum cannot be edited after
 persistence, even before the first subscriber, so a concurrent signup cannot
 observe terms that change mode underneath it. Existing fixed-price edits and
-current-period entitlement versioning remain separate work in #4032; this
-foundation does not provide immutable period snapshots. Concurrent first creates
+current-period entitlement versioning arrived with #4032 (see
+[Plan versions](#plan-versions-and-paid-periods)). Concurrent first creates
 for one `(tenantId, planKey)` use a strict insert: one succeeds and a collision
 fails without changing the winner. Retry by reading the existing plan; a
 sequential create with matching mode/minimum retains natural-key upsert behavior.
@@ -104,6 +107,112 @@ Existing databases created before #3829 may retain the global
 migration so different tenants can reuse a plan key. The script supports SQLite
 and PostgreSQL and refuses DuckDB, whose inline unique constraint needs a
 reviewed table rebuild.
+
+## Plan versions and paid periods
+
+A `SubscriptionPlan` is the stable tier identity, scoped by
+`(tenantId, planKey)`. Its terms — `status`, `priceAmount`, `currency`,
+`billingInterval`, `pricingMode`, `minimumAmount`, `suggestedAmount`,
+feature grants and thresholds — are published as immutable
+`SubscriptionPlanVersion` rows (#4032):
+
+- Saving a plan whose terms differ from its latest version publishes the next
+  version (1, 2, 3 …), effective now. `plan.publishTerms({ effectiveFrom })`
+  schedules a future amendment instead. Versions are append-only (no update,
+  no delete) and monotonic: a version cannot start before the previous one.
+  Re-saving unchanged terms, or changing only `name`/`description`/metadata,
+  publishes nothing.
+- A version is in force from its `effectiveFrom` until the next version's;
+  an instant before the first version resolves to version 1.
+- `TenantSubscription.planVersionId` is the version frozen for the current
+  period (`planVersionPinnedAt`, `planVersionPinReason`, and
+  `planVersionPinNote` audit it). It is maintained on every save:
+  - a new subscription pins the version in force at its period start
+    (`currentPeriodStart ?? startedAt`);
+  - **renewal** — a save whose new `currentPeriodStart` is at or after the
+    stored `currentPeriodEnd` (or, for an open-ended row, after the stored
+    start) — re-pins the version in force at the new boundary, for the plan
+    the row now names. A downgrade or a plan change that removes features is
+    applied this way. Moving the start within a paid period is not a renewal,
+    and a renewal saved before its start date may change the pinned terms
+    only as an upgrade (otherwise save it once the period has started). It
+    pins the version scheduled for its boundary at save time; an amendment
+    published later but effective before that boundary applies from the
+    following renewal (or re-save the renewal after the period starts).
+    Period dates are host/provider-owned: shortening `currentPeriodEnd` ends
+    the paid period;
+  - at creation and renewal the boundary decides the version: naming any
+    other `planVersionId` (for example to grandfather an import) needs an
+    authorized replacement;
+  - within an unchanged period, a different plan or version is accepted only
+    when it is an **upgrade** (`isEntitlementUpgrade()`: every enabled feature
+    stays enabled and no threshold is added, lowered or made stricter), or
+    when the period no longer entitles. Anything else is rejected;
+  - `subscription.replacePlanVersion({ policy: 'authorized', reason })` is the
+    explicit, audited escape hatch for an approved in-period downgrade or
+    correction. `policy: 'upgrade'` applies an amended version of the same
+    plan mid-period when it only adds.
+- **Cancellation** keeps the paid period: a subscription canceled while it
+  entitled (`active`/`trialing` within its period) records
+  `retainsPaidPeriod` and entitles until `currentPeriodEnd`, then resolves
+  nothing. A subscription canceled from `incomplete`, `past_due` or `unpaid`
+  (for example a provider's `incomplete_expired`) entitles nothing. For an
+  immediate cancellation of a paid period (e.g. with a refund) set
+  `currentPeriodEnd` to the cancellation time.
+
+`SubscriptionResolver` resolves entitlements at `options.now` from the pinned
+version, not the live plan: editing, archiving, or removing a feature from a
+plan never changes a paid period. A pinned version that cannot be found, or
+whose status is not `active`, fails closed. `EntitlementResolution` reports
+`planVersionId` and `planVersion`; `EntitlementResolutionContext` carries
+`planVersion`, validated against the subscription's plan, pin and tenant like
+`plan`. Resolvers built from custom readers without `planVersions` keep the
+live-plan behavior.
+
+```ts
+// A co-op removes a perk. Paying members keep it until their renewal.
+plan.setFeatureGrants(['coop:vote']);
+await plan.save(); // publishes version 2, effective now
+
+// Schedule an entitlement change from a future date.
+plan.setFeatureGrants(['coop:vote', 'coop:shift-swap']);
+await plan.publishTerms({ effectiveFrom: new Date('2027-01-01T00:00:00Z') });
+
+// Resolve what a member is entitled to at an instant.
+const result = await resolver.resolveEntitlements(subscriber, { now });
+result.planVersion; // the version their current period paid for
+```
+
+The plan row always shows the latest published terms, including a scheduled
+version's. Hosts that charge from the plan row must price from the pinned
+version instead; commerce period-close still reads the live row until #4146,
+so do not schedule a price change ahead of time while relying on it.
+
+The plan row is written before its version. If publishing fails, the save
+rejects with the row already updated and the next save publishes the missing
+version; wrap the save in `plan.withTransaction()` when both writes must be
+atomic.
+
+### Migrating existing data
+
+1. Run the ordinary manifest migration (`smrt db:migrate`). It adds the
+   `_smrt_subscription_plan_versions` table and the nullable `plan_version_id`,
+   `plan_version_pinned_at`, `plan_version_pin_reason` and
+   `plan_version_pin_note` and `retains_paid_period` columns on
+   `_smrt_tenant_subscriptions`. Nothing is dropped or rewritten. Existing
+   `canceled` rows default to `retains_paid_period = false`, so they stay
+   unentitled exactly as before.
+2. Run `migrateSubscriptionPlanVersions(db)` once. Every plan without versions
+   gets version 1 — its current terms, effective from the plan's creation —
+   and every unpinned subscription is pinned to it with
+   `planVersionPinReason: 'migration'`. Entitlements are unchanged. The run is
+   idempotent, works across tenants in system context, and reports any
+   subscription it could not re-save in `failed` (that row keeps resolving
+   through version 1).
+
+Until step 2, unpinned subscriptions to plans without versions keep resolving
+from the live plan, and the first edit of such a plan records its pre-edit
+terms as version 1 before publishing the change.
 
 ## Thresholds and spending
 

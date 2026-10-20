@@ -99,6 +99,7 @@ interface ImportDeclaration extends BaseNode {
   type: 'ImportDeclaration';
   specifiers?: ImportSpecifierLike[];
   source: Literal;
+  importKind?: 'value' | 'type';
 }
 
 type ImportSpecifierLike =
@@ -110,6 +111,7 @@ interface ImportSpecifier extends BaseNode {
   type: 'ImportSpecifier';
   imported: Identifier;
   local: Identifier;
+  importKind?: 'value' | 'type';
 }
 
 interface ImportNamespaceSpecifier extends BaseNode {
@@ -579,6 +581,7 @@ export function parseFile(filePath: string): FileScanResult {
         constants: extractModuleObjectConstants(program.body, sourceText),
         unresolved: [],
         importAliases,
+        importBindings: extractImportBindings(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -820,6 +823,7 @@ export function parseSource(
         constants: extractModuleObjectConstants(program.body, sourceText),
         unresolved: [],
         importAliases,
+        importBindings: extractImportBindings(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -924,6 +928,42 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
     }
   }
   return aliases;
+}
+
+/**
+ * Where one local import binding comes from (#4145).
+ * `imported` is the exported name for a named import, `null` for a namespace
+ * import (`import * as ns`).
+ */
+interface ImportBinding {
+  source: string;
+  imported: string | null;
+}
+
+/**
+ * Map each local name bound by a named or namespace VALUE import to its
+ * module specifier. Default imports are left out (the exported class name is
+ * unknown) and so are type-only imports (they cannot be extended).
+ */
+function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') {
+      continue;
+    }
+    const source = node.source?.value;
+    if (typeof source !== 'string' || !node.specifiers) continue;
+    for (const spec of node.specifiers) {
+      if (!spec.local?.name) continue;
+      if (spec.type === 'ImportSpecifier') {
+        if (spec.importKind === 'type' || !spec.imported?.name) continue;
+        bindings.set(spec.local.name, { source, imported: spec.imported.name });
+      } else if (spec.type === 'ImportNamespaceSpecifier') {
+        bindings.set(spec.local.name, { source, imported: null });
+      }
+    }
+  }
+  return bindings;
 }
 
 /**
@@ -1223,6 +1263,12 @@ interface DecoratorConfigContext {
    * would silently keep its generated route (#2686).
    */
   importAliases?: Map<string, string>;
+  /**
+   * Local name -> import source for this file's named and namespace value
+   * imports, so a class's `extends` can be traced to the module that
+   * exports its parent (#4145).
+   */
+  importBindings?: Map<string, ImportBinding>;
 }
 
 /**
@@ -1835,9 +1881,10 @@ function extractClassDeclaration(
       : smrtConfig;
 
   // Extract extends clause
-  const { extendsClause, extendsTypeArg } = extractExtendsClause(
+  const { extendsClause, extendsTypeArg, extendsSource } = extractExtendsClause(
     node,
     importAliases,
+    ctx?.importBindings,
   );
 
   // Extract fields and methods
@@ -1877,6 +1924,7 @@ function extractClassDeclaration(
     filePath,
     extendsClause,
     extendsTypeArg,
+    ...(extendsSource ? { extendsSource } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),
@@ -2246,9 +2294,11 @@ function extractValue(
 function extractExtendsClause(
   node: ClassDeclaration,
   importAliases: Map<string, string>,
+  importBindings?: Map<string, ImportBinding>,
 ): {
   extendsClause: string | null;
   extendsTypeArg: string | null;
+  extendsSource?: string;
 } {
   if (!node.superClass) {
     return { extendsClause: null, extendsTypeArg: null };
@@ -2256,17 +2306,43 @@ function extractExtendsClause(
 
   let extendsClause: string | null = null;
   let extendsTypeArg: string | null = null;
+  let extendsSource: string | undefined;
 
   // Get class name
   if (node.superClass.type === 'Identifier') {
     extendsClause = node.superClass.name;
+    const binding = importBindings?.get(extendsClause);
+    if (binding?.imported) extendsSource = binding.source;
   } else if (node.superClass.type === 'MemberExpression') {
-    // Handle Namespace.Class
-    extendsClause = getMemberExpressionString(node.superClass);
+    const member = node.superClass;
+    const namespace =
+      !member.computed &&
+      member.object.type === 'Identifier' &&
+      member.property.type === 'Identifier'
+        ? importBindings?.get(member.object.name)
+        : undefined;
+    if (
+      namespace &&
+      namespace.imported === null &&
+      member.property.type === 'Identifier'
+    ) {
+      // `ns.Class` through `import * as ns from '...'`: the parent is that
+      // module's export `Class` (#4145).
+      extendsClause = member.property.name;
+      extendsSource = namespace.source;
+    } else {
+      // Handle Namespace.Class
+      extendsClause = getMemberExpressionString(member);
+    }
   }
 
-  // Resolve import aliases (e.g., import { Performer as PerformerBase })
-  if (extendsClause && importAliases.has(extendsClause)) {
+  // Resolve import aliases (e.g., import { Performer as PerformerBase }).
+  // A namespace member's name is an export name, never a local alias.
+  if (
+    node.superClass.type === 'Identifier' &&
+    extendsClause &&
+    importAliases.has(extendsClause)
+  ) {
     const aliasedExtends = importAliases.get(extendsClause);
     if (aliasedExtends) {
       extendsClause = aliasedExtends;
@@ -2282,7 +2358,11 @@ function extractExtendsClause(
     extendsTypeArg = extractTypeName(typeParam);
   }
 
-  return { extendsClause, extendsTypeArg };
+  return {
+    extendsClause,
+    extendsTypeArg,
+    ...(extendsSource ? { extendsSource } : {}),
+  };
 }
 
 /**

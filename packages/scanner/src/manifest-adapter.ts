@@ -7,11 +7,13 @@
 
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { type EnumValue, resolveEnumValues } from './enum-values.js';
+import { FRAMEWORK_BASE_CLASSES } from './inheritance-resolver.js';
 import { isSafeObjectKey } from './oxc-parser.js';
 import type {
   FieldTypeInference,
   InferredFieldType,
   ParameterTypeBranch,
+  RawClassDefinition,
   RawFieldDefinition,
   RawMethodDefinition,
   ResolvedClassDefinition,
@@ -176,6 +178,8 @@ interface SmartObjectDefinition {
   methods: Record<string, MethodDefinition>;
   decoratorConfig: SmartObjectConfig;
   extends?: string;
+  /** Parent's qualified name when it is imported from another package (#4145). */
+  extendsQualified?: string;
   extendsTypeArg?: string;
   staticProperties?: Record<string, unknown>;
 }
@@ -373,6 +377,44 @@ function createQualifiedName(
   className: string,
 ): QualifiedClassName {
   return `${packageName}:${className}` as QualifiedClassName;
+}
+
+/**
+ * npm package name of a bare, scoped module specifier
+ * (`@scope/pkg` or `@scope/pkg/subpath` → `@scope/pkg`), else `undefined`.
+ * Relative, absolute, protocol (`node:`), unscoped, and alias-like specifiers
+ * (`@/lib`, `$lib/…`) name no SMRT package: qualified names are always scoped.
+ */
+export function scopedPackageOfSpecifier(
+  specifier: string,
+): string | undefined {
+  const match = /^(@[a-z0-9][\w.~-]*\/[a-z0-9][\w.~-]*)(?:\/.*)?$/i.exec(
+    specifier,
+  );
+  return match?.[1];
+}
+
+/**
+ * Qualified name of a class's parent when the scanner traced it to a named or
+ * namespace import from ANOTHER scoped package (#4145): two packages may
+ * export the same class name (`Agreement` in smrt-commerce and smrt-sales),
+ * and only the import says which one is meant.
+ *
+ * Returns `undefined` (the simple `extends` stays authoritative, as before)
+ * for framework bases, for parents declared in this package (same file,
+ * relative import, or a self-import, which runtime resolution already
+ * qualifies same-package first), and for anything it cannot trace.
+ */
+export function importedParentQualifiedName(
+  classDef: Pick<RawClassDefinition, 'extendsClause' | 'extendsSource'>,
+  ownPackageName: string | undefined,
+): QualifiedClassName | undefined {
+  const parent = classDef.extendsClause;
+  if (!parent || !classDef.extendsSource) return undefined;
+  if (FRAMEWORK_BASE_CLASSES.has(parent)) return undefined;
+  const parentPackage = scopedPackageOfSpecifier(classDef.extendsSource);
+  if (!parentPackage || parentPackage === ownPackageName) return undefined;
+  return createQualifiedName(parentPackage, parent);
 }
 
 /**
@@ -665,6 +707,10 @@ export class ManifestAdapter {
     const qualifiedName = packageName
       ? createQualifiedName(packageName, classDef.className)
       : undefined;
+    const extendsQualified = importedParentQualifiedName(
+      classDef,
+      packageName || undefined,
+    );
 
     return {
       name: classDef.className.toLowerCase(),
@@ -678,6 +724,7 @@ export class ManifestAdapter {
       methods,
       decoratorConfig: (classDef.decoratorConfig || {}) as SmartObjectConfig,
       extends: classDef.extendsClause || undefined,
+      ...(extendsQualified ? { extendsQualified } : {}),
       extendsTypeArg: classDef.extendsTypeArg || undefined,
       exportName: classDef.className,
       collectionExportName: `${classDef.className}Collection`,

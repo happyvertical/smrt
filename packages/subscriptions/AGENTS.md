@@ -64,6 +64,27 @@ that reverted to DECIMAL passes every SQLite suite.
   are BIGINT, and hydration rejects values outside JavaScript's safe-integer
   range. Existing PostgreSQL `int4` columns require the explicit widening in #2424.
 
+## Plan versions (#4032)
+
+- `SubscriptionPlan.save()` publishes the next immutable
+  `SubscriptionPlanVersion` when its terms (`PLAN_TERM_FIELDS`) change; the
+  logic lives in `src/plan-versioning.ts`. Versions are append-only,
+  contiguous, and monotonic in `effectiveFrom`.
+- `TenantSubscription.validateBeforeSave()` maintains `planVersionId` via
+  `pinSubscriptionPlanVersion()`: pin at period start, re-pin when
+  `currentPeriodStart` moves, and refuse in-period changes that are not an
+  `isEntitlementUpgrade()` unless `replacePlanVersion({ policy: 'authorized',
+  reason })`. Never relax this to "latest version wins": a paid period must
+  not lose entitlements.
+- The resolver reads the pinned version; a missing or inactive pinned version
+  fails closed. Only unpinned rows on plans without versions fall back to the
+  live plan. `migrateSubscriptionPlanVersions(db)` backfills both.
+- Renewal means the new `currentPeriodStart` is at or after the stored
+  `currentPeriodEnd`; creation and renewal pin the boundary's version, and a
+  caller-named other version needs an authorized replacement.
+- `canceled` subscriptions entitle until `currentPeriodEnd` only with
+  `retainsPaidPeriod`, derived on save from an entitled pre-cancel row.
+
 ## Reseller billing (#3059)
 
 - Billing ownership is consumed from `smrt-tenancy`'s

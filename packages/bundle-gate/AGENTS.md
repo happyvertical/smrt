@@ -43,6 +43,9 @@ listing, and provider-manifest non-adoption of consumer classes.
 `src/__tests__/consumer-same-name.spec.ts` bundles an app entry that declares
 its own `LicenseSale` next to an external smrt-commerce (both load orders) and
 asserts neither class adopts the other's registration or table (#3106).
+`consumer-qualified-parent.spec.ts` bundles a subclass of smrt-commerce's
+`Agreement` next to smrt-sales' `Agreement` and asserts it registers under
+commerce's parent and other STI models still serialize (#4145).
 
 The specs build from **dist** via package export maps (no workspace src
 aliases), so run `pnpm build` for chat/personas/messages/commerce first; in CI turbo's

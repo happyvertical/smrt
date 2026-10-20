@@ -64,7 +64,9 @@ import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import {
   assertScopedPackageName,
   createQualifiedName,
+  isQualifiedName,
   isQualifiedNameAliasFormat,
+  parseQualifiedName,
   readPreviousQualifiedNames,
 } from '../utils/qualified-names.js';
 import { applyRecipeDemo } from './recipe-demo-pass.js';
@@ -449,6 +451,10 @@ export class ManifestGenerator {
     // same as the registry refuses them at runtime.
     this.assertQualifiedNameAliases(manifest);
 
+    // Keep only import-derived parent qualifications the parent's package
+    // confirms (#4145), before any pass walks `extendsQualified`.
+    this.verifyImportedParents(manifest);
+
     // Report cache rows are safe to scope by tenant even when a report is
     // global: optional mode keeps tenant-less rows readable outside a tenant
     // context and gives tenant-scoped reports the tenant_id column their raw
@@ -594,6 +600,69 @@ export class ManifestGenerator {
       options?.packageName,
       options?.packageJson,
     );
+  }
+
+  /**
+   * Drop an `extendsQualified` naming ANOTHER package unless that package's
+   * manifest declares the class under exactly that qualified name (#4145).
+   *
+   * The scanner qualifies a parent from the import it is bound to, but a
+   * module can re-export another package's class, and an alias-like specifier
+   * (`@app/models`) can look like a package. Neither may become a parent the
+   * registry cannot find, so an unconfirmed qualification falls back to the
+   * simple `extends` and today's resolution. Same-package qualifications are
+   * left alone: they name this manifest's own classes.
+   */
+  verifyImportedParents(manifest: SmartObjectManifest): void {
+    for (const obj of Object.values(manifest.objects)) {
+      const parent = obj.extendsQualified;
+      if (!parent || !isQualifiedName(parent)) continue;
+      const { packageName } = parseQualifiedName(parent);
+      if (packageName === (obj.packageName ?? manifest.packageName)) continue;
+      const parentManifest = loadExternalManifestSync(packageName, {
+        warn: false,
+      });
+      if (parentManifest && lookupInManifest(parentManifest, parent)) continue;
+      logger.debug(
+        `[manifest-generator] ${obj.className}: ${packageName} does not declare ${parent}; keeping the unqualified parent "${obj.extends}"`,
+      );
+      delete obj.extendsQualified;
+    }
+  }
+
+  /**
+   * The name to resolve an object's parent by: the import-derived qualified
+   * name when the scanner traced one (#4145), else the simple `extends`.
+   */
+  private parentRef(obj: SmartObjectDefinition): string | undefined {
+    return obj.extendsQualified || obj.extends;
+  }
+
+  /**
+   * Resolve a parent reference from {@link parentRef}. A qualified reference
+   * matches only that package's class (this manifest's, else the dependency's
+   * manifest), never a same-named class of another package; a simple one
+   * keeps the established local-then-dependency lookup. `child` is skipped so
+   * a local class named like its imported parent never resolves to itself.
+   */
+  private resolveParentDefinition(
+    ref: string,
+    child: SmartObjectDefinition | undefined,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    let parent: SmartObjectDefinition | undefined = isQualifiedName(ref)
+      ? (manifest.objects[ref] as SmartObjectDefinition | undefined)
+      : objectsByName.get(ref);
+    if (parent === child) parent = undefined;
+    if (!parent && manifest.smrtDependencies?.length) {
+      parent = this.loadParentFromExternalPackage(
+        ref,
+        manifest.smrtDependencies,
+        objectsByName,
+      );
+    }
+    return parent === child ? undefined : parent;
   }
 
   /**
@@ -1786,7 +1855,12 @@ export class ManifestGenerator {
         continue;
       }
 
-      if (extendsLower === baseClassLower) {
+      // An import-qualified parent names its package: a same-named base of
+      // another package is not this class's ancestor (#4145).
+      if (
+        extendsLower === baseClassLower &&
+        !this.qualifiedParentExcludes(obj, baseClassName)
+      ) {
         descendants.push(name);
         descendants.push(
           ...this.findDescendantsInManifest(name, manifest, visited),
@@ -1795,6 +1869,21 @@ export class ManifestGenerator {
     }
 
     return descendants;
+  }
+
+  /**
+   * Whether `obj`'s import-qualified parent rules out `baseClassName` (a
+   * qualified name of another class with the same simple name).
+   */
+  private qualifiedParentExcludes(
+    obj: SmartObjectDefinition,
+    baseClassName: string,
+  ): boolean {
+    return (
+      !!obj.extendsQualified &&
+      isQualifiedName(baseClassName) &&
+      obj.extendsQualified !== baseClassName
+    );
   }
 
   private applySqlTypeOverrides(obj: SmartObjectDefinition): void {
@@ -1913,27 +2002,21 @@ export class ManifestGenerator {
     }
 
     // Walk up the inheritance chain looking for STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
       if (visited.has(currentClass)) break;
       visited.add(currentClass);
 
-      let parentObj = objectsByName.get(currentClass);
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentObj &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentObj = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      // Local first, then external SMRT packages; a qualified parent only
+      // resolves to its own package's class (#4145).
+      const parentObj = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentObj) break; // Parent not found anywhere (e.g., SmrtObject)
 
@@ -1941,7 +2024,7 @@ export class ManifestGenerator {
         return true; // Found STI ancestor
       }
 
-      currentClass = parentObj.extends;
+      currentClass = this.parentRef(parentObj);
     }
 
     return false;
@@ -1994,27 +2077,19 @@ export class ManifestGenerator {
     let stiBaseInfo: { className: string; tableName: string } | undefined;
 
     // Walk up the inheritance chain looking for the OLDEST STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
       if (visited.has(currentClass)) break;
       visited.add(currentClass);
 
-      let parentObj = objectsByName.get(currentClass);
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentObj &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentObj = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      const parentObj = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentObj) break;
 
@@ -2031,7 +2106,7 @@ export class ManifestGenerator {
         };
       }
 
-      currentClass = parentObj.extends;
+      currentClass = this.parentRef(parentObj);
     }
 
     return stiBaseInfo; // Return the oldest STI ancestor found (or undefined if none)
@@ -2138,9 +2213,12 @@ export class ManifestGenerator {
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
       );
 
-      // Build full inheritance chain (base -> child)
+      // Build full inheritance chain (base -> child). Each ancestor keeps
+      // the definition it resolved to: re-resolving its simple name later
+      // could pick another package's same-named class (#4145).
       const inheritanceChain: string[] = [];
-      let currentClass: string | undefined = obj.extends;
+      const ancestorDefs: Array<SmartObjectDefinition | undefined> = [];
+      let currentClass: string | undefined = this.parentRef(obj);
       const visited = new Set<string>();
 
       while (currentClass) {
@@ -2151,33 +2229,25 @@ export class ManifestGenerator {
           break;
         }
         visited.add(currentClass);
-        inheritanceChain.unshift(currentClass); // Add to front (building base -> child)
 
-        let parentObj = objectsByName.get(currentClass);
-
-        // Skip self-reference: when a local class has the same name as its
+        // Skips self-reference: when a local class has the same name as its
         // imported parent (e.g., local Performer extends external Performer),
-        // objectsByName returns the child itself. Skip it so we fall through
-        // to the external package lookup.
-        if (parentObj === obj) {
-          parentObj = undefined;
-        }
+        // the local lookup returns the child itself and falls through to the
+        // external package lookup.
+        const parentObj = this.resolveParentDefinition(
+          currentClass,
+          obj,
+          manifest,
+          objectsByName,
+        );
 
-        // If parent not in current manifest, try loading from external SMRT packages
-        if (
-          !parentObj &&
-          manifest.smrtDependencies &&
-          manifest.smrtDependencies.length > 0
-        ) {
-          parentObj = this.loadParentFromExternalPackage(
-            currentClass,
-            manifest.smrtDependencies,
-            objectsByName,
-          );
-        }
-
+        // Chain entries are simple names, as before; the resolved definition
+        // rides alongside.
+        const ancestorName = this.simpleClassName(currentClass);
+        inheritanceChain.unshift(ancestorName); // Add to front (building base -> child)
+        ancestorDefs.unshift(parentObj);
         if (!parentObj) break; // Parent not found anywhere (e.g., SmrtObject)
-        currentClass = parentObj.extends;
+        currentClass = this.parentRef(parentObj);
       }
 
       logger.debug(
@@ -2198,8 +2268,8 @@ export class ManifestGenerator {
       const mergedFieldOwners = new Map<string, string>();
       const mergedMethods: Record<string, MethodDefinition> = {};
 
-      for (const ancestorName of inheritanceChain) {
-        const ancestor = objectsByName.get(ancestorName);
+      for (const [index, ancestorName] of inheritanceChain.entries()) {
+        const ancestor = ancestorDefs[index];
         if (!ancestor) continue;
 
         const ancestorIsFrameworkBase =
@@ -2842,7 +2912,7 @@ export class ManifestGenerator {
     }
 
     // Walk up the inheritance chain looking for STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
@@ -2851,25 +2921,13 @@ export class ManifestGenerator {
       }
       visited.add(currentClass);
 
-      let parentDef = objectsByName.get(currentClass);
-
-      // Skip self-reference (local class with same name as imported parent)
-      if (parentDef === obj) {
-        parentDef = undefined;
-      }
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentDef &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentDef = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      // Skips self-reference (local class with same name as imported parent).
+      const parentDef = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentDef) break; // Parent not found anywhere
 
@@ -2878,7 +2936,7 @@ export class ManifestGenerator {
         return true; // Found STI ancestor
       }
 
-      currentClass = parentDef.extends;
+      currentClass = this.parentRef(parentDef);
     }
 
     return false; // No STI in hierarchy
@@ -2909,7 +2967,7 @@ export class ManifestGenerator {
     }
 
     // Walk up the inheritance chain looking for the oldest STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
@@ -2918,25 +2976,13 @@ export class ManifestGenerator {
       }
       visited.add(currentClass);
 
-      let parentDef = objectsByName.get(currentClass);
-
-      // Skip self-reference (local class with same name as imported parent)
-      if (parentDef === obj) {
-        parentDef = undefined;
-      }
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentDef &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentDef = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      // Skips self-reference (local class with same name as imported parent).
+      const parentDef = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentDef) break; // Parent not found anywhere
 
@@ -2946,7 +2992,7 @@ export class ManifestGenerator {
         stiBase = parentDef;
       }
 
-      currentClass = parentDef.extends;
+      currentClass = this.parentRef(parentDef);
     }
 
     return stiBase; // Return the oldest STI ancestor found (or undefined if none)
@@ -2982,9 +3028,15 @@ export class ManifestGenerator {
       const parentObj = lookupInManifest(externalManifest, parentClassName);
 
       if (parentObj) {
-        // Cache the loaded parent object for future lookups
-        objectsByName.set(parentObj.className, parentObj);
-        objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+        // Cache the loaded parent object for future lookups, but never over
+        // a local class of the same simple name: that entry is this
+        // package's own parent for its other subclasses (#4145).
+        if (!objectsByName.has(parentObj.className)) {
+          objectsByName.set(parentObj.className, parentObj);
+        }
+        if (!objectsByName.has(parentObj.className.toLowerCase())) {
+          objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+        }
 
         return parentObj;
       }

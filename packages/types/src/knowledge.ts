@@ -132,6 +132,11 @@ export interface DomainKnowledgeObject {
   tableName?: string;
   packageName?: string;
   extends?: string;
+  /**
+   * Parent's qualified name when it is imported from another package
+   * (#4145); `extends` stays the simple name. Omitted otherwise.
+   */
+  extendsQualified?: string;
   visibility?: string;
   fields: DomainKnowledgeField[];
   relationships: DomainKnowledgeField[];
