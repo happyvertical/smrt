@@ -65,6 +65,7 @@ let {
   basePath,
   inference,
   persistence,
+  projectPersistence,
   themeControls = true,
   defaultTitle = DEFAULT_PLANNER_TITLE,
   tabs,
@@ -87,6 +88,12 @@ const hashHref = (path: string) => `#${path}`;
 setBasePath(untrack(() => basePath) ?? '', 'hash');
 /** The assistant exists only when the host gave the planner a model. */
 const assistant = $derived(inference !== undefined);
+function resetProject() {
+  // A hidden session has no public export capability, but still belongs to
+  // this project and must not reappear when inference is enabled later.
+  if (!assistant) aiState.session.transport.reset();
+  onreset?.();
+}
 
 const shellCatalog: ComponentProps<typeof CookbookApp>['catalog'] = {
   recipes: recipes.map(({ id, label, nav, models, group, section }) => ({
@@ -391,7 +398,7 @@ const dockToggles = $derived(
 {/snippet}
 {#snippet hostAction()}
   {#if headerAction}
-    <PlannerHostAction action={headerAction} {controller} nativeAssistant={aiState.session.transport} />
+    <PlannerHostAction action={headerAction} {controller} nativeAssistant={assistant ? aiState.session.transport : undefined} />
   {/if}
 {/snippet}
 
@@ -516,7 +523,7 @@ const dockToggles = $derived(
     {:else if entryMode === 'planning' && recipeState.ids.length === 0 && recipeState.features.length === 0 && (!route || /^\/configure\/?$/.test(route))}
       <section aria-label="App planning" role="status"><h1>Your app starts here</h1><p>The planner will show your app here as we plan it.</p><a href="#/configure/cookbooks/">Browse cookbooks</a></section>
     {:else}
-      <PlannerControls {onreset} {resetDisabledReason} {exportAction} nativeAssistant={aiState.session.transport} {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
+      <PlannerControls onreset={resetProject} {resetDisabledReason} {exportAction} {projectPersistence} nativeAssistant={assistant ? aiState.session.transport : undefined} {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
     {/if}
   </main>
 </CookbookApp>

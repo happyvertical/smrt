@@ -1,6 +1,7 @@
 import type { BrowserAssistantTransport } from '../assistant/transport.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { setSamplePack } from '../data/packs.ts';
+import { clearSampleContext } from '../data/sample-context.ts';
 import type { DataSource } from '../data/source.ts';
 import { libraryState } from '../library/state.svelte.ts';
 import type { PlannerController } from './commands/index.ts';
@@ -10,6 +11,10 @@ import {
   setRememberPlan,
   workspaceStorageManager,
 } from './workspace-storage.ts';
+
+export const PROJECT_PERSISTENCE_CONTEXT = Symbol(
+  'planner-project-persistence-owner',
+);
 
 let revision = $state(0);
 export const workspacePersistence = {
@@ -51,6 +56,7 @@ export function resetWorkspace(options: {
     cookbookStore.reset({ preserveTheme: true });
     libraryState.active = null;
     libraryState.appliedWork = null;
+    clearSampleContext();
     setSamplePack(null);
     options.dataSource.reset?.();
     options.controller.resetWorkspace?.();

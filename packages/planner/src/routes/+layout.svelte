@@ -5,6 +5,7 @@ import {
   type ShellNavGroup,
   type ShellNavItem,
 } from '@happyvertical/smrt-svelte/workspace';
+import { setContext } from 'svelte';
 import {
   afterNavigate,
   goto,
@@ -63,6 +64,10 @@ import {
 } from '$lib/planner/shell.ts';
 import { plannerTab } from '$lib/planner/tab.svelte.ts';
 import { currentPlannerTitle } from '$lib/planner/title.svelte.ts';
+import {
+  PROJECT_PERSISTENCE_CONTEXT,
+  workspacePersistence,
+} from '$lib/planner/workspace.svelte.ts';
 import { FEATURE_SECTION, featureNavItems } from '$lib/recipes/features.ts';
 import {
   buildNavSections,
@@ -281,6 +286,13 @@ let hydrated = false;
 let liveBinding = $state<LiveKitchenBinding | null>(null);
 let liveLocked = $state(false);
 let kitchenFragment: KitchenFragment = { present: false, hash: '' };
+setContext(PROJECT_PERSISTENCE_CONTEXT, {
+  get current() {
+    return !liveBinding && cookbookStore.loaded && !cookbookStore.hostManaged
+      ? workspacePersistence
+      : null;
+  },
+});
 
 const onPlanner = () => page.route.id === '/';
 

@@ -79,8 +79,46 @@ try {
   if (calls.length !== 2 || calls[0].id !== calls[1].id || calls[0].expectedRevision !== 1) {
     throw Error('preview retry changed its batch id or revision');
   }
+  await page.getByRole('tab', { name: 'Settings', exact: true }).click();
+  if (await page.getByRole('switch', { name: 'Remember this plan' }).count()) throw Error('host-managed live plan exposed browser Remember');
+
+  // Exercise the real static layout's canonical storage delegation, not a
+  // test-only transport or a fake persistence callback.
+  const localContext = await browser.newContext();
+  const local = await localContext.newPage();
+  await local.goto(origin, { waitUntil: 'networkidle' });
+  const noAi = local.getByRole('button', { name: /I don't need AI/ });
+  await local.getByRole('button', { name: /Bakery/ }).or(noAi).first().waitFor();
+  if (await noAi.isVisible()) await noAi.click();
+  await local.getByRole('button', { name: /Bakery/ }).click();
+  await local.getByRole('button', { name: 'Use this cookbook' }).click();
+  await local.getByRole('tab', { name: 'Settings', exact: true }).click();
+  await local.locator('#app-settings-tab-currency').selectOption('CAD');
+  await local.waitForFunction(() => {
+    const raw = sessionStorage.getItem('smrt-planner:cookbook-doc:v1');
+    return raw && JSON.parse(raw).policies?.some((policy) => policy.scopeType === 'app' && policy.fieldName === 'currency' && policy.defaultValue === '"CAD"');
+  });
+  const remember = local.getByRole('switch', { name: 'Remember this plan' });
+  await local.getByText('Remember this plan', { exact: true }).click();
+  if (!(await remember.isChecked())) throw Error('visible Remember label did not toggle the control');
+  await remember.focus();
+  await remember.press('Space');
+  await local.waitForFunction(() => localStorage.getItem('smrt-planner:remember:v1') === 'false');
+  await remember.press('Space');
+  await local.waitForFunction(() => {
+    const raw = localStorage.getItem('smrt-planner:cookbook-doc:v1');
+    return localStorage.getItem('smrt-planner:remember:v1') === 'true' && raw && JSON.parse(raw).policies?.some((policy) => policy.scopeType === 'app' && policy.fieldName === 'currency' && policy.defaultValue === '"CAD"');
+  });
+  const restored = await local.context().newPage();
+  await restored.goto(`${origin}/?tab=settings`, { waitUntil: 'networkidle' });
+  await restored.getByRole('tab', { name: 'Settings', exact: true }).click();
+  if (await restored.locator('#app-settings-tab-currency').inputValue() !== 'CAD') throw Error('Remember did not restore the current cookbook');
+  if (!(await restored.getByRole('switch', { name: 'Remember this plan' }).isChecked())) throw Error('static storage owner did not retain Remember');
+  await local.close();
+  await restored.close();
+  await localContext.close();
   if (errors.length) throw Error(`browser errors: ${errors.join('; ')}`);
-  console.log(JSON.stringify({ previewRetrySameId: true, draftPreserved: true, controlsLocked: true }));
+  console.log(JSON.stringify({ previewRetrySameId: true, draftPreserved: true, controlsLocked: true, hostRememberOmitted: true, staticOwnerRemembersCurrentCookbook: true }));
 } finally {
   await browser.close();
   await vite.close();

@@ -383,3 +383,15 @@ invalidated there cannot accept a delayed pre-reset reply. Do not automatically
 retry a conflict with a newer revision: inspect the current plan first. A host
 using an older release must feature-detect these exports and report unavailable
 Planner control honestly while its external conversation continues.
+
+
+When `persistence="host"`, Planner controls do not offer browser Remember or
+legacy recovery by default: the host owns saving the current cookbook. An owner
+that actually persists that cookbook may supply `projectPersistence`, the typed
+canonical facade capability (`remembering`, `recoveryAvailable`, `setRemember`,
+`recover`, `discardRecovery`). Self persistence uses the existing facade by
+default. Reset remains available independently. The static app's layout supplies
+its actual canonical storage capability; a live Kitchen-hosted plan supplies none.
+Without `inference`, native assistant handles and action captures omit native
+conversation data. Confirmed Reset still retires any private previous native
+session so enabling inference for the next project cannot revive its thread.

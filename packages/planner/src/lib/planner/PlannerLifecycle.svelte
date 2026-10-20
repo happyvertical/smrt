@@ -84,11 +84,14 @@ onMount(() => {
       recipeState.ids.length > 0 || recipeState.features.length > 0,
     );
   }
-  const native = nativeAssistant ? aiState.session.transport : undefined;
-  let nativeEpoch = native?.resetRevision;
-  const stopGuideReset = native?.subscribeConversation(() => {
-    if (native.resetRevision !== nativeEpoch) {
-      nativeEpoch = native.resetRevision;
+  // Guide lifetime observes the private epoch even without an inference UI.
+  // Only an enabled assistant grants public conversation/export capabilities.
+  const privateNative = nativeAssistant ? aiState.session.transport : undefined;
+  const native = inference ? privateNative : undefined;
+  let nativeEpoch = privateNative?.resetRevision;
+  const stopGuideReset = privateNative?.subscribeConversation(() => {
+    if (privateNative.resetRevision !== nativeEpoch) {
+      nativeEpoch = privateNative.resetRevision;
       guide?.dismiss();
     }
   });

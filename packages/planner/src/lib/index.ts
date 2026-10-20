@@ -87,5 +87,6 @@ export type {
   PlannerExportAction,
   PlannerExportContext,
   PlannerHandle,
+  PlannerProjectPersistence,
   PlannerProps,
 } from './planner/types.ts';

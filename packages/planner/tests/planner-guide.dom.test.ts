@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { aiState } from '../src/lib/ai/instance.ts';
 import { cookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import Planner from '../src/lib/planner/Planner.svelte';
 import type { PlannerHandle } from '../src/lib/planner/types.ts';
@@ -186,7 +187,9 @@ it('bounds highlight lifetime and clears immediately when native workspace reset
   expect(
     (await handle?.guide?.highlight({ kind: 'addition', before, result }))?.ok,
   ).toBe(true);
-  handle?.nativeAssistant?.reset();
+  // No-inference hosts keep guidance, but must not receive the hidden thread.
+  expect(handle?.nativeAssistant).toBeUndefined();
+  aiState.session.transport.reset();
   expect(
     document.querySelector('[data-smrt-component="ControlSpotlight"]'),
   ).toBeNull();

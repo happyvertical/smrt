@@ -216,3 +216,20 @@ with the one-prop wiring. Focused after-fix coverage includes existing Stop beha
 and current-turn report/question outcomes; full Planner suite and relevant package
 checks are rerun before the follow-up review. The first full-root pass remains base
 coverage; no unrelated source or enforcement changes are part of this correction.
+
+
+## Automated review follow-up: optional assistant and persistence ownership
+
+| Invariant / trigger | Positive / negative cases | Actor / executor / runtime | Contract edge | Evidence command |
+| --- | --- | --- | --- | --- |
+| Mount without inference and capture header/Export | No public native handle or hidden conversation in either capture; inference-enabled handle stays real | Browser host / actual Planner and native session, Svelte DOM; SQL N/A | Optional inference/private reset ownership | native-handoff.dom.test.ts: seeded hidden thread, both captures, confirmed Reset, remount with inference and fresh greeting |
+| Reset with injected source absent/no-op reset | Own active sample context and derived pack clear after successful storage reset; failed storage reset preserves context | Browser workspace coordinator / own context only, Vitest; external data ownership unchanged | Optional DataSource.reset | workspace-reset.test.ts |
+| Host persistence without canonical owner capability | No Remember/recovery promise or callback, Reset stays available; supplied capability receives its own callback only | Host controls / typed alias of existing facade, Svelte DOM; SQL N/A | Optional projectPersistence owner delegation | project-controls.dom.test.ts |
+| Actual static layout owns current cookbook saving | Manual CAD setting is saved through canonical workspace storage, Remember moves that current cookbook, fresh tab restores CAD and enabled Remember; live Kitchen mode omits Remember | Actual browser layout/page, local/sessionStorage; no provider/DB calls | Real layout context owner → Page → Controls | test:live-preview-browser |
+
+Fail-before tests reproduce hidden native exposure, injected-source context
+retention, generic-host Remember promise and ignored owner callbacks. The static
+layout delegates the existing facade only while it owns cookbook saving; there is
+no second persistence controller. Reset privately clears the old native session
+without granting a hidden transcript to exports or resetting an external source
+beyond its pre-existing optional reset contract.

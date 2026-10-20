@@ -12,6 +12,9 @@ import type {
 } from './commands/index.ts';
 import type { PlannerGuideHandle } from './guide.ts';
 
+export type PlannerProjectPersistence =
+  typeof import('./workspace.svelte.ts').workspacePersistence;
+
 /** What `onready` hands a host once the planner is mounted. */
 export interface PlannerHandle {
   /** Host draft storage follows this workspace’s remember/session policy. */
@@ -86,6 +89,9 @@ export interface PlannerProps {
    * layout does them).
    */
   persistence?: 'self' | 'host';
+  /** Host-owned storage UI capability. Supply only from the owner that actually
+   * saves the current cookbook; self mode uses the canonical facade by default. */
+  projectPersistence?: PlannerProjectPersistence | null;
   /** Show the theme preset and light/dark controls (they need a theme provider). */
   themeControls?: boolean;
   /** Link to the host's Advanced Styles page, when mounting controls alone. */

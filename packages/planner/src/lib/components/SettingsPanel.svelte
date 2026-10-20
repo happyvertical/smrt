@@ -1,7 +1,11 @@
 <script lang="ts">
 import type { BrowserAssistantTransport } from '../assistant/transport.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
-import type { PlannerProps } from '../planner/types.ts';
+import type {
+  PlannerProjectPersistence,
+  PlannerProps,
+} from '../planner/types.ts';
+import { workspacePersistence } from '../planner/workspace.svelte.ts';
 import type { AppSettings as Settings } from '../settings/app-settings.ts';
 import AppSettings from './AppSettings.svelte';
 import ProjectControls from './ProjectControls.svelte';
@@ -9,9 +13,15 @@ import ProjectControls from './ProjectControls.svelte';
 interface Props
   extends Pick<PlannerProps, 'controller' | 'onreset' | 'resetDisabledReason'> {
   nativeAssistant?: BrowserAssistantTransport;
+  projectPersistence?: PlannerProjectPersistence | null;
 }
-let { controller, nativeAssistant, onreset, resetDisabledReason }: Props =
-  $props();
+let {
+  controller,
+  nativeAssistant,
+  onreset,
+  resetDisabledReason,
+  projectPersistence = workspacePersistence,
+}: Props = $props();
 
 // The editor holds its own copy so typing is never fought by the store;
 // changes reach the cookbook after a short pause (and its save follows).
@@ -54,7 +64,7 @@ $effect(() => {
 </script>
 
 <div class="pane">
-  <ProjectControls {controller} {nativeAssistant} {onreset} {resetDisabledReason} />
+  <ProjectControls {projectPersistence} {controller} {nativeAssistant} {onreset} {resetDisabledReason} />
   <p class="meta">
     Defaults for this app. They apply to new records only; existing records
     keep their values.

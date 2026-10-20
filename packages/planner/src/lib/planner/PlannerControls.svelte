@@ -24,6 +24,7 @@ import { plannerController } from './instance.ts';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { plannerTab } from './tab.svelte.ts';
 import type { PlannerProps } from './types.ts';
+import { workspacePersistence } from './workspace.svelte.ts';
 
 /**
  * The planner's customization controls alone (Cookbooks, Recipes, Theme,
@@ -55,6 +56,7 @@ let {
   inference,
   layout = 'own',
   persistence = 'self',
+  projectPersistence,
   themeControls = false,
   advancedStylesHref,
   tabs = DEFAULT_TABS,
@@ -65,6 +67,14 @@ let {
   resetDisabledReason,
   managedByParent = false,
 }: PlannerControlsProps = $props();
+
+const projectStorage = $derived(
+  projectPersistence === undefined
+    ? persistence === 'self'
+      ? workspacePersistence
+      : null
+    : projectPersistence,
+);
 
 // Generated views and the Cookbooks tab read sample records from a data
 // source: use the host's, else make the planner's own.
@@ -189,7 +199,7 @@ $effect(() => {
       <div hidden={active !== 'theme'}><ThemeSection provider={themeControls} {advancedStylesHref} /></div>
     {/if}
     {#if reachable.includes('settings')}
-      <div hidden={active !== 'settings'}><SettingsPanel {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
+      <div hidden={active !== 'settings'}><SettingsPanel projectPersistence={projectStorage} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
     {/if}
     {#if reachable.includes('export')}
       <div hidden={active !== 'export'}><ExportPanel {exportAction} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>

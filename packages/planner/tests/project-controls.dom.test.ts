@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectControls from '../src/lib/components/ProjectControls.svelte';
 import { cookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import { DATA_SOURCE_KEY } from '../src/lib/data/context.ts';
+import PlannerControls from '../src/lib/planner/PlannerControls.svelte';
 import SettingsPanel from './settings-panel.fixture.svelte';
 
 const workspace = vi.hoisted(() => ({
@@ -48,6 +49,45 @@ describe('project workspace controls', () => {
     if (app) await unmount(app);
     target.remove();
     vi.useRealTimers();
+  });
+  it('omits self-storage promises for a generic host while preserving reset', async () => {
+    app = mount(PlannerControls, {
+      target,
+      context,
+      props: { persistence: 'host', tabs: ['settings'] },
+    });
+    await settle();
+    expect(target.textContent).not.toContain('Remember this plan');
+    expect(target.textContent).not.toContain('Previous saved plan');
+    expect(button('Reset project').disabled).toBe(false);
+    expect(workspace.remember).not.toHaveBeenCalled();
+  });
+  it('delegates storage controls only to the supplied current-cookbook owner', async () => {
+    const owner = {
+      remembering: false,
+      recoveryAvailable: false,
+      setRemember: vi.fn(() => true),
+      recover: vi.fn(() => true),
+      discardRecovery: vi.fn(() => true),
+    };
+    app = mount(PlannerControls, {
+      target,
+      context,
+      props: {
+        persistence: 'host',
+        projectPersistence: owner,
+        tabs: ['settings'],
+      },
+    });
+    await settle();
+    const input = required(
+      target.querySelector<HTMLInputElement>('input[type="checkbox"]'),
+    );
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(owner.setRemember).toHaveBeenCalledWith(true);
+    expect(workspace.remember).not.toHaveBeenCalled();
   });
   it('requires explicit confirmation and passes canonical reset dependencies', async () => {
     const onreset = vi.fn();

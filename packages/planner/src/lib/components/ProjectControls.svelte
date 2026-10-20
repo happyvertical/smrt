@@ -7,6 +7,7 @@ import type { BrowserAssistantTransport } from '../assistant/transport.ts';
 import { useDataSource } from '../data/context.ts';
 import type { PlannerController } from '../planner/commands/index.ts';
 import { plannerController } from '../planner/instance.ts';
+import type { PlannerProjectPersistence } from '../planner/types.ts';
 import {
   resetWorkspace,
   workspacePersistence,
@@ -18,6 +19,7 @@ interface Props {
   onreset?: () => void;
   resetDisabledReason?: string;
   resetOnly?: boolean;
+  projectPersistence?: PlannerProjectPersistence | null;
 }
 let {
   controller = plannerController,
@@ -25,19 +27,17 @@ let {
   onreset,
   resetDisabledReason,
   resetOnly = false,
+  projectPersistence = workspacePersistence,
 }: Props = $props();
 const dataSource = useDataSource();
 let confirming = $state(false);
 let recovering = $state(false);
 let error = $state('');
 let notice = $state('');
-let remembering = $state(workspacePersistence.remembering);
-$effect(() => {
-  remembering = workspacePersistence.remembering;
-});
+let remembering = $derived(projectPersistence?.remembering ?? false);
 
 function remember(value: boolean) {
-  error = workspacePersistence.setRemember(value)
+  error = projectPersistence?.setRemember(value)
     ? ''
     : 'Your storage preference could not be changed. Your existing plan is preserved.';
 }
@@ -54,7 +54,7 @@ function reset() {
 function recover() {
   recovering = false;
   if (resetDisabledReason) return;
-  if (!workspacePersistence.recover()) {
+  if (!projectPersistence?.recover()) {
     error =
       'The previous plan could not be recovered. Its saved copy is preserved.';
     return;
@@ -62,14 +62,14 @@ function recover() {
   location.reload();
 }
 function discard() {
-  error = workspacePersistence.discardRecovery()
+  error = projectPersistence?.discardRecovery()
     ? ''
     : 'The previous saved copy could not be removed. Please try again.';
 }
 </script>
 
 <section class="project" aria-label="Project">
-  {#if !resetOnly}
+  {#if !resetOnly && projectPersistence}
     <h2>Project</h2>
     <p class="meta">Your plan, sample records and settings stay in this browser session by default. Conversations and contact or request drafts stay in the current tab session.</p>
     <Switch
@@ -79,12 +79,12 @@ function discard() {
         const input = event.currentTarget;
         remember(input.checked);
         await tick();
-        remembering = workspacePersistence.remembering;
+        remembering = projectPersistence?.remembering ?? false;
         input.checked = remembering;
       }}
     />
     <p class="meta">Remembering keeps your cookbook, sample records and settings on this device after the session ends. Conversations and contact or request drafts still stay in the current tab session. Turn it off to remove the remembered project copy.</p>
-    {#if workspacePersistence.recoveryAvailable}
+    {#if projectPersistence?.recoveryAvailable}
       <Alert variant="info" title="Previous saved plan available">
         An earlier project has been kept as a recovery copy of its cookbook, sample records and settings. Recover it to replace this project, or discard the copy. Conversations are not remembered.
       </Alert>

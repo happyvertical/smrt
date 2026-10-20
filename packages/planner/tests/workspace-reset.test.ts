@@ -8,7 +8,10 @@ const calls = vi.hoisted(() => ({
 vi.mock('../src/lib/cookbook/store.svelte.ts', () => ({
   cookbookStore: { reset: calls.store },
 }));
-vi.mock('../src/lib/data/packs.ts', () => ({ setSamplePack: calls.pack }));
+vi.mock('../src/lib/data/packs.ts', async (original) => ({
+  ...(await original<typeof import('../src/lib/data/packs.ts')>()),
+  setSamplePack: calls.pack,
+}));
 vi.mock('../src/lib/library/state.svelte.ts', () => ({
   libraryState: { active: 'manual', appliedWork: 'fingerprint' },
 }));
@@ -19,10 +22,62 @@ vi.mock('../src/lib/planner/workspace-storage.ts', () => ({
   workspaceStorageManager: () => ({}),
 }));
 
+import { getSamplePack } from '../src/lib/data/packs.ts';
+import {
+  applySampleContext,
+  clearSampleContext,
+  getSampleContext,
+} from '../src/lib/data/sample-context.ts';
 import { resetWorkspace } from '../src/lib/planner/workspace.svelte.ts';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearSampleContext();
+});
+for (const reset of [undefined, () => {}]) {
+  it(`clears its own sample context with an injected data source reset=${typeof reset}`, () => {
+    calls.storage.mockReturnValue(true);
+    expect(
+      applySampleContext({
+        provenance: 'fictional',
+        products: [
+          { name: 'Old context product', description: 'Fictional', price: 100 },
+        ],
+        customers: ['Old customer'],
+        vendors: ['Old vendor'],
+      }),
+    ).toBe(true);
+    expect(
+      getSamplePack().products.some(
+        (product) => product.name === 'Old context product',
+      ),
+    ).toBe(true);
+    expect(
+      resetWorkspace({
+        controller: {} as never,
+        dataSource: { reset } as never,
+      }),
+    ).toBe(true);
+    expect(getSampleContext()).toBeUndefined();
+    expect(
+      getSamplePack().products.some(
+        (product) => product.name === 'Old context product',
+      ),
+    ).toBe(false);
+  });
+}
+it('preserves active sample context when storage reset fails', () => {
+  calls.storage.mockReturnValue(false);
+  applySampleContext({
+    provenance: 'fictional',
+    products: [{ name: 'Keep product', description: 'Fictional', price: 100 }],
+    customers: ['Customer'],
+    vendors: ['Vendor'],
+  });
+  expect(
+    resetWorkspace({ controller: {} as never, dataSource: {} as never }),
+  ).toBe(false);
+  expect(getSampleContext()?.products[0].name).toBe('Keep product');
 });
 it('leaves native conversation, manual plan, data, and host draft intact if storage reset fails', () => {
   calls.storage.mockReturnValue(false);
