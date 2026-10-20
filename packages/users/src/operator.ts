@@ -25,6 +25,7 @@ import {
   PasswordCredentialService,
   type PasswordPolicyOptions,
 } from './services/PasswordCredentialService.js';
+import { PermissionResolver } from './services/PermissionResolver.js';
 import { MembershipStatus, TenantStatus, UserStatus } from './types/index.js';
 
 /** Explicit immutable identities make retries safe across operator processes. */
@@ -111,6 +112,16 @@ export async function provisionPasswordOwner(
         const tenants = await TenantCollection.create(options);
         const memberships = await MembershipCollection.create(options);
         const roles = await RoleCollection.create(options);
+        const permissions = await PermissionResolver.create(options);
+        const requireEffectivePermissions = async () => {
+          // Resolve against the same transaction as the membership: role grants
+          // alone do not account for tenant or membership DENY overrides.
+          if (
+            !(await permissions.resolvePermissions(userId, tenantId))
+              .permissions.size
+          )
+            throw new OperatorProvisioningError();
+        };
         const credentials =
           await UsersPasswordCredentialCollection.create(options);
         const tenant = await tenants.get({ id: tenantId });
@@ -155,6 +166,7 @@ export async function provisionPasswordOwner(
             ))
           )
             throw new OperatorProvisioningError();
+          await requireEffectivePermissions();
           return { status: 'unchanged', tenantId, userId };
         }
         // Never attach an owner to an occupied or differently configured tenant.
@@ -198,6 +210,7 @@ export async function provisionPasswordOwner(
           roleId: role.id,
           _insertOnly: true,
         });
+        await requireEffectivePermissions();
         if (
           !(await credentials.insertIfAbsent(userId, {
             passwordHash,

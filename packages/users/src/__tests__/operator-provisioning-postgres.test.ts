@@ -7,7 +7,9 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPasswordCredentialCollection } from '../collections/PasswordCredentialCollection.js';
+import { RoleCollection } from '../collections/RoleCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
+import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { provisionPasswordOwner } from '../operator.js';
 import { checkReadiness } from '../password-readiness.js';
@@ -180,6 +182,81 @@ postgres('trusted operator provisioning on PostgreSQL', () => {
     expect(
       (await sessions.loadSessionContext(signedIn.sessionId))?.user.id,
     ).toBe(owner.userId);
+  });
+
+  it('refuses an unseeded owner role without durable writes, then permits explicitly authorized grant recovery', async () => {
+    const { db } = await fixture();
+    const roles = await RoleCollection.create({ db });
+    await roles.seedSystemRoles();
+    const owner = input();
+    const snapshot = async () => {
+      const rows = [];
+      for (const table of [
+        'roles',
+        'role_permissions',
+        'tenants',
+        'users',
+        'memberships',
+        'users_password_credentials',
+      ])
+        rows.push((await db.query(`SELECT * FROM ${table} ORDER BY id`)).rows);
+      return rows;
+    };
+    const before = await snapshot();
+    await expect(provisionPasswordOwner(db, owner, policy)).rejects.toThrow(
+      'Owner provisioning refused.',
+    );
+    expect(await snapshot()).toEqual(before);
+    // Recovery is an explicit authority-administration decision, never an
+    // automatic side effect of provisioning an existing role.
+    await roles.seedSystemRoles({ seedPermissions: true });
+    expect((await provisionPasswordOwner(db, owner, policy)).status).toBe(
+      'created',
+    );
+    const grants = await db.query('SELECT * FROM role_permissions ORDER BY id');
+    await db.query('DELETE FROM role_permissions');
+    const revoked = await snapshot();
+    await expect(provisionPasswordOwner(db, owner, policy)).rejects.toThrow(
+      'Owner provisioning refused.',
+    );
+    expect(await snapshot()).toEqual(revoked);
+    expect(grants.rows.length).toBeGreaterThan(0);
+  });
+
+  it('refuses an existing tenant whose DENY overrides remove all owner permissions', async () => {
+    const { db } = await fixture();
+    const roles = await RoleCollection.create({ db });
+    await roles.seedSystemRoles({ seedPermissions: true });
+    const owner = input();
+    const tenants = await TenantCollection.create({ db });
+    await tenants.create({ id: owner.tenantId, name: owner.tenantName });
+    const overrides = await TenantPermissionOverrideCollection.create({ db });
+    const permissions = await db.query('SELECT id FROM permissions');
+    expect(permissions.rows.length).toBeGreaterThan(0);
+    for (const permission of permissions.rows)
+      await overrides.denyPermission(owner.tenantId, permission.id);
+    const grants = await db.query('SELECT * FROM role_permissions ORDER BY id');
+    await expect(provisionPasswordOwner(db, owner, policy)).rejects.toThrow(
+      'Owner provisioning refused.',
+    );
+    expect(
+      await (await UserCollection.create({ db })).get({ id: owner.userId }),
+    ).toBeNull();
+    expect(
+      await (await MembershipCollection.create({ db })).findByUserAndTenant(
+        owner.userId,
+        owner.tenantId,
+      ),
+    ).toBeNull();
+    expect(
+      await (
+        await UsersPasswordCredentialCollection.create({ db })
+      ).findByUserId(owner.userId),
+    ).toBeNull();
+    expect(await tenants.get({ id: owner.tenantId })).not.toBeNull();
+    expect(
+      (await db.query('SELECT * FROM role_permissions ORDER BY id')).rows,
+    ).toEqual(grants.rows);
   });
 
   it('rolls back identity, tenant, membership and grants on credential-write failure, then permits a clean retry', async () => {

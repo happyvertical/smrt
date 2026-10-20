@@ -1131,7 +1131,19 @@ session handlers: possession of the database connection is its authority.
 Provisioning supports PostgreSQL only. It creates the tenant, User, owner
 membership, and ordinary password credential in one transaction, without minting
 a session. A fresh authority catalog receives the standard roles and grants;
-existing role grants are never reseeded. An existing target tenant must be an
+existing role grants are never reseeded. Both creation and exact retries require
+at least one effective permission, resolved with tenant and membership DENY
+overrides inside that transaction. Existing restricted roles remain restricted;
+success does not promise every application permission. An empty or fully denied
+permission set refuses with the ordinary sanitized error and CLI exit status 1,
+rolling back new identities and leaving existing credentials and grants intact.
+If roles were initialized without grants, inspect the intended authority policy
+and explicitly seed approved grants using `RoleCollection.seedSystemRoles({
+seedPermissions: true })` from a trusted operator tool, or administer the desired
+restricted grants through the public role services, before retrying. Provisioning
+never restores deliberately revoked grants automatically.
+
+An existing target tenant must be an
 active root tenant with the exact name and no memberships. Existing or partial
 User identities are refused except for a complete exact retry with the same
 active owner membership and password, which returns `unchanged` without writes.
