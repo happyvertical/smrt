@@ -817,7 +817,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#if controller.activeThreadId && !controller.threadsLoading && !controller.messages.some((message) => message.role === 'user' || message.role === 'tool') && controller.pendingSends.length === 0 && suggestions.length > 0}
-          <div class="assistant-dock-suggestions" role="group" aria-label="Conversation starters">
+          <div class="assistant-dock-suggestions" role="group" aria-label={t(M['chat.assistant_dock.conversation_starters'])}>
             {#each suggestions as suggestion (suggestion.prompt)}
               <Button variant="secondary" disabled={composerDisabled} onclick={() => { void handleSend(suggestion.prompt, []).catch(() => {}); }}>
                 {suggestion.label}

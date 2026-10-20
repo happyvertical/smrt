@@ -16,6 +16,7 @@ import {
   type AssistantThreadSummary,
   createInMemoryAssistantTransport,
 } from '../assistant-transport.js';
+import AssistantDockI18nFixture from './AssistantDockI18nFixture.svelte';
 
 function mount(
   transport = createInMemoryAssistantTransport(),
@@ -188,6 +189,9 @@ it('shows fresh-thread suggestions and sends exactly the clicked intent', async 
   const choice = await screen.findByRole('button', {
     name: 'Report on invoices',
   });
+  expect(
+    screen.getByRole('group', { name: 'Conversation starters' }),
+  ).toBeInTheDocument();
   expect(send).not.toHaveBeenCalled();
   await user.click(choice);
   await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
@@ -199,6 +203,21 @@ it('shows fresh-thread suggestions and sends exactly the clicked intent', async 
       screen.queryByRole('group', { name: 'Conversation starters' }),
     ).not.toBeInTheDocument(),
   );
+});
+it('localizes the conversation-starters accessible name through the host snapshot', async () => {
+  const transport = createInMemoryAssistantTransport();
+  render(AssistantDockI18nFixture, {
+    props: {
+      transport,
+      registry: createDataSurfaceRegistry(),
+    },
+  });
+  expect(
+    await screen.findByRole('group', { name: 'Débuts de conversation' }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('group', { name: 'Conversation starters' }),
+  ).not.toBeInTheDocument();
 });
 it('keeps starters out of an existing user conversation', async () => {
   const transport = createInMemoryAssistantTransport();
