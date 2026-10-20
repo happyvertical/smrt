@@ -41,6 +41,7 @@ export {
 } from './reseller-errors.js';
 export {
   type SubscriptionPlanReader,
+  type SubscriptionPlanVersionReader,
   SubscriptionResolver,
   type SubscriptionResolverReaders,
   type TenantSubscriptionReader,

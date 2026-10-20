@@ -1,13 +1,19 @@
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import {
   getTenantId,
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
+import { extractPlanTerms } from '../plan-terms.js';
 import type {
   BillingInterval,
   JsonObject,
   PlanFeatureGrant,
+  PlanTerms,
   PlanThreshold,
   PricingMode,
   SubscriptionPlanOptions,
@@ -19,6 +25,17 @@ import {
   parseJsonObject,
   stringifyJson,
 } from '../utils.js';
+import type { SubscriptionPlanVersion } from './SubscriptionPlanVersion.js';
+
+/** Effective date requested by {@link SubscriptionPlan.publishTerms}. */
+const requestedEffectiveFrom = new WeakMap<SubscriptionPlan, Date>();
+/** The persisted row a save is about to overwrite, read during validation. */
+const priorTerms = new WeakMap<SubscriptionPlan, SubscriptionPlan>();
+/** The latest version after the most recent save. */
+const publishedVersions = new WeakMap<
+  SubscriptionPlan,
+  SubscriptionPlanVersion
+>();
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -28,7 +45,7 @@ import {
   mcp: { include: ['list', 'get'] },
   conflictColumns: ['tenant_id', 'plan_key'],
 })
-export class SubscriptionPlan extends SmrtObject {
+export class SubscriptionPlan extends SmrtObject implements PlanTerms {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
@@ -105,6 +122,78 @@ export class SubscriptionPlan extends SmrtObject {
     return this.status === 'active';
   }
 
+  /** The versioned terms currently on this row (the latest published). */
+  getTerms(): PlanTerms {
+    return extractPlanTerms(this);
+  }
+
+  /**
+   * Persist this plan. When its terms (status, price, pricing configuration,
+   * feature grants or thresholds) differ from the latest published version —
+   * or no version exists yet — the save then publishes the next immutable
+   * {@link SubscriptionPlanVersion}, effective now (#4032). Use
+   * {@link publishTerms} to choose a different effective date. Subscribers
+   * keep the version pinned for their current period; the new terms apply
+   * from their next renewal.
+   *
+   * A plan saved before versioning existed first records its pre-edit terms
+   * as version 1, effective from its creation, so subscriptions sold under
+   * them are not re-priced.
+   *
+   * The row is written before the version. If publishing fails the save
+   * rejects with the row already updated; saving again publishes the
+   * missing version. Wrap the call in `plan.withTransaction()` when the
+   * adapter supports transactions and the two writes must be atomic.
+   */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    const effectiveFrom = requestedEffectiveFrom.get(this) ?? new Date();
+    requestedEffectiveFrom.delete(this);
+    await super.save(options);
+    const { publishPlanVersion } = await import('../plan-versioning.js');
+    const prior = priorTerms.get(this);
+    priorTerms.delete(this);
+    publishedVersions.set(
+      this,
+      await publishPlanVersion(this, effectiveFrom, prior),
+    );
+    return this;
+  }
+
+  /**
+   * Save this plan and publish its current terms as a version effective at
+   * `effectiveFrom` (default now). A future date schedules an amendment: the
+   * plan row shows the new terms immediately, but subscriptions starting or
+   * renewing before that date pin the earlier version. Versions are
+   * monotonic, so `effectiveFrom` may not precede the latest version's.
+   *
+   * @returns the latest version, which carries the saved terms.
+   */
+  async publishTerms(
+    options: { effectiveFrom?: Date } = {},
+  ): Promise<SubscriptionPlanVersion> {
+    if (options.effectiveFrom) {
+      requestedEffectiveFrom.set(this, options.effectiveFrom);
+    }
+    await this.save();
+    const version = publishedVersions.get(this);
+    if (!version) throw new Error('Plan version was not published');
+    return version;
+  }
+
+  /** The version of this plan in force at `at` (default now). */
+  async getVersionInForce(
+    at = new Date(),
+  ): Promise<SubscriptionPlanVersion | null> {
+    if (!this.id) return null;
+    const { SubscriptionPlanVersionCollection } = await import(
+      '../collections/SubscriptionPlanVersionCollection.js'
+    );
+    const versions = await SubscriptionPlanVersionCollection.create({
+      db: this.db,
+    });
+    return versions.findInForce(String(this.id), at);
+  }
+
   getFeatureGrants(): PlanFeatureGrant[] {
     return normalizeFeatureGrants(
       parseJsonArray<string | PlanFeatureGrant>(this.features),
@@ -156,6 +245,7 @@ export class SubscriptionPlan extends SmrtObject {
     // A concurrently created natural-key row must never be adopted after this
     // validation: its pricing terms may differ from the terms checked here.
     if (!persisted) this.requireInsertOnSave();
+    else priorTerms.set(this, persisted);
     if (
       persisted &&
       (persisted.pricingMode !== this.pricingMode ||

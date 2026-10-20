@@ -64,6 +64,9 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
   for (const sql of getSQLFromDiff(diff)) await db.query(sql);
   await dropLegacyPlanKeyIndex(db);
   await dropLegacyPlanKeyIndex(db);
+  // The same `db:migrate` creates the #4032 plan-version table that every
+  // versioned plan save writes to.
+  await getTestDatabase({ db, classes: ['SubscriptionPlanVersion'] });
   const plans = await SubscriptionPlanCollection.create({ db });
   const original = await plans.get(id);
   expect(original?.name).toBe('Existing co-op');

@@ -11,6 +11,7 @@ import './__smrt-register__.js';
 
 export {
   SubscriptionPlanCollection,
+  SubscriptionPlanVersionCollection,
   TenantSubscriptionCollection,
   TenantUsageMetricCollection,
 } from './collections/index.js';
@@ -21,6 +22,11 @@ export {
   SUBSCRIPTIONS_MONEY_COLUMNS,
   SUBSCRIPTIONS_MONEY_MINOR_UNITS_BACKFILL,
 } from './migrations/moneyMinorUnits.js';
+// Effective-dated plan versions backfill (#4032)
+export {
+  migrateSubscriptionPlanVersions,
+  type SubscriptionPlanVersionsMigrationReport,
+} from './migrations/planVersions.js';
 export type {
   PriceBookKind,
   PricingStrategy,
@@ -47,9 +53,19 @@ export {
   SpendingPolicy,
   SpendingPolicyCollection,
   SubscriptionPlan,
+  SubscriptionPlanVersion,
   TenantSubscription,
   TenantUsageMetric,
 } from './models/index.js';
+export {
+  enabledFeatureKeys,
+  extractPlanTerms,
+  isEntitlementUpgrade,
+  PLAN_TERM_FIELDS,
+  samePlanTerms,
+  validThresholds,
+} from './plan-terms.js';
+export type { PlanVersionReplacement } from './plan-versioning.js';
 export type {
   AssignPriceBooksInput,
   AutoTopUpGrant,
@@ -87,6 +103,7 @@ export {
   ResellerBillingService,
   SpendingPolicyEvaluator,
   type SubscriptionPlanReader,
+  type SubscriptionPlanVersionReader,
   SubscriptionResolver,
   type SubscriptionResolverReaders,
   type TenantSubscriptionReader,
@@ -101,12 +118,15 @@ export type {
   EntitlementResolutionContext,
   JsonObject,
   PlanFeatureGrant,
+  PlanTerms,
   PlanThreshold,
+  PlanVersionPinReason,
   PricingMode,
   RecordUsageOptions,
   Subscriber,
   SubscriberKind,
   SubscriptionPlanStatus,
+  SubscriptionPlanVersionOptions,
   SubscriptionResolverOptions,
   SubscriptionStatus,
   SummarizeAiUsageOptions,

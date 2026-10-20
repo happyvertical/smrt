@@ -7,8 +7,13 @@ import {
   withSystemContext,
 } from '@happyvertical/smrt-tenancy';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
+import {
+  type PlanVersionReplacement,
+  pinSubscriptionPlanVersion,
+} from '../plan-versioning.js';
 import type {
   JsonObject,
+  PlanVersionPinReason,
   Subscriber,
   SubscriberKind,
   SubscriptionStatus,
@@ -19,6 +24,12 @@ import {
   parseJsonObject,
   stringifyJson,
 } from '../utils.js';
+
+/** In-period replacements requested through `replacePlanVersion()`. */
+const pendingReplacements = new WeakMap<
+  TenantSubscription,
+  PlanVersionReplacement
+>();
 
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -81,6 +92,29 @@ export class TenantSubscription extends SmrtObject {
   canceledAt: Date | null = null;
   /** Amount selected for this subscription, in integer minor units. */
   agreedAmount: number | null = null;
+  /**
+   * The immutable `SubscriptionPlanVersion` frozen for the current period
+   * (#4032). Maintained on save: pinned at period start, re-pinned when
+   * `currentPeriodStart` moves (renewal), and replaced mid-period only by an
+   * entitlement upgrade or an authorized {@link replacePlanVersion}. Null
+   * only for subscriptions to unmigrated legacy plans with no versions.
+   */
+  @foreignKey('SubscriptionPlanVersion')
+  planVersionId: string | null = null;
+  /** When {@link planVersionId} was last set. */
+  planVersionPinnedAt: Date | null = null;
+  /** Why {@link planVersionId} was last set (audit). */
+  planVersionPinReason: PlanVersionPinReason | null = null;
+  /** Caller-supplied reason for an `upgrade`/`authorized` replacement. */
+  planVersionPinNote: string = '';
+  /**
+   * Set when the row was canceled while it entitled (`active`/`trialing`
+   * within its period), so the paid period runs to `currentPeriodEnd`.
+   * Derived on save from the stored row and never taken from the caller: a
+   * subscription canceled while `incomplete`, `past_due` or `unpaid` (for
+   * example a provider's `incomplete_expired`) entitles nothing.
+   */
+  retainsPaidPeriod: boolean = false;
   externalProvider: string | null = null;
   stripeCustomerId: string = '';
   stripeSubscriptionId: string = '';
@@ -120,6 +154,16 @@ export class TenantSubscription extends SmrtObject {
     if (options.canceledAt !== undefined) this.canceledAt = options.canceledAt;
     if (options.agreedAmount !== undefined)
       this.agreedAmount = options.agreedAmount;
+    if (options.planVersionId !== undefined)
+      this.planVersionId = options.planVersionId;
+    if (options.planVersionPinnedAt !== undefined)
+      this.planVersionPinnedAt = options.planVersionPinnedAt;
+    if (options.planVersionPinReason !== undefined)
+      this.planVersionPinReason = options.planVersionPinReason;
+    if (options.planVersionPinNote !== undefined)
+      this.planVersionPinNote = options.planVersionPinNote;
+    if (options.retainsPaidPeriod !== undefined)
+      this.retainsPaidPeriod = options.retainsPaidPeriod;
     if (options.externalProvider !== undefined) {
       this.externalProvider = options.externalProvider;
     }
@@ -185,16 +229,92 @@ export class TenantSubscription extends SmrtObject {
     } else if (this.agreedAmount !== null) {
       throw new Error('agreedAmount requires a pay_what_you_can plan');
     }
+    const replacement = pendingReplacements.get(this);
+    pendingReplacements.delete(this);
+    const { TenantSubscriptionCollection } = await import(
+      '../collections/TenantSubscriptionCollection.js'
+    );
+    // The row this save replaces: by id, or — for a create that will
+    // upsert onto an existing subscriber row — by the natural key, so a
+    // re-create cannot bypass the paid-period rules.
+    const subscriptions = await TenantSubscriptionCollection.create({
+      db: this.db,
+    });
+    const persisted =
+      (this.id
+        ? await subscriptions.get({ id: String(this.id) }, { cache: false })
+        : null) ??
+      (this.isPersisted
+        ? null
+        : ((
+            await subscriptions.list({
+              where: {
+                tenantId: this.tenantId ?? getTenantId() ?? null,
+                subscriberKind: this.subscriberKind,
+                subscriberExternalId: this.subscriberExternalId,
+              },
+              limit: 1,
+            })
+          )[0] ?? null));
+    if (this.status !== 'canceled') {
+      this.retainsPaidPeriod = false;
+    } else if (persisted?.status === 'canceled') {
+      this.retainsPaidPeriod = persisted.retainsPaidPeriod;
+    } else {
+      this.retainsPaidPeriod =
+        persisted !== null &&
+        (persisted.status === 'active' || persisted.status === 'trialing') &&
+        persisted.isEntitled();
+    }
+    await pinSubscriptionPlanVersion(this, persisted, replacement);
   }
 
+  /**
+   * Replace the plan version frozen for the current period and save (#4032).
+   *
+   * - `policy: 'upgrade'` succeeds only when the target's entitlements cover
+   *   the frozen version's (see `isEntitlementUpgrade`); otherwise the save
+   *   is rejected and the paid period keeps its terms.
+   * - `policy: 'authorized'` accepts any target and requires a `reason`,
+   *   recorded with `planVersionPinReason: 'authorized'` for audit — use it
+   *   for an operator-approved downgrade, refund, or correction.
+   *
+   * The target is `planVersionId`, else the version of `planId` (as set on
+   * this instance) in force now. A plain `planId` change in the same period
+   * is treated as `policy: 'upgrade'`.
+   */
+  async replacePlanVersion(
+    options: PlanVersionReplacement & { planId?: string },
+  ): Promise<this> {
+    const { planId, ...replacement } = options;
+    if (planId !== undefined) this.planId = planId;
+    pendingReplacements.set(this, replacement);
+    try {
+      return await this.save();
+    } finally {
+      pendingReplacements.delete(this);
+    }
+  }
+
+  /**
+   * Whether the subscription grants entitlements at `now`. Active and
+   * trialing subscriptions entitle until `currentPeriodEnd`. A subscription
+   * canceled while it entitled keeps its paid period ({@link
+   * retainsPaidPeriod}) until `currentPeriodEnd`, never without one (#4032).
+   * For an immediate cancellation (for example with a refund) set
+   * `currentPeriodEnd` to the cancellation time.
+   */
   isEntitled(now = new Date()): boolean {
+    const end = this.currentPeriodEnd
+      ? new Date(this.currentPeriodEnd).getTime()
+      : null;
+    if (this.status === 'canceled') {
+      return this.retainsPaidPeriod && end !== null && now.getTime() <= end;
+    }
     if (this.status !== 'active' && this.status !== 'trialing') {
       return false;
     }
-    if (
-      this.currentPeriodEnd &&
-      this.currentPeriodEnd.getTime() < now.getTime()
-    ) {
+    if (end !== null && end < now.getTime()) {
       return false;
     }
     return true;
