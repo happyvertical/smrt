@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.15
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - discover collection actions and close redirect/MCP vulnerabilities (#4172)
+- @happyvertical/smrt-config@0.57.15
+  - @happyvertical/smrt-scanner@0.57.15
+  - @happyvertical/smrt-types@0.57.15
+
 ## 0.57.14
 
 ### Patch Changes

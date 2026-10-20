@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ingestion",
-  "version": "0.57.14",
+  "version": "0.57.15",
   "description": "Durable tenant-scoped intake and evidence foundations",
   "type": "module",
   "main": "./dist/index.js",
