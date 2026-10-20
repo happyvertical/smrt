@@ -336,7 +336,6 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
 - **Manifest discovery**: finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
 - **Aggregate manifest identity**: preload/schema discovery resolve package ownership per entry (`definition.packageName` before the container), keeping dependency objects' qualified registrations
 - **Class loading order**: config.entryPoint → package.json exports['.'] → package.json main → `./dist/index.js`
-- **Generated create/update writes**: every input mode (`--from-file`, interactive, flags) passes the REST/MCP write policy — `api.writable`, `readonly` and server-managed fields are dropped (#3831)
 - **Object method exposure**: custom SMRT object methods auto-become CLI commands
 
 ## Key Files

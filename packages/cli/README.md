@@ -318,6 +318,11 @@ For each registered s-m-r-t object, the CLI generates:
 | `<object>:delete <id>` | Delete object |
 | `<object>:<method> <id>` | Custom methods exposed via `cli: { include: [...] }` |
 
+`create` and `update` apply the same write policy as the generated REST routes
+and MCP tools in every input mode (`--from-file`, interactive, flags): fields
+outside `api.writable`, `readonly` fields and server-managed keys (`id`,
+`tenantId`, timestamps) are dropped.
+
 Custom methods on s-m-r-t objects are auto-discovered from manifests. Method parameters become CLI options (camelCase to kebab-case).
 
 ## Usage
