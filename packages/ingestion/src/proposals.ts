@@ -1118,8 +1118,7 @@ export class IngestionProposalService {
       minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
       tieMargin: this.config.tieMargin ?? 0.1,
     };
-    if (digest(configuration) !== digest(expected))
-      throw new Error('Proposal read configuration mismatch');
+    const configurationStale = digest(configuration) !== digest(expected);
     const output = record(
       snapshot.result.output.proposals,
     ) as unknown as GenerationOutput;
@@ -1155,7 +1154,7 @@ export class IngestionProposalService {
       );
     }
     // Never classify an authorization/catalog/provider denial as mere staleness.
-    if (stale) throw new GenerationSnapshotStaleError();
+    if (configurationStale || stale) throw new GenerationSnapshotStaleError();
   }
   async preview(input: PreviewGeneratedInput): Promise<GeneratedPreview[]> {
     if (

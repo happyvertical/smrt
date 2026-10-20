@@ -705,8 +705,88 @@ export function proposalSuite(
             generated.itemId,
             generated.lease.attemptId,
           ),
-        ).rejects.toThrow('Proposal read configuration mismatch');
+        ).rejects.toThrow(GenerationSnapshotStaleError);
       });
+
+    it('keeps saved reviews and succeeded results on a generating host after configuration drift', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'configuration-drift',
+            expectedRevision: 0,
+            requestId: 'configuration-drift-preview',
+          },
+        ],
+      });
+      const review =
+        saved.kind === 'operation' ? saved.review : saved.review.steps[0];
+      await service.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'configuration-drift-approve',
+        decision: 'approve',
+      });
+      expect((await service.applyAction(review.actionId)).state).toBe(
+        'succeeded',
+      );
+
+      const drifted = new IngestionService({
+        ...options,
+        proposals: { ...configuration, version: 'drifted' },
+      });
+      const reviews = await drifted.listReviews(generated.itemId);
+      expect(reviews.actions[0].review.state).toBe('succeeded');
+      expect(reviews.actions[0].result?.state).toBe('succeeded');
+      await expect(
+        drifted.getCompletedAnalysis(generated.itemId),
+      ).rejects.toThrow(GenerationSnapshotStaleError);
+      await expect(
+        drifted.previewGeneratedProposals({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'configuration-drift-preview-again',
+              expectedRevision: review.revision,
+              requestId: 'configuration-drift-preview-again',
+            },
+          ],
+        }),
+      ).rejects.toThrow(GenerationSnapshotStaleError);
+      const loaded = await loadReviewAnalysis(
+        drifted,
+        await drifted.getItem(generated.itemId),
+        reviews,
+      );
+      expect(loaded.analysis).toBeUndefined();
+      expect(loaded.reviews.actions[0].review.state).toBe('succeeded');
+      expect(loaded.reviews.actions[0].result?.state).toBe('succeeded');
+    });
+
+    it('keeps provider denials hard when the read configuration drifts', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const reader = new IngestionService({
+        ...options,
+        proposals: undefined,
+        proposalRead: {
+          ...proposalReadConfiguration(configuration),
+          version: 'drifted',
+        },
+      });
+      providerAllowed = false;
+      await expect(
+        reader.getCompletedAnalysis(generated.itemId),
+      ).rejects.toThrow('Generation visibility changed');
+    });
 
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();
