@@ -476,8 +476,13 @@ function manifestObjectExtends(
   const extendsName = objectDef.extends;
   // An import-qualified parent names its package: a same-named class of
   // another package is not this object's parent (#4176).
-  if (typeof extendsQualified === 'string' && parent.qualifiedName) {
-    return extendsQualified === parent.qualifiedName;
+  const parentIdentity =
+    parent.qualifiedName ??
+    (parent.packageName
+      ? `${parent.packageName}:${parent.className}`
+      : undefined);
+  if (typeof extendsQualified === 'string' && parentIdentity) {
+    return extendsQualified === parentIdentity;
   }
   return (
     (typeof extendsQualified === 'string' &&

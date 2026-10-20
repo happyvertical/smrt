@@ -492,7 +492,7 @@ export class ManifestGenerator {
       const config = objectDef.decoratorConfig;
       const isCollection =
         objectDef.extends === 'SmrtCollection' ||
-        this.extendsCollection(objectDef, objectsByName);
+        this.extendsCollection(objectDef, objectsByName, manifest);
       let collectionItem: SmartObjectDefinition | undefined;
       if (isCollection) {
         const seenParents = new Set<string>();
@@ -670,10 +670,13 @@ export class ManifestGenerator {
    * loading dependency manifests. An import-qualified parent only matches a
    * definition of that package, never a same-named class of another one
    * (#4176); a definition carrying no package identity still matches by name.
+   * `manifest` is the one `objectsByName` was built from, where a qualified
+   * parent that lost its class-name slot is still found.
    */
   private namedParent(
     obj: SmartObjectDefinition,
     objectsByName: Map<string, SmartObjectDefinition>,
+    manifest?: SmartObjectManifest,
   ): SmartObjectDefinition | undefined {
     const qualified = obj.extendsQualified;
     if (!qualified) {
@@ -681,16 +684,28 @@ export class ManifestGenerator {
     }
     const direct = objectsByName.get(qualified);
     if (direct) return direct;
-    const candidate = objectsByName.get(this.simpleClassName(qualified));
-    if (!candidate) return undefined;
-    const candidateQualified =
+    const identity = (candidate: SmartObjectDefinition) =>
       candidate.qualifiedName ??
       (candidate.packageName
         ? `${candidate.packageName}:${candidate.className}`
         : undefined);
-    return !candidateQualified || candidateQualified === qualified
-      ? candidate
-      : undefined;
+    const candidate = objectsByName.get(this.simpleClassName(qualified));
+    if (candidate && (identity(candidate) ?? qualified) === qualified) {
+      return candidate;
+    }
+    // The class-name slot may hold another package's same-named class; the
+    // imported one is then still in the manifest the map was built from.
+    const keyed = manifest?.objects[qualified] as
+      | SmartObjectDefinition
+      | undefined;
+    if (keyed) return keyed;
+    for (const definition of [
+      ...objectsByName.values(),
+      ...Object.values(manifest?.objects ?? {}),
+    ] as SmartObjectDefinition[]) {
+      if (identity(definition) === qualified) return definition;
+    }
+    return undefined;
   }
 
   /**
@@ -1373,7 +1388,7 @@ export class ManifestGenerator {
     for (const [name, obj] of Object.entries(manifest.objects)) {
       // Collections access their item model's table; an independent schema can
       // contradict that model's tenant/conflict identity during aggregation.
-      if (this.extendsCollection(obj, schemaClasses)) {
+      if (this.extendsCollection(obj, schemaClasses, aggregatedManifest)) {
         delete obj.schema;
         continue;
       }
@@ -1449,7 +1464,8 @@ export class ManifestGenerator {
     // Preserve collection metadata, but take persistence identity from the item
     // model only after every model schema (including FK repair) is complete.
     for (const obj of Object.values(manifest.objects)) {
-      if (!this.extendsCollection(obj, schemaClasses)) continue;
+      if (!this.extendsCollection(obj, schemaClasses, aggregatedManifest))
+        continue;
       let current: SmartObjectDefinition | undefined = obj;
       const visited = new Set<SmartObjectDefinition>();
       while (current && !visited.has(current)) {
@@ -1459,11 +1475,14 @@ export class ManifestGenerator {
           aggregatedManifest,
           schemaClasses,
         );
-        if (item?.schema && !this.extendsCollection(item, schemaClasses)) {
+        if (
+          item?.schema &&
+          !this.extendsCollection(item, schemaClasses, aggregatedManifest)
+        ) {
           obj.schema = structuredClone(item.schema);
           break;
         }
-        current = this.namedParent(current, schemaClasses);
+        current = this.namedParent(current, schemaClasses, aggregatedManifest);
       }
     }
   }
@@ -2449,10 +2468,13 @@ export class ManifestGenerator {
       // Check if this is a collection class (extends SmrtCollection)
       const isCollection =
         obj.extends === 'SmrtCollection' ||
-        this.extendsCollection(obj, objectsByName);
+        this.extendsCollection(obj, objectsByName, manifest);
       // Junction and report collections inherit their model's exposure too,
       // but keep their own storage naming (that predates this pass).
-      if (!isCollection && !this.extendsAnyCollectionBase(obj, objectsByName)) {
+      if (
+        !isCollection &&
+        !this.extendsAnyCollectionBase(obj, objectsByName, manifest)
+      ) {
         continue;
       }
 
@@ -2533,8 +2555,8 @@ export class ManifestGenerator {
       return undefined;
     }
     if (
-      this.extendsCollection(obj, objectsByName) ||
-      this.extendsAnyCollectionBase(obj, objectsByName)
+      this.extendsCollection(obj, objectsByName, manifest) ||
+      this.extendsAnyCollectionBase(obj, objectsByName, manifest)
     ) {
       return undefined;
     }
@@ -2554,8 +2576,8 @@ export class ManifestGenerator {
     }
     if (!parent || parent === obj) return undefined;
     if (
-      this.extendsCollection(parent, objectsByName) ||
-      this.extendsAnyCollectionBase(parent, objectsByName)
+      this.extendsCollection(parent, objectsByName, manifest) ||
+      this.extendsAnyCollectionBase(parent, objectsByName, manifest)
     ) {
       return undefined;
     }
@@ -2702,8 +2724,8 @@ export class ManifestGenerator {
     for (const obj of Object.values(manifest.objects)) {
       if (
         obj.extends !== 'SmrtCollection' &&
-        !this.extendsCollection(obj, objectsByName) &&
-        !this.extendsAnyCollectionBase(obj, objectsByName)
+        !this.extendsCollection(obj, objectsByName, manifest) &&
+        !this.extendsAnyCollectionBase(obj, objectsByName, manifest)
       ) {
         continue;
       }
@@ -2737,6 +2759,7 @@ export class ManifestGenerator {
   private extendsAnyCollectionBase(
     obj: SmartObjectDefinition,
     objectsByName: Map<string, SmartObjectDefinition>,
+    manifest?: SmartObjectManifest,
   ): boolean {
     let current: SmartObjectDefinition | undefined = obj;
     const visited = new Set<SmartObjectDefinition>();
@@ -2744,7 +2767,7 @@ export class ManifestGenerator {
       if (isSmrtCollectionExtendsName(current.extends)) return true;
       if (visited.has(current)) return false;
       visited.add(current);
-      current = this.namedParent(current, objectsByName);
+      current = this.namedParent(current, objectsByName, manifest);
     }
     return false;
   }
@@ -2759,6 +2782,7 @@ export class ManifestGenerator {
   private extendsCollection(
     obj: SmartObjectDefinition,
     objectsByName: Map<string, SmartObjectDefinition>,
+    manifest?: SmartObjectManifest,
   ): boolean {
     // Walk up inheritance chain looking for SmrtCollection
     let current: SmartObjectDefinition | undefined = obj;
@@ -2770,7 +2794,7 @@ export class ManifestGenerator {
 
       if (current.extends === 'SmrtCollection') return true;
 
-      current = this.namedParent(current, objectsByName);
+      current = this.namedParent(current, objectsByName, manifest);
     }
 
     return false;
