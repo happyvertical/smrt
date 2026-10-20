@@ -11,6 +11,7 @@ smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
+smrt users:provision-owner   # Trusted PostgreSQL owner provisioning; password from private file/stdin, never argv/env (users README)
 smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
@@ -108,9 +109,7 @@ it in the same migration also run outside the transaction, in order.
 `smrt doctor` reports the application's complete agent-addressable surface —
 generated model tools, declared view intents, registered playbooks — **from
 build artifacts alone**. No route is mounted, no server starts, and no
-application module is imported. That is the whole point: before this, the only
-way to answer "what can an agent do in this app" was to mount every route and
-enumerate, which is not an answer a build, a review, or a CI gate can use.
+application module is imported.
 
 `readAgentSurfaceReport(cwd)` reads the first of `.smrt/smrt-knowledge.json`
 then `dist/smrt-knowledge.json`. Model tools come from the artifact's `mcp`

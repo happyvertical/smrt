@@ -555,6 +555,20 @@ export class PasswordCredentialService {
     return service;
   }
 
+  /**
+   * Validate and hash a prospective password without reading or writing state.
+   * Trusted operator provisioning uses the same policy as ordinary lifecycle
+   * writes. This does not install a credential or authorize an account change.
+   */
+  static async preparePasswordHash(
+    password: string,
+    user: Pick<User, 'id' | 'email' | 'emailKey' | 'username' | 'usernameKey'>,
+    policy: PasswordPolicyOptions = {},
+  ): Promise<string> {
+    const service = new PasswordCredentialService({ password: policy });
+    return service.hashPassword(await service.assertPolicy(password, user));
+  }
+
   async initialize(): Promise<void> {
     this.sessionService = await SessionService.create({
       ...this.options,
@@ -1225,7 +1239,10 @@ export class PasswordCredentialService {
   }
 
   /** Returns the normalized password to hash, or throws {@link PasswordPolicyError}. */
-  private async assertPolicy(password: string, user: User): Promise<string> {
+  private async assertPolicy(
+    password: string,
+    user: Pick<User, 'id' | 'email' | 'emailKey' | 'username' | 'usernameKey'>,
+  ): Promise<string> {
     if (typeof password !== 'string' || !password) {
       throw new PasswordPolicyError('Enter a password.');
     }

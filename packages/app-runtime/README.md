@@ -371,7 +371,7 @@ An awaited `close()` request made from inside a tracked provider or worker
 operation acknowledges shutdown so that operation can unwind; callers outside
 the operation continue to await complete worker and database cleanup.
 
-Self-hosted deployments may select OIDC or magic-link authentication, explicit
+Self-hosted deployments may select OIDC, magic-link, or password authentication, explicit
 single- or multi-tenancy, local or S3-compatible assets, and environment,
 local-file, or external secrets. Cloud requires hosted identity, PostgreSQL,
 multi-tenancy with required tenant context, managed/external secrets,

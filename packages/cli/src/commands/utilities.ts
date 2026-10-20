@@ -111,6 +111,7 @@ import {
   resolveStiDiscriminatorUpgrade,
   type StiDiscriminatorRepairConflict,
 } from './sti-upgrade.js';
+import { usersProvisionOwnerCommand } from './users-provision-owner.js';
 
 /**
  * Fallbacks for `migrations.postgres.lockTimeout` / `.statementTimeout`.
@@ -3937,6 +3938,7 @@ export default testManifest;
   'db:upgrade-commerce-money': dbUpgradeCommerceMoneyCommand,
   'db:migrate-qualified-names': dbMigrateQualifiedNamesCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
+  'users:provision-owner': usersProvisionOwnerCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,

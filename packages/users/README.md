@@ -904,6 +904,14 @@ Other credential kinds (a fob or badge reader, say) implement
 
 ### Password sign-in
 
+For a self-hosted public password deployment, set
+`SMRT_AUTH_READINESS_MODULE=@happyvertical/smrt-users`. The existing
+app-runtime provider-readiness factory then opens the configured PostgreSQL
+database and requires the password, session, membership, and login-limiter
+schema used by `PasswordCredentialService`; it never creates schema. Browser
+owner bootstrap remains local-only, so production owners are provisioned by a
+separate operator path.
+
 `PasswordCredentialService` (#3274) gives an app without an identity provider
 email-or-username + password sign-in for **existing, active** users. It never creates a
 user. The password lives in its own object, `UsersPasswordCredential`
@@ -1091,6 +1099,57 @@ What the app must do:
   returned `sessionId`; keep the session id out of page data.
 
 Passkeys/WebAuthn are a separate credential (#3275).
+
+### Trusted deployment owner provisioning
+
+Self-hosted password deployments keep browser owner bootstrap disabled. After
+building the app, run migrations and provision the owner from a trusted operator
+shell using the compiled registration entry. These commands need Node and the
+published packages, without a Vite runtime:
+
+```sh
+node --import ./.smrt/runtime/register.js node_modules/@happyvertical/smrt-cli/bin/smrt.js db:migrate
+node --import ./.smrt/runtime/register.js node_modules/@happyvertical/smrt-cli/bin/smrt.js users:provision-owner \
+  --tenant-id 2acb0135-6d63-40dc-a8d4-fd87d37cd197 --tenant-name Hearth \
+  --user-id 753d9480-fd17-4f21-8771-345e83833fe3 \
+  --email owner@example.com --username owner --password-stdin < /run/secrets/owner-password
+```
+
+Use your own stable UUIDs and identities; retain them for retries. The database
+comes from normal CLI configuration (`packages.cli.database`, or `DATABASE_URL`
+and `DATABASE_TYPE=postgres`). Supply at least one email or username. The password
+must be one UTF-8 line; a final newline is removed. `--password-file` also accepts
+a regular mode-0400/0600 file (no final symlink); stdin redirection works with
+mounted secret symlinks. Password arguments and environment inputs are unsupported.
+
+The Node-only `@happyvertical/smrt-users/operator` export provides
+`provisionPasswordOwner(db, input, passwordPolicy?)` for operator tools that use
+the application's custom password policy or pepper. The CLI uses the ordinary
+default policy. Never expose this function through browser, REST, MCP, or
+session handlers: possession of the database connection is its authority.
+
+Provisioning supports PostgreSQL only. It creates the tenant, User, owner
+membership, and ordinary password credential in one transaction, without minting
+a session. A fresh authority catalog receives the standard roles and grants;
+existing role grants are never reseeded. Both creation and exact retries require
+at least one effective permission, resolved with tenant and membership DENY
+overrides inside that transaction. Existing restricted roles remain restricted;
+success does not promise every application permission. An empty or fully denied
+permission set refuses with the ordinary sanitized error and CLI exit status 1,
+rolling back new identities and leaving existing credentials and grants intact.
+If roles were initialized without grants, inspect the intended authority policy
+and explicitly seed approved grants using `RoleCollection.seedSystemRoles({
+seedPermissions: true })` from a trusted operator tool, or administer the desired
+restricted grants through the public role services, before retrying. Provisioning
+never restores deliberately revoked grants automatically.
+
+An existing target tenant must be an
+active root tenant with the exact name and no memberships. Existing or partial
+User identities are refused except for a complete exact retry with the same
+active owner membership and password, which returns `unchanged` without writes.
+It never resets a password, reactivates an account, or adopts an ambiguous
+identity. After provisioning, the owner signs in using the normal password
+route. Local loopback bootstrap remains unchanged.
 
 ### Request-scoped database access
 

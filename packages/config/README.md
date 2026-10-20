@@ -83,7 +83,7 @@ console.log(JSON.stringify(runtime));
 | Profile | Database | Authentication | Tenancy | Assets / secrets | Jobs | Network |
 | --- | --- | --- | --- | --- | --- | --- |
 | `local` | user-owned SQLite | single-use owner bootstrap | real default tenant | user-owned local files | embedded (`inline` override allowed) | loopback |
-| `self-hosted` | operator PostgreSQL | OIDC (`magic-link` allowed) | single tenant (`multi-tenant` allowed) | S3-compatible + environment secrets (documented local/external overrides allowed) | external worker | public TLS |
+| `self-hosted` | operator PostgreSQL | OIDC (`magic-link` or `password` allowed) | single tenant (`multi-tenant` allowed) | S3-compatible + environment secrets (documented local/external overrides allowed) | external worker | public TLS |
 | `cloud` | managed PostgreSQL | hosted identity | required multi-tenant context, application isolation or RLS | managed object storage/secrets | scalable workers | public TLS |
 
 Every profile supports logical export/import. The local profile additionally

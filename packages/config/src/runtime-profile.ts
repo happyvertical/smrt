@@ -14,6 +14,7 @@ export type AuthenticationProvider =
   | 'owner-bootstrap'
   | 'oidc'
   | 'magic-link'
+  | 'password'
   | 'hosted-identity';
 export type OwnerBootstrapMode = 'single-use' | 'disabled';
 export type TenancyMode = 'default-tenant' | 'single-tenant' | 'multi-tenant';
@@ -299,7 +300,13 @@ const PROVIDER_VALUE_DOMAINS = {
     connectionOwnership: ['user', 'operator', 'managed'],
   },
   authentication: {
-    provider: ['owner-bootstrap', 'oidc', 'magic-link', 'hosted-identity'],
+    provider: [
+      'owner-bootstrap',
+      'oidc',
+      'magic-link',
+      'password',
+      'hosted-identity',
+    ],
     ownerBootstrap: ['single-use', 'disabled'],
   },
   tenancy: {
@@ -593,7 +600,7 @@ function validateComposition(
     allow(
       'providers.authentication.provider',
       providers.authentication.provider,
-      ['oidc', 'magic-link'],
+      ['oidc', 'magic-link', 'password'],
     );
     allow(
       'providers.authentication.ownerBootstrap',
