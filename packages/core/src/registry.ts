@@ -1987,13 +1987,27 @@ export class ObjectRegistry {
     // and only the child package is installed
     const childClassName = objectDef.className || requestedClassName;
     if (objectDef.extends && objectDef.extends !== childClassName) {
-      const parentName = objectDef.extends;
+      // An import-qualified parent of another package is not in this
+      // manifest; it registers from its own package, never as this
+      // manifest's same-named class (#4176).
+      const parentRef = objectDef.extendsQualified ?? objectDef.extends;
+      const qualifiedParent = isQualifiedName(parentRef)
+        ? parseQualifiedName(parentRef)
+        : undefined;
+      const parentInManifest =
+        !qualifiedParent ||
+        !packageName ||
+        qualifiedParent.packageName === packageName;
+      const parentName = qualifiedParent?.className ?? objectDef.extends;
       const lowerParentName = parentName.toLowerCase();
-      let parentDef =
-        manifest.objects[lowerParentName] || manifest.objects[parentName];
+      let parentDef = parentInManifest
+        ? manifest.objects[parentRef] ||
+          manifest.objects[lowerParentName] ||
+          manifest.objects[parentName]
+        : undefined;
 
       // Search by className field if not found by key (Issue #713)
-      if (!parentDef) {
+      if (!parentDef && parentInManifest) {
         for (const [_key, def] of Object.entries(manifest.objects)) {
           if (
             def.className?.toLowerCase() === lowerParentName ||
@@ -2005,12 +2019,12 @@ export class ObjectRegistry {
         }
       }
 
-      if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
+      if (parentDef && !ObjectRegistry.hasClass(parentRef)) {
         verboseLog(
-          `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
+          `[ObjectRegistry] Also registering parent class ${parentRef} for STI`,
         );
         ObjectRegistry.registerFromManifest(
-          parentDef.className || objectDef.extends,
+          parentDef.className || parentName,
           parentDef,
           manifest.packageName,
         );

@@ -666,6 +666,34 @@ export class ManifestGenerator {
   }
 
   /**
+   * `obj`'s parent among `objectsByName` (keyed by class name), without
+   * loading dependency manifests. An import-qualified parent only matches a
+   * definition of that package, never a same-named class of another one
+   * (#4176); a definition carrying no package identity still matches by name.
+   */
+  private namedParent(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    const qualified = obj.extendsQualified;
+    if (!qualified) {
+      return obj.extends ? objectsByName.get(obj.extends) : undefined;
+    }
+    const direct = objectsByName.get(qualified);
+    if (direct) return direct;
+    const candidate = objectsByName.get(this.simpleClassName(qualified));
+    if (!candidate) return undefined;
+    const candidateQualified =
+      candidate.qualifiedName ??
+      (candidate.packageName
+        ? `${candidate.packageName}:${candidate.className}`
+        : undefined);
+    return !candidateQualified || candidateQualified === qualified
+      ? candidate
+      : undefined;
+  }
+
+  /**
    * Stamp `importPath` (via {@link determineImportPath}) on every object
    * that does not already have one. Safe to call unconditionally: objects
    * that went through `generateManifest()`'s own inline assignment already
@@ -1435,9 +1463,7 @@ export class ManifestGenerator {
           obj.schema = structuredClone(item.schema);
           break;
         }
-        current = current.extends
-          ? schemaClasses.get(current.extends)
-          : undefined;
+        current = this.namedParent(current, schemaClasses);
       }
     }
   }
@@ -2713,12 +2739,12 @@ export class ManifestGenerator {
     objectsByName: Map<string, SmartObjectDefinition>,
   ): boolean {
     let current: SmartObjectDefinition | undefined = obj;
-    const visited = new Set<string>();
+    const visited = new Set<SmartObjectDefinition>();
     while (current?.extends) {
       if (isSmrtCollectionExtendsName(current.extends)) return true;
-      if (visited.has(current.extends)) return false;
-      visited.add(current.extends);
-      current = objectsByName.get(current.extends);
+      if (visited.has(current)) return false;
+      visited.add(current);
+      current = this.namedParent(current, objectsByName);
     }
     return false;
   }
@@ -2734,22 +2760,17 @@ export class ManifestGenerator {
     obj: SmartObjectDefinition,
     objectsByName: Map<string, SmartObjectDefinition>,
   ): boolean {
-    if (!obj.extends) return false;
-
     // Walk up inheritance chain looking for SmrtCollection
-    let currentClass: string | undefined = obj.extends;
-    const visited = new Set<string>();
+    let current: SmartObjectDefinition | undefined = obj;
+    const visited = new Set<SmartObjectDefinition>();
 
-    while (currentClass) {
-      if (visited.has(currentClass)) break;
-      visited.add(currentClass);
+    while (current?.extends) {
+      if (visited.has(current)) break;
+      visited.add(current);
 
-      if (currentClass === 'SmrtCollection') return true;
+      if (current.extends === 'SmrtCollection') return true;
 
-      const parentObj = objectsByName.get(currentClass);
-      if (!parentObj) break;
-
-      currentClass = parentObj.extends;
+      current = this.namedParent(current, objectsByName);
     }
 
     return false;
