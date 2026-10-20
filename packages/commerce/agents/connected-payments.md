@@ -52,7 +52,7 @@ the platform account.
 | `requireEnabledTenantPaymentAccount` | Throws `NO_ENABLED_ACCOUNT` unless enabled. |
 | `createConnectedCheckout` | Checkout on the tenant's account with `stripeAccount` + `applicationFeeAmount` (integer minor units from the caller's fee policy; `0` for none; must be below the amount). Records the intent with the session id in the option's `memo`. Idempotent on the intent natural key. |
 | `handleConnectedPaymentWebhook` | See below. |
-| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full. The refund row is written before booking and holds its amount; only a provider-`succeeded` refund is journaled, a `pending` one waits for the refund update, and a retry with the same key resumes unfinished booking. Once booked refunds cover the payment it is marked `REFUNDED` and its intent retired. |
+| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full. The refund row is written (`requested`, holding its amount) before the provider is asked; only a provider-`succeeded` refund is journaled, `pending` waits for the refund update, `failed` releases the amount. A retry with the same key returns a recorded result, or re-sends a lost request with the same provider idempotency key within 23 hours (older lost requests wait for the refund update). Once booked refunds cover the payment it is marked `REFUNDED` and its intent retired. |
 | `createStripeConnectGateway` | Platform `StripeAdapter` from smrt-secrets. |
 
 ## Webhooks
@@ -75,9 +75,9 @@ signature, resolveSettlementAccounts })`:
    matters. Refund updates (`charge.refund.updated`, `refund.*`) book or fail
    a pending refund recorded by `refundConnectedPayment` on that account;
    terminal states never move back. Refunds made by the command carry
-   `metadata.smrt_refund_id`; an update for such a refund that is not recorded
-   yet throws `REFUND_NOT_RECORDED` (non-2xx, so the provider redelivers after
-   the same-key retry records it). Refunds made elsewhere are reported. Settlement records a `Payment` (deterministic id from the intent)
+   `metadata.smrt_refund_id` and are matched by it (an unknown one throws
+   `REFUND_NOT_RECORDED`; an amount differing from the row throws
+   `AMOUNT_MISMATCH`). Refunds made elsewhere are reported. Settlement records a `Payment` (deterministic id from the intent)
    through `recordPayment()` and marks the intent paid. `refunded` events are
    reported (`refund_reported`), never booked automatically.
 5. The event id is stored only after processing succeeds; a refusal throws,

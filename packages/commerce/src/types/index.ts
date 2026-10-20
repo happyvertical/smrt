@@ -771,7 +771,7 @@ export interface PaymentOptions extends SmrtObjectOptions {
   connectedAccountId?: string;
   applicationFeeCents?: number;
   refundOfPaymentId?: string;
-  connectedRefundState?: '' | 'pending' | 'succeeded' | 'failed';
+  connectedRefundState?: '' | 'requested' | 'pending' | 'succeeded' | 'failed';
 }
 
 /**

@@ -72,6 +72,10 @@ export class StripeConnectFixture {
   private sequence = 0;
   /** Status the next refunds report (`succeeded`, `pending`, …). */
   refundStatus = 'succeeded';
+  /** Lose the next refund response after the provider made the refund. */
+  loseNextRefundResponse = false;
+  /** Provider idempotency: a replayed key returns the original response. */
+  private readonly refundsByKey = new Map<string, Record<string, unknown>>();
   /** Distinguishes ids across fixtures sharing one PostgreSQL database. */
   readonly run = randomBytes(5).toString('hex');
 
@@ -211,14 +215,24 @@ export class StripeConnectFixture {
       return json(200, session.body);
     }
     if (method === 'POST' && path === '/refunds') {
-      return json(200, {
+      const key = headers.get('Idempotency-Key');
+      const replayed = key ? this.refundsByKey.get(key) : undefined;
+      if (replayed) return json(200, replayed);
+      const refund = {
         id: this.next('re'),
         object: 'refund',
         status: this.refundStatus,
         amount: Number(body.get('amount')),
         currency: 'usd',
         payment_intent: body.get('payment_intent'),
-      });
+        metadata: { smrt_refund_id: body.get('metadata[smrt_refund_id]') },
+      };
+      if (key) this.refundsByKey.set(key, refund);
+      if (this.loseNextRefundResponse) {
+        this.loseNextRefundResponse = false;
+        throw new TypeError('fetch failed: connection reset');
+      }
+      return json(200, refund);
     }
     return json(404, { error: { message: `fixture has no route ${path}` } });
   };

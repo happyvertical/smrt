@@ -381,10 +381,12 @@ export class Payment extends SmrtObject {
 
   /**
    * For a `refund` of a connected charge, the provider's refund state:
-   * `pending` until the provider confirms it, then `succeeded` (journaled) or
-   * `failed` (#3831). Server-managed.
+   * `requested` (recorded before the provider is asked), `pending` until the
+   * provider confirms it, then `succeeded` (journaled) or `failed` (#3831).
+   * Server-managed.
    */
-  connectedRefundState: '' | 'pending' | 'succeeded' | 'failed' = '';
+  connectedRefundState: '' | 'requested' | 'pending' | 'succeeded' | 'failed' =
+    '';
 
   constructor(options: PaymentOptions = {}) {
     super(options);
@@ -609,8 +611,15 @@ export class Payment extends SmrtObject {
       ['currency', String(priorRow.currency ?? ''), this.currency],
       ['backendId', String(priorRow.backend_id ?? ''), this.backendId],
       [
+        // A refund's provider reference is set once, in the same write that
+        // records the provider's answer (connectedRefundState leaves
+        // `requested`, which no generated surface can write).
         'backendTxRef',
-        String(priorRow.backend_tx_ref ?? ''),
+        !priorRow.backend_tx_ref &&
+        priorRow.connected_refund_state === 'requested' &&
+        this.connectedRefundState !== 'requested'
+          ? this.backendTxRef
+          : String(priorRow.backend_tx_ref ?? ''),
         this.backendTxRef,
       ],
       [

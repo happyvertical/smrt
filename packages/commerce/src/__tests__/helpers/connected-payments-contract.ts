@@ -697,6 +697,14 @@ export function connectedPaymentsContract(
       expect(
         (await refundUpdate(failedLater.refund.backendTxRef, 'failed')).outcome,
       ).toBe('refund_updated');
+      // A retry of a refund the provider failed returns that failure; the
+      // provider is not asked again.
+      const before = stripe.requestsTo('/refunds').length;
+      expect(await refund(2_000, 'pending-2')).toMatchObject({
+        state: 'failed',
+        created: false,
+      });
+      expect(stripe.requestsTo('/refunds')).toHaveLength(before);
       expect(
         (await refundUpdate(pending.refund.backendTxRef, 'succeeded')).outcome,
       ).toBe('refund_updated');
@@ -732,6 +740,60 @@ export function connectedPaymentsContract(
         await expect(row.save()).rejects.toThrow(/cannot change/);
       });
       await refundUpdate(waiting.refund.backendTxRef, 'succeeded');
+
+      // The provider's answer is lost: the row recorded before the request
+      // holds the amount, a same-key retry gets the provider's original
+      // refund back, and an old unanswered request is never re-sent.
+      stripe.refundStatus = 'succeeded';
+      stripe.loseNextRefundResponse = true;
+      await expect(refund(500, 'lost')).rejects.toThrow(/fetch failed/);
+      const recovered = await refund(500, 'lost');
+      expect(recovered).toMatchObject({ state: 'succeeded', created: true });
+      expect(recovered.refund.status).toBe(PaymentStatus.COMPLETED);
+      stripe.loseNextRefundResponse = true;
+      await expect(refund(500, 'stale')).rejects.toThrow(/fetch failed/);
+      const sent = stripe.requestsTo('/refunds').length;
+      const staleBody = stripe.requestsTo('/refunds').at(-1)!.body;
+      const realNow = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(realNow + 25 * 60 * 60 * 1000);
+      const waitingForUpdate = await refund(500, 'stale');
+      vi.restoreAllMocks();
+      expect(waitingForUpdate).toMatchObject({
+        state: 'requested',
+        created: false,
+      });
+      expect(stripe.requestsTo('/refunds')).toHaveLength(sent);
+      const lostRefund = stripe.event({
+        type: 'charge.refund.updated',
+        account,
+        object: {
+          id: 're_staleanswer',
+          object: 'refund',
+          status: 'succeeded',
+          amount: 500,
+          metadata: {
+            smrt_refund_id: staleBody.get('metadata[smrt_refund_id]'),
+          },
+        },
+      });
+      expect(
+        (
+          await handleConnectedPaymentWebhook({
+            db,
+            gateway: stripe.adapter(),
+            environment: 'test',
+            payload: lostRefund.payload,
+            signature: lostRefund.signature,
+            resolveSettlementAccounts,
+          })
+        ).outcome,
+      ).toBe('refund_updated');
+      await withTenant({ tenantId: bakery }, async () => {
+        const payments = await PaymentCollection.create({ db });
+        const row = (await payments.get({ id: waitingForUpdate.refund.id! }))!;
+        expect(row.status).toBe(PaymentStatus.COMPLETED);
+        expect(row.backendTxRef).toBe('re_staleanswer');
+      });
 
       // Provider refund succeeds but booking fails: a retry with the same key
       // finishes the booking and the full-refund state without a second

@@ -1168,10 +1168,11 @@ export interface ConnectedRefund {
   /** Minor units still refundable after this refund. */
   remaining: number;
   /**
-   * Provider state: `succeeded` refunds are journaled; a `pending` one holds
-   * its amount and is booked when the provider's refund update arrives.
+   * Provider state: `succeeded` refunds are journaled; `pending` (or
+   * `requested`, when the provider's answer was lost) holds its amount and is
+   * booked when the provider's refund update arrives; `failed` releases it.
    */
-  state: 'pending' | 'succeeded' | 'failed';
+  state: 'requested' | 'pending' | 'succeeded' | 'failed';
   /** Whether this call created the refund (false on an idempotent retry). */
   created: boolean;
 }
@@ -1232,93 +1233,139 @@ export async function refundConnectedPayment(
         refund,
         resolveSettlementAccounts: input.resolveSettlementAccounts,
       });
-    const prior = await liveRefunds(payments, payment.id!);
-    const replay = prior.find((row) => row.id === refundId);
-    if (replay) {
-      // Resume whatever a failed earlier attempt left unfinished.
-      const remaining = await settle(replay);
-      return {
-        refund: replay,
-        payment,
-        remaining,
-        state: replay.connectedRefundState || 'pending',
-        created: false,
-      };
+    const outcome = async (
+      refund: Payment,
+      created: boolean,
+    ): Promise<ConnectedRefund> => ({
+      refund,
+      payment,
+      remaining: await settle(refund),
+      state: refund.connectedRefundState || 'requested',
+      created,
+    });
+
+    // The refund row is the request's identity, whatever its status: a retry
+    // returns a terminal result and never asks the provider twice.
+    let refund = await payments.get({ id: refundId });
+    if (refund) {
+      if (
+        !sameTenant(refund.tenantId, key.tenantId) ||
+        refund.refundOfPaymentId !== payment.id ||
+        refund.connectedAccountId !== payment.connectedAccountId
+      )
+        throw new ConnectedPaymentError(
+          'PAYMENT_NOT_OWNED',
+          'Refund does not belong to this payment',
+        );
+      if (refund.connectedRefundState !== 'requested')
+        return outcome(refund, false);
+      // The provider's answer was lost. Re-sending the same idempotency key
+      // returns the provider's original refund, but only while the provider
+      // still remembers the key; after that, wait for the refund update.
+      const age = Date.now() - new Date(refund.created_at ?? 0).getTime();
+      if (!(age >= 0 && age < PROVIDER_IDEMPOTENCY_SAFE_MS))
+        return outcome(refund, false);
+    } else {
+      if (payment.status !== PaymentStatus.COMPLETED)
+        throw new ConnectedPaymentError(
+          'REFUND_EXCEEDS_PAYMENT',
+          `Payment is ${payment.status}; only a completed payment can be refunded`,
+        );
+      const remaining =
+        payment.amount -
+        (await liveRefunds(payments, payment.id!)).reduce(
+          (sum, row) => sum + row.amount,
+          0,
+        );
+      const amount =
+        input.amount === undefined
+          ? remaining
+          : assertMinorUnits(input.amount, 'amount', 1);
+      if (amount < 1 || amount > remaining)
+        throw new ConnectedPaymentError(
+          'REFUND_EXCEEDS_PAYMENT',
+          `Refund of ${amount} exceeds the ${remaining} still refundable`,
+        );
+      // Recorded before the provider is asked: it holds its amount, and a
+      // retry or a refund update always finds it.
+      refund = await payments.create({
+        id: refundId,
+        tenantId: key.tenantId,
+        kind: 'refund',
+        amount,
+        currency: payment.currency,
+        method: payment.method,
+        status: PaymentStatus.PENDING,
+        transactionId: payment.backendTxRef,
+        reference: `connected-refund:${payment.id}`,
+        backendId: key.backendId,
+        connectedAccountId: payment.connectedAccountId,
+        refundOfPaymentId: payment.id!,
+        connectedRefundState: 'requested',
+        notes: `Application fee refunded: ${input.refundApplicationFee ? 'yes' : 'no'}`,
+      });
     }
-    if (payment.status !== PaymentStatus.COMPLETED)
-      throw new ConnectedPaymentError(
-        'REFUND_EXCEEDS_PAYMENT',
-        `Payment is ${payment.status}; only a completed payment can be refunded`,
-      );
-    const remaining =
-      payment.amount - prior.reduce((sum, row) => sum + row.amount, 0);
-    const amount =
-      input.amount === undefined
-        ? remaining
-        : assertMinorUnits(input.amount, 'amount', 1);
-    if (amount < 1 || amount > remaining)
-      throw new ConnectedPaymentError(
-        'REFUND_EXCEEDS_PAYMENT',
-        `Refund of ${amount} exceeds the ${remaining} still refundable`,
-      );
 
     const request: StripeRefundPaymentInput = {
       paymentId: payment.backendTxRef,
-      amount,
+      amount: refund.amount,
       currency: payment.currency,
       stripeAccount: account.providerAccountId,
       refundApplicationFee: input.refundApplicationFee,
       idempotencyKey: `smrt-connected-refund:${refundId}`,
-      // Lets a refund update that outruns this command be told apart from a
-      // refund made elsewhere (see applyRefundUpdate).
+      // Ties provider refund updates to this row (see applyRefundUpdate).
       metadata: { smrt_refund_id: refundId },
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     };
     const result = await input.gateway.refundPayment(request);
-    const state = refundState(result.status);
-    if (state === 'failed')
+    if (
+      (result.amount !== undefined && result.amount !== refund.amount) ||
+      !result.refundId
+    )
+      // Left `requested` (unbooked, amount held) for an operator.
+      throw new ConnectedPaymentError(
+        'AMOUNT_MISMATCH',
+        'Provider refund does not match the requested refund',
+      );
+    await recordRefundState(
+      refund,
+      refundState(result.status),
+      result.refundId,
+    );
+    if (refund.connectedRefundState === 'failed')
       throw new ConnectedPaymentError(
         'REFUND_FAILED',
         'Provider declined the refund',
       );
-    if (result.amount !== undefined && result.amount !== amount)
-      throw new ConnectedPaymentError(
-        'AMOUNT_MISMATCH',
-        'Provider refunded a different amount than requested',
-      );
-    if (!result.refundId)
-      throw new ConnectedPaymentError(
-        'REFUND_FAILED',
-        'Provider did not return a refund reference',
-      );
-
-    // Recorded before any booking: a pending refund holds its amount, and a
-    // retry with the same key resumes from this row.
-    const refund = await payments.create({
-      id: refundId,
-      tenantId: key.tenantId,
-      kind: 'refund',
-      amount,
-      currency: payment.currency,
-      method: payment.method,
-      status: PaymentStatus.PENDING,
-      transactionId: payment.backendTxRef,
-      reference: `connected-refund:${payment.id}`,
-      backendId: key.backendId,
-      backendTxRef: result.refundId,
-      connectedAccountId: payment.connectedAccountId,
-      refundOfPaymentId: payment.id!,
-      connectedRefundState: state,
-      notes: `Application fee refunded: ${input.refundApplicationFee ? 'yes' : 'no'}`,
-    });
-    return {
-      refund,
-      payment,
-      remaining: await settle(refund),
-      state,
-      created: true,
-    };
+    return outcome(refund, true);
   });
+}
+
+/** How long a provider idempotency key is safely remembered (Stripe: 24 h). */
+const PROVIDER_IDEMPOTENCY_SAFE_MS = 23 * 60 * 60 * 1000;
+
+/**
+ * Move a refund row on from `requested`/`pending`. Terminal states never
+ * move back; the provider refund reference is set once.
+ */
+async function recordRefundState(
+  refund: Payment,
+  state: 'pending' | 'succeeded' | 'failed',
+  providerRefundId: string,
+): Promise<void> {
+  if (refund.backendTxRef && refund.backendTxRef !== providerRefundId)
+    throw new ConnectedPaymentError(
+      'PAYMENT_NOT_OWNED',
+      'Provider refund does not match the recorded refund',
+    );
+  const current = refund.connectedRefundState;
+  const open = current === 'requested' || current === 'pending';
+  const next = open && state !== 'pending' ? state : open ? 'pending' : current;
+  if (next === current && refund.backendTxRef === providerRefundId) return;
+  refund.backendTxRef = providerRefundId;
+  refund.connectedRefundState = next;
+  if (next === 'failed') refund.status = PaymentStatus.FAILED;
+  await refund.save();
 }
 
 function refundState(status: string): 'pending' | 'succeeded' | 'failed' {
@@ -1410,9 +1457,10 @@ async function applyRefundUpdate(args: {
     args.raw && typeof args.raw === 'object'
       ? (args.raw as { data?: { object?: unknown } }).data?.object
       : undefined;
-  const { id, status, metadata } = (object ?? {}) as {
+  const { id, status, amount, metadata } = (object ?? {}) as {
     id?: unknown;
     status?: unknown;
+    amount?: unknown;
     metadata?: unknown;
   };
   if (typeof id !== 'string' || !id || typeof status !== 'string')
@@ -1423,33 +1471,45 @@ async function applyRefundUpdate(args: {
       : undefined;
   return withTenant({ tenantId: args.tenantId }, async () => {
     const payments = await PaymentCollection.create({ db: args.db });
-    const [refund] = await payments.list({
-      where: {
-        backendTxRef: id,
-        kind: 'refund',
-        connectedAccountId: args.providerAccountId,
-      },
-      limit: 2,
-    });
+    const byRef = async () =>
+      (
+        await payments.list({
+          where: {
+            backendTxRef: id,
+            kind: 'refund',
+            connectedAccountId: args.providerAccountId,
+          },
+          limit: 1,
+        })
+      )[0] ?? null;
+    const refund =
+      typeof ours === 'string' && isUuid(ours)
+        ? await payments.get({ id: ours })
+        : await byRef();
     if (!refund) {
-      // Ours but not written yet (the update outran the command, or the
-      // command stopped after the provider call): refuse, so the provider
-      // redelivers once the same-key retry has recorded it.
+      // Ours, but the row is gone or not visible: refuse so the provider
+      // redelivers and an operator sees it.
       if (typeof ours === 'string' && ours)
         throw new ConnectedPaymentError(
           'REFUND_NOT_RECORDED',
-          'Refund update arrived before its refund was recorded; retry later',
+          'Refund update names a refund that is not recorded',
         );
       // Refunds made outside these commands are reported, not booked.
       return { outcome: 'refund_reported' as const };
     }
     if (
       !sameTenant(refund.tenantId, args.tenantId) ||
+      refund.kind !== 'refund' ||
       refund.connectedAccountId !== args.providerAccountId
     )
       throw new ConnectedPaymentError(
         'PAYMENT_NOT_OWNED',
         'Refund does not belong to the connected account that reported it',
+      );
+    if (typeof amount === 'number' && amount !== refund.amount)
+      throw new ConnectedPaymentError(
+        'AMOUNT_MISMATCH',
+        'Provider refund amount differs from the recorded refund',
       );
     const source = await payments.get({ id: refund.refundOfPaymentId });
     if (!source || !sameTenant(source.tenantId, args.tenantId))
@@ -1457,13 +1517,7 @@ async function applyRefundUpdate(args: {
         'PAYMENT_NOT_OWNED',
         'Refunded payment does not belong to this tenant',
       );
-    const state = refundState(status);
-    // Terminal states never move back; only a pending refund changes.
-    if (refund.connectedRefundState === 'pending' && state !== 'pending') {
-      refund.connectedRefundState = state;
-      if (state === 'failed') refund.status = PaymentStatus.FAILED;
-      await refund.save();
-    }
+    await recordRefundState(refund, refundState(status), id);
     if (refund.connectedRefundState === 'succeeded')
       await finalizeConnectedRefund({
         db: args.db,
