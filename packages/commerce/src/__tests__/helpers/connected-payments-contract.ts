@@ -1144,6 +1144,10 @@ export function connectedPaymentsContract(
 
     it('serialises account writes: concurrent onboarding, disable and relink', async () => {
       const gateway = stripe.adapter();
+      // Both calls check before either stores the account.
+      vi.spyOn(TenantPaymentAccountCollection.prototype, 'findForTenant')
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
       const [a, b] = await Promise.all([
         onboardTenantPaymentAccount({
           db,
@@ -1163,6 +1167,7 @@ export function connectedPaymentsContract(
       // Both calls reached the provider, so the second insert hit the unique
       // index and recovered the winning row.
       expect(stripe.requestsTo('/accounts')).toHaveLength(2);
+      vi.restoreAllMocks();
       const accountId = a.providerAccountId;
 
       // An operator disable lands while account.updated is being handled.
