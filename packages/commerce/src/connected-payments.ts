@@ -630,6 +630,12 @@ export interface ConnectedCheckout {
   checkoutUrl: string;
   /** Whether this call created the intent (false on an idempotent retry). */
   created: boolean;
+  /**
+   * The checkout is already paid (`PAID`, `ISSUED` or `RETIRED`): a retry
+   * returns it instead of a session, and the host must not charge again.
+   * `checkoutUrl` is then empty.
+   */
+  settled: boolean;
 }
 
 const DEFAULT_CHECKOUT_WINDOW_MS = 60 * 60 * 1000;
@@ -720,17 +726,31 @@ export async function createConnectedCheckout(
         throw invalid(
           'idempotencyKey was already used for a different connected checkout',
         );
-      // A closed quote (expired, cancelled or settled) never hands out a
-      // payable session again, nor one whose lock has lapsed.
+      // A paid checkout is returned as paid: an idempotent retry (a
+      // double-submit, a reload) must never lead to a second charge.
+      if (
+        intent.status === PaymentIntentStatus.PAID ||
+        intent.status === PaymentIntentStatus.ISSUED ||
+        intent.status === PaymentIntentStatus.RETIRED
+      )
+        return { intent, checkoutUrl: '', created: false, settled: true };
+      // An unpaid closed quote (expired, cancelled, or with a recorded session
+      // whose lock lapsed) never hands out a payable session again.
       if (
         intent.status !== PaymentIntentStatus.AWAITING_PAYMENT ||
         (prior && intent.isExpired())
       )
         throw new ConnectedPaymentError(
           'QUOTE_CLOSED',
-          `Checkout is ${intent.isExpired() ? 'expired' : intent.status}; start a new checkout with a new idempotencyKey`,
+          `Checkout was not paid and is ${intent.status === PaymentIntentStatus.AWAITING_PAYMENT ? 'expired' : intent.status}; start a new checkout with a new idempotencyKey`,
         );
-      if (prior) return { intent, checkoutUrl: prior.payTo, created: false };
+      if (prior)
+        return {
+          intent,
+          checkoutUrl: prior.payTo,
+          created: false,
+          settled: false,
+        };
       // The request was recorded but the provider's answer was lost, so the
       // buyer never saw its URL. Re-send it unchanged (same key and expiry)
       // while the provider still accepts that expiry; once it is too close,
@@ -828,7 +848,12 @@ export async function createConnectedCheckout(
       },
     ];
     await intent.save();
-    return { intent, checkoutUrl: option.payTo, created: !reused };
+    return {
+      intent,
+      checkoutUrl: option.payTo,
+      created: !reused,
+      settled: false,
+    };
   });
 }
 

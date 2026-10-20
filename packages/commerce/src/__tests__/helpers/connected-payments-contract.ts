@@ -334,6 +334,14 @@ export function connectedPaymentsContract(
         tenantId: bakery,
         paymentIntentId: intent.id,
       });
+      // A retry of the paid checkout returns it as paid, never a new session.
+      const paidRetry = await checkout(bakery);
+      expect(paidRetry).toMatchObject({
+        settled: true,
+        created: false,
+        checkoutUrl: '',
+      });
+      expect(stripe.requestsTo('/checkout/sessions')).toHaveLength(1);
 
       await withTenant({ tenantId: bakery }, async () => {
         const payments = await PaymentCollection.create({ db });
