@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.14
+
+### Patch Changes
+
+- ### Features
+  
+  - support self-hosted public password auth (#4165) (app-runtime)
+- @happyvertical/smrt-config@0.57.14
+  - @happyvertical/smrt-scanner@0.57.14
+  - @happyvertical/smrt-types@0.57.14
+
 ## 0.57.13
 
 ### Patch Changes
