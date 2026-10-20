@@ -8,6 +8,42 @@ import type {
 } from '../types';
 
 describe('ManifestGenerator', () => {
+  it.each([
+    undefined,
+    'workitemresources',
+  ])('preserves explicit collection routes independently of item storage: %s', (collectionName) => {
+    const model: SmartObjectDefinition = {
+      name: 'WorkItem',
+      className: 'WorkItem',
+      collection: 'workitems',
+      filePath: 'item.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableName: 'work_items' },
+    };
+    const collection: SmartObjectDefinition = {
+      name: 'WorkActions',
+      className: 'WorkActions',
+      collection: 'workactions',
+      filePath: 'actions.ts',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'WorkItem',
+      fields: {},
+      methods: {},
+      decoratorConfig: collectionName ? { collection: collectionName } : {},
+    };
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: { model, collection },
+    };
+    new ManifestGenerator().mergeInheritedFields(manifest);
+    expect(collection.collection).toBe(collectionName ?? 'workitems');
+    expect(collection.decoratorConfig?.tableName).toBe('work_items');
+    new ManifestGenerator().generateSchemas(manifest);
+    expect(collection.schema).toEqual(model.schema);
+  });
+
   it('does not invent independent persistence schemas for collection access classes (#2834)', () => {
     const model: SmartObjectDefinition = {
       name: 'identity',

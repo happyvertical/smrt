@@ -1,3 +1,4 @@
+import { SmrtCollection } from '../collection.js';
 import type { RegisteredClass } from './types';
 
 export interface CollectionRegistrationLookup {
@@ -114,6 +115,18 @@ export function isCollectionRegistration(
 ): boolean {
   if (isSmrtCollectionExtendsName(registered.extends)) {
     return true;
+  }
+
+  // A concrete collection may extend an undecorated domain collection whose
+  // metadata was never registered. Match real prototype identity, not names or
+  // an _itemClass property that an unrelated model could also declare.
+  let prototype: object | null | undefined =
+    typeof registered.constructor === 'function'
+      ? registered.constructor.prototype
+      : undefined;
+  for (let depth = 0; prototype && depth < 64; depth += 1) {
+    if (prototype === SmrtCollection.prototype) return true;
+    prototype = Object.getPrototypeOf(prototype);
   }
 
   return getCollectionChainRegistrations(className, registered, lookup).some(

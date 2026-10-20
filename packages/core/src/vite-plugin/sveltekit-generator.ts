@@ -72,6 +72,7 @@ import {
 } from './sync-apply-route.js';
 import {
   computeWebManifestHash,
+  findManifestObjectByName,
   isCollectionManifestClass,
   orderedManifestObjectEntries,
   resolveCollectionItemObject,
@@ -2135,6 +2136,61 @@ async function generateRegistrationFile(
     };
   }
 
+  // Collection decorators install their real constructor under the item,
+  // but do not register their own discovery metadata. Publish only explicitly
+  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
+  // them; ordinary/default collections retain their side-effect-only startup.
+  const collectionMetadata = new Map<string, SmartObjectDefinition>();
+  const manifestKeys = new Map(
+    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
+  );
+  for (const objectDef of Object.values(manifest.objects)) {
+    if (!isCollectionManifestClass(manifest, objectDef)) continue;
+    const cli = objectDef.decoratorConfig?.cli;
+    if (
+      !cli ||
+      typeof cli !== 'object' ||
+      !Array.isArray(cli.include) ||
+      cli.http === false ||
+      (cli.exclude !== undefined && !Array.isArray(cli.exclude))
+    )
+      continue;
+    const apiActions = resolveApiActionSet(objectDef, manifest);
+    const cliActions = resolveCliActionSet(objectDef);
+    if (
+      !cli.include.some(
+        (name) => name !== '*' && apiActions.has(name) && cliActions.has(name),
+      )
+    )
+      continue;
+    let current: SmartObjectDefinition | undefined = objectDef;
+    const seen = new Set<SmartObjectDefinition>();
+    while (
+      current &&
+      !seen.has(current) &&
+      isCollectionManifestClass(manifest, current)
+    ) {
+      seen.add(current);
+      const key = manifestKeys.get(current);
+      if (key)
+        collectionMetadata.set(
+          key,
+          portableObjectManifest(projectRoot, current),
+        );
+      const parent: string | undefined =
+        current.extendsQualified || current.extends;
+      current = parent
+        ? findManifestObjectByName(manifest, parent, current)
+        : undefined;
+    }
+  }
+  const collectionMetadataLiteral = JSON.stringify(
+    JSON.stringify({
+      ...manifest,
+      objects: Object.fromEntries(collectionMetadata),
+    }),
+  );
+
   const registrationManifests = Object.fromEntries(
     Object.entries(manifest.objects).flatMap(([className, objectDef]) => {
       if (isCollectionManifestClass(manifest, objectDef)) return [];
@@ -2223,7 +2279,14 @@ const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ${registrations}
-`;
+${
+  collectionMetadata.size > 0
+    ? `
+// Metadata only: collection constructors were installed by their decorators.
+ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}));
+`
+    : ''
+}`;
 
   // Create directory if it doesn't exist
   if (!existsSync(configDir)) {

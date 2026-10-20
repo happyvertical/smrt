@@ -246,6 +246,36 @@ CLI CRUD write its model closes. Gates: `registry/__tests__/collection-exposure.
 `packages/cli/src/__tests__/collection-exposure.test.ts`, and the cross-package
 `packages/bundle-gate/src/__tests__/collection-exposure.spec.ts`.
 
+## Explicit collection action resources
+
+A typed `SmrtCollection<Model>` may declare `@smrt({ collection: 'operations',
+api: { include: ['submit'] }, cli: { include: ['submit'] } })` to give its
+custom actions a distinct route namespace. The explicit `collection` controls
+routes; the collection still inherits its model's storage/schema. Without an
+explicit namespace, the existing model collection name is inherited.
+
+HTTP CLI discovery includes only named custom methods in the collection's
+`cli.include` that its API exposes. Boolean/default CLI config, wildcard-only
+includes and `mirror: 'api'` alone do not opt a collection into discovery;
+collections never advertise CRUD. Both static and instance collection methods
+use collection-scoped URLs without an item id. Existing unsupported-signature
+warnings and the handler's per-command policy still apply.
+
+The collection must declare or inherit its real `_itemClass` and be registered
+as that model's collection constructor. A facade may extend an undecorated
+domain collection to retain its instance behavior; include that collection
+ancestry in the consumer manifest. Generated startup retains its existing
+side-effect imports and registers discovery metadata only for named API/HTTP
+CLI action hosts and their collection ancestors. Ordinary collections stay
+side-effect-only. Runtime schema ownership also recognizes real
+`SmrtCollection` prototype ancestry when a domain parent is not registered;
+class names and `_itemClass` alone do not exempt a model from table ownership. Generated routes resolve the model's registry
+identity and invoke the registered collection, not an arbitrary model instance.
+A distinct route namespace does not change authorization: collection-hosted
+writes retain the model collection's permission slug (#2977). Discovery is
+capability filtering, not row authorization; the route and domain action remain
+authoritative for authentication, permissions and tenant ownership.
+
 ## Subclass exposure
 
 A model that extends another registered model (`Person extends Profile`, an

@@ -293,12 +293,14 @@ export function createResourceListHandler(
       if (!cliConfig) continue;
       if (!isHttpCliConfig(cliConfig)) continue;
 
-      // Skip SmrtCollection subclasses. The generator routes these through
-      // a different code path that only emits collection-scoped custom
-      // routes (no CRUD), so surfacing CRUD commands here would 404 and
-      // item-scoped custom commands would call URLs the generator never
-      // wrote. See #1311 review (codex P2).
-      if (isCollectionClass(def)) continue;
+      // Collections have custom routes only. Require named CLI opt-ins so
+      // inherited/default exposure never advertises collection CRUD.
+      const collectionClass = isCollectionClass(def);
+      const collectionIncludes =
+        typeof cliConfig === 'object' && Array.isArray(cliConfig.include)
+          ? cliConfig.include
+          : [];
+      if (collectionClass && collectionIncludes.length === 0) continue;
 
       // Skip an STI child that shares its ancestor's collection. The route
       // generator folds such a child into its base model (one route per
@@ -309,13 +311,23 @@ export function createResourceListHandler(
       // Resolve included method set per v4 rules.
       // resolveApiActionSet only reads decoratorConfig + methods; cast is safe.
       const apiActionSet = resolveApiActionSet(
-        def as unknown as Parameters<typeof resolveApiActionSet>[0],
+        // The registry can resolve indirect collection ancestry; the pure
+        // no-manifest API resolver otherwise only sees a direct parent name.
+        {
+          ...def,
+          ...(collectionClass ? { extends: 'SmrtCollection' } : {}),
+        } as unknown as Parameters<typeof resolveApiActionSet>[0],
         undefined,
         { isModelClassName },
       );
       const includedMethods = resolveCliIncludedMethods(
         cliConfig,
         apiActionSet,
+      ).filter(
+        (name) =>
+          !collectionClass ||
+          (collectionIncludes.includes(name) &&
+            !STANDARD_API_ACTIONS.includes(name as StandardApiAction)),
       );
       if (includedMethods.length === 0) continue;
 
@@ -604,6 +616,8 @@ function sharesAncestorCollection(
  * prototype-walk fallback. (#1311 review D-2.)
  */
 function isCollectionClass(def: SynthesizedDefinition): boolean {
+  if (ObjectRegistry.isCollectionClass(def.qualifiedName ?? def.className))
+    return true;
   if (def.extends === 'SmrtCollection') return true;
   if (def.extendsTypeArg) return true;
   return ctorChainContains(def.constructor, 'SmrtCollection');
@@ -818,9 +832,8 @@ function buildCustomCommand(
     apiConfig: apiConfigObj,
   });
 
-  const defaultScope: CommandScope = methodDef?.isStatic
-    ? 'collection'
-    : 'item';
+  const defaultScope: CommandScope =
+    isCollectionClass(def) || methodDef?.isStatic ? 'collection' : 'item';
   // The RECEIVER-collapsed scope, not the raw declaration: a `scope` declares a
   // method's receiver and cannot relocate it, and `scope` here also decides
   // whether the generated command carries an id. Reading the declaration
