@@ -1,7 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { describe, expect, it } from 'vitest';
 import { allocateContractMilestones } from '../contract-billing-schedule.js';
+import {
+  proveNullBillingScheduleBackfill,
+  proveNullBillingScheduleSave,
+} from './helpers/contract-null-schedule-suite.js';
 import { proveContractSchedule } from './helpers/contract-schedule-suite.js';
 
 describe('approved contract milestone billing (#4074)', () => {
@@ -30,5 +36,38 @@ describe('approved contract milestone billing (#4074)', () => {
       disableTenancy();
       await db.close?.();
     }
+  });
+  describe('contracts stored with a NULL billing schedule (#4155)', () => {
+    async function withSqlite(
+      run: (db: Awaited<ReturnType<typeof getTestDatabase>>) => Promise<void>,
+    ) {
+      const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+      enableTenancy();
+      try {
+        await run(db);
+      } finally {
+        disableTenancy();
+        await db.close?.();
+      }
+    }
+
+    it('declares an empty-string column default in the manifest', () => {
+      const manifest = JSON.parse(
+        readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+      ) as {
+        objects: Record<
+          string,
+          { schema: { columns: Record<string, { default?: unknown }> } }
+        >;
+      };
+      expect(
+        manifest.objects['@happyvertical/smrt-commerce:Contract'].schema.columns
+          .billing_schedule_json.default,
+      ).toBe('');
+    });
+    it('saves a status change and still refuses a schedule change on SQLite', () =>
+      withSqlite(proveNullBillingScheduleSave));
+    it('backfills NULL schedules through the money upgrade on SQLite', () =>
+      withSqlite(proveNullBillingScheduleBackfill));
   });
 });

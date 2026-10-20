@@ -65,3 +65,9 @@ claim rejects. A parent rollback reverses both invoice issue and schedule claim.
 A detached read DTO cannot modify persisted state. Ordinary Contract writes and
 deletes cannot erase schedule history. Host authorization precedes these commands;
 none is exposed as an unauthenticated generated mutation.
+
+`billingScheduleJson` is `''` when a Contract has no schedule, and the
+column defaults to `''`. A row written before that default holds NULL, which
+hydrates and saves as `''`, so an ordinary save of such a Contract succeeds;
+any other change to the field through `save()` is still refused (#4155).
+`smrt db:upgrade-commerce-money` stores `''` for those NULL rows.

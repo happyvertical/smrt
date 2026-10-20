@@ -242,6 +242,7 @@ describe('commerce money upgrade (#4021)', () => {
       droppedSchema: [],
       remaining: [],
       tenantlessDocuments: [],
+      billingSchedulesBackfilled: 0,
     });
 
     // The issued invoice kept every stored total and gained v2 facts.

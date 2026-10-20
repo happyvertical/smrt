@@ -52,6 +52,7 @@ interface CommerceMoneyUpgradeModule {
     droppedSchema: string[];
     remaining: TenantNeed[];
     tenantlessDocuments?: Array<{ table: string; id: string }>;
+    billingSchedulesBackfilled?: number;
   }>;
 }
 
@@ -240,6 +241,10 @@ export const dbUpgradeCommerceMoneyCommand: CLICommand = {
               ? ` ${failure.documentType} ${failure.documentId}`
               : ''
           }: ${failure.reason}`,
+        );
+      if (result.billingSchedulesBackfilled)
+        console.log(
+          `\n✓ Set ${result.billingSchedulesBackfilled} contract(s) with a NULL billing schedule to empty.`,
         );
       if (result.droppedSchema.length)
         console.log(
