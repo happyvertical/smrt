@@ -115,7 +115,15 @@ export function proposalReadConfiguration(
       ? {}
       : { minimumDecisionProbability: config.minimumDecisionProbability }),
     ...(config.tieMargin === undefined ? {} : { tieMargin: config.tieMargin }),
-    limits: structuredClone(config.limits),
+    limits: {
+      maxHandlers: config.limits.maxHandlers,
+      maxCandidates: config.limits.maxCandidates,
+      maxSuggestions: config.limits.maxSuggestions,
+      maxInputBytes: config.limits.maxInputBytes,
+      maxOutputBytes: config.limits.maxOutputBytes,
+      maxQueryLength: config.limits.maxQueryLength,
+      timeoutMs: config.limits.timeoutMs,
+    },
   };
 }
 export interface GenerationStageConfiguration extends IntakeValues {

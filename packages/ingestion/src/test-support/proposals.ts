@@ -594,6 +594,27 @@ export function proposalSuite(
       ).resolves.toHaveLength(1);
       expect(calls).toHaveBeenCalledTimes(1);
     });
+    it('accepts equivalent read limits regardless of insertion order', () => {
+      const { limits, ...read } = proposalReadConfiguration(configuration);
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposalRead: {
+              ...read,
+              limits: {
+                timeoutMs: limits.timeoutMs,
+                maxQueryLength: limits.maxQueryLength,
+                maxOutputBytes: limits.maxOutputBytes,
+                maxInputBytes: limits.maxInputBytes,
+                maxSuggestions: limits.maxSuggestions,
+                maxCandidates: limits.maxCandidates,
+                maxHandlers: limits.maxHandlers,
+              },
+            },
+          }),
+      ).not.toThrow();
+    });
     it('rejects mismatched read and generation configuration', () => {
       expect(
         () =>
