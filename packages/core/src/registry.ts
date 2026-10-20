@@ -301,6 +301,37 @@ let manifestAliasInventory:
 const manifestEnsuredAtGeneration = new WeakMap<RegisteredClass, number>();
 
 /**
+ * The parent a manifest entry would set on `registered`, or `undefined` when
+ * the registration already records it (#4176). The import-qualified
+ * `extendsQualified` (#4145) wins over the bare `extends`. A bare name never
+ * replaces a registered qualified parent of the same class name: once two
+ * packages export that name the bare form is ambiguous, and the qualified one
+ * is the parent the class was registered against (from its constructor or its
+ * manifest). A qualified parent that names no registered class — a guess made
+ * before the class's package identity was known — still yields to the bare
+ * name, which resolves by simple name.
+ */
+function manifestParentUpdate(
+  registered: RegisteredClass,
+  manifestEntry: { extends?: string; extendsQualified?: string },
+): string | undefined {
+  const parent = manifestEntry.extendsQualified ?? manifestEntry.extends;
+  if (!parent || registered.extends === parent) {
+    return undefined;
+  }
+  if (
+    !isQualifiedName(parent) &&
+    registered.extends &&
+    isQualifiedName(registered.extends) &&
+    parseQualifiedName(registered.extends).className === parent &&
+    getClasses().has(registered.extends)
+  ) {
+    return undefined;
+  }
+  return parent;
+}
+
+/**
  * Loose view of a stored field's option bag. Field entries are heterogeneous
  * (decorator options, manifest-derived shapes, tenancy markers), so the
  * accessed members are narrowed individually rather than asserting a single
@@ -2814,8 +2845,7 @@ export class ObjectRegistry {
       const needsRegistrationHydration =
         (!!manifestEntry.packageName &&
           registered.packageName !== manifestEntry.packageName) ||
-        (!!manifestEntry.extends &&
-          registered.extends !== manifestEntry.extends);
+        manifestParentUpdate(registered, manifestEntry) !== undefined;
 
       if (
         existingFieldCount > 0 &&
@@ -2898,8 +2928,9 @@ export class ObjectRegistry {
       }
 
       // Store extends info for getAllFields() to use (if present)
-      if (manifestEntry.extends) {
-        registered.extends = manifestEntry.extends;
+      const manifestParent = manifestParentUpdate(registered, manifestEntry);
+      if (manifestParent) {
+        registered.extends = manifestParent;
         didHydrate = true;
       }
 
