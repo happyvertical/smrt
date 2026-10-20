@@ -1085,6 +1085,48 @@ export function connectedPaymentsContract(
         `https://checkout.stripe.com/c/pay/${recovered.intent.paymentOptions[0]!.memo}`,
       );
 
+      // A retry may not change the recorded price, even before the provider's
+      // answer is stored.
+      stripe.loseNextCheckoutResponse = true;
+      await expect(checkout(bakery, 'lost-late')).rejects.toThrow(
+        /fetch failed/,
+      );
+      const beforeChanged = stripe.requestsTo('/checkout/sessions').length;
+      await expect(
+        createConnectedCheckout({
+          db,
+          gateway: stripe.adapter(),
+          tenantId: bakery,
+          environment: 'test',
+          offeringRef: 'sourdough-share',
+          licenseeEmail: 'member@example.org',
+          idempotencyKey: 'lost-late',
+          amount: 1_000,
+          currency: 'USD',
+          applicationFeeAmount: 500,
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      expect(stripe.requestsTo('/checkout/sessions')).toHaveLength(
+        beforeChanged,
+      );
+      // Retried after the recorded expiry is too close to replay: a fresh
+      // session is requested with a renewed expiry and a new key.
+      const realNow = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(realNow + 45 * 60 * 1000);
+      try {
+        const late = await checkout(bakery, 'lost-late');
+        expect(late.checkoutUrl).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+        const sent = stripe.requestsTo('/checkout/sessions');
+        expect(sent.at(-1)!.idempotencyKey).not.toBe(
+          sent.at(-2)!.idempotencyKey,
+        );
+        expect(late.intent.priceLockExpiresAt!.getTime()).toBeGreaterThan(
+          realNow + 45 * 60 * 1000,
+        );
+      } finally {
+        vi.restoreAllMocks();
+      }
+
       // The same Standard account id in live mode is a different checkout.
       stripe.addAccount(account, true, { smrt_tenant_id: bakery });
       await linkTenantPaymentAccount({

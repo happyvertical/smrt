@@ -295,6 +295,16 @@ export class PaymentIntent extends SmrtObject {
    */
   connectedEnvironment: string = '';
 
+  /**
+   * Price of a connected checkout in integer minor units, recorded with the
+   * request before the provider is asked (#3831), so a retry is checked
+   * against it even before the provider's answer is stored. Server-managed.
+   */
+  connectedAmount: number = 0;
+
+  /** ISO 4217 currency of {@link connectedAmount}. Server-managed. */
+  connectedCurrency: string = '';
+
   constructor(options: PaymentIntentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -340,6 +350,10 @@ export class PaymentIntent extends SmrtObject {
       this.applicationFeeCents = options.applicationFeeCents;
     if (options.connectedEnvironment !== undefined)
       this.connectedEnvironment = options.connectedEnvironment;
+    if (options.connectedAmount !== undefined)
+      this.connectedAmount = options.connectedAmount;
+    if (options.connectedCurrency !== undefined)
+      this.connectedCurrency = options.connectedCurrency;
   }
 
   /**
@@ -555,17 +569,30 @@ export class PaymentIntent extends SmrtObject {
     const priorExpiry = PaymentIntent.coerceDate(
       priorRow.price_lock_expires_at,
     );
+    const priorOptionsEmpty =
+      PaymentIntent.normalizePaymentOptions(priorRow.payment_options as unknown)
+        .length === 0;
     if (
       String(priorRow.connected_account_id ?? '') !== this.connectedAccountId ||
       Number(priorRow.application_fee_cents ?? 0) !==
         this.applicationFeeCents ||
       String(priorRow.connected_environment ?? '') !==
         this.connectedEnvironment ||
-      (priorExpiry?.getTime() ?? null) !==
-        (this.priceLockExpiresAt?.getTime() ?? null)
+      Number(priorRow.connected_amount ?? 0) !== this.connectedAmount ||
+      String(priorRow.connected_currency ?? '') !== this.connectedCurrency
     )
       throw new Error(
-        `PaymentIntent ${this.id}: a connected checkout's account, environment, application fee and expiry cannot change`,
+        `PaymentIntent ${this.id}: a connected checkout's account, environment, application fee and price cannot change`,
+      );
+    // The expiry may be renewed only by the checkout command while no
+    // provider session has been recorded (a lost request too old to replay).
+    if (
+      (priorExpiry?.getTime() ?? null) !==
+        (this.priceLockExpiresAt?.getTime() ?? null) &&
+      !(priorOptionsEmpty && hasConnectedPaymentAuthority(this.tenantId))
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: a connected checkout's expiry cannot change`,
       );
     const priorOptions = PaymentIntent.normalizePaymentOptions(
       priorRow.payment_options as unknown,

@@ -632,6 +632,12 @@ export interface ConnectedCheckout {
 }
 
 const DEFAULT_CHECKOUT_WINDOW_MS = 60 * 60 * 1000;
+/**
+ * A recorded checkout request is replayed only while its expiry is still
+ * acceptable to the provider (Stripe: at least 30 minutes ahead) plus a
+ * minute of slack.
+ */
+const MIN_CHECKOUT_REPLAY_MS = 31 * 60 * 1000;
 
 function assertMinorUnits(value: unknown, name: string, min: number): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min)
@@ -705,6 +711,8 @@ export async function createConnectedCheckout(
         intent.connectedEnvironment !== key.environment ||
         intent.connectedAccountId !== account.providerAccountId ||
         intent.applicationFeeCents !== fee ||
+        intent.connectedAmount !== amount ||
+        intent.connectedCurrency !== currency ||
         (prior &&
           (prior.nativeAmount !== amount || prior.currency !== currency))
       )
@@ -712,8 +720,22 @@ export async function createConnectedCheckout(
           'idempotencyKey was already used for a different connected checkout',
         );
       if (prior) return { intent, checkoutUrl: prior.payTo, created: false };
-      // The request was recorded but the provider's answer was lost: re-send
-      // it unchanged below (same idempotency key and expiry).
+      // The request was recorded but the provider's answer was lost, so the
+      // buyer never saw its URL. Re-send it unchanged (same key and expiry)
+      // while the provider still accepts that expiry; once it is too close,
+      // ask for a fresh session with a renewed expiry (and so a new key) —
+      // the unseen one expires unpaid.
+      if (
+        !intent.priceLockExpiresAt ||
+        intent.priceLockExpiresAt.getTime() <
+          Date.now() + MIN_CHECKOUT_REPLAY_MS
+      ) {
+        const renewed =
+          input.expiresAt ?? new Date(Date.now() + DEFAULT_CHECKOUT_WINDOW_MS);
+        intent.priceLockExpiresAt = renewed;
+        intent.priceLockWindowMs = Math.max(renewed.getTime() - Date.now(), 1);
+        await intent.save();
+      }
     } else {
       const expiresAt =
         input.expiresAt ?? new Date(Date.now() + DEFAULT_CHECKOUT_WINDOW_MS);
@@ -740,6 +762,8 @@ export async function createConnectedCheckout(
         priceLockExpiresAt: expiresAt,
         connectedAccountId: account.providerAccountId,
         connectedEnvironment: key.environment,
+        connectedAmount: amount,
+        connectedCurrency: currency,
         applicationFeeCents: fee,
         paymentOptions: [],
       });
@@ -752,7 +776,9 @@ export async function createConnectedCheckout(
       amount,
       currency,
       expiresAt: intent.priceLockExpiresAt,
-      idempotencyKey: `smrt-connected-checkout:${intentId}`,
+      // The expiry is part of the request, so it is part of the key: a replay
+      // of the recorded request reuses it; a renewed request gets a new one.
+      idempotencyKey: `smrt-connected-checkout:${intentId}:${intent.priceLockExpiresAt.getTime()}`,
       buyerEmail: input.licenseeEmail,
       stripeAccount: account.providerAccountId,
       ...(fee > 0 ? { applicationFeeAmount: fee } : {}),
