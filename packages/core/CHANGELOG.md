@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.13
+
+### Patch Changes
+
+- ### Features
+  
+  - add safe native hosting, workspace reset and guidance (#4159) (planner)
+- @happyvertical/smrt-config@0.57.13
+  - @happyvertical/smrt-scanner@0.57.13
+  - @happyvertical/smrt-types@0.57.13
+
 ## 0.57.12
 
 ### Patch Changes
