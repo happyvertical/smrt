@@ -305,8 +305,10 @@ export function createResourceListHandler(
       // Skip an STI child that shares its ancestor's collection. The route
       // generator folds such a child into its base model (one route per
       // collection), so the base's resource already serves it; listing the
-      // child as well would collide on the slug.
-      if (sharesAncestorCollection(def, registeredClasses)) continue;
+      // child as well would collide on the slug. Collection action hosts have
+      // their own commands even when they inherit the item namespace.
+      if (!collectionClass && sharesAncestorCollection(def, registeredClasses))
+        continue;
 
       // Resolve included method set per v4 rules.
       // resolveApiActionSet only reads decoratorConfig + methods; cast is safe.

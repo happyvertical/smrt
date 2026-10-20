@@ -44,3 +44,17 @@ zero discovery resources. The initial two-file full root test was cancelled as
 superseded when these integration gaps were confirmed; it is not a full green
 result or review credit. Its logs are historical only. The final four-file
 contract is validated afresh after source freeze.
+
+## Round2 accepted discovery correction
+
+The initial high-risk reviewers corroborated that model STI folding also hid
+collection action facades sharing an inherited namespace. The startup fixture
+now runs both explicit and inherited namespaces with item/parent discovery off,
+retaining every schema, actor/grant, tenant/owner, typed-failure and ordinary
+collection default assertion. Before the correction, the inherited case reaches
+the generated route but discovery returns zero resources instead of one.
+The correction restricts ancestor folding to models. The existing resource-list
+STI regression continues to require one base-model resource and no duplicate
+child. No core generation, schema classification or authorization behavior changes
+in this delta; the round1 full validation remains baseline coverage, supplemented
+by current full users tests, owning builds/typechecks and relevant checks.

@@ -15,6 +15,8 @@ const { ObjectRegistry } = await import(core);
 const { createResourceListHandler } = await import(pathToFileURL(join(usersRoot, 'dist/sveltekit.js')).href);
 const { withTenant } = await import(tenancy);
 const pkg = '@fixture/startup4171';
+const inheritedNamespace = process.argv.includes('--inherited-namespace');
+const collectionPath = inheritedNamespace ? 'domainboot4171' : 'facadeboot4171';
 const root = mkdtempSync(join(process.env.CI_TEST_TMPDIR || process.env.TMPDIR, 'startup4171-'));
 let actual;
 try {
@@ -28,12 +30,12 @@ try {
   // Deliberately undecorated: the inherited domain behavior must survive without
   // adding local parent annotations to compensate for framework registration.
   const parentFile = source('DomainCollectionBoot4171', `import {SmrtCollection} from '${core}'; import {DomainBoot4171} from './DomainBoot4171'; export class DomainCollectionBoot4171 extends SmrtCollection { static _itemClass=DomainBoot4171; inheritedBehavior(){return 'canonical';} }`);
-  const facadeFile = source('FacadeBoot4171', `import {smrt} from '${core}'; import {getCurrentTenant} from '${tenancy}'; import {DomainCollectionBoot4171} from './DomainCollectionBoot4171'; export class FacadeBoot4171 extends DomainCollectionBoot4171 { static calls=[]; static async submit(options){ this.calls.push(options); if(options.ownerTenant && options.ownerTenant!==getCurrentTenant()?.tenantId) throw Object.assign(new Error('Wrong owner'),{status:403,code:'owner_denied'}); if(options.fail) throw Object.assign(new Error('Domain conflict'),{status:409,code:'domain_conflict'}); return {accepted:options,tenantId:getCurrentTenant()?.tenantId,userId:getCurrentTenant()?.userId}; } } smrt({packageName:'${pkg}',collection:'facadeboot4171',api:{include:['submit'],principalContext:true},cli:{include:['submit']},mcp:false})(FacadeBoot4171);`);
+  const facadeFile = source('FacadeBoot4171', `import {smrt} from '${core}'; import {getCurrentTenant} from '${tenancy}'; import {DomainCollectionBoot4171} from './DomainCollectionBoot4171'; export class FacadeBoot4171 extends DomainCollectionBoot4171 { static calls=[]; static async submit(options){ this.calls.push(options); if(options.ownerTenant && options.ownerTenant!==getCurrentTenant()?.tenantId) throw Object.assign(new Error('Wrong owner'),{status:403,code:'owner_denied'}); if(options.fail) throw Object.assign(new Error('Domain conflict'),{status:409,code:'domain_conflict'}); return {accepted:options,tenantId:getCurrentTenant()?.tenantId,userId:getCurrentTenant()?.userId}; } } smrt({packageName:'${pkg}',${inheritedNamespace ? '' : `collection:'${collectionPath}',`}api:{include:['submit'],principalContext:true},cli:{include:['submit']},mcp:false})(FacadeBoot4171);`);
   const defaultFile = source('DefaultCollectionBoot4171', `import {SmrtCollection,smrt} from '${core}'; import {DomainBoot4171} from './DomainBoot4171'; export class DefaultCollectionBoot4171 extends SmrtCollection { static _itemClass=DomainBoot4171; } smrt({packageName:'${pkg}',api:false,cli:true,mcp:false})(DefaultCollectionBoot4171);`);
   const entry = (className, filePath, collection, extendsName, extendsTypeArg) => ({ name: className, className, qualifiedName: `${pkg}:${className}`, packageName: pkg, filePath, collection, extends: extendsName, extendsTypeArg, fields: {}, methods: {}, decoratorConfig: { tableName: 'domain_boot4171', collection, api: false, cli: false, mcp: false } });
   const model = entry('DomainBoot4171', modelFile, 'domainboot4171', 'SmrtObject');
   const parent = entry('DomainCollectionBoot4171', parentFile, 'domainboot4171', 'SmrtCollection', 'DomainBoot4171');
-  const facade = { ...entry('FacadeBoot4171', facadeFile, 'facadeboot4171', 'DomainCollectionBoot4171'), decoratorConfig: { tableName: 'domain_boot4171', collection: 'facadeboot4171', api: { include: ['submit'], principalContext: true }, cli: { include: ['submit'] }, mcp: false }, methods: { submit: { name: 'submit', isStatic: true, isPublic: true, async: true, parameters: [{ name: 'options', type: 'Record<string, unknown>', optional: false }], returnType: 'Promise<unknown>' } } };
+  const facade = { ...entry('FacadeBoot4171', facadeFile, collectionPath, 'DomainCollectionBoot4171'), decoratorConfig: { tableName: 'domain_boot4171', ...(inheritedNamespace ? {} : { collection: collectionPath }), api: { include: ['submit'], principalContext: true }, cli: { include: ['submit'] }, mcp: false }, methods: { submit: { name: 'submit', isStatic: true, isPublic: true, async: true, parameters: [{ name: 'options', type: 'Record<string, unknown>', optional: false }], returnType: 'Promise<unknown>' } } };
   const ordinary = { ...entry('DefaultCollectionBoot4171', defaultFile, 'domainboot4171', 'SmrtCollection', 'DomainBoot4171'), decoratorConfig: { api: false, cli: true, mcp: false } };
   const manifest = { version: '1', timestamp: 0, packageName: pkg, objects: { DomainBoot4171: model, DomainCollectionBoot4171: parent, FacadeBoot4171: facade, DefaultCollectionBoot4171: ordinary } };
   // Keep the unrelated default collection source out of this startup runtime:
@@ -59,12 +61,12 @@ try {
   const discover = async (resolved) => { const handler = createResourceListHandler({ ensureRegistry: () => {}, resolveSession: async () => resolved, commandPolicy: ({ classMeta, session }) => !!session.user && session.tenantId === 'tenant-a' && classMeta.qualifiedName === `${pkg}:FacadeBoot4171` }); return await (await handler({ cookies: { get: () => undefined }, request: new Request('http://localhost/api/_resources'), url: new URL('http://localhost/api/_resources') })).json(); };
   const body = await discover(session);
   assert.equal(body.resources.length, 1);
-  assert.equal(body.resources[0].apiPath, 'facadeboot4171');
+  assert.equal(body.resources[0].apiPath, collectionPath);
   assert.deepEqual(body.resources[0].commands.map(({ methodName, kind, scope }) => [methodName, kind, scope]), [['submit', 'custom', 'collection']]);
   assert.equal((await discover({ ...session, user: null })).resources.length, 0);
   assert.equal((await discover({ ...session, tenantId: 'tenant-b' })).resources.length, 0);
-  const route = await bundle(join(root, 'src/routes/api/facadeboot4171/submit/+server.ts'), 'route.mjs');
-  const request = (value) => new Request('http://localhost/api/facadeboot4171/submit', { method: 'POST', body: JSON.stringify(value) });
+  const route = await bundle(join(root, `src/routes/api/${collectionPath}/submit/+server.ts`), 'route.mjs');
+  const request = (value) => new Request(`http://localhost/api/${collectionPath}/submit`, { method: 'POST', body: JSON.stringify(value) });
   await assert.rejects(route.POST({ locals: {}, request: request({}) }), { status: 401 });
   await assert.rejects(route.POST({ locals: { ...session, permissions: ['facadeboot4171.submit'] }, request: request({}) }), { status: 403 });
   const response = await route.POST({ locals: session, request: request({ opaque: { nested: 'kept' }, tenantId: 'forged', ownerTenant: 'tenant-a' }) });
@@ -79,7 +81,7 @@ try {
   await generateSvelteKitRoutes(root, { ...manifest, objects: { DomainBoot4171: model, DefaultCollectionBoot4171: ordinary } }, { enabled: true, objectsDir: 'src/lib/objects', routesDir: 'src/routes/api', configPath: 'src/lib/server', configFileName: 'smrt.ts' });
   const { readFileSync } = await import('node:fs');
   assert.equal(readFileSync(join(root, 'src/lib/server/smrt-register.ts'), 'utf8').includes('ObjectRegistry.registerPackageManifest'), false);
-  console.log('RESULT4171=' + JSON.stringify({ startupDiscovery: true, realInheritedConstructor: true, canonicalSchemaOnly: true, noRuntimeSchemaWrites: true, itemAuthority: true, authAndTenantNegatives: true, typedFailure: true, defaultUnchanged: true }));
+  console.log('RESULT4171=' + JSON.stringify({ inheritedNamespace, startupDiscovery: true, realInheritedConstructor: true, canonicalSchemaOnly: true, noRuntimeSchemaWrites: true, itemAuthority: true, authAndTenantNegatives: true, typedFailure: true, defaultUnchanged: true }));
 } finally {
   if (actual) await actual.db.close?.();
   delete globalThis.__fixture4171Db;
