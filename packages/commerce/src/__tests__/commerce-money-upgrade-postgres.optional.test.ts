@@ -25,6 +25,7 @@ import {
 } from '../index.js';
 import { InvoiceStatus } from '../types/index.js';
 import { forgetCommerceMoneyChecks } from '../upgrade/detect.js';
+import { proveNullBillingScheduleBackfill } from './helpers/contract-null-schedule-suite.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -42,11 +43,13 @@ const RESTORE = [
   'ALTER TABLE invoice_line_items DROP COLUMN IF EXISTS legacy_amount',
   'ALTER TABLE contract_line_items DROP COLUMN IF EXISTS legacy_amount',
   'DROP TABLE IF EXISTS commerce_money_migration_documents',
-  ...['invoices', 'invoice_line_items', 'tax_settings'].flatMap((table) => [
-    `DROP POLICY IF EXISTS smrt_4021_system_only ON ${table}`,
-    `ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`,
-    `ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`,
-  ]),
+  ...['invoices', 'invoice_line_items', 'tax_settings', 'contracts'].flatMap(
+    (table) => [
+      `DROP POLICY IF EXISTS smrt_4021_system_only ON ${table}`,
+      `ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`,
+      `ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`,
+    ],
+  ),
 ];
 
 /** Rows visible and writable only in system context, as the generated policies. */
@@ -121,6 +124,12 @@ describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
     );
     return ids;
   }
+
+  it('backfills NULL contract billing schedules under row policies (#4155)', async () => {
+    await proveNullBillingScheduleBackfill(db, () =>
+      systemOnly(db, 'contracts'),
+    );
+  });
 
   it('detects, refuses and upgrades a legacy tenant, then drops the old schema', async () => {
     const legacy = randomUUID();

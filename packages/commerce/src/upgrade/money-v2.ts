@@ -105,6 +105,8 @@ export interface CommerceMoneyUpgradeResult {
   remaining: TenantMoneyUpgradeNeed[];
   /** Money rows without a tenant; they block the schema drop until resolved. */
   tenantlessDocuments: TenantlessMoneyDocument[];
+  /** Contracts whose NULL billing schedule this run set to `''` (#4155). */
+  billingSchedulesBackfilled: number;
 }
 
 type Row = Record<string, unknown>;
@@ -726,6 +728,37 @@ async function dropOldSchema(
 }
 
 /**
+ * A contract written before `billing_schedule_json` defaulted to `''` holds
+ * NULL. Both mean no schedule and the runtime reads NULL as `''`; this stores
+ * `''` so the column matches its default (#4155). Idempotent.
+ */
+async function backfillBillingSchedules(
+  db: DatabaseInterface,
+  tenantId: string | undefined,
+): Promise<number> {
+  if (!(await tableExists(db, 'contracts'))) return 0;
+  const where = `billing_schedule_json IS NULL${tenantId ? ' AND CAST(tenant_id AS TEXT) = ?' : ''}`;
+  const params = tenantId ? [tenantId] : [];
+  return withDocumentMoneyTransaction(db, async (tx) => {
+    if (isPostgresDatabase(db))
+      await tx.query("SELECT set_config('smrt.system_context', 'true', true)");
+    const [row] = rowsOf(
+      await tx.query(
+        `SELECT COUNT(*) AS n FROM contracts WHERE ${where}`,
+        ...params,
+      ),
+    );
+    const count = storedNumber(row?.n, 'contracts NULL billing schedules');
+    if (count > 0)
+      await tx.query(
+        `UPDATE contracts SET billing_schedule_json = '' WHERE ${where}`,
+        ...params,
+      );
+    return count;
+  });
+}
+
+/**
  * Convert old-format commerce money data to the current model. Safe to rerun:
  * a converted tenant is no longer reported, and a failed tenant changed
  * nothing. Read `failures` and `remaining`; the CLI exits nonzero on either.
@@ -800,7 +833,12 @@ export async function upgradeCommerceMoney(
       : [];
   if (droppedSchema.length > 0 && (await findOldMoneySchema(db)).length > 0)
     throw new Error('The pre-upgrade commerce money schema was not removed');
+  const billingSchedulesBackfilled = await backfillBillingSchedules(
+    db,
+    options.tenantId,
+  );
   return {
+    billingSchedulesBackfilled,
     upgraded,
     failures,
     droppedSchema,
