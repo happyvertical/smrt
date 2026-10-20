@@ -72,6 +72,7 @@ import {
 } from './sync-apply-route.js';
 import {
   computeWebManifestHash,
+  findManifestObjectByName,
   isCollectionManifestClass,
   orderedManifestObjectEntries,
   resolveCollectionItemObject,
@@ -1988,7 +1989,10 @@ async function generateRegistrationFile(
         hasCollectionImport: false,
       };
 
-      if (isCollectionManifestClass(manifest, objectDef)) {
+      if (
+        isCollectionManifestClass(manifest, objectDef) &&
+        !isCollectionActionResource(manifest, objectDef)
+      ) {
         packageEntry.hasCollectionImport = true;
       } else {
         packageEntry.objects.push({
@@ -2036,7 +2040,10 @@ async function generateRegistrationFile(
       );
     }
 
-    if (isCollectionManifestClass(manifest, objectDef)) {
+    if (
+      isCollectionManifestClass(manifest, objectDef) &&
+      !isCollectionActionResource(manifest, objectDef)
+    ) {
       localSideEffectImports.add(importPath);
       continue;
     }
@@ -2135,6 +2142,45 @@ async function generateRegistrationFile(
     };
   }
 
+  // Collection decorators install their real constructor under the item,
+  // but do not register their own discovery metadata. Publish only explicitly
+  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
+  // them; ordinary/default collections retain their side-effect-only startup.
+  const collectionMetadata = new Map<string, SmartObjectDefinition>();
+  const manifestKeys = new Map(
+    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
+  );
+  for (const objectDef of Object.values(manifest.objects)) {
+    if (!isCollectionManifestClass(manifest, objectDef)) continue;
+    if (!isCollectionActionResource(manifest, objectDef)) continue;
+    let current: SmartObjectDefinition | undefined = objectDef;
+    const seen = new Set<SmartObjectDefinition>();
+    while (
+      current &&
+      !seen.has(current) &&
+      isCollectionManifestClass(manifest, current)
+    ) {
+      seen.add(current);
+      const key = manifestKeys.get(current);
+      if (key)
+        collectionMetadata.set(
+          key,
+          portableObjectManifest(projectRoot, current),
+        );
+      const parent: string | undefined =
+        current.extendsQualified || current.extends;
+      current = parent
+        ? findManifestObjectByName(manifest, parent, current)
+        : undefined;
+    }
+  }
+  const collectionMetadataLiteral = JSON.stringify(
+    JSON.stringify({
+      ...manifest,
+      objects: Object.fromEntries(collectionMetadata),
+    }),
+  );
+
   const registrationManifests = Object.fromEntries(
     Object.entries(manifest.objects).flatMap(([className, objectDef]) => {
       if (isCollectionManifestClass(manifest, objectDef)) return [];
@@ -2205,6 +2251,26 @@ async function generateRegistrationFile(
     .filter((registration): registration is string => registration !== null)
     .join('\n');
 
+  const collectionRegistrations = Object.entries(manifest.objects)
+    .filter(([, objectDef]) => isCollectionActionResource(manifest, objectDef))
+    .map(([className, objectDef]) => {
+      const packageName = getRegistrationPackageName(
+        manifest,
+        objectDef,
+        isLocalObject(projectRoot, objectDef),
+      );
+      const qualifiedName =
+        objectDef.qualifiedName ||
+        (packageName
+          ? `${packageName}:${extractSimpleClassName(className)}`
+          : className);
+      const bindingName =
+        registrationBindings.get(className) ||
+        extractSimpleClassName(className);
+      return `ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${bindingName});`;
+    })
+    .join('\n');
+
   const registrationContent = `/**
  * Auto-generated SMRT object registration
  * DO NOT EDIT - changes will be overwritten
@@ -2223,7 +2289,16 @@ const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ${registrations}
-`;
+${
+  collectionMetadata.size > 0
+    ? `
+// Metadata only: collection constructors were installed by their decorators.
+ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}));
+// Preserve exact runtime identity alongside discovery metadata, without initialization.
+${collectionRegistrations}
+`
+    : ''
+}`;
 
   // Create directory if it doesn't exist
   if (!existsSync(configDir)) {
@@ -2234,13 +2309,39 @@ ${registrations}
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
 }
 
+/** Named HTTP CLI collection actions need metadata and a live receiver binding. */
+function isCollectionActionResource(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  if (!isCollectionManifestClass(manifest, objectDef)) return false;
+  const cli = objectDef.decoratorConfig?.cli;
+  if (
+    !cli ||
+    typeof cli !== 'object' ||
+    !Array.isArray(cli.include) ||
+    cli.http === false ||
+    (cli.exclude !== undefined && !Array.isArray(cli.exclude))
+  )
+    return false;
+  const apiActions = resolveApiActionSet(objectDef, manifest);
+  const cliActions = resolveCliActionSet(objectDef);
+  return cli.include.some(
+    (name) => name !== '*' && apiActions.has(name) && cliActions.has(name),
+  );
+}
+
 function buildRegistrationBindings(
   manifest: SmartObjectManifest,
 ): Map<string, string> {
   const keysBySimpleName = new Map<string, string[]>();
   const reservedBindings = new Set<string>();
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
-    if (isCollectionManifestClass(manifest, objectDef)) continue;
+    if (
+      isCollectionManifestClass(manifest, objectDef) &&
+      !isCollectionActionResource(manifest, objectDef)
+    )
+      continue;
     const simpleName = extractSimpleClassName(manifestKey);
     reservedBindings.add(simpleName);
     const keys = keysBySimpleName.get(simpleName) ?? [];

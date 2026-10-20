@@ -130,10 +130,11 @@ overrides:
   # @modelcontextprotocol/client >=2.0.0 <2.2.0 can send OAuth credentials to an
   # authorization server chosen by the MCP server, and @modelcontextprotocol/sdk
   # >=1.12.0 <1.31.0 has the same flaw. Workspace packages pin client exactly at
-  # 2.0.0; 2.2.0 is the first patched release, and sdk 1.31.0 is the patch for
-  # the transitive 1.x copy (via @happyvertical/ai).
+  # 2.0.0; 2.2.0 is the first patched client release. The transitive 1.x SDK
+  # (via @happyvertical/ai) also needs 1.32.0 for GHSA-22jm-h49p-29qw:
+  # experimental tasks in >=1.24.0 <1.32.0 were not tied to their session.
   '@modelcontextprotocol/client@>=2.0.0 <2.2.0': 2.2.0
-  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.32.0': 1.32.0
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future

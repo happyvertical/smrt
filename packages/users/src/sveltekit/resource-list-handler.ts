@@ -77,6 +77,8 @@ interface RegisteredClassLike {
    * the manifest is loaded. (#1311 review D-2.)
    */
   constructor?: { name?: string; prototype?: object } | unknown;
+  /** Exact live collection installed through the public registry API. */
+  collectionConstructor?: unknown;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -263,9 +265,8 @@ export function createResourceListHandler(
       throw error;
     }
 
-    const resources: CliResource[] = [];
     const skipWarnings: SkipWarning[] = [];
-    const slugSeen = new Map<string, string>();
+    const resourceGroups = new Map<string, ResourceMember[]>();
 
     // The wire-ability gate needs a class inventory to tell a model instance
     // from an options interface. Without one it half-applies -- every rejection
@@ -293,29 +294,43 @@ export function createResourceListHandler(
       if (!cliConfig) continue;
       if (!isHttpCliConfig(cliConfig)) continue;
 
-      // Skip SmrtCollection subclasses. The generator routes these through
-      // a different code path that only emits collection-scoped custom
-      // routes (no CRUD), so surfacing CRUD commands here would 404 and
-      // item-scoped custom commands would call URLs the generator never
-      // wrote. See #1311 review (codex P2).
-      if (isCollectionClass(def)) continue;
+      // Collections have custom routes only. Require named CLI opt-ins so
+      // inherited/default exposure never advertises collection CRUD.
+      const collectionClass = isCollectionClass(def);
+      const collectionIncludes =
+        typeof cliConfig === 'object' && Array.isArray(cliConfig.include)
+          ? cliConfig.include
+          : [];
+      if (collectionClass && collectionIncludes.length === 0) continue;
 
       // Skip an STI child that shares its ancestor's collection. The route
       // generator folds such a child into its base model (one route per
       // collection), so the base's resource already serves it; listing the
-      // child as well would collide on the slug.
-      if (sharesAncestorCollection(def, registeredClasses)) continue;
+      // child as well would collide on the slug. Collection action hosts have
+      // their own commands even when they inherit the item namespace.
+      if (!collectionClass && sharesAncestorCollection(def, registeredClasses))
+        continue;
 
       // Resolve included method set per v4 rules.
       // resolveApiActionSet only reads decoratorConfig + methods; cast is safe.
       const apiActionSet = resolveApiActionSet(
-        def as unknown as Parameters<typeof resolveApiActionSet>[0],
+        // The registry can resolve indirect collection ancestry; the pure
+        // no-manifest API resolver otherwise only sees a direct parent name.
+        {
+          ...def,
+          ...(collectionClass ? { extends: 'SmrtCollection' } : {}),
+        } as unknown as Parameters<typeof resolveApiActionSet>[0],
         undefined,
         { isModelClassName },
       );
       const includedMethods = resolveCliIncludedMethods(
         cliConfig,
         apiActionSet,
+      ).filter(
+        (name) =>
+          !collectionClass ||
+          (collectionIncludes.includes(name) &&
+            !STANDARD_API_ACTIONS.includes(name as StandardApiAction)),
       );
       if (includedMethods.length === 0) continue;
 
@@ -326,21 +341,6 @@ export function createResourceListHandler(
         qualifiedName: def.qualifiedName,
         packageName: def.packageName,
       });
-      const previous = slugSeen.get(slug);
-      if (previous && previous !== def.qualifiedName) {
-        return jsonResponse(
-          {
-            error: 'resource-slug-collision',
-            slug,
-            classes: [previous, def.qualifiedName ?? def.className].filter(
-              Boolean,
-            ),
-          },
-          500,
-        );
-      }
-      slugSeen.set(slug, def.qualifiedName ?? def.className);
-
       const resourceShell: Omit<CliResource, 'commands'> = {
         slug,
         className: def.className,
@@ -349,6 +349,28 @@ export function createResourceListHandler(
         label: humanLabel(def.className),
         apiPath: resolveApiPath(def),
       };
+
+      const group = resourceGroups.get(slug) ?? [];
+      // Only the documented inherited item namespace composes. An explicit
+      // duplicate namespace, unrelated model, or second action host still fails.
+      if (
+        group.length > 0 &&
+        (group.length !== 1 ||
+          !isInheritedItemActionPair(group[0].def, def) ||
+          group[0].shell.apiPath !== resourceShell.apiPath)
+      ) {
+        return jsonResponse(
+          {
+            error: 'resource-slug-collision',
+            slug,
+            classes: [
+              group[0].def.qualifiedName ?? group[0].def.className,
+              def.qualifiedName ?? def.className,
+            ],
+          },
+          500,
+        );
+      }
 
       const classMeta: CommandPolicyContext['classMeta'] = {
         name: def.className,
@@ -408,6 +430,27 @@ export function createResourceListHandler(
         candidates.push(result.command);
       }
 
+      for (const candidate of candidates) {
+        if (
+          group.some((member) =>
+            member.candidates.some(
+              (previous) =>
+                previous.commandName === candidate.commandName ||
+                commandRouteKey(previous) === commandRouteKey(candidate),
+            ),
+          )
+        ) {
+          return jsonResponse(
+            {
+              error: 'command-name-collision',
+              slug,
+              commandName: candidate.commandName,
+            },
+            500,
+          );
+        }
+      }
+
       // Run the command policy. Batch with Promise.all so an async
       // `commandPolicy` (e.g. one that hits a DB) fans out across all
       // candidates instead of serializing N round-trips per class. For
@@ -423,9 +466,22 @@ export function createResourceListHandler(
         ),
       );
       const allowed = candidates.filter((_, i) => policyResults[i]);
-      if (allowed.length === 0) continue;
+      // Keep even a denied member so policy cannot hide a configuration
+      // collision or change the canonical model shell for the remaining action.
+      group.push({ def, shell: resourceShell, candidates, allowed });
+      resourceGroups.set(slug, group);
+    }
 
-      resources.push({ ...resourceShell, commands: allowed });
+    const resources: CliResource[] = [];
+    for (const members of resourceGroups.values()) {
+      const ordered = [...members].sort(
+        (left, right) =>
+          Number(isCollectionClass(left.def)) -
+          Number(isCollectionClass(right.def)),
+      );
+      const commands = ordered.flatMap((member) => member.allowed);
+      if (commands.length > 0)
+        resources.push({ ...ordered[0].shell, commands });
     }
 
     // Filter warnings through policy: only surface warnings the caller could
@@ -485,6 +541,50 @@ interface SynthesizedDefinition {
   extendsTypeArg?: string;
   /** Live constructor for prototype-chain fallback in isCollectionClass. */
   constructor?: unknown;
+  collectionConstructor?: unknown;
+}
+
+interface ResourceMember {
+  def: SynthesizedDefinition;
+  shell: Omit<CliResource, 'commands'>;
+  candidates: CommandDefinition[];
+  allowed: CommandDefinition[];
+}
+
+function commandRouteKey(command: CommandDefinition): string {
+  return JSON.stringify([
+    command.httpMethod,
+    command.scope === 'item'
+      ? [':id', ...command.pathSegments]
+      : command.pathSegments,
+  ]);
+}
+
+/** Compose only a live collection's registered item model, never matching names. */
+function isInheritedItemActionPair(
+  first: SynthesizedDefinition,
+  second: SynthesizedDefinition,
+): boolean {
+  const firstCollection = isCollectionClass(first);
+  if (firstCollection === isCollectionClass(second)) return false;
+  const collection = firstCollection ? first : second;
+  const model = firstCollection ? second : first;
+  if (
+    collection.decoratorConfig.collection !== undefined ||
+    collection.collection !== model.collection ||
+    typeof collection.collectionConstructor !== 'function' ||
+    collection.collectionConstructor !== model.collectionConstructor ||
+    typeof model.constructor !== 'function'
+  )
+    return false;
+  const itemClass = (
+    collection.collectionConstructor as { _itemClass?: unknown }
+  )._itemClass;
+  if (typeof itemClass !== 'function') return false;
+  const registeredItem = ObjectRegistry.getClassByConstructor(
+    itemClass as Parameters<typeof ObjectRegistry.getClassByConstructor>[0],
+  );
+  return registeredItem?.constructor === model.constructor;
 }
 
 interface MethodLike {
@@ -542,6 +642,7 @@ function synthesizeDefinition(
     extends: registered.extends,
     extendsTypeArg: registered.extendsTypeArg,
     constructor: registered.constructor,
+    collectionConstructor: registered.collectionConstructor,
   };
 }
 
@@ -604,6 +705,8 @@ function sharesAncestorCollection(
  * prototype-walk fallback. (#1311 review D-2.)
  */
 function isCollectionClass(def: SynthesizedDefinition): boolean {
+  if (ObjectRegistry.isCollectionClass(def.qualifiedName ?? def.className))
+    return true;
   if (def.extends === 'SmrtCollection') return true;
   if (def.extendsTypeArg) return true;
   return ctorChainContains(def.constructor, 'SmrtCollection');
@@ -818,9 +921,8 @@ function buildCustomCommand(
     apiConfig: apiConfigObj,
   });
 
-  const defaultScope: CommandScope = methodDef?.isStatic
-    ? 'collection'
-    : 'item';
+  const defaultScope: CommandScope =
+    isCollectionClass(def) || methodDef?.isStatic ? 'collection' : 'item';
   // The RECEIVER-collapsed scope, not the raw declaration: a `scope` declares a
   // method's receiver and cannot relocate it, and `scope` here also decides
   // whether the generated command carries an id. Reading the declaration

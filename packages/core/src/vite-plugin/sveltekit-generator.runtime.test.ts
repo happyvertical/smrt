@@ -11,7 +11,11 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SmrtCollection } from '../collection.js';
+import { SmrtObject } from '../object.js';
+import { ObjectRegistry, smrt } from '../registry.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 function createManifest(
@@ -159,10 +163,17 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const ObjectRegistry = {',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
+      '    if (globalThis.__smrtGeneratedCollectionResolver) return globalThis.__smrtGeneratedCollectionResolver(...args);',
       '    if (globalThis.__smrtGeneratedRouteCollection) {',
       '      return globalThis.__smrtGeneratedRouteCollection;',
       '    }',
       "    return { marker: 'collection' };",
+      '  },',
+      '  registerCollection(...args) {',
+      '    return globalThis.__smrtGeneratedCollectionBinding?.(...args);',
+      '  },',
+      '  registerPackageManifest(manifest) {',
+      '    return globalThis.__smrtGeneratedCollectionMetadata?.(manifest);',
       '  },',
       '  register(...args) {',
       '    globalThis.__smrtGeneratedHelperRegistrations.push(args);',
@@ -937,6 +948,183 @@ describe('generated SvelteKit helper runtime', () => {
       'widgets.create',
     ]);
     expect(JSON.stringify(contexts[0])).not.toContain('forged');
+  });
+
+  it('executes an explicitly named collection action through its real registered constructor and item authority', async () => {
+    const restore = snapshotObjectRegistryState();
+    class ActionItem4171 extends SmrtObject {}
+    class ActionFacade4171 extends SmrtCollection<ActionItem4171> {
+      static readonly _itemClass = ActionItem4171;
+      static calls: unknown[] = [];
+      static async submit(options: Record<string, unknown>) {
+        this.calls.push(options);
+        if (options.fail)
+          throw Object.assign(new Error('Rejected by domain action'), {
+            status: 409,
+            code: 'domain_conflict',
+          });
+        return { accepted: options };
+      }
+    }
+    try {
+      smrt({
+        packageName: '@fixture/collection-actions',
+        collection: 'actionitems',
+        api: false,
+        cli: false,
+      })(ActionItem4171);
+      smrt({
+        packageName: '@fixture/collection-actions',
+        collection: 'actionfacades',
+        api: { include: ['submit'], principalContext: true },
+        cli: { include: ['submit'] },
+      })(ActionFacade4171);
+      const key =
+        ObjectRegistry.getClassByConstructor(ActionItem4171)?.qualifiedName;
+      if (!key)
+        throw new Error('Expected qualified collection item registration');
+      expect(key).toBe('@fixture/collection-actions:ActionItem4171');
+      const actual = await ObjectRegistry.getCollection(key, {
+        db: { type: 'sqlite', url: ':memory:' },
+      });
+      (globalThis as Record<string, unknown>).__smrt4171Constructors = {
+        ActionItem4171,
+        ActionFacade4171,
+      };
+      expect(actual.constructor).toBe(ActionFacade4171);
+      (
+        globalThis as Record<string, unknown>
+      ).__smrtGeneratedCollectionMetadata = (manifest: SmartObjectManifest) =>
+        ObjectRegistry.registerPackageManifest(manifest);
+      (globalThis as Record<string, unknown>).__smrtGeneratedCollectionBinding =
+        (
+          name: string,
+          ctor: Parameters<typeof ObjectRegistry.registerCollection>[1],
+        ) => ObjectRegistry.registerCollection(name, ctor);
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      writeFileSync(
+        objectFilePath,
+        'export const { ActionItem4171, ActionFacade4171 } = globalThis.__smrt4171Constructors;',
+      );
+      const manifest = createManifest(projectRoot, objectFilePath);
+      manifest.objects.Widget.className = 'ActionItem4171';
+      manifest.objects.Widget.collection = 'actionitems';
+      manifest.objects.Widget.decoratorConfig = { api: false };
+      manifest.objects.Widget.qualifiedName = key;
+      manifest.objects[key] = manifest.objects.Widget;
+      delete manifest.objects.Widget;
+      manifest.objects.ActionFacade4171 = {
+        className: 'ActionFacade4171',
+        name: 'ActionFacade4171',
+        collection: 'actionfacades',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'ActionItem4171',
+        fields: {},
+        filePath: objectFilePath,
+        decoratorConfig: {
+          collection: 'actionfacades',
+          api: { include: ['submit'], principalContext: true },
+          cli: { include: ['submit'] },
+        },
+        methods: {
+          submit: {
+            name: 'submit',
+            isStatic: true,
+            isPublic: true,
+            async: true,
+            returnType: 'Promise<unknown>',
+            parameters: [
+              {
+                name: 'options',
+                type: 'Record<string, unknown>',
+                optional: false,
+              },
+            ],
+          },
+        },
+      };
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      (
+        globalThis as Record<string, unknown>
+      ).__smrtGeneratedCollectionResolver = (
+        name: string,
+        options: Parameters<typeof ObjectRegistry.getCollection>[1],
+      ) => ObjectRegistry.getCollection(name, { ...options, db: actual.db });
+      const route = await bundleGeneratedRoute(
+        'src/routes/api/actionfacades/submit/+server.ts',
+        'collection-action.mjs',
+      );
+      const request = () =>
+        new Request('http://localhost/api/actionfacades/submit', {
+          method: 'POST',
+          body: JSON.stringify({
+            opaque: { nested: 'unchanged' },
+            tenantId: 'forged',
+          }),
+        });
+      await expect(
+        route.POST({ locals: {}, request: request() }),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        route.POST({
+          locals: {
+            user: { id: 'actor' },
+            permissions: ['actionfacades.submit'],
+          },
+          request: request(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(ActionFacade4171.calls).toEqual([]);
+      const response = await route.POST({
+        locals: {
+          user: { id: 'actor' },
+          tenantId: 'trusted-tenant',
+          permissions: ['actionitems.submit'],
+        },
+        request: request(),
+      });
+      expect(response.status).toBe(200);
+      expect(ActionFacade4171.calls).toEqual([
+        { opaque: { nested: 'unchanged' }, tenantId: 'forged' },
+      ]);
+      expect(
+        (globalThis as Record<string, unknown>)
+          .__smrtGeneratedActiveTenantContext,
+      ).toMatchObject({ tenantId: 'trusted-tenant', userId: 'actor' });
+      const failed = await route.POST({
+        locals: {
+          user: { id: 'actor' },
+          tenantId: 'trusted-tenant',
+          permissions: ['actionitems.submit'],
+        },
+        request: new Request('http://localhost/api/actionfacades/submit', {
+          method: 'POST',
+          body: JSON.stringify({ fail: true }),
+        }),
+      });
+      expect(failed.status).toBe(409);
+      expect(
+        (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls,
+      ).toEqual([
+        [key, expect.any(Object)],
+        [key, expect.any(Object)],
+      ]);
+    } finally {
+      restore();
+      delete (globalThis as Record<string, unknown>).__smrt4171Constructors;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionBinding;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionResolver;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionMetadata;
+    }
   });
 
   describe('generated write routes enforce operation permissions (#2977)', () => {

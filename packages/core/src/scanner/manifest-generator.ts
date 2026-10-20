@@ -2448,8 +2448,11 @@ export class ManifestGenerator {
           );
         }
 
-        // Inherit collection name from item class
-        if (itemClass.collection !== obj.collection) {
+        // Routes may use an explicit namespace independently of item storage.
+        // Match registry registration, where decorator collection wins.
+        if (typeof obj.decoratorConfig?.collection === 'string') {
+          obj.collection = obj.decoratorConfig.collection;
+        } else if (itemClass.collection !== obj.collection) {
           logger.debug(
             `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
           );

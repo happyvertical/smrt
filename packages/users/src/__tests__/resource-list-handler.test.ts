@@ -7,7 +7,12 @@
  * setup isn't needed here.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmartObjectManifest,
+  SmrtCollection,
+  SmrtObject,
+} from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   SMRT_DISCOVERY_CONFORMANCE_SCHEMA,
@@ -36,6 +41,7 @@ type RegisteredClassLike = {
   extends?: string;
   extendsTypeArg?: string;
   constructor?: unknown;
+  collectionConstructor?: unknown;
 };
 
 function makeRegistered(
@@ -417,6 +423,166 @@ describe('createResourceListHandler', () => {
     ).toEqual(['Profile']);
   });
 
+  describe('inherited item-model action composition', () => {
+    function pair(
+      options: {
+        reverse?: boolean;
+        explicit?: boolean;
+        unrelated?: boolean;
+        overlap?: boolean;
+        routeOverlap?: boolean;
+      } = {},
+    ) {
+      class Item extends SmrtObject {}
+      class OtherItem extends SmrtObject {}
+      class Parent extends SmrtCollection<Item> {
+        static _itemClass = Item;
+      }
+      class Host extends Parent {}
+      const model = makeRegistered(
+        'Item',
+        { api: { include: ['inspect'] }, cli: { include: ['inspect'] } },
+        { inspect: { isStatic: true } },
+        {
+          qualifiedName: '@pair:Item',
+          collection: 'items',
+          constructor: Item,
+          collectionConstructor: Host,
+        },
+      );
+      const methodName = options.overlap ? 'inspect' : 'submit';
+      const host = makeRegistered(
+        'Host',
+        {
+          ...(options.explicit ? { collection: 'items' } : {}),
+          api: {
+            include: [methodName],
+            ...(options.routeOverlap
+              ? { routes: { submit: { path: 'inspect' } } }
+              : {}),
+          },
+          cli: { include: [methodName] },
+        },
+        { [methodName]: { isStatic: true } },
+        {
+          qualifiedName: '@pair:Host',
+          collection: 'items',
+          extends: 'SmrtCollection',
+          constructor: Host,
+          collectionConstructor: Host,
+        },
+      );
+      vi.spyOn(ObjectRegistry, 'getClassByConstructor').mockImplementation(
+        (ctor) =>
+          ctor === Item
+            ? ({
+                ...model,
+                constructor: options.unrelated ? OtherItem : Item,
+              } as any)
+            : undefined,
+      );
+      mockRegistry(
+        Object.fromEntries(
+          options.reverse
+            ? [
+                ['Host', host],
+                ['Item', model],
+              ]
+            : [
+                ['Item', model],
+                ['Host', host],
+              ],
+        ),
+      );
+    }
+
+    it.each([
+      false,
+      true,
+    ])('keeps model shell, source policies and route fields with reverse inventory=%s', async (reverse) => {
+      pair({ reverse });
+      for (const allowed of [['Item', 'Host'], ['Item'], ['Host'], []]) {
+        const seen: CommandPolicyContext[] = [];
+        const res = await call({
+          ensureRegistry: noopRegistry,
+          commandPolicy: (context) => {
+            seen.push(context);
+            return allowed.includes(context.classMeta.name);
+          },
+        });
+        expect(res.status).toBe(200);
+        expect(
+          seen
+            .map(({ classMeta, resource, command }) => [
+              classMeta.name,
+              resource.className,
+              command.methodName,
+            ])
+            .sort(),
+        ).toEqual([
+          ['Host', 'Host', 'submit'],
+          ['Item', 'Item', 'inspect'],
+        ]);
+        const commands = [
+          ...(allowed.includes('Item') ? ['inspect'] : []),
+          ...(allowed.includes('Host') ? ['submit'] : []),
+        ];
+        if (commands.length === 0) expect(res.body.resources).toEqual([]);
+        else {
+          expect(res.body.resources).toHaveLength(1);
+          expect(res.body.resources[0]).toMatchObject({
+            className: 'Item',
+            qualifiedName: '@pair:Item',
+            apiPath: 'items',
+          });
+          expect(
+            res.body.resources[0].commands.map(
+              ({ methodName, scope, httpMethod, pathSegments }: any) => [
+                methodName,
+                scope,
+                httpMethod,
+                pathSegments,
+              ],
+            ),
+          ).toEqual(
+            commands.map((name) => [name, 'collection', 'POST', [name]]),
+          );
+        }
+      }
+    });
+
+    it.each([
+      [
+        'explicit same namespace',
+        { explicit: true },
+        'resource-slug-collision',
+      ],
+      [
+        'unrelated item constructor',
+        { unrelated: true },
+        'resource-slug-collision',
+      ],
+      [
+        'overlapping command names',
+        { overlap: true },
+        'command-name-collision',
+      ],
+      [
+        'overlapping HTTP routes',
+        { routeOverlap: true },
+        'command-name-collision',
+      ],
+    ] as const)('rejects %s even when policy denies every command', async (_, options, error) => {
+      pair(options);
+      const res = await call({
+        ensureRegistry: noopRegistry,
+        commandPolicy: () => false,
+      });
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe(error);
+    });
+  });
+
   it('500s on resource-slug collision', async () => {
     mockRegistry({
       A: makeRegistered('A', { api: true, cli: true }, {}, {
@@ -767,6 +933,158 @@ describe('createResourceListHandler', () => {
     );
 
     expect(res.body.resources).toEqual([]);
+  });
+
+  it('discovers explicitly included collection actions without inventing CRUD or item receivers', async () => {
+    mockRegistry({
+      WorkItems: makeRegistered(
+        'WorkItems',
+        {
+          collection: 'workitemresources',
+          api: { include: ['createWorkItem', 'search', 'hidden'] },
+          cli: {
+            include: ['createWorkItem', 'search', 'create', 'notExposed'],
+          },
+        },
+        {
+          createWorkItem: {
+            isStatic: true,
+            parameters: [{ name: 'options', type: 'Record<string, unknown>' }],
+          },
+          search: { isStatic: false },
+          hidden: { isStatic: true },
+          notExposed: { isStatic: true },
+        },
+        {
+          extends: 'SmrtCollection',
+          extendsTypeArg: 'WorkItem',
+          collection: 'workitemresources',
+        },
+      ),
+    });
+    const result = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+    expect(result.body.resources).toHaveLength(1);
+    expect(result.body.resources[0].apiPath).toBe('workitemresources');
+    expect(
+      result.body.resources[0].commands.map((c: any) => [
+        c.methodName,
+        c.kind,
+        c.scope,
+      ]),
+    ).toEqual([
+      ['createWorkItem', 'custom', 'collection'],
+      ['search', 'custom', 'collection'],
+    ]);
+    const denied = await call({ ensureRegistry: noopRegistry });
+    expect(denied.body.resources).toEqual([]);
+    const filtered = await call(
+      {
+        ensureRegistry: noopRegistry,
+        commandPolicy: ({ command, session }) =>
+          session.tenantId === 'tenant-a' && command.methodName === 'search',
+      },
+      { locals: { ...authedLocals, tenantId: 'tenant-a' } },
+    );
+    expect(
+      filtered.body.resources[0].commands.map((c: any) => c.methodName),
+    ).toEqual(['search']);
+    const wrongTenant = await call(
+      {
+        ensureRegistry: noopRegistry,
+        commandPolicy: ({ session }) => session.tenantId === 'tenant-a',
+      },
+      { locals: { ...authedLocals, tenantId: 'tenant-b' } },
+    );
+    expect(wrongTenant.body.resources).toEqual([]);
+  });
+
+  it('discovers a collection from actual package-manifest registration', async () => {
+    const packageName = '@fixture/collection-discovery-4171';
+    const className = 'RegisteredActions4171';
+    const modelName = 'RegisteredItem4171';
+    const definition = (name: string) => ({
+      name,
+      className: name,
+      packageName,
+      qualifiedName: `${packageName}:${name}` as const,
+      collection: 'registereditems4171',
+      filePath: `/fixture/${name}.ts`,
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: false, cli: false },
+    });
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      packageName,
+      objects: {
+        [modelName]: definition(modelName),
+        [className]: {
+          ...definition(className),
+          extends: 'SmrtCollection',
+          extendsTypeArg: modelName,
+          collection: 'registeredactions4171',
+          decoratorConfig: {
+            collection: 'registeredactions4171',
+            api: { include: ['submit'] },
+            cli: { include: ['submit'] },
+          },
+          methods: {
+            submit: {
+              name: 'submit',
+              isStatic: true,
+              isPublic: true,
+              async: true,
+              returnType: 'Promise<void>',
+              parameters: [],
+            },
+          },
+        },
+      },
+    };
+    ObjectRegistry.registerPackageManifest(manifest);
+    const result = await call(
+      {
+        ensureRegistry: noopRegistry,
+        commandPolicy: ({ classMeta, session }) =>
+          session.user !== null &&
+          classMeta.qualifiedName === `${packageName}:${className}`,
+      },
+      { locals: authedLocals },
+    );
+    expect(result.body.resources).toHaveLength(1);
+    expect(result.body.resources[0]).toMatchObject({
+      className,
+      qualifiedName: `${packageName}:${className}`,
+      apiPath: 'registeredactions4171',
+      commands: [{ methodName: 'submit', kind: 'custom', scope: 'collection' }],
+    });
+  });
+
+  it.each([
+    true,
+    {},
+    { mirror: 'api' },
+    { include: ['*'] },
+    { include: 'run' },
+    { include: ['run'], exclude: ['run'] },
+  ])('keeps collection discovery closed without a valid explicit command allowlist: %j', async (cli) => {
+    mockRegistry({
+      Actions: makeRegistered(
+        'Actions',
+        { api: { include: ['run'] }, cli },
+        { run: { isStatic: true } },
+        { extends: 'SmrtCollection' },
+      ),
+    });
+    const result = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+    expect(result.body.resources).toEqual([]);
   });
 
   it('returns undefined parameters when tool schema has no real properties — #1311 codex P2 schema', async () => {
