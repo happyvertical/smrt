@@ -61,6 +61,7 @@ describe('password provider readiness', () => {
     expect(getDatabase).toHaveBeenCalledWith({
       type: 'postgres',
       url: 'postgresql://user:secret@db.example/app',
+      cache: false,
     });
     expect(query).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();

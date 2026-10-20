@@ -99,7 +99,12 @@ are not prerequisites for unrelated user-package work.
   `setPin` ends that session; do not grant it authority another way.
 - `UsersPasswordCredential` is one row per person, sensitive, with no
   generated surface; `PasswordCredentialService` and its handlers are its only
-  read/write paths. Sign-in normalizes the email like `emailKey`, reserves
+  session-authorized read/write paths. The separate Node `./operator` entrypoint
+  provisions new PostgreSQL owners from trusted database custody, atomically;
+  never mount it in a browser/REST/MCP handler. Exact retries verify existing
+  credentials without writes; partial/conflicting identities fail closed.
+  See README "Trusted deployment owner provisioning".
+  Sign-in normalizes the email like `emailKey`, reserves
   before work, always runs one scrypt verify (dummy hash when absent), never
   creates a user, and maps every non-rate-limit refusal to one
   `PasswordCredentialError`. It re-checks the credential after the mint (a

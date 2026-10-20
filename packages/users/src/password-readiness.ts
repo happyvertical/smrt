@@ -123,6 +123,9 @@ export async function checkReadiness(
   const db = await getDatabase({
     type: 'postgres',
     url: configuredPostgresUrl(process.env),
+    // Readiness owns this connection and closes it; never borrow the
+    // application's cached handle during a live readiness check.
+    cache: false,
   });
   try {
     await requirePasswordSchema(db);

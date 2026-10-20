@@ -1100,6 +1100,45 @@ What the app must do:
 
 Passkeys/WebAuthn are a separate credential (#3275).
 
+### Trusted deployment owner provisioning
+
+Self-hosted password deployments keep browser owner bootstrap disabled. After
+building the app, run migrations and provision the owner from a trusted operator
+shell using the compiled registration entry. These commands need Node and the
+published packages, without a Vite runtime:
+
+```sh
+node --import ./.smrt/runtime/register.js node_modules/@happyvertical/smrt-cli/bin/smrt.js db:migrate
+node --import ./.smrt/runtime/register.js node_modules/@happyvertical/smrt-cli/bin/smrt.js users:provision-owner \
+  --tenant-id 2acb0135-6d63-40dc-a8d4-fd87d37cd197 --tenant-name Hearth \
+  --user-id 753d9480-fd17-4f21-8771-345e83833fe3 \
+  --email owner@example.com --username owner --password-stdin < /run/secrets/owner-password
+```
+
+Use your own stable UUIDs and identities; retain them for retries. The database
+comes from normal CLI configuration (`packages.cli.database`, or `DATABASE_URL`
+and `DATABASE_TYPE=postgres`). Supply at least one email or username. The password
+must be one UTF-8 line; a final newline is removed. `--password-file` also accepts
+a regular mode-0400/0600 file (no final symlink); stdin redirection works with
+mounted secret symlinks. Password arguments and environment inputs are unsupported.
+
+The Node-only `@happyvertical/smrt-users/operator` export provides
+`provisionPasswordOwner(db, input, passwordPolicy?)` for operator tools that use
+the application's custom password policy or pepper. The CLI uses the ordinary
+default policy. Never expose this function through browser, REST, MCP, or
+session handlers: possession of the database connection is its authority.
+
+Provisioning supports PostgreSQL only. It creates the tenant, User, owner
+membership, and ordinary password credential in one transaction, without minting
+a session. A fresh authority catalog receives the standard roles and grants;
+existing role grants are never reseeded. An existing target tenant must be an
+active root tenant with the exact name and no memberships. Existing or partial
+User identities are refused except for a complete exact retry with the same
+active owner membership and password, which returns `unchanged` without writes.
+It never resets a password, reactivates an account, or adopts an ambiguous
+identity. After provisioning, the owner signs in using the normal password
+route. Local loopback bootstrap remains unchanged.
+
 ### Request-scoped database access
 
 Generated SvelteKit helpers and custom server code can read the current
