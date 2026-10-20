@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.11
+
+### Patch Changes
+
+- ### Features
+  
+  - tenant-owned connected payment accounts (#4157) (commerce)
+  
+  ### Bug Fixes
+  
+  - save contracts whose billing schedule is NULL (#4156) (commerce)
+- @happyvertical/smrt-config@0.57.11
+  - @happyvertical/smrt-scanner@0.57.11
+  - @happyvertical/smrt-types@0.57.11
+
 ## 0.57.10
 
 ### Patch Changes
