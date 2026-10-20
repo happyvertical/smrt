@@ -74,8 +74,8 @@ export class StripeConnectFixture {
   refundStatus = 'succeeded';
   /** Lose the next refund response after the provider made the refund. */
   loseNextRefundResponse = false;
-  /** Reject the next refund outright, as Stripe does with a 400. */
-  rejectNextRefund = false;
+  /** Answer the next refund with an unreadable 2xx body after making it. */
+  garbleNextRefundResponse = false;
   /** Provider idempotency: a replayed key returns the original response. */
   private readonly refundsByKey = new Map<string, Record<string, unknown>>();
   /** Distinguishes ids across fixtures sharing one PostgreSQL database. */
@@ -217,12 +217,6 @@ export class StripeConnectFixture {
       return json(200, session.body);
     }
     if (method === 'POST' && path === '/refunds') {
-      if (this.rejectNextRefund) {
-        this.rejectNextRefund = false;
-        return json(400, {
-          error: { message: 'Charge has already been refunded.' },
-        });
-      }
       const key = headers.get('Idempotency-Key');
       const replayed = key ? this.refundsByKey.get(key) : undefined;
       if (replayed) return json(200, replayed);
@@ -236,6 +230,10 @@ export class StripeConnectFixture {
         metadata: { smrt_refund_id: body.get('metadata[smrt_refund_id]') },
       };
       if (key) this.refundsByKey.set(key, refund);
+      if (this.garbleNextRefundResponse) {
+        this.garbleNextRefundResponse = false;
+        return new Response('<html>upstream proxy</html>', { status: 200 });
+      }
       if (this.loseNextRefundResponse) {
         this.loseNextRefundResponse = false;
         throw new TypeError('fetch failed: connection reset');

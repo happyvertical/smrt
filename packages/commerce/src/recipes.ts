@@ -365,6 +365,7 @@ export class InvoicingRecipe extends SmrtRecipe {
         applicationFeeCents: { visibility: 'hidden' },
         refundOfPaymentId: { visibility: 'hidden' },
         connectedRefundState: { visibility: 'hidden' },
+        applicationFeeRefunded: { visibility: 'hidden' },
       },
     },
     PaymentAllocation: { fields: { allocatedBy: { visibility: 'hidden' } } },

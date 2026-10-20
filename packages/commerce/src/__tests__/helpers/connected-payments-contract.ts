@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PaymentNotOwnedError } from '@happyvertical/payments';
+import { StripeAdapter } from '@happyvertical/payments/stripe';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   AccountCollection,
@@ -795,15 +796,42 @@ export function connectedPaymentsContract(
         expect(row.backendTxRef).toBe('re_staleanswer');
       });
 
-      // A refund the provider rejects outright made no refund: its amount is
-      // released and a retry returns the failure.
-      stripe.rejectNextRefund = true;
-      await expect(refund(700, 'rejected')).rejects.toMatchObject({
-        code: 'REFUND_FAILED',
+      // A request the SDK refuses before sending made no refund: its amount
+      // is released and a retry returns the failure.
+      const usdUnsupported = new StripeAdapter({
+        secretKey: TEST_SECRET_KEY,
+        defaultCurrency: 'cad',
+        supportedCurrencies: ['cad'],
+        apiBaseUrl: 'https://api.stripe.test/v1',
+        fetch: stripe.fetch,
       });
-      expect(await refund(700, 'rejected')).toMatchObject({
+      const refundWith = (gateway: StripeAdapter, key: string) =>
+        refundConnectedPayment({
+          db,
+          gateway,
+          tenantId: bakery,
+          environment: 'test',
+          paymentId: result.paymentId!,
+          amount: 700,
+          refundApplicationFee: false,
+          idempotencyKey: key,
+          resolveSettlementAccounts,
+        });
+      const beforeRefused = stripe.requestsTo('/refunds').length;
+      await expect(refundWith(usdUnsupported, 'refused')).rejects.toMatchObject(
+        { code: 'REFUND_FAILED' },
+      );
+      expect(await refundWith(stripe.adapter(), 'refused')).toMatchObject({
         state: 'failed',
         created: false,
+      });
+      expect(stripe.requestsTo('/refunds')).toHaveLength(beforeRefused);
+      // A provider answer that cannot be read may follow a real refund: the
+      // row stays requested, and a same-key re-send recovers that refund.
+      stripe.garbleNextRefundResponse = true;
+      await expect(refund(700, 'garbled')).rejects.toThrow(/invalid JSON/);
+      expect(await refund(700, 'garbled')).toMatchObject({
+        state: 'succeeded',
       });
       // A re-sent lost request must repeat its original fee choice.
       stripe.loseNextRefundResponse = true;
