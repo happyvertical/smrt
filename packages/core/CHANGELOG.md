@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.12
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - resolve runtime:check parents through extendsQualified (#4161) (cli)
+- @happyvertical/smrt-config@0.57.12
+  - @happyvertical/smrt-scanner@0.57.12
+  - @happyvertical/smrt-types@0.57.12
+
 ## 0.57.11
 
 ### Patch Changes
