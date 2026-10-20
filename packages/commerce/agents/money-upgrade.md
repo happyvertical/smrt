@@ -81,6 +81,11 @@ each failing document. A tenant whose earlier
 migration never finished also fails; roll it back with the version that started
 it, or reset its data. Converted tenants are skipped on a rerun.
 
+Every run also stores `''` for each Contract whose `billing_schedule_json` is
+NULL (only that tenant's with `tenantId`) and reports the count in
+`billingSchedulesBackfilled` (#4155). The runtime already reads NULL as no
+schedule, so this is tidying, not a prerequisite.
+
 Once no tenant needs the upgrade, the old columns and table are dropped. The
 upgrade leaves no mode flag. Read `failures` and `remaining` on the result; the
 CLI exits nonzero on either. New `rate-<percent>` components have no liability

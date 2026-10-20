@@ -409,6 +409,9 @@ export async function saveContract(input: Contract): Promise<Contract> {
       const existing = contract.id
         ? await loadContract(scope.db, contract.id)
         : null;
+      // NULL (a row written before the column had a default) and `''` both
+      // mean no schedule (#4155); any other difference is a schedule change.
+      contract.billingScheduleJson ??= '';
       if (
         contract.billingScheduleJson !== (existing?.billingScheduleJson ?? '')
       )

@@ -42,6 +42,8 @@ changes, and the command lists each failing document. So do an invalid
 stored rate, an invoice posted under the earlier version (void its journal and
 clear the link, or reset the data), and an existing `rate-<percent>` code that
 means a different rate. Fix or reset that data and rerun; converted tenants are skipped.
+Every run also sets contracts whose billing schedule is NULL (written before
+the column defaulted to empty) to empty, and prints how many (#4155).
 Once no tenant needs the upgrade, the earlier version's columns and table are
 dropped. The command exits nonzero while any tenant still needs it.
 

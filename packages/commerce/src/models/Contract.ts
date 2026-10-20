@@ -206,8 +206,12 @@ export class Contract extends SmrtObject {
   /** Guarded received evidence; write through the public received purchase/sales contract commands only. */
   receivedPurchaseMoneyJson = '';
 
-  /** Append-only approved milestone schedule and issued claim evidence. */
-  @field({ type: 'text' })
+  /**
+   * Append-only approved milestone schedule and issued claim evidence.
+   * `''` means no schedule; the column defaults to it, and a NULL stored by an
+   * earlier writer hydrates as `''` (#4155).
+   */
+  @field({ type: 'text', default: '' })
   billingScheduleJson = '';
 
   /** Pricing interpretation fixed before the Contract leaves draft. */
@@ -410,6 +414,9 @@ export class Contract extends SmrtObject {
    */
   override async initialize(): Promise<this> {
     await super.initialize();
+    // No schedule is `''`; a row written before the column had a default
+    // holds NULL, which means the same thing (#4155).
+    this.billingScheduleJson ??= '';
     // A row read from the database must not be old-format money data.
     if (this.isPersisted) {
       const { assertHydratedMoneyRowCurrent } = await import(

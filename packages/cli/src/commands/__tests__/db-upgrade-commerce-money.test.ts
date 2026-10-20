@@ -67,6 +67,7 @@ describe('smrt db:upgrade-commerce-money (#4021)', () => {
       failures: [],
       droppedSchema: ['tax_settings.money_model'],
       remaining: [],
+      billingSchedulesBackfilled: 2,
     });
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -102,6 +103,9 @@ describe('smrt db:upgrade-commerce-money (#4021)', () => {
     expect(output).toContain('invoice draft-a: total 105 -> 105');
     expect(output).toContain('component-5');
     expect(output).toContain('tax_settings.money_model');
+    expect(output).toContain(
+      'Set 2 contract(s) with a NULL billing schedule to empty',
+    );
     expect(process.exitCode).toBeUndefined();
     expect(mocks.close).toHaveBeenCalledOnce();
   });
