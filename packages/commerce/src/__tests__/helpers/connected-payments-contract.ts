@@ -565,6 +565,21 @@ export function connectedPaymentsContract(
         tenantId: bakery,
         applicationFee: { id: 'fee_riverbend1', amount: 500 },
       });
+      // A redelivery still returns the fee details.
+      expect(
+        await handleConnectedPaymentWebhook({
+          db,
+          gateway: stripe.adapter(),
+          environment: 'test',
+          endpoint: 'platform',
+          payload: fee.payload,
+          signature: fee.signature,
+          resolveSettlementAccounts,
+        }),
+      ).toMatchObject({
+        duplicate: true,
+        applicationFee: { id: 'fee_riverbend1', amount: 500 },
+      });
     });
 
     it('refunds partially then fully on the connected account with an explicit fee flag', async () => {
@@ -738,7 +753,18 @@ export function connectedPaymentsContract(
         const payments = await PaymentCollection.create({ db });
         const row = (await payments.get({ id: waiting.refund.id! }))!;
         row.amount = 1;
-        await expect(row.save()).rejects.toThrow(/cannot change/);
+        await expect(row.save()).rejects.toThrow(
+          /written only by the connected-payments commands/,
+        );
+        // Nor can its provider state be forged (for example by a CLI
+        // `--from-file` update) or the row deleted.
+        const forged = (await payments.get({ id: waiting.refund.id! }))!;
+        forged.connectedRefundState = 'succeeded';
+        forged.backendTxRef = 're_forged';
+        await expect(forged.save()).rejects.toThrow(
+          /written only by the connected-payments commands/,
+        );
+        await expect(forged.delete()).rejects.toThrow(/cannot be deleted/);
       });
       await refundUpdate(waiting.refund.backendTxRef, 'succeeded');
 
@@ -1040,6 +1066,195 @@ export function connectedPaymentsContract(
           { ...stored.paymentOptions[0]!, memo: 'cs_test_withoutfee' },
         ];
         await expect(stored.save()).rejects.toThrow(/frozen/);
+      });
+    });
+
+    it('recovers a lost checkout response and refuses reuse across environments', async () => {
+      const account = stripe.accountId('riverbendbakery');
+      await connect(bakery, account);
+      stripe.loseNextCheckoutResponse = true;
+      await expect(checkout(bakery, 'lost-session')).rejects.toThrow(
+        /fetch failed/,
+      );
+      const recovered = await checkout(bakery, 'lost-session');
+      const [first, second] = stripe.requestsTo('/checkout/sessions');
+      // The retry replays the recorded request unchanged, so the provider
+      // returns the session it already made.
+      expect(second!.body.toString()).toBe(first!.body.toString());
+      expect(recovered.checkoutUrl).toBe(
+        `https://checkout.stripe.com/c/pay/${recovered.intent.paymentOptions[0]!.memo}`,
+      );
+
+      // The same Standard account id in live mode is a different checkout.
+      stripe.addAccount(account, true, { smrt_tenant_id: bakery });
+      await linkTenantPaymentAccount({
+        db,
+        gateway: stripe.adapter(),
+        tenantId: bakery,
+        environment: 'live',
+        providerAccountId: account,
+      });
+      const sessions = stripe.requestsTo('/checkout/sessions').length;
+      await expect(
+        createConnectedCheckout({
+          db,
+          gateway: stripe.adapter(),
+          tenantId: bakery,
+          environment: 'live',
+          offeringRef: 'sourdough-share',
+          licenseeEmail: 'member@example.org',
+          idempotencyKey: 'lost-session',
+          amount: 10_000,
+          currency: 'USD',
+          applicationFeeAmount: 500,
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      expect(stripe.requestsTo('/checkout/sessions')).toHaveLength(sessions);
+    });
+
+    it('settles a provider-confirmed checkout after the lock and flags payments on closed quotes', async () => {
+      const account = stripe.accountId('riverbendbakery');
+      await connect(bakery, account);
+      const late = await checkout(bakery, 'late-notice');
+      const closed = await checkout(bakery, 'closed-quote');
+      await withTenant({ tenantId: bakery }, async () => {
+        const intents = await PaymentIntentCollection.create({ db });
+        const quote = (await intents.get({ id: closed.intent.id! }))!;
+        quote.cancel('buyer left');
+        await quote.save();
+      });
+      const realNow = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(realNow + 2 * 60 * 60 * 1000);
+      try {
+        const { result } = await deliverCompleted(
+          late.intent.paymentOptions[0]!.memo!,
+          account,
+        );
+        expect(result.outcome).toBe('settled');
+        const { result: flagged } = await deliverCompleted(
+          closed.intent.paymentOptions[0]!.memo!,
+          account,
+        );
+        expect(flagged.outcome).toBe('late_payment');
+        expect(flagged.paymentId).toBeUndefined();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('serialises account writes: concurrent onboarding, disable and relink', async () => {
+      const gateway = stripe.adapter();
+      const [a, b] = await Promise.all([
+        onboardTenantPaymentAccount({
+          db,
+          gateway,
+          tenantId: bakery,
+          environment: 'test',
+        }),
+        onboardTenantPaymentAccount({
+          db,
+          gateway,
+          tenantId: bakery,
+          environment: 'test',
+        }),
+      ]);
+      expect(a.id).toBe(b.id);
+      expect(a.providerAccountId).toBe(b.providerAccountId);
+      // Both calls reached the provider, so the second insert hit the unique
+      // index and recovered the winning row.
+      expect(stripe.requestsTo('/accounts')).toHaveLength(2);
+      const accountId = a.providerAccountId;
+
+      // An operator disable lands while account.updated is being handled.
+      const update = stripe.event({
+        type: 'account.updated',
+        account: accountId,
+        object: stripe.enableAccount(accountId),
+      });
+      const get = TenantPaymentAccountCollection.prototype.get;
+      const spy = vi
+        .spyOn(TenantPaymentAccountCollection.prototype, 'get')
+        .mockImplementationOnce(async function (this: unknown, ...args) {
+          const loaded = await get.apply(
+            this as TenantPaymentAccountCollection,
+            args as Parameters<typeof get>,
+          );
+          await setTenantPaymentAccountDisabled({
+            db,
+            tenantId: bakery,
+            environment: 'test',
+            disabled: true,
+          });
+          return loaded;
+        });
+      await expect(
+        handleConnectedPaymentWebhook({
+          db,
+          gateway,
+          environment: 'test',
+          payload: update.payload,
+          signature: update.signature,
+          resolveSettlementAccounts,
+        }),
+      ).rejects.toThrow(/revision|changed|conflict|stale/i);
+      spy.mockRestore();
+      expect(
+        (
+          await getTenantPaymentAccount({
+            db,
+            tenantId: bakery,
+            environment: 'test',
+          })
+        )?.status,
+      ).toBe('disabled');
+
+      // A relink lands between routing and the reload: the old account's
+      // snapshot is never applied to the replacement.
+      stripe.addAccount(stripe.accountId('riverbendnew'), true, {
+        smrt_tenant_id: bakery,
+      });
+      const stale = stripe.event({
+        type: 'account.updated',
+        account: accountId,
+        object: stripe.enableAccount(accountId),
+      });
+      vi.spyOn(
+        TenantPaymentAccountCollection.prototype,
+        'get',
+      ).mockImplementationOnce(async function (this: unknown, ...args) {
+        await linkTenantPaymentAccount({
+          db,
+          gateway,
+          tenantId: bakery,
+          environment: 'test',
+          providerAccountId: stripe.accountId('riverbendnew'),
+          replace: true,
+        });
+        return get.apply(
+          this as TenantPaymentAccountCollection,
+          args as Parameters<typeof get>,
+        );
+      });
+      await expect(
+        handleConnectedPaymentWebhook({
+          db,
+          gateway,
+          environment: 'test',
+          payload: stale.payload,
+          signature: stale.signature,
+          resolveSettlementAccounts,
+        }),
+      ).rejects.toMatchObject({ code: 'ACCOUNT_NOT_OWNED' });
+      vi.restoreAllMocks();
+
+      // The ownership record is never deleted.
+      const current = (await getTenantPaymentAccount({
+        db,
+        tenantId: bakery,
+        environment: 'test',
+      }))!;
+      await withTenant({ tenantId: bakery }, async () => {
+        await expect(current.delete()).rejects.toThrow(/cannot be deleted/);
       });
     });
 

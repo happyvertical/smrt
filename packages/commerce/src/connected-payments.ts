@@ -30,6 +30,7 @@ import { canonicalTenantId, deterministicId, isUuid } from './billing/units.js';
 import { PaymentCollection } from './collections/PaymentCollection.js';
 import { PaymentIntentCollection } from './collections/PaymentIntentCollection.js';
 import { TenantPaymentAccountCollection } from './collections/TenantPaymentAccountCollection.js';
+import { withConnectedPaymentAuthority } from './connected-payments-internal.js';
 import type { Payment } from './models/Payment.js';
 import type { PaymentIntent } from './models/PaymentIntent.js';
 import {
@@ -150,6 +151,13 @@ function resolveKey(args: TenantPaymentAccountKey): ResolvedKey {
   };
 }
 
+/** Run a connected-payments command write in the tenant's context. */
+function tenantCommand<T>(tenantId: string, operation: () => Promise<T>) {
+  return withTenant({ tenantId }, () =>
+    withConnectedPaymentAuthority(tenantId, operation),
+  );
+}
+
 function sameTenant(a: string | null | undefined, b: string): boolean {
   return typeof a === 'string' && a.toLowerCase() === b;
 }
@@ -241,21 +249,29 @@ async function insertAccount(
       'ACCOUNT_NOT_OWNED',
       'Provider returned a different account than requested',
     );
-  return withTenant({ tenantId: key.tenantId }, async () => {
-    const accounts = await TenantPaymentAccountCollection.create({
-      db: key.db,
+  try {
+    return await withTenant({ tenantId: key.tenantId }, async () => {
+      const accounts = await TenantPaymentAccountCollection.create({
+        db: key.db,
+      });
+      const account = await accounts.build({
+        tenantId: key.tenantId,
+        backendId: key.backendId,
+        environment: key.environment,
+        providerAccountId,
+        feePolicyRef: feePolicyRef ?? '',
+      });
+      account.setCapabilities(snapshotOf(status), new Date());
+      await writeTenantPaymentAccount(account, {}, () => account.save());
+      return account;
     });
-    const account = await accounts.build({
-      tenantId: key.tenantId,
-      backendId: key.backendId,
-      environment: key.environment,
-      providerAccountId,
-      feePolicyRef: feePolicyRef ?? '',
-    });
-    account.setCapabilities(snapshotOf(status), new Date());
-    await writeTenantPaymentAccount(account, {}, () => account.save());
-    return account;
-  });
+  } catch (error) {
+    // A concurrent call for the same tenant may have stored the same account
+    // first (the unique indexes refuse the second row): return that one.
+    const winner = await findTenantAccount(key);
+    if (winner && winner.providerAccountId === providerAccountId) return winner;
+    throw error;
+  }
 }
 
 /**
@@ -667,53 +683,75 @@ export async function createConnectedCheckout(
       : assertMinorUnits(input.usdPriceLocked, 'usdPriceLocked', 0);
 
   const account = await requireEnabledTenantPaymentAccount(key);
-  return withTenant({ tenantId: key.tenantId }, async () => {
+  return tenantCommand(key.tenantId, async () => {
     const intents = await PaymentIntentCollection.create({ db: key.db });
-    const existing = await intents.findByIdempotencyKey({
+    let intent = await intents.findByIdempotencyKey({
       offeringRef: input.offeringRef,
       licenseeEmail: input.licenseeEmail,
       idempotencyKey: input.idempotencyKey,
       tenantId: key.tenantId,
     });
-    if (existing) {
-      if (!sameTenant(existing.tenantId, key.tenantId))
+    const reused = !!intent;
+    if (intent) {
+      if (!sameTenant(intent.tenantId, key.tenantId))
         throw new ConnectedPaymentError(
           'QUOTE_NOT_OWNED',
           'Checkout idempotency lookup returned another tenant',
         );
-      const prior = existing.getOption(key.backendId);
+      const prior = intent.getOption(key.backendId);
+      // The same provider account id exists in test and live mode, so the
+      // environment is part of the checkout's identity.
       if (
-        existing.connectedAccountId !== account.providerAccountId ||
-        existing.applicationFeeCents !== fee ||
+        intent.connectedEnvironment !== key.environment ||
+        intent.connectedAccountId !== account.providerAccountId ||
+        intent.applicationFeeCents !== fee ||
         (prior &&
           (prior.nativeAmount !== amount || prior.currency !== currency))
       )
         throw invalid(
           'idempotencyKey was already used for a different connected checkout',
         );
-      if (!prior)
-        throw invalid(
-          'idempotencyKey was already used for a different connected checkout',
-        );
-      return { intent: existing, checkoutUrl: prior.payTo, created: false };
+      if (prior) return { intent, checkoutUrl: prior.payTo, created: false };
+      // The request was recorded but the provider's answer was lost: re-send
+      // it unchanged below (same idempotency key and expiry).
+    } else {
+      const expiresAt =
+        input.expiresAt ?? new Date(Date.now() + DEFAULT_CHECKOUT_WINDOW_MS);
+      // Recorded before the provider is asked, so a retry replays the same
+      // request; the option naming the provider session is added once, below.
+      intent = await intents.create({
+        id: await deterministicId([
+          'tenant-payment-checkout',
+          key.tenantId,
+          key.backendId,
+          key.environment,
+          input.offeringRef,
+          input.licenseeEmail,
+          input.idempotencyKey,
+        ]),
+        tenantId: key.tenantId,
+        offeringRef: input.offeringRef,
+        licenseeEmail: input.licenseeEmail,
+        idempotencyKey: input.idempotencyKey,
+        skuId: input.skuId ?? '',
+        customerId: input.customerId ?? '',
+        usdPriceLocked,
+        priceLockWindowMs: Math.max(expiresAt.getTime() - Date.now(), 1),
+        priceLockExpiresAt: expiresAt,
+        connectedAccountId: account.providerAccountId,
+        connectedEnvironment: key.environment,
+        applicationFeeCents: fee,
+        paymentOptions: [],
+      });
     }
-
-    const intentId = await deterministicId([
-      'tenant-payment-checkout',
-      key.tenantId,
-      key.backendId,
-      key.environment,
-      input.offeringRef,
-      input.licenseeEmail,
-      input.idempotencyKey,
-    ]);
-    const expiresAt =
-      input.expiresAt ?? new Date(Date.now() + DEFAULT_CHECKOUT_WINDOW_MS);
+    const intentId = intent.id!;
+    if (!intent.priceLockExpiresAt)
+      throw invalid('Connected checkout has no recorded expiry');
     const option = await input.gateway.createPaymentOption({
       quoteId: intentId,
       amount,
       currency,
-      expiresAt,
+      expiresAt: intent.priceLockExpiresAt,
       idempotencyKey: `smrt-connected-checkout:${intentId}`,
       buyerEmail: input.licenseeEmail,
       stripeAccount: account.providerAccountId,
@@ -735,36 +773,18 @@ export async function createConnectedCheckout(
         'AMOUNT_MISMATCH',
         'Provider checkout does not match the requested price',
       );
-
-    // One write: a connected intent never exists without the option that
-    // names its provider session, so the options freeze has no gap.
-    const intent = await intents.create({
-      id: intentId,
-      tenantId: key.tenantId,
-      offeringRef: input.offeringRef,
-      licenseeEmail: input.licenseeEmail,
-      idempotencyKey: input.idempotencyKey,
-      skuId: input.skuId ?? '',
-      customerId: input.customerId ?? '',
-      usdPriceLocked,
-      priceLockWindowMs: Math.max(option.expiresAt.getTime() - Date.now(), 1),
-      priceLockExpiresAt: option.expiresAt,
-      connectedAccountId: account.providerAccountId,
-      applicationFeeCents: fee,
-      paymentOptions: [
-        {
-          backendId: key.backendId,
-          currency,
-          payTo: option.payTo,
-          nativeAmount: amount,
-          ...(option.providerPaymentId
-            ? { memo: option.providerPaymentId }
-            : {}),
-          expiresAt: option.expiresAt.toISOString(),
-        },
-      ],
-    });
-    return { intent, checkoutUrl: option.payTo, created: true };
+    intent.paymentOptions = [
+      {
+        backendId: key.backendId,
+        currency,
+        payTo: option.payTo,
+        nativeAmount: amount,
+        ...(option.providerPaymentId ? { memo: option.providerPaymentId } : {}),
+        expiresAt: option.expiresAt.toISOString(),
+      },
+    ];
+    await intent.save();
+    return { intent, checkoutUrl: option.payTo, created: !reused };
   });
 }
 
@@ -897,6 +917,11 @@ export async function handleConnectedPaymentWebhook(
       ...(seen.paymentIntentId
         ? { paymentIntentId: seen.paymentIntentId }
         : {}),
+      // A redelivery still carries the fee, so a host that failed to book it
+      // the first time can book it now.
+      ...(seen.applicationFeeJson
+        ? { applicationFee: JSON.parse(seen.applicationFeeJson) }
+        : {}),
     };
 
   let result: Omit<
@@ -937,6 +962,7 @@ export async function handleConnectedPaymentWebhook(
       backendId,
       tenantId,
       providerAccountId,
+      environment,
       quoteId: event.quoteId,
       eventStatus: event.status,
       resolveSettlementAccounts: input.resolveSettlementAccounts,
@@ -957,6 +983,9 @@ export async function handleConnectedPaymentWebhook(
       providerAccountId,
       outcome: result.outcome,
       paymentIntentId: result.paymentIntentId ?? '',
+      applicationFeeJson: result.applicationFee
+        ? JSON.stringify(result.applicationFee)
+        : '',
       processedAt: new Date(),
     });
     await record.save();
@@ -979,7 +1008,14 @@ async function applyAccountUpdate(
   return withTenant({ tenantId }, async () => {
     const accounts = await TenantPaymentAccountCollection.create({ db });
     const account = await accounts.get({ id: owner.id! });
-    if (!account || !sameTenant(account.tenantId, tenantId))
+    // Reloaded, so a concurrent relink or operator disable is seen: an event
+    // for a provider account the row no longer holds is refused, and a
+    // write racing this one fails the revision-guarded save below.
+    if (
+      !account ||
+      !sameTenant(account.tenantId, tenantId) ||
+      account.providerAccountId !== status.accountId
+    )
       throw new ConnectedPaymentError(
         'ACCOUNT_NOT_OWNED',
         'Payment account changed while handling the event',
@@ -1004,6 +1040,7 @@ async function applyPaymentEvent(args: {
   backendId: string;
   tenantId: string;
   providerAccountId: string;
+  environment: TenantPaymentEnvironment;
   quoteId: string;
   eventStatus: string;
   resolveSettlementAccounts: ResolveConnectedSettlementAccounts;
@@ -1020,13 +1057,14 @@ async function applyPaymentEvent(args: {
   // The connected account chose quoteId; only a UUID can name our intent.
   if (!isUuid(args.quoteId)) throw notOwned();
   const { db, tenantId } = args;
-  return withTenant({ tenantId }, async () => {
+  return tenantCommand(tenantId, async () => {
     const intents = await PaymentIntentCollection.create({ db });
     const intent = await intents.get({ id: args.quoteId });
     if (
       !intent ||
       !sameTenant(intent.tenantId, tenantId) ||
-      intent.connectedAccountId !== args.providerAccountId
+      intent.connectedAccountId !== args.providerAccountId ||
+      intent.connectedEnvironment !== args.environment
     )
       throw notOwned();
     const paymentIntentId = intent.id!;
@@ -1042,18 +1080,23 @@ async function applyPaymentEvent(args: {
         paymentIntentId,
         paymentId: intent.paymentId,
       };
-    if (intent.status !== PaymentIntentStatus.AWAITING_PAYMENT)
-      return { outcome: 'ignored' as const, paymentIntentId };
     const option = intent.getOption(args.backendId);
-    if (!option)
-      throw new ConnectedPaymentError(
-        'QUOTE_NOT_OWNED',
-        `Quote has no ${args.backendId} option`,
-      );
+    if (!option) return { outcome: 'pending' as const, paymentIntentId };
     const status = await args.gateway.getStatus(paymentIntentId, option.payTo, {
       stripeAccount: args.providerAccountId,
       ...(option.memo ? { providerPaymentId: option.memo } : {}),
     });
+    // Closed (expired or cancelled) before the provider's confirmation was
+    // handled: the money reached the tenant's account, but nothing is posted
+    // against a closed quote; an operator reconciles it.
+    if (intent.status !== PaymentIntentStatus.AWAITING_PAYMENT)
+      return {
+        outcome:
+          status.status === 'confirmed'
+            ? ('late_payment' as const)
+            : ('ignored' as const),
+        paymentIntentId,
+      };
     if (status.status !== 'confirmed')
       return { outcome: 'pending' as const, paymentIntentId };
     if (
@@ -1201,7 +1244,7 @@ export async function refundConnectedPayment(
       'Payment does not belong to this tenant',
     );
   const account = await findTenantAccount(key);
-  return withTenant({ tenantId: key.tenantId }, async () => {
+  return tenantCommand(key.tenantId, async () => {
     const payments = await PaymentCollection.create({ db: key.db });
     const payment = await payments.get({ id: input.paymentId });
     if (!payment || !sameTenant(payment.tenantId, key.tenantId))
@@ -1496,7 +1539,7 @@ async function applyRefundUpdate(args: {
     metadata && typeof metadata === 'object'
       ? (metadata as Record<string, unknown>).smrt_refund_id
       : undefined;
-  return withTenant({ tenantId: args.tenantId }, async () => {
+  return tenantCommand(args.tenantId, async () => {
     const payments = await PaymentCollection.create({ db: args.db });
     const byRef = async () =>
       (

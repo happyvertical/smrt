@@ -14,6 +14,7 @@
 
 import {
   field,
+  type SmrtDeleteOptions,
   SmrtObject,
   type SmrtObjectOptions,
   type SmrtSaveOptions,
@@ -135,7 +136,13 @@ const STATUSES: readonly TenantPaymentAccountStatus[] = [
   ],
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  // Reads only, like REST and MCP. Naming the read-only methods makes the
+  // list strict, so no CRUD write, `delete` or other public method (such as
+  // `setCapabilities`) becomes a CLI command.
+  cli: {
+    include: ['list', 'get', 'isEnabled', 'getCapabilities'],
+    skipApiCheck: true,
+  },
 })
 export class TenantPaymentAccount extends SmrtObject {
   /** Tenant that owns the account and receives its charges. */
@@ -286,6 +293,17 @@ export class TenantPaymentAccount extends SmrtObject {
       }
     }
     return super.save(options);
+  }
+
+  /**
+   * Never deleted: the record owns webhook routing and refunds for the
+   * provider account. Switch it off with `setTenantPaymentAccountDisabled` or
+   * replace it with `linkTenantPaymentAccount({ replace: true })`.
+   */
+  override async delete(_options?: SmrtDeleteOptions): Promise<void> {
+    throw new Error(
+      'TenantPaymentAccount cannot be deleted; disable or relink it instead',
+    );
   }
 }
 

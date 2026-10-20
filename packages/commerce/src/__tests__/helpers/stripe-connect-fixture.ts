@@ -76,6 +76,10 @@ export class StripeConnectFixture {
   loseNextRefundResponse = false;
   /** Answer the next refund with an unreadable 2xx body after making it. */
   garbleNextRefundResponse = false;
+  /** Lose the next Checkout Session response after creating the session. */
+  loseNextCheckoutResponse = false;
+  /** Provider idempotency for accounts and sessions (key -> body). */
+  private readonly createdByKey = new Map<string, unknown>();
   /** Provider idempotency: a replayed key returns the original response. */
   private readonly refundsByKey = new Map<string, Record<string, unknown>>();
   /** Distinguishes ids across fixtures sharing one PostgreSQL database. */
@@ -158,6 +162,14 @@ export class StripeConnectFixture {
       body,
     });
 
+    const idempotencyKey = headers.get('Idempotency-Key');
+    if (
+      method === 'POST' &&
+      (path === '/accounts' || path === '/checkout/sessions') &&
+      idempotencyKey &&
+      this.createdByKey.has(idempotencyKey)
+    )
+      return json(200, this.createdByKey.get(idempotencyKey));
     if (method === 'POST' && path === '/accounts') {
       const id = this.next('acct');
       const metadata: Record<string, string> = {};
@@ -172,7 +184,9 @@ export class StripeConnectFixture {
         payouts_enabled: false,
         capabilities: {},
       });
-      return json(200, accountBody(this.accounts.get(id)!));
+      const created = accountBody(this.accounts.get(id)!);
+      if (idempotencyKey) this.createdByKey.set(idempotencyKey, created);
+      return json(200, created);
     }
     const accountMatch = /^\/accounts\/([^/]+)$/.exec(path);
     if (method === 'GET' && accountMatch) {
@@ -207,6 +221,11 @@ export class StripeConnectFixture {
         metadata: { quoteId: body.get('metadata[quoteId]') },
       };
       this.sessions.set(id, { account: stripeAccount, body: session });
+      if (idempotencyKey) this.createdByKey.set(idempotencyKey, session);
+      if (this.loseNextCheckoutResponse) {
+        this.loseNextCheckoutResponse = false;
+        throw new TypeError('fetch failed: connection reset');
+      }
       return json(200, session);
     }
     const sessionMatch = /^\/checkout\/sessions\/([^/]+)$/.exec(path);

@@ -20,9 +20,15 @@ capabilitiesObservedAt, feePolicyRef, disabledAt, disabledReason }`.
   submitted, charges or payouts off), `enabled` (charges, details and payouts
   all on), `disabled` (operator; refreshes keep it off). Only `enabled` takes
   new charges.
-- Read-only generated surface. `save()` refuses any write outside the
+- Read-only generated surface (REST, MCP and CLI: `list`/`get` and read methods only); never deleted. `save()` refuses any write outside the
   commands, any change of tenant/backend/environment, and a provider account
   change outside the relink command.
+- Connected `Payment` rows and connected `PaymentIntent` creation/option
+  writes need the commands' internal authority (`connected-payments-internal.ts`,
+  per tenant), so no generated REST/MCP/CLI write can forge or advance them;
+  connected payments and refunds are never deleted. A checkout's identity
+  includes its environment (`PaymentIntent.connectedEnvironment`): the same
+  `acct_` id exists in test and live.
 - `TenantPaymentWebhookEvent` (`_smrt_tenant_payment_webhook_events`, system
   table, unique `(backendId, environment, eventId)`) stores processed event ids;
   the SDK's dedupe is in memory only.
@@ -50,7 +56,7 @@ the platform account.
 | `refreshTenantPaymentAccount` | Snapshot from `getAccountCapabilities`, re-derive status. |
 | `setTenantPaymentAccountDisabled`, `setTenantPaymentFeePolicy` | Operator switches. |
 | `requireEnabledTenantPaymentAccount` | Throws `NO_ENABLED_ACCOUNT` unless enabled. |
-| `createConnectedCheckout` | Checkout on the tenant's account with `stripeAccount` + `applicationFeeAmount` (integer minor units from the caller's fee policy; `0` for none; must be below the amount). Records the intent with the session id in the option's `memo`. Idempotent on the intent natural key. |
+| `createConnectedCheckout` | Checkout on the tenant's account with `stripeAccount` + `applicationFeeAmount` (integer minor units from the caller's fee policy; `0` for none; below the amount). The intent (account, environment, fee, expiry) is recorded before the provider call and the option naming the provider session is added once, so a retry replays the same request and recovers a lost answer. Idempotent on the intent natural key; reuse across environments is refused. |
 | `handleConnectedPaymentWebhook` | See below. |
 | `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full. The refund row is written (`requested`, holding its amount) before the provider is asked; only a provider-`succeeded` refund is journaled, `pending` waits for the refund update, `failed` (including a first request the SDK refused before sending) releases the amount; a re-sent request must repeat its `refundApplicationFee` (stored in the frozen `applicationFeeRefunded`). A retry with the same key returns a recorded result, or re-sends a lost request with the same provider idempotency key within 23 hours (older lost requests wait for the refund update). Once booked refunds cover the payment it is marked `REFUNDED` and its intent retired. |
 | `createStripeConnectGateway` | Platform `StripeAdapter` from smrt-secrets. |
@@ -65,14 +71,20 @@ signature, resolveSettlementAccounts })`:
    `withSystemContext`, the one reviewed cross-tenant path). Unknown accounts
    throw the SDK's `PaymentNotOwnedError`.
 2. The event's `livemode` must match `environment` (`ENVIRONMENT_MISMATCH`).
-3. A stored event id returns `{ duplicate: true }` with its first outcome.
+3. A stored event id returns `{ duplicate: true }` with its first outcome (and the `application_fee` details, so a host can still book them).
 4. `account.updated` applies the snapshot unless an earlier second than the
    stored one (`stale_account_update`). `application_fee.*` (platform endpoint,
    `endpoint: 'platform'`) is routed to the tenant and reported, not booked.
    A payment event loads the quote **in the resolved tenant** and refuses
    (`QUOTE_NOT_OWNED`) unless it belongs to that tenant and account, then
    re-reads the Checkout Session from the provider, so delivery order never
-   matters. Refund updates (`charge.refund.updated`, `refund.*`) book or fail
+   matters. A provider-confirmed checkout settles even when its notice
+   arrives after the price lock (the session expires with the lock); a
+   payment confirmed for a quote already expired or cancelled is reported
+   `late_payment` and posts nothing. `account.updated` reloads the row and
+   refuses an event for a provider account the row no longer holds; a
+   concurrent operator write fails the revision-guarded save (retried by the
+   provider). Refund updates (`charge.refund.updated`, `refund.*`) book or fail
    a pending refund recorded by `refundConnectedPayment` on that account;
    terminal states never move back. Refunds made by the command carry
    `metadata.smrt_refund_id` and are matched by it (an unknown one throws

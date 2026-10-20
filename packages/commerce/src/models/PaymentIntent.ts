@@ -24,6 +24,7 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { hasConnectedPaymentAuthority } from '../connected-payments-internal.js';
 import {
   type PaymentIntentOptions,
   PaymentIntentStatus,
@@ -287,6 +288,13 @@ export class PaymentIntent extends SmrtObject {
    */
   applicationFeeCents: number = 0;
 
+  /**
+   * Provider mode (`test` or `live`) of a connected checkout (#3831). The same
+   * provider account id exists in both modes, so the environment is part of
+   * the checkout's identity. Server-managed.
+   */
+  connectedEnvironment: string = '';
+
   constructor(options: PaymentIntentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -330,6 +338,8 @@ export class PaymentIntent extends SmrtObject {
       this.connectedAccountId = options.connectedAccountId;
     if (options.applicationFeeCents !== undefined)
       this.applicationFeeCents = options.applicationFeeCents;
+    if (options.connectedEnvironment !== undefined)
+      this.connectedEnvironment = options.connectedEnvironment;
   }
 
   /**
@@ -426,6 +436,15 @@ export class PaymentIntent extends SmrtObject {
     ) {
       this.assertBackingFieldsUnchanged(priorRow);
     }
+    // A connected checkout (#3831) is created only by createConnectedCheckout.
+    if (
+      !priorRow &&
+      (this.connectedAccountId || this.connectedEnvironment) &&
+      !hasConnectedPaymentAuthority(this.tenantId)
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: connected checkouts are created only by the connected-payments commands`,
+      );
     if (priorRow && String(priorRow.connected_account_id ?? ''))
       this.assertConnectedCheckoutUnchanged(priorRow);
 
@@ -533,22 +552,31 @@ export class PaymentIntent extends SmrtObject {
   private assertConnectedCheckoutUnchanged(
     priorRow: Record<string, unknown>,
   ): void {
+    const priorExpiry = PaymentIntent.coerceDate(
+      priorRow.price_lock_expires_at,
+    );
     if (
       String(priorRow.connected_account_id ?? '') !== this.connectedAccountId ||
-      Number(priorRow.application_fee_cents ?? 0) !== this.applicationFeeCents
+      Number(priorRow.application_fee_cents ?? 0) !==
+        this.applicationFeeCents ||
+      String(priorRow.connected_environment ?? '') !==
+        this.connectedEnvironment ||
+      (priorExpiry?.getTime() ?? null) !==
+        (this.priceLockExpiresAt?.getTime() ?? null)
     )
       throw new Error(
-        `PaymentIntent ${this.id}: a connected checkout's account and application fee cannot change`,
+        `PaymentIntent ${this.id}: a connected checkout's account, environment, application fee and expiry cannot change`,
       );
     const priorOptions = PaymentIntent.normalizePaymentOptions(
       priorRow.payment_options as unknown,
     );
-    if (
-      JSON.stringify(priorOptions) !==
-      JSON.stringify(
-        PaymentIntent.normalizePaymentOptions(this.paymentOptions as unknown),
-      )
-    )
+    const nextOptions = PaymentIntent.normalizePaymentOptions(
+      this.paymentOptions as unknown,
+    );
+    if (JSON.stringify(priorOptions) === JSON.stringify(nextOptions)) return;
+    // The checkout command records the provider session once, after the
+    // request it persisted first; nothing else may set or change options.
+    if (priorOptions.length > 0 || !hasConnectedPaymentAuthority(this.tenantId))
       throw new Error(
         `PaymentIntent ${this.id}: a connected checkout's payment options are frozen once created`,
       );
@@ -762,7 +790,12 @@ export class PaymentIntent extends SmrtObject {
     // an expired USD price. `isExpired()` is status-independent (it checks
     // `priceLockExpiresAt`), so guard on it here; callers should `expire()`
     // and re-quote rather than record against a lapsed lock.
-    if (this.isExpired()) {
+    // A connected checkout's provider session expires with the price lock, so
+    // a provider-confirmed payment settled by the connected-payments command
+    // was made in time even when its notice arrives after the lock (#3831).
+    const providerConfirmedInTime =
+      !!this.connectedAccountId && hasConnectedPaymentAuthority(this.tenantId);
+    if (this.isExpired() && !providerConfirmedInTime) {
       throw new Error(
         `PaymentIntent ${this.id}: price lock expired at ` +
           `${this.priceLockExpiresAt?.toISOString() ?? 'unknown'}; cannot record a ` +

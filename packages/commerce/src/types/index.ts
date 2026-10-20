@@ -831,6 +831,7 @@ export interface PaymentIntentOptions extends SmrtObjectOptions {
   notes?: string;
   connectedAccountId?: string;
   applicationFeeCents?: number;
+  connectedEnvironment?: string;
 }
 
 /**

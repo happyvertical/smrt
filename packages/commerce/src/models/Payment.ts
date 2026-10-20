@@ -1,3 +1,4 @@
+import { hasConnectedPaymentAuthority } from '../connected-payments-internal.js';
 import { hasOrdinaryAccountingAuthority } from '../ordinary-accounting-internal.js';
 import { hasRetentionAccountingAuthority } from '../retention-accounting-internal.js';
 /**
@@ -538,6 +539,18 @@ export class Payment extends SmrtObject {
       // connected-payments commands: its identity and amounts never change
       // after the first write, even while PENDING (a pending refund can wait
       // days for the provider), so a generated update cannot repoint it.
+      // Every write of a connected row (creation, refund state, provider
+      // reference, status) must come from a connected-payments command for
+      // its tenant: generated surfaces (including CLI `--from-file`) cannot
+      // forge or advance one.
+      if (
+        (this.connectedAccountId ||
+          String(priorRow?.connected_account_id ?? '')) &&
+        !hasConnectedPaymentAuthority(this.tenantId)
+      )
+        throw new Error(
+          'Connected payments and refunds are written only by the connected-payments commands',
+        );
       if (priorRow && String(priorRow.connected_account_id ?? ''))
         this.assertConnectedIdentityUnchanged(priorRow);
       const prior =
@@ -606,6 +619,8 @@ export class Payment extends SmrtObject {
       throw new Error('Provider-recorded refund history cannot be deleted');
     if (this.customerFundsJson || persisted?.customer_funds_json)
       throw new Error('Customer funds cash history cannot be deleted');
+    if (this.connectedAccountId || persisted?.connected_account_id)
+      throw new Error('Connected payment and refund history cannot be deleted');
     return super.delete(options);
   }
 
