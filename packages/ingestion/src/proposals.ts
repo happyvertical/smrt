@@ -1103,6 +1103,23 @@ export class IngestionProposalService {
       snapshot.result.provider !== 'smrt-ingestion-proposals'
     )
       throw new Error('Generation output required');
+    const frozen = record(snapshot.configuration.proposals);
+    const {
+      source: _source,
+      catalogDigest: _catalogDigest,
+      ...configuration
+    } = frozen;
+    const expected = {
+      configurationVersion: this.config.version,
+      promptVersion: this.config.promptVersion,
+      generator: this.identity,
+      decision: this.decisionIdentity,
+      limits: this.config.limits,
+      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
+      tieMargin: this.config.tieMargin ?? 0.1,
+    };
+    if (digest(configuration) !== digest(expected))
+      throw new Error('Proposal read configuration mismatch');
     const output = record(
       snapshot.result.output.proposals,
     ) as unknown as GenerationOutput;

@@ -33,6 +33,7 @@ import type {
   GenerationLimits,
   ProposalConfiguration,
   ProposalGenerator,
+  ProposalReadConfiguration,
 } from '../proposal-contracts.js';
 import { proposalReadConfiguration } from '../proposal-contracts.js';
 import type { GenerationOutput } from '../proposal-dto.js';
@@ -637,6 +638,75 @@ export function proposalSuite(
         reader.prepareGeneration('missing', 'missing'),
       ).rejects.toThrow('Intake proposals are not configured');
     });
+    const readDrifts: Array<
+      [string, (read: ProposalReadConfiguration) => ProposalReadConfiguration]
+    > = [
+      [
+        'version',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          version: 'drifted',
+        }),
+      ],
+      [
+        'prompt version',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          promptVersion: 'drifted',
+        }),
+      ],
+      [
+        'generator identity',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          generator: { ...identity, version: 'drifted' },
+        }),
+      ],
+      [
+        'decision identity',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          decision: { ...identity, model: 'decision' },
+        }),
+      ],
+      [
+        'limits',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          limits: { ...limits, maxHandlers: limits.maxHandlers - 1 },
+        }),
+      ],
+      [
+        'minimum decision probability',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          minimumDecisionProbability: 0.7,
+        }),
+      ],
+      [
+        'tie margin',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          tieMargin: 0.2,
+        }),
+      ],
+    ];
+    for (const [field, change] of readDrifts)
+      it(`rejects a persisted snapshot when the read ${field} drifts`, async () => {
+        chooseCreate();
+        const generated = await generate();
+        const reader = new IngestionService({
+          ...options,
+          proposals: undefined,
+          proposalRead: change(proposalReadConfiguration(configuration)),
+        });
+        await expect(
+          reader.getCompletedAnalysis(
+            generated.itemId,
+            generated.lease.attemptId,
+          ),
+        ).rejects.toThrow('Proposal read configuration mismatch');
+      });
 
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();
