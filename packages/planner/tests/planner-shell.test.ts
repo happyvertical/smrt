@@ -11,6 +11,8 @@ describe('Planner shell defaults', () => {
     expect(props.edgeToggles).toBe(PLANNER_SHELL_EDGE_TOGGLES);
     expect(props.config).toBe(PLANNER_SHELL_PANEL_DEFAULTS);
     expect(props.edgeToggles).toEqual({ left: true });
+    expect(props.colorSchemeToggle).toEqual({ slot: 'leftSidebar.footer' });
+    expect(props.accountMenu).toEqual({ slot: 'leftSidebar.footer' });
     expect(props.config.left).toMatchObject({
       initial: 'expanded',
     });

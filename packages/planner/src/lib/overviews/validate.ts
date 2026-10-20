@@ -67,7 +67,7 @@ export function checkStoredOverride(
   id: string,
   raw: unknown,
 ): { override: OverviewOverride | null; issues: OverviewIssue[] } {
-  const definition = overviewDefinition(id);
+  const definition = overviewDefinition(id, raw);
   if (!definition) {
     return {
       override: null,
@@ -82,7 +82,21 @@ export function checkStoredOverride(
     };
   }
   const first = checkOverviewOverride(definition, raw, overviewRegistry);
-  if (first.ok) return { override: first.override, issues: [] };
+  if (first.ok) {
+    const count = parseOverviewOverride(raw).override?.changed?.count;
+    // Keep explicit legacy intent even when a version-only patch is otherwise
+    // normalized away. The entire override already passed existing validation.
+    if (count && definition.defaults.some((widget) => widget.id === 'count')) {
+      return {
+        override: {
+          ...(first.override ?? { version: 1 }),
+          changed: { ...first.override?.changed, count },
+        },
+        issues: [],
+      };
+    }
+    return { override: first.override, issues: [] };
+  }
   const parsed = parseOverviewOverride(raw);
   const bad = new Set(
     first.issues.flatMap((issue) => (issue.widgetId ? [issue.widgetId] : [])),

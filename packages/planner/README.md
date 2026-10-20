@@ -259,3 +259,139 @@ the root `CHANGESETS.md`); it is never published on its own.
 ## License
 
 MIT © Happy Vertical Corporation
+
+### Native host context and Export actions
+
+A mounted complete `Planner` can retain an earlier conversation and add its
+host's first Export action while keeping the native cookbook download:
+
+```svelte
+<Planner
+  inference={{ mode: 'host', host: { endpoint: '/api/planner/chat' } }}
+  initialConversation={{
+    id: 'stable-handoff-id',
+    messages: [{ role: 'user', content: 'I run a repair workshop.' }],
+  }}
+  cookbookOffers={false}
+  exportAction={{
+    label: 'Continue with this app',
+    run: async ({ export: file, revision, conversation }) => {
+      // file is the existing ExportData: fileName, exact text, full cookbook.
+      // Store/submit the detached context according to your host's policy.
+      await savePlan({ file, revision, conversation });
+    },
+  }}
+  onready={({ nativeAssistant }) => {
+    // The same transport the visible native dock uses, not `assistant`.
+    nativeAssistant?.subscribeConversation((messages) => remember(messages));
+  }}
+/>
+```
+
+`onready.openAssistant()` opens and focuses the ready native dock using the
+shell API and returns false if the dock/model is unavailable. It waits a Svelte
+tick so shell registration can settle; seeding alone never opens the dock.
+
+`onready.nativeAssistant` exposes `conversation()` (a detached full current
+thread), `subscribeConversation(listener)` (immediate snapshot; returns an
+unsubscribe), `busy`, `seed({ id, messages })`, and the existing chat transport
+methods. The legacy `onready.assistant` remains a separate host-driven assistant;
+it is not a way to read the visible native dock's messages.
+
+Seed accepts only plain user/assistant text. It appends the complete input in
+one notification, never executes it, and returns false for a repeated id,
+malformed input, an in-flight turn or a thread that has already received native
+sends. Supply `initialConversation` before opening the native dock; seeding is
+not a way to replace an active conversation. The host retains the original
+transcript separately when original message identities/provenance matter.
+
+`headerAction={{ label, run }}` adds a primary button to the complete Planner header.
+It uses the same capture and busy/error safeguards as `exportAction`; hosts may
+pass the same callback to both entry points. The Export shortcut and native
+download remain available. `PlannerControls` does not render a header action.
+
+`PlannerExportContext` is `{ export: ExportData, revision, conversation }`.
+The Export action captures document and thread synchronously and rejects an
+in-flight conversation rather than submitting a partial turn. Host callback
+failures are displayed inline; download remains available. Conversation export
+has no inference history truncation, including native tool data and error
+messages. The inference wire still sends only bounded recent turns. No server
+persistence, iframe bridge, automatic app generation, or custom model/recipe
+creation is implied. Sample records remain outside the cookbook.
+
+`cookbookOffers={false}` removes library cookbook proposals from the native
+assistant's vocabulary/schema; existing recipe/feature composition remains
+available. This defaults to true and does not remove the Cookbooks tab.
+`PlannerControls` also accepts `exportAction`; without a complete Planner its
+export conversation is empty because it owns no native dock.
+
+### External assistant on the same live app
+
+An external host assistant can drive `onready.controller` through a dedicated
+`MessagePort` without using, seeding, or writing the native assistant thread.
+The host must first authenticate its window handshake by exact origin **and**
+expected `event.source`, then transfer a fresh `MessageChannel` port. The
+library intentionally does not install a broad window message listener.
+
+```ts
+// Inside the mounted Planner host, after a trusted port transfer:
+const binding = bindPlannerCommandPort({
+  port,
+  controller: handle.controller,
+  allowedCommands: ['add_cookbook', 'add_recipes', 'add_features'],
+  source: 'external-assistant',
+});
+// Call binding.invalidate() in the workspace's synchronous onreset callback.
+// Call binding.dispose() before replacing/unmounting the mounted Planner.
+
+// On the external assistant side, using the other dedicated port:
+const client = connectPlannerCommandPort(otherPort);
+const before = await client.snapshot();
+// Prepare a hosted model reply from before.snapshot and this assistant's own
+// conversation. context() additionally exposes the canonical catalog/tools.
+const result = await client.applyReply({
+  id: 'stable-request-id',
+  generation: before.generation,
+  expectedRevision: before.snapshot.revision,
+  reply: hostedReply,
+});
+// Speak/display result.content: it comes from actual command receipts/coaching.
+```
+
+`snapshot()` and `subscribe()` expose `{ generation, snapshot }` from the actual
+mounted controller, including manual edits. `context()` adds the package's
+published `catalog` and `tools`. `execute()` accepts a typed command array;
+`applyReply()` accepts only `{ reply, commands?, sampleContext? }`. The latter
+validates fictional sample context before executing an atomic canonical batch,
+then installs it only after successful changed commands and before the next
+render. It reuses native command receipts and coaching, with no assistant thread.
+
+Every mutation requires the observed generation and revision. The binding
+assigns source attribution, namespaces command ids, deduplicates the whole
+request, rejects id reuse with changed input, and refuses stale/reset requests.
+Allowed commands are explicit (an empty list denies all mutations). Envelopes
+are limited to 32 KiB, 16 commands and 128-character request ids. Each generation
+retains at most 256 receipts; at capacity new requests are rejected, never
+silently evicted/reexecuted. Reconnect/invalidate deliberately to renew the
+capability. The client bounds pending calls to 32 and times out unanswered calls
+after ten seconds; disposal rejects pending calls and closes the port.
+
+`invalidate()` changes only the connection generation and receipt cache; it
+never resets the app itself. The canonical workspace reset increments the
+controller revision and invokes host `onreset` synchronously, so a host binding
+invalidated there cannot accept a delayed pre-reset reply. Do not automatically
+retry a conflict with a newer revision: inspect the current plan first. A host
+using an older release must feature-detect these exports and report unavailable
+Planner control honestly while its external conversation continues.
+
+
+When `persistence="host"`, Planner controls do not offer browser Remember or
+legacy recovery by default: the host owns saving the current cookbook. An owner
+that actually persists that cookbook may supply `projectPersistence`, the typed
+canonical facade capability (`remembering`, `recoveryAvailable`, `setRemember`,
+`recover`, `discardRecovery`). Self persistence uses the existing facade by
+default. Reset remains available independently. The static app's layout supplies
+its actual canonical storage capability; a live Kitchen-hosted plan supplies none.
+Without `inference`, native assistant handles and action captures omit native
+conversation data. Confirmed Reset still retires any private previous native
+session so enabling inference for the next project cannot revive its thread.

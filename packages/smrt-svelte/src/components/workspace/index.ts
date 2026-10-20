@@ -152,6 +152,11 @@ export {
   type ShellStateOptions,
 } from './admin-shell/state.svelte.js';
 export { default as TenantNav } from './admin-shell/TenantNav.svelte';
+export {
+  type ShellTargets,
+  shellTargetAction,
+  tryUseShellTargets,
+} from './admin-shell/targets.js';
 export type {
   ActivityStatus,
   AdminShellPhoneOptions,
@@ -198,7 +203,6 @@ export {
   SCOPE_EDGES,
 } from './admin-shell/types.js';
 export { default as WorkspaceAccountMenu } from './admin-shell/WorkspaceAccountMenu.svelte';
-
 export {
   type NavSection,
   type NavTreeFromManifestOptions,

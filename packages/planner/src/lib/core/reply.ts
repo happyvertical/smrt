@@ -7,6 +7,10 @@ import {
   stripThinking,
 } from '../assistant/change.ts';
 import {
+  type SampleContext,
+  sampleContextSchema,
+} from '../data/sample-context.ts';
+import {
   checkSchema,
   commandSchemas,
   commandTools,
@@ -21,6 +25,7 @@ import { defaultCatalog, type PromptCatalog } from './catalog.ts';
  * model. Only `reply` is required; empty parts are left out.
  */
 export interface HostReply {
+  sampleContext?: SampleContext;
   /** The sentence shown to the visitor. */
   reply: string;
   /** Recipe ids to switch on. */
@@ -89,6 +94,8 @@ export function buildReplySchema(
       [],
     );
   }
+  (schema.properties as Record<string, unknown>).sampleContext =
+    sampleContextSchema;
   return schema;
 }
 
@@ -109,6 +116,7 @@ const nonEmpty = (value: object) => Object.keys(value).length > 0;
 function toHostReply(change: AssistantChange): HostReply {
   return {
     reply: change.reply,
+    ...(change.sampleContext ? { sampleContext: change.sampleContext } : {}),
     ...(change.add.length ? { add: change.add } : {}),
     ...(change.remove.length ? { remove: change.remove } : {}),
     ...(change.cookbook ? { cookbook: change.cookbook } : {}),

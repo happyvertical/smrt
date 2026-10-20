@@ -7,6 +7,7 @@ import {
 } from '@happyvertical/smrt-svelte/workspace';
 import { Tabs } from '@happyvertical/smrt-ui';
 import { onMount, tick, untrack } from 'svelte';
+import type { BrowserAssistantTransport } from '../assistant/transport.ts';
 import CookbooksPanel from '../components/CookbooksPanel.svelte';
 import ExportPanel from '../components/ExportPanel.svelte';
 import FeaturesPanel from '../components/FeaturesPanel.svelte';
@@ -23,6 +24,7 @@ import { plannerController } from './instance.ts';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { plannerTab } from './tab.svelte.ts';
 import type { PlannerProps } from './types.ts';
+import { workspacePersistence } from './workspace.svelte.ts';
 
 /**
  * The planner's customization controls alone (Cookbooks, Recipes, Theme,
@@ -36,6 +38,7 @@ interface PlannerControlsProps extends PlannerProps {
    * controls do not mount a second one.
    */
   managedByParent?: boolean;
+  nativeAssistant?: BrowserAssistantTransport;
 }
 
 const DEFAULT_TABS: PlannerTabId[] = [
@@ -53,12 +56,25 @@ let {
   inference,
   layout = 'own',
   persistence = 'self',
+  projectPersistence,
   themeControls = false,
   advancedStylesHref,
   tabs = DEFAULT_TABS,
   onready,
+  exportAction,
+  nativeAssistant,
+  onreset,
+  resetDisabledReason,
   managedByParent = false,
 }: PlannerControlsProps = $props();
+
+const projectStorage = $derived(
+  projectPersistence === undefined
+    ? persistence === 'self'
+      ? workspacePersistence
+      : null
+    : projectPersistence,
+);
 
 // Generated views and the Cookbooks tab read sample records from a data
 // source: use the host's, else make the planner's own.
@@ -183,10 +199,10 @@ $effect(() => {
       <div hidden={active !== 'theme'}><ThemeSection provider={themeControls} {advancedStylesHref} /></div>
     {/if}
     {#if reachable.includes('settings')}
-      <div hidden={active !== 'settings'}><SettingsPanel /></div>
+      <div hidden={active !== 'settings'}><SettingsPanel projectPersistence={projectStorage} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
     {/if}
     {#if reachable.includes('export')}
-      <div hidden={active !== 'export'}><ExportPanel /></div>
+      <div hidden={active !== 'export'}><ExportPanel {exportAction} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
     {/if}
   </Tabs>
 </div>

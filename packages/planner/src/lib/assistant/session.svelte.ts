@@ -20,6 +20,7 @@ import {
   type BrowserAssistantTransport,
   type ChatModel,
   createBrowserAssistantTransport,
+  type PlannerHostTurnHandler,
 } from './transport.ts';
 
 /**
@@ -42,6 +43,7 @@ export type SessionStatus =
   | 'error';
 
 export interface SessionOptions {
+  conversationStorage?: Storage | null;
   store: RecipeStore;
   recipes: readonly Recipe[];
   /** The app settings the assistant may change; omit to leave them out. */
@@ -76,7 +78,9 @@ export class AssistantSession {
   remoteLabel = $state('');
 
   readonly transport: BrowserAssistantTransport;
+  hostTurn: PlannerHostTurnHandler | undefined;
   /** Cookbooks the assistant proposed, applied only by the person's click. */
+  cookbookOffers = true;
   readonly offers = new CookbookOffers(getLibraryCookbook);
   /** Theme changes the assistant made, each undoable from the chat. */
   readonly themeUndos: ThemeUndos | null;
@@ -102,9 +106,11 @@ export class AssistantSession {
       : null;
     this.transport = createBrowserAssistantTransport({
       model: () => this.chat,
+      conversationStorage: options.conversationStorage,
+      hostTurn: async (turn) => this.hostTurn?.(turn) ?? null,
       store: options.store,
       recipes: options.recipes,
-      cookbooks: libraryCookbooks,
+      cookbooks: () => (this.cookbookOffers ? libraryCookbooks : []),
       offers: this.offers,
       settings: options.settings,
       theme: options.theme,

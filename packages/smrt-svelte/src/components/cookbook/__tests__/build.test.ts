@@ -303,11 +303,7 @@ describe('buildCookbookShell: overviews', () => {
       dataWidgets: true,
     });
     const defaults = rich.overviews['section:accounting']?.definition.defaults;
-    expect(defaults?.map((w) => w.id)).toEqual([
-      'shortcuts',
-      'count',
-      'latest',
-    ]);
+    expect(defaults?.map((w) => w.id)).toEqual(['shortcuts', 'latest']);
     expect(defaults?.[1]?.options.model).toMatch(
       /^@happyvertical\/smrt-ledgers:/,
     );
@@ -478,4 +474,37 @@ describe('pluralize', () => {
     expect(pluralize(humanize('EventSeries'))).toBe('Event Series');
     expect(pluralize('Species')).toBe('Species');
   });
+});
+
+it('the actual cookbook builder preserves explicit legacy count edits without injecting new defaults', () => {
+  const original = fixture(FIXTURE_NAMES[0]);
+  const rich = buildCookbookShell({
+    cookbook: original,
+    catalog,
+    dataWidgets: true,
+  });
+  const id = Object.keys(rich.overviews).find((id) =>
+    rich.overviews[id].definition.defaults.some((w) => w.id === 'latest'),
+  );
+  if (!id) throw new Error('No ordinary section');
+  expect(
+    rich.overviews[id].definition.defaults.some((w) => w.type === 'metric'),
+  ).toBe(false);
+  const cookbook = {
+    ...original,
+    overviews: {
+      [id]: { version: 1 as const, changed: { count: { span: 2 } } },
+    },
+  };
+  const raw = JSON.stringify(cookbook);
+  const projected = buildCookbookShell({
+    cookbook,
+    catalog,
+    dataWidgets: true,
+  });
+  expect(
+    projected.overviews[id].definition.defaults.map((w) => w.id),
+  ).toContain('count');
+  expect(projected.overviews[id].override).toEqual(cookbook.overviews[id]);
+  expect(JSON.stringify(cookbook)).toBe(raw);
 });

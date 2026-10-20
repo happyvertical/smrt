@@ -18,6 +18,7 @@ import {
   recordOverview,
   recordOverviewId,
   sectionDefaultWidget,
+  sectionOverviewDefaults,
 } from '@happyvertical/smrt-svelte/overview';
 import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
 import { catalog, getModel } from '../catalog/index.ts';
@@ -61,40 +62,19 @@ function leadModel(
   return undefined;
 }
 
-function defaults(sectionId: string): OverviewWidget[] {
-  // A recipe that declares its own section page (smrt-reports' saved reports)
-  // replaces the generic shortcuts, count and records.
+function defaults(sectionId: string, override?: unknown): OverviewWidget[] {
   const page = sectionDefaultWidget(
     NAV_SECTIONS.get(sectionId)?.recipes[0] as unknown as
       | Parameters<typeof sectionDefaultWidget>[0]
       | undefined,
   );
-  if (page && RECIPE_WIDGET_TYPES.includes(page.type)) return [page];
-  const widgets: OverviewWidget[] = [
-    { id: 'shortcuts', type: 'shortcuts', span: 4, options: {} },
-  ];
   const lead = leadModel(sectionId);
-  if (lead) {
-    widgets.push(
-      {
-        id: 'count',
-        type: 'metric',
-        span: 1,
-        options: {
-          title: pluralize(lead.name),
-          model: lead.id,
-          measure: 'count',
-        },
-      },
-      {
-        id: 'latest',
-        type: 'records',
-        span: 3,
-        options: { title: `${lead.name} records`, model: lead.id, limit: 5 },
-      },
-    );
-  }
-  return widgets;
+  return sectionOverviewDefaults({
+    lead: lead ? { ...lead, plural: pluralize(lead.name) } : undefined,
+    dataWidgets: true,
+    page: page && RECIPE_WIDGET_TYPES.includes(page.type) ? page : undefined,
+    override,
+  });
 }
 
 const cache = new Map<string, OverviewDefinition>();
@@ -106,6 +86,7 @@ const cache = new Map<string, OverviewDefinition>();
  */
 export function sectionOverview(
   sectionId: string,
+  override?: unknown,
 ): OverviewDefinition | undefined {
   if (!OVERVIEW_PAGE_ID_PATTERN.test(sectionId)) return undefined;
   let definition = cache.get(sectionId);
@@ -118,7 +99,12 @@ export function sectionOverview(
     });
     cache.set(sectionId, definition);
   }
-  return definition;
+  return override === undefined
+    ? definition
+    : defineOverview({
+        ...definition,
+        defaults: defaults(sectionId, override),
+      });
 }
 
 /**
@@ -238,8 +224,13 @@ export function detailOverviewFor(
 }
 
 /** The definition behind any overview id: a section's or a record view's. */
-export function overviewDefinition(id: string): OverviewDefinition | undefined {
-  return id.startsWith('detail:') ? detailOverview(id) : sectionOverview(id);
+export function overviewDefinition(
+  id: string,
+  override?: unknown,
+): OverviewDefinition | undefined {
+  return id.startsWith('detail:')
+    ? detailOverview(id)
+    : sectionOverview(id, override);
 }
 
 /**

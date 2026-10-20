@@ -9,8 +9,10 @@ import {
   SHELL_DEFAULT_SECTION_ICON,
   SHELL_PLACEHOLDER_ICON,
 } from './shell-icons.js';
+import { shellTargetAction, tryUseShellTargets } from './targets.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
+const target = shellTargetAction(tryUseShellTargets());
 const DEFAULT_ACTION_ICON = 'settings';
 
 interface Props {
@@ -154,6 +156,7 @@ function fallbackIcon(label: string): string {
     <div class="smrt-tenant-nav__section" in:fly={reveal()} animate:flipRow>
       <div class="smrt-tenant-nav__row">
       <a
+        use:target={item.id ?? item.href}
         href={item.href}
         class:smrt-tenant-nav__link--visible-active={isVisibleActive(item)}
         aria-current={isActive(item) ? 'page' : undefined}
@@ -238,6 +241,7 @@ function fallbackIcon(label: string): string {
         <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)} in:fly={reveal()}>
           <div class="smrt-tenant-nav__row">
             <a
+              use:target={groupId(group)}
               {href}
               class="smrt-tenant-nav__section-link"
               class:smrt-tenant-nav__link--visible-active={isSectionCurrent(group)}
@@ -289,6 +293,7 @@ function fallbackIcon(label: string): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  a:global([data-smrt-highlighted='true']) { outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,
   .smrt-tenant-nav__children,

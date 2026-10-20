@@ -66,6 +66,27 @@ describe('the browser controller is an adapter over the engine', () => {
     expect(!late.ok && late.error.code).toBe('conflict');
   });
 
+  it('forgets undo and replay history after explicit workspace reset', () => {
+    const controller = fresh();
+    const added = controller.run({ ...SALES, id: 'old-project-command' });
+    if (!added.ok) throw new Error('add failed');
+    const revision = controller.snapshot().revision;
+    cookbookStore.setTheme({ preset: 'glass' });
+    cookbookStore.reset({ preserveTheme: true });
+    controller.resetWorkspace?.();
+    expect(controller.snapshot().undo).toEqual([]);
+    expect(controller.snapshot().recipes).toEqual([]);
+    expect(cookbookStore.theme?.preset).toBe('glass');
+    expect(controller.snapshot().revision).toBeGreaterThan(revision);
+    expect(
+      controller.run({ name: 'undo', input: { undoId: added.receipt.undoId } })
+        .ok,
+    ).toBe(false);
+    const retried = controller.run({ ...SALES, id: 'old-project-command' });
+    expect(retried.ok).toBe(true);
+    expect(retried.ok && retried.replayed).not.toBe(true);
+  });
+
   it('does not count a page customisation as a plan change', () => {
     const controller = fresh();
     controller.run(SALES);

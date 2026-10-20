@@ -83,6 +83,7 @@ export const M = defineMessages({
   'chat.floating_assistant.close': 'Close',
 
   // AssistantDock (#2904)
+  'chat.assistant_dock.conversation_starters': 'Conversation starters',
   'chat.assistant_dock.no_surfaces':
     'Nothing on this page can be changed from the chat. You can still ask questions.',
   'chat.assistant_dock.loading_conversations': 'Loading conversations…',

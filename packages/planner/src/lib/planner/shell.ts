@@ -68,6 +68,8 @@ export function plannerShellProps() {
     config: PLANNER_SHELL_PANEL_DEFAULTS,
     hotkeys: false,
     user: PLANNER_SHELL_USER,
+    colorSchemeToggle: { slot: 'leftSidebar.footer' as const },
+    accountMenu: { slot: 'leftSidebar.footer' as const },
     phoneTabBar: true,
     phoneDock: 'sheet' as const,
   };

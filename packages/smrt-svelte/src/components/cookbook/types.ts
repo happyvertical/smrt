@@ -218,9 +218,9 @@ export interface CookbookSectionHeadingInfo {
 /** Props of `CookbookSectionOverview` (the presentation half is shared with the page). */
 export interface CookbookSectionPresentationProps {
   /**
-   * How the overview's tiles are drawn outside edit mode: `'plain'` (default)
-   * lists a section's entries as unframed rows or tiles on the panel surface;
-   * `'card'` keeps the framed look. Editing always keeps its frame.
+   * How the overview's tiles are drawn outside edit mode: `'card'` (default)
+   * uses the current theme's framed styles. Explicit `'plain'` lists entries
+   * as unframed rows or tiles. Editing always keeps its frame.
    */
   presentation?: 'plain' | 'card';
   /** Replaces the section heading with host content. */

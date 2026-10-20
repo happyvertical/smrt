@@ -7,10 +7,15 @@
  * (`aria-current="page"`); `transitionName` is the `view-transition-name` it
  * carries while a route transition runs (one per control, unique on screen).
  */
+import {
+  shellTargetAction,
+  tryUseShellTargets,
+} from '@happyvertical/smrt-svelte/workspace';
 import { Icon } from '@happyvertical/smrt-ui';
 
 interface Props {
   href: string;
+  guideTarget?: string;
   label: string;
   /** A smrt-ui preset icon name. */
   icon?: string;
@@ -23,6 +28,7 @@ interface Props {
 
 let {
   href,
+  guideTarget,
   label,
   icon,
   path,
@@ -30,9 +36,11 @@ let {
   transitionName,
   onclick,
 }: Props = $props();
+const target = shellTargetAction(tryUseShellTargets());
 </script>
 
 <a
+  use:target={guideTarget ?? `item:${transitionName}`}
   class="header-link"
   {href}
   aria-label={label}

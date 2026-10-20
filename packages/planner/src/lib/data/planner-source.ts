@@ -1,9 +1,10 @@
 import { catalog } from '../catalog/index.ts';
-import { browserStorage, STORAGE_KEY } from '../cookbook/storage.ts';
+import { STORAGE_KEY } from '../cookbook/storage.ts';
 import { followSettings } from '../cookbook/store.svelte.ts';
 import { parseCookbookText } from '../cookbook/validate.ts';
 import { catalogModels } from '../forms/shared.ts';
 import { PROFILE_TYPE, stockSamples, VARIANT } from '../forms/stock.ts';
+import { workspaceStorage } from '../planner/workspace-storage.ts';
 import { ASSET, PRODUCT_ASSET } from '../products/media.ts';
 import { recipes } from '../recipes/index.ts';
 import { childLinks } from '../recipes/plumbing.ts';
@@ -53,9 +54,9 @@ function primeSampleSettings(storage: Storage | null): void {
  * objects: swap this for a collection-backed `DataSource`.
  */
 export function createPlannerDataSource(): DataSource {
-  primeSampleSettings(browserStorage());
+  primeSampleSettings(workspaceStorage());
   return createMemoryDataSource({
-    storage: browserStorage(),
+    storage: workspaceStorage(),
     // Fields the views hide still carry their policy default, e.g. the
     // `contractType` that tells an Order from a PurchaseOrder.
     defaults: (model) => recipeState.apply(model).background,

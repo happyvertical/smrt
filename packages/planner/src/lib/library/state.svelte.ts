@@ -1,5 +1,5 @@
-import { browserStorage } from '../cookbook/storage.ts';
 import { setSamplePack } from '../data/packs.ts';
+import { workspaceStorage } from '../planner/workspace-storage.ts';
 
 /** Which cookbook the visitor last applied; a UI note, not part of the cookbook. */
 export const COOKBOOK_KEY = 'smrt-planner:cookbook';
@@ -12,7 +12,7 @@ class CookbookState {
   appliedWork = $state<string | null>(null);
 
   /** Read the remembered cookbook (browser only; never throws). */
-  load(storage: Storage | null = browserStorage()): void {
+  load(storage: Storage | null = workspaceStorage()): void {
     try {
       this.active = storage?.getItem(COOKBOOK_KEY) ?? null;
       this.appliedWork = storage?.getItem(APPLIED_WORK_KEY) ?? null;
@@ -27,7 +27,7 @@ class CookbookState {
   select(
     id: string,
     work: string | null = null,
-    storage: Storage | null = browserStorage(),
+    storage: Storage | null = workspaceStorage(),
   ): void {
     this.active = id;
     this.appliedWork = work;

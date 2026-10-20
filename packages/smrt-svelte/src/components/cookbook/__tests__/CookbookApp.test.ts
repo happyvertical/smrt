@@ -152,24 +152,8 @@ describe('CookbookApp', () => {
     const shortcuts = () =>
       document.querySelector('[data-smrt-component="ShortcutsWidget"]');
 
-    it('draws shortcuts plain by default', async () => {
+    it('draws shortcuts with existing themed cards by default', async () => {
       render(Harness, { cookbook, catalog, sectionId: 'custom:shop' });
-      await waitFor(() => expect(shortcuts()).toBeTruthy());
-      expect(shortcuts()?.getAttribute('data-presentation')).toBe('plain');
-      expect(
-        document
-          .querySelector('[data-smrt-component="OverviewGrid"]')
-          ?.getAttribute('data-presentation'),
-      ).toBe('plain');
-    });
-
-    it('keeps the framed look with presentation="card"', async () => {
-      render(Harness, {
-        cookbook,
-        catalog,
-        sectionId: 'custom:shop',
-        presentation: 'card',
-      });
       await waitFor(() => expect(shortcuts()).toBeTruthy());
       expect(shortcuts()?.getAttribute('data-presentation')).toBe('card');
       expect(
@@ -177,6 +161,22 @@ describe('CookbookApp', () => {
           .querySelector('[data-smrt-component="OverviewGrid"]')
           ?.getAttribute('data-presentation'),
       ).toBe('card');
+    });
+
+    it('keeps explicit presentation="plain" available', async () => {
+      render(Harness, {
+        cookbook,
+        catalog,
+        sectionId: 'custom:shop',
+        presentation: 'plain',
+      });
+      await waitFor(() => expect(shortcuts()).toBeTruthy());
+      expect(shortcuts()?.getAttribute('data-presentation')).toBe('plain');
+      expect(
+        document
+          .querySelector('[data-smrt-component="OverviewGrid"]')
+          ?.getAttribute('data-presentation'),
+      ).toBe('plain');
     });
 
     it('renders the heading snippet in place of the default header', async () => {

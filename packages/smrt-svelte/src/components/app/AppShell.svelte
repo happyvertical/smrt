@@ -52,6 +52,10 @@ import {
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import {
+  provideShellTargets,
+  shellTargetAction,
+} from '../workspace/admin-shell/targets.js';
+import {
   type AdminShellProps,
   PANEL_EDGES,
   type PanelEdge,
@@ -338,6 +342,7 @@ const SHELL_BRAND_ITEM_ID = 'item:brand';
 const SHELL_ACCOUNT_ITEM_ID = 'item:account';
 const SHELL_COLOR_SCHEME_ITEM_ID = 'item:color-scheme';
 const SHELL_COMMAND_PALETTE_ITEM_ID = 'item:command-palette';
+const target = shellTargetAction(provideShellTargets());
 /** Stable id of the built-in edit-layout toggle item. */
 const layoutFloating = $derived(
   typeof layoutEditing === 'object' && layoutEditing.floating === true,
@@ -857,7 +862,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet layoutToggle()}
-  <span class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
+  <span use:target={SHELL_LAYOUT_EDIT_ITEM_ID} class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
     <ShellIconButton
       icon="edit"
       pressed={editing}
@@ -955,7 +960,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet brandItem()}
-  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} />
+  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} compact={shell.viewport === 'phone'} />
 {/snippet}
 
 {#snippet editRegionControl(region: ShellRegion)}
@@ -1101,6 +1106,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   a {
     color: var(--smrt-color-primary);
   }
+  .smrt-layout-toggle:global([data-smrt-highlighted='true']) { outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
   .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border: var(--smrt-hairline); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-raised); box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight); }
   .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }

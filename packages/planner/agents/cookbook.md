@@ -8,7 +8,7 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `https://s-m-r-t.dev/schemas/cookbook/v1.json`; import also accepts the old `.../blueprint/v1.json`)
   holding recipes, options, layout and theme. `store.svelte.ts` is the single
   source of truth (hydrate, debounced save, import/reset), `storage.ts` the
-  try/catch localStorage wrapper (key `smrt-planner:cookbook-doc:v1`; a value under the old
+  try/catch document wrapper, using `planner/workspace-storage.ts` for tab-scoped session storage by default and explicit Remember opt-in local storage (key `smrt-planner:cookbook-doc:v1`; a value under the old
   `smrt-planner:blueprint:v1` is read once, written to the new key and kept as a backup until the
   next successful save removes it; `smrt-planner:cookbook` alone is the library selection),
   `file.ts` the `<name>.cookbook.json` export (plus `slugify`, size and `formatSize`),
@@ -90,3 +90,5 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   the static layout pushes a shallow `?cookbook=<id>` entry, the mount a `#/configure/cookbooks/<id>/`
   route, so browser Back returns to the grid and a link opens the detail. Applying regenerates the sample records from the cookbook's pack (the panel says so). Add a
   library cookbook by adding an entry; use only existing recipe ids.
+
+Workspace persistence retains the plan, library selection, sample context and rows in the current tab by default. Remember toggles move only those project values after destination writes succeed. Raw native conversation, seed markers, and host contact/frozen-lead drafts always remain session-only, including when Remember is enabled. A new tab restores the remembered plan with a fresh conversation and draft. Earlier durable raw thread/draft copies move safely into the current session and are excluded from durable legacy archives; conflicting old lead identifiers are retained in a session-only recovery value. Legacy local data is archived once for visible recovery before its live keys move to the current tab; explicit Remember OFF, discard recovery, and confirmed reset delete that archive. Reset preserves saved theme preferences and unrelated identity keys, invalidates native inference, and clears controller undo/replay history.

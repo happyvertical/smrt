@@ -93,3 +93,52 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   First visit: `aiState.hydrate` decides once (nothing downloaded, no read-aloud,
   nothing built, not dismissed) and the Planner page then shows the setup form
   before the tabs; Continue is per visit, "I don't need AI" is remembered.
+
+- Native mounted hosts may provide `conversationalAction`: a trusted callback
+  for the actual current user send, with a detached complete transcript and
+  AbortSignal. Returning null continues inference; returning content records
+  the host's outcome. Model replies, seeded/restored turns and explicit
+  `nativeAssistant.sendHostMessage` never invoke it. Domain consent and external
+  mutations belong to the host, never to the model. Callback failure does not
+  fall through into model execution. `nativeAssistant.reset()` aborts and
+  fences late completions, then clears native history and seed markers.
+- Native transcript/seed persistence uses injected `conversationStorage`;
+  the mounted singleton receives the workspace storage facade. The optional
+  `PlannerHandle.workspaceStorage` lets a host draft follow the same session /
+  Remember policy. Restored data is provenance, never a new user event.
+
+- Post-execution coaching (`src/lib/assistant/coaching.ts`) describes only the
+  actual successful initial app: fictional samples and a real visible page,
+  followed by “What else would you like your app to do?”. Later additions do
+  not trigger an automatic next-package suggestion. The shared browser/host
+  prompt grounds recommendations in the person's stated workflow or necessary
+  setup and actual catalog descriptions, never catalog order or a fixed domain
+  palette. Command receipts remain the authority for what changed.
+
+- `entryMode: 'planning'` suppresses the empty cookbook chooser while a host-led
+  app is being conceived; default `'browse'` and deliberate cookbook navigation
+  retain browsing. The empty planning copy does not claim inference is pending.
+- `PlannerHandle.guide` highlights actual scoped shell refs using the existing
+  highlight primitive. Arrival describes the real layout Edit control; addition
+  uses actual before/result snapshots. The command-port guide operation accepts
+  only a cached successful receipt ID, never a caller-selected menu target.
+  Guides do not focus, navigate, or mutate the app. Dismissal, timeout, reset,
+  disposal, and stale generations clear/refuse guidance. Hosts can narrate the
+  returned verified `description` in their existing conversation.
+
+- Hosted actual application replies optionally include `spokenContent`, a short
+  literal receipt derived from successful changed controller state. Full
+  `content` remains authoritative for visible conversation and provider history.
+  Initial speech keeps fictional-demo clarity, one menu/record step, layout Edit
+  purpose, and the open app question within forty words. Later speech counts
+  actual new visible menu items; long names use a truthful generic location.
+  Hosts may speak this optional field without summarizing arbitrary model prose;
+  omitted fields retain backward-compatible full-content handling.
+
+- Guidance uses `highlightControl` with `presentation: 'spotlight'`, not a
+  separate tour/controller. Its passive child-document veil cuts a hole around
+  the real semantic target, follows viewport/layout movement, and leaves app
+  controls and parent Happy available. The existing guide owns receipt authority,
+  Escape, timeout, reset and disposal; the primitive adds an accessible dismiss
+  button and idempotent DOM cleanup. Offscreen, hidden or detached targets remove
+  the veil. Geometry updates are immediate, with no animated movement.

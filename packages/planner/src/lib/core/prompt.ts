@@ -4,6 +4,7 @@ import {
   matchText,
 } from '../assistant/match.ts';
 import { buildSystemPrompt } from '../assistant/prompt.ts';
+import { sampleContextSchema } from '../data/sample-context.ts';
 import {
   HOST_HISTORY_CHARS,
   HOST_HISTORY_TURNS,
@@ -93,6 +94,11 @@ function commandSection(snapshot: PlanSnapshot): string[] {
     '',
     '"commands": optional, at most 8 {"name", "input"} run in order, only for what add/remove/settings/theme cannot do. Commands:',
     ...commandTools.map((tool) => `- ${signature(tool)}: ${tool.description}`),
+    '',
+    '"sampleContext": TOP-LEVEL sibling of "reply" and "commands". REQUIRED when building an initial custom product-backed business app on an empty project (no recipes enabled), so its product records match the business. Omit for questions, no-ops, followups, or library cookbooks with their own canonical sample pack. Never fabricate a product assortment for a non-product app. NEVER put sampleContext inside commands[].input. Exact shape:',
+    '{"reply":"...","commands":[{"name":"add_recipes","input":{"ids":["<published recipe id>"]}}],"sampleContext":{"provenance":"fictional","products":[{"name":"<invented relevant product>","description":"<fictional sample description>","price":1200,"category":"<relevant category>"}],"customers":["<invented customer name>"],"vendors":["<invented vendor name>"]}}',
+    `sampleContext: provenance must be "fictional"; products ${sampleContextSchema.properties.products.minItems}–${sampleContextSchema.properties.products.maxItems} objects with required name, description, price and optional category; customers ${sampleContextSchema.properties.customers.minItems}–${sampleContextSchema.properties.customers.maxItems} strings; vendors ${sampleContextSchema.properties.vendors.minItems}–${sampleContextSchema.properties.vendors.maxItems} strings. Names/category: nonblank, max ${sampleContextSchema.properties.products.items.properties.name.maxLength} characters; description max ${sampleContextSchema.properties.products.items.properties.description.maxLength}. Price: integer minor units (1200 = 12.00), ${sampleContextSchema.properties.products.items.properties.price.minimum}–${sampleContextSchema.properties.products.items.properties.price.maximum}. No other fields.`,
+    'For an initial custom build, choose 5–6 relevant fictional products and a few fictional customers/vendors, not the maximum counts. Represent the business assortment: core goods, replacement parts/accessories and related merchandise/apparel where appropriate. Infer vocabulary from this business in any domain; never invent real company facts. Omit sampleContext on followups: never regenerate, reset or overwrite existing samples or manual edits.',
   ];
   const menu = snapshot.sections
     .filter((section) => !section.hidden)
@@ -153,6 +159,10 @@ export function buildHostPrompt(input: HostPromptInput): HostPrompt {
         : [],
     ),
     ...commandSection(snapshot),
+    snapshot.recipes.length > 0 &&
+    commandTools.some((tool) => tool.name === 'export_cookbook')
+      ? 'Completion: only when the visitor is clearly satisfied or wrapping up, offer Export > Download cookbook or Copy prompt once per wrap-up. Keep Build it primary where present. Brainstorming, not-ready statements, negation and thanks alone are not completion intent. Do not repeat an earlier export offer without renewed intent. Never emit export_cookbook merely because they seem done; suggest the UI action, never claim export or submission happened.'
+      : 'Completion: there is no verified nonempty exportable plan. Do not suggest export based on a visitor claim or completion language alone.',
   ].join('\n');
   const history = (input.history ?? [])
     .filter(

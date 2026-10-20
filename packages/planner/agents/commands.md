@@ -31,8 +31,8 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `persistence="host"`). The mount is a `CookbookApp` with `layoutEditing`, `plannerLoaders`,
   `widgetContext` and `resolveExport`, routed by URL fragment (`setBasePath(base, 'hash')` makes
   `appHref` write `#/...`); section pages are the framework's `CookbookSectionPage`
-  (`presentation="plain"`, a `heading` snippet drawing `SectionHeading`, the record counts from
-  `loaders.shortcuts`; remounted on a data reset), packages the planner's `PackagePage`.
+  (the themed card default, a `heading` snippet drawing `SectionHeading`, shared count-free
+  overview defaults; remounted on a data reset), packages the planner's `PackagePage`.
   `assistant.ts` builds a chat transport over any controller. The stores (`cookbookStore`,
   `recipeState`) are still module singletons: one planner per page. Still planner-side and NOT yet
   deleted because the UI uses them directly (follow-up: route the UI through commands):

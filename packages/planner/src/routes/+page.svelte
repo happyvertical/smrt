@@ -1,11 +1,17 @@
 <script lang="ts">
 import { Button } from '@happyvertical/smrt-ui';
+import { getContext } from 'svelte';
 import { aiState } from '$lib/ai/instance.ts';
 import AiSetup from '$lib/components/AiSetup.svelte';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import PlannerControls from '$lib/planner/PlannerControls.svelte';
 import { currentPlannerTitle } from '$lib/planner/title.svelte.ts';
+import type { PlannerProjectPersistence } from '$lib/planner/types.ts';
+import { PROJECT_PERSISTENCE_CONTEXT } from '$lib/planner/workspace.svelte.ts';
 
+const persistenceOwner = getContext<
+  { readonly current: PlannerProjectPersistence | null } | undefined
+>(PROJECT_PERSISTENCE_CONTEXT);
 const title = $derived(currentPlannerTitle());
 </script>
 
@@ -29,7 +35,7 @@ const title = $derived(currentPlannerTitle());
       </div>
     </section>
   {:else}
-  <PlannerControls layout="shell" persistence="host" themeControls advancedStylesHref={appHref('/advanced-styles/')} />
+  <PlannerControls projectPersistence={persistenceOwner?.current ?? null} nativeAssistant={aiState.session.transport} layout="shell" persistence="host" themeControls advancedStylesHref={appHref('/advanced-styles/')} />
   {/if}
 </main>
 

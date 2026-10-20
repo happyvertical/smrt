@@ -35,12 +35,23 @@ export function serializeCookbook(cookbook: Cookbook): string {
 
 /** Offer the cookbook as a `<name>.cookbook.json` download. */
 export function downloadCookbook(cookbook: Cookbook, name?: string): void {
+  downloadCookbookFile({
+    fileName: exportFileName(name),
+    text: serializeCookbook(cookbook),
+  });
+}
+
+/** Download an already serialized native export without changing its bytes. */
+export function downloadCookbookFile(file: {
+  fileName: string;
+  text: string;
+}): void {
   const url = URL.createObjectURL(
-    new Blob([serializeCookbook(cookbook)], { type: 'application/json' }),
+    new Blob([file.text], { type: 'application/json' }),
   );
   const link = document.createElement('a');
   link.href = url;
-  link.download = exportFileName(name);
+  link.download = file.fileName;
   document.body.append(link);
   link.click();
   link.remove();

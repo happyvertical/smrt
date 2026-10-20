@@ -120,6 +120,8 @@ export interface AdapterEnv {
  * all drive the app through this one seam.
  */
 export interface PlannerController {
+  /** Forget project command history after an explicit workspace reset. */
+  resetWorkspace?(): void;
   /**
    * Run one command. Never throws: a bad command, unknown id or refused edit
    * comes back as `{ ok: false, error }` and leaves the app unchanged.
@@ -814,6 +816,28 @@ export function createPlannerAdapter(
   };
 
   return {
+    resetWorkspace() {
+      sync();
+      const revision = engine.state().revision + 1;
+      engine = createCookbookEngine({
+        catalog,
+        state: {
+          version: 1,
+          revision,
+          applied: resolvedApplied(),
+          cookbook: (port?.read?.() ?? engine.cookbook()) as never,
+          journal: [],
+        },
+      });
+      outward.clear();
+      inward.clear();
+      syncError = null;
+      lastKey = signature(
+        port?.read?.() ?? engine.cookbook(),
+        resolvedApplied(),
+      );
+      deliver();
+    },
     run: runWithUndo,
     batch,
     snapshot() {

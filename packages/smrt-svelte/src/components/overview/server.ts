@@ -93,6 +93,7 @@ export {
   optionsEqual,
   validateWidgetOptions,
 } from './schema.js';
+export { sectionOverviewDefaults } from './section-defaults.js';
 export * from './types.js';
 export {
   type LineItemsTotals,

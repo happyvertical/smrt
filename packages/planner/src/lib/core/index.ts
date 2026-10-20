@@ -20,6 +20,11 @@
  */
 
 export {
+  parseSampleContext,
+  type SampleContext,
+  sampleContextSchema,
+} from '../data/sample-context.ts';
+export {
   HOST_HISTORY_CHARS,
   HOST_HISTORY_TURNS,
   HOST_MESSAGE_CHARS,

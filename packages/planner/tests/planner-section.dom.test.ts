@@ -1,8 +1,7 @@
 /**
  * The mounted Planner's section pages are the framework's
- * `CookbookSectionPage` (smrt#3888): drawn `plain` with the planner's heading,
- * the shortcuts carrying record counts from the planner's
- * `loaders.shortcuts`. The overview grid renders after hydration, so this
+ * `CookbookSectionPage` (smrt#3888): themed cards with the planner's heading
+ * and count-free section defaults. The overview grid renders after hydration, so this
  * mounts the component in a DOM.
  */
 import { flushSync, mount, tick, unmount } from 'svelte';
@@ -51,7 +50,7 @@ describe('the mounted Planner section page', () => {
     setBasePath('');
   });
 
-  it('renders the framework section page plain, with record counts on the shortcuts', async () => {
+  it('renders default section pages without automatic record counts', async () => {
     app = mount(Planner, { target, props: { basePath: '/planner' } });
     await settle();
     const page = target.querySelector(
@@ -62,12 +61,15 @@ describe('the mounted Planner section page', () => {
       'Sales',
     );
     const grid = page?.querySelector('[data-smrt-component="OverviewGrid"]');
-    expect(grid?.getAttribute('data-presentation')).toBe('plain');
+    expect(grid?.getAttribute('data-presentation')).toBe('card');
     const counts = [
       ...(page?.querySelectorAll('.smrt-shortcuts__count') ?? []),
     ].map((node) => node.textContent?.trim() ?? '');
-    expect(counts.length).toBeGreaterThan(0);
-    for (const count of counts) expect(count).toMatch(/^\d+ records?$/);
+    expect(counts).toEqual([]);
+    expect(
+      page?.querySelector('[data-smrt-component="MetricWidget"]'),
+    ).toBeNull();
+    expect(page?.textContent).not.toMatch(/\d+ in total/);
   });
 
   it('opens a cookbook from its fragment route, and Back returns to the grid', async () => {

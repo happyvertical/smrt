@@ -101,6 +101,104 @@ describe('core', () => {
     ]);
   });
 
+  it.each([
+    'skateboard shop',
+    'laboratory supplies business',
+  ])('publishes a top-level sample vocabulary contract for %s', (business) => {
+    const { system } = buildHostPrompt({
+      message: `Build an app for my ${business}`,
+      snapshot,
+    });
+    expect(system).toContain('TOP-LEVEL sibling of "reply" and "commands"');
+    expect(system).toContain('NEVER put sampleContext inside commands[].input');
+    expect(system).toContain(
+      'REQUIRED when building an initial custom product-backed business app on an empty project (no recipes enabled)',
+    );
+    expect(system).toContain(
+      'Omit for questions, no-ops, followups, or library cookbooks with their own canonical sample pack',
+    );
+    expect(system).toContain(
+      'Never fabricate a product assortment for a non-product app',
+    );
+    expect(system).toContain('products 1–16 objects');
+    expect(system).toContain('customers 1–8 strings');
+    expect(system).toContain('vendors 1–5 strings');
+    expect(system).toContain(
+      'integer minor units (1200 = 12.00), 0–1000000000',
+    );
+    expect(system).toContain('Omit sampleContext on followups');
+    expect(system).toContain('choose 5–6 relevant fictional products');
+    expect(system).toContain(
+      'core goods, replacement parts/accessories and related merchandise/apparel where appropriate',
+    );
+    const example = system
+      .split('\n')
+      .find((line) => line.startsWith('{"reply":"...","commands":'));
+    if (!example) throw new Error('Missing sample context example');
+    const parsed = parseHostReply(example);
+    expect(
+      parsed.issues.every((issue) => !issue.includes('sampleContext')),
+    ).toBe(true);
+    expect(parsed.reply.sampleContext?.provenance).toBe('fictional');
+    expect(parsed.reply.sampleContext?.products[0]?.price).toBe(1200);
+    expect(JSON.parse(example).commands[0].input).not.toHaveProperty(
+      'sampleContext',
+    );
+  });
+
+  it('rejects nested context and accepts the top-level sibling', () => {
+    const sampleContext = {
+      provenance: 'fictional',
+      products: [
+        {
+          name: 'Sample product',
+          description: 'Fictional relevant product.',
+          price: 1200,
+        },
+      ],
+      customers: ['Fictional customer'],
+      vendors: ['Fictional vendor'],
+    };
+    const bad = parseHostReply(
+      JSON.stringify({
+        reply: 'Ready',
+        commands: [
+          {
+            name: 'add_recipes',
+            input: { ids: ['commerce.invoicing'], sampleContext },
+          },
+        ],
+      }),
+    );
+    expect(bad.reply.commands).toBeUndefined();
+    expect(
+      bad.issues.some((issue) => issue.includes('input.sampleContext')),
+    ).toBe(true);
+    const good = parseHostReply(
+      JSON.stringify({
+        reply: 'Ready',
+        commands: [
+          { name: 'add_recipes', input: { ids: ['commerce.invoicing'] } },
+        ],
+        sampleContext,
+      }),
+    );
+    expect(good.issues).toEqual([]);
+    expect(good.reply.commands).toHaveLength(1);
+    expect(good.reply.sampleContext).toEqual(sampleContext);
+    const malformed = parseHostReply(
+      JSON.stringify({
+        reply: 'Ready',
+        sampleContext: {
+          ...sampleContext,
+          products: [{ name: 'Missing description', price: 1200 }],
+          customers: [{ name: 'Wrong object shape' }],
+        },
+      }),
+    );
+    expect(malformed.reply.sampleContext).toBeUndefined();
+  });
+
   it('bounds the message and the history', () => {
     const { messages } = buildHostPrompt({
       message: 'x'.repeat(HOST_MESSAGE_CHARS + 50),
@@ -128,6 +226,7 @@ describe('core', () => {
         'reply',
         'report',
         'settings',
+        'sampleContext',
         'theme',
       ].sort(),
     );
@@ -238,5 +337,35 @@ describe('core', () => {
     ]) {
       expect(parseHostRequest(body).ok).toBe(false);
     }
+  });
+});
+
+describe('completion export policy grounding', () => {
+  it('offers a UI export only for an actual nonempty plan, never an automatic command', () => {
+    const { system } = buildHostPrompt({
+      message: "That covers everything; I'm ready to wrap up",
+      snapshot,
+    });
+    expect(system).toContain(
+      'offer Export > Download cookbook or Copy prompt once per wrap-up',
+    );
+    expect(system).toContain('Keep Build it primary');
+    expect(system).toContain(
+      'Brainstorming, not-ready statements, negation and thanks alone are not completion intent',
+    );
+    expect(system).toContain(
+      'Never emit export_cookbook merely because they seem done',
+    );
+    expect(system).toContain(
+      'Do not repeat an earlier export offer without renewed intent',
+    );
+  });
+  it('does not turn a completion claim into plan existence', () => {
+    const { system } = buildHostPrompt({
+      message: 'My plan is done',
+      snapshot: { ...snapshot, recipes: [] },
+    });
+    expect(system).toContain('there is no verified nonempty exportable plan');
+    expect(system).not.toContain('offer Export > Download cookbook');
   });
 });
