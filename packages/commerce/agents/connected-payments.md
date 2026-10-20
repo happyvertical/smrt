@@ -27,9 +27,11 @@ capabilitiesObservedAt, feePolicyRef, disabledAt, disabledReason }`.
   table, unique `(backendId, environment, eventId)`) stores processed event ids;
   the SDK's dedupe is in memory only.
 - `PaymentIntent` and `Payment` gain server-managed `connectedAccountId` and
-  `applicationFeeCents` (`Payment` also `refundOfPaymentId`), frozen once
-  settled. A connected intent settles only with a Payment on the same account
-  and fee.
+  `applicationFeeCents` (`Payment` also `refundOfPaymentId` and
+  `connectedRefundState`), frozen once settled. A connected intent settles only
+  with a Payment on the same account and fee, and its account, fee and payment
+  options (which name the provider session settlement re-reads) are frozen
+  from creation, so a generated update cannot repoint it.
 
 ## Commands
 
@@ -41,13 +43,13 @@ the platform account.
 |---|---|
 | `onboardTenantPaymentAccount` | Create the Standard account (per-tenant idempotency key) and store it; returns the existing one on retry. |
 | `createTenantOnboardingLink` | Single-use onboarding URL. A bearer secret: redirect, never log or store. |
-| `linkTenantPaymentAccount` | Link an existing account; `replace: true` relinks. Refused (`ACCOUNT_IN_USE`) when another tenant holds it. |
+| `linkTenantPaymentAccount` | Link an existing account; `replace: true` relinks. Refused (`ACCOUNT_IN_USE`) when another tenant holds it or its `smrt_tenant_id` metadata names another tenant. An account whose metadata names no tenant needs `ownershipVerified: true` (the host proved control, for example Stripe OAuth). |
 | `refreshTenantPaymentAccount` | Snapshot from `getAccountCapabilities`, re-derive status. |
 | `setTenantPaymentAccountDisabled`, `setTenantPaymentFeePolicy` | Operator switches. |
 | `requireEnabledTenantPaymentAccount` | Throws `NO_ENABLED_ACCOUNT` unless enabled. |
 | `createConnectedCheckout` | Checkout on the tenant's account with `stripeAccount` + `applicationFeeAmount` (integer minor units from the caller's fee policy; `0` for none; must be below the amount). Records the intent with the session id in the option's `memo`. Idempotent on the intent natural key. |
 | `handleConnectedPaymentWebhook` | See below. |
-| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full; a full refund marks the payment `REFUNDED` and retires the intent. |
+| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full. The refund row is written before booking and holds its amount; only a provider-`succeeded` refund is journaled, a `pending` one waits for the refund update, and a retry with the same key resumes unfinished booking. Once booked refunds cover the payment it is marked `REFUNDED` and its intent retired. |
 | `createStripeConnectGateway` | Platform `StripeAdapter` from smrt-secrets. |
 
 ## Webhooks
@@ -67,7 +69,9 @@ signature, resolveSettlementAccounts })`:
    A payment event loads the quote **in the resolved tenant** and refuses
    (`QUOTE_NOT_OWNED`) unless it belongs to that tenant and account, then
    re-reads the Checkout Session from the provider, so delivery order never
-   matters. Settlement records a `Payment` (deterministic id from the intent)
+   matters. Refund updates (`charge.refund.updated`, `refund.*`) book or fail
+   a pending refund recorded by `refundConnectedPayment` on that account;
+   terminal states never move back. Settlement records a `Payment` (deterministic id from the intent)
    through `recordPayment()` and marks the intent paid. `refunded` events are
    reported (`refund_reported`), never booked automatically.
 5. The event id is stored only after processing succeeds; a refusal throws,
@@ -94,7 +98,7 @@ refunded amount; a refunded application fee is reported by
   `application_fee.refunded`) and one Connect endpoint (`account.updated`,
   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
   `checkout.session.async_payment_failed`, `checkout.session.expired`,
-  `charge.refunded`), per environment.
+  `charge.refunded`, `charge.refund.updated`), per environment.
 - Each tenant needs ledger accounts for cash, receivables and the platform fee
   expense, returned by `resolveSettlementAccounts`.
 

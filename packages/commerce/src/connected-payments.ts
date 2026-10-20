@@ -389,7 +389,40 @@ export interface LinkTenantPaymentAccountInput extends TenantPaymentAccountKey {
    * refunds on the old account stop working, so this must be explicit.
    */
   replace?: boolean;
+  /**
+   * The host proved this tenant controls the account (for example through
+   * Stripe's OAuth connect flow). Required for an account whose metadata does
+   * not already name the tenant; accounts made by
+   * {@link onboardTenantPaymentAccount} carry that metadata.
+   */
+  ownershipVerified?: boolean;
   feePolicyRef?: string;
+}
+
+/**
+ * Whether provider metadata ties the account to this tenant: `true` when it
+ * names the tenant, `false` when it names another tenant or environment,
+ * `undefined` when it names none.
+ */
+function metadataOwner(
+  status: StripeConnectAccountStatus,
+  key: ResolvedKey,
+): boolean | undefined {
+  const raw = status.raw;
+  const metadata =
+    raw && typeof raw === 'object'
+      ? (raw as { metadata?: unknown }).metadata
+      : undefined;
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  const { smrt_tenant_id: tenant, smrt_environment: environment } =
+    metadata as Record<string, unknown>;
+  if (tenant === undefined || tenant === null || tenant === '')
+    return undefined;
+  return (
+    typeof tenant === 'string' &&
+    tenant.toLowerCase() === key.tenantId &&
+    (environment === undefined || environment === key.environment)
+  );
 }
 
 /**
@@ -409,6 +442,19 @@ export async function linkTenantPaymentAccount(
   const providerAccountId = input.providerAccountId.trim();
   await assertNotOwnedElsewhere(key, providerAccountId);
   const status = await input.gateway.getAccountCapabilities(providerAccountId);
+  // Holding no row today does not make an account free to claim: it must be
+  // provably this tenant's (#3831 review).
+  const owner = metadataOwner(status, key);
+  if (owner === false)
+    throw new ConnectedPaymentError(
+      'ACCOUNT_IN_USE',
+      'That provider account was created for another tenant',
+    );
+  if (owner === undefined && input.ownershipVerified !== true)
+    throw new ConnectedPaymentError(
+      'ACCOUNT_NOT_OWNED',
+      'The account does not name this tenant; link it only after verifying the tenant controls it (ownershipVerified)',
+    );
   const existing = await findTenantAccount(key);
   if (!existing)
     return insertAccount(key, providerAccountId, status, input.feePolicyRef);
@@ -869,6 +915,18 @@ export async function handleConnectedPaymentWebhook(
   ) {
     const { raw: _raw, ...applicationFee } = detail.applicationFee;
     result = { outcome: 'application_fee', applicationFee };
+  } else if (
+    endpoint === 'connect' &&
+    (event.type.startsWith('charge.refund.') ||
+      event.type.startsWith('refund.'))
+  ) {
+    result = await applyRefundUpdate({
+      db,
+      tenantId,
+      providerAccountId,
+      raw: event.raw,
+      resolveSettlementAccounts: input.resolveSettlementAccounts,
+    });
   } else if (endpoint === 'connect' && event.quoteId) {
     result = await applyPaymentEvent({
       db,
@@ -1107,6 +1165,11 @@ export interface ConnectedRefund {
   payment: Payment;
   /** Minor units still refundable after this refund. */
   remaining: number;
+  /**
+   * Provider state: `succeeded` refunds are journaled; a `pending` one holds
+   * its amount and is booked when the provider's refund update arrives.
+   */
+  state: 'pending' | 'succeeded' | 'failed';
   /** Whether this call created the refund (false on an idempotent retry). */
   created: boolean;
 }
@@ -1159,30 +1222,34 @@ export async function refundConnectedPayment(
       payment.id!,
       input.idempotencyKey,
     ]);
-    const prior = (
-      await payments.list({
-        where: { refundOfPaymentId: payment.id!, kind: 'refund' },
-      })
-    ).filter(
-      (row) =>
-        row.status !== PaymentStatus.FAILED &&
-        row.status !== PaymentStatus.CANCELLED,
-    );
-    const refunded = prior.reduce((sum, row) => sum + row.amount, 0);
+    const settle = (refund: Payment) =>
+      finalizeConnectedRefund({
+        db: key.db,
+        tenantId: key.tenantId,
+        payment,
+        refund,
+        resolveSettlementAccounts: input.resolveSettlementAccounts,
+      });
+    const prior = await liveRefunds(payments, payment.id!);
     const replay = prior.find((row) => row.id === refundId);
-    if (replay)
+    if (replay) {
+      // Resume whatever a failed earlier attempt left unfinished.
+      const remaining = await settle(replay);
       return {
         refund: replay,
         payment,
-        remaining: payment.amount - refunded,
+        remaining,
+        state: replay.connectedRefundState || 'pending',
         created: false,
       };
+    }
     if (payment.status !== PaymentStatus.COMPLETED)
       throw new ConnectedPaymentError(
         'REFUND_EXCEEDS_PAYMENT',
         `Payment is ${payment.status}; only a completed payment can be refunded`,
       );
-    const remaining = payment.amount - refunded;
+    const remaining =
+      payment.amount - prior.reduce((sum, row) => sum + row.amount, 0);
     const amount =
       input.amount === undefined
         ? remaining
@@ -1203,7 +1270,8 @@ export async function refundConnectedPayment(
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     };
     const result = await input.gateway.refundPayment(request);
-    if (result.status === 'failed')
+    const state = refundState(result.status);
+    if (state === 'failed')
       throw new ConnectedPaymentError(
         'REFUND_FAILED',
         'Provider declined the refund',
@@ -1213,7 +1281,14 @@ export async function refundConnectedPayment(
         'AMOUNT_MISMATCH',
         'Provider refunded a different amount than requested',
       );
+    if (!result.refundId)
+      throw new ConnectedPaymentError(
+        'REFUND_FAILED',
+        'Provider did not return a refund reference',
+      );
 
+    // Recorded before any booking: a pending refund holds its amount, and a
+    // retry with the same key resumes from this row.
     const refund = await payments.create({
       id: refundId,
       tenantId: key.tenantId,
@@ -1225,35 +1300,152 @@ export async function refundConnectedPayment(
       transactionId: payment.backendTxRef,
       reference: `connected-refund:${payment.id}`,
       backendId: key.backendId,
-      backendTxRef: result.refundId ?? '',
+      backendTxRef: result.refundId,
       connectedAccountId: payment.connectedAccountId,
       refundOfPaymentId: payment.id!,
+      connectedRefundState: state,
       notes: `Application fee refunded: ${input.refundApplicationFee ? 'yes' : 'no'}`,
     });
+    return {
+      refund,
+      payment,
+      remaining: await settle(refund),
+      state,
+      created: true,
+    };
+  });
+}
+
+function refundState(status: string): 'pending' | 'succeeded' | 'failed' {
+  if (status === 'succeeded') return 'succeeded';
+  if (status === 'failed' || status === 'canceled') return 'failed';
+  return 'pending';
+}
+
+/** Refunds of a payment that hold or used its refundable amount. */
+async function liveRefunds(
+  payments: PaymentCollection,
+  paymentId: string,
+): Promise<Payment[]> {
+  return (
+    await payments.list({
+      where: { refundOfPaymentId: paymentId, kind: 'refund' },
+    })
+  ).filter(
+    (row) =>
+      row.status !== PaymentStatus.FAILED &&
+      row.status !== PaymentStatus.CANCELLED,
+  );
+}
+
+/**
+ * Book a provider-confirmed refund and, once confirmed refunds cover the
+ * payment, mark it `REFUNDED` and retire its intent. Every step is idempotent,
+ * so a retry or a later provider update resumes where a failure stopped. A
+ * refund the provider has not confirmed is never booked.
+ *
+ * @returns Minor units still refundable
+ */
+async function finalizeConnectedRefund(args: {
+  db: DatabaseInterface;
+  tenantId: string;
+  payment: Payment;
+  refund: Payment;
+  resolveSettlementAccounts: ResolveConnectedSettlementAccounts;
+}): Promise<number> {
+  const { refund, payment } = args;
+  if (
+    refund.connectedRefundState === 'succeeded' &&
+    refund.status === PaymentStatus.PENDING
+  )
     await refund.recordRefund(
-      await input.resolveSettlementAccounts({
-        tenantId: key.tenantId,
-        currency: payment.currency,
+      await args.resolveSettlementAccounts({
+        tenantId: args.tenantId,
+        currency: refund.currency,
       }),
     );
-
-    const left = remaining - amount;
-    if (left === 0) {
+  const payments = await PaymentCollection.create({ db: args.db });
+  const live = await liveRefunds(payments, payment.id!);
+  const booked = live
+    .filter((row) => row.status === PaymentStatus.COMPLETED)
+    .reduce((sum, row) => sum + row.amount, 0);
+  if (booked === payment.amount) {
+    if (payment.status === PaymentStatus.COMPLETED) {
       payment.status = PaymentStatus.REFUNDED;
       await payment.save();
-      const intents = await PaymentIntentCollection.create({ db: key.db });
-      for (const intent of await intents.list({
-        where: { paymentId: payment.id! },
-      }))
-        if (
-          sameTenant(intent.tenantId, key.tenantId) &&
-          (intent.isPaid() || intent.isIssued())
-        ) {
-          intent.retire('refunded in full');
-          await intent.save();
-        }
     }
-    return { refund, payment, remaining: left, created: true };
+    const intents = await PaymentIntentCollection.create({ db: args.db });
+    for (const intent of await intents.list({
+      where: { paymentId: payment.id! },
+    }))
+      if (
+        sameTenant(intent.tenantId, args.tenantId) &&
+        (intent.isPaid() || intent.isIssued())
+      ) {
+        intent.retire('refunded in full');
+        await intent.save();
+      }
+  }
+  return payment.amount - live.reduce((sum, row) => sum + row.amount, 0);
+}
+
+/**
+ * Apply a provider refund update (`charge.refund.updated`, `refund.*`) to the
+ * refund recorded by {@link refundConnectedPayment}: book it once the provider
+ * confirms it, release its amount if the provider failed it.
+ */
+async function applyRefundUpdate(args: {
+  db: DatabaseInterface;
+  tenantId: string;
+  providerAccountId: string;
+  raw: unknown;
+  resolveSettlementAccounts: ResolveConnectedSettlementAccounts;
+}): Promise<{ outcome: TenantPaymentWebhookOutcome; paymentId?: string }> {
+  const object =
+    args.raw && typeof args.raw === 'object'
+      ? (args.raw as { data?: { object?: unknown } }).data?.object
+      : undefined;
+  const { id, status } = (object ?? {}) as { id?: unknown; status?: unknown };
+  if (typeof id !== 'string' || !id || typeof status !== 'string')
+    return { outcome: 'ignored' };
+  return withTenant({ tenantId: args.tenantId }, async () => {
+    const payments = await PaymentCollection.create({ db: args.db });
+    const [refund] = await payments.list({
+      where: { backendTxRef: id, kind: 'refund' },
+      limit: 1,
+    });
+    // Refunds made outside these commands are reported, not booked.
+    if (!refund) return { outcome: 'refund_reported' as const };
+    if (
+      !sameTenant(refund.tenantId, args.tenantId) ||
+      refund.connectedAccountId !== args.providerAccountId
+    )
+      throw new ConnectedPaymentError(
+        'PAYMENT_NOT_OWNED',
+        'Refund does not belong to the connected account that reported it',
+      );
+    const source = await payments.get({ id: refund.refundOfPaymentId });
+    if (!source || !sameTenant(source.tenantId, args.tenantId))
+      throw new ConnectedPaymentError(
+        'PAYMENT_NOT_OWNED',
+        'Refunded payment does not belong to this tenant',
+      );
+    const state = refundState(status);
+    // Terminal states never move back; only a pending refund changes.
+    if (refund.connectedRefundState === 'pending' && state !== 'pending') {
+      refund.connectedRefundState = state;
+      if (state === 'failed') refund.status = PaymentStatus.FAILED;
+      await refund.save();
+    }
+    if (refund.connectedRefundState === 'succeeded')
+      await finalizeConnectedRefund({
+        db: args.db,
+        tenantId: args.tenantId,
+        payment: source,
+        refund,
+        resolveSettlementAccounts: args.resolveSettlementAccounts,
+      });
+    return { outcome: 'refund_updated' as const, paymentId: refund.id! };
   });
 }
 

@@ -28,6 +28,7 @@ export type TenantPaymentWebhookOutcome =
   | 'stale_account_update'
   | 'application_fee'
   | 'refund_reported'
+  | 'refund_updated'
   | 'ignored';
 
 /** One processed provider webhook event. */

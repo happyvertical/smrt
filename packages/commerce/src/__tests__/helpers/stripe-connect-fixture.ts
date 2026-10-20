@@ -28,6 +28,7 @@ interface FixtureAccount {
   details_submitted: boolean;
   payouts_enabled: boolean;
   capabilities: Record<string, string>;
+  metadata: Record<string, string>;
 }
 
 interface FixtureSession {
@@ -49,6 +50,7 @@ function accountBody(account: FixtureAccount) {
     type: 'standard',
     country: 'CA',
     default_currency: 'usd',
+    metadata: account.metadata,
     charges_enabled: account.charges_enabled,
     details_submitted: account.details_submitted,
     payouts_enabled: account.payouts_enabled,
@@ -68,6 +70,8 @@ export class StripeConnectFixture {
   private readonly accounts = new Map<string, FixtureAccount>();
   private readonly sessions = new Map<string, FixtureSession>();
   private sequence = 0;
+  /** Status the next refunds report (`succeeded`, `pending`, …). */
+  refundStatus = 'succeeded';
   /** Distinguishes ids across fixtures sharing one PostgreSQL database. */
   readonly run = randomBytes(5).toString('hex');
 
@@ -82,9 +86,14 @@ export class StripeConnectFixture {
   }
 
   /** Register an existing connected account (as if onboarded elsewhere). */
-  addAccount(id: string, enabled = true): void {
+  addAccount(
+    id: string,
+    enabled = true,
+    metadata: Record<string, string> = {},
+  ): void {
     this.accounts.set(id, {
       id,
+      metadata,
       charges_enabled: enabled,
       details_submitted: enabled,
       payouts_enabled: enabled,
@@ -145,8 +154,13 @@ export class StripeConnectFixture {
 
     if (method === 'POST' && path === '/accounts') {
       const id = this.next('acct');
+      const metadata: Record<string, string> = {};
+      for (const [name, value] of body)
+        if (name.startsWith('metadata[') && name.endsWith(']'))
+          metadata[name.slice(9, -1)] = value;
       this.accounts.set(id, {
         id,
+        metadata,
         charges_enabled: false,
         details_submitted: false,
         payouts_enabled: false,
@@ -200,7 +214,7 @@ export class StripeConnectFixture {
       return json(200, {
         id: this.next('re'),
         object: 'refund',
-        status: 'succeeded',
+        status: this.refundStatus,
         amount: Number(body.get('amount')),
         currency: 'usd',
         payment_intent: body.get('payment_intent'),

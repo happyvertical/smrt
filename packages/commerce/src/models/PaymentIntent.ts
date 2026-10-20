@@ -426,6 +426,8 @@ export class PaymentIntent extends SmrtObject {
     ) {
       this.assertBackingFieldsUnchanged(priorRow);
     }
+    if (priorRow && String(priorRow.connected_account_id ?? ''))
+      this.assertConnectedCheckoutUnchanged(priorRow);
 
     const persistingPaidOrIssued =
       this.status === PaymentIntentStatus.PAID ||
@@ -519,6 +521,38 @@ export class PaymentIntent extends SmrtObject {
           'reconciliation and cannot change. retire() it and issue a new intent.',
       );
     }
+  }
+
+  /**
+   * A connected checkout (#3831) is bound to the account, fee and provider
+   * session it was created with. Settlement re-reads the session named by the
+   * option, so once set the options are frozen like the account and fee —
+   * otherwise a generated update could point settlement at a session made
+   * without the platform's application fee.
+   */
+  private assertConnectedCheckoutUnchanged(
+    priorRow: Record<string, unknown>,
+  ): void {
+    if (
+      String(priorRow.connected_account_id ?? '') !== this.connectedAccountId ||
+      Number(priorRow.application_fee_cents ?? 0) !== this.applicationFeeCents
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: a connected checkout's account and application fee cannot change`,
+      );
+    const priorOptions = PaymentIntent.normalizePaymentOptions(
+      priorRow.payment_options as unknown,
+    );
+    if (
+      priorOptions.length > 0 &&
+      JSON.stringify(priorOptions) !==
+        JSON.stringify(
+          PaymentIntent.normalizePaymentOptions(this.paymentOptions as unknown),
+        )
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: a connected checkout's payment options are frozen once created`,
+      );
   }
 
   /**

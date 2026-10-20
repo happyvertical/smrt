@@ -379,6 +379,13 @@ export class Payment extends SmrtObject {
    */
   refundOfPaymentId: string = '';
 
+  /**
+   * For a `refund` of a connected charge, the provider's refund state:
+   * `pending` until the provider confirms it, then `succeeded` (journaled) or
+   * `failed` (#3831). Server-managed.
+   */
+  connectedRefundState: '' | 'pending' | 'succeeded' | 'failed' = '';
+
   constructor(options: PaymentOptions = {}) {
     super(options);
     if (options.kind !== undefined) this.kind = options.kind;
@@ -417,6 +424,8 @@ export class Payment extends SmrtObject {
       this.applicationFeeCents = options.applicationFeeCents;
     if (options.refundOfPaymentId !== undefined)
       this.refundOfPaymentId = options.refundOfPaymentId;
+    if (options.connectedRefundState !== undefined)
+      this.connectedRefundState = options.connectedRefundState;
   }
 
   /**
@@ -697,6 +706,11 @@ export class Payment extends SmrtObject {
         'refundOfPaymentId',
         String(priorRow.refund_of_payment_id ?? ''),
         String(this.refundOfPaymentId ?? ''),
+      ],
+      [
+        'connectedRefundState',
+        String(priorRow.connected_refund_state ?? ''),
+        String(this.connectedRefundState ?? ''),
       ],
     ];
     for (const [field, prior, next] of frozen) {

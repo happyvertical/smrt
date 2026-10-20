@@ -139,7 +139,10 @@ export function connectedPaymentsContract(
 
     /** Link an already-onboarded provider account to a tenant. */
     async function connect(tenantId: string, accountId: string) {
-      stripe.addAccount(accountId);
+      stripe.addAccount(accountId, true, {
+        smrt_tenant_id: tenantId,
+        smrt_environment: 'test',
+      });
       return linkTenantPaymentAccount({
         db,
         gateway: stripe.adapter(),
@@ -633,6 +636,101 @@ export function connectedPaymentsContract(
       ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     });
 
+    it('books a pending refund only when the provider confirms it, and resumes interrupted refunds', async () => {
+      const account = stripe.accountId('riverbendbakery');
+      await connect(bakery, account);
+      const { intent } = await checkout(bakery);
+      const { result } = await deliverCompleted(
+        intent.paymentOptions[0]!.memo!,
+        account,
+      );
+      const refund = (
+        amount: number | undefined,
+        key: string,
+        resolve = resolveSettlementAccounts,
+      ) =>
+        refundConnectedPayment({
+          db,
+          gateway: stripe.adapter(),
+          tenantId: bakery,
+          environment: 'test',
+          paymentId: result.paymentId!,
+          amount,
+          refundApplicationFee: false,
+          idempotencyKey: key,
+          resolveSettlementAccounts: resolve,
+        });
+      const refundUpdate = (refundId: string, status: string) => {
+        const event = stripe.event({
+          type: 'charge.refund.updated',
+          account,
+          object: { id: refundId, object: 'refund', status },
+        });
+        return handleConnectedPaymentWebhook({
+          db,
+          gateway: stripe.adapter(),
+          environment: 'test',
+          payload: event.payload,
+          signature: event.signature,
+          resolveSettlementAccounts,
+        });
+      };
+
+      stripe.refundStatus = 'pending';
+      const pending = await refund(3_000, 'pending-1');
+      expect(pending.state).toBe('pending');
+      expect(pending.refund.status).toBe(PaymentStatus.PENDING);
+      expect(pending.refund.journalId).toBe('');
+      expect(pending.remaining).toBe(7_000);
+      // The pending amount stays reserved.
+      await expect(refund(8_000, 'too-much')).rejects.toMatchObject({
+        code: 'REFUND_EXCEEDS_PAYMENT',
+      });
+      const failedLater = await refund(2_000, 'pending-2');
+      expect(
+        (await refundUpdate(failedLater.refund.backendTxRef, 'failed')).outcome,
+      ).toBe('refund_updated');
+      expect(
+        (await refundUpdate(pending.refund.backendTxRef, 'succeeded')).outcome,
+      ).toBe('refund_updated');
+      // A late 'pending' update never moves a settled refund back.
+      await refundUpdate(pending.refund.backendTxRef, 'pending');
+      await withTenant({ tenantId: bakery }, async () => {
+        const payments = await PaymentCollection.create({ db });
+        const booked = await payments.get({ id: pending.refund.id! });
+        expect(booked?.status).toBe(PaymentStatus.COMPLETED);
+        expect(booked?.journalId).not.toBe('');
+        expect(
+          (await payments.get({ id: failedLater.refund.id! }))?.status,
+        ).toBe(PaymentStatus.FAILED);
+      });
+
+      // Provider refund succeeds but booking fails: a retry with the same key
+      // finishes the booking and the full-refund state without a second
+      // provider refund.
+      stripe.refundStatus = 'succeeded';
+      const calls = stripe.requestsTo('/refunds').length;
+      await expect(
+        refund(undefined, 'rest', () => {
+          throw new Error('ledger offline');
+        }),
+      ).rejects.toThrow('ledger offline');
+      const resumed = await refund(undefined, 'rest');
+      expect(resumed).toMatchObject({ created: false, remaining: 0 });
+      expect(resumed.refund.status).toBe(PaymentStatus.COMPLETED);
+      expect(stripe.requestsTo('/refunds')).toHaveLength(calls + 1);
+      await withTenant({ tenantId: bakery }, async () => {
+        const payments = await PaymentCollection.create({ db });
+        expect((await payments.get({ id: result.paymentId! }))?.status).toBe(
+          PaymentStatus.REFUNDED,
+        );
+        const intents = await PaymentIntentCollection.create({ db });
+        expect((await intents.get({ id: intent.id! }))?.status).toBe(
+          PaymentIntentStatus.RETIRED,
+        );
+      });
+    });
+
     it('refuses wrong-tenant refunds and relinks, including privileged callers', async () => {
       await connect(bakery, stripe.accountId('riverbendbakery'));
       await connect(toolLibrary, stripe.accountId('harbortools'));
@@ -674,26 +772,44 @@ export function connectedPaymentsContract(
         code: 'ACCOUNT_IN_USE',
       });
 
-      // Relinking without `replace` is refused; with it, old payments can no
+      // An account that does not name the tenant needs host-verified
+      // ownership; relinking also needs `replace`. Old payments can then no
       // longer be refunded through the new account.
       stripe.addAccount(stripe.accountId('riverbendnew'));
-      await expect(
+      const linkNew = (extra: {
+        replace?: boolean;
+        ownershipVerified?: boolean;
+      }) =>
         linkTenantPaymentAccount({
           db,
           gateway: stripe.adapter(),
           tenantId: bakery,
           environment: 'test',
           providerAccountId: stripe.accountId('riverbendnew'),
-        }),
-      ).rejects.toMatchObject({ code: 'ACCOUNT_ALREADY_LINKED' });
-      await linkTenantPaymentAccount({
-        db,
-        gateway: stripe.adapter(),
-        tenantId: bakery,
-        environment: 'test',
-        providerAccountId: stripe.accountId('riverbendnew'),
-        replace: true,
+          ...extra,
+        });
+      await expect(linkNew({ replace: true })).rejects.toMatchObject({
+        code: 'ACCOUNT_NOT_OWNED',
       });
+      await expect(linkNew({ ownershipVerified: true })).rejects.toMatchObject({
+        code: 'ACCOUNT_ALREADY_LINKED',
+      });
+      await linkNew({ replace: true, ownershipVerified: true });
+      // The bakery's old account is no longer held, but it still names the
+      // bakery: nobody else can claim it, even with verified ownership.
+      await expect(
+        withSystemContext(() =>
+          linkTenantPaymentAccount({
+            db,
+            gateway: stripe.adapter(),
+            tenantId: toolLibrary,
+            environment: 'test',
+            providerAccountId: stripe.accountId('riverbendbakery'),
+            replace: true,
+            ownershipVerified: true,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'ACCOUNT_IN_USE' });
       await expect(
         refundConnectedPayment({
           db,
@@ -758,6 +874,24 @@ export function connectedPaymentsContract(
       expect(refreshed.status).toBe('disabled');
       await expect(checkout(bakery)).rejects.toMatchObject({
         code: 'NO_ENABLED_ACCOUNT',
+      });
+
+      // A connected checkout's options cannot be repointed (for example by a
+      // generated update) at a session made without the application fee.
+      await setTenantPaymentAccountDisabled({
+        db,
+        tenantId: bakery,
+        environment: 'test',
+        disabled: false,
+      });
+      const { intent } = await checkout(bakery, 'freeze');
+      await withTenant({ tenantId: bakery }, async () => {
+        const intents = await PaymentIntentCollection.create({ db });
+        const stored = (await intents.get({ id: intent.id! }))!;
+        stored.paymentOptions = [
+          { ...stored.paymentOptions[0]!, memo: 'cs_test_withoutfee' },
+        ];
+        await expect(stored.save()).rejects.toThrow(/frozen/);
       });
     });
 
