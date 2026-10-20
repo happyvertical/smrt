@@ -330,6 +330,86 @@ describe('runRuntimeCheck', () => {
     expect(result.projectPackageName).toBe('@app/example');
   });
 
+  it('hydrates through extendsQualified when two dependencies share the parent name (#4160)', async () => {
+    const writeDep = (
+      name: string,
+      scopeDir: string,
+      fields: Record<string, unknown>,
+    ) => {
+      const depDir = join(tempDir, 'node_modules', '@acme', scopeDir);
+      mkdirSync(join(depDir, '.smrt'), { recursive: true });
+      writeFileSync(
+        join(depDir, 'package.json'),
+        JSON.stringify({
+          name,
+          version: '1.0.0',
+          dependencies: { '@happyvertical/smrt-core': '*' },
+        }),
+        'utf-8',
+      );
+      writeFileSync(
+        join(depDir, '.smrt', 'manifest.json'),
+        JSON.stringify({
+          version: '1.0.0',
+          packageName: name,
+          objects: {
+            [`${name}:Agreement`]: {
+              className: 'Agreement',
+              qualifiedName: `${name}:Agreement`,
+              fields,
+            },
+          },
+        }),
+        'utf-8',
+      );
+    };
+    writeDep('@acme/commerce', 'commerce', {
+      id: { type: 'text' },
+      customerId: { type: 'text' },
+    });
+    writeDep('@acme/sales', 'sales', {
+      id: { type: 'text' },
+      termsJson: { type: 'text' },
+    });
+
+    const manifest = (extendsQualified?: string) => ({
+      version: '1.0.0',
+      packageName: '@app/example',
+      smrtDependencies: ['@acme/commerce', '@acme/sales'],
+      objects: {
+        '@app/example:AdContract': {
+          className: 'AdContract',
+          qualifiedName: '@app/example:AdContract',
+          extends: 'Agreement',
+          ...(extendsQualified ? { extendsQualified } : {}),
+          fields: {
+            id: { type: 'text' },
+            customerId: { type: 'text' },
+            siteId: { type: 'text' },
+          },
+        },
+      },
+    });
+
+    writeManifest(tempDir, manifest());
+    writeFileSync(join(tempDir, '.smrt', 'register.js'), '// registered');
+    const ambiguous = await runRuntimeCheck(tempDir);
+    expect(findCodes(ambiguous.findings)).toContain(
+      'ambiguous-extends-reference',
+    );
+
+    writeManifest(tempDir, manifest('@acme/commerce:Agreement'));
+    const qualified = await runRuntimeCheck(tempDir);
+    expect(findCodes(qualified.findings)).not.toContain(
+      'ambiguous-extends-reference',
+    );
+    expect(
+      qualified.findings.filter((finding) =>
+        finding.message.includes('AdContract'),
+      ),
+    ).toEqual([]);
+  });
+
   it('reports a missing dependency manifest for an undeclared SMRT dependency', async () => {
     writeManifest(tempDir, {
       version: '1.0.0',
