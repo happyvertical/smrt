@@ -217,6 +217,8 @@ export {
   type TenantHierarchyProblem,
   type TenantHierarchyRow,
 } from './models/tenant-hierarchy.js';
+// Deployed self-hosted password provider readiness (#4158)
+export { checkReadiness } from './password-readiness.js';
 // Credential retention — expired sessions and tokens (#2375)
 export {
   CLI_AUTH_RETENTION_TASK,

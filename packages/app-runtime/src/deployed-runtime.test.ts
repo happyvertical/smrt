@@ -131,6 +131,32 @@ describe('deployed application runtime', () => {
     });
   });
 
+  it('requires real password-provider readiness before opening self-hosted PostgreSQL', async () => {
+    const { db } = databaseFixture();
+    const connect = vi.fn(async () => db);
+    const passwordReadiness = vi.fn(async () => {
+      throw new Error('password schema missing');
+    });
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        providers: { authentication: { provider: 'password' } },
+        database: { engine: 'postgres', connect, close: closeDatabase },
+        authentication: {
+          provider: 'password',
+          readiness: passwordReadiness,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'authentication',
+    });
+
+    expect(passwordReadiness).toHaveBeenCalledOnce();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   it('composes cloud with required tenant context and scalable workers', async () => {
     const { db } = databaseFixture();
     const initialized = await initializeDeployedApplicationRuntime({

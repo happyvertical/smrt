@@ -33,7 +33,7 @@ fails closed.
 | Profile | Default composition | Supported choices |
 | --- | --- | --- |
 | `local` | user-owned SQLite; single-use owner bootstrap; real default tenant; local assets and secrets; embedded jobs; loopback binding; file-snapshot backup | jobs may run `inline`; TLS may be enabled while the bind remains loopback |
-| `self-hosted` | operator PostgreSQL; OIDC; single tenant; S3-compatible assets; environment secrets; external workers; public TLS; operator backup | magic link auth; explicit multi-tenant mode with required context; local or S3-compatible assets; environment, local-file, or external secrets; application isolation or RLS |
+| `self-hosted` | operator PostgreSQL; OIDC; single tenant; S3-compatible assets; environment secrets; external workers; public TLS; operator backup | magic link or password auth; explicit multi-tenant mode with required context; local or S3-compatible assets; environment, local-file, or external secrets; application isolation or RLS |
 | `cloud` | managed PostgreSQL; hosted identity; required multi-tenant context with RLS; managed storage and secrets; scalable workers; public TLS; managed backup | S3-compatible storage, external secret provider, or application-enforced isolation |
 
 All three presets advertise logical export and import. Provider-specific

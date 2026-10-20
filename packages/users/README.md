@@ -904,6 +904,14 @@ Other credential kinds (a fob or badge reader, say) implement
 
 ### Password sign-in
 
+For a self-hosted public password deployment, set
+`SMRT_AUTH_READINESS_MODULE=@happyvertical/smrt-users`. The existing
+app-runtime provider-readiness factory then opens the configured PostgreSQL
+database and requires the password, session, membership, and login-limiter
+schema used by `PasswordCredentialService`; it never creates schema. Browser
+owner bootstrap remains local-only, so production owners are provisioned by a
+separate operator path.
+
 `PasswordCredentialService` (#3274) gives an app without an identity provider
 email-or-username + password sign-in for **existing, active** users. It never creates a
 user. The password lives in its own object, `UsersPasswordCredential`
