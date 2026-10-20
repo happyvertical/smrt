@@ -10,6 +10,7 @@ import { cancelsSpeech } from '../ai/echo-gate.ts';
 import { aiState } from '../ai/instance.ts';
 import { getModel, shortLabel } from '../assistant/models.ts';
 import { isOfferRef } from '../assistant/offers.svelte.ts';
+import { plannerConversationStarters } from '../assistant/starters.ts';
 import { isThemeUndoRef } from '../assistant/theme-undo.svelte.ts';
 import { createHandsFreeCapture as handsFreeCapture } from '../assistant/voice-host.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
@@ -18,7 +19,10 @@ import { applyLibraryCookbook, needsConfirm } from '../library/apply.ts';
 import { getLibraryCookbook } from '../library/index.ts';
 import { previewMenu } from '../library/menu.ts';
 import { appHref } from '../planner/app.svelte.ts';
+import { recipes } from '../recipes/index.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 import { plannerReportsFor } from '../reports/planner.ts';
+import { plannerReportSources } from '../reports/sources.ts';
 import { settingsOfCookbook } from '../settings/app-settings.ts';
 import ReportProposalCard from './ReportProposalCard.svelte';
 import VoiceTyping from './VoiceTyping.svelte';
@@ -37,8 +41,21 @@ let { registry, settingsHref = appHref('/ai/') }: BrowserAssistantProps =
 // AI models page read the same), so closing the dock keeps them loaded.
 const session = $derived(aiState.session);
 const voice = $derived(aiState.voice);
+let resetRevision = $state(0);
+// AssistantDock owns its rendered thread, composer and pending requests. Reset
+// retires that state immediately; ordinary conversation notifications do not.
+$effect(() => {
+  const transport = session.transport;
+  resetRevision = transport.resetRevision;
+  return transport.subscribeConversation(() => {
+    resetRevision = transport.resetRevision;
+  });
+});
 const model = $derived(getModel(session.prefs.modelId));
 const dataSource = useDataSource();
+const suggestions = $derived(
+  plannerConversationStarters(plannerReportSources(recipeState.ids, recipes)),
+);
 const thinkName = $derived(
   session.mode === 'manual'
     ? 'Off'
@@ -201,11 +218,13 @@ $effect(() => {
         if (cancelsSpeech(event)) aiState.cancelSpeech();
       }}
     >
+      {#key resetRevision}
       <AssistantDock
         transport={session.transport}
         {registry}
         contextMode="server"
         conversations="single"
+        {suggestions}
         composerPlaceholder="I run a bakery…"
         toolCall={toolCard}
         dictation={voice.dictation}
@@ -214,6 +233,7 @@ $effect(() => {
         sendOnPause={aiState.sendOnPauseActive}
         speaking={aiState.speaking}
       />
+      {/key}
     </div>
   {:else}
     <!-- The header control only opens the dock once the assistant is ready;

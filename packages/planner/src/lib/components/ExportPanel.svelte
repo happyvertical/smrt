@@ -2,9 +2,11 @@
 import { Button, Chip, Disclosure } from '@happyvertical/smrt-ui';
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { Textarea } from '@happyvertical/smrt-ui/forms';
+import { onMount, tick } from 'svelte';
+import type { BrowserAssistantTransport } from '../assistant/transport.ts';
 import { describeCookbook, summarizeCookbook } from '../cookbook/describe.ts';
 import {
-  downloadCookbook,
+  downloadCookbookFile,
   exportFileName,
   exportFileSize,
   formatSize,
@@ -18,11 +20,18 @@ import {
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import type { Cookbook } from '../cookbook/types.ts';
 import { parseCookbookText } from '../cookbook/validate.ts';
-import { useDataSource } from '../data/context.ts';
 import { kitchenState } from '../kitchen/state.svelte.ts';
 import { getLibraryCookbook } from '../library/index.ts';
 import { libraryState } from '../library/state.svelte.ts';
+import type {
+  ExportData,
+  PlannerController,
+} from '../planner/commands/index.ts';
+import { capturePlannerExport } from '../planner/export-context.ts';
+import { plannerController } from '../planner/instance.ts';
+import type { PlannerExportAction } from '../planner/types.ts';
 import CopyButton from './CopyButton.svelte';
+import ProjectControls from './ProjectControls.svelte';
 
 /**
  * The Export tab: what the cookbook holds, a prompt that hands it to a coding
@@ -32,9 +41,49 @@ import CopyButton from './CopyButton.svelte';
 interface Props {
   /** Replaces `navigator.clipboard.writeText` (tests). */
   write?: (text: string) => Promise<void>;
+  exportAction?: PlannerExportAction;
+  controller?: PlannerController;
+  nativeAssistant?: BrowserAssistantTransport;
+  onreset?: () => void;
+  resetDisabledReason?: string;
 }
 
-let { write }: Props = $props();
+let {
+  write,
+  exportAction,
+  controller = plannerController,
+  nativeAssistant,
+  onreset,
+  resetDisabledReason,
+}: Props = $props();
+let actionPending = $state(false);
+let assistantBusy = $state(false);
+let actionError = $state('');
+onMount(() =>
+  nativeAssistant?.subscribeConversation(() => {
+    assistantBusy = nativeAssistant?.busy ?? false;
+  }),
+);
+function downloadCurrent() {
+  const result = controller.run({ name: 'export_cookbook', input: {} });
+  if (result.ok) downloadCookbookFile(result.data as ExportData);
+  else actionError = result.error.message;
+}
+async function runExportAction() {
+  if (!exportAction || actionPending) return;
+  actionError = '';
+  actionPending = true;
+  try {
+    await exportAction.run(capturePlannerExport(controller, nativeAssistant));
+  } catch (cause) {
+    actionError =
+      cause instanceof Error
+        ? cause.message
+        : 'The export action could not finish. Try again.';
+  } finally {
+    actionPending = false;
+  }
+}
 
 let fileInput: HTMLInputElement | undefined = $state();
 let promptBox: ReturnType<typeof Textarea> | undefined = $state();
@@ -46,7 +95,7 @@ let pendingDropped = $state<string[]>([]);
 let error = $state('');
 let notice = $state('');
 let copyNotice = $state('');
-let confirmingReset = $state(false);
+let promptOpen = $state(false);
 
 // A file is named for the cookbook's own name, else the library cookbook last
 // applied, else a generic name.
@@ -67,7 +116,9 @@ const command = $derived(applyCommand(fileName, appName));
 const COPY_BY_HAND =
   'Copying is not available here. The text is selected: press Ctrl+C (Cmd+C on a Mac) to copy it.';
 
-function promptCopyFailed() {
+async function promptCopyFailed() {
+  promptOpen = true;
+  await tick();
   const element = promptBox?.getElement();
   element?.focus();
   element?.select();
@@ -110,93 +161,74 @@ function confirmImport() {
   pending = null;
   pendingDropped = [];
 }
-
-const dataSource = useDataSource();
-
-function confirmReset() {
-  cookbookStore.reset();
-  // Rows the visitor added, edited or deleted go with the cookbook.
-  dataSource.reset?.();
-  confirmingReset = false;
-  // The shell holds its settings in memory too; reload so it starts from its
-  // defaults (the cookbook is already saved empty).
-  cookbookStore.flush();
-  location.reload();
-}
 </script>
 
 <div class="export">
-  <p class="meta">
-    Your recipes, their options, the theme, the layout and customised pages,
-    kept together in this browser as one cookbook. Sample records are not part
-    of it.
-  </p>
-
-  <section class="block" aria-labelledby="summary-heading" data-export-section="summary">
-    <h2 id="summary-heading">In this cookbook</h2>
-    {#if summary.length}
-      <dl class="summary">
-        {#each summary as line (line.id)}
-          <dt>{line.label}</dt>
-          <dd>
-            {#if line.chips}
-              <ul class="chips">
-                {#each line.chips as chip, i (`${chip}:${i}`)}
-                  <li><Chip label={chip} size="sm" /></li>
-                {/each}
-              </ul>
-            {:else}
-              {line.text}
-            {/if}
-          </dd>
-        {/each}
-      </dl>
-    {:else}
-      <p class="quiet">Nothing customised yet. Add recipes or apply a cookbook first.</p>
-    {/if}
-  </section>
-
   <section class="block" aria-labelledby="prompt-heading" data-export-section="prompt">
-    <h2 id="prompt-heading">Copy prompt for your coding agent</h2>
-    <p class="meta" id="prompt-note">
-      Paste it into Claude Code, Codex or another coding agent. The prompt
-      carries the cookbook, creates the app <code>{appName}</code> with the smrt CLI {prompt.version} and
-      starts it. About {formatSize(prompt.bytes)}.
-    </p>
-    <Textarea
-      bind:this={promptBox}
-      class="prompt"
-      value={prompt.text}
-      readonly
-      rows={10}
-      spellcheck={false}
-      wrap="soft"
-      aria-label="Prompt for your coding agent"
-      aria-describedby="prompt-note"
-      interaction={false}
-    />
-    <div class="actions" data-export-actions="primary">
-      <CopyButton
-        text={() => prompt.text}
-        label="Copy prompt"
-        {write}
-        oncopied={() => (copyNotice = 'Prompt copied.')}
-        onfail={promptCopyFailed}
-      />
-      {#if kitchenState.config}
-        <Button
-          variant="secondary"
-          disabled={kitchenState.status === 'sending'}
-          onclick={() => kitchenState.send(cookbookStore.snapshot())}
-        >{kitchenState.status === 'sending' ? 'Sending to kitchen…' : 'Send to kitchen'}</Button>
-      {/if}
-      <Button variant="secondary" onclick={() => downloadCookbook(current, current.name ?? libraryName)}>Download cookbook</Button>
+    <div class="export-intro">
+      <p class="eyebrow">Your app plan</p>
+      <h2 id="prompt-heading">Ready for the next step?</h2>
+      <p class="meta">Your recipes, theme, layout and customised pages travel together as a cookbook. Sample records stay in this preview.</p>
     </div>
+    <div class="next-steps" data-export-actions="primary">
+      {#if exportAction}
+        <div class="build-step">
+          <h3>Build your app</h3>
+          <p class="meta">Continue with your current plan.</p>
+          <div class="actions">
+            <Button disabled={actionPending || assistantBusy} onclick={runExportAction}>{exportAction.label}</Button>
+          </div>
+        </div>
+      {/if}
+      <div class="copy-step">
+        <h3>Keep a copy</h3>
+        <p class="meta">Download your cookbook or copy a prompt for your coding agent.</p>
+        <div class="actions">
+          <CopyButton
+            text={() => prompt.text}
+            label="Copy prompt"
+            variant={exportAction ? 'secondary' : 'primary'}
+            {write}
+            oncopied={() => (copyNotice = 'Prompt copied.')}
+            onfail={promptCopyFailed}
+          />
+          {#if kitchenState.config}
+            <Button
+              variant="secondary"
+              disabled={kitchenState.status === 'sending'}
+              onclick={() => kitchenState.send(cookbookStore.snapshot())}
+            >{kitchenState.status === 'sending' ? 'Sending to kitchen…' : 'Send to kitchen'}</Button>
+          {/if}
+          <Button variant="secondary" onclick={downloadCurrent}>Download cookbook</Button>
+        </div>
+      </div>
+    </div>
+    {#if actionError}<Alert variant="error" title="Export action failed">{actionError}</Alert>{/if}
+    {#if exportAction && assistantBusy}<p class="meta" role="status">Wait for the assistant to finish, or stop it, before continuing.</p>{/if}
     <p class="notice" role="status" aria-live="polite">{copyNotice}</p>
+    <Disclosure title="Preview coding-agent prompt" bind:open={promptOpen}>
+      <p class="meta" id="prompt-note">
+        Paste it into Claude Code, Codex or another coding agent. The prompt
+        carries the cookbook, creates the app <code>{appName}</code> with the smrt CLI {prompt.version} and
+        starts it. About {formatSize(prompt.bytes)}.
+      </p>
+      <Textarea
+        bind:this={promptBox}
+        class="prompt"
+        value={prompt.text}
+        readonly
+        rows={7}
+        spellcheck={false}
+        wrap="soft"
+        aria-label="Prompt for your coding agent"
+        aria-describedby="prompt-note"
+        interaction={false}
+      />
+    </Disclosure>
   </section>
 
-  <section class="block" aria-labelledby="file-heading" data-export-section="file">
-    <h2 id="file-heading">The downloaded file</h2>
+  <section class="block" aria-label="Downloaded file instructions" data-export-section="file">
+    <Disclosure title="Use the downloaded file yourself">
     <p class="meta">
       Download writes <code>{fileName}</code> ({fileSize}). To make the app from
       it yourself, run this where the file is:
@@ -214,6 +246,32 @@ function confirmReset() {
     </div>
     <Disclosure title="Preview JSON">
       <pre class="json">{serializeCookbook(current)}</pre>
+    </Disclosure>
+    </Disclosure>
+  </section>
+
+  <section class="block" aria-label="Cookbook summary" data-export-section="summary">
+    <Disclosure title="In this cookbook">
+      {#if summary.length}
+        <dl class="summary">
+          {#each summary as line (line.id)}
+            <dt>{line.label}</dt>
+            <dd>
+              {#if line.chips}
+                <ul class="chips">
+                  {#each line.chips as chip, i (`${chip}:${i}`)}
+                    <li><Chip label={chip} size="sm" /></li>
+                  {/each}
+                </ul>
+              {:else}
+                {line.text}
+              {/if}
+            </dd>
+          {/each}
+        </dl>
+      {:else}
+        <p class="quiet">Nothing customised yet. Add recipes or apply a cookbook first.</p>
+      {/if}
     </Disclosure>
   </section>
 
@@ -259,31 +317,33 @@ function confirmReset() {
     </div>
   {/if}
 
-  <section class="block replace" aria-labelledby="replace-heading" data-export-section="replace">
-    <h2 id="replace-heading">Replace or start over</h2>
-    <p class="meta">
-      Both replace everything listed above; download a copy first to keep it.
-    </p>
-    <div class="actions" data-export-actions="replace">
-      <Button variant="secondary" onclick={() => fileInput?.click()}>Import cookbook…</Button>
-      <Button variant="ghost" onclick={() => (confirmingReset = true)}>Reset</Button>
-    </div>
-    <p class="meta">
-      Import swaps this cookbook for one from a file. Reset empties it and
-      removes the sample records you added or changed.
-    </p>
-    <input
-      bind:this={fileInput}
-      type="file"
-      accept="application/json,.json"
-      hidden
-      aria-label="Cookbook file"
-      onchange={choose}
-    />
-    {#if error}
-      <Alert variant="error" title="Import failed">{error}</Alert>
-    {/if}
-    <p class="notice" role="status" aria-live="polite">{notice}</p>
+  <section class="block replace" aria-label="Import or reset project" data-export-section="replace">
+    <Disclosure title="Import or reset project">
+      <p class="meta">
+        Both replace everything listed above; download a copy first to keep it.
+      </p>
+      <div class="actions" data-export-actions="replace">
+        <Button variant="secondary" onclick={() => fileInput?.click()}>Import cookbook…</Button>
+
+      </div>
+      <p class="meta">
+        Import swaps this cookbook for one from a file. Reset project also clears
+        your conversation, sample records and current Build it draft.
+      </p>
+      <ProjectControls resetOnly {controller} {nativeAssistant} {onreset} {resetDisabledReason} />
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        aria-label="Cookbook file"
+        onchange={choose}
+      />
+      {#if error}
+        <Alert variant="error" title="Import failed">{error}</Alert>
+      {/if}
+      <p class="notice" role="status" aria-live="polite">{notice}</p>
+    </Disclosure>
   </section>
 </div>
 
@@ -299,16 +359,6 @@ function confirmReset() {
   oncancel={() => (pending = null)}
 />
 
-<ConfirmDialog
-  open={confirmingReset}
-  title="Reset the cookbook?"
-  message="This removes every recipe, saved option, theme and layout change, and the sample records you added or changed. Download a copy first to keep it."
-  confirmLabel="Reset"
-  destructive
-  onconfirm={confirmReset}
-  oncancel={() => (confirmingReset = false)}
-/>
-
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
@@ -319,6 +369,7 @@ function confirmReset() {
   }
 
   h2,
+  h3,
   p,
   dl,
   dd,
@@ -329,6 +380,12 @@ function confirmReset() {
   h2 {
     font: var(--smrt-typography-title-medium-font);
   }
+
+  h3 { font: var(--smrt-typography-title-small-font); }
+  .eyebrow { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-large-font); }
+  .export-intro, .build-step, .copy-step { display: grid; gap: var(--smrt-spacing-3); min-inline-size: 0; }
+  .next-steps { display: grid; gap: var(--smrt-spacing-4); }
+  .build-step { padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-sunken); }
 
   .block {
     display: grid;
@@ -443,6 +500,7 @@ function confirmReset() {
 
   /* Forced colours: the command and preview boxes keep a visible edge. */
   @media (forced-colors: active) {
+    .build-step,
     .command code,
     .json {
       border-color: CanvasText;

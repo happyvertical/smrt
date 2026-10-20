@@ -49,6 +49,119 @@ describe('the export panel', () => {
     vi.useRealTimers();
   });
 
+  it('runs a host action first with exact context and preserves download after failure', async () => {
+    const run = vi.fn(
+      async (
+        _context: import('../src/lib/planner/types.ts').PlannerExportContext,
+      ) => {
+        throw new Error('Host unavailable');
+      },
+    );
+    app = mount(ExportPanel, {
+      target,
+      context,
+      props: { exportAction: { label: 'Continue', run } },
+    });
+    await settle();
+    const actions = target.querySelector('[data-export-actions="primary"]');
+    if (!actions) throw new Error('Expected primary export actions');
+    expect(buttons(actions)[0]).toBe('Continue');
+    const hostAction = actions.querySelector('button');
+    if (!hostAction) throw new Error('Expected primary host action');
+    hostAction.click();
+    await settle();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      export: { cookbook: cookbookStore.snapshot() },
+      conversation: [],
+    });
+    expect(target.textContent).toContain('Host unavailable');
+    expect(buttons(actions!)).toContain('Download cookbook');
+    expect(
+      [...actions!.querySelectorAll('button')].find((b) =>
+        b.textContent?.includes('Download cookbook'),
+      )?.disabled,
+    ).toBe(false);
+  });
+
+  it('puts the host action before optional details and keeps technical content collapsed', async () => {
+    app = mount(ExportPanel, {
+      target,
+      context,
+      props: { exportAction: { label: 'Build it', run: vi.fn() } },
+    });
+    await settle();
+    expect(buttons(target).slice(0, 3)).toEqual([
+      'Build it',
+      'Copy prompt',
+      'Download cookbook',
+    ]);
+    const sections = [...target.querySelectorAll('[data-export-section]')];
+    expect(sections[0]?.getAttribute('data-export-section')).toBe('prompt');
+    for (const details of target.querySelectorAll('details'))
+      expect(details.open).toBe(false);
+    expect(target.querySelector('h2')?.textContent).toBe(
+      'Ready for the next step?',
+    );
+    expect(target.querySelector('.build-step')?.textContent).toContain(
+      'Build your app',
+    );
+  });
+
+  it('downloads the exact same native export text and filename the host receives', async () => {
+    let captured:
+      | import('../src/lib/planner/types.ts').PlannerExportContext
+      | undefined;
+    let blob: Blob | undefined;
+    let filename = '';
+    const create = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((value) => {
+        blob = value as Blob;
+        return 'blob:export-test';
+      });
+    const revoke = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {});
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        filename = this.download;
+      });
+    try {
+      app = mount(ExportPanel, {
+        target,
+        context,
+        props: {
+          exportAction: {
+            label: 'Continue',
+            run(
+              value: import('../src/lib/planner/types.ts').PlannerExportContext,
+            ) {
+              captured = value;
+            },
+          },
+        },
+      });
+      await settle();
+      const actions = target.querySelector('[data-export-actions="primary"]')!;
+      const find = (label: string) =>
+        [...actions.querySelectorAll('button')].find(
+          (b) => b.textContent?.trim() === label,
+        )!;
+      find('Continue').click();
+      await settle();
+      find('Download cookbook').click();
+      await settle();
+      expect(filename).toBe(captured?.export.fileName);
+      expect(await blob?.text()).toBe(captured?.export.text);
+    } finally {
+      create.mockRestore();
+      revoke.mockRestore();
+      click.mockRestore();
+    }
+  });
+
   it('renders the summary, the prompt, the file and the replace sections', async () => {
     app = mount(ExportPanel, { target, context });
     await settle();
@@ -76,7 +189,7 @@ describe('the export panel', () => {
     expect(file?.querySelector('[data-export-command]')?.textContent).toMatch(
       /^npx -y @happyvertical\/smrt-cli@\d+\.\d+\.\d+ cookbook apply bakery\.cookbook\.json bakery$/,
     );
-    const preview = file?.querySelector('details');
+    const preview = file?.querySelector('details details');
     expect(preview?.textContent).toContain('Preview JSON');
     expect(
       JSON.parse(preview?.querySelector('pre')?.textContent ?? ''),
@@ -92,9 +205,14 @@ describe('the export panel', () => {
       'Copy prompt',
       'Download cookbook',
     ]);
-    expect(replace && buttons(replace)).toEqual(['Import cookbook…', 'Reset']);
+    expect(replace && buttons(replace)).toEqual(['Import cookbook…']);
+    expect(
+      target.querySelector('[data-export-section="replace"]')?.textContent,
+    ).toContain('Reset project');
     const all = buttons(target);
-    expect(all.indexOf('Reset')).toBeGreaterThan(all.indexOf('Copy command'));
+    expect(all.indexOf('Reset project')).toBeGreaterThan(
+      all.indexOf('Copy command'),
+    );
   });
 
   it('adds Send to kitchen to the primary group when a kitchen is linked', async () => {
@@ -159,6 +277,7 @@ describe('the export panel', () => {
     const box = target.querySelector<HTMLTextAreaElement>(
       '[data-export-section="prompt"] textarea',
     );
+    expect(box?.closest('details')?.open).toBe(true);
     expect(document.activeElement).toBe(box);
     expect(
       target.querySelector('[data-export-section="prompt"] [role="status"]')

@@ -12,10 +12,12 @@ import {
   validateAssistantQuestionAnswer,
 } from '@happyvertical/smrt-chat/svelte';
 import { resolveRuntimeReportTimeRange } from '@happyvertical/smrt-reports/spec';
+import { applySampleContext } from '../data/sample-context.ts';
 import {
   createSliceController,
   type PlannerController,
 } from '../planner/commands/index.ts';
+import type { CommandResult } from '../planner/commands/types.ts';
 import type { Recipe } from '../recipes/types.ts';
 import {
   type ReportFollowUp,
@@ -35,6 +37,7 @@ import {
   type SettingsStore,
   type ThemeStore,
 } from './change.ts';
+import { appliedCoaching } from './coaching.ts';
 import { buildMatchIndex, matchText } from './match.ts';
 import type { OfferRef } from './offers.svelte.ts';
 import {
@@ -58,13 +61,25 @@ export interface ChatModel {
   ): Promise<string>;
 }
 
+export interface PlannerHostTurn {
+  userMessage: AssistantMessage;
+  conversation: AssistantMessage[];
+  signal: AbortSignal;
+}
+/** A trusted host callback, never a model tool or a restored-history event. */
+export type PlannerHostTurnHandler = (
+  turn: PlannerHostTurn,
+) => Promise<{ content: string } | null>;
+
 export interface BrowserTransportOptions {
+  hostTurn?: (turn: PlannerHostTurn) => Promise<{ content: string } | null>;
+  conversationStorage?: Storage | null;
   /** The loaded model; null until the visitor has downloaded one. */
   model: () => ChatModel | null;
   store: RecipeStore;
   recipes: readonly Recipe[];
   /** Cookbooks the assistant may offer (id, name, summary). */
-  cookbooks?: readonly CookbookBrief[];
+  cookbooks?: readonly CookbookBrief[] | (() => readonly CookbookBrief[]);
   /** Proposes a cookbook; the person's click applies it. Null: already pending. */
   offers?: {
     offer(cookbookId: string): OfferRef | null;
@@ -114,7 +129,31 @@ export interface BrowserTransportOptions {
   reports?: () => PlannerReports | null;
 }
 
+export interface PlannerConversationSeed {
+  /** Stable host handoff id. A repeated seed does nothing. */
+  id: string;
+  messages: readonly { role: 'user' | 'assistant'; content: string }[];
+}
+
 export interface BrowserAssistantTransport extends AssistantTransport {
+  /** The actual native thread, without the inference wire's history limits. */
+  conversation(): AssistantMessage[];
+  /** Observe cloned transcript snapshots, including tool outcomes and busy changes. */
+  subscribeConversation(
+    listener: (messages: AssistantMessage[]) => void,
+  ): () => void;
+  /** True until the complete user/assistant turn has been recorded. */
+  readonly busy: boolean;
+  /** Seed plain earlier turns once, before native sends; never executes commands. */
+  seed(input: PlannerConversationSeed): boolean;
+  /** Host-only sends (for example handoff replay) never invoke hostTurn. */
+  sendHostMessage(
+    input: AssistantSendMessageInput,
+  ): Promise<AssistantSendMessageResult>;
+  /** Clear this workspace thread and stop any in-flight completion. */
+  reset(): void;
+  /** Changes only on reset, so a mounted dock can retire its private UI state. */
+  readonly resetRevision: number;
   /** Stop the turn in flight, if any. */
   abort(): void;
   /**
@@ -159,10 +198,12 @@ const runSummary = (
 function runCommands(
   controller: PlannerController,
   calls: readonly { name: string; input: unknown }[],
-): string {
+): { summary: string; results: CommandResult[] } {
   const lines: string[] = [];
+  const results: CommandResult[] = [];
   for (const call of calls) {
     const result = controller.run(call);
+    results.push(result);
     if (!result.ok) {
       lines.push(
         `The server's ${call.name} was refused: ${result.error.message}`,
@@ -171,7 +212,7 @@ function runCommands(
     }
     if (result.receipt.summary) lines.push(result.receipt.summary);
   }
-  return lines.join(' ');
+  return { summary: lines.join(' '), results };
 }
 
 /** Said when a turn changed nothing and the model's sentence was not a question. */
@@ -404,6 +445,34 @@ export function createBrowserAssistantTransport(
   };
   const messages: AssistantMessage[] = [];
   const seen = new Map<string, AssistantSendMessageResult>();
+  const seeds = new Set<string>();
+  const listeners = new Set<(messages: AssistantMessage[]) => void>();
+  let busy = false;
+  let sent = false;
+  let generation = 0;
+  const conversation = () => structuredClone(messages);
+  const persist = () => {
+    try {
+      options.conversationStorage?.setItem(
+        'smrt-planner:conversation:v1',
+        JSON.stringify({ version: 1, messages, sent, counter }),
+      );
+      options.conversationStorage?.setItem(
+        'smrt-planner:conversation-seed:v1',
+        JSON.stringify([...seeds]),
+      );
+    } catch {
+      /* A blocked or full browser store must not break a turn. */
+    }
+  };
+  const notify = () => {
+    persist();
+    for (const listener of listeners) listener(conversation());
+  };
+  const cookbooksForTurn = () =>
+    typeof options.cookbooks === 'function'
+      ? options.cookbooks()
+      : (options.cookbooks ?? []);
   let controller: AbortController | null = null;
   /**
    * The report follow-up waiting for an answer: the intent so far, the
@@ -520,6 +589,7 @@ export function createBrowserAssistantTransport(
     content: string,
     clientRequestId?: string,
     toolCallData?: unknown,
+    notifyChange = true,
   ): AssistantMessage => {
     const message: AssistantMessage = {
       id: id('m'),
@@ -533,6 +603,7 @@ export function createBrowserAssistantTransport(
     messages.push(message);
     thread.messageCount = messages.length;
     thread.lastMessageAt = message.createdAt;
+    if (notifyChange) notify();
     return message;
   };
   const planner =
@@ -542,10 +613,102 @@ export function createBrowserAssistantTransport(
       settings: options.settings,
       theme: options.theme,
     });
-  const index = buildMatchIndex(options.recipes, options.cookbooks ?? [], {
-    theme: !!options.theme,
-  });
-  const greeting = push('assistant', GREETING);
+  let greeting = push('assistant', GREETING, undefined, undefined, false);
+  try {
+    const raw = options.conversationStorage?.getItem(
+      'smrt-planner:conversation:v1',
+    );
+    const stored = raw && raw.length <= 2_000_000 ? JSON.parse(raw) : null;
+    if (
+      stored?.version === 1 &&
+      Array.isArray(stored.messages) &&
+      stored.messages.length <= 2000 &&
+      stored.messages.every(
+        (m: AssistantMessage) =>
+          m &&
+          typeof m.id === 'string' &&
+          ['user', 'assistant'].includes(m.role) &&
+          typeof m.content === 'string' &&
+          m.content.length <= 100_000,
+      ) &&
+      Number.isSafeInteger(stored.counter) &&
+      stored.counter >= stored.messages.length &&
+      typeof stored.sent === 'boolean'
+    ) {
+      messages.splice(0, messages.length, ...structuredClone(stored.messages));
+      counter = stored.counter;
+      sent = stored.sent;
+      greeting = messages[0] ?? push('assistant', GREETING);
+      const ids = JSON.parse(
+        options.conversationStorage?.getItem(
+          'smrt-planner:conversation-seed:v1',
+        ) ?? '[]',
+      );
+      if (
+        Array.isArray(ids) &&
+        ids.length <= 2000 &&
+        ids.every(
+          (value: unknown) => typeof value === 'string' && value.length <= 200,
+        )
+      )
+        for (const value of ids) seeds.add(value);
+    }
+  } catch {
+    /* Invalid saved data carries no authority and is ignored. */
+  }
+
+  async function send(
+    input: AssistantSendMessageInput,
+    host: boolean,
+  ): Promise<AssistantSendMessageResult> {
+    const cached = seen.get(input.clientRequestId);
+    if (cached) return cached;
+    if (busy) throw new Error('The assistant is still answering.');
+    sent = true;
+    busy = true;
+    const epoch = generation;
+    try {
+      const userMessage = push('user', input.content, input.clientRequestId);
+      let reply: { content: string; refs?: unknown } | null = null;
+      if (!host && options.hostTurn) {
+        controller = new AbortController();
+        try {
+          reply = await options.hostTurn({
+            userMessage: structuredClone(userMessage),
+            conversation: conversation(),
+            signal: controller.signal,
+          });
+        } catch {
+          reply = {
+            content:
+              'Your request could not be confirmed. Please retry the same request.',
+          };
+        }
+        if (epoch !== generation || controller?.signal.aborted)
+          return { inProgress: false };
+        controller = null;
+      }
+      reply ??= await turn(input.content);
+      if (epoch !== generation) return { inProgress: false };
+      const result: AssistantSendMessageResult = {
+        inProgress: false,
+        userMessage,
+        assistantMessage: push(
+          'assistant',
+          reply.content,
+          undefined,
+          reply.refs,
+        ),
+      };
+      seen.set(input.clientRequestId, result);
+      return result;
+    } finally {
+      if (epoch === generation) {
+        busy = false;
+        notify();
+      }
+    }
+  }
 
   async function turn(
     text: string,
@@ -571,7 +734,10 @@ export function createBrowserAssistantTransport(
     }
     controller = new AbortController();
     try {
-      const cookbooks = options.cookbooks ?? [];
+      const cookbooks = cookbooksForTurn();
+      const index = buildMatchIndex(options.recipes, cookbooks, {
+        theme: !!options.theme,
+      });
       const prior = messages
         .filter((m) => m !== greeting)
         .slice(0, -1)
@@ -586,6 +752,15 @@ export function createBrowserAssistantTransport(
       const reports = reportsHost();
       const reportSources = reports?.sources() ?? [];
       const asked = pending;
+      // Hosted structured replies describe this exact app revision. Local
+      // providers may perform their own supported tool work during message().
+      const hosted =
+        typeof options.acceptCommands === 'function'
+          ? options.acceptCommands()
+          : options.acceptCommands;
+      const inferenceRevision = hosted
+        ? planner.snapshot().revision
+        : undefined;
       const raw = await model.message(text, {
         history: [
           {
@@ -622,6 +797,17 @@ export function createBrowserAssistantTransport(
         maxTokens: MAX_REPLY_TOKENS,
         signal: controller.signal,
       });
+      // A provider may resolve after abort instead of rejecting. Never apply it.
+      if (controller.signal.aborted) return { content: 'Stopped.' };
+      if (
+        inferenceRevision !== undefined &&
+        planner.snapshot().revision !== inferenceRevision
+      ) {
+        return {
+          content:
+            'The app changed while I was preparing that reply. I have kept your newer changes and applied nothing from this reply. Please try again.',
+        };
+      }
       const change = parseChange(raw, options.recipes, cookbooks, {
         commands:
           typeof options.acceptCommands === 'function'
@@ -638,6 +824,7 @@ export function createBrowserAssistantTransport(
         change.remove = [];
         delete change.open;
       }
+      const beforeCommands = planner.snapshot();
       const applied = applyRecipes(planner, change);
       const settingsText =
         options.settings && hasKeys(change.settings)
@@ -652,9 +839,24 @@ export function createBrowserAssistantTransport(
         themed?.undoId && options.themeUndos
           ? options.themeUndos.record(previousTheme, themed.undoId)
           : undefined;
-      const commandText = (change.commands ?? []).length
+      const commandRun = (change.commands ?? []).length
         ? runCommands(planner, change.commands ?? [])
-        : '';
+        : { summary: '', results: [] };
+      if (
+        change.sampleContext &&
+        commandRun.results.length === change.commands?.length &&
+        commandRun.results.every((result) => result.ok) &&
+        commandRun.results.some((result) => result.ok && result.receipt.changed)
+      ) {
+        applySampleContext(change.sampleContext);
+      }
+      const commandText = commandRun.summary;
+      const coaching = appliedCoaching(
+        beforeCommands,
+        planner.snapshot(),
+        commandRun.results,
+        options.recipes,
+      );
       // A request for a report or a summary of the data (the keyword match
       // finds reports.runtime) goes to Reports or nowhere: an `open` of any
       // other section (the product catalogue, say) is dropped.
@@ -775,7 +977,9 @@ export function createBrowserAssistantTransport(
         ? cookbooks.find((c) => c.id === cookbookId)
         : undefined;
       const line = change.reply || (offered ? `Set up ${offered.name}?` : '');
-      const reply = honestReply(line, summary, !!offer);
+      const reply = [honestReply(line, summary, !!offer), coaching]
+        .filter(Boolean)
+        .join(' ');
       if (reply) options.onReply?.(reply);
       // One ref renders as is; several in one turn (a cookbook offer, a theme
       // Undo, a report preview) ride together.
@@ -792,6 +996,41 @@ export function createBrowserAssistantTransport(
   }
 
   return {
+    conversation,
+    get resetRevision() {
+      return generation;
+    },
+    get busy() {
+      return busy;
+    },
+    subscribeConversation(listener) {
+      listeners.add(listener);
+      listener(conversation());
+      return () => listeners.delete(listener);
+    },
+    seed(input) {
+      if (
+        !input ||
+        typeof input.id !== 'string' ||
+        !input.id.trim() ||
+        !Array.isArray(input.messages) ||
+        input.messages.some(
+          (message) =>
+            !message ||
+            !['user', 'assistant'].includes(message.role) ||
+            typeof message.content !== 'string',
+        ) ||
+        seeds.has(input.id) ||
+        busy ||
+        sent
+      )
+        return false;
+      seeds.add(input.id);
+      for (const message of input.messages)
+        push(message.role, message.content, undefined, undefined, false);
+      notify();
+      return true;
+    },
     async listThreads() {
       return [thread];
     },
@@ -801,25 +1040,25 @@ export function createBrowserAssistantTransport(
     async loadMessages() {
       return [...messages];
     },
-    async sendMessage(
-      input: AssistantSendMessageInput,
-    ): Promise<AssistantSendMessageResult> {
-      const cached = seen.get(input.clientRequestId);
-      if (cached) return cached;
-      const userMessage = push('user', input.content, input.clientRequestId);
-      const reply = await turn(input.content);
-      const result: AssistantSendMessageResult = {
-        inProgress: false,
-        userMessage,
-        assistantMessage: push(
-          'assistant',
-          reply.content,
-          undefined,
-          reply.refs,
-        ),
-      };
-      seen.set(input.clientRequestId, result);
-      return result;
+    sendMessage(input) {
+      return send(input, false);
+    },
+    sendHostMessage(input) {
+      return send(input, true);
+    },
+    reset() {
+      generation += 1;
+      controller?.abort();
+      controller = null;
+      pending = null;
+      messages.splice(0);
+      seen.clear();
+      seeds.clear();
+      sent = false;
+      busy = false;
+      counter = 0;
+      greeting = push('assistant', GREETING);
+      notify();
     },
     /**
      * The report follow-up's form, submitted: its pick merges into the
@@ -831,6 +1070,7 @@ export function createBrowserAssistantTransport(
     ): Promise<AssistantSendMessageResult> {
       const cached = seen.get(input.clientRequestId);
       if (cached) return cached;
+      if (busy) throw new Error('The assistant is still answering.');
       const reports = reportsHost();
       if (!pending || !reports || pending.question.id !== input.questionId) {
         throw new Error('That question is no longer open. Ask again?');
@@ -843,32 +1083,39 @@ export function createBrowserAssistantTransport(
         ? pickedOption(pending.followUp, values)
         : undefined;
       if (!values || !option) throw new Error('Choose one of the options.');
-      const asked = messages.find((m) => m.id === input.messageId);
-      if (asked) {
-        const mark = (ref: unknown) => {
-          const item = ref as { kind?: string; id?: string } | null;
-          return item?.kind === ASSISTANT_QUESTION_KIND &&
-            item.id === input.questionId
-            ? { ...item, answer: values }
-            : ref;
+      sent = true;
+      busy = true;
+      try {
+        const asked = messages.find((m) => m.id === input.messageId);
+        if (asked) {
+          const mark = (ref: unknown) => {
+            const item = ref as { kind?: string; id?: string } | null;
+            return item?.kind === ASSISTANT_QUESTION_KIND &&
+              item.id === input.questionId
+              ? { ...item, answer: values }
+              : ref;
+          };
+          asked.toolCallData = Array.isArray(asked.toolCallData)
+            ? asked.toolCallData.map(mark)
+            : mark(asked.toolCallData);
+        }
+        const reply = await answerPending(reports, option);
+        const result: AssistantSendMessageResult = {
+          inProgress: false,
+          ...(asked ? { messages: [asked] } : {}),
+          assistantMessage: push(
+            'assistant',
+            reply.content,
+            undefined,
+            reply.refs,
+          ),
         };
-        asked.toolCallData = Array.isArray(asked.toolCallData)
-          ? asked.toolCallData.map(mark)
-          : mark(asked.toolCallData);
+        seen.set(input.clientRequestId, result);
+        return result;
+      } finally {
+        busy = false;
+        notify();
       }
-      const reply = await answerPending(reports, option);
-      const result: AssistantSendMessageResult = {
-        inProgress: false,
-        ...(asked ? { messages: [asked] } : {}),
-        assistantMessage: push(
-          'assistant',
-          reply.content,
-          undefined,
-          reply.refs,
-        ),
-      };
-      seen.set(input.clientRequestId, result);
-      return result;
     },
     recordReportOutcome(specHash: string, outcome: unknown) {
       for (const message of messages) {
@@ -889,6 +1136,7 @@ export function createBrowserAssistantTransport(
           }
         }
       }
+      notify();
     },
     async uploadAttachment(file: File) {
       throw new Error(`The assistant cannot take attachments (${file.name}).`);

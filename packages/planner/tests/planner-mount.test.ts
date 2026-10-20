@@ -20,6 +20,16 @@ import { selection } from '../src/lib/planner/selection.svelte.ts';
 import { plannerTab } from '../src/lib/planner/tab.svelte.ts';
 
 describe('Planner component', () => {
+  it('offers the host primary action in its native header while retaining Export', () => {
+    const { body } = render(Planner, {
+      props: { headerAction: { label: 'Build it', run() {} } },
+    });
+    expect(body).toContain('data-planner-host-action');
+    expect(body).toContain('Build it');
+    expect(body).toContain('aria-label="Export the app"');
+    expect(body).toContain('href="#/configure/export/"');
+  });
+
   it('renders the app shell and its customization controls without a host router', () => {
     const { body } = render(Planner, { props: { basePath: '/planner' } });
     expect(body).toContain('smrt-admin-shell');

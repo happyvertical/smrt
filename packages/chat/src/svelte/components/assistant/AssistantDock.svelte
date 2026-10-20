@@ -90,6 +90,8 @@ function formatAttachmentSize(bytes: number): string {
 }
 
 export interface Props {
+  /** Explicit send choices for a fresh conversation. Nothing runs until clicked. */
+  suggestions?: readonly { label: string; prompt: string }[];
   /** Thread/message I/O backend; see `./assistant-transport.js`. */
   transport: AssistantTransport;
   /** The host shell's `DataSurfaceRegistry` instance — the dock discovers
@@ -238,6 +240,7 @@ export interface Props {
 const {
   transport,
   registry,
+  suggestions = [],
   contextMode = 'data-surfaces',
   actionClient,
   surfaces,
@@ -813,6 +816,15 @@ async function handleConfirmAction(requestId: string) {
           </section>
         {/if}
 
+        {#if controller.activeThreadId && !controller.threadsLoading && !controller.messages.some((message) => message.role === 'user' || message.role === 'tool') && controller.pendingSends.length === 0 && suggestions.length > 0}
+          <div class="assistant-dock-suggestions" role="group" aria-label="Conversation starters">
+            {#each suggestions as suggestion (suggestion.prompt)}
+              <Button variant="secondary" disabled={composerDisabled} onclick={() => { void handleSend(suggestion.prompt, []).catch(() => {}); }}>
+                {suggestion.label}
+              </Button>
+            {/each}
+          </div>
+        {/if}
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
             {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
@@ -1239,6 +1251,13 @@ async function handleConfirmAction(requestId: string) {
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3);
     min-height: 0;
+  }
+
+  .assistant-dock-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-3);
   }
 
   .assistant-dock-messages {

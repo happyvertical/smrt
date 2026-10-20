@@ -81,7 +81,7 @@ describe('section overview definitions', () => {
     expect(isOverviewId('section:more')).toBe(true);
   });
 
-  it('the sales overview counts and lists its lead model after the shortcuts', () => {
+  it('the sales overview lists its lead model without automatic counts', () => {
     // The first menu entry of the first recipe suggesting the section.
     const section = buildNavSections(recipes).find(
       (s) => `section:${s.id}` === SALES,
@@ -92,7 +92,6 @@ describe('section overview definitions', () => {
     expect(lead).toBeTruthy();
     expect(definition().defaults.map((w) => [w.id, w.type])).toEqual([
       ['shortcuts', 'shortcuts'],
-      ['count', 'metric'],
       ['latest', 'records'],
     ]);
     expect(definition().defaults[1]?.options.model).toBe(lead);
@@ -279,8 +278,8 @@ describe('cookbook overviews: store, export and import', () => {
     store.apply(parse({}).cookbook);
     const controller = createSectionOverview(definition(), store);
     expect(controller.add('note', { body: 'Hello **there**' }).ok).toBe(true);
-    expect(controller.resize('latest', 4).ok).toBe(true);
-    expect(controller.remove('count').ok).toBe(true);
+    expect(controller.resize('latest', 2).ok).toBe(true);
+    expect(controller.remove('shortcuts').ok).toBe(true);
     const exported = store.snapshot();
     expect(Object.keys(exported.overviews ?? {})).toEqual([SALES]);
 
@@ -330,7 +329,6 @@ describe('section page overview', () => {
     // The page renders from the cookbook: the controller reads it back.
     expect(controller.document.widgets.map((w) => w.id)).toEqual([
       'shortcuts',
-      'count',
       'latest',
       'w1',
     ]);
@@ -342,7 +340,6 @@ describe('section page overview', () => {
     expect(store.snapshot()).not.toHaveProperty('overviews');
     expect(controller.document.widgets.map((w) => w.id)).toEqual([
       'shortcuts',
-      'count',
       'latest',
     ]);
   });
@@ -390,8 +387,14 @@ describe('section page overview', () => {
       href: (path: string) => path,
     };
     const rows = await source.list(lead.model);
-    const [shortcuts, count, latest] = def.defaults;
-    if (!shortcuts || !count || !latest) throw new Error('defaults');
+    const [shortcuts, latest] = def.defaults;
+    if (!shortcuts || !latest) throw new Error('defaults');
+    const count = {
+      id: 'explicit-count',
+      type: 'metric',
+      span: 1,
+      options: { model, measure: 'count' },
+    };
     await expect(loadSectionWidget(def, context, shortcuts)).resolves.toEqual({
       items: [{ id: 'item:x', label: 'Orders', href: '/m/commerce/Order/' }],
     });
@@ -455,8 +458,8 @@ describe('section page overview', () => {
     if (!shortcuts) throw new Error('defaults');
     await expect(loadSectionWidget(def, context, shortcuts)).resolves.toEqual({
       items: [
-        { id: 'item:x', label: 'All', href: '/x/', count: rows.length },
-        { id: 'item:y', label: 'Some', href: '/y/', count: scoped },
+        { id: 'item:x', label: 'All', href: '/x/' },
+        { id: 'item:y', label: 'Some', href: '/y/' },
         // An entry the index does not know keeps no count.
         { id: 'item:z', label: 'Elsewhere', href: '/z/' },
       ],
@@ -496,5 +499,65 @@ describe('section page overview', () => {
         ...RECIPE_WIDGET_TYPES,
       ].sort(),
     );
+  });
+});
+
+describe('count-free defaults preserve explicit customizations', () => {
+  it('keeps validated legacy span/version/options patches and added metrics without writes', () => {
+    const lead = definition().defaults[1]?.options.model;
+    for (const patch of [
+      { span: 2 },
+      { version: 1 },
+      { options: { title: 'My count', model: lead, measure: 'count' } },
+    ]) {
+      const raw = {
+        version: 1,
+        changed: { count: patch },
+        added: [
+          {
+            id: 'custom-count',
+            type: 'metric',
+            span: 1,
+            options: { model: lead, measure: 'count' },
+          },
+        ],
+      };
+      const input = JSON.stringify(raw);
+      const parsed = parse({ [SALES]: raw });
+      expect(parsed.dropped).toBeUndefined();
+      expect(parsed.cookbook.overviews?.[SALES]?.changed?.count).toEqual(patch);
+      const store = new CookbookStore();
+      store.apply(parsed.cookbook);
+      const saved = JSON.stringify(store.snapshot());
+      const controller = createSectionOverview(definition(), store);
+      expect(controller.document.widgets.map((w) => w.id)).toContain('count');
+      expect(controller.document.widgets.map((w) => w.id)).toContain(
+        'custom-count',
+      );
+      expect(JSON.stringify(store.snapshot())).toBe(saved);
+      expect(JSON.stringify(raw)).toBe(input);
+    }
+  });
+  it('keeps custom record totals while default records omit count metadata', async () => {
+    const def = definition();
+    const latest = def.defaults.find((w) => w.id === 'latest');
+    if (!latest) throw new Error('missing latest');
+    const context = {
+      source: createMemoryDataSource(),
+      sections: [],
+      entryIndex: new Map(),
+      href: (path: string) => path,
+    };
+    const defaults = (await loadSectionWidget(def, context, latest)) as Record<
+      string,
+      unknown
+    >;
+    expect(defaults).not.toHaveProperty('total');
+    const custom = (await loadSectionWidget(def, context, {
+      ...latest,
+      id: 'custom-records',
+      options: { ...latest.options, summaries: true },
+    })) as Record<string, unknown>;
+    expect(custom.total).toBeGreaterThan(0);
   });
 });

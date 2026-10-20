@@ -443,7 +443,15 @@ describe('the assistant builds runtime reports (#4100)', () => {
     const answer = await say('give me a summary of all sales last month');
     const proposal = runtimeReportProposalFromMessage(answer ?? {});
     if (!proposal || !answer) throw new Error('no preview');
+    const changes: unknown[][] = [];
+    const unsubscribe = transport.subscribeConversation((messages) =>
+      changes.push(messages),
+    );
     transport.recordReportOutcome(proposal.specHash, { status: 'declined' });
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).not.toEqual(changes[1]);
+    expect(transport.conversation()).toEqual(changes[1]);
+    unsubscribe();
     const reloaded = (await transport.loadMessages('planner')).find(
       (m) => m.id === answer.id,
     );

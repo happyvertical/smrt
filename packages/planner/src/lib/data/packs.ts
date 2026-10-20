@@ -1,3 +1,4 @@
+import { getSampleContext } from './sample-context.ts';
 /**
  * Sample-data packs. The generator draws names, prices, descriptions and the
  * like from the ACTIVE pack: the generic one until a cookbook is applied, then
@@ -3362,7 +3363,19 @@ let active: SamplePack = GENERIC_PACK;
 
 /** The pack the generator reads right now. */
 export function getSamplePack(): SamplePack {
-  return active;
+  const context = getSampleContext();
+  return active === GENERIC_PACK && context
+    ? {
+        ...GENERIC_PACK,
+        id: 'contextual',
+        rowCounts: {
+          '@happyvertical/smrt-products:Product': context.products.length,
+        },
+        products: context.products,
+        customers: context.customers,
+        vendors: context.vendors,
+      }
+    : active;
 }
 
 /**

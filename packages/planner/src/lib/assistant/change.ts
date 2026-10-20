@@ -1,3 +1,7 @@
+import {
+  parseSampleContext,
+  type SampleContext,
+} from '../data/sample-context.ts';
 import type { Recipe } from '../recipes/types.ts';
 import {
   parseReportIntent,
@@ -58,6 +62,7 @@ export const FALLBACK_REPLY = 'Sorry, say that again?';
  * settings to change.
  */
 export interface AssistantChange {
+  sampleContext?: SampleContext;
   reply: string;
   add: string[];
   remove: string[];
@@ -322,6 +327,9 @@ export function parseChange(
   const add = pick(object.add);
   const remove = pick(object.remove);
   const both = new Set(add.filter((id) => remove.includes(id)));
+  const sampleContext = options.commands
+    ? parseSampleContext(object.sampleContext)
+    : undefined;
   const commands = options.commands ? pickCommands(object.commands) : [];
   const report = options.reports ? parseReportIntent(object.report) : null;
   return {
@@ -336,6 +344,7 @@ export function parseChange(
     settings: parseSettings(object.settings),
     theme: parseThemePatch(object.theme),
     ...(commands.length ? { commands } : {}),
+    ...(sampleContext ? { sampleContext } : {}),
     ...(typeof object.open === 'string' &&
     options.sections?.includes(object.open)
       ? { open: object.open }

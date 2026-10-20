@@ -15,6 +15,7 @@ import {
   parseOverviewOverride,
 } from '../overview/model.js';
 import { sectionDefaultWidget } from '../overview/recipe-widgets.js';
+import { sectionOverviewDefaults } from '../overview/section-defaults.js';
 import {
   OVERVIEW_PAGE_ID_PATTERN,
   type OverviewDefinition,
@@ -103,37 +104,6 @@ function leadModel(
     }
   }
   return undefined;
-}
-
-function overviewDefaults(
-  lead: CookbookModelInfo | undefined,
-  dataWidgets: boolean,
-  page?: OverviewWidget,
-): OverviewWidget[] {
-  // The leading recipe's own section page (a `sectionDefault` widget) needs
-  // its loader on the host, as the count and records do.
-  if (dataWidgets && page) return [page];
-  const widgets: OverviewWidget[] = [
-    { id: 'shortcuts', type: 'shortcuts', span: 4, options: {} },
-  ];
-  if (dataWidgets && lead) {
-    const name = humanize(lead.name);
-    widgets.push(
-      {
-        id: 'count',
-        type: 'metric',
-        span: 1,
-        options: { title: pluralize(name), model: lead.id, measure: 'count' },
-      },
-      {
-        id: 'latest',
-        type: 'records',
-        span: 3,
-        options: { title: `${name} records`, model: lead.id, limit: 5 },
-      },
-    );
-  }
-  return widgets;
 }
 
 /** The cookbook layout as the shell takes it: `null` when it has none. */
@@ -309,11 +279,18 @@ export function buildCookbookShell(
     const definition: OverviewDefinition = defineOverview({
       id,
       ...(modelIds.length > 0 ? { models: modelIds } : {}),
-      defaults: overviewDefaults(
-        leads.get(id),
-        options.dataWidgets === true,
-        pages.get(id),
-      ),
+      defaults: sectionOverviewDefaults({
+        lead: leads.has(id)
+          ? {
+              id: leads.get(id)!.id,
+              name: humanize(leads.get(id)!.name),
+              plural: pluralize(humanize(leads.get(id)!.name)),
+            }
+          : undefined,
+        dataWidgets: options.dataWidgets === true,
+        page: pages.get(id),
+        override: cookbook.overviews?.[id],
+      }),
     });
     const stored = cookbook.overviews?.[id];
     const parsed = parseOverviewOverride(stored);

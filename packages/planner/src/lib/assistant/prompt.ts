@@ -179,6 +179,7 @@ export function buildSystemPrompt(
     'You help assemble a small business app. Reply as JSON.',
     '"reply": answer what they just said in one sentence of 12 words or fewer. No greeting; never repeat a reply.',
     '"add"/"remove": recipe ids, only what they ask to add or drop; else []. Dependencies are automatic.',
+    'Use stated needs/setup and catalog; no invented features/package tours.',
   ];
   if (cookbooks.length) {
     out.push('"cookbook": id only if their business clearly fits, else null.');

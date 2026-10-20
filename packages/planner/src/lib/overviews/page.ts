@@ -12,6 +12,7 @@ import {
   type OverviewOverride,
   type OverviewWidget,
 } from '@happyvertical/smrt-svelte/overview';
+import { sectionOverview } from './definitions.ts';
 import { overviewRegistry, type PlannerWidgetContext } from './registry.ts';
 
 /** The part of the cookbook store an overview reads and writes. */
@@ -52,7 +53,9 @@ export function createSectionOverview(
 ): OverviewController {
   const id = definition.id;
   return createOverview({
-    definition,
+    definition: id.startsWith('detail:')
+      ? definition
+      : (sectionOverview(id, store.overview(id)) ?? definition),
     registry: overviewRegistry,
     override: () => store.overview(id),
     onchange: (override) => store.setOverview(id, override),

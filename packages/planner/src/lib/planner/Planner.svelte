@@ -51,6 +51,7 @@ import { PLANNER_TAB_IDS } from './commands/index.ts';
 import { CHEF_HAT_ICON, EXPORT_ICON } from './header-icons.ts';
 import { plannerRuntime } from './instance.ts';
 import PlannerControls from './PlannerControls.svelte';
+import PlannerHostAction from './PlannerHostAction.svelte';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { parseModelRoute, recordFilter, splitRoute } from './routes.ts';
 import { plannerAssistantToggle, plannerShellProps } from './shell.ts';
@@ -69,6 +70,14 @@ let {
   tabs,
   backLink,
   onready,
+  entryMode = 'browse',
+  exportAction,
+  headerAction,
+  initialConversation,
+  cookbookOffers,
+  conversationalAction,
+  onreset,
+  resetDisabledReason,
 }: PlannerProps = $props();
 
 /** The mount's links: its pages are fragment routes, so no host router. */
@@ -328,6 +337,22 @@ function updateCookbook(next: ComponentProps<typeof CookbookApp>['cookbook']) {
 }
 
 const slotItems = $derived<ShellSlotItem[]>([
+  {
+    id: 'planner-project',
+    label: 'Project settings',
+    slot: 'leftSidebar.footer',
+    render: projectSettings,
+  },
+  ...(headerAction
+    ? [
+        {
+          id: 'planner-host-action',
+          label: headerAction.label,
+          slot: 'header.end' as const,
+          render: hostAction,
+        },
+      ]
+    : []),
   ...(backLink
     ? [
         {
@@ -360,6 +385,15 @@ const dockToggles = $derived(
     : [],
 );
 </script>
+
+{#snippet projectSettings()}
+  <HeaderIconLink href="#/configure/settings/" label="Project settings" icon="settings" transitionName="planner-project" current={configuring && plannerTab.active === 'settings'} />
+{/snippet}
+{#snippet hostAction()}
+  {#if headerAction}
+    <PlannerHostAction action={headerAction} {controller} nativeAssistant={aiState.session.transport} />
+  {/if}
+{/snippet}
 
 {#snippet back()}
   <a class="back" href={backLink?.href} data-planner-back>
@@ -419,7 +453,7 @@ const dockToggles = $derived(
   `oncookbookchange` and lands in the cookbook's `layout` / `overviews`, so it
   is saved, exported and imported with the rest of the plan. `loaders`,
   `widgetContext` and `resolveExport` wire the framework's own section pages
-  (`CookbookSectionPage`, drawn `plain` with the planner's heading) to the
+  (`CookbookSectionPage`, using existing themed cards with the planner's heading) to the
   sample data; `loaders.shortcuts` adds the record counts.
 -->
 <svelte:head>
@@ -446,14 +480,13 @@ const dockToggles = $derived(
   {...plannerShellProps()}
 >
   <ThemeBridge deferInitial={persistence === 'host'} presetOverride={applyCookbookTheme(shell.theme)} />
-  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} links="hash" />
+  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" />
   <main class="content">
     {#if sectionSlug}
       {#if cookbookStore.loaded}
         {#key `${sectionSlug}:${dataGeneration}`}
           <CookbookSectionPage
             sectionId={sectionIdFromSlug(sectionSlug)}
-            presentation="plain"
             heading={sectionHeading}
           />
         {/key}
@@ -480,8 +513,10 @@ const dockToggles = $derived(
       {/key}
     {:else if applied && model}
       <ModelWorkspace model={applied.model} fields={applied.fields} {forms} {scope} {preset} title={entryWords.heading} noun={listNoun} href={hashHref} />
+    {:else if entryMode === 'planning' && recipeState.ids.length === 0 && recipeState.features.length === 0 && (!route || /^\/configure\/?$/.test(route))}
+      <section aria-label="App planning" role="status"><h1>Your app starts here</h1><p>The planner will show your app here as we plan it.</p><a href="#/configure/cookbooks/">Browse cookbooks</a></section>
     {:else}
-      <PlannerControls {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
+      <PlannerControls {onreset} {resetDisabledReason} {exportAction} nativeAssistant={aiState.session.transport} {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
     {/if}
   </main>
 </CookbookApp>

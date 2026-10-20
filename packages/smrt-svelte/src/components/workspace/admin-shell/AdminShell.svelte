@@ -863,6 +863,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   function regionVisible(region: ShellRegion): boolean {
     return shell.isRegionVisible(region);
   }
+  function slotRegionAvailable(region: ShellRegion): boolean {
+    // A closed phone drawer still owns its slots; the drawer itself is inert.
+    if (isPhone && region === 'leftSidebar') return shell.isEdgeShown('left');
+    if (isPhone && region === 'rightSidebar') return shell.isEdgeShown('right');
+    return regionVisible(region);
+  }
 
   /**
    * Whether a region shows its hide control in edit mode: a sidebar has one as
@@ -883,7 +889,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       Snippet | undefined,
     ][]) {
       if (!snippet) continue;
-      const target = resolveSlot(name, regionVisible);
+      const target = resolveSlot(name, slotRegionAvailable);
       if (target) (placed[target] ??= []).push(snippet);
     }
     return placed;
@@ -1496,7 +1502,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             </button>
           </div>
         {:else if !topRendered && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
-        {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
+        {#if shownOpen('left') || (tenantPanel && keepsContent('left')) || (isPhone && slotHas('leftSidebar.header', 'leftSidebar.footer'))}
           <div
             class="smrt-admin-shell__tenant-stack"
             hidden={!shownOpen('left')}
@@ -1696,7 +1702,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render edgeToggle('right')}
         {/if}
       </div>
-      {#if panelMounted('right')}
+      {#if panelMounted('right') || (isPhone && slotHas('rightSidebar.header', 'rightSidebar.footer'))}
         <div
           class="smrt-admin-shell__panel smrt-admin-shell__panel--right"
           tabindex="-1"
@@ -2922,6 +2928,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   @media (max-width: 48rem) {
+    .smrt-admin-shell__band--top :global(.smrt-admin-shell__brand.compact) { margin-block-end: 0; }
+    .smrt-admin-shell__band--top {
+      gap: var(--smrt-spacing-1);
+      padding-inline-start: var(--smrt-spacing-2);
+      padding-inline-end: calc(var(--smrt-spacing-2) + var(--smrt-shell-floating-reserve-inline));
+    }
     .smrt-admin-shell {
       grid-template-columns: 0 minmax(0, 1fr) 0;
       grid-template-rows:

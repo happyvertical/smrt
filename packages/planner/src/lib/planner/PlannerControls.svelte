@@ -7,6 +7,7 @@ import {
 } from '@happyvertical/smrt-svelte/workspace';
 import { Tabs } from '@happyvertical/smrt-ui';
 import { onMount, tick, untrack } from 'svelte';
+import type { BrowserAssistantTransport } from '../assistant/transport.ts';
 import CookbooksPanel from '../components/CookbooksPanel.svelte';
 import ExportPanel from '../components/ExportPanel.svelte';
 import FeaturesPanel from '../components/FeaturesPanel.svelte';
@@ -36,6 +37,7 @@ interface PlannerControlsProps extends PlannerProps {
    * controls do not mount a second one.
    */
   managedByParent?: boolean;
+  nativeAssistant?: BrowserAssistantTransport;
 }
 
 const DEFAULT_TABS: PlannerTabId[] = [
@@ -57,6 +59,10 @@ let {
   advancedStylesHref,
   tabs = DEFAULT_TABS,
   onready,
+  exportAction,
+  nativeAssistant,
+  onreset,
+  resetDisabledReason,
   managedByParent = false,
 }: PlannerControlsProps = $props();
 
@@ -183,10 +189,10 @@ $effect(() => {
       <div hidden={active !== 'theme'}><ThemeSection provider={themeControls} {advancedStylesHref} /></div>
     {/if}
     {#if reachable.includes('settings')}
-      <div hidden={active !== 'settings'}><SettingsPanel /></div>
+      <div hidden={active !== 'settings'}><SettingsPanel {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
     {/if}
     {#if reachable.includes('export')}
-      <div hidden={active !== 'export'}><ExportPanel /></div>
+      <div hidden={active !== 'export'}><ExportPanel {exportAction} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
     {/if}
   </Tabs>
 </div>

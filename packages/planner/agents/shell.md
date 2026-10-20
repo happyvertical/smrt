@@ -9,8 +9,8 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   icon, title (the layout's rename wins), description (`info.ts`: recipe `section.icon/description`,
   `FEATURE_SECTION`, cookbook `sectionDescriptions`), Help/Options icons (`entries.ts` `optionGroups`),
   and the section's editable overview (`SectionOverview.svelte`, see `src/lib/overviews/`; its
-  `shortcuts` widget replaces the menu cards; the grid is `presentation="plain"`, page sections rather
-  than cards in a card); in edit mode the entries follow as smrt-svelte's `ShellSectionMenu` list.
+  `shortcuts` widget replaces the menu cards; the grid defaults to `presentation="card"`, using existing themed frames;
+  explicit plain presentation remains available); in edit mode the entries follow as smrt-svelte's `ShellSectionMenu` list.
   `SectionView.svelte` is the route page's body (the static shell is a plain `AppShell`, so it cannot
   use `CookbookSectionPage`); `SectionHeading.svelte` is the icon/title/description heading it shares
   with the mount. A section id outside the overview id pattern keeps the `ShellSectionMenu`
@@ -21,17 +21,19 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   smrt-svelte's shell icon set (tests/section-pages.test.ts); visitor sections get `folder`.
 - `src/lib/overviews/`: section pages as customisable overviews (smrt-svelte `./overview`, smrt#3727).
   `definitions.ts`: one `defineOverview` per section, id = the section's layout id, static (never
-  depends on which recipes are on): `shortcuts` (the section's entries with record counts: the framework's entries through
-  `composeShortcutsLoader(loadShortcutCounts)`, counting rows in each entry's scope from the
-  `entryIndex` in the load context) then the
-  section's lead model as a `metric` count and a `records` list; `allowed` = the core types the planner
+  depends on which recipes are on): `shortcuts` then the section's lead model as a full-width `records` list with
+  summaries off; automatic record counts are absent. The shared
+  `sectionOverviewDefaults` also drives CookbookApp. Explicit legacy changed.count
+  patches project the original metric definition on read, without store writes;
+  removed count wins, and unrelated overrides do not resurrect it. Custom metrics
+  and explicit record summaries remain available; `allowed` = the core types the planner
   loads plus recipe `widget` surfaces, `models` = the catalog. `isOverviewId` is what a cookbook may
   key: recipe sections, More, and the document's own `layout.customSections`. `registry.ts`: the one
   registry, core widgets with loaders over the in-browser `DataSource` (capabilities in the load
   context, never in options; a named `filter` is an error tile, the sample data has none; `chart`
   groups the sample rows itself, the in-browser stand-in for a runtime report, for every chart style:
   bar, line, table, pie and stat read the same points), `plannerLoaders` (metric, records, chart, and
-  `shortcuts` = `loadShortcutCounts`) for the mounted `Planner`'s `CookbookApp`, and
+  `shortcuts` passes the shell entries through without count enrichment) for the mounted `Planner`'s `CookbookApp`, and
   `registerRecipeWidgets` with a static, currently empty, module map. `models.ts`: the option
   editor's model choices, shared by the page and the mount. `validate.ts`: the cookbook's
   `overviews` field; every override goes through `checkOverviewOverride` on load and import, bad

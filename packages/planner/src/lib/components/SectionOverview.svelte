@@ -6,9 +6,8 @@
 // The shell's pencil edits it like the layout; widget data comes from the
 // in-browser sample source. Mount it under `{#key}` on the section id.
 //
-// The widgets are page sections, not cards in a card: the grid's `plain`
-// presentation drops the tile frame (edit mode brings it back with the
-// controls) and each title is drawn as a section heading.
+// The grid defaults to the existing themed card presentation. Explicit plain
+// presentation remains available; edit mode keeps its controls and frame.
 import {
   type OverviewDefinition,
   OverviewGrid,
@@ -34,7 +33,7 @@ interface SectionOverviewProps {
   models: readonly OverviewModelChoice[];
   /** Accessible name of the grid. */
   label: string;
-  /** Page sections (`plain`, the default) or framed tiles (`card`). */
+  /** Existing themed tiles (`card`, default) or unframed page sections (`plain`). */
   presentation?: 'card' | 'plain';
   /** An in-app path with the app query; the standalone page's `appHref`. */
   href?: (path: string) => string;
@@ -45,7 +44,7 @@ let {
   entries,
   models,
   label,
-  presentation = 'plain',
+  presentation = 'card',
   href = appHref,
 }: SectionOverviewProps = $props();
 

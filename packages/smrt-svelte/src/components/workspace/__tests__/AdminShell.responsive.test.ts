@@ -935,3 +935,70 @@ describe('AdminShell dock default (#4100): inline from xl, overlay below', () =>
 });
 
 vi.setConfig({ testTimeout: 30000 });
+
+it('retains phone drawer utilities in their actual footer while closed and open', async () => {
+  setWidth(305);
+  const shell = createShellState({
+    config: { left: { initial: 'collapsed' }, bottom: false },
+  });
+  const { container } = render(AdminShell, {
+    props: {
+      state: shell,
+      slots: {
+        'leftSidebar.footer': html(
+          '<button data-testid="drawer-utility">Drawer utility</button>',
+        ),
+      },
+      children: html('<p>page</p>'),
+    },
+  });
+  await settle();
+  const utility = container.querySelector('[data-testid="drawer-utility"]');
+  expect(utility?.closest('[data-slot]')?.getAttribute('data-slot')).toBe(
+    'leftSidebar.footer',
+  );
+  expect(utility?.closest('aside')?.inert).toBe(true);
+  shell.expandPanel('left');
+  await settle();
+  expect(container.querySelector('[data-testid="drawer-utility"]')).toBe(
+    utility,
+  );
+  expect(utility?.closest('aside')?.inert).toBe(false);
+  shell.collapsePanel('left');
+  await settle();
+  expect(container.querySelector('[data-testid="drawer-utility"]')).toBe(
+    utility,
+  );
+  expect(utility?.closest('[data-slot]')?.getAttribute('data-slot')).toBe(
+    'leftSidebar.footer',
+  );
+  expect(
+    container.querySelector(
+      '[data-slot="header.start"] [data-testid="drawer-utility"]',
+    ),
+  ).toBeNull();
+});
+it('still falls back from an explicitly hidden phone sidebar', async () => {
+  setWidth(305);
+  const shell = createShellState({
+    config: { left: { initial: 'hidden' }, bottom: false },
+  });
+  const { container } = render(AdminShell, {
+    props: {
+      state: shell,
+      slots: {
+        'leftSidebar.footer': html(
+          '<button data-testid="hidden-drawer-utility">Utility</button>',
+        ),
+      },
+      children: html('<p>page</p>'),
+    },
+  });
+  await settle();
+  expect(
+    container
+      .querySelector('[data-testid="hidden-drawer-utility"]')
+      ?.closest('[data-slot]')
+      ?.getAttribute('data-slot'),
+  ).toBe('header.start');
+});

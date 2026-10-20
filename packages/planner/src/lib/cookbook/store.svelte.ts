@@ -4,6 +4,7 @@ import {
   type ShellLayout,
 } from '@happyvertical/smrt-svelte/workspace/layout';
 import { setSamplePricing, setSampleTaxRate } from '../data/packs.ts';
+import { workspaceStorage } from '../planner/workspace-storage.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import {
   type AppSettings,
@@ -17,7 +18,6 @@ import { assembleCookbook } from './assemble.ts';
 import { cookbookFromLegacySearch, hasLegacyState } from './legacy.ts';
 import {
   BACKUP_KEY,
-  browserStorage,
   loadCookbook,
   PREVIOUS_STORAGE_KEY,
   removeKey,
@@ -64,6 +64,7 @@ export function followSettings(cookbook: Pick<Cookbook, 'policies'>): void {
  * Cookbook, whether it is saved, exported or compared.
  */
 export class CookbookStore {
+  replacementGeneration = $state(0);
   /** The shell layout, owned here and passed to `AppShell`. */
   layout = $state<ShellLayout | undefined>();
   /** The app's name and description (`set_name`); not shown in the UI yet. */
@@ -194,6 +195,7 @@ export class CookbookStore {
 
   /** Replace on the visitor's say-so (an import): saving is allowed again. */
   replace(cookbook: Cookbook): void {
+    this.replacementGeneration++;
     this.apply(cookbook);
     if (!this.loaded) this.replacedBeforeLoad = true;
     this.saveBlocked = false;
@@ -201,19 +203,15 @@ export class CookbookStore {
   }
 
   /** Back to an empty cookbook, and the shell's own settings to defaults. */
-  reset(): void {
+  reset(options: { preserveTheme?: boolean } = {}): void {
+    this.replacementGeneration++;
     recipeState.clear();
     followSettings({ policies: [] });
     this.layout = undefined;
-    this.theme = undefined;
+    if (!options.preserveTheme) this.theme = undefined;
     this.name = undefined;
     this.description = undefined;
     this.overviews = {};
-    try {
-      globalThis.localStorage?.removeItem(SHELL_STORAGE_KEY);
-    } catch {
-      // Storage may be unavailable (private mode); the cookbook still resets.
-    }
     this.saveBlocked = false;
     this.keepLegacyUrl = false;
   }
@@ -230,7 +228,10 @@ export class CookbookStore {
    * Call once in the browser, before `loaded` lets saving start. Returns true
    * when a legacy link was imported, so the caller can clean the URL.
    */
-  hydrate(search: string, storage: Storage | null = browserStorage()): boolean {
+  hydrate(
+    search: string,
+    storage: Storage | null = workspaceStorage(),
+  ): boolean {
     this.storage = storage;
     const outcome = loadCookbook(storage);
     if (outcome.status === 'loaded') this.previousKept = outcome.previousKept;

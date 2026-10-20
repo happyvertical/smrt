@@ -175,3 +175,56 @@ describe('AssistantDock conversations="single"', () => {
     expect(create).not.toHaveBeenCalled();
   });
 });
+
+it('shows fresh-thread suggestions and sends exactly the clicked intent', async () => {
+  const transport = createInMemoryAssistantTransport();
+  const send = vi.spyOn(transport, 'sendMessage');
+  const user = userEvent.setup();
+  mount(transport, {
+    suggestions: [
+      { label: 'Report on invoices', prompt: 'Count invoices by month' },
+    ],
+  });
+  const choice = await screen.findByRole('button', {
+    name: 'Report on invoices',
+  });
+  expect(send).not.toHaveBeenCalled();
+  await user.click(choice);
+  await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+  expect(send.mock.calls[0][0]).toMatchObject({
+    content: 'Count invoices by month',
+  });
+  await vi.waitFor(() =>
+    expect(
+      screen.queryByRole('group', { name: 'Conversation starters' }),
+    ).not.toBeInTheDocument(),
+  );
+});
+it('keeps starters out of an existing user conversation', async () => {
+  const transport = createInMemoryAssistantTransport();
+  const thread = await transport.createThread!();
+  await transport.sendMessage({
+    threadId: thread.id,
+    content: 'Existing business context',
+    clientRequestId: 'seed',
+  });
+  mount(transport, {
+    suggestions: [{ label: 'Start a report', prompt: 'Count rows' }],
+  });
+  await screen.findByText('Existing business context');
+  expect(
+    screen.queryByRole('group', { name: 'Conversation starters' }),
+  ).not.toBeInTheDocument();
+});
+it('keeps explicit suggestion sending disabled with the composer', async () => {
+  const transport = createInMemoryAssistantTransport();
+  const send = vi.spyOn(transport, 'sendMessage');
+  mount(transport, {
+    composerDisabled: true,
+    suggestions: [{ label: 'Start a report', prompt: 'Count rows' }],
+  });
+  expect(
+    await screen.findByRole('button', { name: 'Start a report' }),
+  ).toBeDisabled();
+  expect(send).not.toHaveBeenCalled();
+});

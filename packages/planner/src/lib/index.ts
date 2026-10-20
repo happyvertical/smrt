@@ -6,6 +6,11 @@
  *
  * @module
  */
+
+export type {
+  BrowserAssistantTransport,
+  PlannerConversationSeed,
+} from './assistant/transport.ts';
 export {
   type ByoPresetDefinition,
   type ConfigResult,
@@ -41,7 +46,25 @@ export {
   type PlannerConfigInference,
   type PlannerInference,
 } from './planner/assistant.ts';
+export type {
+  PlannerBridgeApplyReply,
+  PlannerBridgeContext,
+  PlannerBridgeExecute,
+  PlannerBridgeRequest,
+  PlannerBridgeResult,
+  PlannerBridgeSnapshot,
+  PlannerCommandPortClient,
+} from './planner/bridge.ts';
+export {
+  bindPlannerCommandPort,
+  connectPlannerCommandPort,
+} from './planner/bridge.ts';
 export * from './planner/commands/index.ts';
+export { capturePlannerExport } from './planner/export-context.ts';
+export type {
+  PlannerGuideHandle,
+  PlannerGuideResult,
+} from './planner/guide.ts';
 export { default as HostPlanner } from './planner/host/HostPlanner.svelte';
 export {
   type CallKitchenTool,
@@ -49,6 +72,8 @@ export {
   type HostPlan,
   type HostSession,
 } from './planner/host/session.svelte.ts';
+export type { PlannerHostReplyResult } from './planner/host-reply.ts';
+export { applyPlannerHostReply } from './planner/host-reply.ts';
 export { plannerController } from './planner/instance.ts';
 export { default as Planner } from './planner/Planner.svelte';
 export { default as PlannerControls } from './planner/PlannerControls.svelte';
@@ -59,6 +84,8 @@ export {
 } from './planner/shell.ts';
 export type {
   PlannerBackLink,
+  PlannerExportAction,
+  PlannerExportContext,
   PlannerHandle,
   PlannerProps,
 } from './planner/types.ts';

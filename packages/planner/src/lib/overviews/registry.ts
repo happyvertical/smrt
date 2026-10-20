@@ -406,7 +406,7 @@ async function loadRecords(
         cells: cellsOf(row),
       })),
     ),
-    total: rows.length,
+    ...(options.summaries === false ? {} : { total: rows.length }),
     ...(linked ? { href: listHref(href, found, parent) } : {}),
     columns,
     currency: currencyOf(model, rows),
@@ -670,14 +670,14 @@ export const plannerLoaders = {
   metric: loadMetric,
   records: loadRecords,
   chart: loadChart,
-  shortcuts: loadShortcutCounts,
+  shortcuts: async (_ctx, defaults) => defaults,
 } satisfies Omit<CoreWidgetLoaders, 'shortcuts'> & {
   shortcuts: CookbookShortcutsLoader;
 };
 
 registerCoreWidgets(overviewRegistry, {
   ...plannerLoaders,
-  shortcuts: composeShortcutsLoader(loadShortcutCounts),
+  shortcuts: composeShortcutsLoader(),
 });
 
 /**

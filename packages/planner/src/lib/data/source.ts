@@ -38,8 +38,8 @@ import {
   settleDocument,
 } from './money.ts';
 import { getSamplePricing, getSampleTaxRate } from './packs.ts';
-
 import { fakeAllocations } from './payments.ts';
+import { clearSampleContext } from './sample-context.ts';
 
 export type { ModelRecord } from './fakes.ts';
 
@@ -827,6 +827,7 @@ export function createMemoryDataSource(
       return true;
     },
     reset() {
+      clearSampleContext();
       tables.clear();
       created = 0;
       clearStoredData(storage);

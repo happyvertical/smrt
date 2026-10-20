@@ -47,7 +47,7 @@ let {
   models,
   hostContext,
   label,
-  presentation = 'plain',
+  presentation = 'card',
   heading,
   section,
 }: Props = $props();
