@@ -29,7 +29,7 @@ const title = $derived(currentPlannerTitle());
       </div>
     </section>
   {:else}
-  <PlannerControls layout="shell" persistence="host" themeControls advancedStylesHref={appHref('/advanced-styles/')} />
+  <PlannerControls nativeAssistant={aiState.session.transport} layout="shell" persistence="host" themeControls advancedStylesHref={appHref('/advanced-styles/')} />
   {/if}
 </main>
 

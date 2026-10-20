@@ -132,6 +132,74 @@ const SALES_LAST_MONTH = {
 };
 
 describe('the assistant builds runtime reports (#4100)', () => {
+  for (const stage of ['model report', 'question answer'] as const) {
+    it(`fences a pending ${stage} definition after reset while a new turn owns busy state`, async () => {
+      const test = mechanic({
+        reply: 'Report',
+        add: [],
+        remove: [],
+        report: {
+          source: 'invoices',
+          groupBy: stage === 'question answer' ? 'flavour' : 'status',
+        },
+      });
+      const first =
+        stage === 'question answer'
+          ? await test.say('invoices by flavour')
+          : undefined;
+      const question = assistantQuestionFromMessage(first ?? {});
+      let entered!: () => void;
+      const defining = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const define = test.reports.define.bind(test.reports);
+      vi.spyOn(test.reports, 'define').mockImplementationOnce(
+        async (...args) => {
+          const result = await define(...args);
+          expect(result.ok).toBe(true);
+          entered();
+          await held;
+          return result;
+        },
+      );
+      const old =
+        stage === 'question answer'
+          ? test.transport.answerQuestion!({
+              threadId: 'planner',
+              messageId: first!.id,
+              questionId: question!.id,
+              values: { groupBy: 'status' },
+              clientRequestId: 'old-answer',
+            })
+          : test.say('report invoices by status');
+      await defining;
+      test.transport.reset();
+      recipeState.clear();
+      test.controller.resetWorkspace?.();
+      let resolveFresh!: (value: string) => void;
+      test.message.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFresh = resolve;
+          }),
+      );
+      const fresh = test.say('fresh question');
+      release();
+      await old;
+      expect(recipeState.ids).not.toContain(REPORTS_RECIPE);
+      expect(test.transport.busy).toBe(true);
+      expect(
+        test.transport.conversation().map((message) => message.content),
+      ).toEqual(['What would you like to build?', 'fresh question']);
+      resolveFresh('{"reply":"Fresh answer","add":[],"remove":[]}');
+      expect((await fresh)?.content).not.toContain('could not answer');
+      expect(test.transport.busy).toBe(false);
+    });
+  }
   it('"a summary of all sales last month" on Mechanic: Reports on, a valid spec, the right totals, saved on approval, then opened', async () => {
     const { data, reports, say, saved, message } = mechanic(SALES_LAST_MONTH);
     expect(recipeState.ids).not.toContain(REPORTS_RECIPE);

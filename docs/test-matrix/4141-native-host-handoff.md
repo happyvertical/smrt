@@ -197,3 +197,22 @@ individual matrices and preparation QA handoffs. Prompt-budget validation retain
 its original threshold, and rejects the original longer workflow instruction; the
 compact equivalent retains catalog grounding and excludes invented features and
 automatic package tours, while allowing deliberate control guidance.
+
+
+## Review follow-up: reset and operation ownership
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor/context | Executor/transaction | Runtime | Contract edge | Level | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A stale model cannot borrow B’s abort controller | Start A, reset, start B, resolve A despite abort, resolve B | B retains busy/controller and completes normally | A applies no recipes/samples, appends no old reply and cannot clear B | Same browser visitor, independent generations | Captured per-operation controller and epoch; synchronous mutations only, SQL N/A | Browser transport / Vitest | Provider may ignore AbortSignal | Unit | native-host-concurrency.test.ts; existing Stop/cancel tests retained |
+| Report continuations cannot resurrect reset state | Hold reports.define for a model report or question answer, reset, start B, release old definition | B stays busy and completes; current reports still work | No Reports recipe, obsolete answer/ref, pending question or old notification in fresh conversation | Current native visitor | Captured operation guard before post-await effects; SQL N/A | Browser / Vitest | Async report preview/hash boundary | Unit | assistant-reports.test.ts |
+| Static page resets the actual visible transport | Seed native history, mount real Page and BrowserAssistant under AppShell, Settings → Reset → confirm, then fresh send | Visible history clears immediately and fresh session persists only current thread | Old in-memory text cannot return or be persisted by the next notification | Static-app browser visitor | Actual aiState.session.transport passed to existing PlannerControls reset; no duplicate controller | Svelte DOM / happy-dom | Static page composition, sessionStorage | DOM | browser-assistant-reset.dom.test.ts + static-reset.fixture.svelte |
+
+Fail-before evidence: the three deferred transport/report regressions failed against
+reviewed behavior with stale recipe/Reports mutations. The first static harness
+attempt lacked AppShell context/import and was not bug evidence; after using the
+actual AppShell composition, removing only the new nativeAssistant prop reproduced
+the retained visible obsolete conversation. The same rendered regression passes
+with the one-prop wiring. Focused after-fix coverage includes existing Stop behavior
+and current-turn report/question outcomes; full Planner suite and relevant package
+checks are rerun before the follow-up review. The first full-root pass remains base
+coverage; no unrelated source or enforcement changes are part of this correction.

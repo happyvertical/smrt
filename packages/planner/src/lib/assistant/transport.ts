@@ -474,6 +474,11 @@ export function createBrowserAssistantTransport(
       ? options.cookbooks()
       : (options.cookbooks ?? []);
   let controller: AbortController | null = null;
+  type Operation = { epoch: number; controller: AbortController };
+  const owns = (operation: Operation) =>
+    operation.epoch === generation && controller === operation.controller;
+  const active = (operation: Operation) =>
+    owns(operation) && !operation.controller.signal.aborted;
   /**
    * The report follow-up waiting for an answer: the intent so far, the
    * question asked (its options from the source descriptor), and the words
@@ -498,8 +503,10 @@ export function createBrowserAssistantTransport(
     intent: ReportIntent,
     text: string,
     previous: ReportFollowUp | null,
+    current: () => boolean,
   ): Promise<{ text: string; ref?: unknown; added: string[] }> {
     const defined = await reports.define(intent, text);
+    if (!current()) return { added: [], text: 'Stopped.' };
     if (defined.ok) {
       pending = null;
       // Reports must be on to keep the report; turning it on is a command
@@ -533,7 +540,9 @@ export function createBrowserAssistantTransport(
           mergeIntent(intent, pick.apply),
           text,
           followUp,
+          current,
         );
+        if (!current()) return { added: [], text: 'Stopped.' };
         return { ...next, text: `I went with ${pick.label}. ${next.text}` };
       }
     }
@@ -556,7 +565,8 @@ export function createBrowserAssistantTransport(
   async function answerPending(
     reports: PlannerReports,
     option: ReportFollowUpOption,
-    reply = '',
+    reply: string,
+    isCurrent: () => boolean,
   ): Promise<{ content: string; refs?: unknown }> {
     const current = pending;
     if (!current) return { content: '' };
@@ -565,7 +575,9 @@ export function createBrowserAssistantTransport(
       mergeIntent(current.intent, option.apply),
       `${current.text} ${reply}`.trim(),
       current.followUp,
+      isCurrent,
     );
+    if (!isCurrent()) return { content: 'Stopped.' };
     const content = [
       describeChange(
         { added: built.added, removed: [], kept: [] },
@@ -666,17 +678,17 @@ export function createBrowserAssistantTransport(
     if (busy) throw new Error('The assistant is still answering.');
     sent = true;
     busy = true;
-    const epoch = generation;
+    const operation = { epoch: generation, controller: new AbortController() };
+    controller = operation.controller;
     try {
       const userMessage = push('user', input.content, input.clientRequestId);
       let reply: { content: string; refs?: unknown } | null = null;
       if (!host && options.hostTurn) {
-        controller = new AbortController();
         try {
           reply = await options.hostTurn({
             userMessage: structuredClone(userMessage),
             conversation: conversation(),
-            signal: controller.signal,
+            signal: operation.controller.signal,
           });
         } catch {
           reply = {
@@ -684,12 +696,12 @@ export function createBrowserAssistantTransport(
               'Your request could not be confirmed. Please retry the same request.',
           };
         }
-        if (epoch !== generation || controller?.signal.aborted)
-          return { inProgress: false };
-        controller = null;
+        if (!owns(operation)) return { inProgress: false };
+        if (operation.controller.signal.aborted)
+          reply = { content: 'Stopped.' };
       }
-      reply ??= await turn(input.content);
-      if (epoch !== generation) return { inProgress: false };
+      reply ??= await turn(input.content, operation);
+      if (!owns(operation)) return { inProgress: false };
       const result: AssistantSendMessageResult = {
         inProgress: false,
         userMessage,
@@ -703,7 +715,8 @@ export function createBrowserAssistantTransport(
       seen.set(input.clientRequestId, result);
       return result;
     } finally {
-      if (epoch === generation) {
+      if (owns(operation)) {
+        controller = null;
         busy = false;
         notify();
       }
@@ -712,6 +725,7 @@ export function createBrowserAssistantTransport(
 
   async function turn(
     text: string,
+    operation: Operation,
   ): Promise<{ content: string; refs?: unknown }> {
     // A typed answer to the pending report question resolves against its
     // options in code: no model turn, and "the date month" means the date by
@@ -720,7 +734,10 @@ export function createBrowserAssistantTransport(
     if (pending && pendingReports) {
       const option = directAnswer(pending.followUp, pending.question, text);
       // The reply's own time words ("status last month") still count.
-      if (option) return answerPending(pendingReports, option, text);
+      if (option)
+        return answerPending(pendingReports, option, text, () =>
+          active(operation),
+        );
     }
     const model = options.model();
     if (!model) {
@@ -732,7 +749,6 @@ export function createBrowserAssistantTransport(
           'Download a model first, then I can help. The cards on the Planner page work without one.',
       };
     }
-    controller = new AbortController();
     try {
       const cookbooks = cookbooksForTurn();
       const index = buildMatchIndex(options.recipes, cookbooks, {
@@ -795,10 +811,10 @@ export function createBrowserAssistantTransport(
         ),
         temperature: 0,
         maxTokens: MAX_REPLY_TOKENS,
-        signal: controller.signal,
+        signal: operation.controller.signal,
       });
       // A provider may resolve after abort instead of rejecting. Never apply it.
-      if (controller.signal.aborted) return { content: 'Stopped.' };
+      if (!active(operation)) return { content: 'Stopped.' };
       if (
         inferenceRevision !== undefined &&
         planner.snapshot().revision !== inferenceRevision
@@ -899,7 +915,9 @@ export function createBrowserAssistantTransport(
           reportIntent,
           reportWords,
           asked?.followUp ?? null,
+          () => active(operation),
         );
+        if (!active(operation)) return { content: 'Stopped.' };
         applied.added.push(...built.added);
         reportText = built.text;
         reportRef = built.ref;
@@ -914,7 +932,9 @@ export function createBrowserAssistantTransport(
             mergeIntent(asked.intent, pick.apply),
             asked.text,
             asked.followUp,
+            () => active(operation),
           );
+          if (!active(operation)) return { content: 'Stopped.' };
           applied.added.push(...built.added);
           reportText = `I went with ${pick.label}. ${built.text}`;
           reportRef = built.ref;
@@ -987,11 +1007,9 @@ export function createBrowserAssistantTransport(
       const refs = all.length > 1 ? all : all[0];
       return { content: reply, refs };
     } catch (error) {
-      if (controller?.signal.aborted) return { content: 'Stopped.' };
+      if (!active(operation)) return { content: 'Stopped.' };
       const detail = error instanceof Error ? error.message : String(error);
       return { content: `Sorry, the model could not answer: ${detail}` };
-    } finally {
-      controller = null;
     }
   }
 
@@ -1085,6 +1103,11 @@ export function createBrowserAssistantTransport(
       if (!values || !option) throw new Error('Choose one of the options.');
       sent = true;
       busy = true;
+      const operation = {
+        epoch: generation,
+        controller: new AbortController(),
+      };
+      controller = operation.controller;
       try {
         const asked = messages.find((m) => m.id === input.messageId);
         if (asked) {
@@ -1099,7 +1122,10 @@ export function createBrowserAssistantTransport(
             ? asked.toolCallData.map(mark)
             : mark(asked.toolCallData);
         }
-        const reply = await answerPending(reports, option);
+        const reply = await answerPending(reports, option, '', () =>
+          active(operation),
+        );
+        if (!owns(operation)) return { inProgress: false };
         const result: AssistantSendMessageResult = {
           inProgress: false,
           ...(asked ? { messages: [asked] } : {}),
@@ -1113,8 +1139,11 @@ export function createBrowserAssistantTransport(
         seen.set(input.clientRequestId, result);
         return result;
       } finally {
-        busy = false;
-        notify();
+        if (owns(operation)) {
+          controller = null;
+          busy = false;
+          notify();
+        }
       }
     },
     recordReportOutcome(specHash: string, outcome: unknown) {

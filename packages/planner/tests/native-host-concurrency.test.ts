@@ -62,6 +62,55 @@ function setup() {
 }
 
 describe('hosted native structured reply revision', () => {
+  it('keeps the new turn active when an aborted earlier provider resolves after reset', async () => {
+    const store = new CookbookStore();
+    const controller = createPlannerController(store);
+    const replies: ((value: string) => void)[] = [];
+    const signals: (AbortSignal | undefined)[] = [];
+    const transport = createBrowserAssistantTransport({
+      store: recipeState,
+      recipes,
+      controller,
+      acceptCommands: false,
+      model: () => ({
+        message: (_text, options) => {
+          signals.push(options?.signal);
+          return new Promise((resolve) => replies.push(resolve));
+        },
+      }),
+    });
+    const send = (id: string) =>
+      transport.sendMessage({
+        threadId: 'planner',
+        clientRequestId: id,
+        content: id,
+      });
+    const old = send('old');
+    transport.reset();
+    const fresh = send('fresh');
+    replies[0](
+      JSON.stringify({ reply: 'Old answer', add: ['commerce.customers'] }),
+    );
+    await old;
+    expect(controller.snapshot().recipes).toHaveLength(0);
+    expect(transport.busy).toBe(true);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    replies[1](
+      JSON.stringify({ reply: 'Fresh answer', add: ['commerce.customers'] }),
+    );
+    const result = await fresh;
+    expect(result.assistantMessage?.content).not.toContain('could not answer');
+    expect(controller.snapshot().recipes.map((item) => item.id)).toContain(
+      'commerce.customers',
+    );
+    expect(
+      transport
+        .conversation()
+        .some((message) => message.content.includes('Old answer')),
+    ).toBe(false);
+    expect(transport.busy).toBe(false);
+  });
   for (const actor of ['manual', 'external-assistant'] as const) {
     it(`preserves ${actor} edits made while hosted inference is pending`, async () => {
       const test = setup();

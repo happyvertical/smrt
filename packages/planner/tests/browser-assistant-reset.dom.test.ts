@@ -5,8 +5,10 @@ import { aiState } from '../src/lib/ai/instance.ts';
 import BrowserAssistant from '../src/lib/components/BrowserAssistant.svelte';
 import { DATA_SOURCE_KEY } from '../src/lib/data/context.ts';
 import { createPlannerDataSource } from '../src/lib/data/planner-source.ts';
+import StaticPage from './static-reset.fixture.svelte';
 
 let app: ReturnType<typeof mount> | undefined;
+let page: ReturnType<typeof mount> | undefined;
 let target: HTMLElement;
 async function settle() {
   for (let i = 0; i < 8; i++) {
@@ -17,9 +19,64 @@ async function settle() {
 }
 afterEach(async () => {
   if (app) await unmount(app);
+  if (page) await unmount(page);
+  app = undefined;
+  page = undefined;
   target?.remove();
   aiState.session.hostTurn = undefined;
   aiState.session.transport.reset();
+});
+it('the static page resets its actual visible native conversation and cannot persist it again', async () => {
+  const native = aiState.session.transport;
+  native.reset();
+  aiState.dismissFirstRun();
+  aiState.useChat(
+    { message: async () => '{"reply":"Fresh answer","add":[],"remove":[]}' },
+    'Test',
+  );
+  native.seed({
+    id: 'old-static',
+    messages: [{ role: 'user', content: 'Obsolete static conversation' }],
+  });
+  target = document.createElement('div');
+  document.body.append(target);
+  const context = new Map([[DATA_SOURCE_KEY, createPlannerDataSource()]]);
+  page = mount(StaticPage, { target, context });
+  await settle();
+  expect(target.textContent).toContain('Obsolete static conversation');
+  const settings = [
+    ...target.querySelectorAll<HTMLElement>('[role="tab"]'),
+  ].find((node) => node.textContent?.trim() === 'Settings');
+  expect(settings).toBeDefined();
+  settings?.click();
+  await settle();
+  const reset = [...target.querySelectorAll('button')].find(
+    (node) => node.textContent?.trim() === 'Reset project',
+  );
+  expect(reset).toBeDefined();
+  reset?.click();
+  await settle();
+  const dialog = target.querySelector('dialog[open]');
+  expect(dialog).not.toBeNull();
+  dialog?.querySelectorAll('button')[1].click();
+  await settle();
+  expect(target.textContent).not.toContain('Obsolete static conversation');
+  expect(native.conversation().map((message) => message.content)).toEqual([
+    'What would you like to build?',
+  ]);
+  await native.sendMessage({
+    threadId: 'planner',
+    clientRequestId: 'fresh-static',
+    content: 'Fresh static request',
+  });
+  expect(
+    native
+      .conversation()
+      .some((message) => message.content.includes('Obsolete static')),
+  ).toBe(false);
+  expect(sessionStorage.getItem('smrt-planner:conversation:v1')).not.toContain(
+    'Obsolete static',
+  );
 });
 it('retires the visible native dock immediately on reset without reload or remounting ordinary turns', async () => {
   const native = aiState.session.transport;
