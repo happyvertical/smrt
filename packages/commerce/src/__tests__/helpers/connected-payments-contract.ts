@@ -1127,6 +1127,61 @@ export function connectedPaymentsContract(
         vi.restoreAllMocks();
       }
 
+      // An explicit expiry that is now too close cannot be replayed: the
+      // caller is told to pass a fresh one, which then succeeds.
+      const explicitExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      const explicit = (expiresAt: Date) =>
+        createConnectedCheckout({
+          db,
+          gateway: stripe.adapter(),
+          tenantId: bakery,
+          environment: 'test',
+          offeringRef: 'sourdough-share',
+          licenseeEmail: 'member@example.org',
+          idempotencyKey: 'lost-explicit',
+          amount: 10_000,
+          currency: 'USD',
+          applicationFeeAmount: 500,
+          expiresAt,
+        });
+      stripe.loseNextCheckoutResponse = true;
+      await expect(explicit(explicitExpiry)).rejects.toThrow(/fetch failed/);
+      const laterNow = Date.now() + 45 * 60 * 1000;
+      vi.spyOn(Date, 'now').mockReturnValue(laterNow);
+      try {
+        await expect(explicit(explicitExpiry)).rejects.toMatchObject({
+          code: 'INVALID_INPUT',
+        });
+        const renewedExplicit = await explicit(
+          new Date(laterNow + 60 * 60 * 1000),
+        );
+        expect(renewedExplicit.intent.paymentOptions).toHaveLength(1);
+      } finally {
+        vi.restoreAllMocks();
+      }
+
+      // A closed quote never hands out a session again, even when its first
+      // answer was lost.
+      stripe.loseNextCheckoutResponse = true;
+      await expect(checkout(bakery, 'lost-closed')).rejects.toThrow(
+        /fetch failed/,
+      );
+      await withTenant({ tenantId: bakery }, async () => {
+        const intents = await PaymentIntentCollection.create({ db });
+        const [stale] = await intents.list({
+          where: { idempotencyKey: 'lost-closed' },
+        });
+        stale!.expire();
+        await stale!.save();
+      });
+      const beforeClosed = stripe.requestsTo('/checkout/sessions').length;
+      await expect(checkout(bakery, 'lost-closed')).rejects.toMatchObject({
+        code: 'QUOTE_CLOSED',
+      });
+      expect(stripe.requestsTo('/checkout/sessions')).toHaveLength(
+        beforeClosed,
+      );
+
       // The same Standard account id in live mode is a different checkout.
       stripe.addAccount(account, true, { smrt_tenant_id: bakery });
       await linkTenantPaymentAccount({

@@ -78,6 +78,7 @@ export type ConnectedPaymentErrorCode =
   | 'ACCOUNT_IN_USE'
   | 'ACCOUNT_NOT_OWNED'
   | 'QUOTE_NOT_OWNED'
+  | 'QUOTE_CLOSED'
   | 'PAYMENT_NOT_OWNED'
   | 'ENVIRONMENT_MISMATCH'
   | 'AMOUNT_MISMATCH'
@@ -719,6 +720,16 @@ export async function createConnectedCheckout(
         throw invalid(
           'idempotencyKey was already used for a different connected checkout',
         );
+      // A closed quote (expired, cancelled or settled) never hands out a
+      // payable session again, nor one whose lock has lapsed.
+      if (
+        intent.status !== PaymentIntentStatus.AWAITING_PAYMENT ||
+        (prior && intent.isExpired())
+      )
+        throw new ConnectedPaymentError(
+          'QUOTE_CLOSED',
+          `Checkout is ${intent.isExpired() ? 'expired' : intent.status}; start a new checkout with a new idempotencyKey`,
+        );
       if (prior) return { intent, checkoutUrl: prior.payTo, created: false };
       // The request was recorded but the provider's answer was lost, so the
       // buyer never saw its URL. Re-send it unchanged (same key and expiry)
@@ -730,6 +741,13 @@ export async function createConnectedCheckout(
         intent.priceLockExpiresAt.getTime() <
           Date.now() + MIN_CHECKOUT_REPLAY_MS
       ) {
+        if (
+          input.expiresAt &&
+          input.expiresAt.getTime() < Date.now() + MIN_CHECKOUT_REPLAY_MS
+        )
+          throw invalid(
+            'The recorded checkout request is too old to replay; retry with an expiresAt at least 31 minutes ahead (or omit it)',
+          );
         const renewed =
           input.expiresAt ?? new Date(Date.now() + DEFAULT_CHECKOUT_WINDOW_MS);
         intent.priceLockExpiresAt = renewed;
