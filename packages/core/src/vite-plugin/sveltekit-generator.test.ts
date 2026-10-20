@@ -963,6 +963,83 @@ describe('SvelteKit Route Generator', () => {
       );
     });
 
+    it('binds only named action hosts with collision-safe external constructor imports', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const objects: SmartObjectManifest['objects'] = {};
+      for (const [index, packageName] of ['@test/a', '@test/b'].entries()) {
+        objects[`${packageName}:Actions`] = {
+          name: 'Actions',
+          className: 'Actions',
+          packageName,
+          qualifiedName: `${packageName}:Actions`,
+          importPath: `${packageName}/collections`,
+          exportName: 'ExportedActions',
+          filePath: `/virtual/node_modules/${packageName}/dist/Actions.js`,
+          collection: `actions${index}`,
+          extends: 'SmrtCollection',
+          fields: {},
+          methods: {
+            submit: {
+              name: 'submit',
+              async: false,
+              isStatic: true,
+              isPublic: true,
+              parameters: [],
+              returnType: 'void',
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['submit'] },
+            cli: { include: ['submit'] },
+          },
+        };
+      }
+      objects.Ordinary = {
+        name: 'Ordinary',
+        className: 'Ordinary',
+        packageName: '@test/ordinary',
+        filePath: '/virtual/node_modules/@test/ordinary/dist/Ordinary.js',
+        collection: 'ordinary',
+        extends: 'SmrtCollection',
+        fields: {},
+        methods: {},
+        decoratorConfig: { api: false, cli: true },
+      };
+      await generateSvelteKitRoutes(
+        projectRoot,
+        { version: '1', timestamp: 0, objects },
+        {
+          enabled: true,
+          routesDir: 'src/routes/api',
+          objectsDir: 'src/lib/objects',
+          configPath: 'src/lib/server',
+        },
+      );
+      const content = String(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            String(call[0]).endsWith('smrt-register.ts'),
+          )?.[1],
+      );
+      expect(content).toContain(
+        "import { ExportedActions as __smrt_Actions_1 } from '@test/a/collections';",
+      );
+      expect(content).toContain(
+        "import { ExportedActions as __smrt_Actions_2 } from '@test/b/collections';",
+      );
+      expect(content).toContain(
+        'ObjectRegistry.registerCollection("@test/a:Actions", __smrt_Actions_1);',
+      );
+      expect(content).toContain(
+        'ObjectRegistry.registerCollection("@test/b:Actions", __smrt_Actions_2);',
+      );
+      expect(content).toContain("import '@test/ordinary';");
+      expect(content).not.toContain(
+        'ObjectRegistry.registerCollection("@test/ordinary:Ordinary"',
+      );
+    });
+
     it('isolates same-name package metadata in generated registrations', async () => {
       vi.mocked(existsSync).mockReturnValue(false);
 

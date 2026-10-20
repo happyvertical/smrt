@@ -169,6 +169,9 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       '    }',
       "    return { marker: 'collection' };",
       '  },',
+      '  registerCollection(...args) {',
+      '    return globalThis.__smrtGeneratedCollectionBinding?.(...args);',
+      '  },',
       '  registerPackageManifest(manifest) {',
       '    return globalThis.__smrtGeneratedCollectionMetadata?.(manifest);',
       '  },',
@@ -993,6 +996,11 @@ describe('generated SvelteKit helper runtime', () => {
         globalThis as Record<string, unknown>
       ).__smrtGeneratedCollectionMetadata = (manifest: SmartObjectManifest) =>
         ObjectRegistry.registerPackageManifest(manifest);
+      (globalThis as Record<string, unknown>).__smrtGeneratedCollectionBinding =
+        (
+          name: string,
+          ctor: Parameters<typeof ObjectRegistry.registerCollection>[1],
+        ) => ObjectRegistry.registerCollection(name, ctor);
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
         objectFilePath,
@@ -1110,6 +1118,8 @@ describe('generated SvelteKit helper runtime', () => {
     } finally {
       restore();
       delete (globalThis as Record<string, unknown>).__smrt4171Constructors;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionBinding;
       delete (globalThis as Record<string, unknown>)
         .__smrtGeneratedCollectionResolver;
       delete (globalThis as Record<string, unknown>)

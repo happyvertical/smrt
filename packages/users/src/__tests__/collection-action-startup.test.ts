@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 it.each([
   'explicit',
   'inherited',
+  'inherited-model-visible',
 ])('discovers and executes an action host with %s namespace from real generated startup without preregistration', (namespace) => {
   const result = spawnSync(
     process.execPath,
@@ -12,7 +13,8 @@ it.each([
       fileURLToPath(
         new URL('./fixtures/collection-action-startup.mjs', import.meta.url),
       ),
-      ...(namespace === 'inherited' ? ['--inherited-namespace'] : []),
+      ...(namespace.startsWith('inherited') ? ['--inherited-namespace'] : []),
+      ...(namespace === 'inherited-model-visible' ? ['--model-visible'] : []),
     ],
     { encoding: 'utf8', env: process.env, timeout: 60000 },
   );

@@ -10,6 +10,8 @@
 import {
   ObjectRegistry,
   type SmartObjectManifest,
+  SmrtCollection,
+  SmrtObject,
 } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -39,6 +41,7 @@ type RegisteredClassLike = {
   extends?: string;
   extendsTypeArg?: string;
   constructor?: unknown;
+  collectionConstructor?: unknown;
 };
 
 function makeRegistered(
@@ -418,6 +421,166 @@ describe('createResourceListHandler', () => {
         (resource: { className: string }) => resource.className,
       ),
     ).toEqual(['Profile']);
+  });
+
+  describe('inherited item-model action composition', () => {
+    function pair(
+      options: {
+        reverse?: boolean;
+        explicit?: boolean;
+        unrelated?: boolean;
+        overlap?: boolean;
+        routeOverlap?: boolean;
+      } = {},
+    ) {
+      class Item extends SmrtObject {}
+      class OtherItem extends SmrtObject {}
+      class Parent extends SmrtCollection<Item> {
+        static _itemClass = Item;
+      }
+      class Host extends Parent {}
+      const model = makeRegistered(
+        'Item',
+        { api: { include: ['inspect'] }, cli: { include: ['inspect'] } },
+        { inspect: { isStatic: true } },
+        {
+          qualifiedName: '@pair:Item',
+          collection: 'items',
+          constructor: Item,
+          collectionConstructor: Host,
+        },
+      );
+      const methodName = options.overlap ? 'inspect' : 'submit';
+      const host = makeRegistered(
+        'Host',
+        {
+          ...(options.explicit ? { collection: 'items' } : {}),
+          api: {
+            include: [methodName],
+            ...(options.routeOverlap
+              ? { routes: { submit: { path: 'inspect' } } }
+              : {}),
+          },
+          cli: { include: [methodName] },
+        },
+        { [methodName]: { isStatic: true } },
+        {
+          qualifiedName: '@pair:Host',
+          collection: 'items',
+          extends: 'SmrtCollection',
+          constructor: Host,
+          collectionConstructor: Host,
+        },
+      );
+      vi.spyOn(ObjectRegistry, 'getClassByConstructor').mockImplementation(
+        (ctor) =>
+          ctor === Item
+            ? ({
+                ...model,
+                constructor: options.unrelated ? OtherItem : Item,
+              } as any)
+            : undefined,
+      );
+      mockRegistry(
+        Object.fromEntries(
+          options.reverse
+            ? [
+                ['Host', host],
+                ['Item', model],
+              ]
+            : [
+                ['Item', model],
+                ['Host', host],
+              ],
+        ),
+      );
+    }
+
+    it.each([
+      false,
+      true,
+    ])('keeps model shell, source policies and route fields with reverse inventory=%s', async (reverse) => {
+      pair({ reverse });
+      for (const allowed of [['Item', 'Host'], ['Item'], ['Host'], []]) {
+        const seen: CommandPolicyContext[] = [];
+        const res = await call({
+          ensureRegistry: noopRegistry,
+          commandPolicy: (context) => {
+            seen.push(context);
+            return allowed.includes(context.classMeta.name);
+          },
+        });
+        expect(res.status).toBe(200);
+        expect(
+          seen
+            .map(({ classMeta, resource, command }) => [
+              classMeta.name,
+              resource.className,
+              command.methodName,
+            ])
+            .sort(),
+        ).toEqual([
+          ['Host', 'Host', 'submit'],
+          ['Item', 'Item', 'inspect'],
+        ]);
+        const commands = [
+          ...(allowed.includes('Item') ? ['inspect'] : []),
+          ...(allowed.includes('Host') ? ['submit'] : []),
+        ];
+        if (commands.length === 0) expect(res.body.resources).toEqual([]);
+        else {
+          expect(res.body.resources).toHaveLength(1);
+          expect(res.body.resources[0]).toMatchObject({
+            className: 'Item',
+            qualifiedName: '@pair:Item',
+            apiPath: 'items',
+          });
+          expect(
+            res.body.resources[0].commands.map(
+              ({ methodName, scope, httpMethod, pathSegments }: any) => [
+                methodName,
+                scope,
+                httpMethod,
+                pathSegments,
+              ],
+            ),
+          ).toEqual(
+            commands.map((name) => [name, 'collection', 'POST', [name]]),
+          );
+        }
+      }
+    });
+
+    it.each([
+      [
+        'explicit same namespace',
+        { explicit: true },
+        'resource-slug-collision',
+      ],
+      [
+        'unrelated item constructor',
+        { unrelated: true },
+        'resource-slug-collision',
+      ],
+      [
+        'overlapping command names',
+        { overlap: true },
+        'command-name-collision',
+      ],
+      [
+        'overlapping HTTP routes',
+        { routeOverlap: true },
+        'command-name-collision',
+      ],
+    ] as const)('rejects %s even when policy denies every command', async (_, options, error) => {
+      pair(options);
+      const res = await call({
+        ensureRegistry: noopRegistry,
+        commandPolicy: () => false,
+      });
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe(error);
+    });
   });
 
   it('500s on resource-slug collision', async () => {

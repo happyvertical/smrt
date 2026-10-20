@@ -58,3 +58,28 @@ STI regression continues to require one base-model resource and no duplicate
 child. No core generation, schema classification or authorization behavior changes
 in this delta; the round1 full validation remains baseline coverage, supplemented
 by current full users tests, owning builds/typechecks and relevant checks.
+
+## Round3 accepted model/action namespace composition
+
+Post-push review found the inherited namespace case with BOTH model and action
+host exposed. The maintained generated-startup fixture returned HTTP500
+`resource-slug-collision` before the correction. It now adds a model static
+`inspect` action alongside collection `submit`, executes both real generated
+POSTs, and preserves the original schema/no-DDL, item-grant, tenant, owner,
+typed-failure and ordinary-default assertions. Generated metadata alone had
+stub constructors; startup now binds only named action hosts through existing
+`ObjectRegistry.registerCollection`, without initialization or a new API.
+
+| Behavior | Positive | Negative/stop | Evidence |
+|---|---|---|---|
+| Verified inherited item/action pair | Exact host `collectionConstructor` identity matches model receiver and inherited `_itemClass` resolves to actual registered model | Explicit same namespace, unrelated item constructor and unrelated resource slugs remain errors; no name/slug identity guesses | maintained startup and resource-list tests |
+| Policy remains per source | Both commands, model-only, host-only and neither allowed; canonical model shell and model-first command order in both inventory orders | Policy denying every command cannot conceal namespace or command/HTTP-route collisions | resource-list parameterized inventory/policy tests; startup per-class policy cases |
+| Actual receiver and authority | Model POST runs actual model static method; host POST runs actual collection static method | Missing actor401, absent item permission403, wrong tenant/owner403, typed domain409; no grants unioned by composition | real generated-startup inherited-model-visible case |
+| Bindings remain scoped | Local startup preserves exact constructor; external same-name action hosts use qualified keys and collision-safe import aliases | Ordinary collection remains side-effect-only, no metadata/binding/discovery; overlapping action routes rejected | core generator test and startup default case |
+
+Current users full suite and affected core generator/runtime tests, owning builds,
+typechecks, pack and root lint/format/strict knowledge supplement the earlier
+full baseline. The initial unit-only after-run still failed true startup because
+manifest stubs lacked live host identity; it is retained as failed evidence, not
+acceptance. The external association probe demonstrated the candidate only; the
+maintained generated-startup test provides final acceptance.

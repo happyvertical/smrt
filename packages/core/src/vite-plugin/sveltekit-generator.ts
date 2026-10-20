@@ -1989,7 +1989,10 @@ async function generateRegistrationFile(
         hasCollectionImport: false,
       };
 
-      if (isCollectionManifestClass(manifest, objectDef)) {
+      if (
+        isCollectionManifestClass(manifest, objectDef) &&
+        !isCollectionActionResource(manifest, objectDef)
+      ) {
         packageEntry.hasCollectionImport = true;
       } else {
         packageEntry.objects.push({
@@ -2037,7 +2040,10 @@ async function generateRegistrationFile(
       );
     }
 
-    if (isCollectionManifestClass(manifest, objectDef)) {
+    if (
+      isCollectionManifestClass(manifest, objectDef) &&
+      !isCollectionActionResource(manifest, objectDef)
+    ) {
       localSideEffectImports.add(importPath);
       continue;
     }
@@ -2146,23 +2152,7 @@ async function generateRegistrationFile(
   );
   for (const objectDef of Object.values(manifest.objects)) {
     if (!isCollectionManifestClass(manifest, objectDef)) continue;
-    const cli = objectDef.decoratorConfig?.cli;
-    if (
-      !cli ||
-      typeof cli !== 'object' ||
-      !Array.isArray(cli.include) ||
-      cli.http === false ||
-      (cli.exclude !== undefined && !Array.isArray(cli.exclude))
-    )
-      continue;
-    const apiActions = resolveApiActionSet(objectDef, manifest);
-    const cliActions = resolveCliActionSet(objectDef);
-    if (
-      !cli.include.some(
-        (name) => name !== '*' && apiActions.has(name) && cliActions.has(name),
-      )
-    )
-      continue;
+    if (!isCollectionActionResource(manifest, objectDef)) continue;
     let current: SmartObjectDefinition | undefined = objectDef;
     const seen = new Set<SmartObjectDefinition>();
     while (
@@ -2261,6 +2251,26 @@ async function generateRegistrationFile(
     .filter((registration): registration is string => registration !== null)
     .join('\n');
 
+  const collectionRegistrations = Object.entries(manifest.objects)
+    .filter(([, objectDef]) => isCollectionActionResource(manifest, objectDef))
+    .map(([className, objectDef]) => {
+      const packageName = getRegistrationPackageName(
+        manifest,
+        objectDef,
+        isLocalObject(projectRoot, objectDef),
+      );
+      const qualifiedName =
+        objectDef.qualifiedName ||
+        (packageName
+          ? `${packageName}:${extractSimpleClassName(className)}`
+          : className);
+      const bindingName =
+        registrationBindings.get(className) ||
+        extractSimpleClassName(className);
+      return `ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${bindingName});`;
+    })
+    .join('\n');
+
   const registrationContent = `/**
  * Auto-generated SMRT object registration
  * DO NOT EDIT - changes will be overwritten
@@ -2284,6 +2294,8 @@ ${
     ? `
 // Metadata only: collection constructors were installed by their decorators.
 ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}));
+// Preserve exact runtime identity alongside discovery metadata, without initialization.
+${collectionRegistrations}
 `
     : ''
 }`;
@@ -2297,13 +2309,39 @@ ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}))
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
 }
 
+/** Named HTTP CLI collection actions need metadata and a live receiver binding. */
+function isCollectionActionResource(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  if (!isCollectionManifestClass(manifest, objectDef)) return false;
+  const cli = objectDef.decoratorConfig?.cli;
+  if (
+    !cli ||
+    typeof cli !== 'object' ||
+    !Array.isArray(cli.include) ||
+    cli.http === false ||
+    (cli.exclude !== undefined && !Array.isArray(cli.exclude))
+  )
+    return false;
+  const apiActions = resolveApiActionSet(objectDef, manifest);
+  const cliActions = resolveCliActionSet(objectDef);
+  return cli.include.some(
+    (name) => name !== '*' && apiActions.has(name) && cliActions.has(name),
+  );
+}
+
 function buildRegistrationBindings(
   manifest: SmartObjectManifest,
 ): Map<string, string> {
   const keysBySimpleName = new Map<string, string[]>();
   const reservedBindings = new Set<string>();
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
-    if (isCollectionManifestClass(manifest, objectDef)) continue;
+    if (
+      isCollectionManifestClass(manifest, objectDef) &&
+      !isCollectionActionResource(manifest, objectDef)
+    )
+      continue;
     const simpleName = extractSimpleClassName(manifestKey);
     reservedBindings.add(simpleName);
     const keys = keysBySimpleName.get(simpleName) ?? [];

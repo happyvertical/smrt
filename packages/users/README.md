@@ -1639,6 +1639,15 @@ wildcard-only includes, and `mirror: 'api'` alone stay hidden; collection CRUD i
 methods use collection-scoped URLs. Explicit `@smrt({ collection })` chooses
 the route namespace independently of the backing model's storage.
 
+When a collection inherits its item's namespace and both expose commands,
+discovery composes disjoint commands under the model's resource identity.
+The generated startup binds the exact live host constructor; composition requires
+that host's registered item model and the same canonical collection receiver.
+Each command retains its originating class's policy context and HTTP route.
+Denied commands are omitted independently. Explicit duplicate namespaces,
+unrelated resources, multiple hosts and overlapping command names/routes still
+fail closed as configuration collisions.
+
 The existing `commandPolicy` filters these commands with the same session and
 class metadata as model resources. Discovery does not authorize execution or
 rows. Generated collection action writes still require the **item model's**

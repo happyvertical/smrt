@@ -252,7 +252,11 @@ A typed `SmrtCollection<Model>` may declare `@smrt({ collection: 'operations',
 api: { include: ['submit'] }, cli: { include: ['submit'] } })` to give its
 custom actions a distinct route namespace. The explicit `collection` controls
 routes; the collection still inherits its model's storage/schema. Without an
-explicit namespace, the existing model collection name is inherited.
+explicit namespace, the existing model collection name is inherited. When both
+the model and its action host expose HTTP CLI commands in that inherited
+namespace, discovery combines disjoint commands under the model resource shell,
+while evaluating each command with its original class policy. Explicit duplicate
+namespaces and overlapping routes/commands remain configuration errors.
 
 HTTP CLI discovery includes only named custom methods in the collection's
 `cli.include` that its API exposes. Boolean/default CLI config, wildcard-only
@@ -265,7 +269,8 @@ The collection must declare or inherit its real `_itemClass` and be registered
 as that model's collection constructor. A facade may extend an undecorated
 domain collection to retain its instance behavior; include that collection
 ancestry in the consumer manifest. Generated startup retains its existing
-side-effect imports and registers discovery metadata only for named API/HTTP
+side-effect imports and registers discovery metadata and exact live constructor
+bindings only for named API/HTTP
 CLI action hosts and their collection ancestors. Ordinary collections stay
 side-effect-only. Runtime schema ownership also recognizes real
 `SmrtCollection` prototype ancestry when a domain parent is not registered;
