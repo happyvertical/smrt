@@ -2148,6 +2148,56 @@ export class CLIGenerator {
   }
 
   /**
+   * Keep only the fields a generated create/update may write, exactly as the
+   * REST routes and MCP tools do: never framework/server-managed keys,
+   * underscored internals or `readonly` fields, and only `api.writable` when
+   * the model declares it. Applies to every input mode (`--from-file`,
+   * interactive, flags), so the CLI is not a way around a model's write
+   * allowlist.
+   */
+  private applyWritablePolicy(
+    objectName: string,
+    data: unknown,
+  ): Record<string, unknown> {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+    const serverManaged = new Set([
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ]);
+    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    const writable =
+      apiConfig &&
+      typeof apiConfig === 'object' &&
+      Array.isArray((apiConfig as { writable?: unknown }).writable)
+        ? ((apiConfig as { writable: string[] }).writable as string[])
+        : null;
+    const readonly = new Set<string>();
+    for (const [name, definition] of ObjectRegistry.getFields(objectName)) {
+      const meta = definition as {
+        readonly?: unknown;
+        _meta?: { readonly?: unknown };
+      } | null;
+      if (meta?.readonly === true || meta?._meta?.readonly === true)
+        readonly.add(name);
+    }
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(
+      data as Record<string, unknown>,
+    )) {
+      if (key.startsWith('_')) continue;
+      if (serverManaged.has(key) || readonly.has(key)) continue;
+      if (writable && !writable.includes(key)) continue;
+      result[key] = value;
+    }
+    return result;
+  }
+
+  /**
    * Handle CREATE command
    */
   private async handleCreate(
@@ -2179,6 +2229,10 @@ export class CLIGenerator {
         }
       }
 
+      // The STI discriminator selects the subtype; it is not a field write.
+      const metaType = data._meta_type;
+      data = this.applyWritablePolicy(objectName, data);
+      if (typeof metaType === 'string') data._meta_type = metaType;
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
       const collection = await this.getCollection(objectName);
@@ -2241,6 +2295,7 @@ export class CLIGenerator {
         }
       }
 
+      data = this.applyWritablePolicy(objectName, data);
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
       await collection.withAuditMutation(existing, 'updated', async (bound) => {

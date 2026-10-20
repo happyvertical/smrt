@@ -698,6 +698,67 @@ await billing.processEvents();
 See [`AGENTS.md`](./AGENTS.md#billing-period-close-3060) for invariants and
 known limits.
 
+## Tenant-owned connected payment accounts
+
+A tenant (for example a co-op) can be paid into its own Stripe Connect
+Standard account, so its customers' money never passes through the platform.
+Checkouts are direct charges on the tenant's account; the platform's share is
+an application fee. A tenant without an enabled account is refused — there is
+no fallback to the platform account.
+
+```ts
+import { SecretService } from '@happyvertical/smrt-secrets';
+import {
+  createConnectedCheckout,
+  createStripeConnectGateway,
+  createTenantOnboardingLink,
+  handleConnectedPaymentWebhook,
+  onboardTenantPaymentAccount,
+  refundConnectedPayment,
+} from '@happyvertical/smrt-commerce';
+
+const gateway = await createStripeConnectGateway({
+  secrets: await SecretService.create({ db }),
+  secretsTenantId: installationTenantId,
+  environment: 'live',
+  adapterOptions: { successUrl, cancelUrl, defaultCurrency: 'CAD' },
+});
+
+// Onboarding: create the tenant's Standard account, then send its treasurer
+// to Stripe. The link is a bearer secret: redirect, never log or store.
+await onboardTenantPaymentAccount({ db, gateway, tenantId, environment: 'live', country: 'CA' });
+const { url } = await createTenantOnboardingLink({
+  db, gateway, tenantId, environment: 'live', returnUrl, refreshUrl,
+});
+
+// Checkout: the fee comes from the tenant's fee policy, in integer minor units.
+const { intent, checkoutUrl } = await createConnectedCheckout({
+  db, gateway, tenantId, environment: 'live',
+  offeringRef: 'membership-2027', licenseeEmail, idempotencyKey,
+  amount: 10_000, currency: 'CAD', applicationFeeAmount: 500,
+});
+
+// Webhooks (Connect endpoint; use endpoint: 'platform' for application_fee.*).
+const result = await handleConnectedPaymentWebhook({
+  db, gateway, environment: 'live', payload: rawBody,
+  signature: request.headers.get('Stripe-Signature') ?? undefined,
+  resolveSettlementAccounts: ({ tenantId }) => ledgerAccountsFor(tenantId),
+});
+
+// Refunds go to the tenant's account; the fee-refund choice is explicit.
+await refundConnectedPayment({
+  db, gateway, tenantId, environment: 'live', paymentId, amount: 4_000,
+  refundApplicationFee: true, idempotencyKey, resolveSettlementAccounts,
+});
+```
+
+The settled `Payment` books cash net of the fee and the fee as an expense, so
+the fee never becomes a payable to the platform. Webhook signatures are
+verified before routing, events are routed by connected account to the
+owning tenant, quotes are bound to that tenant before settling, and processed
+event ids are stored. Secrets, endpoints, and limits:
+[connected payments](agents/connected-payments.md).
+
 ## Dependencies
 
 - `@happyvertical/smrt-core` -- ORM and code generation

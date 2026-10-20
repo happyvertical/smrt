@@ -24,6 +24,7 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { hasConnectedPaymentAuthority } from '../connected-payments-internal.js';
 import {
   type PaymentIntentOptions,
   PaymentIntentStatus,
@@ -272,6 +273,38 @@ export class PaymentIntent extends SmrtObject {
    */
   notes: string = '';
 
+  /**
+   * Connected provider account (for example a Stripe `acct_...`) the
+   * checkout was created on as a direct charge (#3831). Empty for
+   * platform-account intents. Server-managed: set only by
+   * `createConnectedCheckout()`, and the settling Payment must carry the same
+   * account.
+   */
+  connectedAccountId: string = '';
+
+  /**
+   * Platform application fee requested on the direct charge, in integer
+   * minor units of the option's currency (#3831). Server-managed.
+   */
+  applicationFeeCents: number = 0;
+
+  /**
+   * Provider mode (`test` or `live`) of a connected checkout (#3831). The same
+   * provider account id exists in both modes, so the environment is part of
+   * the checkout's identity. Server-managed.
+   */
+  connectedEnvironment: string = '';
+
+  /**
+   * Price of a connected checkout in integer minor units, recorded with the
+   * request before the provider is asked (#3831), so a retry is checked
+   * against it even before the provider's answer is stored. Server-managed.
+   */
+  connectedAmount: number = 0;
+
+  /** ISO 4217 currency of {@link connectedAmount}. Server-managed. */
+  connectedCurrency: string = '';
+
   constructor(options: PaymentIntentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -311,6 +344,16 @@ export class PaymentIntent extends SmrtObject {
     if (options.retiredAt !== undefined)
       this.retiredAt = PaymentIntent.coerceDate(options.retiredAt);
     if (options.notes !== undefined) this.notes = options.notes;
+    if (options.connectedAccountId !== undefined)
+      this.connectedAccountId = options.connectedAccountId;
+    if (options.applicationFeeCents !== undefined)
+      this.applicationFeeCents = options.applicationFeeCents;
+    if (options.connectedEnvironment !== undefined)
+      this.connectedEnvironment = options.connectedEnvironment;
+    if (options.connectedAmount !== undefined)
+      this.connectedAmount = options.connectedAmount;
+    if (options.connectedCurrency !== undefined)
+      this.connectedCurrency = options.connectedCurrency;
   }
 
   /**
@@ -379,6 +422,17 @@ export class PaymentIntent extends SmrtObject {
       ? (priorRow.status as PaymentIntentStatus)
       : loadedIntentStatus.get(this);
     this.assertStatusTransition(prior);
+    if (
+      !Number.isSafeInteger(this.applicationFeeCents) ||
+      this.applicationFeeCents < 0
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: applicationFeeCents must be a non-negative integer of minor units`,
+      );
+    if (this.applicationFeeCents > 0 && !this.connectedAccountId)
+      throw new Error(
+        `PaymentIntent ${this.id}: applicationFeeCents requires a connectedAccountId`,
+      );
 
     // Freeze the backing fields once the intent is already PAID/ISSUED in the
     // database (codex HIGH#2). Round 3 re-verified the backing Payment but did
@@ -396,6 +450,17 @@ export class PaymentIntent extends SmrtObject {
     ) {
       this.assertBackingFieldsUnchanged(priorRow);
     }
+    // A connected checkout (#3831) is created only by createConnectedCheckout.
+    if (
+      !priorRow &&
+      (this.connectedAccountId || this.connectedEnvironment) &&
+      !hasConnectedPaymentAuthority(this.tenantId)
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: connected checkouts are created only by the connected-payments commands`,
+      );
+    if (priorRow && String(priorRow.connected_account_id ?? ''))
+      this.assertConnectedCheckoutUnchanged(priorRow);
 
     const persistingPaidOrIssued =
       this.status === PaymentIntentStatus.PAID ||
@@ -455,6 +520,16 @@ export class PaymentIntent extends SmrtObject {
         Number(priorRow.usd_price_locked ?? 0),
         Number(this.usdPriceLocked ?? 0),
       ],
+      [
+        'connectedAccountId',
+        priorRow.connected_account_id ?? '',
+        this.connectedAccountId,
+      ],
+      [
+        'applicationFeeCents',
+        Number(priorRow.application_fee_cents ?? 0),
+        Number(this.applicationFeeCents ?? 0),
+      ],
     ];
     for (const [field, prior, next] of frozen) {
       if (prior !== next) {
@@ -479,6 +554,59 @@ export class PaymentIntent extends SmrtObject {
           'reconciliation and cannot change. retire() it and issue a new intent.',
       );
     }
+  }
+
+  /**
+   * A connected checkout (#3831) is bound to the account, fee and provider
+   * session it was created with. Settlement re-reads the session named by the
+   * option, so once set the options are frozen like the account and fee —
+   * otherwise a generated update could point settlement at a session made
+   * without the platform's application fee.
+   */
+  private assertConnectedCheckoutUnchanged(
+    priorRow: Record<string, unknown>,
+  ): void {
+    const priorExpiry = PaymentIntent.coerceDate(
+      priorRow.price_lock_expires_at,
+    );
+    const priorOptionsEmpty =
+      PaymentIntent.normalizePaymentOptions(priorRow.payment_options as unknown)
+        .length === 0;
+    if (
+      String(priorRow.connected_account_id ?? '') !== this.connectedAccountId ||
+      Number(priorRow.application_fee_cents ?? 0) !==
+        this.applicationFeeCents ||
+      String(priorRow.connected_environment ?? '') !==
+        this.connectedEnvironment ||
+      Number(priorRow.connected_amount ?? 0) !== this.connectedAmount ||
+      String(priorRow.connected_currency ?? '') !== this.connectedCurrency
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: a connected checkout's account, environment, application fee and price cannot change`,
+      );
+    // The expiry may be renewed only by the checkout command while no
+    // provider session has been recorded (a lost request too old to replay).
+    if (
+      (priorExpiry?.getTime() ?? null) !==
+        (this.priceLockExpiresAt?.getTime() ?? null) &&
+      !(priorOptionsEmpty && hasConnectedPaymentAuthority(this.tenantId))
+    )
+      throw new Error(
+        `PaymentIntent ${this.id}: a connected checkout's expiry cannot change`,
+      );
+    const priorOptions = PaymentIntent.normalizePaymentOptions(
+      priorRow.payment_options as unknown,
+    );
+    const nextOptions = PaymentIntent.normalizePaymentOptions(
+      this.paymentOptions as unknown,
+    );
+    if (JSON.stringify(priorOptions) === JSON.stringify(nextOptions)) return;
+    // The checkout command records the provider session once, after the
+    // request it persisted first; nothing else may set or change options.
+    if (priorOptions.length > 0 || !hasConnectedPaymentAuthority(this.tenantId))
+      throw new Error(
+        `PaymentIntent ${this.id}: a connected checkout's payment options are frozen once created`,
+      );
   }
 
   /**
@@ -569,10 +697,24 @@ export class PaymentIntent extends SmrtObject {
       currency?: string;
       nativeAmount?: number;
       amount?: number;
+      connectedAccountId?: string;
+      applicationFeeCents?: number;
     },
     option: PaymentOption,
     paymentIdLabel: string,
   ): void {
+    // A connected direct charge settles only with a Payment made on the same
+    // connected account with the same application fee (#3831), so funds on
+    // another tenant's account (or the platform's) never satisfy it.
+    if (
+      (payment.connectedAccountId ?? '') !== this.connectedAccountId ||
+      Number(payment.applicationFeeCents ?? 0) !== this.applicationFeeCents
+    ) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' was not made on ` +
+          'the connected account and application fee this intent was created with',
+      );
+    }
     // Only enforce the rail check when the Payment actually recorded a backend
     // (PaymentBackend-routed flows). Manually-recorded payments may carry no
     // backendId; the amount + currency checks still apply.
@@ -675,7 +817,12 @@ export class PaymentIntent extends SmrtObject {
     // an expired USD price. `isExpired()` is status-independent (it checks
     // `priceLockExpiresAt`), so guard on it here; callers should `expire()`
     // and re-quote rather than record against a lapsed lock.
-    if (this.isExpired()) {
+    // A connected checkout's provider session expires with the price lock, so
+    // a provider-confirmed payment settled by the connected-payments command
+    // was made in time even when its notice arrives after the lock (#3831).
+    const providerConfirmedInTime =
+      !!this.connectedAccountId && hasConnectedPaymentAuthority(this.tenantId);
+    if (this.isExpired() && !providerConfirmedInTime) {
       throw new Error(
         `PaymentIntent ${this.id}: price lock expired at ` +
           `${this.priceLockExpiresAt?.toISOString() ?? 'unknown'}; cannot record a ` +
