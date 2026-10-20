@@ -795,6 +795,36 @@ export function connectedPaymentsContract(
         expect(row.backendTxRef).toBe('re_staleanswer');
       });
 
+      // A refund the provider rejects outright made no refund: its amount is
+      // released and a retry returns the failure.
+      stripe.rejectNextRefund = true;
+      await expect(refund(700, 'rejected')).rejects.toMatchObject({
+        code: 'REFUND_FAILED',
+      });
+      expect(await refund(700, 'rejected')).toMatchObject({
+        state: 'failed',
+        created: false,
+      });
+      // A re-sent lost request must repeat its original fee choice.
+      stripe.loseNextRefundResponse = true;
+      await expect(refund(300, 'lost-2')).rejects.toThrow(/fetch failed/);
+      await expect(
+        refundConnectedPayment({
+          db,
+          gateway: stripe.adapter(),
+          tenantId: bakery,
+          environment: 'test',
+          paymentId: result.paymentId!,
+          amount: 300,
+          refundApplicationFee: true,
+          idempotencyKey: 'lost-2',
+          resolveSettlementAccounts,
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      expect(await refund(300, 'lost-2')).toMatchObject({
+        state: 'succeeded',
+      });
+
       // Provider refund succeeds but booking fails: a retry with the same key
       // finishes the booking and the full-refund state without a second
       // provider refund.

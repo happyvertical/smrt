@@ -15,6 +15,7 @@
  * @packageDocumentation
  */
 
+import { PaymentError } from '@happyvertical/payments';
 import {
   type StripeAdapter,
   StripeAdapter as StripeAdapterClass,
@@ -1246,7 +1247,9 @@ export async function refundConnectedPayment(
 
     // The refund row is the request's identity, whatever its status: a retry
     // returns a terminal result and never asks the provider twice.
+    const feeNote = `Application fee refunded: ${input.refundApplicationFee ? 'yes' : 'no'}`;
     let refund = await payments.get({ id: refundId });
+    const fresh = !refund;
     if (refund) {
       if (
         !sameTenant(refund.tenantId, key.tenantId) ||
@@ -1259,6 +1262,12 @@ export async function refundConnectedPayment(
         );
       if (refund.connectedRefundState !== 'requested')
         return outcome(refund, false);
+      // A re-sent request must be the original one, or the provider refuses
+      // the reused key.
+      if (refund.notes !== feeNote)
+        throw invalid(
+          'A retried refund must repeat its original refundApplicationFee',
+        );
       // The provider's answer was lost. Re-sending the same idempotency key
       // returns the provider's original refund, but only while the provider
       // still remembers the key; after that, wait for the refund update.
@@ -1302,7 +1311,7 @@ export async function refundConnectedPayment(
         connectedAccountId: payment.connectedAccountId,
         refundOfPaymentId: payment.id!,
         connectedRefundState: 'requested',
-        notes: `Application fee refunded: ${input.refundApplicationFee ? 'yes' : 'no'}`,
+        notes: feeNote,
       });
     }
 
@@ -1317,7 +1326,26 @@ export async function refundConnectedPayment(
       metadata: { smrt_refund_id: refundId },
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     };
-    const result = await input.gateway.refundPayment(request);
+    let result: Awaited<ReturnType<ConnectedPaymentGateway['refundPayment']>>;
+    try {
+      result = await input.gateway.refundPayment(request);
+    } catch (error) {
+      // A first request the SDK refused before sending, or the provider
+      // rejected outright (a non-retryable 4xx), made no refund: release its
+      // amount. Anything else (transport, 5xx, a re-sent key) may have, so
+      // the row stays `requested`.
+      if (fresh && error instanceof PaymentError && !error.retryable) {
+        refund.connectedRefundState = 'failed';
+        refund.status = PaymentStatus.FAILED;
+        await refund.save();
+        throw new ConnectedPaymentError(
+          'REFUND_FAILED',
+          'Provider refused the refund',
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     if (
       (result.amount !== undefined && result.amount !== refund.amount) ||
       !result.refundId

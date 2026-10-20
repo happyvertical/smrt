@@ -52,7 +52,7 @@ the platform account.
 | `requireEnabledTenantPaymentAccount` | Throws `NO_ENABLED_ACCOUNT` unless enabled. |
 | `createConnectedCheckout` | Checkout on the tenant's account with `stripeAccount` + `applicationFeeAmount` (integer minor units from the caller's fee policy; `0` for none; must be below the amount). Records the intent with the session id in the option's `memo`. Idempotent on the intent natural key. |
 | `handleConnectedPaymentWebhook` | See below. |
-| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full. The refund row is written (`requested`, holding its amount) before the provider is asked; only a provider-`succeeded` refund is journaled, `pending` waits for the refund update, `failed` releases the amount. A retry with the same key returns a recorded result, or re-sends a lost request with the same provider idempotency key within 23 hours (older lost requests wait for the refund update). Once booked refunds cover the payment it is marked `REFUNDED` and its intent retired. |
+| `refundConnectedPayment` | Refund on the tenant's account; `refundApplicationFee` is required; partial and full. The refund row is written (`requested`, holding its amount) before the provider is asked; only a provider-`succeeded` refund is journaled, `pending` waits for the refund update, `failed` (including a first request the SDK or provider refused outright) releases the amount; a re-sent request must repeat its `refundApplicationFee`. A retry with the same key returns a recorded result, or re-sends a lost request with the same provider idempotency key within 23 hours (older lost requests wait for the refund update). Once booked refunds cover the payment it is marked `REFUNDED` and its intent retired. |
 | `createStripeConnectGateway` | Platform `StripeAdapter` from smrt-secrets. |
 
 ## Webhooks
@@ -109,6 +109,11 @@ refunded amount; a refunded application fee is reported by
   expense, returned by `resolveSettlementAccounts`.
 
 ## Known limits
+
+A `requested` refund whose request never reached the provider and was not
+retried within 23 hours holds its amount until an operator resolves it; the
+SDK has no refund read yet to reconcile it automatically
+([sdk#1430](https://github.com/happyvertical/sdk/issues/1430)).
 
 Relinking strands open checkouts on the old account and refuses refunds of
 its payments (`ACCOUNT_NOT_OWNED`). Concurrent refunds with different keys are
