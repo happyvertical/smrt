@@ -55,7 +55,11 @@ import type {
   IngestionService,
 } from './server.js';
 
-export type * from './proposal-contracts.js';
+export type {
+  ProposalConfiguration,
+  ProposalReadConfiguration,
+} from './proposal-contracts.js';
+export { proposalReadConfiguration } from './proposal-contracts.js';
 export type * from './proposal-dto.js';
 export {
   createSDKProposalDecisionClient,
