@@ -407,6 +407,33 @@ export function defineWorkerCoopLedgerSuite(
       const journal = await postReceivable(base);
       expect((await postReceivable(base)).id).toBe(journal.id);
     });
+    it('replays an identical retry after the run-once claim is pruned (#4067)', async () => {
+      const original = await postReceivable(base);
+      await db.query('DELETE FROM _smrt_run_once_claims');
+      const replay = await postReceivable(base);
+      expect(replay.id).toBe(original.id);
+      expect(replay.isPosted()).toBe(true);
+      expect((await db.query('SELECT id FROM journals')).rows).toHaveLength(1);
+      expect(
+        (await db.query('SELECT id FROM journal_entries')).rows,
+      ).toHaveLength(2);
+      expect(await replay.getTotalDebits()).toBe(10000);
+      expect(await replay.getTotalCredits()).toBe(10000);
+    });
+    it('refuses a changed retry after the run-once claim is pruned (#4067)', async () => {
+      await postReceivable(base);
+      await db.query('DELETE FROM _smrt_run_once_claims');
+      await expect(
+        postReceivable({ ...base, amountMinor: 9999 }),
+      ).rejects.toThrow(/different content/);
+      expect((await db.query('SELECT id FROM journals')).rows).toHaveLength(1);
+      expect(
+        (await db.query('SELECT id FROM journal_entries')).rows,
+      ).toHaveLength(2);
+      expect(
+        (await db.query('SELECT claim_key FROM _smrt_run_once_claims')).rows,
+      ).toHaveLength(0);
+    });
     it('denies wrong currency, foreign accounts, context and noninteger amounts atomically', async () => {
       for (const amountMinor of [
         1.5,

@@ -50,10 +50,19 @@ function assertInput(input: LedgerPostingInput): void {
     );
 }
 
+function replayMismatchError(): Error {
+  return new Error(
+    'Ledger posting idempotency key was replayed with different content',
+  );
+}
+
 /**
  * Atomically records an exact-minor-unit double entry. `runOnce` scopes the
  * key by tenant and ledger; its receipt binds the request digest so retries recover the
  * original journal and a changed replay refuses instead of double-posting.
+ * Idempotency is permanent: once the receipt is pruned, the journal's unique
+ * `(tenantId, ledgerId, idempotencyKey)` row and its `requestDigest` answer the
+ * same replay.
  */
 export async function postLedgerEntry(
   input: LedgerPostingInput,
@@ -106,6 +115,26 @@ export async function postLedgerEntry(
             'Posting helpers require an owned exact-integer ledger',
           );
         const journals = await JournalCollection.create({ db: tx });
+        // The `runOnce` claim is pruned after its retention window (30 days by
+        // default), after which an identical retry would re-run this callback
+        // and hit `journals_ledger_idempotency_key`. The journal row is the
+        // permanent idempotency record, so resolve it before inserting (#4067).
+        const [existing] = await journals.list({
+          where: {
+            tenantId: input.tenantId,
+            ledgerId: input.ledgerId,
+            idempotencyKey: input.idempotencyKey,
+          },
+          limit: 1,
+        });
+        if (existing) {
+          if (existing.requestDigest !== digest) throw replayMismatchError();
+          if (!existing.isPosted())
+            throw new Error(
+              'Ledger posting idempotency key belongs to a journal that is not posted',
+            );
+          return { journalId: existing.id, requestDigest: digest };
+        }
         const journal = await journals.createWithEntries({
           tenantId: input.tenantId,
           ledgerId: input.ledgerId,
@@ -145,10 +174,7 @@ export async function postLedgerEntry(
       },
     ),
   );
-  if (receipt.requestDigest !== digest)
-    throw new Error(
-      'Ledger posting idempotency key was replayed with different content',
-    );
+  if (receipt.requestDigest !== digest) throw replayMismatchError();
   const journal = await withTenant({ tenantId: input.tenantId }, async () => {
     const journals = await JournalCollection.create({ db: input.db });
     return journals.get({ id: String(receipt.journalId) });
@@ -157,10 +183,7 @@ export async function postLedgerEntry(
     throw new Error(
       'Ledger posting receipt does not resolve to a posted journal',
     );
-  if (journal.requestDigest !== digest)
-    throw new Error(
-      'Ledger posting idempotency key was replayed with different content',
-    );
+  if (journal.requestDigest !== digest) throw replayMismatchError();
   return journal;
 }
 
