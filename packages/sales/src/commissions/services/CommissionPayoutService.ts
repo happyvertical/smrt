@@ -37,6 +37,7 @@ import {
   ADJUSTMENT_SETTLEABLE_COMMISSION_STATUSES,
   type CommissionPayoutStatus,
   type CommissionStatus,
+  PAYOUT_METHODS_REQUIRING_DESTINATION,
   type PayoutMethod,
 } from '../types.js';
 
@@ -386,6 +387,22 @@ export class CommissionPayoutService {
       };
     }
 
+    // A NEW Stripe Connect / crypto batch is only routeable to a matching
+    // destination on the earner — including when the method is an override.
+    // Checked after the replay lookup so an existing key still returns (or
+    // repairs) its payout after the earner's preference changes.
+    const payoutMethod = input.payoutMethod ?? earner.payoutMethod;
+    if (
+      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
+        payoutMethod,
+      ) &&
+      earner.getPayoutDestination()?.method !== payoutMethod
+    ) {
+      throw new Error(
+        `CommissionPayoutService: earner '${input.earnerId}' has no ${payoutMethod} payoutDestination`,
+      );
+    }
+
     // Gather the exact rows this batch would settle (honoring any source /
     // explicit-id scope).
     const commissions = await this.gatherBatchCommissions(input);
@@ -435,7 +452,7 @@ export class CommissionPayoutService {
       currency: input.currency,
       periodStart: input.periodStart ?? null,
       periodEnd: input.periodEnd ?? null,
-      payoutMethod: input.payoutMethod ?? earner.payoutMethod,
+      payoutMethod,
       status: 'pending',
       commissionTotalCents,
       adjustmentTotalCents,
