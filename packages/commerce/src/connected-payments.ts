@@ -80,7 +80,8 @@ export type ConnectedPaymentErrorCode =
   | 'ENVIRONMENT_MISMATCH'
   | 'AMOUNT_MISMATCH'
   | 'REFUND_EXCEEDS_PAYMENT'
-  | 'REFUND_FAILED';
+  | 'REFUND_FAILED'
+  | 'REFUND_NOT_RECORDED';
 
 /** A refused connected-payments command. */
 export class ConnectedPaymentError extends Error {
@@ -689,21 +690,22 @@ export async function createConnectedCheckout(
         throw invalid(
           'idempotencyKey was already used for a different connected checkout',
         );
-      if (prior)
-        return { intent: existing, checkoutUrl: prior.payTo, created: false };
+      if (!prior)
+        throw invalid(
+          'idempotencyKey was already used for a different connected checkout',
+        );
+      return { intent: existing, checkoutUrl: prior.payTo, created: false };
     }
 
-    const intentId =
-      existing?.id ??
-      (await deterministicId([
-        'tenant-payment-checkout',
-        key.tenantId,
-        key.backendId,
-        key.environment,
-        input.offeringRef,
-        input.licenseeEmail,
-        input.idempotencyKey,
-      ]));
+    const intentId = await deterministicId([
+      'tenant-payment-checkout',
+      key.tenantId,
+      key.backendId,
+      key.environment,
+      input.offeringRef,
+      input.licenseeEmail,
+      input.idempotencyKey,
+    ]);
     const expiresAt =
       input.expiresAt ?? new Date(Date.now() + DEFAULT_CHECKOUT_WINDOW_MS);
     const option = await input.gateway.createPaymentOption({
@@ -733,35 +735,35 @@ export async function createConnectedCheckout(
         'Provider checkout does not match the requested price',
       );
 
-    const intent =
-      existing ??
-      (await intents.create({
-        id: intentId,
-        tenantId: key.tenantId,
-        offeringRef: input.offeringRef,
-        licenseeEmail: input.licenseeEmail,
-        idempotencyKey: input.idempotencyKey,
-        skuId: input.skuId ?? '',
-        customerId: input.customerId ?? '',
-        usdPriceLocked,
-        priceLockWindowMs: Math.max(option.expiresAt.getTime() - Date.now(), 1),
-        priceLockExpiresAt: option.expiresAt,
-        connectedAccountId: account.providerAccountId,
-        applicationFeeCents: fee,
-      }));
-    intent.paymentOptions = [
-      {
-        backendId: key.backendId,
-        currency,
-        payTo: option.payTo,
-        nativeAmount: amount,
-        ...(option.providerPaymentId ? { memo: option.providerPaymentId } : {}),
-        expiresAt: option.expiresAt.toISOString(),
-      },
-    ];
-    intent.priceLockExpiresAt = option.expiresAt;
-    await intent.save();
-    return { intent, checkoutUrl: option.payTo, created: !existing };
+    // One write: a connected intent never exists without the option that
+    // names its provider session, so the options freeze has no gap.
+    const intent = await intents.create({
+      id: intentId,
+      tenantId: key.tenantId,
+      offeringRef: input.offeringRef,
+      licenseeEmail: input.licenseeEmail,
+      idempotencyKey: input.idempotencyKey,
+      skuId: input.skuId ?? '',
+      customerId: input.customerId ?? '',
+      usdPriceLocked,
+      priceLockWindowMs: Math.max(option.expiresAt.getTime() - Date.now(), 1),
+      priceLockExpiresAt: option.expiresAt,
+      connectedAccountId: account.providerAccountId,
+      applicationFeeCents: fee,
+      paymentOptions: [
+        {
+          backendId: key.backendId,
+          currency,
+          payTo: option.payTo,
+          nativeAmount: amount,
+          ...(option.providerPaymentId
+            ? { memo: option.providerPaymentId }
+            : {}),
+          expiresAt: option.expiresAt.toISOString(),
+        },
+      ],
+    });
+    return { intent, checkoutUrl: option.payTo, created: true };
   });
 }
 
@@ -1267,6 +1269,9 @@ export async function refundConnectedPayment(
       stripeAccount: account.providerAccountId,
       refundApplicationFee: input.refundApplicationFee,
       idempotencyKey: `smrt-connected-refund:${refundId}`,
+      // Lets a refund update that outruns this command be told apart from a
+      // refund made elsewhere (see applyRefundUpdate).
+      metadata: { smrt_refund_id: refundId },
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     };
     const result = await input.gateway.refundPayment(request);
@@ -1405,17 +1410,39 @@ async function applyRefundUpdate(args: {
     args.raw && typeof args.raw === 'object'
       ? (args.raw as { data?: { object?: unknown } }).data?.object
       : undefined;
-  const { id, status } = (object ?? {}) as { id?: unknown; status?: unknown };
+  const { id, status, metadata } = (object ?? {}) as {
+    id?: unknown;
+    status?: unknown;
+    metadata?: unknown;
+  };
   if (typeof id !== 'string' || !id || typeof status !== 'string')
     return { outcome: 'ignored' };
+  const ours =
+    metadata && typeof metadata === 'object'
+      ? (metadata as Record<string, unknown>).smrt_refund_id
+      : undefined;
   return withTenant({ tenantId: args.tenantId }, async () => {
     const payments = await PaymentCollection.create({ db: args.db });
     const [refund] = await payments.list({
-      where: { backendTxRef: id, kind: 'refund' },
-      limit: 1,
+      where: {
+        backendTxRef: id,
+        kind: 'refund',
+        connectedAccountId: args.providerAccountId,
+      },
+      limit: 2,
     });
-    // Refunds made outside these commands are reported, not booked.
-    if (!refund) return { outcome: 'refund_reported' as const };
+    if (!refund) {
+      // Ours but not written yet (the update outran the command, or the
+      // command stopped after the provider call): refuse, so the provider
+      // redelivers once the same-key retry has recorded it.
+      if (typeof ours === 'string' && ours)
+        throw new ConnectedPaymentError(
+          'REFUND_NOT_RECORDED',
+          'Refund update arrived before its refund was recorded; retry later',
+        );
+      // Refunds made outside these commands are reported, not booked.
+      return { outcome: 'refund_reported' as const };
+    }
     if (
       !sameTenant(refund.tenantId, args.tenantId) ||
       refund.connectedAccountId !== args.providerAccountId

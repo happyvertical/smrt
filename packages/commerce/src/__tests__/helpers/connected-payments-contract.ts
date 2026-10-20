@@ -599,6 +599,9 @@ export function connectedPaymentsContract(
       let [call] = stripe.requestsTo('/refunds');
       expect(call!.stripeAccount).toBe(stripe.accountId('riverbendbakery'));
       expect(call!.body.get('refund_application_fee')).toBe('true');
+      expect(call!.body.get('metadata[smrt_refund_id]')).toBe(
+        partial.refund.id,
+      );
       expect(call!.body.get('amount')).toBe('4000');
 
       const replay = await refund(4_000, true, 'refund-1');
@@ -660,11 +663,15 @@ export function connectedPaymentsContract(
           idempotencyKey: key,
           resolveSettlementAccounts: resolve,
         });
-      const refundUpdate = (refundId: string, status: string) => {
+      const refundUpdate = (
+        refundId: string,
+        status: string,
+        metadata: Record<string, string> = {},
+      ) => {
         const event = stripe.event({
           type: 'charge.refund.updated',
           account,
-          object: { id: refundId, object: 'refund', status },
+          object: { id: refundId, object: 'refund', status, metadata },
         });
         return handleConnectedPaymentWebhook({
           db,
@@ -695,6 +702,16 @@ export function connectedPaymentsContract(
       ).toBe('refund_updated');
       // A late 'pending' update never moves a settled refund back.
       await refundUpdate(pending.refund.backendTxRef, 'pending');
+      // An update for one of our refunds that is not recorded yet is refused
+      // so the provider redelivers; a refund made elsewhere is reported.
+      await expect(
+        refundUpdate('re_notrecordedyet', 'succeeded', {
+          smrt_refund_id: randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: 'REFUND_NOT_RECORDED' });
+      expect(
+        (await refundUpdate('re_madeindashboard', 'succeeded')).outcome,
+      ).toBe('refund_reported');
       await withTenant({ tenantId: bakery }, async () => {
         const payments = await PaymentCollection.create({ db });
         const booked = await payments.get({ id: pending.refund.id! });
@@ -704,6 +721,17 @@ export function connectedPaymentsContract(
           (await payments.get({ id: failedLater.refund.id! }))?.status,
         ).toBe(PaymentStatus.FAILED);
       });
+      // A pending connected refund cannot be edited (for example through a
+      // generated update) while it waits for the provider.
+      stripe.refundStatus = 'pending';
+      const waiting = await refund(1_000, 'pending-3');
+      await withTenant({ tenantId: bakery }, async () => {
+        const payments = await PaymentCollection.create({ db });
+        const row = (await payments.get({ id: waiting.refund.id! }))!;
+        row.amount = 1;
+        await expect(row.save()).rejects.toThrow(/cannot change/);
+      });
+      await refundUpdate(waiting.refund.backendTxRef, 'succeeded');
 
       // Provider refund succeeds but booking fails: a retry with the same key
       // finishes the booking and the full-refund state without a second

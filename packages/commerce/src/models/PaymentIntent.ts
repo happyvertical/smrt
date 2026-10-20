@@ -544,11 +544,10 @@ export class PaymentIntent extends SmrtObject {
       priorRow.payment_options as unknown,
     );
     if (
-      priorOptions.length > 0 &&
       JSON.stringify(priorOptions) !==
-        JSON.stringify(
-          PaymentIntent.normalizePaymentOptions(this.paymentOptions as unknown),
-        )
+      JSON.stringify(
+        PaymentIntent.normalizePaymentOptions(this.paymentOptions as unknown),
+      )
     )
       throw new Error(
         `PaymentIntent ${this.id}: a connected checkout's payment options are frozen once created`,

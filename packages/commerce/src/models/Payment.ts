@@ -524,6 +524,12 @@ export class Payment extends SmrtObject {
         throw new Error(
           'Provider-recorded refund is immutable; use an explicit reversal workflow',
         );
+      // A connected charge or refund (#3831) is written only by the
+      // connected-payments commands: its identity and amounts never change
+      // after the first write, even while PENDING (a pending refund can wait
+      // days for the provider), so a generated update cannot repoint it.
+      if (priorRow && String(priorRow.connected_account_id ?? ''))
+        this.assertConnectedIdentityUnchanged(priorRow);
       const prior =
         priorRow && priorRow.status != null
           ? (priorRow.status as PaymentStatus)
@@ -591,6 +597,48 @@ export class Payment extends SmrtObject {
     if (this.customerFundsJson || persisted?.customer_funds_json)
       throw new Error('Customer funds cash history cannot be deleted');
     return super.delete(options);
+  }
+
+  /** See the connected-row guard in {@link save}. */
+  private assertConnectedIdentityUnchanged(
+    priorRow: Record<string, unknown>,
+  ): void {
+    const frozen: Array<[string, unknown, unknown]> = [
+      ['kind', String(priorRow.kind ?? 'payment'), this.kind],
+      ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
+      ['currency', String(priorRow.currency ?? ''), this.currency],
+      ['backendId', String(priorRow.backend_id ?? ''), this.backendId],
+      [
+        'backendTxRef',
+        String(priorRow.backend_tx_ref ?? ''),
+        this.backendTxRef,
+      ],
+      [
+        'transactionId',
+        String(priorRow.transaction_id ?? ''),
+        this.transactionId,
+      ],
+      [
+        'connectedAccountId',
+        String(priorRow.connected_account_id ?? ''),
+        this.connectedAccountId,
+      ],
+      [
+        'applicationFeeCents',
+        Number(priorRow.application_fee_cents ?? 0),
+        Number(this.applicationFeeCents ?? 0),
+      ],
+      [
+        'refundOfPaymentId',
+        String(priorRow.refund_of_payment_id ?? ''),
+        this.refundOfPaymentId,
+      ],
+    ];
+    for (const [field, prior, next] of frozen)
+      if (prior !== next)
+        throw new Error(
+          `Payment ${this.id}: '${field}' of a connected payment or refund cannot change`,
+        );
   }
 
   /**

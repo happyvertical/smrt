@@ -31,7 +31,10 @@ capabilitiesObservedAt, feePolicyRef, disabledAt, disabledReason }`.
   `connectedRefundState`), frozen once settled. A connected intent settles only
   with a Payment on the same account and fee, and its account, fee and payment
   options (which name the provider session settlement re-reads) are frozen
-  from creation, so a generated update cannot repoint it.
+  from creation, so a generated update cannot repoint it. A connected
+  `Payment` (charge or refund) keeps its kind, amounts, currency, provider
+  references, account, fee and refunded payment from its first write, even
+  while pending.
 
 ## Commands
 
@@ -71,7 +74,10 @@ signature, resolveSettlementAccounts })`:
    re-reads the Checkout Session from the provider, so delivery order never
    matters. Refund updates (`charge.refund.updated`, `refund.*`) book or fail
    a pending refund recorded by `refundConnectedPayment` on that account;
-   terminal states never move back. Settlement records a `Payment` (deterministic id from the intent)
+   terminal states never move back. Refunds made by the command carry
+   `metadata.smrt_refund_id`; an update for such a refund that is not recorded
+   yet throws `REFUND_NOT_RECORDED` (non-2xx, so the provider redelivers after
+   the same-key retry records it). Refunds made elsewhere are reported. Settlement records a `Payment` (deterministic id from the intent)
    through `recordPayment()` and marks the intent paid. `refunded` events are
    reported (`refund_reported`), never booked automatically.
 5. The event id is stored only after processing succeeds; a refusal throws,
