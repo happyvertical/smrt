@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.57.10
+
+### Patch Changes
+
+- ### Features
+  
+  - effective-dated plan versions preserve paid-period entitlements (#4153) (subscriptions)
+  - pool recipients weighted by metric; organisation and treasury earners (#4150) (sales)
+  - deliver Hearth MVP education and ingestion framework (#4137)
+  
+  ### Bug Fixes
+  
+  - qualify imported parent classes in manifests (#4152) (core)
+- @happyvertical/smrt-config@0.57.10
+  - @happyvertical/smrt-scanner@0.57.10
+  - @happyvertical/smrt-types@0.57.10
+
 ## 0.57.9
 
 ### Patch Changes
