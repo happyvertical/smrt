@@ -733,19 +733,20 @@ async function checkRuntimeHydration(
       projectManifest.packageName,
     );
     let parentEntry: ManifestEntryRef | undefined;
+    // Prefer the scanner's import-qualified parent (#4145) so a parent name
+    // shared by two packages resolves to the one the class actually imports.
+    const parentName =
+      entry.definition.extendsQualified || entry.definition.extends;
 
-    if (entry.definition.extends) {
-      const parentLookup = resolveEntryByName(
-        allManifests,
-        entry.definition.extends,
-      );
+    if (parentName) {
+      const parentLookup = resolveEntryByName(allManifests, parentName);
 
       if (parentLookup.kind === 'ambiguous') {
         addFinding(
           findings,
           'error',
           'ambiguous-extends-reference',
-          `Runtime hydration for "${qualifiedName}" cannot resolve "${entry.definition.extends}" because it matches multiple manifest classes: ${parentLookup.matches.map(describeEntry).sort().join(', ')}.`,
+          `Runtime hydration for "${qualifiedName}" cannot resolve "${parentName}" because it matches multiple manifest classes: ${parentLookup.matches.map(describeEntry).sort().join(', ')}.`,
         );
         continue;
       }
@@ -795,7 +796,7 @@ async function checkRuntimeHydration(
           findings,
           'error',
           'runtime-inheritance-hydration',
-          `Runtime hydration for "${qualifiedName}" is missing inherited fields from "${entry.definition.extends}": ${missingInherited.join(', ')}.`,
+          `Runtime hydration for "${qualifiedName}" is missing inherited fields from "${parentName}": ${missingInherited.join(', ')}.`,
         );
       }
     }
