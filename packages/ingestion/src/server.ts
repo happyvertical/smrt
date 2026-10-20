@@ -35,7 +35,11 @@ import type {
   RetrieveFeedbackInput,
   SuggestRuleInput,
 } from './feedback-dto.js';
-import type { ProposalConfiguration } from './proposal-contracts.js';
+import {
+  type ProposalConfiguration,
+  type ProposalReadConfiguration,
+  proposalReadConfiguration,
+} from './proposal-contracts.js';
 import type {
   CompletedAnalysisSnapshot,
   PreviewGeneratedInput,
@@ -98,6 +102,8 @@ export interface DispatchRouteInspection {
 export interface IngestionOptions {
   /** Optional server-owned interpretation configuration; independent of execution. */
   proposals?: ProposalConfiguration;
+  /** Credential-free persisted proposal reads and previews; cannot generate. */
+  proposalRead?: ProposalReadConfiguration;
   /** Explicit scoped learning; never inferred from analysis or execution success. */
   feedback?: FeedbackConfiguration;
   /** Optional application-owned review/execution catalog and live authority. */
@@ -219,6 +225,15 @@ export class IngestionService {
   private readonly dispatchTarget: IntakeDispatchTarget;
   constructor(private readonly options: IngestionOptions) {
     if (options.proposals) assertProposalLimits(options.proposals.limits);
+    if (options.proposalRead) {
+      assertProposalLimits(options.proposalRead.limits);
+      if (
+        options.proposals &&
+        JSON.stringify(proposalReadConfiguration(options.proposals)) !==
+          JSON.stringify(proposalReadConfiguration(options.proposalRead))
+      )
+        throw new Error('Proposal read configuration mismatch');
+    }
     this.db = options.db;
     this.scope = Object.freeze({ ...options.scope });
     if (!uuid.test(this.scope.tenantId))
@@ -289,6 +304,12 @@ export class IngestionService {
       this.options.proposals,
     );
   }
+  private async proposalReader() {
+    const config = this.options.proposals ?? this.options.proposalRead;
+    if (!config) throw new Error('Intake proposals are not configured');
+    const { IngestionProposalService } = await import('./proposals.js');
+    return new IngestionProposalService(this, this.options, config);
+  }
   async listHandlers(itemId: string) {
     return (await this.proposals()).listHandlers(itemId);
   }
@@ -308,7 +329,7 @@ export class IngestionService {
     return (await this.proposals()).generate(lease);
   }
   async previewGeneratedProposals(input: PreviewGeneratedInput) {
-    return (await this.proposals()).preview(input);
+    return (await this.proposalReader()).preview(input);
   }
   private async feedback() {
     const { IntakeFeedbackService } = await import('./feedback.js');
@@ -1342,7 +1363,7 @@ export class IngestionService {
     });
     if (replay) {
       // Idempotency acknowledges only an intent the current reviewer may still access.
-      await (await this.proposals())[generationSnapshotRead](
+      await (await this.proposalReader())[generationSnapshotRead](
         frozen.itemId,
         (work) => this.tx(work),
         (db) =>
@@ -1358,7 +1379,7 @@ export class IngestionService {
       return replay;
     }
     let result: { id: string; revision: number } | undefined;
-    await (await this.proposals())[generationSnapshotRead](
+    await (await this.proposalReader())[generationSnapshotRead](
       frozen.itemId,
       (work) => this.tx(work),
       (db) =>
@@ -1691,7 +1712,7 @@ export class IngestionService {
       return current;
     };
     if (snapshot.configuration.stage === 'interpret')
-      return (await this.proposals())[generationSnapshotRead](
+      return (await this.proposalReader())[generationSnapshotRead](
         itemId,
         (work) => this.tx(work),
         read,

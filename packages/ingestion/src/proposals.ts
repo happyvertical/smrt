@@ -28,7 +28,9 @@ import type {
   GenerationStageConfiguration,
   GenerativeProposalInput,
   ProposalConfiguration,
+  ProposalReadConfiguration,
 } from './proposal-contracts.js';
+import { proposalReadConfiguration } from './proposal-contracts.js';
 import type {
   CandidatePage,
   CompletedAnalysisSnapshot,
@@ -111,43 +113,50 @@ export class IngestionProposalService {
   private readonly execution: IntakeExecutionService;
   private readonly identity;
   private readonly decisionIdentity;
+  private readonly generator?: ProposalConfiguration['generator'];
+  private readonly decision?: NonNullable<ProposalConfiguration['decision']>;
   constructor(
     private readonly service: IngestionService,
     private readonly options: IngestionOptions,
-    private readonly config: ProposalConfiguration,
+    config: ProposalConfiguration | ProposalReadConfiguration,
   ) {
     if (!options.execution)
       throw new Error('Application execution catalog required');
     this.execution = new IntakeExecutionService(options, options.execution);
-    this.identity = providerIdentity(config.generator.identity);
+    this.config = proposalReadConfiguration(config);
+    this.identity = providerIdentity(this.config.generator);
     this.decisionIdentity = config.decision
-      ? providerIdentity(config.decision.identity)
+      ? providerIdentity(
+          'identity' in config.decision
+            ? config.decision.identity
+            : config.decision,
+        )
       : null;
-    text(config.version);
-    text(config.promptVersion);
-    assertProposalLimits(config.limits);
-    this.config = {
-      ...config,
-      limits: structuredClone(config.limits),
-      generator: {
+    text(this.config.version);
+    text(this.config.promptVersion);
+    assertProposalLimits(this.config.limits);
+    if ('identity' in config.generator)
+      this.generator = {
         identity: this.identity,
         generate: config.generator.generate.bind(config.generator),
-      },
-      ...(config.decision
-        ? {
-            decision: {
-              identity: this.decisionIdentity!,
-              client: config.decision.client,
-            },
-          }
-        : {}),
-    };
+      };
+    if (config.decision && 'client' in config.decision && this.decisionIdentity)
+      this.decision = {
+        identity: this.decisionIdentity,
+        client: config.decision.client,
+      };
     for (const value of [
       config.minimumDecisionProbability ?? 0.8,
       config.tieMargin ?? 0.1,
     ])
       if (!Number.isFinite(value) || value < 0 || value > 1)
         throw new Error('Invalid decision threshold');
+  }
+  private readonly config: ProposalReadConfiguration;
+  private generation(): ProposalConfiguration['generator'] {
+    if (!this.generator)
+      throw new Error('Intake proposal generation is not configured');
+    return this.generator;
   }
   private handler(id: string, version: string): IntakeHandler {
     const handler = this.options.execution?.handlers.find(
@@ -396,6 +405,7 @@ export class IngestionProposalService {
     itemId: string,
     attemptId: string,
   ): Promise<GenerationStageConfiguration> {
+    this.generation();
     const source = await this.service.getCompletedAnalysis(itemId, attemptId);
     if (source.result.provider !== 'smrt-ingestion-extraction')
       throw new Error('Extraction source required');
@@ -541,6 +551,7 @@ export class IngestionProposalService {
     }
   }
   async generate(lease: AnalysisLease): Promise<boolean> {
+    const generator = this.generation();
     const { generation, source } = await this.service.getGenerationInput(lease);
     const catalog = await this.catalog(lease.itemId);
     const frozen = record(generation.configuration.proposals);
@@ -579,7 +590,7 @@ export class IngestionProposalService {
           ...new Set(catalog.flatMap((entry) => entry.policyVersions)),
         ],
         generative: this.identity,
-        decision: { configured: !!this.config.decision },
+        decision: { configured: !!this.decision },
         usage: {},
       },
       automaticActionEligible: false,
@@ -713,10 +724,10 @@ export class IngestionProposalService {
           throw new StageFailure('limit');
         const generated = await this.deadline(async (signal) => {
           try {
-            return await this.config.generator.generate(
-              structuredClone(input),
-              { signal, maxOutputBytes: maxBytes },
-            );
+            return await generator.generate(structuredClone(input), {
+              signal,
+              maxOutputBytes: maxBytes,
+            });
           } catch {
             throw new StageFailure('unavailable');
           }
@@ -760,7 +771,7 @@ export class IngestionProposalService {
         output.provenance.usage = safeUsage(generated.usage);
         if (generated.responseModel)
           output.provenance.generativeResponseModel = generated.responseModel;
-        if (this.config.decision && output.suggestions.length)
+        if (this.decision && output.suggestions.length)
           await this.decide(lease, output, input);
         if (
           extraction.some((entry) =>
@@ -818,7 +829,9 @@ export class IngestionProposalService {
     output: GenerationOutput,
     input: unknown,
   ) {
-    const configured = this.config.decision!;
+    const configured = this.decision;
+    if (!configured || !this.decisionIdentity)
+      throw new Error('Intake proposal decision is not configured');
     const questions: DecisionRequest['questions'] = {};
     output.suggestions.forEach((suggestion, index) => {
       questions[`supported_${index}`] = {

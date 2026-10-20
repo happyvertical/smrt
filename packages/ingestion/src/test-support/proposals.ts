@@ -34,6 +34,7 @@ import type {
   ProposalConfiguration,
   ProposalGenerator,
 } from '../proposal-contracts.js';
+import { proposalReadConfiguration } from '../proposal-contracts.js';
 import type { GenerationOutput } from '../proposal-dto.js';
 import {
   type AnalysisLease,
@@ -564,6 +565,58 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       return { ...input, output: await output(input.lease) };
     }
+    it('reads and previews completed proposals without a generation client', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const reader = new IngestionService({
+        ...options,
+        proposals: undefined,
+        proposalRead: proposalReadConfiguration(configuration),
+      });
+      await expect(
+        reader.getCompletedAnalysis(generated.itemId),
+      ).resolves.toMatchObject({
+        attemptId: generated.lease.attemptId,
+      });
+      await expect(
+        reader.previewGeneratedProposals({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'reader-preview',
+              expectedRevision: 0,
+              requestId: randomUUID(),
+            },
+          ],
+        }),
+      ).resolves.toHaveLength(1);
+      expect(calls).toHaveBeenCalledTimes(1);
+    });
+    it('rejects mismatched read and generation configuration', () => {
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposalRead: {
+              ...proposalReadConfiguration(configuration),
+              version: 'other',
+            },
+          }),
+      ).toThrow('Proposal read configuration mismatch');
+    });
+    it('keeps generation unavailable to read-only services', async () => {
+      const reader = new IngestionService({
+        ...options,
+        proposals: undefined,
+        proposalRead: proposalReadConfiguration(configuration),
+      });
+      await expect(
+        reader.prepareGeneration('missing', 'missing'),
+      ).rejects.toThrow('Intake proposals are not configured');
+    });
+
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();
       const generated = await generate();
