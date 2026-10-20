@@ -507,6 +507,12 @@ export const generateCommands: Record<string, CLICommand> = {
             // Skip test-visibility objects (test fixtures, perf tests, etc.)
             if (def.visibility === 'test') continue;
 
+            // Collection-class entries are never registered as objects, and
+            // packages need not export them from their root (#4066). Emit no
+            // import for them and do not count them as imported entries. An
+            // object's paired collection is imported via its own entry below.
+            if (isCollectionClass(def)) continue;
+
             // Deduplicate by qualifiedName (e.g. @happyvertical/smrt-profiles:Profile)
             const dedupeKey =
               def.qualifiedName ||
@@ -546,10 +552,6 @@ export const generateCommands: Record<string, CLICommand> = {
             }
             importedEntryCount++;
             packageImportedEntryCount++;
-
-            if (isCollectionClass(def)) {
-              continue;
-            }
 
             // Generate registration calls. Keep the class name and package name
             // separate so ObjectRegistry can use package-aware collision policy.
