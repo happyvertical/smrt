@@ -33,7 +33,9 @@ import type {
   GenerationLimits,
   ProposalConfiguration,
   ProposalGenerator,
+  ProposalReadConfiguration,
 } from '../proposal-contracts.js';
+import { proposalReadConfiguration } from '../proposal-contracts.js';
 import type { GenerationOutput } from '../proposal-dto.js';
 import {
   type AnalysisLease,
@@ -564,6 +566,228 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       return { ...input, output: await output(input.lease) };
     }
+    it('reads and previews completed proposals without a generation client', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const reader = new IngestionService({
+        ...options,
+        proposals: undefined,
+        proposalRead: proposalReadConfiguration(configuration),
+      });
+      await expect(
+        reader.getCompletedAnalysis(generated.itemId),
+      ).resolves.toMatchObject({
+        attemptId: generated.lease.attemptId,
+      });
+      await expect(
+        reader.previewGeneratedProposals({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'reader-preview',
+              expectedRevision: 0,
+              requestId: randomUUID(),
+            },
+          ],
+        }),
+      ).resolves.toHaveLength(1);
+      expect(calls).toHaveBeenCalledTimes(1);
+    });
+    it('accepts equivalent read limits regardless of insertion order', () => {
+      const { limits, ...read } = proposalReadConfiguration(configuration);
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposalRead: {
+              ...read,
+              limits: {
+                timeoutMs: limits.timeoutMs,
+                maxQueryLength: limits.maxQueryLength,
+                maxOutputBytes: limits.maxOutputBytes,
+                maxInputBytes: limits.maxInputBytes,
+                maxSuggestions: limits.maxSuggestions,
+                maxCandidates: limits.maxCandidates,
+                maxHandlers: limits.maxHandlers,
+              },
+            },
+          }),
+      ).not.toThrow();
+    });
+    it('rejects mismatched read and generation configuration', () => {
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposalRead: {
+              ...proposalReadConfiguration(configuration),
+              version: 'other',
+            },
+          }),
+      ).toThrow('Proposal read configuration mismatch');
+    });
+    it('keeps generation unavailable to read-only services', async () => {
+      const reader = new IngestionService({
+        ...options,
+        proposals: undefined,
+        proposalRead: proposalReadConfiguration(configuration),
+      });
+      await expect(
+        reader.prepareGeneration('missing', 'missing'),
+      ).rejects.toThrow('Intake proposals are not configured');
+    });
+    const readDrifts: Array<
+      [string, (read: ProposalReadConfiguration) => ProposalReadConfiguration]
+    > = [
+      [
+        'version',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          version: 'drifted',
+        }),
+      ],
+      [
+        'prompt version',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          promptVersion: 'drifted',
+        }),
+      ],
+      [
+        'generator identity',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          generator: { ...identity, version: 'drifted' },
+        }),
+      ],
+      [
+        'decision identity',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          decision: { ...identity, model: 'decision' },
+        }),
+      ],
+      [
+        'limits',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          limits: { ...limits, maxHandlers: limits.maxHandlers - 1 },
+        }),
+      ],
+      [
+        'minimum decision probability',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          minimumDecisionProbability: 0.7,
+        }),
+      ],
+      [
+        'tie margin',
+        (read: ReturnType<typeof proposalReadConfiguration>) => ({
+          ...read,
+          tieMargin: 0.2,
+        }),
+      ],
+    ];
+    for (const [field, change] of readDrifts)
+      it(`rejects a persisted snapshot when the read ${field} drifts`, async () => {
+        chooseCreate();
+        const generated = await generate();
+        const reader = new IngestionService({
+          ...options,
+          proposals: undefined,
+          proposalRead: change(proposalReadConfiguration(configuration)),
+        });
+        await expect(
+          reader.getCompletedAnalysis(
+            generated.itemId,
+            generated.lease.attemptId,
+          ),
+        ).rejects.toThrow(GenerationSnapshotStaleError);
+      });
+
+    it('keeps saved reviews and succeeded results on a generating host after configuration drift', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'configuration-drift',
+            expectedRevision: 0,
+            requestId: 'configuration-drift-preview',
+          },
+        ],
+      });
+      const review =
+        saved.kind === 'operation' ? saved.review : saved.review.steps[0];
+      await service.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'configuration-drift-approve',
+        decision: 'approve',
+      });
+      expect((await service.applyAction(review.actionId)).state).toBe(
+        'succeeded',
+      );
+
+      const drifted = new IngestionService({
+        ...options,
+        proposals: { ...configuration, version: 'drifted' },
+      });
+      const reviews = await drifted.listReviews(generated.itemId);
+      expect(reviews.actions[0].review.state).toBe('succeeded');
+      expect(reviews.actions[0].result?.state).toBe('succeeded');
+      await expect(
+        drifted.getCompletedAnalysis(generated.itemId),
+      ).rejects.toThrow(GenerationSnapshotStaleError);
+      await expect(
+        drifted.previewGeneratedProposals({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'configuration-drift-preview-again',
+              expectedRevision: review.revision,
+              requestId: 'configuration-drift-preview-again',
+            },
+          ],
+        }),
+      ).rejects.toThrow(GenerationSnapshotStaleError);
+      const loaded = await loadReviewAnalysis(
+        drifted,
+        await drifted.getItem(generated.itemId),
+        reviews,
+      );
+      expect(loaded.analysis).toBeUndefined();
+      expect(loaded.reviews.actions[0].review.state).toBe('succeeded');
+      expect(loaded.reviews.actions[0].result?.state).toBe('succeeded');
+    });
+
+    it('keeps provider denials hard when the read configuration drifts', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const reader = new IngestionService({
+        ...options,
+        proposals: undefined,
+        proposalRead: {
+          ...proposalReadConfiguration(configuration),
+          version: 'drifted',
+        },
+      });
+      providerAllowed = false;
+      await expect(
+        reader.getCompletedAnalysis(generated.itemId),
+      ).rejects.toThrow('Generation visibility changed');
+    });
+
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();
       const generated = await generate();

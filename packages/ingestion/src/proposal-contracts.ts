@@ -1,7 +1,11 @@
 import type { DecisionClient } from '@happyvertical/smrt-core';
 import type { HandlerContext } from './execution-contracts.js';
 import type { IntakeValues } from './execution-dto.js';
-import type { EvidenceLocation, ProviderIdentity } from './extraction-types.js';
+import {
+  type EvidenceLocation,
+  type ProviderIdentity,
+  providerIdentity,
+} from './extraction-types.js';
 import type {
   ProposalCandidate,
   ProposalCatalogEntry,
@@ -74,6 +78,53 @@ export interface ProposalConfiguration {
   minimumDecisionProbability?: number;
   tieMargin?: number;
   limits: GenerationLimits;
+}
+/** Credential-free configuration for validating persisted proposal snapshots. */
+export interface ProposalReadConfiguration {
+  version: string;
+  promptVersion: string;
+  generator: ProviderIdentity;
+  decision?: ProviderIdentity;
+  minimumDecisionProbability?: number;
+  tieMargin?: number;
+  limits: GenerationLimits;
+}
+/** Remove generation capability while preserving the public persisted configuration. */
+export function proposalReadConfiguration(
+  config: ProposalConfiguration | ProposalReadConfiguration,
+): ProposalReadConfiguration {
+  const generator = providerIdentity(
+    'identity' in config.generator
+      ? config.generator.identity
+      : config.generator,
+  );
+  return {
+    version: config.version,
+    promptVersion: config.promptVersion,
+    generator,
+    ...(config.decision
+      ? {
+          decision: providerIdentity(
+            'identity' in config.decision
+              ? config.decision.identity
+              : config.decision,
+          ),
+        }
+      : {}),
+    ...(config.minimumDecisionProbability === undefined
+      ? {}
+      : { minimumDecisionProbability: config.minimumDecisionProbability }),
+    ...(config.tieMargin === undefined ? {} : { tieMargin: config.tieMargin }),
+    limits: {
+      maxHandlers: config.limits.maxHandlers,
+      maxCandidates: config.limits.maxCandidates,
+      maxSuggestions: config.limits.maxSuggestions,
+      maxInputBytes: config.limits.maxInputBytes,
+      maxOutputBytes: config.limits.maxOutputBytes,
+      maxQueryLength: config.limits.maxQueryLength,
+      timeoutMs: config.limits.timeoutMs,
+    },
+  };
 }
 export interface GenerationStageConfiguration extends IntakeValues {
   stage: 'interpret';

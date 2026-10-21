@@ -7,6 +7,14 @@ optional `candidates` callback. There is one catalog: the same operation or
 ordered playbook adapter is discovered, validated, previewed, and later applied
 by the execution service. Generation never approves or applies.
 
+Credential-free review hosts may configure `IngestionOptions.proposalRead` with
+`ProposalReadConfiguration`: public generator/decision identities, version,
+prompt version, limits and thresholds only. It reads completed proposals,
+preserves current authority and snapshot validation, and permits human preview;
+it never accepts a generator or provider client. If a process supplies both
+settings, their public configuration must match exactly. Preparing or generating
+proposals still requires `proposals` with a real generator.
+
 ## Discovery and authority
 
 `listHandlers(itemId)` returns a bounded detached catalog. The owning execution
