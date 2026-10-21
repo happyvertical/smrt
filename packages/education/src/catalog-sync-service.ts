@@ -168,16 +168,10 @@ export class CatalogSyncService {
     checkpoint = {
       ...checkpoint,
       complete: false,
-      paused: true,
-      pauseReason: 'Catalog page limit reached; resume in a later invocation.',
-      failures: [
-        ...checkpoint.failures,
-        {
-          cursor: checkpoint.cursor,
-          code: 'page-limit',
-          message: 'Catalog page limit reached; resume in a later invocation.',
-        },
-      ],
+      paused: false,
+      pauseReason: undefined,
+      // A controlled invocation budget is a resumable yield, not a source failure.
+      failures: checkpoint.failures,
     };
     await this.store.saveCheckpoint(checkpoint);
     return { ...checkpoint, withdrawnCount };

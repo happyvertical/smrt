@@ -138,3 +138,55 @@ regressions, dialect coverage, and the existing DuckDB setup limitations.
 - [Users and tenant hierarchy](../users/README.md)
 - [Tenant isolation](../tenancy/README.md)
 - [Assets](../assets/README.md)
+
+
+### Public first-edition Illustrative Mathematics
+
+`createPublicIllustrativeMathematicsFirstEditionAdapter({ fetch })` returns both
+`CatalogSyncAdapter` and `CatalogAcquireAdapter`; `fetch` is optional and defaults
+to the standard global Fetch API. Use the same factory for discovery and explicit
+private acquisition through `CatalogAcquisitionService`. No credential, mounted
+provider module, schema extension, or PDF fetch is needed for discovery.
+
+The declared scope is public PDFs with explicit student/family labels on the
+first-edition Kendall Hunt K–5, 6–8, and high-school teacher/family hierarchy,
+including Algebra 1 Supports and linked Spanish counterparts. Traversal starts
+at the official homepage and fixed curriculum roots; it follows direct course,
+unit, resources, family-materials, and lesson-preparation links. Teacher guides,
+answers, assessments, presentations, login-only links, unknown labels, HTML-only
+student lessons, non-PDF formats, and AccessIM/v.360 are excluded. Completion
+means this declared scope only; exclusions remain in the sync report.
+
+Each `enumerate` reads one HTML page (2 MB maximum) and at most four asset HEADs.
+It never GETs PDF content. Version-1 JSON cursors contain the remaining validated
+hierarchy paths and an artifact offset plus source fingerprint when needed;
+persist the returned cursor unchanged. A fresh adapter can resume it. The cursor
+is capped at 64 KB and 384 pending paths; source pages are capped at 128 children
+and artifacts. Exceeding a bound, changing source metadata during a chunked page,
+or a provider failure pauses with the current cursor, never a terminal success.
+Normal `CatalogSyncService` invocation page budgets yield an unpaused, incomplete
+checkpoint without inventing a source failure; resume it to complete the same generation.
+
+The source fingerprint is SHA-256 of canonical JSON containing the canonical
+path and parsed children, artifacts (asset ID, exact normalized label, allowed
+role), exclusions, source attribution, notices, license decision, and title, in
+source order. It excludes scripts, comments and transient CSRF markup. This is
+necessary because official page weak ETags change for each anonymous request.
+Acquisition rechecks that fingerprint, exact asset identity, role and license
+before requesting bytes. The PDF revision additionally pins the strong ETag,
+length and Last-Modified. A conditional PDF GET must return the identical
+validators, PDF content type, exact declared/streamed length and `%PDF-` signature;
+the adapter hashes the bytes with SHA-256. The generic service retains attribution
+and image/trademark notices and provides tenant, selection and idempotence checks.
+
+`timeoutMs` bounds the entire call, including streaming (default 20 seconds,
+maximum 60 seconds). `maxPdfBytes` defaults to 32 MiB (maximum 64 MiB). Requests
+use fixed official hosts and strict paths, reject redirects, and carry no source
+credentials. Rate limiting returns a resumable pause with Retry-After information;
+hosts must honor that delay before resuming rather than loop immediately.
+
+License evidence comes from each exact official source page's attribution and
+CC BY 4.0 footer, with retrieval time and retained exceptions. The official
+[terms §7.1](https://illustrativemathematics.org/terms-of-use/) distinguish the
+first edition's CC BY 4.0 curriculum from the separate v.360 terms in §7.2.
+No v.360 grant is inferred.
