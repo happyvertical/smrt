@@ -69,6 +69,15 @@ export const SESSION_DATA_KEYS = {
    * `created_at`).
    */
   outOfBandProofAt: 'outOfBandProofAt',
+  /**
+   * ISO timestamp of the original authentication, carried forward when
+   * tenant-switch rotation mints a replacement row (whose own `created_at`
+   * is new). Written only by `SessionService.switchTenant`; never from client
+   * input, and `setSessionData` refuses it. Absent on a session that has not
+   * rotated, where `created_at` is the authentication time. See
+   * {@link Session.getAuthenticatedAt}.
+   */
+  authenticatedAt: 'authenticatedAt',
 } as const;
 
 /**
@@ -279,6 +288,27 @@ export class Session extends SmrtObject {
     const raw = this.data?.[SESSION_DATA_KEYS.idleSeconds];
     return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
       ? raw
+      : null;
+  }
+
+  /**
+   * When the person authenticated: `data.authenticatedAt` when present, else
+   * the row's `created_at`. A present but malformed or future stamp returns
+   * null, which callers must treat as "not fresh" (fail closed). Also null
+   * when there is no usable `created_at`.
+   */
+  getAuthenticatedAt(): Date | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.authenticatedAt];
+    if (raw !== undefined && raw !== null) {
+      const at = typeof raw === 'string' ? new Date(raw) : null;
+      if (!at || Number.isNaN(at.getTime())) return null;
+      // A stamp from the future (beyond clock skew) was not written by us.
+      if (at.getTime() > Date.now() + 30_000) return null;
+      return at;
+    }
+    const created = this.created_at;
+    return created instanceof Date && !Number.isNaN(created.getTime())
+      ? created
       : null;
   }
 
