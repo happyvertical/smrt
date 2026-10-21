@@ -33,6 +33,10 @@ export const DECORATOR_RUNTIME_PACKAGES: readonly string[] = [
   '@swc/helpers',
   '@babel/runtime',
   'tslib',
+  // `reflect-metadata` (pulled in by e.g. `@simplewebauthn/server` and
+  // tsyringe) defines `Reflect.decorate`, which tsc-style `__decorate` helpers
+  // delegate to; every decorator is then applied FROM its Reflect.js frame.
+  'reflect-metadata',
 ];
 
 /**
