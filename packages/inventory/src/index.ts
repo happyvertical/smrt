@@ -55,6 +55,12 @@ import './__smrt-register__.js';
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   InventoryLocationCollection,
+  LotCollection,
+  LotCorrectionCollection,
+  LotDocumentCollection,
+  LotStockLevelCollection,
+  LotUsageCollection,
+  lotSearchKey,
   StockLevelCollection,
   StockMovementCollection,
 } from './collections/index.js';
@@ -65,6 +71,16 @@ export {
 export {
   InventoryLocation,
   type InventoryLocationOptions,
+  Lot,
+  LotCorrection,
+  type LotCorrectionOptions,
+  LotDocument,
+  type LotDocumentOptions,
+  type LotOptions,
+  LotStockLevel,
+  type LotStockLevelOptions,
+  LotUsage,
+  type LotUsageOptions,
   StockLevel,
   type StockLevelOptions,
   StockMovement,
@@ -75,24 +91,41 @@ export { StockRecipe } from './recipes.js';
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  type AttachDocumentInput,
   type ContractCreatedLine,
   type ContractCreatedPayload,
+  createLotService,
   createStockService,
+  DuplicateLotError,
   type FulfillmentShippedLine,
   type FulfillmentShippedPayload,
   type InstalledInventoryDispatchHandlers,
   type InstallInventoryDispatchHandlersOptions,
   InsufficientStockError,
   installInventoryDispatchHandlers,
+  type LotChangeOptions,
+  LotCorrectionError,
+  LotInUseError,
+  LotMismatchError,
+  LotNotFoundError,
+  LotService,
+  type LotServiceOptions,
+  type ReceiveLotInput,
+  type RecordUsageInput,
   type StockMutationOptions,
   StockService,
   type StockServiceOptions,
+  type TraceNode,
+  type TraceOptions,
 } from './services/index.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared types and enums
 // ─────────────────────────────────────────────────────────────────────────────
 export type {
   InventoryLocationKind,
+  LotCorrectionKind,
+  LotKind,
+  LotUsageStatus,
   StockMovementReason,
   StockState,
 } from './types.js';
