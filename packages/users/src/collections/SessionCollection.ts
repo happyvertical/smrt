@@ -358,8 +358,14 @@ export class SessionCollection extends SmrtCollection<Session> {
     key: string,
     value: unknown,
   ): Promise<boolean> {
-    // Server-set: only tenant-switch rotation writes the authentication time.
-    if (key === SESSION_DATA_KEYS.authenticatedAt) return false;
+    // Server-set: tenant-switch rotation writes the authentication time and
+    // passkey sign-in writes the passkey row id; neither is caller data.
+    if (
+      key === SESSION_DATA_KEYS.authenticatedAt ||
+      key === SESSION_DATA_KEYS.passkeyCredentialId
+    ) {
+      return false;
+    }
     const session = await this.findValidSession(sessionId);
     if (!session) return false;
 

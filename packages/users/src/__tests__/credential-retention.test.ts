@@ -417,8 +417,11 @@ describe('passkey challenge retention (#3275)', () => {
 
   it('reaps consumed challenges only after their ceremony expired', async () => {
     const challenges = await UsersPasskeyChallengeCollection.create({ db });
-    await seed(challenges, 'expired-1', new Date(Date.now() - MINUTE_MS));
+    // Past expiry plus the 10 minute skew margin: reaped.
+    await seed(challenges, 'expired-1', new Date(Date.now() - 11 * MINUTE_MS));
     await seed(challenges, 'expired-2', new Date(Date.now() - 60 * MINUTE_MS));
+    // Expired here, but another process's clock may still accept it.
+    await seed(challenges, 'skew-window', new Date(Date.now() - 2 * MINUTE_MS));
     await seed(challenges, 'live', new Date(Date.now() + 5 * MINUTE_MS));
 
     registerUserRetentionTasks();
@@ -428,7 +431,7 @@ describe('passkey challenge retention (#3275)', () => {
         (task) => task.task === PASSKEY_CHALLENGES_RETENTION_TASK,
       )?.pruned,
     ).toBe(2);
-    expect(await countRows('users_passkey_challenges')).toBe(3);
+    expect(await countRows('users_passkey_challenges')).toBe(4);
 
     const swept = await runRetentionSweep(db);
     expect(
@@ -436,8 +439,15 @@ describe('passkey challenge retention (#3275)', () => {
         (task) => task.task === PASSKEY_CHALLENGES_RETENTION_TASK,
       )?.pruned,
     ).toBe(2);
-    expect(await countRows('users_passkey_challenges')).toBe(1);
-    // The live challenge is still a replay guard.
+    expect(await countRows('users_passkey_challenges')).toBe(2);
+    // The live and skew-window challenges are still replay guards.
+    expect(
+      await challenges.consume(
+        'skew-window',
+        'authentication',
+        new Date(Date.now() + MINUTE_MS),
+      ),
+    ).toBe(false);
     expect(
       await challenges.consume(
         'live',

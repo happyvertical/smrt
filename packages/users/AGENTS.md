@@ -126,7 +126,7 @@ are not prerequisites for unrelated user-package work.
 - `UsersPasskeyCredential` (many per person) and `UsersPasskeyChallenge` (consumed
   challenge ledger) are sensitive with no generated surface;
   `PasskeyCredentialService` and its handlers are the only paths. Verification is
-  `@simplewebauthn/server` (external in the build); never hand-roll COSE/CBOR. Sign-in reserves on
+  `@simplewebauthn/server`, loaded on first use (its `reflect-metadata` polyfill is process-wide) and external in the build; never hand-roll COSE/CBOR. Sign-in reserves on
   the submitted credential id before any work, requires user verification, checks
   user handle and a strictly advancing counter (`reason: 'counter'`), mints, then
   re-checks with a guarded counter UPDATE; a ceremony is an HMAC-signed
@@ -137,10 +137,12 @@ are not prerequisites for unrelated user-package work.
   on the stored row (`Session.getAuthenticatedAt()`: server-set
   `data.authenticatedAt`, which tenant-switch rotation carries forward, else
   `created_at`; malformed fails closed; `setSessionData` refuses the key),
-  first-class, no ceiling; `users.passkey.manage` follows the PIN's
+  first-class, no ceiling, and its STORED `authMethod` in `freshAuthMethods` (default password/passkey/oidc/magic-link; never `terminal`, whose approval mints a fresh session for any holder of a stale one, nor `pin`); self list/rename also refuse a ceiling; `users.passkey.manage` follows the PIN's
   single-tenant rule, and `removeAllPasskeys` is admin-only, never self. Sessions
-  end before and after every removal; `Session.data.passkeyCredentialId` is
-  server-set.
+  end before and after every removal; `SESSION_DATA_KEYS.passkeyCredentialId` is
+  server-set (`setSessionData` refuses it). State-changing handlers require
+  `application/json` (415). Challenge rows are reaped only 10 minutes past expiry
+  (clock skew).
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.

@@ -267,7 +267,7 @@ describePostgres('PasskeyCredentialService on PostgreSQL', () => {
     await challenges.consume(
       'long-gone',
       'registration',
-      new Date(Date.now() - 60_000),
+      new Date(Date.now() - 11 * 60_000),
     );
     expect(await challenges.deleteExpired({ dryRun: true })).toBe(1);
     expect(await challenges.deleteExpired()).toBe(1);
