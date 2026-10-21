@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.57.16
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - keep a class's qualified parent when hydrating its manifest (#4177) (core)
+  - skip collection imports in generate-register; permanent ledger idempotency (#4163)
+  - support credential-free proposal review (#4180) (ingestion)
+  - patch @modelcontextprotocol/server, vite and launch-editor advisories (#4179) (deps)
+- @happyvertical/smrt-config@0.57.16
+  - @happyvertical/smrt-scanner@0.57.16
+  - @happyvertical/smrt-types@0.57.16
+
 ## 0.57.15
 
 ### Patch Changes

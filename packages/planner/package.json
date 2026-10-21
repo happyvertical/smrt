@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-planner",
-  "version": "0.57.15",
+  "version": "0.57.16",
   "type": "module",
   "description": "The smrt planner as a mountable Svelte component with a typed command set and plan snapshot.",
   "license": "MIT",
