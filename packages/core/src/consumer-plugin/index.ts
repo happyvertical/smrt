@@ -115,6 +115,46 @@ interface ConsumerPackageJson {
   [key: string]: unknown;
 }
 
+interface SelectiveSsrPackage {
+  packageJson: ConsumerPackageJson;
+  packageRoot: string;
+}
+
+function packageNameFromImportPath(importPath: string): string {
+  const parts = importPath.split('/');
+  return importPath.startsWith('@')
+    ? parts.slice(0, 2).join('/')
+    : (parts[0] ?? importPath);
+}
+
+function findInstalledPackageJson(
+  packageName: string,
+  searchFrom: string,
+): string | undefined {
+  let currentDir = searchFrom;
+  while (true) {
+    const candidate = path.join(
+      currentDir,
+      'node_modules',
+      packageName,
+      'package.json',
+    );
+    if (fs.existsSync(candidate)) return candidate;
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) return undefined;
+    currentDir = parentDir;
+  }
+}
+
+function sameInstalledPackage(
+  left: string | undefined,
+  right: string | undefined,
+): boolean {
+  return Boolean(
+    left && right && fs.realpathSync(left) === fs.realpathSync(right),
+  );
+}
+
 /**
  * SvelteKit route-hosting options for dependency models. Unlike `packages`,
  * `objects` is an HTTP exposure boundary: every entry must be an exact,
@@ -565,7 +605,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let producerApi: SmrtPluginApi | undefined;
   let routeLifecycleConfig: object | undefined;
   let isBuild = false;
-  let selectiveSsrPackages = new Map<string, ConsumerPackageJson>();
+  let selectiveSsrPackages = new Map<string, SelectiveSsrPackage>();
 
   function loadGenerationSnapshot(): ConsumerManifest {
     if (!generationSnapshot) {
@@ -631,7 +671,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     providerPackages: readonly string[],
   ): {
     external: string[];
-    selective: Map<string, ConsumerPackageJson>;
+    selective: Map<string, SelectiveSsrPackage>;
   } {
     const needsViteCompilation = (value: unknown): boolean => {
       if (typeof value === 'string') {
@@ -644,7 +684,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       );
     };
     const external = new Set<string>();
-    const selective = new Map<string, ConsumerPackageJson>();
+    const selective = new Map<string, SelectiveSsrPackage>();
     const visited = new Set<string>();
     const pending = providerPackages.map((packageName) => ({
       packageName,
@@ -655,23 +695,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       if (!candidate) continue;
       const { packageName, searchFrom } = candidate;
 
-      let packageJsonPath: string | undefined;
-      let currentDir = searchFrom;
-      while (true) {
-        const candidatePath = path.join(
-          currentDir,
-          'node_modules',
-          packageName,
-          'package.json',
-        );
-        if (fs.existsSync(candidatePath)) {
-          packageJsonPath = candidatePath;
-          break;
-        }
-        const parentDir = path.dirname(currentDir);
-        if (parentDir === currentDir) break;
-        currentDir = parentDir;
-      }
+      const packageJsonPath = findInstalledPackageJson(packageName, searchFrom);
       const visitKey = packageJsonPath ?? `${searchFrom}\0${packageName}`;
       if (visited.has(visitKey)) continue;
       visited.add(visitKey);
@@ -692,13 +716,14 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       const needsSvelteCompilation =
         typeof packageJson?.svelte === 'string' ||
         needsViteCompilation(packageJson?.exports);
-      const appRootPackageJson = path.join(
-        projectRoot,
-        'node_modules',
+      const projectPackageJson = findInstalledPackageJson(
         packageName,
-        'package.json',
+        projectRoot,
       );
-      const isAppResolvable = packageJsonPath === appRootPackageJson;
+      const isAppResolvable = sameInstalledPackage(
+        packageJsonPath,
+        projectPackageJson,
+      );
 
       // The preset owns app-runtime's finer split: its root and native runtime
       // stay external while ./sveltekit remains bundled with the app's Kit.
@@ -711,7 +736,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         isAppResolvable
       ) {
         if (needsSvelteCompilation && packageJson) {
-          selective.set(packageName, packageJson);
+          selective.set(packageName, {
+            packageJson,
+            packageRoot: path.dirname(packageJsonPath as string),
+          });
         } else {
           external.add(packageName);
         }
@@ -784,6 +812,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   function resolvesToSvelteCondition(
     packageName: string,
     packageJson: ConsumerPackageJson,
+    packageRoot: string,
     id: string,
     resolvedId: string | undefined,
   ): boolean {
@@ -795,7 +824,6 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     if (exportKey === '.' && typeof packageJson.svelte === 'string') {
       targets.push(packageJson.svelte);
     }
-    const packageRoot = path.join(projectRoot, 'node_modules', packageName);
     const normalizedResolved = resolvedId.split('?')[0];
     const canonical = (candidate: string): string =>
       fs.existsSync(candidate)
@@ -1061,7 +1089,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
     async resolveId(id, importer, resolveOptions) {
       if (isBuild && resolveOptions.ssr) {
-        for (const [packageName, packageJson] of selectiveSsrPackages) {
+        for (const [packageName, selectivePackage] of selectiveSsrPackages) {
           if (id !== packageName && !id.startsWith(`${packageName}/`)) {
             continue;
           }
@@ -1073,7 +1101,8 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             resolved?.id.endsWith('.svelte') || resolved?.id.endsWith('.css');
           const compileSvelteBarrel = resolvesToSvelteCondition(
             packageName,
-            packageJson,
+            selectivePackage.packageJson,
+            selectivePackage.packageRoot,
             id,
             resolved?.id,
           );
@@ -1314,10 +1343,19 @@ async function aggregateTypeManifests(
   for (const packageName of packages) {
     let loadedManifest = false;
     try {
-      const packageDir = path.join(projectRoot, 'node_modules', packageName);
-
       // Load package.json for version and export information
-      const packageJsonPath = path.join(packageDir, 'package.json');
+      const packageJsonPath = findInstalledPackageJson(
+        packageName,
+        projectRoot,
+      );
+      if (!packageJsonPath) {
+        console.warn(
+          `[smrt:consumer] Could not read package.json for ${packageName}`,
+        );
+        unresolvedPackages.push(packageName);
+        continue;
+      }
+      const packageDir = path.dirname(packageJsonPath);
       let packageJson: ConsumerPackageJson;
       try {
         const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf-8');
@@ -1378,26 +1416,13 @@ async function aggregateTypeManifests(
               const importPackageName = importPath.startsWith('@')
                 ? importPath.split('/').slice(0, 2).join('/')
                 : importPath.split('/')[0];
-              let sourcePackageJson =
+              const sourcePackageJson =
                 importPackageName === packageName ? packageJsonPath : undefined;
-              let sourceDirectory = packageDir;
-              while (!sourcePackageJson) {
-                const candidate = path.join(
-                  sourceDirectory,
-                  'node_modules',
-                  importPackageName,
-                  'package.json',
-                );
-                if (fs.existsSync(candidate)) {
-                  sourcePackageJson = candidate;
-                  break;
-                }
-                const parent = path.dirname(sourceDirectory);
-                if (parent === sourceDirectory) break;
-                sourceDirectory = parent;
-              }
-              const sourceIdentity = sourcePackageJson
-                ? fs.realpathSync(sourcePackageJson)
+              const resolvedSourcePackageJson =
+                sourcePackageJson ??
+                findInstalledPackageJson(importPackageName, packageDir);
+              const sourceIdentity = resolvedSourcePackageJson
+                ? fs.realpathSync(resolvedSourcePackageJson)
                 : `${packageName}\0${importPackageName}`;
               const priorSource = objectSources.get(objectName);
               if (priorSource && priorSource !== sourceIdentity) {
@@ -1692,26 +1717,39 @@ async function generateRegistrationFile(
     });
     return binding;
   };
-  const packageNameFromImportPath = (importPath: string): string => {
-    const parts = importPath.split('/');
-    return importPath.startsWith('@')
-      ? parts.slice(0, 2).join('/')
-      : (parts[0] ?? importPath);
-  };
-  const isAppResolvableImport = (importPath: string): boolean =>
-    fs.existsSync(
-      path.join(
-        projectRoot,
-        'node_modules',
-        packageNameFromImportPath(importPath),
-        'package.json',
-      ),
+  const isSameProjectAndProviderImport = (
+    importPath: string,
+    providerPackageName?: string,
+  ): boolean => {
+    const importPackageName = packageNameFromImportPath(importPath);
+    const projectPackageJson = findInstalledPackageJson(
+      importPackageName,
+      projectRoot,
     );
+    if (!providerPackageName) return Boolean(projectPackageJson);
+
+    const providerPackageJson = findInstalledPackageJson(
+      providerPackageName,
+      projectRoot,
+    );
+    if (!providerPackageJson) return false;
+    const providerImportPackageJson =
+      importPackageName === providerPackageName
+        ? providerPackageJson
+        : findInstalledPackageJson(
+            importPackageName,
+            path.dirname(providerPackageJson),
+          );
+    return sameInstalledPackage(projectPackageJson, providerImportPackageJson);
+  };
 
   // Configured providers remain ordinary static imports. Transitive-only
   // object modules are loaded below through their owning provider context.
   for (const packageName of manifest.smrtDependencies ?? []) {
-    if (isAppResolvableImport(packageName) && !importsByPath.has(packageName)) {
+    if (
+      isSameProjectAndProviderImport(packageName, packageName) &&
+      !importsByPath.has(packageName)
+    ) {
       importsByPath.set(packageName, new Map());
     }
   }
@@ -1796,8 +1834,11 @@ async function generateRegistrationFile(
         ? objectName
         : `${def.packageName}:${def.className || exportName}`);
 
-    const appResolvable = isAppResolvableImport(importPath);
     const providerPackageName = def.providerPackageName;
+    const appResolvable = isSameProjectAndProviderImport(
+      importPath,
+      providerPackageName,
+    );
     if (!appResolvable && !providerPackageName) {
       throw new Error(
         `[smrt:consumer] ${objectName} has no configured provider provenance for ${importPath}`,

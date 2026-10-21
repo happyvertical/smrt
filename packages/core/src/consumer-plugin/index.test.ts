@@ -209,6 +209,68 @@ describe('smrtConsumer registration generation', () => {
     ]);
   });
 
+  it('resolves hoisted providers and their SMRT runtime closure from the project context', async () => {
+    const appRoot = join(tmpDir, 'apps', 'consumer');
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    const tenancyDir = join(
+      tmpDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-tenancy',
+    );
+    mkdirSync(appRoot, { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(tenancyDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        exports: { '.': './dist/index.js' },
+        dependencies: { '@happyvertical/smrt-core': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        dependencies: { '@happyvertical/smrt-tenancy': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(tenancyDir, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-tenancy' }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      projectRoot: appRoot,
+      disableScanning: true,
+      generateTypes: false,
+    });
+    const configHook = plugin.config;
+    const config = await (typeof configHook === 'function'
+      ? configHook.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        })
+      : configHook?.handler.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        }));
+
+    expect((config as any).ssr.external).toEqual([
+      '@happyvertical/smrt-core',
+      '@happyvertical/smrt-tenancy',
+      '@test/pkg',
+    ]);
+    await buildStart(plugin, {} as any);
+    expect(readFileSync(join(appRoot, '.smrt/register.js'), 'utf8')).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg';",
+    );
+  });
+
   it('follows nested-only SMRT dependencies from each owning package context', async () => {
     const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
     const bridgeDir = join(
@@ -402,10 +464,17 @@ describe('smrtConsumer registration generation', () => {
       '@happyvertical',
       'smrt-model',
     );
+    const appModelDir = join(
+      tmpDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-model',
+    );
     const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
     const nativeDir = join(providerDir, 'node_modules', 'native-image-payload');
     mkdirSync(typesDir, { recursive: true });
     mkdirSync(modelDir, { recursive: true });
+    mkdirSync(appModelDir, { recursive: true });
     mkdirSync(coreDir, { recursive: true });
     mkdirSync(nativeDir, { recursive: true });
     mkdirSync(join(providerDir, 'themes'), { recursive: true });
@@ -520,6 +589,24 @@ describe('smrtConsumer registration generation', () => {
     );
     writeFileSync(
       join(modelDir, 'index.js'),
+      [
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'export class NestedModel {}',
+        'export class NestedModelCollection {}',
+        'NestedModelCollection._itemClass = NestedModel;',
+        "ObjectRegistry.register(NestedModel, { name: 'NestedModel', packageName: '@happyvertical/smrt-model' });",
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(appModelDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-model',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(appModelDir, 'index.js'),
       [
         "import { ObjectRegistry } from '@happyvertical/smrt-core';",
         'export class NestedModel {}',
