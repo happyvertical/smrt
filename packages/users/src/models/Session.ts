@@ -78,6 +78,13 @@ export const SESSION_DATA_KEYS = {
    * {@link Session.getAuthenticatedAt}.
    */
   authenticatedAt: 'authenticatedAt',
+  /**
+   * Row id of the passkey (`users_passkey_credentials`) a session was signed
+   * in with. Set only by `PasskeyCredentialService` at mint; it decides which
+   * session a passkey removal ends. Never from client input, and
+   * `setSessionData` refuses it.
+   */
+  passkeyCredentialId: 'passkeyCredentialId',
 } as const;
 
 /**

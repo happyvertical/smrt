@@ -40,6 +40,7 @@ import {
   type SessionContext,
   SessionService,
 } from '../services/SessionService.js';
+import { TerminalAuthService } from '../services/TerminalAuthService.js';
 import { MembershipStatus, UserStatus } from '../types/index.js';
 import { SoftAuthenticator } from './helpers/soft-authenticator.js';
 
@@ -323,6 +324,13 @@ describe('PasskeyCredentialService', () => {
       ['no passkeys allowed', { maxPasskeysPerUser: 0 }],
       ['more than 100 passkeys', { maxPasskeysPerUser: 101 }],
       ['a non-positive session ttl', { sessionTtl: 0 }],
+      ['an empty freshAuthMethods', { freshAuthMethods: [] }],
+      [
+        'terminal as a fresh method',
+        { freshAuthMethods: ['password', 'terminal'] },
+      ],
+      ['pin as a fresh method', { freshAuthMethods: ['pin'] }],
+      ['a blank fresh method', { freshAuthMethods: ['  '] }],
     ])('rejects %s', (_label, extra) => {
       expect(build(extra)).toThrow(/PasskeyCredentialService/);
     });
@@ -632,6 +640,104 @@ describe('PasskeyCredentialService', () => {
       ).rejects.toBeInstanceOf(PasskeyCredentialForbiddenError);
     });
 
+    describe('only interactive sign-in methods count as fresh', () => {
+      it('refuses a fresh terminal session minted by approval from a stale stolen session', async () => {
+        const terminal = await TerminalAuthService.create({
+          ...options,
+          requestTtlSeconds: 60,
+          sessionTtlSeconds: 3600,
+        });
+        // A stolen cookie, a week old: not fresh.
+        const stolen = await actorFor(personId, { ageSeconds: 7 * 86400 });
+        await expect(
+          service.beginRegistration({ actor: stolen }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+
+        // The thief approves a device code from it, mints a brand new
+        // first-class terminal session whose created_at is now...
+        const started = await terminal.createRequest('https://example.com');
+        const approved = await terminal.approveRequest({
+          userCode: started.userCode,
+          user: { id: personId, email: 'pat@example.com' },
+          tenantId,
+        });
+        const laundered = (await sessionService.loadSessionContext(
+          approved.sessionId as string,
+        )) as SessionContext;
+        expect(laundered.authMethod).toBe('terminal');
+        expect(laundered.parent).toBeNull();
+        expect(
+          (
+            await sessions.findValidSession(laundered.sessionId)
+          )?.getAuthenticatedAt(),
+        ).toBeInstanceOf(Date);
+
+        // ...but terminal is not an interactive sign-in: registration and
+        // self-removal are refused all the same.
+        await expect(
+          service.beginRegistration({ actor: laundered }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        const { passkey } = await register(
+          newAuthenticator(),
+          await actorFor(personId),
+        );
+        await expect(
+          service.removePasskey({ actor: laundered, passkeyId: passkey.id }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        expect(await passkeys.countByUserId(personId)).toBe(1);
+      });
+
+      it('decides on the stored method, not the caller-built context', async () => {
+        const terminal = await actorFor(personId, { authMethod: 'terminal' });
+        await expect(
+          service.beginRegistration({
+            actor: { ...terminal, authMethod: 'password' },
+          }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+      });
+
+      it.each([
+        ['an unknown method', 'api-key'],
+        ['a null method', null],
+      ])('refuses %s', async (_label, method) => {
+        const actor = await actorFor(personId, { authMethod: 'password' });
+        await sessions.db.query(
+          `UPDATE ${sessions.tableName} SET auth_method = ? WHERE id = ?`,
+          method,
+          actor.sessionId,
+        );
+        await expect(
+          service.beginRegistration({ actor }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+      });
+
+      it.each([
+        'password',
+        'passkey',
+        'oidc',
+        'magic-link',
+      ])('accepts %s by default', async (method) => {
+        const actor = await actorFor(personId, { authMethod: method });
+        await expect(
+          service.beginRegistration({ actor }),
+        ).resolves.toBeTruthy();
+      });
+
+      it('honours a narrower freshAuthMethods', async () => {
+        const strict = await make({ freshAuthMethods: ['passkey'] });
+        await expect(
+          strict.beginRegistration({
+            actor: await actorFor(personId, { authMethod: 'password' }),
+          }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        await expect(
+          strict.beginRegistration({
+            actor: await actorFor(personId, { authMethod: 'passkey' }),
+          }),
+        ).resolves.toBeTruthy();
+      });
+    });
+
     describe('tenant-switch rotation does not launder session age', () => {
       it('keeps a stale session stale after it switches tenant', async () => {
         await addMember(personId, otherTenantId);
@@ -695,6 +801,18 @@ describe('PasskeyCredentialService', () => {
         await expect(
           service.beginRegistration({ actor: stale }),
         ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        expect(
+          await sessionService.setSessionData(
+            stale.sessionId,
+            'passkeyCredentialId',
+            crypto.randomUUID(),
+          ),
+        ).toBe(false);
+        expect(
+          (await sessions.findValidSession(stale.sessionId))?.getData(
+            'passkeyCredentialId',
+          ),
+        ).toBeUndefined();
         // Other keys still work.
         expect(
           await sessionService.setSessionData(stale.sessionId, 'note', 'x'),
@@ -1282,6 +1400,44 @@ describe('PasskeyCredentialService', () => {
       ).rejects.toBeInstanceOf(PasskeyCredentialForbiddenError);
     });
 
+    it('refuses a session with a permission ceiling for self list and rename, but not the admin list path', async () => {
+      const actor = await actorFor(personId);
+      const { passkey } = await register(newAuthenticator(), actor, 'Laptop');
+      const restricted = await actorFor(personId, {
+        data: { permissionCeiling: [] },
+      });
+      await expect(
+        service.listPasskeys({ actor: restricted }),
+      ).rejects.toBeInstanceOf(PasskeyCredentialForbiddenError);
+      await expect(
+        service.renamePasskey({
+          actor: restricted,
+          passkeyId: passkey.id,
+          name: 'Hijacked',
+        }),
+      ).rejects.toBeInstanceOf(PasskeyCredentialForbiddenError);
+      // Decided on the stored row: a context that hides the ceiling is no help.
+      await expect(
+        service.listPasskeys({
+          actor: { ...restricted, permissionCeiling: null },
+        }),
+      ).rejects.toBeInstanceOf(PasskeyCredentialForbiddenError);
+      expect((await passkeys.get(passkey.id))?.name).toBe('Laptop');
+      // An administrator listing someone else is unchanged.
+      const admin = await adminActor();
+      expect(
+        await service.listPasskeys({ actor: admin, userId: personId }),
+      ).toHaveLength(1);
+    });
+
+    it('refuses self list and rename for a context whose stored session is gone', async () => {
+      const actor = await actorFor(personId);
+      await sessionService.destroySession(actor.sessionId);
+      await expect(service.listPasskeys({ actor })).rejects.toBeInstanceOf(
+        PasskeyCredentialForbiddenError,
+      );
+    });
+
     it('refuses layered sessions', async () => {
       const device = await actorFor(adminId, { authMethod: 'terminal' });
       const layered = await actorFor(personId, {
@@ -1551,6 +1707,50 @@ describe('PasskeyCredentialService', () => {
     expect(managed[3]?.metadata).toMatchObject({
       actorId: adminId,
       self: false,
+    });
+  });
+
+  describe('operational behaviour', () => {
+    it('logs one warning, with no secret material, when challengeSecret is unset', async () => {
+      const warn = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await make({ challengeSecret: undefined });
+        const output = [...warn.mock.calls, ...log.mock.calls]
+          .flat()
+          .map(String)
+          .join('\n');
+        expect(output).toMatch(/challengeSecret/);
+        expect(output).not.toContain(SECRET);
+      } finally {
+        warn.mockRestore();
+        log.mockRestore();
+      }
+    });
+
+    it('settles the lease before revoking the presented session, and keeps the new session if that revocation fails', async () => {
+      const authenticator = await enrolled();
+      const planted = await sessionService.createSession(personId, tenantId, {
+        authMethod: 'password',
+      });
+      const internal = service as unknown as { sessionService: SessionService };
+      const order: string[] = [];
+      const original = internal.sessionService.destroySession.bind(
+        internal.sessionService,
+      );
+      vi.spyOn(internal.sessionService, 'destroySession').mockImplementation(
+        async (id: string) => {
+          order.push(`destroy:${id === planted ? 'planted' : 'other'}`);
+          if (id === planted) throw new Error('boom');
+          return original(id);
+        },
+      );
+      const result = await signIn(authenticator, { replaceSessionId: planted });
+      expect(audit.map((entry) => entry.outcome)).toEqual(['succeeded']);
+      expect(order).toEqual(['destroy:planted']);
+      expect(await sessions.findValidSession(result.sessionId)).not.toBeNull();
     });
   });
 });

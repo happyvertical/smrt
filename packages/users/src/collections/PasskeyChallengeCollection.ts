@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import {
+  PASSKEY_CHALLENGE_TTL_CEILING_SECONDS,
   type PasskeyChallengePurpose,
   UsersPasskeyChallenge,
 } from '../models/PasskeyChallenge.js';
@@ -49,26 +50,32 @@ export class UsersPasskeyChallengeCollection extends SmrtCollection<UsersPasskey
   }
 
   /**
-   * Delete consumed challenges whose ceremonies no longer verify. One
-   * statement (see `UsersMagicLinkTokenCollection.deleteExpired`); `expiresAt`
-   * carries an index for this predicate.
+   * Delete consumed challenges whose ceremonies can no longer verify ANYWHERE.
+   * A row is kept for {@link PASSKEY_CHALLENGE_TTL_CEILING_SECONDS} past its
+   * `expires_at`: another process whose clock runs behind this one's could
+   * still accept the signed ceremony after this one's clock says it expired,
+   * and deleting the row inside that window would reopen replay. One
+   * statement (see `UsersMagicLinkTokenCollection.deleteExpired`);
+   * `expiresAt` carries an index for this predicate.
    *
    * @param options.dryRun - Count the rows the predicate selects without
    *   deleting them.
    */
   async deleteExpired(options: { dryRun?: boolean } = {}): Promise<number> {
-    const now = new Date().toISOString();
+    const horizon = new Date(
+      Date.now() - PASSKEY_CHALLENGE_TTL_CEILING_SECONDS * 1000,
+    ).toISOString();
     const predicate = 'expires_at < ?';
     const counted = await this.db.query(
       `SELECT COUNT(*) AS total FROM ${this.tableName} WHERE ${predicate}`,
-      now,
+      horizon,
     );
     const total = Number(counted.rows?.[0]?.total ?? 0);
     if (!Number.isFinite(total) || total <= 0) return 0;
     if (!options.dryRun) {
       await this.db.query(
         `DELETE FROM ${this.tableName} WHERE ${predicate}`,
-        now,
+        horizon,
       );
     }
     return total;

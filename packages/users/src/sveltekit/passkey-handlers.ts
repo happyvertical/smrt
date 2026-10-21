@@ -25,7 +25,8 @@
  * // routes/admin/passkeys/remove-all/+server.ts → export const POST = passkeyAuth.removeAll;
  * ```
  *
- * Wire contract (JSON bodies):
+ * Wire contract (every state-changing route requires `content-type:
+ * application/json`, else 415 `unsupported_media_type`; `list` is a GET):
  *
  * - `authenticationOptions`: POST, no body → 200 `{ ceremonyId, options }`
  *   (`options` is the WebAuthn request options; hand it to the browser).
@@ -47,7 +48,7 @@
  *   - `register`: POST `{ ceremonyId, response, name? }` → 200 `{ passkey }`.
  *   - `list`: GET, `?userId=` for an administrator → 200 `{ passkeys }`.
  *   - `rename`: PATCH `{ passkeyId, name }` → 200 `{ passkey }`.
- *   - `remove`: DELETE or POST `{ passkeyId }` (or `?passkeyId=`) → 200
+ *   - `remove`: DELETE or POST `{ passkeyId }` → 200
  *     `{ revokedSessions }`, plus `signedOut: true` and a cleared cookie when
  *     it ended the current session.
  *   - `removeAll`: POST `{ userId }` (administrators) → 200
@@ -173,22 +174,26 @@ const unauthenticated = () =>
     NO_STORE_HEADERS,
   );
 
+/** A JSON request: the only body type state-changing passkey routes accept. */
+function isJson(event: PasskeyRequestEvent): boolean {
+  return /^application\/json\s*(;|$)/iu.test(
+    event.request.headers.get('content-type') ?? '',
+  );
+}
+
+const unsupportedMediaType = () =>
+  json(
+    {
+      error: 'Send application/json.',
+      code: 'unsupported_media_type',
+    },
+    415,
+    NO_STORE_HEADERS,
+  );
+
 async function body(
   event: PasskeyRequestEvent,
 ): Promise<Record<string, unknown>> {
-  const type = event.request.headers.get('content-type') ?? '';
-  if (
-    type.includes('application/x-www-form-urlencoded') ||
-    type.includes('multipart/form-data')
-  ) {
-    const form = await event.request.formData().catch(() => null);
-    if (!form) return {};
-    const fields: Record<string, unknown> = {};
-    for (const [key, value] of form.entries()) {
-      if (typeof value === 'string') fields[key] = value;
-    }
-    return fields;
-  }
   const parsed = (await event.request.json().catch(() => null)) as unknown;
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
     ? (parsed as Record<string, unknown>)
@@ -309,9 +314,15 @@ export function createPasskeyCredentialHandlers(
         input: Record<string, unknown>,
         event: PasskeyRequestEvent,
       ) => Promise<Record<string, unknown>>,
-      { readsBody = true }: { readsBody?: boolean } = {},
+      {
+        readsBody = true,
+        stateChanging = true,
+      }: { readsBody?: boolean; stateChanging?: boolean } = {},
     ) =>
     async (event: PasskeyRequestEvent): Promise<Response> => {
+      // A cross-site form post can carry cookies but not a JSON content
+      // type without a CORS preflight: require it on every state change.
+      if (stateChanging && !isJson(event)) return unsupportedMediaType();
       const actor = resolveActor(event);
       if (!actor) return unauthenticated();
       try {
@@ -326,7 +337,8 @@ export function createPasskeyCredentialHandlers(
   return {
     service,
 
-    authenticationOptions: async () => {
+    authenticationOptions: async (event) => {
+      if (!isJson(event)) return unsupportedMediaType();
       try {
         const begun = await (await service()).beginAuthentication();
         return json(begun, 200, NO_STORE_HEADERS);
@@ -336,6 +348,7 @@ export function createPasskeyCredentialHandlers(
     },
 
     signIn: async (event) => {
+      if (!isJson(event)) return unsupportedMediaType();
       try {
         const input = await body(event);
         // A request missing a field goes through the service like any other:
@@ -397,7 +410,7 @@ export function createPasskeyCredentialHandlers(
           userId: event.url.searchParams.get('userId')?.trim() || undefined,
         }),
       }),
-      { readsBody: false },
+      { readsBody: false, stateChanging: false },
     ),
 
     rename: management(async (svc, actor, input, event) => ({
@@ -412,10 +425,7 @@ export function createPasskeyCredentialHandlers(
     remove: management(async (svc, actor, input, event) => {
       const result = await svc.removePasskey({
         actor,
-        passkeyId:
-          str(input.passkeyId).trim() ||
-          event.url.searchParams.get('passkeyId')?.trim() ||
-          '',
+        passkeyId: str(input.passkeyId).trim(),
         ipAddress: event.getClientAddress?.(),
       });
       if (result.endedCurrentSession) {

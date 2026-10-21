@@ -15,6 +15,9 @@
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
+/** No configuration may keep a ceremony open longer than this (10 minutes). */
+export const PASSKEY_CHALLENGE_TTL_CEILING_SECONDS = 10 * 60;
+
 /** What a consumed challenge was issued for. */
 export type PasskeyChallengePurpose = 'authentication' | 'registration';
 

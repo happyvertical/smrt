@@ -53,27 +53,28 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto';
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
-import {
-  type AuthenticationResponseJSON,
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  type PublicKeyCredentialCreationOptionsJSON,
-  type PublicKeyCredentialRequestOptionsJSON,
-  type RegistrationResponseJSON,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPasskeyChallengeCollection } from '../collections/PasskeyChallengeCollection.js';
 import { UsersPasskeyCredentialCollection } from '../collections/PasskeyCredentialCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
-import type { PasskeyChallengePurpose } from '../models/PasskeyChallenge.js';
+import {
+  PASSKEY_CHALLENGE_TTL_CEILING_SECONDS,
+  type PasskeyChallengePurpose,
+} from '../models/PasskeyChallenge.js';
 import type { UsersPasskeyCredential } from '../models/PasskeyCredential.js';
 import {
   DEFAULT_SESSION_TTL,
+  SESSION_DATA_KEYS,
   type Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -91,6 +92,24 @@ import {
 } from './PermissionCatalogService.js';
 import { type SessionContext, SessionService } from './SessionService.js';
 
+const logger = createLogger({ level: 'info' });
+
+/**
+ * `@simplewebauthn/server` is loaded on first use, never at import time. It
+ * depends on `reflect-metadata`, a process-wide polyfill (`Reflect.decorate`,
+ * `Reflect.metadata`) that changes how decorators are applied. smrt-core
+ * tolerates it, but an application that never uses passkeys should not have
+ * it installed just because it imported this package (the package entry
+ * re-exports this module).
+ */
+let webauthnModule: Promise<typeof import('@simplewebauthn/server')> | null =
+  null;
+const webauthn = () => {
+  webauthnModule ??= import('@simplewebauthn/server');
+  return webauthnModule;
+};
+type WebAuthn = Awaited<ReturnType<typeof webauthn>>;
+
 /** Login-limiter kind and session `authMethod` for passkey sign-ins. */
 export const PASSKEY_LOGIN_KIND = 'passkey';
 /** Default permission required to list or remove another person's passkeys. */
@@ -99,17 +118,24 @@ export const DEFAULT_PASSKEY_MANAGE_PERMISSION = 'users.passkey.manage';
  * Server-set `Session.data` key naming the passkey row a session was signed
  * in with. Never write it from client input.
  */
-export const PASSKEY_SESSION_DATA_KEY = 'passkeyCredentialId';
+export const PASSKEY_SESSION_DATA_KEY = SESSION_DATA_KEYS.passkeyCredentialId;
 /** Default lifetime of a ceremony (5 minutes). */
 export const DEFAULT_PASSKEY_CHALLENGE_TTL_SECONDS = 5 * 60;
-/** No configuration may keep a ceremony open longer than this (10 minutes). */
-export const PASSKEY_CHALLENGE_TTL_CEILING_SECONDS = 10 * 60;
+export { PASSKEY_CHALLENGE_TTL_CEILING_SECONDS };
 /** Default age a session may have when it registers or removes a passkey (15 minutes). */
 export const DEFAULT_PASSKEY_FRESH_SESSION_SECONDS = 15 * 60;
 /** Smallest accepted `freshSessionSeconds`. */
 export const PASSKEY_FRESH_SESSION_FLOOR_SECONDS = 60;
 /** Largest accepted `freshSessionSeconds` (1 hour). */
 export const PASSKEY_FRESH_SESSION_CEILING_SECONDS = 60 * 60;
+/** Sign-in methods that count as a fresh authentication by default. */
+export const DEFAULT_PASSKEY_FRESH_AUTH_METHODS: readonly SessionAuthMethod[] =
+  Object.freeze(['password', 'passkey', 'oidc', 'magic-link']);
+/** Methods that can never count as fresh (see `freshAuthMethods`). */
+const NEVER_FRESH_AUTH_METHODS: ReadonlySet<string> = new Set([
+  'terminal',
+  'pin',
+]);
 /** Default passkeys per person. */
 export const DEFAULT_MAX_PASSKEYS_PER_USER = 10;
 /** No configuration may allow more passkeys per person than this. */
@@ -248,6 +274,16 @@ export interface PasskeyCredentialServiceOptions extends SmrtClassOptions {
    * remove one's own, 60 to 3600 seconds. Default 900.
    */
   freshSessionSeconds?: number;
+  /**
+   * Session `authMethod`s whose sign-in counts as a fresh authentication for
+   * registering or removing one's own passkey. Read from the STORED session
+   * row; a null or unlisted method is never fresh. Default
+   * {@link DEFAULT_PASSKEY_FRESH_AUTH_METHODS}. `terminal` and `pin` are
+   * refused at construction: a terminal approval lets any session (even a
+   * stolen stale one) mint a brand new first-class `terminal` session, and a
+   * PIN session is layered.
+   */
+  freshAuthMethods?: readonly SessionAuthMethod[];
   /** Passkeys one person may hold, 1 to 100. Default 10. */
   maxPasskeysPerUser?: number;
 }
@@ -570,6 +606,7 @@ export class PasskeyCredentialService {
   private readonly challengeTtlMs: number;
   private readonly freshSessionMs: number;
   private readonly maxPasskeys: number;
+  private readonly freshAuthMethods: ReadonlySet<string>;
   private sessionService!: SessionService;
   private sessionRows!: SessionCollection;
   private memberships!: MembershipCollection;
@@ -605,6 +642,9 @@ export class PasskeyCredentialService {
       this.challengeSecret = Buffer.from(options.challengeSecret, 'utf8');
     } else {
       this.challengeSecret = randomBytes(32);
+      logger.warn(
+        'PasskeyCredentialService has no challengeSecret: ceremony ids only verify in the process that issued them. Set challengeSecret for any multi-process deployment.',
+      );
     }
     this.challengeTtlMs =
       1000 *
@@ -624,6 +664,24 @@ export class PasskeyCredentialService {
         PASSKEY_FRESH_SESSION_CEILING_SECONDS,
         'freshSessionSeconds',
       );
+    const freshMethods = options.freshAuthMethods ?? [
+      ...DEFAULT_PASSKEY_FRESH_AUTH_METHODS,
+    ];
+    if (
+      !Array.isArray(freshMethods) ||
+      freshMethods.length === 0 ||
+      freshMethods.some(
+        (method) =>
+          typeof method !== 'string' ||
+          !method.trim() ||
+          NEVER_FRESH_AUTH_METHODS.has(method),
+      )
+    ) {
+      throw new Error(
+        'PasskeyCredentialService freshAuthMethods must list interactive sign-in methods (never terminal or pin).',
+      );
+    }
+    this.freshAuthMethods = new Set<string>(freshMethods);
     this.maxPasskeys = boundedInteger(
       options.maxPasskeysPerUser,
       DEFAULT_MAX_PASSKEYS_PER_USER,
@@ -679,6 +737,7 @@ export class PasskeyCredentialService {
    */
   async beginAuthentication(): Promise<PasskeyAuthenticationBegin> {
     const { ceremonyId, challenge } = this.issueCeremony('authentication');
+    const { generateAuthenticationOptions } = await webauthn();
     const options = await generateAuthenticationOptions({
       rpID: this.rpId,
       challenge: Buffer.from(challenge, 'base64url'),
@@ -750,8 +809,9 @@ export class PasskeyCredentialService {
       const user = await this.users.get(stored.userId);
       if (!user?.id) return refuse();
 
+      const { verifyAuthenticationResponse } = await webauthn();
       let verification: Awaited<
-        ReturnType<typeof verifyAuthenticationResponse>
+        ReturnType<WebAuthn['verifyAuthenticationResponse']>
       >;
       try {
         verification = await verifyAuthenticationResponse({
@@ -838,14 +898,16 @@ export class PasskeyCredentialService {
       );
       if (!recorded) return refuse({ reason: 'superseded' });
 
+      // The sign-in is complete once the lease is settled; revoking the
+      // presented session is best effort after that (and never turns a
+      // success into a failure that would destroy the new session).
+      await lease.succeed();
       const previous = input.replaceSessionId?.trim();
       if (previous && previous !== sessionId) {
         await this.sessionService
           .destroySession(previous)
           .catch(() => undefined);
       }
-
-      await lease.succeed();
       return {
         sessionId,
         userId,
@@ -888,6 +950,7 @@ export class PasskeyCredentialService {
       userId: user.id as string,
       sessionHash: sha256Hex(input.actor.sessionId),
     });
+    const { generateRegistrationOptions } = await webauthn();
     const options = await generateRegistrationOptions({
       rpName: this.rpName,
       rpID: this.rpId,
@@ -942,7 +1005,10 @@ export class PasskeyCredentialService {
       throw this.registrationFailed();
     }
 
-    let verification: Awaited<ReturnType<typeof verifyRegistrationResponse>>;
+    const { verifyRegistrationResponse } = await webauthn();
+    let verification: Awaited<
+      ReturnType<WebAuthn['verifyRegistrationResponse']>
+    >;
     try {
       verification = await verifyRegistrationResponse({
         response,
@@ -1007,6 +1073,9 @@ export class PasskeyCredentialService {
     const targetId = input.userId?.trim() || actorId;
     if (targetId !== actorId) {
       await this.assertCanManage(input.actor, targetId);
+    } else {
+      // Self: decided on the stored session, like registration.
+      await this.assertOwnSession(input.actor);
     }
     return (await this.credentials.listByUserId(targetId)).map((passkey) =>
       this.summarize(passkey),
@@ -1022,6 +1091,7 @@ export class PasskeyCredentialService {
     if (!userId || !UUID_PATTERN.test(userId)) {
       throw new PasskeyCredentialForbiddenError();
     }
+    await this.assertOwnSession(input.actor);
     const passkey = await this.requireOwned(input.passkeyId, userId);
     const name = this.normalizeName(input.name, false);
     if (
@@ -1276,16 +1346,12 @@ export class PasskeyCredentialService {
   }
 
   /**
-   * The actor may enrol or remove their own passkey only from a first-class
-   * session minted within `freshSessionSeconds`. Decided on the STORED
-   * session row, never on the caller-built context: the row must exist and
-   * still be valid, belong to the actor, not be layered, and carry no
-   * permission ceiling — a restricted session, such
-   * as a must-change password session, cannot enrol an authenticator.
+   * The actor's own STORED session row, never the caller-built context: it
+   * must exist and still be valid, belong to the actor, not be layered, and
+   * carry no permission ceiling — a restricted session, such as a
+   * must-change password session, cannot manage an authenticator.
    */
-  private async assertFreshManager(
-    actor: SessionContext,
-  ): Promise<{ user: User; session: Session }> {
+  private async assertOwnSession(actor: SessionContext): Promise<Session> {
     this.assertNotLayered(actor);
     const userId = actor.user?.id;
     if (
@@ -1301,12 +1367,31 @@ export class PasskeyCredentialService {
       !session ||
       session.userId !== userId ||
       session.parentSessionId ||
-      session.authMethod === 'pin'
+      session.authMethod === 'pin' ||
+      session.getPermissionCeiling() !== null
     ) {
       throw new PasskeyCredentialForbiddenError();
     }
-    if (session.getPermissionCeiling() !== null) {
-      throw new PasskeyCredentialForbiddenError();
+    return session;
+  }
+
+  /**
+   * The actor may enrol or remove their own passkey only from an
+   * {@link assertOwnSession} session that was authenticated within
+   * `freshSessionSeconds` by an interactive method in `freshAuthMethods`.
+   * The method is read from the stored row: a `terminal` approval can mint a
+   * brand new first-class session for anyone holding any session, so its
+   * `created_at` proves nothing about the person.
+   */
+  private async assertFreshManager(
+    actor: SessionContext,
+  ): Promise<{ user: User; session: Session }> {
+    const session = await this.assertOwnSession(actor);
+    if (
+      typeof session.authMethod !== 'string' ||
+      !this.freshAuthMethods.has(session.authMethod)
+    ) {
+      throw new PasskeyReauthenticationRequiredError();
     }
     // The authentication time, not the row's age: tenant-switch rotation
     // mints a new row but carries the original time forward, and a malformed
@@ -1318,7 +1403,7 @@ export class PasskeyCredentialService {
     ) {
       throw new PasskeyReauthenticationRequiredError();
     }
-    const user = await this.users.get(userId);
+    const user = await this.users.get(actor.user.id as string);
     if (!user?.id || !user.isActive()) {
       throw new PasskeyCredentialForbiddenError();
     }

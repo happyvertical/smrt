@@ -1188,9 +1188,16 @@ credentials."), HTTP 401 `invalid_credentials`; a rate limit is
 
 #### Managing passkeys
 
-- **Registering** (and a person removing their own) requires a session minted
-  within `freshSessionSeconds`, decided on the stored session row, and refuses
-  layered/PIN sessions and sessions with a permission ceiling. A stale session
+- **Registering** (and a person removing their own) requires a session
+  authenticated within `freshSessionSeconds` (tenant switching keeps the
+  original time) by an interactive method in `freshAuthMethods` (default
+  `password`, `passkey`, `oidc`, `magic-link`), all decided on the stored
+  session row; layered/PIN sessions and sessions with a permission ceiling are
+  refused. A `terminal` session never counts as fresh (nor does a null or
+  unlisted method): approving a device code lets whoever holds any session,
+  however stale, mint a brand new one, so its age proves nothing. `terminal`
+  and `pin` are rejected in `freshAuthMethods` at construction. Listing and
+  renaming one's own passkeys also refuse a permission ceiling. A stale session
   is `PasskeyReauthenticationRequiredError` (HTTP 401
   `reauthentication_required`): sign in again, then retry.
 - `listPasskeys` returns `{ id, name, createdAt, lastUsedAt, backedUp,
@@ -1214,7 +1221,10 @@ Keep at least one non-passkey path available for every person.
 
 Run `smrt db:migrate` once for the two new tables, and sync the permission
 catalog so `users.passkey.manage` can be granted. The retention sweep reaps
-expired challenge rows (`users-passkey-challenges`).
+expired challenge rows (`users-passkey-challenges`), keeping each row for 10 minutes past its expiry
+so a process with a slow clock cannot replay it. Every state-changing passkey
+route requires `content-type: application/json` (415 otherwise). When
+`challengeSecret` is unset the service logs one warning at creation.
 
 ### Trusted deployment owner provisioning
 

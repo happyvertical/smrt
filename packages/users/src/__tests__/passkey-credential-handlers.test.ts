@@ -41,6 +41,7 @@ function makeEvent(
   init: {
     method?: string;
     body?: unknown;
+    contentType?: string | null;
     search?: string;
     locals?: Record<string, unknown>;
     cookies?: Record<string, string>;
@@ -56,7 +57,10 @@ function makeEvent(
   const method = init.method ?? 'POST';
   const request = new Request(url, {
     method,
-    headers: { 'content-type': 'application/json' },
+    headers:
+      init.contentType === null
+        ? {}
+        : { 'content-type': init.contentType ?? 'application/json' },
     body:
       method === 'GET' || init.body === undefined
         ? undefined
@@ -536,6 +540,97 @@ describe('createPasskeyCredentialHandlers', () => {
       makeEvent({ locals: adminLocals, body: { userId: admin.id } }).event,
     );
     expect(selfRemoval.status).toBe(403);
+  });
+
+  it('requires application/json on every state-changing route (415)', async () => {
+    const authenticator = newAuthenticator();
+    await registerPasskey(person, authenticator);
+    const locals = await sessionLocals(person);
+    const [passkey] = (
+      await read(
+        await handlers.list(makeEvent({ method: 'GET', locals }).event),
+      )
+    ).passkeys as Array<{ id: string }>;
+    const adminLocals = await sessionLocals(admin, {
+      permissions: [DEFAULT_PASSKEY_MANAGE_PERMISSION],
+    });
+    const bad = [
+      { contentType: 'application/x-www-form-urlencoded' },
+      { contentType: 'text/plain' },
+      { contentType: 'multipart/form-data; boundary=x' },
+      { contentType: null },
+    ];
+    const routes: Array<
+      [string, (e: PasskeyRequestEvent) => Promise<Response>, object]
+    > = [
+      ['authenticationOptions', handlers.authenticationOptions, {}],
+      ['signIn', handlers.signIn, { body: {} }],
+      ['registrationOptions', handlers.registrationOptions, { locals }],
+      ['register', handlers.register, { locals, body: {} }],
+      [
+        'rename',
+        handlers.rename,
+        { locals, body: { passkeyId: passkey?.id, name: 'x' } },
+      ],
+      ['remove', handlers.remove, { locals, body: { passkeyId: passkey?.id } }],
+      [
+        'removeAll',
+        handlers.removeAll,
+        { locals: adminLocals, body: { userId: person.id } },
+      ],
+    ];
+    for (const [name, handler, init] of routes) {
+      for (const variant of bad) {
+        const made = makeEvent({ ...init, ...variant });
+        const response = await handler(made.event);
+        expect(response.status, `${name} ${variant.contentType}`).toBe(415);
+        expect(await read(response)).toMatchObject({
+          code: 'unsupported_media_type',
+        });
+        expect(made.jar.set).toEqual([]);
+      }
+    }
+    // Nothing happened: the passkey is still there, and charset is accepted.
+    expect(
+      (
+        await read(
+          await handlers.list(makeEvent({ method: 'GET', locals }).event),
+        )
+      ).passkeys,
+    ).toHaveLength(1);
+    expect(
+      (
+        await handlers.authenticationOptions(
+          makeEvent({ contentType: 'application/json; charset=utf-8' }).event,
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it('does not read the passkey id from the query string', async () => {
+    await registerPasskey(person, newAuthenticator());
+    const locals = await sessionLocals(person);
+    const [passkey] = (
+      await read(
+        await handlers.list(makeEvent({ method: 'GET', locals }).event),
+      )
+    ).passkeys as Array<{ id: string }>;
+    const response = await handlers.remove(
+      makeEvent({
+        method: 'DELETE',
+        locals,
+        search: `?passkeyId=${passkey?.id}`,
+        body: {},
+      }).event,
+    );
+    expect(response.status).toBe(403);
+    expect(
+      (
+        await read(
+          await handlers.list(makeEvent({ method: 'GET', locals }).event),
+        )
+      ).passkeys,
+    ).toHaveLength(1);
   });
 
   it('exposes the lazily created service', async () => {
