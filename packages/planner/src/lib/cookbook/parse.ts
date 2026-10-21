@@ -283,6 +283,13 @@ export function parseCookbookWith(
     }
     if (value.trim()) cookbook[key] = value.trim();
   }
+  if (input.specs !== undefined) {
+    if (typeof input.specs !== 'string') {
+      return fail('The cookbook "specs" must be a string.');
+    }
+    // Keep internal newlines: specs are free text, not a one-line label.
+    if (input.specs.trim()) cookbook.specs = input.specs.trim();
+  }
   if (exposure && Object.keys(exposure).length) cookbook.exposure = exposure;
   if (layout) cookbook.layout = layout;
   if (theme) cookbook.theme = theme;

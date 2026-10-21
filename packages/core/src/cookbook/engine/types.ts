@@ -122,8 +122,12 @@ export interface CommandInputs {
     contrast?: 'auto' | 'standard' | 'more';
   };
   reset_theme: Record<string, never>;
-  /** Name (and describe) the app; null clears. */
-  set_name: { name?: string | null; description?: string | null };
+  /** Name, describe and specify the app; null clears a part. */
+  set_name: {
+    name?: string | null;
+    description?: string | null;
+    specs?: string | null;
+  };
   rename_section: { id: string; label: string };
   /** `null` restores the entry's own name. */
   rename_item: { id: string; label: string | null };
@@ -186,7 +190,12 @@ export interface PlanSnapshot {
   version: typeof COOKBOOK_COMMANDS_VERSION;
   /** Counts applied changes; equal histories give equal revisions. */
   revision: number;
-  app: { name: string; description: string | null; cookbook: string | null };
+  app: {
+    name: string;
+    description: string | null;
+    specs: string | null;
+    cookbook: string | null;
+  };
   recipes: { id: string; label: string }[];
   features: string[];
   /** Recipe and feature ids this catalog lacks; kept on export. */

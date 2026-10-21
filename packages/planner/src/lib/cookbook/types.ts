@@ -34,6 +34,8 @@ export interface Cookbook {
   name?: string;
   /** A line about the app (`set_name`). */
   description?: string;
+  /** Product requirements beyond recipes and features (`set_name`); agents treat it as requirements to build. */
+  specs?: string;
   /** Added recipe ids, sorted; requirements are already included. */
   recipes: string[];
   /**

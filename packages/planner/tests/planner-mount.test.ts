@@ -68,7 +68,7 @@ describe('Planner component', () => {
     ]) {
       expect(body, label).toContain(label);
     }
-    expect(PLANNER_TAB_IDS).toHaveLength(7);
+    expect(PLANNER_TAB_IDS).toHaveLength(8);
   });
 
   it('shows a host back link at the start of its header only when given one', () => {

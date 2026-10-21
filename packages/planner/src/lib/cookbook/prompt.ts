@@ -116,6 +116,12 @@ export function buildAgentPrompt(
     '',
     `(cd ${appName} && pnpm exec smrt app install)`,
     '',
+    ...(cookbook.specs?.trim()
+      ? [
+          `5. The cookbook's \`specs\` field lists product requirements beyond the recipes and features: after step 4, implement them in ${appName}, and report any you could not build.`,
+          '',
+        ]
+      : []),
     `If any step fails, run \`pnpm exec smrt app doctor\` inside ${appName} and include its findings in your report. Do not hand-edit the app's smrt.cookbook.json: change ${COOKBOOK_FILE} and run \`${cli} cookbook apply ${COOKBOOK_FILE} --into ${appName}\` instead.`,
     '',
   ].join('\n');
