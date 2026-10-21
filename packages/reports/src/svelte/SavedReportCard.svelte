@@ -28,6 +28,7 @@ import { reportCell } from './result.js';
 import type { RuntimeReportResult, SavedRuntimeReport } from './types.js';
 
 export interface Props {
+  /** The saved report to show: its title, spec and saved-at time. */
   report: SavedRuntimeReport;
   /** The report's page. */
   href: string;
@@ -41,7 +42,9 @@ export interface Props {
   author?: string;
   /** Heading level of the title, under the surrounding page's heading. */
   headingLevel?: 2 | 3;
+  /** BCP 47 locale for dates, numbers and relative times; default `en`. */
   locale?: string;
+  /** ISO 4217 code that formats currency measures; default `USD`. */
   currency?: string;
 }
 let {
