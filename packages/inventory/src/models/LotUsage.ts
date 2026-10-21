@@ -58,6 +58,10 @@ const toDate = (value: Date | string) =>
       name: 'inventory_lot_usages_consumer_idx',
       columns: ['consumerType', 'consumerId'],
     },
+    {
+      name: 'inventory_lot_usages_lot_status_idx',
+      columns: ['lotId', 'status'],
+    },
   ],
 })
 export class LotUsage extends SmrtObject {
@@ -66,7 +70,13 @@ export class LotUsage extends SmrtObject {
   tenantId: string | null = null;
 
   /** The lot that was used. */
-  @foreignKey(Lot, { required: true, onDelete: 'RESTRICT' })
+  @foreignKey(Lot, {
+    required: true,
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+    // DuckDB cannot enforce the constraint; the id is never rewritten.
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
   lotId: string = '';
 
   /** Kind of consumer, for example `'ProductionOrder'`; `'Lot'` for an assembly. */
