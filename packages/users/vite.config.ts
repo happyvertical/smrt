@@ -7,11 +7,10 @@ const baseConfig = createPackageConfig('users', {
 });
 
 /**
- * The WebAuthn libraries stay external (#3275). `@simplewebauthn/server`
- * brings `reflect-metadata`, which must resolve to the consumer's one copy and
- * is only ever loaded on first use (see `PasskeyCredentialService`); inlining
- * it would bundle ~650 kB of CBOR/X.509 code into every consumer of this
- * package, passkeys or not.
+ * The WebAuthn libraries stay external (#3275): they are declared
+ * `dependencies`, so the consumer resolves them (one copy of
+ * `reflect-metadata` and its CBOR/X.509 stack) instead of inlining ~650 kB
+ * into every consumer of this package, passkeys or not.
  */
 export default async (
   env: Parameters<typeof baseConfig>[0],

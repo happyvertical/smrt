@@ -126,8 +126,7 @@ are not prerequisites for unrelated user-package work.
 - `UsersPasskeyCredential` (many per person) and `UsersPasskeyChallenge` (consumed
   challenge ledger) are sensitive with no generated surface;
   `PasskeyCredentialService` and its handlers are the only paths. Verification is
-  `@simplewebauthn/server`, loaded lazily (its `reflect-metadata` breaks model
-  decoration if it loads first); never hand-roll COSE/CBOR. Sign-in reserves on
+  `@simplewebauthn/server` (external in the build); never hand-roll COSE/CBOR. Sign-in reserves on
   the submitted credential id before any work, requires user verification, checks
   user handle and a strictly advancing counter (`reason: 'counter'`), mints, then
   re-checks with a guarded counter UPDATE; a ceremony is an HMAC-signed
