@@ -36,8 +36,10 @@ export interface RuntimeCheckResult {
   findings: RuntimeCheckFinding[];
 }
 
-interface ManifestEntryRef {
+export interface ManifestEntryRef {
   manifestPackageName?: string;
+  /** The package whose manifest holds this entry (it may be a consumed copy). */
+  containerPackageName?: string;
   manifestSource: 'project' | 'dependency';
   key: string;
   definition: SmartObjectDefinition;
@@ -189,6 +191,7 @@ function flattenManifestEntries(
       objectDef as SmartObjectDefinition,
       manifestPackageName,
     ),
+    containerPackageName: manifestPackageName,
     manifestSource: source,
     key,
     definition: objectDef as SmartObjectDefinition,
@@ -310,11 +313,13 @@ function resolveEntryByName(
  * One entry per class. A package's manifest may also carry objects it
  * consumed from another package under their own qualified names, so one class
  * can appear in several manifests; that is not an ambiguity (#4176). The copy
- * in the owning package's manifest wins.
+ * held by the owning package's own manifest wins, whatever the order.
  */
-function distinctClasses(matches: ManifestEntryRef[]): ManifestEntryRef[] {
-  const byClass = new Map<string, ManifestEntryRef>();
-  const unqualified: ManifestEntryRef[] = [];
+export function distinctClasses<Entry extends ManifestEntryRef>(
+  matches: Entry[],
+): Entry[] {
+  const byClass = new Map<string, Entry>();
+  const unqualified: Entry[] = [];
   for (const entry of matches) {
     const qualifiedName = describeEntry(entry);
     // Without a package there is no identity to compare: keep every one.
@@ -325,7 +330,7 @@ function distinctClasses(matches: ManifestEntryRef[]): ManifestEntryRef[] {
     const identity = qualifiedName.toLowerCase();
     const owned =
       parseQualifiedName(qualifiedName).packageName ===
-      entry.manifestPackageName;
+      entry.containerPackageName;
     if (!byClass.has(identity) || owned) byClass.set(identity, entry);
   }
   return [...byClass.values(), ...unqualified];
