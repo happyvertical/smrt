@@ -736,6 +736,82 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     return { external: [...external].sort(), selective };
   }
 
+  function matchingExportTarget(
+    exports: unknown,
+    exportKey: string,
+  ): { target: unknown; wildcard?: string } | undefined {
+    if (!exports) return undefined;
+    if (typeof exports === 'string') {
+      return exportKey === '.' ? { target: exports } : undefined;
+    }
+    if (typeof exports !== 'object') return undefined;
+    const exportMap = exports as Record<string, unknown>;
+    if (exportKey in exportMap) return { target: exportMap[exportKey] };
+    if (
+      exportKey === '.' &&
+      !Object.keys(exportMap).some((key) => key.startsWith('.'))
+    ) {
+      return { target: exportMap };
+    }
+    for (const [pattern, target] of Object.entries(exportMap)) {
+      const wildcardIndex = pattern.indexOf('*');
+      if (wildcardIndex < 0) continue;
+      const prefix = pattern.slice(0, wildcardIndex);
+      const suffix = pattern.slice(wildcardIndex + 1);
+      if (exportKey.startsWith(prefix) && exportKey.endsWith(suffix)) {
+        return {
+          target,
+          wildcard: exportKey.slice(
+            prefix.length,
+            exportKey.length - suffix.length,
+          ),
+        };
+      }
+    }
+  }
+
+  function svelteConditionTargets(value: unknown): string[] {
+    if (!value || typeof value !== 'object') return [];
+    return Object.entries(value).flatMap(([condition, target]) => {
+      if (condition === 'svelte') {
+        if (typeof target === 'string') return [target];
+        return svelteConditionTargets(target);
+      }
+      return svelteConditionTargets(target);
+    });
+  }
+
+  function resolvesToSvelteCondition(
+    packageName: string,
+    packageJson: ConsumerPackageJson,
+    id: string,
+    resolvedId: string | undefined,
+  ): boolean {
+    if (!resolvedId) return false;
+    const exportKey =
+      id === packageName ? '.' : `./${id.slice(packageName.length + 1)}`;
+    const matched = matchingExportTarget(packageJson.exports, exportKey);
+    const targets = matched ? svelteConditionTargets(matched.target) : [];
+    if (exportKey === '.' && typeof packageJson.svelte === 'string') {
+      targets.push(packageJson.svelte);
+    }
+    const packageRoot = path.join(projectRoot, 'node_modules', packageName);
+    const normalizedResolved = resolvedId.split('?')[0];
+    const canonical = (candidate: string): string =>
+      fs.existsSync(candidate)
+        ? fs.realpathSync(candidate)
+        : path.resolve(candidate);
+    return targets.some((target) => {
+      const substituted = matched?.wildcard
+        ? target.replaceAll('*', matched.wildcard)
+        : target;
+      return (
+        canonical(path.resolve(packageRoot, substituted)) ===
+        canonical(normalizedResolved)
+      );
+    });
+  }
+
   async function generateConfigTypes(
     manifest?: ConsumerManifest,
   ): Promise<void> {
@@ -985,7 +1061,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
     async resolveId(id, importer, resolveOptions) {
       if (isBuild && resolveOptions.ssr) {
-        for (const packageName of selectiveSsrPackages.keys()) {
+        for (const [packageName, packageJson] of selectiveSsrPackages) {
           if (id !== packageName && !id.startsWith(`${packageName}/`)) {
             continue;
           }
@@ -995,7 +1071,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           });
           const compile =
             resolved?.id.endsWith('.svelte') || resolved?.id.endsWith('.css');
-          if (!compile) return { id, external: true };
+          const compileSvelteBarrel = resolvesToSvelteCondition(
+            packageName,
+            packageJson,
+            id,
+            resolved?.id,
+          );
+          if (!compile && !compileSvelteBarrel) return { id, external: true };
           break;
         }
       }

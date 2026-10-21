@@ -408,6 +408,7 @@ describe('smrtConsumer registration generation', () => {
     mkdirSync(modelDir, { recursive: true });
     mkdirSync(coreDir, { recursive: true });
     mkdirSync(nativeDir, { recursive: true });
+    mkdirSync(join(providerDir, 'themes'), { recursive: true });
     mkdirSync(join(tmpDir, 'src'), { recursive: true });
     writeFileSync(
       join(providerDir, 'package.json'),
@@ -417,9 +418,10 @@ describe('smrtConsumer registration generation', () => {
         exports: {
           '.': { import: './server.js' },
           './server': { import: './server.js' },
-          './svelte': {
-            svelte: './Component.svelte',
-            default: './Component.svelte',
+          './themes': {
+            svelte: './themes/index.js',
+            import: './themes/index.js',
+            default: './themes/index.js',
           },
         },
         dependencies: {
@@ -470,6 +472,10 @@ describe('smrtConsumer registration generation', () => {
         '</script>',
         '<p>{label}:{marker}</p>',
       ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'themes', 'index.js'),
+      "export { default } from '../Component.svelte';\n",
     );
     writeFileSync(
       join(typesDir, 'package.json'),
@@ -534,7 +540,7 @@ describe('smrtConsumer registration generation', () => {
         "import '../.smrt/register.js';",
         "import { ObjectRegistry } from '@happyvertical/smrt-core';",
         "import { imagePayload, loadModelConstructors } from '@test/pkg/server';",
-        "import Widget from '@test/pkg/svelte';",
+        "import Widget from '@test/pkg/themes';",
         "import { render } from 'svelte/server';",
         "const registeredModel = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.constructor;",
         "const registeredCollection = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.collectionConstructor;",
@@ -592,7 +598,7 @@ describe('smrtConsumer registration generation', () => {
     });
     expect(JSON.parse(output.stdout).html).toContain('<p>compiled:types</p>');
     expect(content).toMatch(/from ["']@test\/pkg\/server["']/);
-    expect(content).not.toMatch(/from ["']@test\/pkg\/svelte["']/);
+    expect(content).not.toMatch(/from ["']@test\/pkg\/themes["']/);
     expect(content).not.toMatch(/from ["']@happyvertical\/smrt-model["']/);
     expect(content).not.toMatch(/from ["']@happyvertical\/smrt-types["']/);
   });
