@@ -1045,10 +1045,30 @@ export class PasskeyCredentialService {
     if (!inserted?.id) {
       throw new PasskeyRegistrationError('This passkey is already registered.');
     }
-    // Concurrent registrations can each pass the count above; settle it.
-    if ((await this.credentials.countByUserId(userId)) > this.maxPasskeys) {
+    // The session was validated before the insert, and an administrator's
+    // removeAllPasskeys can have swept sessions and credentials in between.
+    // Re-read the stored session AFTER the insert: a sweep that revoked it has
+    // already committed (refuse and undo); a sweep that has not will delete
+    // this row when it clears the person's credentials, which it does after
+    // revoking sessions.
+    try {
+      await this.assertFreshManager(input.actor);
+    } catch (error) {
       await this.credentials.deleteOwned(inserted.id, userId);
-      throw this.limitReached();
+      throw error;
+    }
+    // Concurrent registrations can each pass the count above; settle it with
+    // one deterministic loser (the newest row by creation time, then id), never
+    // "every request that sees the overflow removes itself", which would fail
+    // every concurrent registration.
+    if ((await this.credentials.countByUserId(userId)) > this.maxPasskeys) {
+      const kept = (await this.credentials.listByUserId(userId))
+        .slice(0, this.maxPasskeys)
+        .some((passkey) => passkey.id === inserted.id);
+      if (!kept) {
+        await this.credentials.deleteOwned(inserted.id, userId);
+        throw this.limitReached();
+      }
     }
     await this.recordManagement(userId, input.ipAddress, {
       action: 'register',

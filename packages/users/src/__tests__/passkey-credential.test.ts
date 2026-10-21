@@ -1684,6 +1684,65 @@ describe('PasskeyCredentialService', () => {
       ).resolves.toBeTruthy();
     });
 
+    it('a registration in flight cannot outlive an administrative removeAllPasskeys', async () => {
+      const actor = await actorFor(personId, { authMethod: 'passkey' });
+      const admin = await adminActor();
+      const creds = (service as unknown as { credentials: typeof passkeys })
+        .credentials;
+      const insert = creds.insertIfAbsent.bind(creds);
+      // The administrator's recovery completes (sessions revoked, credentials
+      // deleted, sessions revoked again) between the registration's session
+      // check and its insert.
+      vi.spyOn(creds, 'insertIfAbsent').mockImplementationOnce(async (w) => {
+        await service.removeAllPasskeys({ actor: admin, userId: personId });
+        return insert(w);
+      });
+      await expect(register(newAuthenticator(), actor)).rejects.toBeInstanceOf(
+        PasskeyCredentialForbiddenError,
+      );
+      expect(await passkeys.countByUserId(personId)).toBe(0);
+    });
+
+    it('two concurrent registrations at the limit leave exactly one winner', async () => {
+      const limited = await make({ maxPasskeysPerUser: 2 });
+      const actor = await actorFor(personId);
+      await register(newAuthenticator(), actor, 'one', limited);
+      const creds = (limited as unknown as { credentials: typeof passkeys })
+        .credentials;
+      const count = creds.countByUserId.bind(creds);
+      // Both registrations pass the pre-insert limit check before either
+      // inserts, so both insert and both then see the overflow.
+      let arrived = 0;
+      let release: () => void = () => {};
+      const both = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      vi.spyOn(creds, 'countByUserId').mockImplementation(async (userId) => {
+        const total = await count(userId);
+        if (arrived < 2) {
+          arrived++;
+          if (arrived === 2) release();
+          await both;
+        }
+        return total;
+      });
+      const begun = await Promise.all([
+        limited.beginRegistration({ actor }),
+        limited.beginRegistration({ actor }),
+      ]);
+      const results = await Promise.allSettled(
+        begun.map((b) =>
+          limited.finishRegistration({
+            actor,
+            ceremonyId: b.ceremonyId,
+            response: newAuthenticator().register(b.options),
+          }),
+        ),
+      );
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(await passkeys.countByUserId(personId)).toBe(2);
+    });
+
     it('hasPasskeys reflects what is registered', async () => {
       expect(await service.hasPasskeys(personId)).toBe(false);
       await register(newAuthenticator(), await actorFor(personId));
