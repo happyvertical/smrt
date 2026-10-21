@@ -78,6 +78,8 @@ export {
   CatalogService,
 } from './catalog-service.js';
 export type {
+  CatalogExclusionSummary,
+  CatalogFailureSummary,
   CatalogSyncReport,
   CatalogSyncStore,
 } from './catalog-sync-service.js';

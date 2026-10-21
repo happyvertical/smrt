@@ -155,7 +155,8 @@ at the official homepage and fixed curriculum roots; it follows direct course,
 unit, resources, family-materials, and lesson-preparation links. Teacher guides,
 answers, assessments, presentations, login-only links, unknown labels, HTML-only
 student lessons, non-PDF formats, and AccessIM/v.360 are excluded. Completion
-means this declared scope only; exclusions remain in the sync report.
+means this declared scope only. Policy omissions appear in the bounded, invocation-local
+`CatalogSyncReport.exclusionSummary`, rather than the durable failure ledger.
 
 Each `enumerate` reads one HTML page (2 MB maximum) and at most four asset HEADs.
 It never GETs PDF content. Version-1 JSON cursors contain the remaining validated
@@ -190,3 +191,37 @@ CC BY 4.0 footer, with retrieval time and retained exceptions. The official
 [terms §7.1](https://illustrativemathematics.org/terms-of-use/) distinguish the
 first edition's CC BY 4.0 curriculum from the separate v.360 terms in §7.2.
 No v.360 grant is inferred.
+
+
+Public IM PDF roles are local: a table artifact must belong to the same closed
+row as its explicit first-cell label; a non-table artifact must be directly in
+an `im-c-row__flex-resource` block with exactly one local `h3`/`h4` label.
+Missing, ambiguous, nested, or cross-section labels are excluded. A preceding
+student heading cannot authorize a separate teacher/unknown block. Structural
+parsing is bounded to 50,000 tags and 256 open elements. Family unit pages may
+follow their directed same-unit `family-materials.html` edge; family-materials
+leaves never follow reverse unit navigation.
+
+Adapters use `policyExclusions` for normal role/license/format/scope omissions;
+IM emits page-wide omissions only on artifact offset zero and each artifact's
+omission only in its processed chunk. `exclusions` retains its operational error
+meaning: a current error/pause cannot advance the cursor, write returned partial
+resources, withdraw unseen rows, or report completion. The report's
+`exclusionSummary: { total, byCode: [{ code, count }], otherCount }` counts only
+pages processed in that invocation, retains at most 32 public code tokens, and
+is never stored in the checkpoint. Hosts may aggregate these invocation-local
+counts explicitly; they are not full-generation coverage totals.
+
+Durable failures remain the existing JSON array, compacted to 31 recent code
+diagnostics plus an explicit overflow entry. Each entry's optional `count`
+preserves occurrence totals; `omittedDetailCount` explicitly counts occurrences
+whose diagnostic details were compacted/truncated. Messages and diagnostic
+cursors are bounded to 512/256 characters; the actual resume cursor is preserved.
+Missing legacy counts mean one; malformed counts are explicitly marked and
+counted once. Unsafe integer totals fail closed. `failureSummary` distinguishes
+`historicalCount` from this invocation's `currentCount`, with total and omitted
+detail counts. Historical mixed-policy/error entries are retained as audit
+history without guessed reclassification. An old coarse six-grade checkpoint
+with no cursor starts the new adapter at its root, preserves its imported count
+and history, and may complete/withdraw only at the new traversal's actual terminal
+page. History alone does not create an active pause.

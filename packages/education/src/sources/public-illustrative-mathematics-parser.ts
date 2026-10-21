@@ -100,6 +100,121 @@ export interface ImParsedPage {
   licensed: boolean;
   title: string;
 }
+interface RoleContainer {
+  tag: string;
+  parent?: RoleContainer;
+  contentStart: number;
+  resource: boolean;
+  closed: boolean;
+  malformed: boolean;
+  headings: { tag: string; text: string }[];
+  cells: string[];
+}
+
+/** Bind each link to its own source row/block; headings never cross containers. */
+function localArtifactLabels(html: string): Map<number, string> {
+  const stack: RoleContainer[] = [];
+  const links: {
+    start: number;
+    owner?: RoleContainer;
+    kind?: 'row' | 'resource';
+  }[] = [];
+  const voidTags = new Set([
+    'area',
+    'base',
+    'br',
+    'col',
+    'embed',
+    'hr',
+    'img',
+    'input',
+    'link',
+    'meta',
+    'param',
+    'source',
+    'track',
+    'wbr',
+  ]);
+  const tokens =
+    /<\/?([a-zA-Z][\w:-]*)(?:\s+(?:[^>"']|"[^"]*"|'[^']*')*)?\s*\/?>/g;
+  let tokenCount = 0;
+  for (const token of html.matchAll(tokens)) {
+    if (++tokenCount > 50_000 || stack.length > 256)
+      throw new Error('First-edition role structure exceeds parser bounds.');
+    const tag = token[1].toLowerCase();
+    if (token[0].startsWith('</')) {
+      const index = stack.findLastIndex((node) => node.tag === tag);
+      if (index < 0) continue;
+      const node = stack[index];
+      if (index !== stack.length - 1) {
+        node.malformed = true;
+        for (const dangling of stack.slice(index + 1))
+          dangling.malformed = true;
+      }
+      node.closed = true;
+      if (/^h[1-6]$/.test(tag)) {
+        const content = imText(html.slice(node.contentStart, token.index));
+        if (node.parent?.resource)
+          node.parent.headings.push({ tag, text: content });
+        const row = stack
+          .slice(0, index)
+          .findLast((ancestor) => ancestor.tag === 'tr');
+        if (row) row.headings.push({ tag, text: content });
+      }
+      if (tag === 'td' && node.parent?.tag === 'tr')
+        node.parent.cells.push(
+          imText(html.slice(node.contentStart, token.index)),
+        );
+      stack.length = index;
+      continue;
+    }
+    const parent = stack.at(-1);
+    if (tag === 'a') {
+      if (
+        parent?.tag === 'td' &&
+        parent.parent?.tag === 'tr' &&
+        parent.parent.cells.length > 0
+      )
+        links.push({ start: token.index, owner: parent.parent, kind: 'row' });
+      else
+        links.push({
+          start: token.index,
+          owner: parent?.resource ? parent : undefined,
+          kind: 'resource',
+        });
+    }
+    if (voidTags.has(tag) || token[0].endsWith('/>')) continue;
+    const className =
+      /\sclass\s*=\s*["']([^"']*)["']/i.exec(token[0])?.[1] ?? '';
+    stack.push({
+      tag,
+      parent,
+      contentStart: token.index + token[0].length,
+      resource:
+        tag === 'div' &&
+        className.split(/\s+/).includes('im-c-row__flex-resource'),
+      closed: false,
+      malformed: false,
+      headings: [],
+      cells: [],
+    });
+  }
+  const labels = new Map<number, string>();
+  for (const link of links) {
+    const owner = link.owner;
+    if (!owner?.closed || owner.malformed) continue;
+    if (link.kind === 'row') {
+      if (owner.headings.length === 0)
+        labels.set(link.start, owner.cells[0] ?? '');
+    } else if (
+      owner.headings.length === 1 &&
+      /^h[34]$/.test(owner.headings[0].tag)
+    )
+      labels.set(link.start, owner.headings[0].text);
+  }
+  return labels;
+}
+
 export function parseImFirstEditionPage(
   rawHtml: string,
   path: string,
@@ -127,6 +242,7 @@ export function parseImFirstEditionPage(
   const children = new Set<string>();
   const exclusions: ImParsedPage['exclusions'] = [];
   const artifacts = new Map<string, ImArtifact>();
+  const localLabels = localArtifactLabels(html);
   const anchors = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)];
   if (anchors.length > 4000)
     throw new Error('First-edition page has too many links.');
@@ -176,21 +292,7 @@ export function parseImFirstEditionPage(
         });
         continue;
       }
-      const before = html.slice(0, anchor.index);
-      // Table labels and resource headings are explicit source labels, never guessed from a URL.
-      const rowStart = before.lastIndexOf('<tr');
-      const rowEnd = before.lastIndexOf('</tr>');
-      const heading = [
-        ...before.matchAll(/<h[34]\b[^>]*>([\s\S]*?)<\/h[34]>/gi),
-      ].at(-1)?.[1];
-      const label =
-        rowStart > rowEnd
-          ? imText(
-              /<td\b[^>]*>([\s\S]*?)<\/td>/i.exec(
-                before.slice(rowStart),
-              )?.[1] ?? '',
-            )
-          : imText(heading ?? '');
+      const label = localLabels.get(anchor.index) ?? '';
       const allowed =
         /^(Student Task Statements|Student Handouts|Cumulative Practice Problems|Family Support Materials|Family Materials|Learning Targets|Student Task Statement Cover Page)$/i.test(
           label,
@@ -254,7 +356,18 @@ export function parseImFirstEditionPage(
       child.unit === page.unit &&
       ((child.lesson && child.leaf === 'preparation') ||
         (!child.lesson && child.leaf === 'resources'));
-    if (rootChild || courseChild || unitChild) children.add(child.path);
+    const familyMaterialsChild =
+      page.band.startsWith('k5') &&
+      page.audience === 'families' &&
+      page.unit &&
+      !page.lesson &&
+      page.leaf !== 'family-materials' &&
+      sameCourse &&
+      child.unit === page.unit &&
+      !child.lesson &&
+      child.leaf === 'family-materials';
+    if (rootChild || courseChild || unitChild || familyMaterialsChild)
+      children.add(child.path);
   }
   if (children.size > 128 || artifacts.size > 128)
     throw new Error('First-edition page exceeds hierarchy/artifact bound.');

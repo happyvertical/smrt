@@ -280,7 +280,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     const html = page(
       row('Teacher Guide') +
         row('Unknown future role', `${id}x`) +
-        `<div><h4>Family Support Materials</h4><a class="im-c-filetype--pdf" href="${IM_ASSET_ORIGIN}/${id}y">pdf</a></div><a href="https://accessim.org/">v360</a><a href="/oauth_im/login">login</a><a href="${IM_ASSET_ORIGIN}/${id}z">docx</a>`,
+        `<div class="im-c-row__flex-resource"><h4>Family Support Materials</h4><a class="im-c-filetype--pdf" href="${IM_ASSET_ORIGIN}/${id}y">pdf</a></div><a href="https://accessim.org/">v360</a><a href="/oauth_im/login">login</a><a href="${IM_ASSET_ORIGIN}/${id}z">docx</a>`,
     );
     const result = await fixture({ html }).adapter.enumerate({
       cursor: start(),
@@ -289,7 +289,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     expect(
       result.records.filter((r) => r.visibility === 'catalog'),
     ).toHaveLength(1);
-    expect(result.exclusions?.map((e) => e.code)).toEqual(
+    expect(result.policyExclusions?.map((e) => e.code)).toEqual(
       expect.arrayContaining([
         'teacher_or_unknown_role',
         'different_edition',
@@ -307,7 +307,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     const result = await f.adapter.enumerate({ cursor: start(), checkpoint });
     expect(result.records.some((r) => r.visibility === 'catalog')).toBe(false);
     expect(
-      result.exclusions?.some((e) => e.code === 'unverified_license'),
+      result.policyExclusions?.some((e) => e.code === 'unverified_license'),
     ).toBe(true);
     expect(f.fetch).toHaveBeenCalledTimes(1);
   });

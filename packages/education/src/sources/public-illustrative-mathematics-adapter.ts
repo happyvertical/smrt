@@ -273,7 +273,8 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             );
           if (state.offset > parsed.artifacts.length)
             throw new Error('Cursor artifact offset exceeds source page.');
-          const exclusions = [...parsed.exclusions];
+          const policyExclusions =
+            state.offset === 0 ? [...parsed.exclusions] : [];
           const records: CatalogSourceRecord[] = [];
           const page = imPagePath(path);
           const expectsChildren =
@@ -331,7 +332,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
           const results = await Promise.allSettled(
             slice.map(async (asset) => {
               if (!asset.allowed || !parsed.licensed || !parsed.attribution) {
-                exclusions.push({
+                policyExclusions.push({
                   code: !asset.allowed
                     ? 'teacher_or_unknown_role'
                     : 'unverified_license',
@@ -404,7 +405,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
           if (next.todo.length > 384 || encode(next).length > 64_000)
             throw new Error('Hierarchy cursor exceeds its durable bound.');
           if (path === '/')
-            exclusions.push({
+            policyExclusions.push({
               code: 'declared_scope',
               message:
                 'Public first-edition PDFs explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, other formats, teacher/login and unknown-role material are excluded; AccessIM/v.360 is excluded.',
@@ -415,7 +416,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             ),
             complete: next.todo.length === 0,
             ...(next.todo.length ? { nextCursor: encode(next) } : {}),
-            exclusions,
+            policyExclusions,
           };
         });
       } catch (error) {
