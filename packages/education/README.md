@@ -138,3 +138,90 @@ regressions, dialect coverage, and the existing DuckDB setup limitations.
 - [Users and tenant hierarchy](../users/README.md)
 - [Tenant isolation](../tenancy/README.md)
 - [Assets](../assets/README.md)
+
+
+### Public first-edition Illustrative Mathematics
+
+`createPublicIllustrativeMathematicsFirstEditionAdapter({ fetch })` returns both
+`CatalogSyncAdapter` and `CatalogAcquireAdapter`; `fetch` is optional and defaults
+to the standard global Fetch API. Use the same factory for discovery and explicit
+private acquisition through `CatalogAcquisitionService`. No credential, mounted
+provider module, schema extension, or PDF fetch is needed for discovery.
+
+The declared scope is public PDFs with explicit student/family labels on the
+first-edition Kendall Hunt K–5, 6–8, and high-school teacher/family hierarchy,
+including Algebra 1 Supports and linked Spanish counterparts. Traversal starts
+at the official homepage and fixed curriculum roots; it follows direct course,
+unit, resources, family-materials, and lesson-preparation links. Teacher guides,
+answers, assessments, presentations, login-only links, unknown labels, HTML-only
+student lessons, non-PDF formats, and AccessIM/v.360 are excluded. Completion
+means this declared scope only. Policy omissions appear in the bounded, invocation-local
+`CatalogSyncReport.exclusionSummary`, rather than the durable failure ledger.
+
+Each `enumerate` reads one HTML page (2 MB maximum) and at most four asset HEADs.
+It never GETs PDF content. Version-1 JSON cursors contain the remaining validated
+hierarchy paths and an artifact offset plus source fingerprint when needed;
+persist the returned cursor unchanged. A fresh adapter can resume it. The cursor
+is capped at 64 KB and 384 pending paths; source pages are capped at 128 children
+and artifacts. Exceeding a bound, changing source metadata during a chunked page,
+or a provider failure pauses with the current cursor, never a terminal success.
+Normal `CatalogSyncService` invocation page budgets yield an unpaused, incomplete
+checkpoint without inventing a source failure; resume it to complete the same generation.
+
+The source fingerprint is SHA-256 of canonical JSON containing the canonical
+path and parsed children, artifacts (asset ID, exact normalized label, allowed
+role), exclusions, source attribution, notices, license decision, and title, in
+source order. It excludes scripts, comments and transient CSRF markup. This is
+necessary because official page weak ETags change for each anonymous request.
+Acquisition rechecks that fingerprint, exact asset identity, role and license
+before requesting bytes. The PDF revision additionally pins the strong ETag,
+length and Last-Modified. A conditional PDF GET must return the identical
+validators, PDF content type, exact declared/streamed length and `%PDF-` signature;
+the adapter hashes the bytes with SHA-256. The generic service retains attribution
+and image/trademark notices and provides tenant, selection and idempotence checks.
+
+`timeoutMs` bounds the entire call, including streaming (default 20 seconds,
+maximum 60 seconds). `maxPdfBytes` defaults to 32 MiB (maximum 64 MiB). Requests
+use fixed official hosts and strict paths, reject redirects, and carry no source
+credentials. Rate limiting returns a resumable pause with Retry-After information;
+hosts must honor that delay before resuming rather than loop immediately.
+
+License evidence comes from each exact official source page's attribution and
+CC BY 4.0 footer, with retrieval time and retained exceptions. The official
+[terms §7.1](https://illustrativemathematics.org/terms-of-use/) distinguish the
+first edition's CC BY 4.0 curriculum from the separate v.360 terms in §7.2.
+No v.360 grant is inferred.
+
+
+Public IM PDF roles are local: a table artifact must belong to the same closed
+row as its explicit first-cell label; a non-table artifact must be directly in
+an `im-c-row__flex-resource` block with exactly one local `h3`/`h4` label.
+Missing, ambiguous, nested, or cross-section labels are excluded. A preceding
+student heading cannot authorize a separate teacher/unknown block. Structural
+parsing is bounded to 50,000 tags and 256 open elements. Family unit pages may
+follow their directed same-unit `family-materials.html` edge; family-materials
+leaves never follow reverse unit navigation.
+
+Adapters use `policyExclusions` for normal role/license/format/scope omissions;
+IM emits page-wide omissions only on artifact offset zero and each artifact's
+omission only in its processed chunk. `exclusions` retains its operational error
+meaning: a current error/pause cannot advance the cursor, write returned partial
+resources, withdraw unseen rows, or report completion. The report's
+`exclusionSummary: { total, byCode: [{ code, count }], otherCount }` counts only
+pages processed in that invocation, retains at most 32 public code tokens, and
+is never stored in the checkpoint. Hosts may aggregate these invocation-local
+counts explicitly; they are not full-generation coverage totals.
+
+Durable failures remain the existing JSON array, compacted to 31 recent code
+diagnostics plus an explicit overflow entry. Each entry's optional `count`
+preserves occurrence totals; `omittedDetailCount` explicitly counts occurrences
+whose diagnostic details were compacted/truncated. Messages and diagnostic
+cursors are bounded to 512/256 characters; the actual resume cursor is preserved.
+Missing legacy counts mean one; malformed counts are explicitly marked and
+counted once. Unsafe integer totals fail closed. `failureSummary` distinguishes
+`historicalCount` from this invocation's `currentCount`, with total and omitted
+detail counts. Historical mixed-policy/error entries are retained as audit
+history without guessed reclassification. An old coarse six-grade checkpoint
+with no cursor starts the new adapter at its root, preserves its imported count
+and history, and may complete/withdraw only at the new traversal's actual terminal
+page. History alone does not create an active pause.

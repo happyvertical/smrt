@@ -304,14 +304,28 @@ export class GoogleDriveCurriculumAdapter
       ...(page.checkpoint
         ? { nextCursor: encodeCheckpoint(page.checkpoint) }
         : {}),
-      ...(page.exclusions.length
-        ? {
-            exclusions: page.exclusions.map((exclusion) => ({
-              code: exclusion.reason,
-              message: `Google Drive resource ${exclusion.stableId} was excluded: ${exclusion.reason}.`,
-            })),
-          }
-        : {}),
+      // Definite boundary/format omissions are policy; unavailable metadata is
+      // an operational failure and must not authorize terminal withdrawal.
+      policyExclusions: page.exclusions
+        .filter(
+          (entry) =>
+            entry.reason === 'shortcut-target-outside-boundary' ||
+            entry.reason === 'shortcut-target-unsupported',
+        )
+        .map((entry) => ({
+          code: entry.reason,
+          message: `Google Drive resource ${entry.stableId} was excluded: ${entry.reason}.`,
+        })),
+      exclusions: page.exclusions
+        .filter(
+          (entry) =>
+            entry.reason !== 'shortcut-target-outside-boundary' &&
+            entry.reason !== 'shortcut-target-unsupported',
+        )
+        .map((entry) => ({
+          code: entry.reason,
+          message: `Google Drive resource ${entry.stableId} was excluded: ${entry.reason}.`,
+        })),
     };
   }
 

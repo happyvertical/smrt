@@ -50,6 +50,10 @@ export interface CatalogSyncFailure {
   code: string;
   message: string;
   retryAfterMs?: number;
+  /** Aggregated occurrence count; absent on legacy entries means one. */
+  count?: number;
+  /** Occurrences whose diagnostic detail was explicitly compacted or truncated. */
+  omittedDetailCount?: number;
 }
 
 /** One metadata-only enumeration result. `complete` only means this page is terminal. */
@@ -59,7 +63,10 @@ export interface CatalogSyncPage {
   complete: boolean;
   /** Honest non-terminal stop, e.g. missing source authorization. */
   paused?: boolean;
+  /** Operational/access failures. These pause synchronization and remain durable. */
   exclusions?: CatalogSyncFailure[];
+  /** Normal policy omissions; summarized only in this invocation's report. */
+  policyExclusions?: CatalogSyncFailure[];
 }
 
 export interface CatalogSyncCheckpoint {
