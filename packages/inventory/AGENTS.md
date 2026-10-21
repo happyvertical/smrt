@@ -11,7 +11,13 @@ Multi-location stock tracking. Strictly industry-neutral — the same primitives
 | `StockLevel` | Materialized `qty` for a `(skuId, locationId, state)` tuple. Upserted in place. **Mutated only by `StockService`.** States: `available`, `allocated`, `wip`, `qc_hold`, `damaged`. |
 | `StockMovement` | Append-only audit log. Every `StockService` mutation writes one (or two for `transfer`). `sourceType` + `sourceId` carry cross-package attribution. |
 
-All three inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
+| `Lot` | A traceable batch or serial (`inventory_lots`). `conflictColumns: ['identity_key','tenant_id']`, every create insert-only. **Written only by `LotService`.** |
+| `LotStockLevel` | Per-lot balance for `(lotId, locationId, state)` (`inventory_lot_stock_levels`). **Mutated only by `StockService`** when `lotId` is passed. |
+| `LotUsage` | A lot used by a consumer: the trace edge. Never deleted; `status: 'unlinked'` after a correction. `consumerType: 'Lot'` marks assembly lineage. |
+| `LotCorrection` | Append-only correction trail (`conflictColumns: ['id']`); reason mandatory. |
+| `LotDocument` | Asset attached to a lot (`assetId` is a cross-package ref); detached, never deleted. |
+
+All inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`, and the lot models) (`InventoryLocation`, `StockLevel`, `StockMovement`) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
 
 ## StockService — the only sanctioned way to mutate stock
 
@@ -37,6 +43,17 @@ await service.adjust(skuId, locationId, delta, { sourceType, sourceId });
 | `adjust` | signed delta — cycle counts and one-off corrections | `adjustment` |
 
 All methods reject zero / negative / non-finite quantities except `adjust`, which accepts non-zero signed deltas. Negative deltas that would drive a state below zero throw `InsufficientStockError`.
+
+## LotService — lots and serials (additive, #3459)
+
+`createLotService({ db })` (with `withTransaction`, same pattern as `StockService`) is the only writer of the lot tables. `receiveLot` records identity only and moves no stock; compose with `StockService` in one transaction via `createLotService({ db: tx.db })`. Passing `lotId` to a `StockService` mutation applies the same deltas to `LotStockLevel`, enforces non-negative at lot level (`InsufficientStockError.lotId`), validates the lot (`LotNotFoundError`, `LotMismatchError` when `lot.skuId` differs), and stamps `StockMovement.lotId`.
+
+- `Lot.identityKey` is the only DB-unique key: `u:<kind>:<sku>:<SEARCHKEY>` for unique lots and all serials (hashed if over 160 chars), `k:<idempotencyKey>` for idempotent receipts, else a random `r:` key. So a lot number repeats by default (one supplier lot, two receipts); `DuplicateLotError` only for unique ones.
+- Corrections (`correctLotNumber`, `correctAttributes`, `setStatus`, `unlinkUsage`, `detachDocument`) require a reason, are refused when nothing changes, and write a `LotCorrection`. They `save()` the lot so concurrent changes conflict on its revision; retry the loser.
+- `recordUsage` is idempotent per consumer; `exclusive` (default for serials) throws `LotInUseError` for a second consumer.
+- `traceForward(lotId)` / `traceBack(consumerType, consumerId)` follow `consumerType: 'Lot'` usages with a path-based cycle guard and `depth` (default 10).
+- No authorization inside the package; callers authorize. Nothing assumes an id format, so a consumer's data migration may insert rows with its own ids.
+- Schema upgrade is additive: five new tables and one nullable column, `inventory_stock_movements.lot_id`. `StockLevel`'s unique key is unchanged. The `syncSchema` path creates them on first boot; nothing needs copying.
 
 ## Opt-in DispatchBus hooks
 
