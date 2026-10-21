@@ -31,7 +31,7 @@ export default {
     '@happyvertical/smrt-users': '^0.57.15',
     '@happyvertical/smrt-web': '^0.57.15',
     '@happyvertical/sql': '^0.89.12',
-    '@modelcontextprotocol/server': '^2.0.0',
+    '@modelcontextprotocol/server': '^2.3.1',
   },
 
   devDependencies: {
@@ -43,7 +43,7 @@ export default {
     'svelte': '^5.57.1',
     'svelte-check': '^4.7.6',
     'typescript': '6.0.3',
-    'vite': '8.3.0',
+    'vite': '8.3.3',
   },
 
   // Optional: customize files
