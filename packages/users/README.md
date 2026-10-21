@@ -22,8 +22,10 @@ key revoke actions must verify the current account owns the selected record
 before calling `SessionService.destroySession()` or the profile API-key
 service. Passkey sign-in is deliberately hidden unless the host passes a
 `passkeyCeremony` callback to `createUsersAuthAdapter()`. An endpoint alone
-cannot enable it: the callback must perform the #3275 WebAuthn browser ceremony
-and delegate its verified result to an authorized server action.
+cannot enable it: the callback must perform the WebAuthn browser ceremony and
+delegate its verified result to an authorized server action. Build it with
+`createPasskeySignInCeremony()` against the routes of
+`createPasskeyCredentialHandlers()` (see "Passkey sign-in").
 
 Auth components display safe, registered `users.auth.*` messages when an
 adapter rejects; callback diagnostics are never rendered. Configure these
@@ -1098,7 +1100,131 @@ What the app must do:
   `(await passwordAuth.service()).signIn({ … })` and set the cookie with the
   returned `sessionId`; keep the session id out of page data.
 
-Passkeys/WebAuthn are a separate credential (#3275).
+Passkeys/WebAuthn are a separate credential: see "Passkey sign-in" below.
+
+### Passkey sign-in
+
+`PasskeyCredentialService` (#3275) gives an app passkey (WebAuthn) sign-in for
+**existing, active** users, with no username typed: the authenticator offers
+its discoverable credential and the credential names the person. It never
+creates a user. Parsing and verification are `@simplewebauthn/server`; this
+package owns the ceremony state, the sign-in order and the authority rules.
+Passkeys live in their own sensitive objects, `UsersPasskeyCredential`
+(`users_passkey_credentials`, many per person) and `UsersPasskeyChallenge`
+(`users_passkey_challenges`, a replay ledger), with no generated
+REST/MCP/CLI surface and no change-feed entry. The service and handlers below
+are their only read and write paths. Sign-in mints a first-class session with
+`authMethod: 'passkey'`; tenant access still comes only from an active
+membership (explicit tenant, or `'unique-active-membership'`, exactly as for
+passwords).
+
+#### Setup: `ORIGIN` and the relying party
+
+Passkeys are bound to the relying party, so `relyingParty` is required and is
+validated at construction. `origin` is the exact origin(s) the browser runs on:
+an absolute `https:` URL with no path (`http:` only for `localhost`,
+`127.0.0.1`, `[::1]`). `rpId` defaults to the hostname of the first origin and
+must be that hostname or a parent domain of every origin. **Choose it once:**
+changing the RP id orphans every registered passkey.
+
+```ts
+// src/lib/server/passkey-auth.ts
+import { createPasskeyCredentialHandlers } from '@happyvertical/smrt-users/sveltekit';
+
+export const passkeyAuth = createPasskeyCredentialHandlers({
+  db,
+  relyingParty: { origin: ORIGIN, rpName: 'Teamworks' }, // ORIGIN = https://app.example.com
+  challengeSecret: PASSKEY_CHALLENGE_SECRET, // >= 32 chars; REQUIRED with more than one process
+  tenantId: () => SHOP_TENANT_ID,            // value or (event) => …; omit for no tenant context
+  cookieName: 'sid',                         // the same cookie createSessionHandler reads
+  loginLimiter,                              // optional: share one limiter with password/PIN
+  freshSessionSeconds: 15 * 60,              // 60..3600, default 900
+  maxPasskeysPerUser: 10,                    // 1..100, default 10
+});
+// POST   /auth/passkey/options        → passkeyAuth.authenticationOptions   → { ceremonyId, options }
+// POST   /auth/passkey/sign-in        → passkeyAuth.signIn                  ({ ceremonyId, response })
+// POST   /account/passkeys/options    → passkeyAuth.registrationOptions     → { ceremonyId, options }
+// GET    /account/passkeys            → passkeyAuth.list                    (?userId= for administrators)
+// POST   /account/passkeys            → passkeyAuth.register                ({ ceremonyId, response, name? })
+// PATCH  /account/passkeys            → passkeyAuth.rename                  ({ passkeyId, name })
+// DELETE /account/passkeys            → passkeyAuth.remove                  ({ passkeyId })
+// POST   /admin/passkeys/remove-all   → passkeyAuth.removeAll               ({ userId })
+```
+
+In the browser, `@happyvertical/smrt-users/svelte` provides
+`browserSupportsPasskeys()`, `createPasskeySignInCeremony()` (a
+`passkeyCeremony` for `createUsersAuthAdapter`, which reveals the sign-in
+button) and `registerPasskey({ name })`. A refused request throws a
+`PasskeyRequestError` carrying the server's `status` and `code`.
+
+#### Ceremonies and replay
+
+`beginAuthentication()` / `beginRegistration()` return an opaque `ceremonyId`:
+`base64url(payload).base64url(HMAC-SHA256(challengeSecret, payload))`, where
+the payload holds the purpose, a random 32-byte challenge, an expiry
+(`challengeTtlSeconds`, 1 to 600, default 300) and, for registration, the
+person plus the SHA-256 of the registering session id (never the raw id).
+Beginning writes nothing, so an unauthenticated request costs no storage.
+Finishing verifies the MAC in constant time, the purpose, the expiry and a
+4 KB bound, then **consumes** the challenge by inserting its hash into the
+unique ledger: a replay is a conflict and is refused. Without `challengeSecret`
+a random per-process secret is used, which only works while one process begins
+and finishes every ceremony.
+
+#### Sign-in order and refusals
+
+The submitted credential id is reserved against the shared
+`LoginAttemptLimiter` (kind `passkey`, source = client address) **before** any
+other work. Then: ceremony verified and consumed, credential loaded,
+assertion verified (origin, RP id, user verification **required**), user
+handle checked against the stored owner, signature counter checked (it must
+advance whenever either side is non-zero; a regression is refused and audited
+as `reason: 'counter'`), user active, membership. The session is minted and
+the credential re-checked with one guarded `UPDATE` of the counter, so a
+passkey removed (or used concurrently) mid-sign-in leaves no session. Every
+refusal other than a rate limit is one `PasskeyCredentialError` ("Invalid
+credentials."), HTTP 401 `invalid_credentials`; a rate limit is
+`LoginRateLimitError`, HTTP 429 with `Retry-After`.
+
+#### Managing passkeys
+
+- **Registering** (and a person removing their own) requires a session
+  authenticated within `freshSessionSeconds` (tenant switching keeps the
+  original time) by an interactive method in `freshAuthMethods` (default
+  `password`, `passkey`, `oidc`, `magic-link`), all decided on the stored
+  session row; layered/PIN sessions and sessions with a permission ceiling are
+  refused. A `terminal` session never counts as fresh (nor does a null or
+  unlisted method): approving a device code lets whoever holds any session,
+  however stale, mint a brand new one, so its age proves nothing. `terminal`
+  and `pin` are rejected in `freshAuthMethods` at construction. Listing and
+  renaming one's own passkeys also refuse a permission ceiling. A stale session
+  is `PasskeyReauthenticationRequiredError` (HTTP 401
+  `reauthentication_required`): sign in again, then retry.
+- `listPasskeys` returns `{ id, name, createdAt, lastUsedAt, backedUp,
+  deviceType, transports }`, never key material or credential ids.
+- `users.passkey.manage` lets an administrator list and remove the passkeys of
+  people whose every active membership is in the administrator's own tenant
+  (the same single-tenant rule as `users.password.manage`).
+- Removing a passkey ends sessions before **and** after the delete: the
+  person's other passkey sessions (and the current one only if it was signed
+  in with the removed passkey); an administrator's removal ends all of them.
+- Every management call writes a `managed` audit event (kind `passkey`; action,
+  self, actor, revoked sessions; never key material).
+
+#### Recovery when every passkey is lost
+
+An administrator holding `users.passkey.manage` calls `removeAllPasskeys` for
+the person (never for themselves), which deletes all their passkeys and ends
+every passkey session. The person then signs in with another credential (a
+password or a magic link) and registers a new passkey from that fresh session.
+Keep at least one non-passkey path available for every person.
+
+Run `smrt db:migrate` once for the two new tables, and sync the permission
+catalog so `users.passkey.manage` can be granted. The retention sweep reaps
+expired challenge rows (`users-passkey-challenges`), keeping each row for 10 minutes past its expiry
+so a process with a slow clock cannot replay it. Every state-changing passkey
+route requires `content-type: application/json` (415 otherwise). When
+`challengeSecret` is unset the service logs one warning at creation.
 
 ### Trusted deployment owner provisioning
 
@@ -1409,6 +1535,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `UsersLoginAttempt`, `UsersLoginAuditEvent` | Hashed-key login budget rows and durable sign-in audit events (#3273). Closed generated surface. |
 | `UsersPinCredential` | Per-person scrypt PIN hash for enrolled-device sign-in (#3276). Closed generated surface. |
 | `UsersPasswordCredential` | Per-person scrypt password hash for email + password sign-in (#3274). Sensitive; closed generated surface. |
+| `UsersPasskeyCredential`, `UsersPasskeyChallenge` | Per-person WebAuthn passkeys (many per person) and the consumed-challenge replay ledger (#3275). Sensitive; closed generated surface. |
 | `Group` | Team within a tenant. Gains permissions via GroupRole. |
 | `Membership` | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
 | `MembershipOverride` | Per-user permission grant/deny on a membership. |
@@ -1484,7 +1611,7 @@ authority and effective dates, and no posting or balance is copied here.
 | `MembershipOverrideCollection`, `TenantPermissionOverrideCollection` | Override management at membership and tenant levels |
 | `GroupCollection`, `GroupMemberCollection`, `GroupRoleCollection`, `RolePermissionCollection` | Group and role-permission junction management |
 | `AccessRequestCollection` | AccessRequest queries: `findByEmail()`, `findOpenByEmail()`, `findByStatus()`, `findOpen()` |
-| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection`, `UsersPasswordCredentialCollection` | Atomic limiter primitives, audit storage, and PIN and password credential rows behind the services below |
+| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection`, `UsersPasswordCredentialCollection`, `UsersPasskeyCredentialCollection`, `UsersPasskeyChallengeCollection` | Atomic limiter primitives, audit storage, and PIN, password and passkey credential rows behind the services below |
 
 ### Services
 
@@ -1499,6 +1626,7 @@ authority and effective dates, and no posting or balance is copied here.
 | `LoginAttemptLimiter` | Shared sign-in budget with exponential lockout and audit (#3273): `reserve()` → lease `.fail()`/`.succeed()`/`.release()`. `LoginRateLimitError`, `InvalidCredentialsError`, `LoginAuditSink`, `DurableLoginAuditSink`. |
 | `DeviceCredentialService` | Per-person sign-in layered on an enrolled device session (#3276): `signInWithPin()`, `signIn(verifier, input)`, `signOut()`, `setPin()`, `resetPin()`, `clearPin()`. Person authority with optional `deviceCeiling`, `singleOccupant` hand-over, `personIdleSeconds` / `personMaxSeconds`. `PinVerifier`, `DeviceCredentialVerifier`. |
 | `PasswordCredentialService` | Email + password sign-in for existing active users (#3274): `signIn()`, `setPassword()`, `changePassword()`, `resetPassword()`, `clearPassword()`, `hasPassword()`, `validatePassword()`. `PasswordCredentialError`, `PasswordCredentialForbiddenError`, `PasswordPolicyError`. |
+| `PasskeyCredentialService` | Passkey (WebAuthn) sign-in for existing active users (#3275): `beginAuthentication()`, `finishAuthentication()`, `beginRegistration()`, `finishRegistration()`, `listPasskeys()`, `renamePasskey()`, `removePasskey()`, `removeAllPasskeys()`, `hasPasskeys()`. `PasskeyCredentialError`, `PasskeyCredentialForbiddenError`, `PasskeyReauthenticationRequiredError`, `PasskeyRegistrationError`. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
@@ -1526,6 +1654,7 @@ authority and effective dates, and no posting or balance is copied here.
 | `createMobileAuthHandlers` | Mountable `/api/mobile` PKCE, bearer session, bootstrap, logout, and route-guard handlers |
 | `createDeviceCredentialHandlers` | Mountable PIN sign-in, sign-out, and PIN management handlers for enrolled devices |
 | `createPasswordCredentialHandlers` | Mountable password sign-in (sets the session cookie) and password set/change/reset/clear handlers |
+| `createPasskeyCredentialHandlers` | Mountable passkey sign-in (sets the session cookie), registration, list, rename and remove handlers |
 | `resolveMobileUploadDedupKey` | Resolves `clientCaptureId` with `Idempotency-Key` fallback for app-owned multipart routes |
 | `SessionLocals` | Type for `event.locals` (extend in `app.d.ts`) |
 
@@ -1549,6 +1678,7 @@ for authentication, deduplication, and status semantics.
 | `DEFAULT_LOGIN_MAX_ATTEMPTS`, `DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS`, `DEFAULT_LOGIN_LOCKOUT_*` | 5 attempts per 300 s window; lockout 60 s × 2ⁿ, capped at 3600 s |
 | `DEFAULT_PIN_MANAGE_PERMISSION`, `PIN_LOGIN_KIND` | `users.pin.manage`, `pin` |
 | `DEFAULT_PASSWORD_MANAGE_PERMISSION`, `PASSWORD_LOGIN_KIND` | `users.password.manage`, `password` |
+| `DEFAULT_PASSKEY_MANAGE_PERMISSION`, `PASSKEY_LOGIN_KIND`, `PASSKEY_SESSION_DATA_KEY` | `users.passkey.manage`, `passkey`, `passkeyCredentialId` |
 | `DEFAULT_PASSWORD_MIN_LENGTH`, `DEFAULT_PASSWORD_MAX_LENGTH`, `PASSWORD_MAX_LENGTH_CEILING`, `DEFAULT_PASSWORD_DENYLIST` | 10, 256, 1024, built-in common-password list |
 | `TenantHierarchyError` | Thrown on a missing parent, a cycle, or exceeding the hierarchy depth limit (`code`) |
 | `TenantHierarchyMaterializationError` | Thrown by `materializeTenantHierarchy` when any tenant's parent chain is broken; lists `problems` |
