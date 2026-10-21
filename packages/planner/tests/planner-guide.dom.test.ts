@@ -230,3 +230,54 @@ it('declines a missing Build control without opening or generating anything', as
     await handle!.guide!.highlight({ kind: 'control', control: 'build' }),
   ).toMatchObject({ ok: false });
 });
+it('resolves the labelled header buttons, including Specs and Styles', async () => {
+  app = mount(Planner, {
+    target,
+    props: {
+      persistence: 'host',
+      headerNav: 'labelled',
+      onready: (value: PlannerHandle) => {
+        handle = value;
+      },
+    },
+  });
+  await settle();
+  for (const [control, id] of [
+    ['specs', 'item:planner-specs'],
+    ['chef', 'item:planner-customize'],
+    ['styles', 'item:planner-styles'],
+    ['export', 'item:planner-export'],
+  ] as const) {
+    const result = await handle!.guide!.highlight({ kind: 'control', control });
+    expect(result).toMatchObject({ ok: true, targetId: id });
+  }
+});
+it('declines Specs and Styles when the default icon header has no such buttons', async () => {
+  await render();
+  for (const control of ['specs', 'styles'] as const)
+    expect(
+      await handle!.guide!.highlight({ kind: 'control', control }),
+    ).toMatchObject({ ok: false });
+});
+it('holds a narrated spotlight for the requested time within bounds', async () => {
+  const { guideHold } = await import('../src/lib/planner/guide.ts');
+  expect(guideHold(undefined)).toBe(6000);
+  expect(guideHold(9000)).toBe(9000);
+  expect(guideHold(50)).toBe(1000);
+  expect(guideHold(120000)).toBe(30000);
+  vi.useFakeTimers();
+  await render();
+  await handle!.guide!.highlight({
+    kind: 'control',
+    control: 'edit',
+    holdMs: 9000,
+  });
+  vi.advanceTimersByTime(7000);
+  expect(
+    document.querySelector('[data-smrt-component="ControlSpotlight"]'),
+  ).not.toBeNull();
+  vi.advanceTimersByTime(2500);
+  expect(
+    document.querySelector('[data-smrt-component="ControlSpotlight"]'),
+  ).toBeNull();
+});

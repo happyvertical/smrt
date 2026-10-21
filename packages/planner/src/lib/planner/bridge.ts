@@ -64,6 +64,8 @@ export interface PlannerCommandPortClient {
     kind: 'arrival' | 'addition' | 'control';
     control?: PlannerGuideControl;
     requestId?: string;
+    /** How long to keep the spotlight, 1–30 s; default 6 s. */
+    holdMs?: number;
   }): Promise<PlannerGuideResult>;
   dismissGuide(input: { generation: string }): Promise<{ ok: boolean }>;
   dispose(): void;
@@ -247,15 +249,22 @@ export function bindPlannerCommandPort(options: {
           !object(input) ||
           Object.keys(input).some(
             (key) =>
-              !['generation', 'kind', 'requestId', 'control'].includes(key),
+              ![
+                'generation',
+                'kind',
+                'requestId',
+                'control',
+                'holdMs',
+              ].includes(key),
           ) ||
           input.generation !== generation ||
           !['arrival', 'addition', 'control'].includes(String(input.kind)) ||
           (input.kind === 'control' &&
-            !['build', 'export', 'chef', 'edit'].includes(
+            !['build', 'export', 'chef', 'edit', 'specs', 'styles'].includes(
               String(input.control),
             )) ||
           (input.kind !== 'control' && input.control !== undefined) ||
+          (input.holdMs !== undefined && typeof input.holdMs !== 'number') ||
           !options.guide
         )
           value = {
@@ -266,9 +275,13 @@ export function bindPlannerCommandPort(options: {
           value = await options.guide.highlight({
             kind: 'control',
             control: input.control as PlannerGuideControl,
+            holdMs: input.holdMs as number | undefined,
           });
         else if (input.kind === 'arrival')
-          value = await options.guide.highlight({ kind: 'arrival' });
+          value = await options.guide.highlight({
+            kind: 'arrival',
+            holdMs: input.holdMs as number | undefined,
+          });
         else {
           const receipt =
             typeof input.requestId === 'string'

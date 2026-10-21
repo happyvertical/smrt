@@ -4,6 +4,7 @@ import { highlightControl } from '../control-dom.js';
 afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 it('keeps outline compatibility and idempotent cleanup', () => {
@@ -172,4 +173,50 @@ it('keeps Dismiss above the live shell phone footer track across resize', () => 
   vi.advanceTimersByTime(40);
   expect(dismiss?.style.insetBlockEnd).toContain('safe-area-inset-bottom');
   cleanup();
+});
+it('points an arrow at the target from the roomier side and removes it on cleanup', () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    'matchMedia',
+    (query: string) =>
+      ({ matches: query.includes('reduce'), media: query }) as MediaQueryList,
+  );
+  const node = document.createElement('button');
+  document.body.append(node);
+  let rect = {
+    left: 100,
+    top: 20,
+    right: 140,
+    bottom: 60,
+    width: 40,
+    height: 40,
+  };
+  vi.spyOn(node, 'getBoundingClientRect').mockImplementation(
+    () => rect as DOMRect,
+  );
+  const cleanup = highlightControl(node, 6000, {
+    presentation: 'spotlight',
+    dismissLabel: 'Dismiss guidance',
+  });
+  const arrow = document.querySelector<HTMLElement>(
+    '[data-smrt-spotlight-arrow]',
+  );
+  expect(arrow).not.toBeNull();
+  expect(arrow?.getAttribute('aria-hidden')).toBe('true');
+  expect(arrow?.style.pointerEvents).toBe('none');
+  expect(arrow?.dataset.direction).toBe('up');
+  expect(Number.parseFloat(arrow?.style.top ?? '')).toBeGreaterThanOrEqual(68);
+  expect(arrow?.getAnimations?.().length ?? 0).toBe(0);
+  rect = {
+    left: 100,
+    top: window.innerHeight - 60,
+    right: 140,
+    bottom: window.innerHeight - 20,
+    width: 40,
+    height: 40,
+  };
+  vi.advanceTimersByTime(40);
+  expect(arrow?.dataset.direction).toBe('down');
+  cleanup();
+  expect(arrow?.isConnected).toBe(false);
 });
