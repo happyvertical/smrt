@@ -506,11 +506,13 @@ Node therefore resolves native-backed provider dependencies from their
 installed pnpm package context, while core and tenancy retain one server-side
 registry and async context. Mixed packages are split by export: server entries
 stay external, while Svelte and CSS entries remain in Vite's compiler graph.
-Transitive-only packages without an app-level pnpm link remain bundled so the
-server output never contains an unresolvable bare import. The Vite preset
-retains its narrower app-runtime split so SvelteKit control-flow classes keep
-app identity. This applies only to SSR; browser and Svelte component builds
-retain their normal bundled resolution.
+The generated consumer registration entrypoint loads transitive-only object
+modules through the configured provider's ESM resolution context. This avoids
+unresolvable app-root imports while preserving the exact model and collection
+constructors used by the provider. The Vite preset retains its narrower
+app-runtime split so SvelteKit control-flow classes keep app identity. This
+applies only to SSR; browser and Svelte component builds retain their normal
+bundled resolution.
 
 `ObjectRegistry.ensureManifestLoaded()` can now auto-load installed external
 classes by either simple name (`'EventType'`) or qualified name

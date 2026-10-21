@@ -882,8 +882,9 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationContent).toMatch(
         /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*_manifest: smrtRegistrationManifests\['LocalThing'\],\s*_manifestKey: 'LocalThing',\s*\}\);/s,
       );
-      expect(registrationContent).toMatch(
-        /ObjectRegistry\.register\(ExternalThing,\s*\{\s*name: 'ExternalThing',\s*packageName: '@test\/pkg',\s*_manifest: smrtRegistrationManifests\['@test\/pkg:ExternalThing'\],\s*_manifestKey: '@test\/pkg:ExternalThing',\s*\}\);/s,
+      expect(registrationContent).not.toContain("from '@test/pkg'");
+      expect(registrationContent).not.toContain(
+        'ObjectRegistry.register(ExternalThing',
       );
       expect(registrationContent).toContain(
         'const smrtRegistrationManifests = JSON.parse(',

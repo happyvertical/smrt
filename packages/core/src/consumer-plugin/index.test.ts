@@ -434,12 +434,12 @@ describe('smrtConsumer registration generation', () => {
       join(providerDir, 'server.js'),
       [
         "import { createRequire } from 'node:module';",
-        "import { NestedModel, NestedModelCollection } from '@happyvertical/smrt-model';",
         'const require = createRequire(import.meta.url);',
         "export const imagePayload = require('native-image-payload');",
-        'export const providerModel = NestedModel;',
-        'export const providerCollection = NestedModelCollection;',
-        'export { NestedModelCollection };',
+        'export const loadModelConstructors = async () => {',
+        "  const model = await import('@happyvertical/smrt-model');",
+        '  return [model.NestedModel, model.NestedModelCollection];',
+        '};',
       ].join('\n'),
     );
     writeFileSync(
@@ -533,11 +533,12 @@ describe('smrtConsumer registration generation', () => {
       [
         "import '../.smrt/register.js';",
         "import { ObjectRegistry } from '@happyvertical/smrt-core';",
-        "import { imagePayload, providerCollection, providerModel } from '@test/pkg/server';",
+        "import { imagePayload, loadModelConstructors } from '@test/pkg/server';",
         "import Widget from '@test/pkg/svelte';",
         "import { render } from 'svelte/server';",
         "const registeredModel = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.constructor;",
         "const registeredCollection = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.collectionConstructor;",
+        'const [providerModel, providerCollection] = await loadModelConstructors();',
         "console.log(JSON.stringify({ imagePayload, modelIdentity: registeredModel === providerModel, collectionIdentity: registeredCollection === providerCollection, html: render(Widget, { props: { label: 'compiled' } }).body }));",
       ].join('\n'),
     );
@@ -566,7 +567,23 @@ describe('smrtConsumer registration generation', () => {
 
     const entry = join(tmpDir, 'svelte-server', 'entry.mjs');
     const content = readFileSync(entry, 'utf8');
-    const output = spawnSync(process.execPath, [entry], { encoding: 'utf8' });
+    const relocated = join(tmpDir, 'relocated');
+    mkdirSync(relocated);
+    fs.cpSync(join(tmpDir, 'svelte-server'), join(relocated, 'server'), {
+      recursive: true,
+    });
+    fs.cpSync(join(tmpDir, 'node_modules'), join(relocated, 'node_modules'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(relocated, 'package.json'),
+      JSON.stringify({ type: 'module' }),
+    );
+    const output = spawnSync(
+      process.execPath,
+      [join(relocated, 'server', 'entry.mjs')],
+      { encoding: 'utf8', cwd: relocated },
+    );
     expect(output.status, output.stderr).toBe(0);
     expect(JSON.parse(output.stdout)).toMatchObject({
       imagePayload: 'native-server',
@@ -578,6 +595,49 @@ describe('smrtConsumer registration generation', () => {
     expect(content).not.toMatch(/from ["']@test\/pkg\/svelte["']/);
     expect(content).not.toMatch(/from ["']@happyvertical\/smrt-model["']/);
     expect(content).not.toMatch(/from ["']@happyvertical\/smrt-types["']/);
+  });
+
+  it('rejects one qualified object contributed by distinct provider graphs', async () => {
+    for (const provider of ['a', 'b']) {
+      const providerDir = join(tmpDir, 'node_modules', '@test', provider);
+      const modelDir = join(providerDir, 'node_modules', '@nested', 'model');
+      mkdirSync(join(providerDir, 'dist'), { recursive: true });
+      mkdirSync(modelDir, { recursive: true });
+      writeFileSync(
+        join(providerDir, 'package.json'),
+        JSON.stringify({ name: `@test/${provider}`, type: 'module' }),
+      );
+      writeFileSync(
+        join(modelDir, 'package.json'),
+        JSON.stringify({ name: '@nested/model', type: 'module' }),
+      );
+      writeFileSync(
+        join(providerDir, 'dist', 'manifest.json'),
+        JSON.stringify({
+          packageName: `@test/${provider}`,
+          objects: {
+            '@nested/model:Shared': {
+              className: 'Shared',
+              packageName: '@nested/model',
+              importPath: '@nested/model',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+            },
+          },
+        }),
+      );
+    }
+
+    const plugin = smrtConsumer({
+      packages: ['@test/a', '@test/b'],
+      projectRoot: tmpDir,
+      disableScanning: true,
+      generateTypes: false,
+    });
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
+      'contributed by multiple installed provider graphs',
+    );
   });
 
   it('still bundles providers in browser and component-library builds', async () => {
