@@ -134,8 +134,11 @@ are not prerequisites for unrelated user-package work.
   `ceremonyId` consumed into the unique ledger (replay = refuse; set
   `challengeSecret` for multi-process). Unique arbiters are
   `INSERT … ON CONFLICT DO NOTHING`, never a caught constraint error. Register and
-  self-remove need a session fresh within `freshSessionSeconds`, decided on the
-  stored row, first-class, no ceiling; `users.passkey.manage` follows the PIN's
+  self-remove need a session authenticated within `freshSessionSeconds`, decided
+  on the stored row (`Session.getAuthenticatedAt()`: server-set
+  `data.authenticatedAt`, which tenant-switch rotation carries forward, else
+  `created_at`; malformed fails closed; `setSessionData` refuses the key),
+  first-class, no ceiling; `users.passkey.manage` follows the PIN's
   single-tenant rule, and `removeAllPasskeys` is admin-only, never self. Sessions
   end before and after every removal; `Session.data.passkeyCredentialId` is
   server-set.

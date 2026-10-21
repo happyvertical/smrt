@@ -1327,10 +1327,12 @@ export class PasskeyCredentialService {
     if (session.getPermissionCeiling() !== null) {
       throw new PasskeyCredentialForbiddenError();
     }
-    const mintedAt = session.created_at?.getTime();
+    // The authentication time, not the row's age: tenant-switch rotation
+    // mints a new row but carries the original time forward, and a malformed
+    // stamp reads as null (stale).
+    const mintedAt = session.getAuthenticatedAt()?.getTime();
     if (
       typeof mintedAt !== 'number' ||
-      !Number.isFinite(mintedAt) ||
       Date.now() - mintedAt > this.freshSessionMs
     ) {
       throw new PasskeyReauthenticationRequiredError();

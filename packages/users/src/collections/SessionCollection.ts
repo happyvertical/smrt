@@ -8,6 +8,7 @@ import {
   DEFAULT_SESSION_TTL,
   generateSessionId,
   resolveSessionExpiry,
+  SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -357,6 +358,8 @@ export class SessionCollection extends SmrtCollection<Session> {
     key: string,
     value: unknown,
   ): Promise<boolean> {
+    // Server-set: only tenant-switch rotation writes the authentication time.
+    if (key === SESSION_DATA_KEYS.authenticatedAt) return false;
     const session = await this.findValidSession(sessionId);
     if (!session) return false;
 

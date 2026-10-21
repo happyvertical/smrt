@@ -632,6 +632,99 @@ describe('PasskeyCredentialService', () => {
       ).rejects.toBeInstanceOf(PasskeyCredentialForbiddenError);
     });
 
+    describe('tenant-switch rotation does not launder session age', () => {
+      it('keeps a stale session stale after it switches tenant', async () => {
+        await addMember(personId, otherTenantId);
+        const stale = await actorFor(personId, { ageSeconds: 7 * 86400 });
+        const switched = await sessionService.switchTenant(
+          stale.sessionId,
+          otherTenantId,
+        );
+        expect(switched.rotated).toBe(true);
+        const rotated = (await sessionService.loadSessionContext(
+          switched.sessionId as string,
+        )) as SessionContext;
+        // The replacement row is brand new, yet it is not fresh.
+        await expect(
+          service.beginRegistration({ actor: rotated }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        // Rotating again changes nothing.
+        const again = await sessionService.switchTenant(
+          switched.sessionId as string,
+          tenantId,
+        );
+        const twice = (await sessionService.loadSessionContext(
+          again.sessionId as string,
+        )) as SessionContext;
+        await expect(
+          service.beginRegistration({ actor: twice }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        const { passkey } = await register(
+          newAuthenticator(),
+          await actorFor(personId),
+        );
+        await expect(
+          service.removePasskey({ actor: twice, passkeyId: passkey.id }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+      });
+
+      it('keeps a fresh session fresh after it switches tenant', async () => {
+        await addMember(personId, otherTenantId);
+        const fresh = await actorFor(personId, { ageSeconds: 60 });
+        const switched = await sessionService.switchTenant(
+          fresh.sessionId,
+          otherTenantId,
+        );
+        const rotated = (await sessionService.loadSessionContext(
+          switched.sessionId as string,
+        )) as SessionContext;
+        await expect(
+          service.beginRegistration({ actor: rotated }),
+        ).resolves.toBeTruthy();
+      });
+
+      it('cannot be written through setSessionData', async () => {
+        const stale = await actorFor(personId, { ageSeconds: 7 * 86400 });
+        expect(
+          await sessionService.setSessionData(
+            stale.sessionId,
+            'authenticatedAt',
+            new Date().toISOString(),
+          ),
+        ).toBe(false);
+        await expect(
+          service.beginRegistration({ actor: stale }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+        // Other keys still work.
+        expect(
+          await sessionService.setSessionData(stale.sessionId, 'note', 'x'),
+        ).toBe(true);
+      });
+
+      it.each([
+        ['not a date', 'yesterday-ish'],
+        ['not a string', 12345],
+        ['in the future', new Date(Date.now() + 86_400_000).toISOString()],
+      ])('refuses a malformed stamp (%s)', async (_label, stamp) => {
+        const actor = await actorFor(personId, {
+          data: { authenticatedAt: stamp },
+        });
+        await expect(
+          service.beginRegistration({ actor }),
+        ).rejects.toBeInstanceOf(PasskeyReauthenticationRequiredError);
+      });
+
+      it('trusts a valid recent stamp over an old row', async () => {
+        const actor = await actorFor(personId, {
+          data: { authenticatedAt: new Date().toISOString() },
+          ageSeconds: 7 * 86400,
+        });
+        await expect(
+          service.beginRegistration({ actor }),
+        ).resolves.toBeTruthy();
+      });
+    });
+
     it('refuses an inactive person', async () => {
       const actor = await actorFor(personId);
       const user = await users.get(personId);
