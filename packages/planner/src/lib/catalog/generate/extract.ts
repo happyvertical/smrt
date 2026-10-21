@@ -54,6 +54,8 @@ interface RawObject {
   qualifiedName: string;
   collection: string;
   extends?: string;
+  /** The parent qualified from its import, when resolvable (smrt#4145). */
+  extendsQualified?: string;
   extendsTypeArg?: string;
   /** The class's doc description (emitted by newer scanners only). */
   description?: string;
@@ -284,9 +286,12 @@ function isModel(raw: RawObject, objects: Map<string, RawObject>): boolean {
       0,
       ancestor.qualifiedName.lastIndexOf(':'),
     );
-    const parent = ancestor.extends.includes(':')
-      ? ancestor.extends
-      : `${namespace}:${ancestor.extends}`;
+    // An import-qualified parent may live in another package (smrt#4176).
+    const parent =
+      ancestor.extendsQualified ??
+      (ancestor.extends.includes(':')
+        ? ancestor.extends
+        : `${namespace}:${ancestor.extends}`);
     ancestor = objects.get(parent);
   }
   return (
@@ -397,6 +402,10 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
       .sort(byName);
 
     const fields = extractFields(model, packageName);
+    // An import-qualified parent may live in another package (smrt#4176).
+    const parentId =
+      model.extendsQualified ??
+      (model.extends ? `${packageName}:${model.extends}` : undefined);
     const references = [
       ...new Set(
         fields
@@ -417,9 +426,7 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
       id: model.qualifiedName,
       name: model.className,
       collection: model.collection,
-      ...(model.extends && modelMap.has(`${packageName}:${model.extends}`)
-        ? { extends: `${packageName}:${model.extends}` }
-        : {}),
+      ...(parentId && modelMap.has(parentId) ? { extends: parentId } : {}),
       ...(model.description?.trim()
         ? { description: model.description.trim() }
         : {}),

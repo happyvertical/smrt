@@ -36,8 +36,10 @@ export interface RuntimeCheckResult {
   findings: RuntimeCheckFinding[];
 }
 
-interface ManifestEntryRef {
+export interface ManifestEntryRef {
   manifestPackageName?: string;
+  /** The package whose manifest holds this entry (it may be a consumed copy). */
+  containerPackageName?: string;
   manifestSource: 'project' | 'dependency';
   key: string;
   definition: SmartObjectDefinition;
@@ -189,6 +191,7 @@ function flattenManifestEntries(
       objectDef as SmartObjectDefinition,
       manifestPackageName,
     ),
+    containerPackageName: manifestPackageName,
     manifestSource: source,
     key,
     definition: objectDef as SmartObjectDefinition,
@@ -259,8 +262,8 @@ function resolveEntryByName(
   name: string,
 ): EntryLookupResult {
   const entries = flattenRuntimeEntries(manifests);
-  const qualifiedMatches = entries.filter((entry) =>
-    entryMatchesQualifiedName(entry, name),
+  const qualifiedMatches = distinctClasses(
+    entries.filter((entry) => entryMatchesQualifiedName(entry, name)),
   );
 
   if (qualifiedMatches.length === 1) {
@@ -281,8 +284,8 @@ function resolveEntryByName(
   const shortName = isQualifiedName(name)
     ? parseQualifiedName(name).className
     : name;
-  const shortNameMatches = entries.filter((entry) =>
-    entryMatchesShortName(entry, shortName),
+  const shortNameMatches = distinctClasses(
+    entries.filter((entry) => entryMatchesShortName(entry, shortName)),
   );
 
   if (shortNameMatches.length === 1) {
@@ -304,6 +307,33 @@ function resolveEntryByName(
     kind: 'missing',
     name,
   };
+}
+
+/**
+ * One entry per class. A package's manifest may also carry objects it
+ * consumed from another package under their own qualified names, so one class
+ * can appear in several manifests; that is not an ambiguity (#4176). The copy
+ * held by the owning package's own manifest wins, whatever the order.
+ */
+export function distinctClasses<Entry extends ManifestEntryRef>(
+  matches: Entry[],
+): Entry[] {
+  const byClass = new Map<string, Entry>();
+  const unqualified: Entry[] = [];
+  for (const entry of matches) {
+    const qualifiedName = describeEntry(entry);
+    // Without a package there is no identity to compare: keep every one.
+    if (!isQualifiedName(qualifiedName)) {
+      unqualified.push(entry);
+      continue;
+    }
+    const identity = qualifiedName.toLowerCase();
+    const owned =
+      parseQualifiedName(qualifiedName).packageName ===
+      entry.containerPackageName;
+    if (!byClass.has(identity) || owned) byClass.set(identity, entry);
+  }
+  return [...byClass.values(), ...unqualified];
 }
 
 function describeEntry(entry: ManifestEntryRef): string {

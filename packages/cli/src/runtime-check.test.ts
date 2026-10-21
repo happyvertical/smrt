@@ -11,7 +11,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { formatRuntimeCheckReport, runRuntimeCheck } from './runtime-check.js';
+import {
+  distinctClasses,
+  formatRuntimeCheckReport,
+  type ManifestEntryRef,
+  runRuntimeCheck,
+} from './runtime-check.js';
 
 let tempDir: string;
 
@@ -410,6 +415,78 @@ describe('runRuntimeCheck', () => {
     ).toEqual([]);
   });
 
+  for (const order of ['owner-first', 'copy-first'] as const) {
+    it(`does not call a class ambiguous when another manifest carries a consumed copy of it (#4176, ${order})`, async () => {
+      const writeDep = (
+        name: string,
+        scopeDir: string,
+        objects: Record<string, unknown>,
+      ) => {
+        const depDir = join(tempDir, 'node_modules', '@acme', scopeDir);
+        mkdirSync(join(depDir, '.smrt'), { recursive: true });
+        writeFileSync(
+          join(depDir, 'package.json'),
+          JSON.stringify({
+            name,
+            version: '1.0.0',
+            dependencies: { '@happyvertical/smrt-core': '*' },
+          }),
+          'utf-8',
+        );
+        writeFileSync(
+          join(depDir, '.smrt', 'manifest.json'),
+          JSON.stringify({ version: '1.0.0', packageName: name, objects }),
+          'utf-8',
+        );
+      };
+      const agreement = (fields: Record<string, unknown>) => ({
+        className: 'Agreement',
+        qualifiedName: '@acme/commerce:Agreement',
+        packageName: '@acme/commerce',
+        fields,
+      });
+      writeDep('@acme/commerce', 'commerce', {
+        '@acme/commerce:Agreement': agreement({
+          id: { type: 'text' },
+          customerId: { type: 'text' },
+        }),
+      });
+      // A package manifest may preserve objects it consumed, under their own
+      // qualified names and owner: the same class, not a second candidate.
+      // (Which copy wins is covered by the distinctClasses tests.)
+      writeDep('@acme/reports', 'reports', {
+        '@acme/commerce:Agreement': agreement({
+          id: { type: 'text' },
+          customerId: { type: 'text' },
+          retiredField: { type: 'text' },
+        }),
+      });
+
+      const dependencies = ['@acme/commerce', '@acme/reports'];
+      writeManifest(tempDir, {
+        version: '1.0.0',
+        packageName: '@app/example',
+        smrtDependencies:
+          order === 'owner-first' ? dependencies : dependencies.reverse(),
+        objects: {
+          '@app/example:AdContract': {
+            className: 'AdContract',
+            qualifiedName: '@app/example:AdContract',
+            extends: 'Agreement',
+            extendsQualified: '@acme/commerce:Agreement',
+            fields: { id: { type: 'text' }, siteId: { type: 'text' } },
+          },
+        },
+      });
+      writeFileSync(join(tempDir, '.smrt', 'register.js'), '// registered');
+
+      const result = await runRuntimeCheck(tempDir);
+      expect(findCodes(result.findings)).not.toContain(
+        'ambiguous-extends-reference',
+      );
+    });
+  }
+
   it('reports a missing dependency manifest for an undeclared SMRT dependency', async () => {
     writeManifest(tempDir, {
       version: '1.0.0',
@@ -427,6 +504,47 @@ describe('runRuntimeCheck', () => {
     const result = await runRuntimeCheck(tempDir);
 
     expect(findCodes(result.findings)).toContain('missing-dependency-manifest');
+  });
+});
+
+describe('distinctClasses (#4176)', () => {
+  const copy = (
+    container: string,
+    fields: Record<string, unknown>,
+  ): ManifestEntryRef => ({
+    // A consumed copy keeps its owner's identity: only the container differs.
+    manifestPackageName: '@acme/commerce',
+    containerPackageName: container,
+    manifestSource: 'dependency',
+    key: '@acme/commerce:Agreement',
+    definition: {
+      className: 'Agreement',
+      qualifiedName: '@acme/commerce:Agreement',
+      packageName: '@acme/commerce',
+      fields,
+    } as unknown as ManifestEntryRef['definition'],
+  });
+
+  it("keeps the owner's copy of a class in either order", () => {
+    const owner = copy('@acme/commerce', { customerId: { type: 'text' } });
+    const stale = copy('@acme/reports', { retiredField: { type: 'text' } });
+    expect(distinctClasses([owner, stale])).toEqual([owner]);
+    expect(distinctClasses([stale, owner])).toEqual([owner]);
+  });
+
+  it('keeps distinct classes that share a short name', () => {
+    const commerce = copy('@acme/commerce', {});
+    const sales: ManifestEntryRef = {
+      ...copy('@acme/sales', {}),
+      manifestPackageName: '@acme/sales',
+      key: '@acme/sales:Agreement',
+      definition: {
+        className: 'Agreement',
+        qualifiedName: '@acme/sales:Agreement',
+        fields: {},
+      } as unknown as ManifestEntryRef['definition'],
+    };
+    expect(distinctClasses([commerce, sales])).toHaveLength(2);
   });
 });
 

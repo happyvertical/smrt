@@ -105,6 +105,7 @@ type ManifestSchema = ManifestSchemaLike;
 interface ManifestObjectDef {
   className: string;
   extends?: string;
+  extendsQualified?: string;
   extendsTypeArg?: string | null;
   packageName?: string;
   schema?: ManifestSchema;
@@ -1089,9 +1090,10 @@ function getManifestCollectionAncestors(
       currentKey,
       currentDef,
     );
+    // An import-qualified parent resolves in its own package (#4176).
     const parent = findManifestObject(
       manifest,
-      currentDef.extends,
+      currentDef.extendsQualified ?? currentDef.extends,
       currentPackage,
     );
     if (!parent || visited.has(parent.key)) {

@@ -301,6 +301,37 @@ let manifestAliasInventory:
 const manifestEnsuredAtGeneration = new WeakMap<RegisteredClass, number>();
 
 /**
+ * The parent a manifest entry would set on `registered`, or `undefined` when
+ * the registration already records it (#4176). The import-qualified
+ * `extendsQualified` (#4145) wins over the bare `extends`. A bare name never
+ * replaces a registered qualified parent of the same class name: once two
+ * packages export that name the bare form is ambiguous, and the qualified one
+ * is the parent the class was registered against (from its constructor or its
+ * manifest). A qualified parent that names no registered class — a guess made
+ * before the class's package identity was known — still yields to the bare
+ * name, which resolves by simple name.
+ */
+function manifestParentUpdate(
+  registered: RegisteredClass,
+  manifestEntry: { extends?: string; extendsQualified?: string },
+): string | undefined {
+  const parent = manifestEntry.extendsQualified ?? manifestEntry.extends;
+  if (!parent || registered.extends === parent) {
+    return undefined;
+  }
+  if (
+    !isQualifiedName(parent) &&
+    registered.extends &&
+    isQualifiedName(registered.extends) &&
+    parseQualifiedName(registered.extends).className === parent &&
+    getClasses().has(registered.extends)
+  ) {
+    return undefined;
+  }
+  return parent;
+}
+
+/**
  * Loose view of a stored field's option bag. Field entries are heterogeneous
  * (decorator options, manifest-derived shapes, tenancy markers), so the
  * accessed members are narrowed individually rather than asserting a single
@@ -1956,13 +1987,27 @@ export class ObjectRegistry {
     // and only the child package is installed
     const childClassName = objectDef.className || requestedClassName;
     if (objectDef.extends && objectDef.extends !== childClassName) {
-      const parentName = objectDef.extends;
+      // An import-qualified parent of another package is not in this
+      // manifest; it registers from its own package, never as this
+      // manifest's same-named class (#4176).
+      const parentRef = objectDef.extendsQualified ?? objectDef.extends;
+      const qualifiedParent = isQualifiedName(parentRef)
+        ? parseQualifiedName(parentRef)
+        : undefined;
+      const parentInManifest =
+        !qualifiedParent ||
+        !packageName ||
+        qualifiedParent.packageName === packageName;
+      const parentName = qualifiedParent?.className ?? objectDef.extends;
       const lowerParentName = parentName.toLowerCase();
-      let parentDef =
-        manifest.objects[lowerParentName] || manifest.objects[parentName];
+      let parentDef = parentInManifest
+        ? manifest.objects[parentRef] ||
+          manifest.objects[lowerParentName] ||
+          manifest.objects[parentName]
+        : undefined;
 
       // Search by className field if not found by key (Issue #713)
-      if (!parentDef) {
+      if (!parentDef && parentInManifest) {
         for (const [_key, def] of Object.entries(manifest.objects)) {
           if (
             def.className?.toLowerCase() === lowerParentName ||
@@ -1974,12 +2019,12 @@ export class ObjectRegistry {
         }
       }
 
-      if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
+      if (parentDef && !ObjectRegistry.hasClass(parentRef)) {
         verboseLog(
-          `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
+          `[ObjectRegistry] Also registering parent class ${parentRef} for STI`,
         );
         ObjectRegistry.registerFromManifest(
-          parentDef.className || objectDef.extends,
+          parentDef.className || parentName,
           parentDef,
           manifest.packageName,
         );
@@ -2814,8 +2859,7 @@ export class ObjectRegistry {
       const needsRegistrationHydration =
         (!!manifestEntry.packageName &&
           registered.packageName !== manifestEntry.packageName) ||
-        (!!manifestEntry.extends &&
-          registered.extends !== manifestEntry.extends);
+        manifestParentUpdate(registered, manifestEntry) !== undefined;
 
       if (
         existingFieldCount > 0 &&
@@ -2898,8 +2942,9 @@ export class ObjectRegistry {
       }
 
       // Store extends info for getAllFields() to use (if present)
-      if (manifestEntry.extends) {
-        registered.extends = manifestEntry.extends;
+      const manifestParent = manifestParentUpdate(registered, manifestEntry);
+      if (manifestParent) {
+        registered.extends = manifestParent;
         didHydrate = true;
       }
 

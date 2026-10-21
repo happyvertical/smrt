@@ -609,6 +609,9 @@ importers:
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
       '@happyvertical/smrt-comments':
         specifier: workspace:*
         version: link:../comments
@@ -702,6 +705,9 @@ importers:
       '@happyvertical/smrt-sales':
         specifier: workspace:*
         version: link:../sales
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-secrets':
         specifier: workspace:*
         version: link:../secrets
