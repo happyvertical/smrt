@@ -906,3 +906,198 @@ describe('round5 localized descendant-heading blocker', () => {
     expect(drive.acquireById).not.toHaveBeenCalled();
   });
 });
+
+describe('round6 malformed descendant owner invariants', () => {
+  const lexicalCases = [
+    `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><span data-x=<h4>Teacher Guide</span>${link()}</div>`,
+    `<div class="im-c-row__flex-resource" data-x=<h4><h4>Student Task Statements</h4>${link()}</div>`,
+    `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><span data-x=a="<h4>">Teacher Guide</span>${link()}</div>`,
+  ];
+  it.each(
+    lexicalCases,
+  )('rejects unquoted markup hidden inside a matched tag token without metadata asset requests', async (body) => {
+    const f = setup({ [lesson]: page(body) });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((record) => record.visibility === 'catalog'),
+    ).toEqual([]);
+    expect(f.fetch.mock.calls).toHaveLength(1);
+  });
+  it.each(
+    lexicalCases,
+  )('rejects an old selection when malformed own/descendant tag token appears without PDF GET', async (body) => {
+    const original = setup({ [lesson]: page(block()) });
+    const found = await original.adapter.enumerate({
+      cursor: cursor(),
+      checkpoint,
+    });
+    const selected = found.records.find(
+      (record) => record.visibility === 'catalog',
+    );
+    if (!selected) throw new Error('Valid original source fixture missing');
+    const changed = setup({ [lesson]: page(body) });
+    await expect(
+      changed.adapter.acquire({
+        providerId,
+        stableId: selected.stableId,
+        revision: selected.revision,
+        format: 'pdf',
+      }),
+    ).rejects.toThrow('changed');
+    expect(changed.fetch.mock.calls).toHaveLength(1);
+  });
+  it.each([
+    '"<h4>quoted markup</h4>"',
+    "'<h4>quoted markup</h4>'",
+  ])('preserves properly quoted attribute markup %s', async (value) => {
+    const f = setup({
+      [lesson]: page(
+        `<div class="im-c-row__flex-resource" data-x=${value}><h4>Student Task Statements</h4><span data-y=${value}>Description</span>${link()}</div>`,
+      ),
+    });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((record) => record.visibility === 'catalog'),
+    ).toHaveLength(1);
+    expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+      'GET',
+      'HEAD',
+    ]);
+  });
+
+  it.each([
+    1, 2, 3, 4, 5, 6,
+  ])('rejects a truncated nested h%i start before wrapper close rather than silently ignoring malformed markup', async (level) => {
+    const html = page(
+      `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><div><h${level}</div>${link()}</div>`,
+    );
+    const f = setup({ [lesson]: html });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((record) => record.visibility === 'catalog'),
+    ).toEqual([]);
+    expect(f.fetch.mock.calls).toHaveLength(1);
+  });
+
+  const cases = [1, 2, 3, 4, 5, 6].flatMap((level) =>
+    ['before', 'after'].flatMap((position) =>
+      ['wrapper-close', 'wrong-heading-close', 'eof'].map((shape) => ({
+        level,
+        position,
+        shape,
+      })),
+    ),
+  );
+  function malformedBody(
+    level: number,
+    position: string,
+    shape: string,
+  ): string {
+    const opening = `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4>`;
+    const prefix = position === 'after' ? link() : '';
+    if (shape === 'eof')
+      return `${opening}${prefix}<div><h${level}>Teacher Guide${position === 'before' ? link() : ''}`;
+    const nested = `<div><h${level}>Teacher Guide${shape === 'wrong-heading-close' ? `</h${(level % 6) + 1}>` : ''}</div>`;
+    return `${opening}${prefix}${nested}${position === 'before' ? link() : ''}</div>`;
+  }
+  it.each(
+    cases,
+  )('denies malformed h$level $position PDF ($shape) without asset HEAD/GET', async ({
+    level,
+    position,
+    shape,
+  }) => {
+    const html = page(malformedBody(level, position, shape));
+    expect(parseImFirstEditionPage(html, lesson).artifacts[0]?.allowed).toBe(
+      false,
+    );
+    const f = setup({ [lesson]: html });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((record) => record.visibility === 'catalog'),
+    ).toEqual([]);
+    expect(f.fetch.mock.calls).toHaveLength(1);
+  });
+  it.each(
+    [1, 2, 3, 4, 5, 6].flatMap((level) =>
+      ['before', 'after'].map((position) => ({ level, position })),
+    ),
+  )('denies old-selection acquisition after dangling h$level $position PDF without PDF GET', async ({
+    level,
+    position,
+  }) => {
+    const original = setup({ [lesson]: page(block()) });
+    const found = await original.adapter.enumerate({
+      cursor: cursor(),
+      checkpoint,
+    });
+    const selected = found.records.find(
+      (record) => record.visibility === 'catalog',
+    );
+    if (!selected) throw new Error('Valid original source fixture missing');
+    const changed = setup({
+      [lesson]: page(malformedBody(level, position, 'wrapper-close')),
+    });
+    await expect(
+      changed.adapter.acquire({
+        providerId,
+        stableId: selected.stableId,
+        revision: selected.revision,
+        format: 'pdf',
+      }),
+    ).rejects.toThrow('changed');
+    expect(changed.fetch.mock.calls).toHaveLength(1);
+  });
+  it('invalidates every containing resource owner for malformed non-heading descendants, not just the discarded wrapper', async () => {
+    const bodies = [
+      `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><div><span>Malformed descendant</div>${link()}</div>`,
+      `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><div><span>Malformed descendant</div>${link()}</div>${link(otherId)}</div>`,
+      `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4></unknown>${link()}</div>`,
+      `<table><tr><td>Student Task Statements</td><td><div><h4>Teacher Guide</div>${link()}</td></tr></table>`,
+    ];
+    for (const body of bodies) {
+      const f = setup({ [lesson]: page(body) });
+      const result = await f.adapter.enumerate({
+        cursor: cursor(),
+        checkpoint,
+      });
+      expect(
+        result.records.filter((record) => record.visibility === 'catalog'),
+      ).toEqual([]);
+      expect(f.fetch.mock.calls).toHaveLength(1);
+    }
+  });
+  it.each([
+    1, 2, 3, 4, 5, 6,
+  ])('a sole unclosed or misnested direct h%i never supplies a valid label', (level) => {
+    for (const body of [
+      `<div class="im-c-row__flex-resource"><h${level}>Student Task Statements${link()}</div>`,
+      `<div class="im-c-row__flex-resource"><h${level}>Student Task Statements<div></h${level}>${link()}</div>`,
+      `<div class="im-c-row__flex-resource"><h${level}/>Student Task Statements${link()}</div>`,
+    ])
+      expect(
+        parseImFirstEditionPage(page(body), lesson).artifacts[0]?.allowed,
+      ).toBe(false);
+  });
+  it('keeps properly closed sole direct official labels and exact table rows eligible', async () => {
+    for (const body of [
+      block(),
+      `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><p>Compare 1 < 2 and &lt;escaped&gt; text.</p>${link()}</div>`,
+      `<div class="im-c-row__flex-resource"><h3>Student Handouts</h3>${link()}</div>`,
+      `<table><tr><td>Family Materials</td><td>${link()}</td></tr></table>`,
+    ]) {
+      const f = setup({ [lesson]: page(body) });
+      const result = await f.adapter.enumerate({
+        cursor: cursor(),
+        checkpoint,
+      });
+      expect(
+        result.records.filter((record) => record.visibility === 'catalog'),
+      ).toHaveLength(1);
+      expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+        'GET',
+        'HEAD',
+      ]);
+    }
+  });
+});

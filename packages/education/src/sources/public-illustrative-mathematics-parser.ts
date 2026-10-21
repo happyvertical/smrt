@@ -112,6 +112,40 @@ interface RoleContainer {
   cells: string[];
 }
 
+/** A '<' is legal inside a tag only in a closed, quoted attribute value. */
+function malformedTagToken(token: string): boolean {
+  const prefix = /^<\/?[a-zA-Z][\w:-]*/.exec(token);
+  if (!prefix) return true;
+  const end = token.length - 1;
+  let index = prefix[0].length;
+  while (index < end) {
+    while (index < end && /\s/.test(token[index])) index++;
+    if (index === end || (index === end - 1 && token[index] === '/'))
+      return false;
+    const nameStart = index;
+    while (index < end && !/[\s"'<>/=]/.test(token[index])) index++;
+    if (index === nameStart) return true;
+    while (index < end && /\s/.test(token[index])) index++;
+    if (token[index] !== '=') continue;
+    index++;
+    while (index < end && /\s/.test(token[index])) index++;
+    const quote = token[index];
+    if (quote === '"' || quote === "'") {
+      const close = token.indexOf(quote, index + 1);
+      if (close < 0 || close >= end) return true;
+      index = close + 1;
+    } else {
+      const valueStart = index;
+      while (index < end && !/\s/.test(token[index])) {
+        if (/["'`=<>]/.test(token[index])) return true;
+        index++;
+      }
+      if (index === valueStart) return true;
+    }
+  }
+  return false;
+}
+
 /** Bind each link to its own source row/block; headings never cross containers. */
 function localArtifactLabels(html: string): Map<number, string> {
   const stack: RoleContainer[] = [];
@@ -138,16 +172,32 @@ function localArtifactLabels(html: string): Map<number, string> {
   ]);
   const tokens =
     /<\/?([a-zA-Z][\w:-]*)(?:\s+(?:[^>"']|"[^"]*"|'[^']*')*)?\s*\/?>/g;
+  const invalidateOwners = () => {
+    for (const owner of stack)
+      if (owner.resource || owner.tag === 'tr') owner.malformed = true;
+  };
   let tokenCount = 0;
+  let consumedEnd = 0;
   for (const token of html.matchAll(tokens)) {
     if (++tokenCount > 50_000 || stack.length > 256)
       throw new Error('First-edition role structure exceeds parser bounds.');
+    // Unconsumed markup starts are malformed descendants too (e.g. a tag
+    // truncated before its '>' and then followed by an ancestor close).
+    if (/<[/!]?[a-zA-Z]/.test(html.slice(consumedEnd, token.index)))
+      invalidateOwners();
+    consumedEnd = token.index + token[0].length;
+    const malformed = malformedTagToken(token[0]);
+    if (malformed) invalidateOwners();
     const tag = token[1].toLowerCase();
     if (token[0].startsWith('</')) {
       const index = stack.findLastIndex((node) => node.tag === tag);
-      if (index < 0) continue;
+      if (index < 0) {
+        invalidateOwners();
+        continue;
+      }
       const node = stack[index];
       if (index !== stack.length - 1) {
+        invalidateOwners();
         node.malformed = true;
         for (const dangling of stack.slice(index + 1))
           dangling.malformed = true;
@@ -155,12 +205,7 @@ function localArtifactLabels(html: string): Map<number, string> {
       node.closed = true;
       if (/^h[1-6]$/.test(tag)) {
         const content = imText(html.slice(node.contentStart, token.index));
-        // Count every descendant while retaining only the owner's direct labels.
-        // This also prevents a sole nested heading from supplying authority.
-        for (const owner of stack.slice(0, index)) {
-          if (owner.resource) owner.descendantHeadingCount++;
-        }
-        if (node.parent?.resource)
+        if (!node.malformed && node.parent?.resource)
           node.parent.headings.push({ tag, text: content });
         const row = stack
           .slice(0, index)
@@ -173,6 +218,12 @@ function localArtifactLabels(html: string): Map<number, string> {
         );
       stack.length = index;
       continue;
+    }
+    // Register headings at OPEN: malformed close recovery must not erase them.
+    if (/^h[1-6]$/.test(tag)) {
+      for (const owner of stack)
+        if (owner.resource || owner.tag === 'tr')
+          owner.descendantHeadingCount++;
     }
     const parent = stack.at(-1);
     if (tag === 'a') {
@@ -200,18 +251,20 @@ function localArtifactLabels(html: string): Map<number, string> {
         tag === 'div' &&
         className.split(/\s+/).includes('im-c-row__flex-resource'),
       closed: false,
-      malformed: false,
+      malformed,
       headings: [],
       descendantHeadingCount: 0,
       cells: [],
     });
   }
+  // Open owners or their descendants at EOF are never a complete source boundary.
+  invalidateOwners();
   const labels = new Map<number, string>();
   for (const link of links) {
     const owner = link.owner;
     if (!owner?.closed || owner.malformed) continue;
     if (link.kind === 'row') {
-      if (owner.headings.length === 0)
+      if (owner.descendantHeadingCount === 0 && owner.headings.length === 0)
         labels.set(link.start, owner.cells[0] ?? '');
     } else if (
       owner.descendantHeadingCount === 1 &&
