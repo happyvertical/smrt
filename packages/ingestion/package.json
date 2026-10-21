@@ -81,7 +81,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10",
     "@happyvertical/smrt-content": "workspace:*",
     "@happyvertical/smrt-messages": "workspace:*",

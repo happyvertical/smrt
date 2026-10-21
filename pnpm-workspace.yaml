@@ -135,6 +135,15 @@ overrides:
   # experimental tasks in >=1.24.0 <1.32.0 were not tied to their session.
   '@modelcontextprotocol/client@>=2.0.0 <2.2.0': 2.2.0
   '@modelcontextprotocol/sdk@>=1.12.0 <1.32.0': 1.32.0
+  # @modelcontextprotocol/server >=2.0.0 <2.3.0 has two high advisories
+  # (GHSA-jm63-cq47-j5jp: shared transport/server state); 2.3.1 is patched.
+  '@modelcontextprotocol/server@>=2.0.0 <2.3.0': 2.3.1
+  # vite 8.0.0-8.1.5 and 8.3.0-8.3.2, and launch-editor <=2.14.1 (used by the
+  # vite dev server), are covered by GHSA-587h-7wmj-h5pm; move each to the
+  # patch within its line.
+  'vite@>=8.0.0 <8.1.6': 8.1.6
+  'vite@>=8.3.0 <8.3.3': 8.3.3
+  'launch-editor@<2.14.2': 2.14.2
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future
