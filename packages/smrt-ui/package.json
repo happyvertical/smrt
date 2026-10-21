@@ -24,6 +24,12 @@
       "import": "./dist/components/ui/index.js",
       "default": "./dist/components/ui/index.js"
     },
+    "./display": {
+      "types": "./dist/components/display/index.d.ts",
+      "svelte": "./dist/components/display/index.js",
+      "import": "./dist/components/display/index.js",
+      "default": "./dist/components/display/index.js"
+    },
     "./feedback": {
       "types": "./dist/components/feedback/index.d.ts",
       "svelte": "./dist/components/feedback/index.js",
@@ -181,10 +187,14 @@
   },
   "peerDependencies": {
     "@happyvertical/speech": ">=0.102.5",
+    "pdfjs-dist": ">=5.0.0",
     "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/speech": {
+      "optional": true
+    },
+    "pdfjs-dist": {
       "optional": true
     },
     "svelte": {
@@ -200,6 +210,7 @@
     "@testing-library/user-event": "^14.6.7",
     "@types/node": "24.13.6",
     "axe-core": "^4.13.0",
+    "pdfjs-dist": "^6.2.108",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
