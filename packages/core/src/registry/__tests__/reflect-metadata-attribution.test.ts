@@ -38,6 +38,10 @@ describe('decorators applied through reflect-metadata', () => {
         '/repo/node_modules/.pnpm/reflect-metadata@0.2.2/node_modules/reflect-metadata/Reflect.js',
       ),
     ).toBe(true);
+    // Only the installed package is plumbing, not an app directory of that name.
+    expect(
+      isDecoratorRuntimeFramePath('/repo/src/reflect-metadata/Widget.ts'),
+    ).toBe(false);
     const stack = [
       'Error',
       '    at registerClass (/repo/node_modules/@happyvertical/smrt-core/src/registry.ts:1:1)',
