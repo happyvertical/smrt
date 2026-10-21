@@ -2120,9 +2120,25 @@ async function generateRegistrationFile(
     consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]
       .sort()
       .map((registerPath) => {
+        const lexicalRegistrationPath = relative(projectRoot, registerPath);
+        const registerPathFromProjectRoot =
+          lexicalRegistrationPath === '..' ||
+          lexicalRegistrationPath.startsWith(`..${sep}`) ||
+          isAbsolute(lexicalRegistrationPath)
+            ? relative(
+                canonicalSvelteKitPath(projectRoot),
+                canonicalSvelteKitPath(registerPath),
+              )
+            : lexicalRegistrationPath;
+        const registrationTarget =
+          registerPathFromProjectRoot === '..' ||
+          registerPathFromProjectRoot.startsWith(`..${sep}`) ||
+          isAbsolute(registerPathFromProjectRoot)
+            ? registerPath
+            : resolve(projectRoot, registerPathFromProjectRoot);
         const consumerRegistrationPath = relative(
           configDir,
-          registerPath,
+          registrationTarget,
         ).replace(/\\/g, '/');
         return `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
       })

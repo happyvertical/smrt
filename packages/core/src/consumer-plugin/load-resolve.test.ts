@@ -72,7 +72,7 @@ function buildStart(plugin: Plugin, context: unknown): Promise<void> {
 }
 
 describe('smrtConsumer resolveId', () => {
-  it('resolves a known virtual module to the \\0 consumer virtual id when no .d.ts exists', () => {
+  it('resolves a known virtual module to the \\0 consumer virtual id when no .d.ts exists', async () => {
     const plugin = smrtConsumer({
       packages: [],
       projectRoot,
@@ -80,16 +80,16 @@ describe('smrtConsumer resolveId', () => {
     });
     const resolveId = getHook(plugin, 'resolveId');
 
-    const resolved = resolveId.call({}, '@smrt/routes', undefined);
+    const resolved = await resolveId.call({}, '@smrt/routes', undefined);
     // Namespaced id (#1795): distinct from smrtPlugin's `\0smrt:routes` so the
     // two virtual modules never share a rollup id.
     expect(resolved).toBe('\0smrt-consumer:routes');
-    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+    expect(await resolveId.call({}, '@smrt/web', undefined)).toBe(
       '\0smrt-consumer:web',
     );
   });
 
-  it('resolves to a DISTINCT virtual id from smrtPlugin so neither shadows the other (#1795)', () => {
+  it('resolves to a DISTINCT virtual id from smrtPlugin so neither shadows the other (#1795)', async () => {
     // Regression guard for #1795: smrtPlugin's `@happyvertical/smrt-virt-client`
     // and smrtConsumer's `@smrt/client` used to BOTH resolve to `\0smrt:client`.
     // Sharing that id let the consumer fallback non-deterministically win in
@@ -109,7 +109,11 @@ describe('smrtConsumer resolveId', () => {
         ? producerResolveRaw
         : producerResolveRaw.handler;
 
-    const consumerId = consumerResolve.call({}, '@smrt/client', undefined);
+    const consumerId = await consumerResolve.call(
+      {},
+      '@smrt/client',
+      undefined,
+    );
     const producerId = producerResolve.call(
       producer,
       '@happyvertical/smrt-virt-client',
@@ -120,7 +124,7 @@ describe('smrtConsumer resolveId', () => {
     expect(consumerId).not.toBe(producerId);
   });
 
-  it('resolves only the type-only module to its physical .d.ts file', () => {
+  it('resolves only the type-only module to its physical .d.ts file', async () => {
     const typesDir = 'src/types/smrt-generated';
     mkdirSync(join(projectRoot, typesDir), { recursive: true });
     const declPath = join(projectRoot, typesDir, 'smrt-types.d.ts');
@@ -135,20 +139,20 @@ describe('smrtConsumer resolveId', () => {
     });
     const resolveId = getHook(plugin, 'resolveId');
 
-    const resolved = resolveId.call({}, '@smrt/types', undefined);
+    const resolved = await resolveId.call({}, '@smrt/types', undefined);
     expect(resolved).toBe(declPath);
-    expect(resolveId.call({}, '@smrt/client', undefined)).toBe(
+    expect(await resolveId.call({}, '@smrt/client', undefined)).toBe(
       '\0smrt-consumer:client',
     );
-    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+    expect(await resolveId.call({}, '@smrt/web', undefined)).toBe(
       '\0smrt-consumer:web',
     );
   });
 
-  it('returns null for unknown ids', () => {
+  it('returns null for unknown ids', async () => {
     const plugin = smrtConsumer({ projectRoot, disableScanning: true });
     const resolveId = getHook(plugin, 'resolveId');
-    expect(resolveId.call({}, 'some-other-module', undefined)).toBeNull();
+    expect(await resolveId.call({}, 'some-other-module', undefined)).toBeNull();
   });
 });
 
@@ -558,6 +562,7 @@ describe('smrtConsumer buildStart package discovery', () => {
             qualifiedName: '@acme/widgets:Widget',
             packageName: '@acme/widgets',
             packageVersion: '2.0.0',
+            providerPackageName: '@acme/widgets',
             importPath: '@acme/widgets',
             exportName: 'Widget',
             collection: 'widgets',
@@ -612,9 +617,14 @@ describe('smrtConsumer buildStart package discovery', () => {
     );
 
     expect(existsSync(join(projectRoot, '.smrt', 'manifest.json'))).toBe(false);
-    expect(
-      readFileSync(join(projectRoot, '.smrt', 'register.js'), 'utf8'),
-    ).toContain("from '@acme/widgets'");
+    const registration = readFileSync(
+      join(projectRoot, '.smrt', 'register.js'),
+      'utf8',
+    );
+    expect(registration).toContain(
+      'await importSmrtDependency("@acme/widgets", "@acme/widgets")',
+    );
+    expect(registration).not.toContain("from '@acme/widgets'");
     expect(producerManifest).toContain('LocalThing');
     expect(producerManifest).not.toContain('@acme/widgets:Widget');
     expect(consumerManifest).toContain('@acme/widgets:Widget');
@@ -1998,10 +2008,10 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(tool?.route.path).toEqual(['publish-now']);
 
     const resolveId = getHook(plugin, 'resolveId');
-    expect(resolveId.call({}, '@smrt/client', undefined)).toBe(
+    expect(await resolveId.call({}, '@smrt/client', undefined)).toBe(
       '\0smrt-consumer:client',
     );
-    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+    expect(await resolveId.call({}, '@smrt/web', undefined)).toBe(
       '\0smrt-consumer:web',
     );
     expect(
