@@ -33,11 +33,17 @@ export const DECORATOR_RUNTIME_PACKAGES: readonly string[] = [
   '@swc/helpers',
   '@babel/runtime',
   'tslib',
-  // `reflect-metadata` (pulled in by e.g. `@simplewebauthn/server` and
-  // tsyringe) defines `Reflect.decorate`, which tsc-style `__decorate` helpers
-  // delegate to; every decorator is then applied FROM its Reflect.js frame.
-  'reflect-metadata',
 ];
+
+/**
+ * Plumbing packages matched only as an installed `node_modules/<pkg>/` path.
+ * `reflect-metadata` (pulled in by e.g. `@simplewebauthn/server` and tsyringe)
+ * defines `Reflect.decorate`, which tsc-style `__decorate` helpers delegate
+ * to, so every decorator is then applied FROM its Reflect.js frame. The name
+ * is also a plausible directory in an application's own source tree, so the
+ * match is anchored to `node_modules` rather than any `/reflect-metadata/`.
+ */
+const INSTALLED_ONLY_RUNTIME_PACKAGES: readonly string[] = ['reflect-metadata'];
 
 /**
  * Whether a file path (normalized to forward slashes) lives inside a
@@ -52,6 +58,13 @@ export const DECORATOR_RUNTIME_PACKAGES: readonly string[] = [
  */
 export function isDecoratorRuntimeFramePath(path: string): boolean {
   const lower = path.toLowerCase();
+  if (
+    INSTALLED_ONLY_RUNTIME_PACKAGES.some((pkg) =>
+      lower.includes(`/node_modules/${pkg}/`),
+    )
+  ) {
+    return true;
+  }
   return DECORATOR_RUNTIME_PACKAGES.some(
     (pkg) =>
       lower.includes(`/${pkg}/`) ||
