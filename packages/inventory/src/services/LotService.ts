@@ -36,6 +36,8 @@ import {
   isUniqueViolationError,
   resolveDatabase,
 } from '@happyvertical/smrt-core';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import { NestedTransactionError } from '@happyvertical/sql/query';
 import {
   LotCollection,
   LotCorrectionCollection,
@@ -85,7 +87,9 @@ export interface ReceiveLotInput {
   /**
    * Makes the receipt retry-safe: repeating a call with the same key
    * returns the lot the first call made instead of creating another.
-   * Ignored for unique lots and serials, whose number is the identity.
+   * Ignored for unique lots and serials, whose number is the identity. A
+   * repeated key returns the first lot as it was, even when the other fields
+   * of the repeat differ.
    */
   idempotencyKey?: string;
   receivedQty?: number;
@@ -249,29 +253,53 @@ export class LotService {
    * Run `work` in one database transaction with a tx-bound service. Nested
    * calls join the outer transaction. Same pattern as
    * {@link StockService.withTransaction}.
+   *
+   * A service built on a transaction handle (`createLotService({ db: tx.db })`)
+   * opens a savepoint where the engine has them (PostgreSQL, SQLite). Where it
+   * does not (DuckDB) the handle refuses with `NestedTransactionError` before
+   * running anything, and `work` runs on the current handle instead, still
+   * inside the caller's transaction.
    */
   async withTransaction<T>(work: (tx: LotService) => Promise<T>): Promise<T> {
     if (this.inTransaction) return work(this);
+    return this.scoped(work);
+  }
 
+  /**
+   * Open a transaction (or savepoint) on this service's handle and run `work`
+   * in it, even when already tx-bound. Falls back to the current handle when
+   * the engine cannot nest.
+   */
+  private async scoped<T>(work: (tx: LotService) => Promise<T>): Promise<T> {
     const underlying = (this.lots as unknown as { db?: unknown }).db as
       | { transaction?: (cb: (txDb: unknown) => Promise<T>) => Promise<T> }
       | undefined;
     if (typeof underlying?.transaction !== 'function') return work(this);
 
-    return underlying.transaction(async (txDb) => {
-      const db = txDb as DatabaseConfig;
-      return work(
-        new LotService(
-          db,
-          await LotCollection.create({ db }),
-          await LotUsageCollection.create({ db }),
-          await LotCorrectionCollection.create({ db }),
-          await LotDocumentCollection.create({ db }),
-          await StockMovementCollection.create({ db }),
-          /* inTransaction */ true,
-        ),
-      );
-    });
+    let entered = false;
+    try {
+      return await underlying.transaction(async (txDb) => {
+        entered = true;
+        const db = txDb as DatabaseConfig;
+        return work(
+          new LotService(
+            db,
+            await LotCollection.create({ db }),
+            await LotUsageCollection.create({ db }),
+            await LotCorrectionCollection.create({ db }),
+            await LotDocumentCollection.create({ db }),
+            await StockMovementCollection.create({ db }),
+            /* inTransaction */ true,
+          ),
+        );
+      });
+    } catch (error) {
+      // Refused before the callback ran, so nothing is replayed.
+      if (!entered && error instanceof NestedTransactionError) {
+        return work(this);
+      }
+      throw error;
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -307,23 +335,28 @@ export class LotService {
     if (existing) return this.resolveExisting(existing, unique, lotNumber);
 
     try {
-      return await this.lots.create({
-        skuId,
-        kind,
-        lotNumber,
-        searchKey,
-        identityKey,
-        uniqueNumber: unique,
-        receivedQty: kind === 'serial' ? 1 : (input.receivedQty ?? 0),
-        unit: input.unit ?? '',
-        sourceType: input.sourceType ?? '',
-        sourceId: input.sourceId ?? '',
-        attributes: JSON.stringify(input.attributes ?? {}),
-        status: input.status ?? 'active',
-        receivedAt: input.receivedAt ?? new Date(),
-        receivedByProfileId: input.actorProfileId ?? null,
-        _insertOnly: true,
-      });
+      // Own savepoint: joined to a Postgres transaction, a unique violation
+      // aborts the transaction unless it is contained, and the re-query below
+      // must still be able to run.
+      return await this.scoped((scope) =>
+        scope.lots.create({
+          skuId,
+          kind,
+          lotNumber,
+          searchKey,
+          identityKey,
+          uniqueNumber: unique,
+          receivedQty: kind === 'serial' ? 1 : (input.receivedQty ?? 0),
+          unit: input.unit ?? '',
+          sourceType: input.sourceType ?? '',
+          sourceId: input.sourceId ?? '',
+          attributes: JSON.stringify(input.attributes ?? {}),
+          status: input.status ?? 'active',
+          receivedAt: input.receivedAt ?? new Date(),
+          receivedByProfileId: input.actorProfileId ?? null,
+          _insertOnly: true,
+        }),
+      );
     } catch (error) {
       if (!isUniqueViolationError(error)) throw error;
       const winner = await this.findByIdentity(identityKey);
@@ -338,8 +371,11 @@ export class LotService {
   }
 
   private async findByIdentity(identityKey: string): Promise<Lot | null> {
-    const rows = await this.lots.list({ where: { identityKey }, limit: 1 });
-    return rows[0] ?? null;
+    // Identity is unique per tenant. A caller outside any tenant context sees
+    // every tenant's rows, so match the caller's tenant explicitly.
+    const tenantId = getCurrentTenant()?.tenantId ?? null;
+    const rows = await this.lots.list({ where: { identityKey } });
+    return rows.find((row) => (row.tenantId ?? null) === tenantId) ?? null;
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -469,7 +505,8 @@ export class LotService {
 
   /**
    * Record that a consumer used the lot. Repeating the call for the same
-   * consumer returns the active usage already on record. For an exclusive
+   * consumer returns the active usage already on record, unchanged: a
+   * different `qty` or `movementId` on the repeat is ignored. For an exclusive
    * lot (serials by default) a second consumer throws
    * {@link LotInUseError}. The lot row is saved so two concurrent usages
    * conflict on its revision instead of both landing.
@@ -561,19 +598,21 @@ export class LotService {
     if (!assetId) throw new Error('attachDocument: assetId is required');
     const role = input.role ?? 'certificate';
     return this.atomically(async (tx) => {
-      await tx.requireLot(lotId);
+      const lot = await tx.requireLot(lotId);
       const current = await tx.documents.list({
         where: { lotId, assetId, role },
       });
       const active = current.find((doc) => !doc.detachedAt);
       if (active) return active;
-      return tx.documents.create({
+      const document = await tx.documents.create({
         lotId,
         assetId,
         role,
         attachedAt: new Date(),
         attachedByProfileId: input.actorProfileId ?? null,
       });
+      await lot.save();
+      return document;
     });
   }
 
@@ -625,6 +664,11 @@ export class LotService {
   /**
    * Where a lot went: its usages, movements and documents, plus (as
    * `children`) the lots that consumed it, followed up to `depth` levels.
+   *
+   * Cost: each distinct lot in the trace takes four queries (usages,
+   * movements, documents, and the lot itself). A lot reached by two paths
+   * (a diamond) is expanded once and the same node object appears under both
+   * parents. Bound large graphs with `depth`.
    */
   async traceForward(
     lotId: string,
@@ -632,7 +676,7 @@ export class LotService {
   ): Promise<TraceNode> {
     const depth = options.depth ?? DEFAULT_TRACE_DEPTH;
     const lot = await this.requireLot(lotId);
-    return this.forwardNode(lot, options, depth, new Set([lotId]));
+    return this.forwardNode(lot, options, depth, new Set([lotId]), new Map());
   }
 
   private async forwardNode(
@@ -640,6 +684,23 @@ export class LotService {
     options: TraceOptions,
     depth: number,
     path: Set<string>,
+    memo: Map<string, Promise<TraceNode>>,
+  ): Promise<TraceNode> {
+    const lotId = lot.id as string;
+    const key = `${lotId}:${depth}`;
+    const known = memo.get(key);
+    if (known) return known;
+    const node = this.expandForward(lot, options, depth, path, memo);
+    memo.set(key, node);
+    return node;
+  }
+
+  private async expandForward(
+    lot: Lot,
+    options: TraceOptions,
+    depth: number,
+    path: Set<string>,
+    memo: Map<string, Promise<TraceNode>>,
   ): Promise<TraceNode> {
     const lotId = lot.id as string;
     const usages = await this.usages.list({
@@ -660,6 +721,7 @@ export class LotService {
             options,
             depth - 1,
             new Set([...path, usage.consumerId]),
+            memo,
           ),
         );
       }
@@ -671,6 +733,10 @@ export class LotService {
    * Where a consumer's material came from: one node per lot it used, each
    * with (as `children`) the lots that went into that lot when it was
    * itself an assembly (consumer `('Lot', lotId)`), up to `depth` levels.
+   *
+   * Cost: one usage query per consumer visited plus, per lot, the lot,
+   * movements and documents queries. A lot reached by two paths is expanded
+   * once and shared. Bound large graphs with `depth`.
    */
   async traceBack(
     consumerType: string,
@@ -684,6 +750,7 @@ export class LotService {
       options,
       depth,
       consumerType === 'Lot' ? new Set([consumerId]) : new Set(),
+      new Map(),
     );
   }
 
@@ -693,6 +760,7 @@ export class LotService {
     options: TraceOptions,
     depth: number,
     path: Set<string>,
+    memo: Map<string, Promise<TraceNode | null>>,
   ): Promise<TraceNode[]> {
     const edges = await this.usages.findForConsumer(consumerType, consumerId, {
       includeUnlinked: options.includeUnlinked,
@@ -704,24 +772,41 @@ export class LotService {
     const nodes: TraceNode[] = [];
     for (const [lotId, usages] of byLot) {
       if (path.has(lotId)) continue;
-      const lot = await this.lots.get(lotId);
-      if (!lot) continue;
-      const children =
-        depth > 0
-          ? await this.backNodes(
-              'Lot',
-              lotId,
-              options,
-              depth - 1,
-              new Set([...path, lotId]),
-            )
-          : [];
-      nodes.push({
-        ...(await this.nodeBase(lot, usages, options)),
-        children,
-      });
+      // Edges differ per consumer, so key on the edges too.
+      const key = `${lotId}:${depth}:${usages.map((u) => u.id).join(',')}`;
+      let node = memo.get(key);
+      if (!node) {
+        node = this.expandBack(lotId, usages, options, depth, path, memo);
+        memo.set(key, node);
+      }
+      const resolved = await node;
+      if (resolved) nodes.push(resolved);
     }
     return nodes;
+  }
+
+  private async expandBack(
+    lotId: string,
+    usages: LotUsage[],
+    options: TraceOptions,
+    depth: number,
+    path: Set<string>,
+    memo: Map<string, Promise<TraceNode | null>>,
+  ): Promise<TraceNode | null> {
+    const lot = await this.lots.get(lotId);
+    if (!lot) return null;
+    const children =
+      depth > 0
+        ? await this.backNodes(
+            'Lot',
+            lotId,
+            options,
+            depth - 1,
+            new Set([...path, lotId]),
+            memo,
+          )
+        : [];
+    return { ...(await this.nodeBase(lot, usages, options)), children };
   }
 
   private async nodeBase(

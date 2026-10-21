@@ -10,6 +10,11 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   InventoryLocationCollection,
@@ -475,6 +480,78 @@ describe('LotService', () => {
     });
   });
 
+  describe('joined service', () => {
+    it('works through createLotService({ db: tx.db }) inside a stock transaction', async () => {
+      const lot = await lots.receiveLot({ lotNumber: 'J1', unique: true });
+      await stock.withTransaction(async (tx) => {
+        const joined = await createLotService({ db: tx.db });
+        await joined.recordUsage(lot.id!, {
+          consumerType: 'Job',
+          consumerId: 'j1',
+        });
+        await joined.correctLotNumber(lot.id!, 'J2', { reason: 'typo' });
+        const made = await joined.receiveLot({ lotNumber: 'J3', unique: true });
+        await expect(
+          joined.receiveLot({ lotNumber: 'J3', unique: true }),
+        ).rejects.toBeInstanceOf(DuplicateLotError);
+        await tx.receive(skuA, warehouse, 2, { lotId: made.id });
+      });
+      expect((await lots.lots.get(lot.id!))?.lotNumber).toBe('J2');
+      expect(await lots.usages.findActiveForLot(lot.id!)).toHaveLength(1);
+      expect(await lots.lots.findByLotNumber('J3')).toHaveLength(1);
+    });
+
+    it('rolls the joined work back with the outer transaction', async () => {
+      const lot = await lots.receiveLot({ lotNumber: 'J1' });
+      await expect(
+        stock.withTransaction(async (tx) => {
+          const joined = await createLotService({ db: tx.db });
+          await joined.recordUsage(lot.id!, {
+            consumerType: 'Job',
+            consumerId: 'j1',
+          });
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      expect(await lots.usages.findActiveForLot(lot.id!)).toHaveLength(0);
+    });
+  });
+
+  describe('tenancy', () => {
+    afterEach(() => disableTenancy());
+
+    it("does not treat another tenant's lot as a duplicate or idempotent match", async () => {
+      enableTenancy();
+      const other = await withTenant({ tenantId: 'tenant-b' }, async () => {
+        const a = await lots.receiveLot({ lotNumber: 'T1', unique: true });
+        const k = await lots.receiveLot({
+          lotNumber: 'T2',
+          idempotencyKey: 'k',
+        });
+        return { a, k };
+      });
+      // No tenant context: tenant B's rows are not a match.
+      const mine = await lots.receiveLot({ lotNumber: 'T1', unique: true });
+      expect(mine.id).not.toBe(other.a.id);
+      const mineKeyed = await lots.receiveLot({
+        lotNumber: 'T2',
+        idempotencyKey: 'k',
+      });
+      expect(mineKeyed.id).not.toBe(other.k.id);
+      // Inside tenant B the same call matches B's own rows.
+      await withTenant({ tenantId: 'tenant-b' }, async () => {
+        const again = await lots.receiveLot({
+          lotNumber: 'T2',
+          idempotencyKey: 'k',
+        });
+        expect(again.id).toBe(other.k.id);
+        await expect(
+          lots.receiveLot({ lotNumber: 'T1', unique: true }),
+        ).rejects.toBeInstanceOf(DuplicateLotError);
+      });
+    });
+  });
+
   describe('tracing', () => {
     it('traces forward through assemblies with movements and documents', async () => {
       const raw = await lots.receiveLot({ lotNumber: 'RAW', skuId: skuA });
@@ -541,6 +618,29 @@ describe('LotService', () => {
       expect(nodes.map((n) => n.lot.id)).toEqual([part.id]);
       expect(nodes[0].usages[0].consumerId).toBe('j1');
       expect(nodes[0].children.map((n) => n.lot.id)).toEqual([raw.id]);
+    });
+
+    it('expands a diamond once', async () => {
+      const raw = await lots.receiveLot({ lotNumber: 'RAW' });
+      const left = await lots.receiveLot({ lotNumber: 'LEFT' });
+      const right = await lots.receiveLot({ lotNumber: 'RIGHT' });
+      const top = await lots.receiveLot({ lotNumber: 'TOP' });
+      for (const [from, to] of [
+        [raw, left],
+        [raw, right],
+        [left, top],
+        [right, top],
+      ]) {
+        await lots.recordUsage(from.id!, {
+          consumerType: 'Lot',
+          consumerId: to.id!,
+          exclusive: false,
+        });
+      }
+      const trace = await lots.traceForward(raw.id!);
+      expect(trace.children).toHaveLength(2);
+      expect(trace.children[0].children[0]).toBe(trace.children[1].children[0]);
+      expect(trace.children[0].children[0].lot.id).toBe(top.id);
     });
 
     it('survives cycles', async () => {
