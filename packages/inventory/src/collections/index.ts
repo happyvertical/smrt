@@ -12,5 +12,10 @@
 import '../__smrt-register__.js';
 
 export { InventoryLocationCollection } from './InventoryLocationCollection.js';
+export { LotCollection, lotSearchKey } from './LotCollection.js';
+export { LotCorrectionCollection } from './LotCorrectionCollection.js';
+export { LotDocumentCollection } from './LotDocumentCollection.js';
+export { LotStockLevelCollection } from './LotStockLevelCollection.js';
+export { LotUsageCollection } from './LotUsageCollection.js';
 export { StockLevelCollection } from './StockLevelCollection.js';
 export { StockMovementCollection } from './StockMovementCollection.js';

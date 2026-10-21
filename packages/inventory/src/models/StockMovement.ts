@@ -38,6 +38,7 @@ export interface StockMovementOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   skuId?: string;
   locationId?: string;
+  lotId?: string | null;
   fromState?: StockState | null;
   toState?: StockState | null;
   qty?: number;
@@ -80,6 +81,17 @@ export class StockMovement extends SmrtObject {
   /** Plain string reference to the {@link InventoryLocation} being mutated. */
   @field({ required: true, description: 'The place it moved at.' })
   locationId: string = '';
+
+  /**
+   * Plain string reference to the {@link Lot} that moved; null when the
+   * movement is not tracked by lot. Nullable and additive: existing rows
+   * and SKU-level callers are unaffected.
+   */
+  @field({
+    nullable: true,
+    description: 'The lot that moved, when tracked by lot.',
+  })
+  lotId: string | null = null;
 
   /**
    * Origin state for transitions (e.g. `available` → `allocated` for a
@@ -147,6 +159,7 @@ export class StockMovement extends SmrtObject {
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.skuId !== undefined) this.skuId = options.skuId;
     if (options.locationId !== undefined) this.locationId = options.locationId;
+    if (options.lotId !== undefined) this.lotId = options.lotId;
     if (options.fromState !== undefined) this.fromState = options.fromState;
     if (options.toState !== undefined) this.toState = options.toState;
     if (options.qty !== undefined) this.qty = options.qty;
