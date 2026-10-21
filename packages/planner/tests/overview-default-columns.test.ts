@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
+import { listColumns } from '../src/lib/data/columns.ts';
 import { recordLabel } from '../src/lib/data/labels.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { plannerLoaders } from '../src/lib/overviews/registry.ts';
 import { isDiscriminatorField } from '../src/lib/recipes/policy.ts';
+import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 
 const context = () => ({
   source: createMemoryDataSource(),
@@ -17,6 +19,7 @@ const context = () => ({
 const stock = '@happyvertical/smrt-inventory:StockLevel';
 
 describe('default overview record columns (#4184)', () => {
+  afterEach(() => recipeState.clear());
   it('shows stock identity, quantities and reorder context rather than only state', async () => {
     const data = await plannerLoaders.records({ model: stock }, context());
     expect(data.columns?.map((column) => column.key)).toEqual([
@@ -60,6 +63,112 @@ describe('default overview record columns (#4184)', () => {
       'locationId',
     );
     expect(parent.columns?.map((column) => column.key)).toContain('qty');
+  });
+
+  it('honors recipe Options hidden/advanced fields and labels without narrowing explicit columns', async () => {
+    recipeState.add('inventory.stock');
+    recipeState.save(
+      stock,
+      [
+        {
+          objectRef: stock,
+          fieldName: 'reorderPoint',
+          scopeType: 'app',
+          visibility: 'hidden',
+        },
+        {
+          objectRef: stock,
+          fieldName: 'reorderQuantity',
+          scopeType: 'app',
+          visibility: 'advanced',
+        },
+        {
+          objectRef: stock,
+          fieldName: 'qty',
+          scopeType: 'app',
+          label: 'On hand',
+        },
+      ],
+      [],
+    );
+    const data = await plannerLoaders.records({ model: stock }, context());
+    expect(data.columns?.map((column) => column.key)).toEqual([
+      'skuId',
+      'locationId',
+      'state',
+      'qty',
+    ]);
+    expect(data.columns?.find((column) => column.key === 'qty')?.label).toBe(
+      'On hand',
+    );
+    const explicit = await plannerLoaders.records(
+      { model: stock, columns: 'reorderQuantity,qty,reorderPoint' },
+      context(),
+    );
+    expect(explicit.columns?.map((column) => column.key)).toEqual([
+      'reorderQuantity',
+      'qty',
+      'reorderPoint',
+    ]);
+    // Explicit widget columns keep their original catalog labels and authority.
+    expect(
+      explicit.columns?.find((column) => column.key === 'qty')?.label,
+    ).toBe('Qty');
+    recipeState.reset(stock);
+    const reset = await plannerLoaders.records({ model: stock }, context());
+    expect(reset.columns?.find((column) => column.key === 'qty')?.label).toBe(
+      'Qty',
+    );
+  });
+
+  it('uses applied display order within canonical list ranks and retains readonly business values', async () => {
+    recipeState.add('inventory.stock');
+    recipeState.save(
+      stock,
+      [
+        {
+          objectRef: stock,
+          fieldName: 'qty',
+          scopeType: 'app',
+          displayOrder: 99,
+          locked: true,
+        },
+        {
+          objectRef: stock,
+          fieldName: 'reorderPoint',
+          scopeType: 'app',
+          visibility: 'basic',
+          displayOrder: 50,
+        },
+        {
+          objectRef: stock,
+          fieldName: 'reorderQuantity',
+          scopeType: 'app',
+          visibility: 'basic',
+          displayOrder: 0,
+          label: 'Restock quantity',
+        },
+      ],
+      [],
+    );
+    const model = getModelByQualifiedName(stock)?.model;
+    if (!model) throw new Error('StockLevel missing');
+    const expected = listColumns(recipeState.apply(model).fields).filter(
+      (column) => !column.derive,
+    );
+    const data = await plannerLoaders.records({ model: stock }, context());
+    expect(data.columns?.map((column) => column.key)).toEqual(
+      expected.map((column) => column.name),
+    );
+    expect(data.columns?.slice(-3).map((column) => column.key)).toEqual([
+      'reorderQuantity',
+      'reorderPoint',
+      'qty',
+    ]);
+    expect(
+      data.columns?.find((column) => column.key === 'reorderQuantity')?.label,
+    ).toBe('Restock quantity');
+    expect(data.rows[0]?.cells?.qty).toEqual(expect.any(Number));
   });
 
   it('keeps explicit custom fields authoritative, including their order', async () => {

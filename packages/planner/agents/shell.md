@@ -23,7 +23,7 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `definitions.ts`: one `defineOverview` per section, id = the section's layout id, static (never
   depends on which recipes are on): `shortcuts` then the section's lead model as a full-width `records` list with
   summaries off; automatic record counts are absent. Default record columns reuse the model-list
-  business-field projection, excluding system fields, STI discriminators, the current parent
+  policy-applied business-field projection (visibility, labels and order from recipe Options), excluding system fields, STI discriminators, the current parent
   reference and synthetic list-only calculations. Explicit widget columns stay authoritative;
   references retain their related-record display labels. The shared
   `sectionOverviewDefaults` also drives CookbookApp. Explicit legacy changed.count
