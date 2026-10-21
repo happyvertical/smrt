@@ -55,11 +55,15 @@ import {
 } from 'node:crypto';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
-import type {
-  AuthenticationResponseJSON,
-  PublicKeyCredentialCreationOptionsJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-  RegistrationResponseJSON,
+import {
+  type AuthenticationResponseJSON,
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  type PublicKeyCredentialCreationOptionsJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
+  type RegistrationResponseJSON,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
 } from '@simplewebauthn/server';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPasskeyChallengeCollection } from '../collections/PasskeyChallengeCollection.js';
@@ -86,21 +90,6 @@ import {
   registerPermissionDefinitions,
 } from './PermissionCatalogService.js';
 import { type SessionContext, SessionService } from './SessionService.js';
-
-/**
- * `@simplewebauthn/server` is loaded on first use, never at import time. It
- * depends on `reflect-metadata`, which installs `Reflect.decorate`; a model
- * module evaluated AFTER that point has its `@field`/`@smrt` decorators
- * applied through it and silently registers with no fields. Importing this
- * file (it is re-exported from the package entry) must therefore not be what
- * loads it.
- */
-let webauthnModule: Promise<typeof import('@simplewebauthn/server')> | null =
-  null;
-const webauthn = () => {
-  webauthnModule ??= import('@simplewebauthn/server');
-  return webauthnModule;
-};
 
 /** Login-limiter kind and session `authMethod` for passkey sign-ins. */
 export const PASSKEY_LOGIN_KIND = 'passkey';
@@ -690,7 +679,6 @@ export class PasskeyCredentialService {
    */
   async beginAuthentication(): Promise<PasskeyAuthenticationBegin> {
     const { ceremonyId, challenge } = this.issueCeremony('authentication');
-    const { generateAuthenticationOptions } = await webauthn();
     const options = await generateAuthenticationOptions({
       rpID: this.rpId,
       challenge: Buffer.from(challenge, 'base64url'),
@@ -762,7 +750,6 @@ export class PasskeyCredentialService {
       const user = await this.users.get(stored.userId);
       if (!user?.id) return refuse();
 
-      const { verifyAuthenticationResponse } = await webauthn();
       let verification: Awaited<
         ReturnType<typeof verifyAuthenticationResponse>
       >;
@@ -901,7 +888,6 @@ export class PasskeyCredentialService {
       userId: user.id as string,
       sessionHash: sha256Hex(input.actor.sessionId),
     });
-    const { generateRegistrationOptions } = await webauthn();
     const options = await generateRegistrationOptions({
       rpName: this.rpName,
       rpID: this.rpId,
@@ -956,13 +942,8 @@ export class PasskeyCredentialService {
       throw this.registrationFailed();
     }
 
-    let verification: Awaited<
-      ReturnType<
-        Awaited<ReturnType<typeof webauthn>>['verifyRegistrationResponse']
-      >
-    >;
+    let verification: Awaited<ReturnType<typeof verifyRegistrationResponse>>;
     try {
-      const { verifyRegistrationResponse } = await webauthn();
       verification = await verifyRegistrationResponse({
         response,
         expectedChallenge: ceremony.challenge,
