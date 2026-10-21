@@ -401,7 +401,7 @@ const headingTag = $derived(`h${headingLevel}`);
     </div>
   {/if}
 
-  {#if rows.length === 0}
+  {#if editing && rows.length === 0}
     <p class="smrt-overview__empty">{t(M['ui.overview.empty'])}</p>
   {/if}
   <div

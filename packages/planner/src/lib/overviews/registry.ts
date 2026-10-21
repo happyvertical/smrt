@@ -45,6 +45,7 @@ import {
 } from '@happyvertical/smrt-svelte/screens';
 import { getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogModel } from '../catalog/types.ts';
+import { listColumns } from '../data/columns.ts';
 import { EPOCH, isMoneyField } from '../data/fakes.ts';
 import { humanize, labelKey } from '../data/format.ts';
 import { recordLabel, relationLabels } from '../data/labels.ts';
@@ -52,7 +53,9 @@ import type { DataSource, ModelRecord } from '../data/source.ts';
 import { filteredListPath, modelPath, recordPath } from '../planner/routes.ts';
 import { recipes } from '../recipes/index.ts';
 import { isPlumbing } from '../recipes/plumbing.ts';
+import { isDiscriminatorField } from '../recipes/policy.ts';
 import { inScope } from '../recipes/scope.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 import { screenDefinition } from '../screens/definition.ts';
 import {
   documentTotals,
@@ -258,9 +261,9 @@ function cellRole(roles: readonly FieldRole[] = []): FieldRole | undefined {
 /**
  * The columns a `records` table shows: the `columns` option's field names
  * when given (unknown names are an error tile), else the framework's
- * `relatedColumns` by role (identifier, status, lead date, a party, the
- * amount: five, as `screenRelations` asks), leaving out the field pointing
- * at the page's record.
+ * policy-applied model-list projection, leaving out system fields, list-only calculations
+ * and the field pointing at the page's record. Compact relationship-column
+ * policy still supplies formatting roles for the selected business fields.
  */
 function recordColumns(
   model: CatalogModel,
@@ -270,10 +273,23 @@ function recordColumns(
 ): RecordListColumn[] {
   const definition = screenDefinition(model);
   const exclude = parentField ? [parentField] : [];
-  const keys = parseColumnsOption(option);
-  if (keys.length === 0) {
-    return relatedColumns(definition, roles, { exclude, max: 5 });
-  }
+  const explicit = parseColumnsOption(option);
+  const defaults = explicit.length
+    ? []
+    : listColumns(
+        recipeState
+          .apply(model)
+          .fields.filter(
+            (field) =>
+              !exclude.includes(field.name) &&
+              !isDiscriminatorField(model, field),
+          ),
+      )
+        // The widget cells carry catalog fields, not model-list calculations.
+        .filter((column) => !column.derive);
+  const keys = explicit.length
+    ? explicit
+    : defaults.map((column) => column.name);
   // The framework's own column for a key where it has one (a line's unit
   // price is not summed), else one by the field's roles.
   const known = [
@@ -284,13 +300,16 @@ function recordColumns(
     const field = model.fields.find((f) => f.name === key);
     if (!field) throw new Error(`${model.name} has no field ${key}`);
     const framework = known.find((column) => column.key === key);
-    if (framework) return framework;
+    const label = defaults.find((column) => column.name === key)?.label;
+    if (framework) return label ? { ...framework, label } : framework;
     const role = cellRole(roles[key]);
     return {
       key,
-      label: REF_TYPES.has(field.type)
-        ? humanize(key.replace(/Id$/, ''))
-        : humanize(key),
+      label:
+        label ??
+        (REF_TYPES.has(field.type)
+          ? humanize(key.replace(/Id$/, ''))
+          : humanize(key)),
       ...(role ? { role } : {}),
     };
   });

@@ -116,13 +116,15 @@ describe('the records loader as a table', () => {
     );
     expect(all.length).toBeGreaterThan(2);
     expect(data.rows).toHaveLength(2);
-    // Default columns by role, the parent link left out (a sales document has
-    // a customer only, since smrt 0.56).
+    // Default model-list projection, with role formatting and the parent
+    // customer link left out.
     expect(data.columns?.map((c) => [c.key, c.role])).toEqual([
       ['reference', 'identifier'],
       ['status', 'status'],
-      ['issueDate', 'date'],
       ['totalAmount', 'money'],
+      ['dueDate', 'date'],
+      ['issueDate', 'date'],
+      ['subtotal', 'money'],
     ]);
     expect(data.total).toBe(all.length);
     const row = must(data.rows[0]);

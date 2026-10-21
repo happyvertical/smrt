@@ -65,6 +65,28 @@ const titles = () =>
   );
 
 describe('OverviewGrid (view)', () => {
+  it('keeps an empty overview quiet in read mode and retains edit guidance', async () => {
+    const registry = coreRegistry();
+    const empty = { ...definition, defaults: [] };
+    const { container, rerender } = render(Harness, {
+      options: { definition: empty, registry },
+      gridProps: { editing: false },
+    });
+    expect(container.querySelector('.smrt-overview__empty')).toBeNull();
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    await rerender({
+      options: { definition: empty, registry },
+      gridProps: { editing: true },
+    });
+    expect(
+      container.querySelector('.smrt-overview__empty'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('toolbar')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /add widget/i }),
+    ).toBeInTheDocument();
+  });
+
   it('renders host links inside accessible headings without replacing edit controls', async () => {
     const registry = coreRegistry();
     const loaded = await loadedFor(registry);
