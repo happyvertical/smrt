@@ -288,11 +288,12 @@ describe('RecordScreen (overview)', () => {
     });
   });
 
-  it('renders no panels without loaders', () => {
+  it('renders no panels or authoring guidance without loaders in read mode', () => {
     mount({ loaders: undefined });
     expect(
-      screen.getByText('There are no widgets on this overview yet.'),
-    ).toBeInTheDocument();
+      screen.queryByText('There are no widgets on this overview yet.'),
+    ).toBeNull();
+    // OverviewGrid separately covers retained guidance and Add controls in edit mode.
   });
 });
 

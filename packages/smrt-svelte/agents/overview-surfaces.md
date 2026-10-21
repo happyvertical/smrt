@@ -503,6 +503,9 @@ overview id — so the layout persists **per model kind**, not per record.
 `RecordScreen` renders it with `presentation="plain"` and extends the widget
 context with `record`.
 
+Empty surfaces show authoring guidance only while editing. Read mode remains quiet;
+customization controls and capability checks are unchanged.
+
 ## Host section presentation
 
 `OverviewGrid` defaults to framed cards. Pass `presentation="plain"` for

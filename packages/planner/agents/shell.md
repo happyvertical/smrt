@@ -22,7 +22,10 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
 - `src/lib/overviews/`: section pages as customisable overviews (smrt-svelte `./overview`, smrt#3727).
   `definitions.ts`: one `defineOverview` per section, id = the section's layout id, static (never
   depends on which recipes are on): `shortcuts` then the section's lead model as a full-width `records` list with
-  summaries off; automatic record counts are absent. The shared
+  summaries off; automatic record counts are absent. Default record columns reuse the model-list
+  policy-applied business-field projection (visibility, labels and order from recipe Options), excluding system fields, STI discriminators, the current parent
+  reference and synthetic list-only calculations. Explicit widget columns stay authoritative;
+  references retain their related-record display labels. The shared
   `sectionOverviewDefaults` also drives CookbookApp. Explicit legacy changed.count
   patches project the original metric definition on read, without store writes;
   removed count wins, and unrelated overrides do not resurrect it. Custom metrics
