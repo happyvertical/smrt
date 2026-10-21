@@ -709,7 +709,11 @@ value is shown as text. Text comes from `ui.numeric_keypad.*` and `labels`.
 <script lang="ts">
   import { DocumentViewer, createPdfJsOpener } from '@happyvertical/smrt-ui/display';
   import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
-  const openPdf = createPdfJsOpener({ workerSrc });
+  // Literal imports here let YOUR bundler include pdf.js.
+  const openPdf = createPdfJsOpener({
+    workerSrc,
+    loadLibrary: () => import('pdfjs-dist/legacy/build/pdf.mjs'),
+  });
 </script>
 
 <DocumentViewer src="/api/prints/42/file" mimeType="application/pdf"
@@ -732,8 +736,11 @@ PDF engine). Text comes from `ui.document_viewer.*` and `labels`.
 Inject your own, or omit it for the default, `createPdfJsOpener()`, which
 uses `pdfjs-dist`'s legacy build. `pdfjs-dist` is an **optional peer
 dependency**: install it only if you show PDFs; images need nothing. It is
-imported dynamically on the first PDF, and if it is missing the viewer shows
-`unsupported`. Pass `workerSrc` (a URL such as Vite's `?url` import of
+loaded on the first PDF, and if it is missing the viewer shows `unsupported`.
+The default opener loads it through a variable specifier so an app without
+pdfjs-dist still builds; that means a bundler does not include pdf.js by default.
+An app that wants it bundled passes `loadLibrary` (as above) and `workerSrc`.
+Pass `workerSrc` (a URL such as Vite's `?url` import of
 `pdf.worker.min.mjs`) to render off the main thread; without it the worker
 module is imported and runs on the main thread, which needs no bundler URL
 handling. The canvas is capped at 4096 x 4096 device pixels; zooming past it

@@ -211,6 +211,10 @@ function distance(): number {
 }
 function pointerDown(event: PointerEvent): void {
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  // Keep receiving moves when a finger drifts outside the sheet.
+  (event.currentTarget as HTMLElement | null)?.setPointerCapture?.(
+    event.pointerId,
+  );
   if (pointers.size === 2) pinchStart = distance();
 }
 function pointerMove(event: PointerEvent): void {
@@ -317,7 +321,6 @@ function pointerUp(event: PointerEvent): void {
     onpointermove={pointerMove}
     onpointerup={pointerUp}
     onpointercancel={pointerUp}
-    onpointerleave={pointerUp}
   >
     {#if status === 'loading'}
       <p class="hold" data-smrt-part="loading" role="status">{text.loading}</p>

@@ -7,6 +7,13 @@
  * because it supports the widest range of WebViews. pdf.js never fetches
  * anything itself: the bytes come from the caller.
  *
+ * The default imports use a variable specifier (`importOptional`), so a
+ * consumer's bundler never resolves them: an app WITHOUT pdfjs-dist still
+ * builds, and the missing engine surfaces at runtime. The cost is that pdf.js is
+ * not bundled by default. An app that wants it bundled passes `loadLibrary`
+ * (a function holding its own literal `import('pdfjs-dist/legacy/build/pdf.mjs')`)
+ * and `workerSrc`.
+ *
  * Worker: pass `workerSrc` (for Vite,
  * `import url from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'`) to render
  * off the main thread. Without it the worker module is imported and run on the
@@ -14,6 +21,7 @@
  * and works under svelte-package and any bundler, at the cost of a busier UI
  * thread while a page draws.
  */
+import { importOptional } from '../../utils/import-optional.js';
 import { MAX_CANVAS_PIXELS, renderScale } from './document-viewer-logic.js';
 import { type OpenPdf, PdfEngineUnavailableError } from './pdf-types.js';
 
@@ -48,16 +56,14 @@ export interface PdfJsOpenerOptions {
 }
 
 async function importPdfJs(): Promise<PdfJsLike> {
-  return (await import(
-    'pdfjs-dist/legacy/build/pdf.mjs'
-  )) as unknown as PdfJsLike;
+  return importOptional<PdfJsLike>('pdfjs-dist/legacy/build/pdf.mjs');
 }
 
 async function useMainThreadWorker(): Promise<void> {
   const target = globalThis as { pdfjsWorker?: unknown };
   if (target.pdfjsWorker) return;
-  target.pdfjsWorker = await import(
-    'pdfjs-dist/legacy/build/pdf.worker.min.mjs'
+  target.pdfjsWorker = await importOptional(
+    'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
   );
 }
 
@@ -95,14 +101,22 @@ export function createPdfJsOpener(options: PdfJsOpenerOptions = {}): OpenPdf {
     // pdf.js takes ownership of the buffer it is given; hand it a copy.
     const loading = lib.getDocument({ data: bytes.slice(), enableXfa: false });
     const document = await loading.promise;
-    // One page is drawn at a time: a newer request cancels the one drawing.
+    // One page is drawn at a time: a newer request cancels the one drawing,
+    // and a request superseded while awaiting getPage never draws.
     let drawing: { cancel(): void } | null = null;
+    let generation = 0;
+    const stopDrawing = () => {
+      drawing?.cancel();
+      drawing = null;
+    };
     return {
       pages: document.numPages,
       async renderPage(page, canvas, cssWidth) {
-        drawing?.cancel();
-        drawing = null;
+        const ticket = ++generation;
+        stopDrawing();
         const proxy = await document.getPage(page);
+        if (ticket !== generation) return { width: 0, height: 0 };
+        stopDrawing();
         const base = proxy.getViewport({ scale: 1 });
         const ratio =
           typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -137,6 +151,7 @@ export function createPdfJsOpener(options: PdfJsOpenerOptions = {}): OpenPdf {
         return { width: base.width, height: base.height };
       },
       async destroy() {
+        generation += 1;
         drawing?.cancel();
         await loading.destroy();
       },

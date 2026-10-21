@@ -438,3 +438,81 @@ describe('createPdfJsOpener', () => {
     );
   });
 });
+
+describe('createPdfJsOpener overlapping renders', () => {
+  it('a superseded renderPage never draws', async () => {
+    const pending: Array<(page: unknown) => void> = [];
+    const render = vi.fn(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+    const page = {
+      getViewport: ({ scale }: { scale: number }) => ({
+        width: 600 * scale,
+        height: 800 * scale,
+      }),
+      render,
+    };
+    const library: PdfJsLike = {
+      GlobalWorkerOptions: { workerSrc: 'x' },
+      getDocument: () => ({
+        promise: Promise.resolve({
+          numPages: 2,
+          getPage: () => new Promise((resolve) => pending.push(resolve)),
+        }),
+        destroy: async () => undefined,
+      }),
+    };
+    const doc = await createPdfJsOpener({ loadLibrary: async () => library })(
+      new Uint8Array(),
+    );
+    const canvas = document.createElement('canvas');
+    const first = doc.renderPage(1, canvas, 800);
+    const second = doc.renderPage(2, canvas, 800);
+    pending[0]?.(page);
+    pending[1]?.(page);
+    await Promise.all([first, second]);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DocumentViewer pinch capture', () => {
+  it('captures the pointer and keeps pinching when a finger leaves the sheet', async () => {
+    const { openPdf } = fakePdf(1);
+    const { container } = render(DocumentViewer, {
+      props: {
+        src: '/a.pdf',
+        mimeType: 'application/pdf',
+        label: 'A',
+        fetch: async () => reply('x', 'application/pdf'),
+        openPdf,
+      },
+    });
+    await waitFor(() => expect(btn('Zoom in')).toBeInTheDocument());
+    const sheet = container.querySelector(
+      '[data-smrt-part="sheet"]',
+    ) as HTMLElement;
+    const capture = vi.fn();
+    sheet.setPointerCapture = capture;
+    await fireEvent.pointerDown(sheet, {
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0,
+    });
+    await fireEvent.pointerDown(sheet, {
+      pointerId: 2,
+      clientX: 100,
+      clientY: 0,
+    });
+    expect(capture).toHaveBeenCalledWith(1);
+    expect(capture).toHaveBeenCalledWith(2);
+    await fireEvent.pointerLeave(sheet, { pointerId: 2 });
+    await fireEvent.pointerMove(sheet, {
+      pointerId: 2,
+      clientX: 200,
+      clientY: 0,
+    });
+    await fireEvent.pointerUp(sheet, { pointerId: 2 });
+    expect(sheet).toHaveAttribute('data-zoom', '2');
+  });
+});
