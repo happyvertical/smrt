@@ -109,6 +109,14 @@ describe('LotService', () => {
       expect(await lots.lots.findByLotNumber('L1')).toHaveLength(1);
     });
 
+    it('keeps an over-long idempotency key within the identity column', async () => {
+      const idempotencyKey = 'x'.repeat(400);
+      const a = await lots.receiveLot({ lotNumber: 'L2', idempotencyKey });
+      const b = await lots.receiveLot({ lotNumber: 'L2', idempotencyKey });
+      expect(b.id).toBe(a.id);
+      expect(a.identityKey).toMatch(/^kh:[0-9a-f]{64}$/);
+    });
+
     it('records a serial as unique with quantity one', async () => {
       const s = await lots.receiveLot({
         lotNumber: 'sn-1',

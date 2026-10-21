@@ -17,7 +17,7 @@ Multi-location stock tracking. Strictly industry-neutral — the same primitives
 | `LotCorrection` | Append-only correction trail (`conflictColumns: ['id']`); reason mandatory. |
 | `LotDocument` | Asset attached to a lot (`assetId` is a cross-package ref); detached, never deleted. |
 
-All inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`, and the lot models) (`InventoryLocation`, `StockLevel`, `StockMovement`) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
+All inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`, and the lot models) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
 
 ## StockService — the only sanctioned way to mutate stock
 
