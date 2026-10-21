@@ -78,6 +78,8 @@ export {
   CatalogService,
 } from './catalog-service.js';
 export type {
+  CatalogExclusionSummary,
+  CatalogFailureSummary,
   CatalogSyncReport,
   CatalogSyncStore,
 } from './catalog-sync-service.js';
@@ -195,6 +197,8 @@ export {
 } from './sources/google-drive-adapter.js';
 export { parseIllustrativeMathematicsK5Index } from './sources/illustrative-mathematics-parser.js';
 export { parseOerCommonsRssFeed } from './sources/oer-commons-rss-parser.js';
+export type { PublicIllustrativeMathematicsFirstEditionConfig } from './sources/public-illustrative-mathematics-adapter.js';
+export { createPublicIllustrativeMathematicsFirstEditionAdapter } from './sources/public-illustrative-mathematics-adapter.js';
 export type {
   SubmissionAssetClaim,
   SubmissionIntake,

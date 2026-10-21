@@ -33,3 +33,25 @@ sole `LessonAsset` join; it never makes a browsed resource assignable. A host
 may then supply curriculum and learner identifiers so the service calls the
 existing guardian-authorized learner enrollment API. Missing provider subject
 classification must be supplied explicitly by the guardian.
+
+
+`CatalogSyncPage.policyExclusions` contains normal policy omissions; the service
+returns their bounded invocation-local `exclusionSummary` and never persists it.
+A summary has `total`, up to 32 `{ code, count }` entries in `byCode`, and
+`otherCount`. It is not a full-generation coverage count. Operational `exclusions`
+or `paused` pages stay incomplete at the existing cursor and never withdraw.
+
+The durable failure array stays backward compatible. It aggregates occurrence
+`count` by code, caps retained diagnostics at 31 recent codes plus explicit
+overflow, and declares compacted/truncated detail with `omittedDetailCount`.
+Report-only `failureSummary` separates historical and current invocation counts.
+Never infer that a legacy mixed ledger entry is a policy omission, or treat
+history alone as a current error. A no-cursor historical checkpoint starts the
+new adapter root and retains source rows until actual terminal withdrawal.
+
+Valid coarse K–5 and unconfirmed OER snapshots use policy-only partial pages:
+without a next cursor, their valid metadata is retained and the checkpoint
+pauses for unconfirmed coverage, without inventing an operational failure or
+withdrawing unseen rows. In Drive's catalog adapter, definite unsupported or
+out-of-boundary shortcut omissions are policy; missing revisions and inaccessible
+targets remain operational failures. The direct Drive discovery API is unchanged.

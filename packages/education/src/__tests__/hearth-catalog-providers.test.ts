@@ -160,7 +160,7 @@ describe('Hearth catalog providers', () => {
     ).resolves.toMatchObject({
       complete: false,
       records: [{ stableId: 'k5-family-grade-4' }],
-      exclusions: [{ code: 'partial_provider_coverage' }],
+      policyExclusions: [{ code: 'partial_provider_coverage' }],
     });
     await expect(
       createOerCommonsRssAdapter({
@@ -170,7 +170,7 @@ describe('Hearth catalog providers', () => {
     ).resolves.toMatchObject({
       complete: false,
       records: [{ stableId: 'oer-1' }],
-      exclusions: [{ code: 'partial_provider_coverage' }],
+      policyExclusions: [{ code: 'partial_provider_coverage' }],
     });
   });
 

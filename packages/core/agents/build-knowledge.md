@@ -131,6 +131,9 @@ recorded `packageName` — a plain overwrite in either direction silently drops
 the other's objects, and the last pass of a multi-environment build is not
 reliably the aggregating one (#1760, #2925). `dist/manifest.json` stays
 local-only: a published package must not carry its dependencies' objects.
+Core's canonical generator excludes temporary `__test-*` source roots as well
+as test files and `__tests__`; prepack verifies fresh and reused manifests
+contain no test-artifact marker or fixture source provenance (#4190).
 
 The schema-version-1 object projection is additive and high-signal: it retains
 normalized tenant mode/field, explicit `cti`/`sti` strategy, conflict columns,
