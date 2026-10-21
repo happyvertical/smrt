@@ -1790,6 +1790,11 @@ async function generateRegistrationFile(
     const collectionExportName = def.collectionExportName;
     const hasCollection = def.hasCollection; // Check if collection class actually exists
     const tableName = def.collection || objectName.toLowerCase();
+    const qualifiedName =
+      def.qualifiedName ||
+      (objectName.includes(':')
+        ? objectName
+        : `${def.packageName}:${def.className || exportName}`);
 
     const appResolvable = isAppResolvableImport(importPath);
     const providerPackageName = def.providerPackageName;
@@ -1845,7 +1850,10 @@ async function generateRegistrationFile(
     // Only register collection if it exists
     if (collectionBinding) {
       registrations.push(
-        `if (${collectionBinding}) ObjectRegistry.registerCollection('${tableName}', ${collectionBinding});`,
+        `if (${collectionBinding}) {
+  ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${collectionBinding});
+  ObjectRegistry.registerCollection(${JSON.stringify(tableName)}, ${collectionBinding});
+}`,
       );
     }
 

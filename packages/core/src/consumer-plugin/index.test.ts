@@ -501,10 +501,12 @@ describe('smrtConsumer registration generation', () => {
       join(coreDir, 'index.js'),
       [
         'const classes = globalThis.__fixtureSmrtClasses ??= new Map();',
+        'const collections = globalThis.__fixtureSmrtCollections ??= new Map();',
         'export const ObjectRegistry = {',
-        "  register(ctor, config) { classes.set(config.packageName + ':' + config.name, { constructor: ctor }); },",
+        "  register(ctor, config) { const qualifiedName = config.packageName + ':' + config.name; classes.set(qualifiedName, { constructor: ctor, name: config.name, qualifiedName }); },",
         "  getClassInPackage(packageName, name) { return classes.get(packageName + ':' + name); },",
-        '  registerCollection(_name, ctor) { for (const entry of classes.values()) entry.collectionConstructor = ctor; },',
+        '  registerCollection(name, ctor) { const entry = classes.get(name) ?? [...classes.values()].find((candidate) => candidate.name === name); if (entry) entry.collectionConstructor = ctor; collections.set(name, ctor); },',
+        '  async getCollection(name) { const entry = classes.get(name) ?? [...classes.values()].find((candidate) => candidate.name === name); const ctor = entry?.collectionConstructor ?? collections.get(name) ?? class DefaultCollection {}; return new ctor(); },',
         '};',
       ].join('\n'),
     );
@@ -543,7 +545,7 @@ describe('smrtConsumer registration generation', () => {
         "import Widget from '@test/pkg/themes';",
         "import { render } from 'svelte/server';",
         "const registeredModel = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.constructor;",
-        "const registeredCollection = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.collectionConstructor;",
+        "const registeredCollection = (await ObjectRegistry.getCollection('@happyvertical/smrt-model:NestedModel')).constructor;",
         'const [providerModel, providerCollection] = await loadModelConstructors();',
         "console.log(JSON.stringify({ imagePayload, modelIdentity: registeredModel === providerModel, collectionIdentity: registeredCollection === providerCollection, html: render(Widget, { props: { label: 'compiled' } }).body }));",
       ].join('\n'),
