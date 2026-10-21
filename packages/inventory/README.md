@@ -220,6 +220,8 @@ const sources = await lots.traceBack('ProductionOrder', consumerId); // where it
 
 A lot number is not unique by default (one supplier lot can arrive on two receipts); pass `unique: true`, or `kind: 'serial'`, to make it so, or `idempotencyKey` to make a receipt retry-safe. A repeated `idempotencyKey` returns the first lot even if other fields differ, and a repeated `recordUsage` for one consumer returns the existing usage unchanged. `StockService` ignores `lot.status`; callers decide what a quarantined lot may do. Corrections always need a reason. No authorization is checked in the package; callers authorize and pass `actorProfileId`.
 
+Existing deployments must generate and apply their normal s-m-r-t schema migration before using lots: five new tables (`inventory_lots`, `inventory_lot_stock_levels`, `inventory_lot_usages`, `inventory_lot_corrections`, `inventory_lot_documents`) and a nullable `lot_id` on `inventory_stock_movements` (UUID on PostgreSQL/DuckDB, text on SQLite). Existing rows and `StockLevel`'s unique key are unchanged; runtime reads do not create tables.
+
 ### Types
 
 | Export | Description |

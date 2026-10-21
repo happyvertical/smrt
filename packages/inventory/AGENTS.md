@@ -54,7 +54,7 @@ All methods reject zero / negative / non-finite quantities except `adjust`, whic
 - `traceForward(lotId)` / `traceBack(consumerType, consumerId)` follow `consumerType: 'Lot'` usages with a path-based cycle guard and `depth` (default 10).
 - `StockService` does not consult `lot.status`: callers decide what a quarantined or void lot may do. A repeated `idempotencyKey` returns the first lot even if the other fields differ; a repeated `recordUsage` for the same consumer returns the existing usage unchanged (its `qty` is ignored).
 - No authorization inside the package; callers authorize. Nothing assumes an id format, so a consumer's data migration may insert rows with its own ids.
-- Schema upgrade is additive: five new tables and one nullable column, `inventory_stock_movements.lot_id`. `StockLevel`'s unique key is unchanged. The `syncSchema` path creates them on first boot; nothing needs copying.
+- Schema upgrade is additive: five new tables and one nullable column, `inventory_stock_movements.lot_id`. `StockLevel`'s unique key is unchanged. Runtime never creates schema: generate and apply the normal migration first (`smrt doctor --db`); no data copy is needed.
 
 ## Opt-in DispatchBus hooks
 
