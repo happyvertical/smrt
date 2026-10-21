@@ -769,8 +769,11 @@ export class PasskeyCredentialService {
     const lease = await this.limiter.reserve({
       kind: PASSKEY_LOGIN_KIND,
       // What the client submitted, never a resolved user: unknown and wrong
-      // credentials take the same path.
-      subject: submittedId,
+      // credentials take the same path. Prefixed so a submitted id that
+      // happens to equal a user id (any UUID is valid base64url) never pools
+      // with that person's PIN or password budget: an unauthenticated caller
+      // must not be able to lock another credential kind.
+      subject: submittedId ? `${PASSKEY_LOGIN_KIND}:${submittedId}` : null,
       source,
       metadata: {
         tenantId:

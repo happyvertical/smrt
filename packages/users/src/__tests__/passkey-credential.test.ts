@@ -22,6 +22,7 @@ import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import {
+  LoginAttemptLimiter,
   type LoginAuditEntry,
   LoginRateLimitError,
 } from '../services/LoginAttemptLimiter.js';
@@ -209,16 +210,6 @@ describe('PasskeyCredentialService', () => {
     );
     options = { db: { type: 'sqlite', url: dbPath } };
     users = await UserCollection.create(options);
-    require('node:fs').writeFileSync(
-      '/tmp/claude-1000/t3.txt',
-      JSON.stringify(
-        (
-          await users.db.query(
-            "select name from sqlite_master where type='table'",
-          )
-        ).rows.map((x: any) => x.name),
-      ),
-    );
     sessions = await SessionCollection.create(options);
     memberships = await MembershipCollection.create(options);
     passkeys = await UsersPasskeyCredentialCollection.create(options);
@@ -1144,6 +1135,33 @@ describe('PasskeyCredentialService', () => {
       await expect(
         signIn(authenticator, { ipAddress: '203.0.113.99' }),
       ).rejects.toBeInstanceOf(LoginRateLimitError);
+    });
+
+    it("never pools a submitted credential id with another kind's budget for the same string", async () => {
+      // Any UUID is valid base64url, so an unauthenticated caller can submit a
+      // victim's user id as the "credential id". Those failures must not
+      // exhaust the victim's PIN/password subject budget.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await expect(
+          service.finishAuthentication({
+            ceremonyId: 'x',
+            response: { id: personId },
+            ipAddress: `203.0.113.${attempt + 1}`,
+          }),
+        ).rejects.toBeInstanceOf(PasskeyCredentialError);
+      }
+      const pin = await LoginAttemptLimiter.create({
+        ...options,
+        maxAttempts: 3,
+        windowSeconds: 60,
+        audit: false,
+      });
+      const lease = await pin.reserve({
+        kind: 'pin',
+        subject: personId,
+        source: '198.51.100.7',
+      });
+      expect(lease.allowed).toBe(true);
     });
 
     it('reserves before any other work: a malformed body is still a counted attempt', async () => {
