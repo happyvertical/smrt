@@ -24,6 +24,7 @@ import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestColl
 import { UsersLoginAttemptCollection } from '../collections/LoginAttemptCollection.js';
 import { UsersLoginAuditEventCollection } from '../collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection.js';
+import { UsersPasskeyChallengeCollection } from '../collections/PasskeyChallengeCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
@@ -33,6 +34,7 @@ import {
   LOGIN_ATTEMPTS_RETENTION_TASK,
   LOGIN_AUDIT_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
+  PASSKEY_CHALLENGES_RETENTION_TASK,
   registerUserRetentionTasks,
   SESSIONS_RETENTION_TASK,
   unregisterUserRetentionTasks,
@@ -399,6 +401,73 @@ describe('login limiter and audit retention tasks (#3273)', () => {
           task.task === LOGIN_ATTEMPTS_RETENTION_TASK,
       ),
     ).toBe(false);
+  });
+});
+
+describe('passkey challenge retention (#3275)', () => {
+  const seed = async (
+    challenges: UsersPasskeyChallengeCollection,
+    hash: string,
+    expiresAt: Date,
+  ) => {
+    expect(await challenges.consume(hash, 'authentication', expiresAt)).toBe(
+      true,
+    );
+  };
+
+  it('reaps consumed challenges only after their ceremony expired', async () => {
+    const challenges = await UsersPasskeyChallengeCollection.create({ db });
+    await seed(challenges, 'expired-1', new Date(Date.now() - MINUTE_MS));
+    await seed(challenges, 'expired-2', new Date(Date.now() - 60 * MINUTE_MS));
+    await seed(challenges, 'live', new Date(Date.now() + 5 * MINUTE_MS));
+
+    registerUserRetentionTasks();
+    const dryRun = await runRetentionSweep(db, { dryRun: true });
+    expect(
+      dryRun.tasks.find(
+        (task) => task.task === PASSKEY_CHALLENGES_RETENTION_TASK,
+      )?.pruned,
+    ).toBe(2);
+    expect(await countRows('users_passkey_challenges')).toBe(3);
+
+    const swept = await runRetentionSweep(db);
+    expect(
+      swept.tasks.find(
+        (task) => task.task === PASSKEY_CHALLENGES_RETENTION_TASK,
+      )?.pruned,
+    ).toBe(2);
+    expect(await countRows('users_passkey_challenges')).toBe(1);
+    // The live challenge is still a replay guard.
+    expect(
+      await challenges.consume(
+        'live',
+        'authentication',
+        new Date(Date.now() + MINUTE_MS),
+      ),
+    ).toBe(false);
+
+    const optedOut = await runRetentionSweep(db, {
+      tasks: { [PASSKEY_CHALLENGES_RETENTION_TASK]: false },
+    });
+    expect(
+      optedOut.tasks.find(
+        (task) => task.task === PASSKEY_CHALLENGES_RETENTION_TASK,
+      )?.skipped,
+    ).toBe('disabled');
+  });
+
+  it('indexes expires_at on the challenge ledger', async () => {
+    await UsersPasskeyChallengeCollection.create({ db });
+    const result = await db.query(
+      `SELECT name, tbl_name FROM sqlite_master WHERE type = 'index'`,
+    );
+    expect(
+      result.rows.some(
+        (row) =>
+          row.tbl_name === 'users_passkey_challenges' &&
+          String(row.name).includes('expires_at'),
+      ),
+    ).toBe(true);
   });
 });
 

@@ -51,6 +51,8 @@ const EXPECTED_CLI_CRUD: Record<string, readonly string[]> = {
   UsersOAuthRefreshGrant: [],
   UsersOAuthRefreshFamily: [],
   UsersOAuthAccessTokenRevocation: [],
+  UsersPasskeyCredential: [],
+  UsersPasskeyChallenge: [],
   Membership: ['list', 'get'],
   MembershipOverride: ['list', 'get'],
   User: ['list', 'get'],

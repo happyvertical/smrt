@@ -67,6 +67,9 @@ const LOCKED_MODELS = [
   'User',
   'Tenant',
   'Group',
+  // Credential material and its replay ledger (#3275): closed surfaces.
+  'UsersPasskeyCredential',
+  'UsersPasskeyChallenge',
 ];
 
 type SurfaceConfig = {
