@@ -131,7 +131,9 @@ function findInstalledPackageJson(
   packageName: string,
   searchFrom: string,
 ): string | undefined {
-  let currentDir = searchFrom;
+  let currentDir = fs.existsSync(searchFrom)
+    ? fs.realpathSync(searchFrom)
+    : path.resolve(searchFrom);
   while (true) {
     const candidate = path.join(
       currentDir,
@@ -139,7 +141,7 @@ function findInstalledPackageJson(
       packageName,
       'package.json',
     );
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate)) return fs.realpathSync(candidate);
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir) return undefined;
     currentDir = parentDir;

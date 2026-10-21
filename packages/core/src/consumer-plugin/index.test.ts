@@ -271,6 +271,166 @@ describe('smrtConsumer registration generation', () => {
     );
   });
 
+  it('resolves pnpm-linked dependencies from the provider physical context', async () => {
+    const providerLink = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const virtualProviderModules = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@test+pkg@1.2.3',
+      'node_modules',
+    );
+    const physicalProvider = join(virtualProviderModules, '@test', 'pkg');
+    const physicalModel = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@happyvertical+smrt-model@2.0.0',
+      'node_modules',
+      '@happyvertical',
+      'smrt-model',
+    );
+    const physicalCore = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@happyvertical+smrt-core@2.0.0',
+      'node_modules',
+      '@happyvertical',
+      'smrt-core',
+    );
+    const physicalTenancy = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@happyvertical+smrt-tenancy@2.0.0',
+      'node_modules',
+      '@happyvertical',
+      'smrt-tenancy',
+    );
+    rmSync(providerLink, { recursive: true, force: true });
+    for (const directory of [
+      physicalProvider,
+      physicalModel,
+      physicalCore,
+      physicalTenancy,
+    ]) {
+      mkdirSync(directory, { recursive: true });
+    }
+    mkdirSync(join(physicalProvider, 'dist'), { recursive: true });
+    mkdirSync(join(virtualProviderModules, '@happyvertical'), {
+      recursive: true,
+    });
+    symlinkSync(physicalProvider, providerLink, 'dir');
+    symlinkSync(
+      physicalModel,
+      join(virtualProviderModules, '@happyvertical', 'smrt-model'),
+      'dir',
+    );
+    symlinkSync(
+      physicalCore,
+      join(virtualProviderModules, '@happyvertical', 'smrt-core'),
+      'dir',
+    );
+    mkdirSync(join(physicalCore, 'node_modules', '@happyvertical'), {
+      recursive: true,
+    });
+    symlinkSync(
+      physicalTenancy,
+      join(physicalCore, 'node_modules', '@happyvertical', 'smrt-tenancy'),
+      'dir',
+    );
+
+    writeFileSync(
+      join(physicalProvider, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        dependencies: {
+          '@happyvertical/smrt-model': '2.0.0',
+          '@happyvertical/smrt-core': '2.0.0',
+        },
+      }),
+    );
+    writeFileSync(
+      join(physicalProvider, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@happyvertical/smrt-model:NestedModel': {
+            className: 'NestedModel',
+            packageName: '@happyvertical/smrt-model',
+            importPath: '@happyvertical/smrt-model',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(physicalModel, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-model', version: '2.0.0' }),
+    );
+    writeFileSync(
+      join(physicalCore, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        version: '2.0.0',
+        dependencies: { '@happyvertical/smrt-tenancy': '2.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(physicalTenancy, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-tenancy', version: '2.0.0' }),
+    );
+    for (const [packageName, version] of [
+      ['smrt-model', '1.0.0'],
+      ['smrt-core', '1.0.0'],
+      ['smrt-tenancy', '1.0.0'],
+    ]) {
+      const packageDir = join(
+        tmpDir,
+        'node_modules',
+        '@happyvertical',
+        packageName,
+      );
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(
+        join(packageDir, 'package.json'),
+        JSON.stringify({ name: `@happyvertical/${packageName}`, version }),
+      );
+    }
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      projectRoot: tmpDir,
+      disableScanning: true,
+      generateTypes: false,
+    });
+    const configHook = plugin.config;
+    const config = await (typeof configHook === 'function'
+      ? configHook.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        })
+      : configHook?.handler.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        }));
+    expect((config as any).ssr.external).toEqual(['@test/pkg']);
+
+    await buildStart(plugin, {} as any);
+    const registration = readFileSync(
+      join(tmpDir, '.smrt/register.js'),
+      'utf8',
+    );
+    expect(registration).toContain(
+      'await importSmrtDependency("@happyvertical/smrt-model", "@test/pkg")',
+    );
+    expect(registration).not.toContain("from '@happyvertical/smrt-model'");
+  });
+
   it('follows nested-only SMRT dependencies from each owning package context', async () => {
     const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
     const bridgeDir = join(
@@ -693,18 +853,56 @@ describe('smrtConsumer registration generation', () => {
   });
 
   it('rejects one qualified object contributed by distinct provider graphs', async () => {
+    const appModelDir = join(tmpDir, 'node_modules', '@nested', 'model');
+    mkdirSync(appModelDir, { recursive: true });
+    writeFileSync(
+      join(appModelDir, 'package.json'),
+      JSON.stringify({ name: '@nested/model', version: 'app' }),
+    );
+
     for (const provider of ['a', 'b']) {
-      const providerDir = join(tmpDir, 'node_modules', '@test', provider);
-      const modelDir = join(providerDir, 'node_modules', '@nested', 'model');
+      const providerLink = join(tmpDir, 'node_modules', '@test', provider);
+      const virtualProviderModules = join(
+        tmpDir,
+        'node_modules',
+        '.pnpm',
+        `@test+${provider}@1.0.0`,
+        'node_modules',
+      );
+      const providerDir = join(virtualProviderModules, '@test', provider);
+      const modelDir = join(
+        tmpDir,
+        'node_modules',
+        '.pnpm',
+        `@nested+model@${provider}`,
+        'node_modules',
+        '@nested',
+        'model',
+      );
       mkdirSync(join(providerDir, 'dist'), { recursive: true });
       mkdirSync(modelDir, { recursive: true });
+      mkdirSync(join(virtualProviderModules, '@nested'), { recursive: true });
+      symlinkSync(providerDir, providerLink, 'dir');
+      symlinkSync(
+        modelDir,
+        join(virtualProviderModules, '@nested', 'model'),
+        'dir',
+      );
       writeFileSync(
         join(providerDir, 'package.json'),
-        JSON.stringify({ name: `@test/${provider}`, type: 'module' }),
+        JSON.stringify({
+          name: `@test/${provider}`,
+          type: 'module',
+          dependencies: { '@nested/model': provider },
+        }),
       );
       writeFileSync(
         join(modelDir, 'package.json'),
-        JSON.stringify({ name: '@nested/model', type: 'module' }),
+        JSON.stringify({
+          name: '@nested/model',
+          version: provider,
+          type: 'module',
+        }),
       );
       writeFileSync(
         join(providerDir, 'dist', 'manifest.json'),
