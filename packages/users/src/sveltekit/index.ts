@@ -115,6 +115,12 @@ export {
   resolveMobileUploadDedupKey,
 } from './mobile-handlers.js';
 export {
+  type CreatePasskeyCredentialHandlersOptions,
+  createPasskeyCredentialHandlers,
+  type PasskeyCredentialHandlers,
+  type PasskeyRequestEvent,
+} from './passkey-handlers.js';
+export {
   type CreatePasswordCredentialHandlersOptions,
   createPasswordCredentialHandlers,
   type PasswordCredentialHandlers,
