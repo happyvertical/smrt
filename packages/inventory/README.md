@@ -218,7 +218,7 @@ const trace = await lots.traceForward(lot.id);        // where it went
 const sources = await lots.traceBack('ProductionOrder', consumerId); // where it came from
 ```
 
-A lot number is not unique by default (one supplier lot can arrive on two receipts); pass `unique: true`, or `kind: 'serial'`, to make it so, or `idempotencyKey` to make a receipt retry-safe. Corrections always need a reason. No authorization is checked in the package; callers authorize and pass `actorProfileId`.
+A lot number is not unique by default (one supplier lot can arrive on two receipts); pass `unique: true`, or `kind: 'serial'`, to make it so, or `idempotencyKey` to make a receipt retry-safe. A repeated `idempotencyKey` returns the first lot even if other fields differ, and a repeated `recordUsage` for one consumer returns the existing usage unchanged. `StockService` ignores `lot.status`; callers decide what a quarantined lot may do. Corrections always need a reason. No authorization is checked in the package; callers authorize and pass `actorProfileId`.
 
 ### Types
 
