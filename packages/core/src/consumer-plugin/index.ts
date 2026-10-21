@@ -105,6 +105,9 @@ interface ConsumerPackageJson {
   version?: string;
   main?: string;
   exports?: Record<string, unknown>;
+  dependencies?: Record<string, unknown>;
+  optionalDependencies?: Record<string, unknown>;
+  peerDependencies?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -611,6 +614,103 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     return { names: packages, explicit: packages.length > 0 };
   }
 
+  /**
+   * Keep consumed providers and their SMRT runtime graph in Node's installed
+   * package context during SSR. Native-backed dependencies (such as sharp)
+   * resolve relative to that context, and keeping core/tenancy alongside the
+   * provider prevents the server bundle from creating a second registry or
+   * AsyncLocalStorage instance.
+   */
+  function resolveConsumerSsrExternalPackages(
+    providerPackages: readonly string[],
+  ): string[] {
+    const hasSvelteExport = (value: unknown): boolean => {
+      if (typeof value === 'string') return value.endsWith('.svelte');
+      if (!value || typeof value !== 'object') return false;
+      return Object.entries(value).some(
+        ([condition, target]) =>
+          condition === 'svelte' || hasSvelteExport(target),
+      );
+    };
+    const external = new Set<string>();
+    const visited = new Set<string>();
+    const pending = providerPackages.map((packageName) => ({
+      packageName,
+      searchFrom: projectRoot,
+    }));
+    while (pending.length > 0) {
+      const candidate = pending.pop();
+      if (!candidate) continue;
+      const { packageName, searchFrom } = candidate;
+
+      let packageJsonPath: string | undefined;
+      let currentDir = searchFrom;
+      while (true) {
+        const candidatePath = path.join(
+          currentDir,
+          'node_modules',
+          packageName,
+          'package.json',
+        );
+        if (fs.existsSync(candidatePath)) {
+          packageJsonPath = candidatePath;
+          break;
+        }
+        const parentDir = path.dirname(currentDir);
+        if (parentDir === currentDir) break;
+        currentDir = parentDir;
+      }
+      const visitKey = packageJsonPath ?? `${searchFrom}\0${packageName}`;
+      if (visited.has(visitKey)) continue;
+      visited.add(visitKey);
+
+      let packageJson: ConsumerPackageJson | undefined;
+      if (packageJsonPath) {
+        try {
+          packageJson = JSON.parse(
+            fs.readFileSync(packageJsonPath, 'utf8'),
+          ) as ConsumerPackageJson;
+        } catch {
+          // Manifest loading reports an unavailable declared provider with the
+          // actionable package context. Keep the root external here so Vite
+          // does not inline a partial substitute while reporting that error.
+        }
+      }
+
+      const needsSvelteCompilation =
+        typeof packageJson?.svelte === 'string' ||
+        hasSvelteExport(packageJson?.exports);
+
+      // The preset owns app-runtime's finer split: its root and native runtime
+      // stay external while ./sveltekit remains bundled with the app's Kit.
+      // Packages that publish Svelte source must also remain in Vite's graph;
+      // Node cannot execute their .svelte exports from an external SSR import.
+      if (
+        packageName !== '@happyvertical/smrt-app-runtime' &&
+        !needsSvelteCompilation
+      ) {
+        external.add(packageName);
+      }
+
+      if (!packageJsonPath || !packageJson) continue;
+      for (const dependencies of [
+        packageJson.dependencies,
+        packageJson.optionalDependencies,
+        packageJson.peerDependencies,
+      ]) {
+        for (const dependency of Object.keys(dependencies ?? {})) {
+          if (dependency.startsWith('@happyvertical/smrt-')) {
+            pending.push({
+              packageName: dependency,
+              searchFrom: path.dirname(packageJsonPath),
+            });
+          }
+        }
+      }
+    }
+    return [...external].sort();
+  }
+
   async function generateConfigTypes(
     manifest?: ConsumerManifest,
   ): Promise<void> {
@@ -643,6 +743,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       async handler(userConfig, env) {
         const routeLifecycle = env ?? userConfig;
         routeLifecycleConfig = routeLifecycle;
+        const consumerPackages = await resolveConsumerPackages();
+        const ssrExternal = resolveConsumerSsrExternalPackages(
+          consumerPackages.names,
+        );
         const previousConsumerRouteRoots =
           loadConsumerSvelteKitRouteRoots(projectRoot);
         if (consumerSvelteKit) {
@@ -652,11 +756,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             previousConsumerRouteRoots,
             env,
           );
-          const routePackages = await resolveConsumerPackages();
           const routeManifest = generationSnapshot
             ? loadGenerationSnapshot()
-            : await aggregateHosted(routePackages.names, projectRoot, {
-                explicit: routePackages.explicit,
+            : await aggregateHosted(consumerPackages.names, projectRoot, {
+                explicit: consumerPackages.explicit,
               });
           const hostedManifest = selectConsumerRouteManifest(
             routeManifest,
@@ -763,6 +866,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           }
         }
         return {
+          // This applies only to SSR. Client and Svelte-component builds still
+          // compile provider exports normally, while Node keeps provider JS and
+          // every shared SMRT runtime dependency in one pnpm package context.
+          ssr: { external: ssrExternal },
           build: {
             rollupOptions: {
               // Runtime registration evaluates provider entry points so their

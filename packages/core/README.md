@@ -500,6 +500,16 @@ CLI entrypoints should ship two things together:
 2. The `manifest.json` exports for any installed external `@happyvertical/smrt-*`
    packages the runtime needs to hydrate at query time.
 
+For an SSR build, `smrtConsumer()` leaves its consumed providers and their
+transitive server-side `@happyvertical/smrt-*` runtime dependencies external.
+Node therefore resolves native-backed provider dependencies from their
+installed pnpm package context, while core and tenancy retain one server-side
+registry and async context. Packages that declare Svelte export conditions stay
+in Vite's compiler graph, including when they are transitive dependencies. The
+Vite preset retains its narrower app-runtime split so SvelteKit control-flow
+classes keep app identity. This applies only to SSR; browser and Svelte
+component builds retain their normal bundled resolution.
+
 `ObjectRegistry.ensureManifestLoaded()` can now auto-load installed external
 classes by either simple name (`'EventType'`) or qualified name
 (`'@happyvertical/smrt-events:EventType'`). `SmrtCollection.list()` and
