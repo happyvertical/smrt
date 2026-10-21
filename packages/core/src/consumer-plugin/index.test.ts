@@ -270,11 +270,7 @@ describe('smrtConsumer registration generation', () => {
         join(tmpDir, 'node_modules', '@happyvertical', 'smrt-context'),
       ),
     ).toBe(false);
-    expect((config as any).ssr.external).toEqual([
-      '@happyvertical/smrt-bridge',
-      '@happyvertical/smrt-context',
-      '@test/pkg',
-    ]);
+    expect((config as any).ssr.external).toEqual(['@test/pkg']);
   });
 
   it('runs a native-backed provider from its pnpm package context without splitting core or tenancy', async () => {
@@ -392,42 +388,81 @@ describe('smrtConsumer registration generation', () => {
     expect(readFileSync(entry, 'utf8')).toMatch(/from ["']@test\/pkg["']/);
   });
 
-  it('keeps Svelte-exporting dependencies in the SSR compiler graph', async () => {
+  it('splits mixed native server and Svelte exports at the SSR boundary', async () => {
     const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
-    const uiDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-ui');
     const typesDir = join(
-      tmpDir,
+      providerDir,
       'node_modules',
       '@happyvertical',
       'smrt-types',
     );
-    mkdirSync(uiDir, { recursive: true });
+    const modelDir = join(
+      providerDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-model',
+    );
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    const nativeDir = join(providerDir, 'node_modules', 'native-image-payload');
     mkdirSync(typesDir, { recursive: true });
+    mkdirSync(modelDir, { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(nativeDir, { recursive: true });
     mkdirSync(join(tmpDir, 'src'), { recursive: true });
     writeFileSync(
       join(providerDir, 'package.json'),
       JSON.stringify({
         name: '@test/pkg',
-        dependencies: { '@happyvertical/smrt-ui': '1.0.0' },
-      }),
-    );
-    writeFileSync(
-      join(uiDir, 'package.json'),
-      JSON.stringify({
-        name: '@happyvertical/smrt-ui',
         type: 'module',
-        svelte: './Component.svelte',
         exports: {
-          '.': {
+          '.': { import: './server.js' },
+          './server': { import: './server.js' },
+          './svelte': {
             svelte: './Component.svelte',
             default: './Component.svelte',
           },
         },
-        dependencies: { '@happyvertical/smrt-types': '1.0.0' },
+        dependencies: {
+          '@happyvertical/smrt-core': '1.0.0',
+          '@happyvertical/smrt-model': '1.0.0',
+          '@happyvertical/smrt-types': '1.0.0',
+          'native-image-payload': '1.0.0',
+        },
       }),
     );
     writeFileSync(
-      join(uiDir, 'Component.svelte'),
+      join(providerDir, 'server.js'),
+      [
+        "import { createRequire } from 'node:module';",
+        "import { NestedModel, NestedModelCollection } from '@happyvertical/smrt-model';",
+        'const require = createRequire(import.meta.url);',
+        "export const imagePayload = require('native-image-payload');",
+        'export const providerModel = NestedModel;',
+        'export const providerCollection = NestedModelCollection;',
+        'export { NestedModelCollection };',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          NestedModel: {
+            className: 'NestedModel',
+            packageName: '@happyvertical/smrt-model',
+            importPath: '@happyvertical/smrt-model',
+            hasCollection: true,
+            collectionExportName: 'NestedModelCollection',
+            collection: 'nested_models',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'Component.svelte'),
       [
         '<script>',
         "  import { marker } from '@happyvertical/smrt-types';",
@@ -449,11 +484,61 @@ describe('smrtConsumer registration generation', () => {
       "export const marker = 'types';\n",
     );
     writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'index.js'),
+      [
+        'const classes = globalThis.__fixtureSmrtClasses ??= new Map();',
+        'export const ObjectRegistry = {',
+        "  register(ctor, config) { classes.set(config.packageName + ':' + config.name, { constructor: ctor }); },",
+        "  getClassInPackage(packageName, name) { return classes.get(packageName + ':' + name); },",
+        '  registerCollection(_name, ctor) { for (const entry of classes.values()) entry.collectionConstructor = ctor; },',
+        '};',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(modelDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-model',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(modelDir, 'index.js'),
+      [
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'export class NestedModel {}',
+        'export class NestedModelCollection {}',
+        'NestedModelCollection._itemClass = NestedModel;',
+        "ObjectRegistry.register(NestedModel, { name: 'NestedModel', packageName: '@happyvertical/smrt-model' });",
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(nativeDir, 'package.json'),
+      JSON.stringify({ name: 'native-image-payload', main: './index.cjs' }),
+    );
+    writeFileSync(
+      join(nativeDir, 'index.cjs'),
+      "module.exports = 'native-server';\n",
+    );
+    writeFileSync(
       join(tmpDir, 'src', 'svelte-entry.ts'),
       [
-        "import Widget from '@happyvertical/smrt-ui';",
+        "import '../.smrt/register.js';",
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        "import { imagePayload, providerCollection, providerModel } from '@test/pkg/server';",
+        "import Widget from '@test/pkg/svelte';",
         "import { render } from 'svelte/server';",
-        "console.log(render(Widget, { props: { label: 'compiled' } }).body);",
+        "const registeredModel = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.constructor;",
+        "const registeredCollection = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.collectionConstructor;",
+        "console.log(JSON.stringify({ imagePayload, modelIdentity: registeredModel === providerModel, collectionIdentity: registeredCollection === providerCollection, html: render(Widget, { props: { label: 'compiled' } }).body }));",
       ].join('\n'),
     );
 
@@ -483,9 +568,16 @@ describe('smrtConsumer registration generation', () => {
     const content = readFileSync(entry, 'utf8');
     const output = spawnSync(process.execPath, [entry], { encoding: 'utf8' });
     expect(output.status, output.stderr).toBe(0);
-    expect(output.stdout).toContain('<p>compiled:types</p>');
-    expect(content).not.toMatch(/from ["']@happyvertical\/smrt-ui["']/);
-    expect(content).toMatch(/from ["']@happyvertical\/smrt-types["']/);
+    expect(JSON.parse(output.stdout)).toMatchObject({
+      imagePayload: 'native-server',
+      modelIdentity: true,
+      collectionIdentity: true,
+    });
+    expect(JSON.parse(output.stdout).html).toContain('<p>compiled:types</p>');
+    expect(content).toMatch(/from ["']@test\/pkg\/server["']/);
+    expect(content).not.toMatch(/from ["']@test\/pkg\/svelte["']/);
+    expect(content).not.toMatch(/from ["']@happyvertical\/smrt-model["']/);
+    expect(content).not.toMatch(/from ["']@happyvertical\/smrt-types["']/);
   });
 
   it('still bundles providers in browser and component-library builds', async () => {

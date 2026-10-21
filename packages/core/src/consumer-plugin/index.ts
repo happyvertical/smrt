@@ -560,6 +560,8 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let typesGenerated = false;
   let producerApi: SmrtPluginApi | undefined;
   let routeLifecycleConfig: object | undefined;
+  let isBuild = false;
+  let selectiveSsrPackages = new Map<string, ConsumerPackageJson>();
 
   function loadGenerationSnapshot(): ConsumerManifest {
     if (!generationSnapshot) {
@@ -623,16 +625,22 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
    */
   function resolveConsumerSsrExternalPackages(
     providerPackages: readonly string[],
-  ): string[] {
-    const hasSvelteExport = (value: unknown): boolean => {
-      if (typeof value === 'string') return value.endsWith('.svelte');
+  ): {
+    external: string[];
+    selective: Map<string, ConsumerPackageJson>;
+  } {
+    const needsViteCompilation = (value: unknown): boolean => {
+      if (typeof value === 'string') {
+        return value.endsWith('.svelte') || value.endsWith('.css');
+      }
       if (!value || typeof value !== 'object') return false;
       return Object.entries(value).some(
         ([condition, target]) =>
-          condition === 'svelte' || hasSvelteExport(target),
+          condition === 'svelte' || needsViteCompilation(target),
       );
     };
     const external = new Set<string>();
+    const selective = new Map<string, ConsumerPackageJson>();
     const visited = new Set<string>();
     const pending = providerPackages.map((packageName) => ({
       packageName,
@@ -679,17 +687,30 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
       const needsSvelteCompilation =
         typeof packageJson?.svelte === 'string' ||
-        hasSvelteExport(packageJson?.exports);
+        needsViteCompilation(packageJson?.exports);
+      const appRootPackageJson = path.join(
+        projectRoot,
+        'node_modules',
+        packageName,
+        'package.json',
+      );
+      const isAppResolvable = packageJsonPath === appRootPackageJson;
 
       // The preset owns app-runtime's finer split: its root and native runtime
       // stay external while ./sveltekit remains bundled with the app's Kit.
-      // Packages that publish Svelte source must also remain in Vite's graph;
-      // Node cannot execute their .svelte exports from an external SSR import.
+      // Component-bearing packages need an export-level boundary: their server
+      // entries stay external while Svelte/CSS entries remain in Vite's graph.
+      // A nested-only dependency cannot be emitted as a bare external import
+      // because Node would resolve it from the app root, where pnpm has no link.
       if (
         packageName !== '@happyvertical/smrt-app-runtime' &&
-        !needsSvelteCompilation
+        isAppResolvable
       ) {
-        external.add(packageName);
+        if (needsSvelteCompilation && packageJson) {
+          selective.set(packageName, packageJson);
+        } else {
+          external.add(packageName);
+        }
       }
 
       if (!packageJsonPath || !packageJson) continue;
@@ -708,7 +729,41 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         }
       }
     }
-    return [...external].sort();
+    return { external: [...external].sort(), selective };
+  }
+
+  function exportedTarget(
+    exports: Record<string, unknown> | undefined,
+    exportKey: string,
+  ): unknown {
+    if (!exports) return undefined;
+    if (exportKey in exports) return exports[exportKey];
+    if (
+      exportKey === '.' &&
+      !Object.keys(exports).some((key) => key.startsWith('.'))
+    ) {
+      return exports;
+    }
+    for (const [pattern, target] of Object.entries(exports)) {
+      const wildcard = pattern.indexOf('*');
+      if (wildcard < 0) continue;
+      const prefix = pattern.slice(0, wildcard);
+      const suffix = pattern.slice(wildcard + 1);
+      if (exportKey.startsWith(prefix) && exportKey.endsWith(suffix)) {
+        return target;
+      }
+    }
+  }
+
+  function exportNeedsViteCompilation(value: unknown): boolean {
+    if (typeof value === 'string') {
+      return value.endsWith('.svelte') || value.endsWith('.css');
+    }
+    if (!value || typeof value !== 'object') return false;
+    return Object.entries(value).some(
+      ([condition, target]) =>
+        condition === 'svelte' || exportNeedsViteCompilation(target),
+    );
   }
 
   async function generateConfigTypes(
@@ -744,9 +799,11 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         const routeLifecycle = env ?? userConfig;
         routeLifecycleConfig = routeLifecycle;
         const consumerPackages = await resolveConsumerPackages();
-        const ssrExternal = resolveConsumerSsrExternalPackages(
+        isBuild = env?.command === 'build';
+        const ssrResolution = resolveConsumerSsrExternalPackages(
           consumerPackages.names,
         );
+        selectiveSsrPackages = ssrResolution.selective;
         const previousConsumerRouteRoots =
           loadConsumerSvelteKitRouteRoots(projectRoot);
         if (consumerSvelteKit) {
@@ -869,7 +926,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           // This applies only to SSR. Client and Svelte-component builds still
           // compile provider exports normally, while Node keeps provider JS and
           // every shared SMRT runtime dependency in one pnpm package context.
-          ssr: { external: ssrExternal },
+          ssr: {
+            external: ssrResolution.external,
+            noExternal: [...selectiveSsrPackages.keys()].sort(),
+          },
           build: {
             rollupOptions: {
               // Runtime registration evaluates provider entry points so their
@@ -953,7 +1013,22 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
     },
 
-    resolveId(id, _importer) {
+    resolveId(id, _importer, resolveOptions) {
+      if (isBuild && resolveOptions.ssr) {
+        for (const [packageName, packageJson] of selectiveSsrPackages) {
+          if (id !== packageName && !id.startsWith(`${packageName}/`)) {
+            continue;
+          }
+          const exportKey =
+            id === packageName ? '.' : `./${id.slice(packageName.length + 1)}`;
+          const target = exportedTarget(packageJson.exports, exportKey);
+          const compile =
+            exportNeedsViteCompilation(target) ||
+            (exportKey === '.' && typeof packageJson.svelte === 'string');
+          if (!compile) return { id, external: true };
+          break;
+        }
+      }
       // Resolve virtual modules to generated type declarations
       if (id in VIRTUAL_MODULES) {
         // Generated declarations are ambient TypeScript declarations, not
@@ -1477,6 +1552,11 @@ async function generateRegistrationFile(
   // imports in a production consumer bundle.
   const importBindings = new Map<string, string>();
   const importsByPath = new Map<string, Map<string, string>>();
+  const registryBindings = new Map<string, string>();
+  const registryCollectionBindings = new Map<
+    string,
+    { binding: string; itemBinding: string; itemExportName: string }
+  >();
   let nextImportBinding = 0;
   const getImportBinding = (importPath: string, exportName: string): string => {
     const key = `${importPath}\0${exportName}`;
@@ -1490,6 +1570,59 @@ async function generateRegistrationFile(
     importsByPath.set(importPath, specifiers);
     return binding;
   };
+  const getRegistryBinding = (
+    packageName: string,
+    exportName: string,
+  ): string => {
+    const key = `${packageName}\0${exportName}`;
+    const existing = registryBindings.get(key);
+    if (existing) return existing;
+    const binding = `__smrt_consumer_${nextImportBinding++}`;
+    registryBindings.set(key, binding);
+    return binding;
+  };
+  const getRegistryCollectionBinding = (
+    packageName: string,
+    exportName: string,
+    itemBinding: string,
+    itemExportName: string,
+  ): string => {
+    const key = `${packageName}\0${exportName}`;
+    const existing = registryCollectionBindings.get(key);
+    if (existing) return existing.binding;
+    const binding = `__smrt_consumer_${nextImportBinding++}`;
+    registryCollectionBindings.set(key, {
+      binding,
+      itemBinding,
+      itemExportName,
+    });
+    return binding;
+  };
+  const packageNameFromImportPath = (importPath: string): string => {
+    const parts = importPath.split('/');
+    return importPath.startsWith('@')
+      ? parts.slice(0, 2).join('/')
+      : (parts[0] ?? importPath);
+  };
+  const isAppResolvableImport = (importPath: string): boolean =>
+    fs.existsSync(
+      path.join(
+        projectRoot,
+        'node_modules',
+        packageNameFromImportPath(importPath),
+        'package.json',
+      ),
+    );
+
+  // Provider imports evaluate their full installed graph before registry
+  // bindings below are read. This gives transitive-only models one canonical
+  // constructor without emitting a bare import Node cannot resolve from the
+  // app root.
+  for (const packageName of manifest.smrtDependencies ?? []) {
+    if (isAppResolvableImport(packageName) && !importsByPath.has(packageName)) {
+      importsByPath.set(packageName, new Map());
+    }
+  }
 
   const registrations: string[] = [];
   const registrationManifests: Record<string, ConsumerManifest> = {};
@@ -1566,10 +1699,20 @@ async function generateRegistrationFile(
     const hasCollection = def.hasCollection; // Check if collection class actually exists
     const tableName = def.collection || objectName.toLowerCase();
 
-    const exportBinding = getImportBinding(importPath, exportName);
+    const appResolvable = isAppResolvableImport(importPath);
+    const exportBinding = appResolvable
+      ? getImportBinding(importPath, exportName)
+      : getRegistryBinding(def.packageName, exportName);
     const collectionBinding =
       hasCollection && collectionExportName
-        ? getImportBinding(importPath, collectionExportName)
+        ? appResolvable
+          ? getImportBinding(importPath, collectionExportName)
+          : getRegistryCollectionBinding(
+              def.packageName,
+              collectionExportName,
+              exportBinding,
+              exportName,
+            )
         : undefined;
     importedEntryCount++;
 
@@ -1625,6 +1768,22 @@ async function generateRegistrationFile(
           `const ${binding} = getSmrtExport(__smrt_provider_${index}, ${JSON.stringify(exportName)});`,
       ),
   );
+  const registryDeclarations = Array.from(registryBindings.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, binding]) => {
+      const [packageName, exportName] = key.split('\0');
+      return `const ${binding} = ObjectRegistry.getClassInPackage(${JSON.stringify(packageName)}, ${JSON.stringify(exportName)})?.constructor;
+if (!${binding}) throw new Error(${JSON.stringify(`[smrt:consumer] Configured provider graph did not register ${packageName}:${exportName}`)});`;
+    });
+  const registryCollectionDeclarations = Array.from(
+    registryCollectionBindings.entries(),
+  )
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, { binding, itemBinding, itemExportName }]) => {
+      const [packageName, exportName] = key.split('\0');
+      return `const ${binding} = ObjectRegistry.getClassInPackage(${JSON.stringify(packageName)}, ${JSON.stringify(itemExportName)})?.collectionConstructor ?? getSmrtCollectionExport(${JSON.stringify(exportName)}, ${itemBinding});
+if (!${binding}) throw new Error(${JSON.stringify(`[smrt:consumer] Configured provider graph did not provide ${packageName}:${exportName}`)});`;
+    });
   const registrationManifestLiteral = JSON.stringify(
     JSON.stringify(registrationManifests),
   );
@@ -1649,7 +1808,16 @@ ${imports.join('\n')}
  */
 const getSmrtExport = (provider, exportName) =>
   typeof provider[exportName] === 'function' ? provider[exportName] : undefined;
+const smrtProviders = [${sortedImports.map((_, index) => `__smrt_provider_${index}`).join(', ')}];
+const getSmrtCollectionExport = (exportName, itemConstructor) => {
+  for (const provider of smrtProviders) {
+    const candidate = getSmrtExport(provider, exportName);
+    if (candidate?._itemClass === itemConstructor) return candidate;
+  }
+};
 ${importDeclarations.join('\n')}
+${registryDeclarations.join('\n')}
+${registryCollectionDeclarations.join('\n')}
 
 const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
