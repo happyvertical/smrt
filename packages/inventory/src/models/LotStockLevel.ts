@@ -15,12 +15,14 @@
 
 import {
   field,
+  foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { StockState } from '../types.js';
+import { Lot } from './Lot.js';
 
 /**
  * Options accepted by the {@link LotStockLevel} constructor.
@@ -48,8 +50,14 @@ export class LotStockLevel extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  /** Plain string reference to the {@link Lot} this row tracks. */
-  @field({ required: true, description: 'The lot being counted.' })
+  /** The {@link Lot} this row tracks. */
+  @foreignKey(Lot, {
+    required: true,
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+    // DuckDB cannot enforce the constraint; the id is never rewritten.
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
   lotId: string = '';
 
   /** Plain string reference to the Sku, copied from the movement. */

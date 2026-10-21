@@ -68,6 +68,7 @@ export interface StockMovementOptions extends SmrtObjectOptions {
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
+  indexes: [{ name: 'inventory_stock_movements_lot_idx', columns: ['lotId'] }],
 })
 export class StockMovement extends SmrtObject {
   /** Tenant scope. `null` means the movement is global. */

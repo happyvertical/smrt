@@ -44,6 +44,7 @@ const toDate = (value: Date | string) =>
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
+  indexes: [{ name: 'inventory_lot_documents_lot_idx', columns: ['lotId'] }],
 })
 export class LotDocument extends SmrtObject {
   /** Tenant scope. `null` means the document link is global. */
@@ -51,7 +52,13 @@ export class LotDocument extends SmrtObject {
   tenantId: string | null = null;
 
   /** The lot the document belongs to. */
-  @foreignKey(Lot, { required: true, onDelete: 'RESTRICT' })
+  @foreignKey(Lot, {
+    required: true,
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+    // DuckDB cannot enforce the constraint; the id is never rewritten.
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
   lotId: string = '';
 
   /** The stored file. */

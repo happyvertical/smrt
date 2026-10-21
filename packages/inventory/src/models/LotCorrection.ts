@@ -47,6 +47,7 @@ export interface LotCorrectionOptions extends SmrtObjectOptions {
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
+  indexes: [{ name: 'inventory_lot_corrections_lot_idx', columns: ['lotId'] }],
 })
 export class LotCorrection extends SmrtObject {
   /** Tenant scope. `null` means the correction is global. */
@@ -54,7 +55,13 @@ export class LotCorrection extends SmrtObject {
   tenantId: string | null = null;
 
   /** The lot that was corrected. */
-  @foreignKey(Lot, { required: true, onDelete: 'RESTRICT' })
+  @foreignKey(Lot, {
+    required: true,
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+    // DuckDB cannot enforce the constraint; the id is never rewritten.
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
   lotId: string = '';
 
   /** What was corrected. */
