@@ -297,7 +297,7 @@ describe('scanned consumer app subclass of a same-named package class (#4176)', 
         `${error.stdout ?? ''}${error.stderr ?? ''}`,
     );
 
-    expect(report, report).not.toMatch(/ambiguous-extends-reference/);
+    expect(report, report).not.toMatch(/cannot resolve/);
     expect(report, report).toMatch(/\b0 error\(s\)/);
   }, 120_000);
 });

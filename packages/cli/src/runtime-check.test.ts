@@ -410,6 +410,61 @@ describe('runRuntimeCheck', () => {
     ).toEqual([]);
   });
 
+  it('does not call a class ambiguous when another manifest carries a consumed copy of it (#4176)', async () => {
+    const writeDep = (
+      name: string,
+      scopeDir: string,
+      objects: Record<string, unknown>,
+    ) => {
+      const depDir = join(tempDir, 'node_modules', '@acme', scopeDir);
+      mkdirSync(join(depDir, '.smrt'), { recursive: true });
+      writeFileSync(
+        join(depDir, 'package.json'),
+        JSON.stringify({ name, version: '1.0.0' }),
+        'utf-8',
+      );
+      writeFileSync(
+        join(depDir, '.smrt', 'manifest.json'),
+        JSON.stringify({ version: '1.0.0', packageName: name, objects }),
+        'utf-8',
+      );
+    };
+    const agreement = {
+      className: 'Agreement',
+      qualifiedName: '@acme/commerce:Agreement',
+      fields: { id: { type: 'text' }, customerId: { type: 'text' } },
+    };
+    writeDep('@acme/commerce', 'commerce', {
+      '@acme/commerce:Agreement': agreement,
+    });
+    // A package manifest may preserve objects it consumed, under their own
+    // qualified names: the same class, not a second candidate.
+    writeDep('@acme/reports', 'reports', {
+      '@acme/commerce:Agreement': agreement,
+    });
+
+    writeManifest(tempDir, {
+      version: '1.0.0',
+      packageName: '@app/example',
+      smrtDependencies: ['@acme/commerce', '@acme/reports'],
+      objects: {
+        '@app/example:AdContract': {
+          className: 'AdContract',
+          qualifiedName: '@app/example:AdContract',
+          extends: 'Agreement',
+          extendsQualified: '@acme/commerce:Agreement',
+          fields: { id: { type: 'text' }, siteId: { type: 'text' } },
+        },
+      },
+    });
+    writeFileSync(join(tempDir, '.smrt', 'register.js'), '// registered');
+
+    const result = await runRuntimeCheck(tempDir);
+    expect(findCodes(result.findings)).not.toContain(
+      'ambiguous-extends-reference',
+    );
+  });
+
   it('reports a missing dependency manifest for an undeclared SMRT dependency', async () => {
     writeManifest(tempDir, {
       version: '1.0.0',
