@@ -38,7 +38,9 @@ export interface Props {
   listHref?: string;
   /** Replace "New report" asking the page's assistant. */
   onnewreport?: () => void;
+  /** BCP 47 locale for dates, numbers and relative times; default `en`. */
   locale?: string;
+  /** ISO 4217 code that formats currency measures on the cards; default `USD`. */
   currency?: string;
 }
 let {
