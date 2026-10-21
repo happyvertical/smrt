@@ -108,6 +108,7 @@ interface RoleContainer {
   closed: boolean;
   malformed: boolean;
   headings: { tag: string; text: string }[];
+  descendantHeadingCount: number;
   cells: string[];
 }
 
@@ -154,6 +155,11 @@ function localArtifactLabels(html: string): Map<number, string> {
       node.closed = true;
       if (/^h[1-6]$/.test(tag)) {
         const content = imText(html.slice(node.contentStart, token.index));
+        // Count every descendant while retaining only the owner's direct labels.
+        // This also prevents a sole nested heading from supplying authority.
+        for (const owner of stack.slice(0, index)) {
+          if (owner.resource) owner.descendantHeadingCount++;
+        }
         if (node.parent?.resource)
           node.parent.headings.push({ tag, text: content });
         const row = stack
@@ -196,6 +202,7 @@ function localArtifactLabels(html: string): Map<number, string> {
       closed: false,
       malformed: false,
       headings: [],
+      descendantHeadingCount: 0,
       cells: [],
     });
   }
@@ -207,6 +214,7 @@ function localArtifactLabels(html: string): Map<number, string> {
       if (owner.headings.length === 0)
         labels.set(link.start, owner.cells[0] ?? '');
     } else if (
+      owner.descendantHeadingCount === 1 &&
       owner.headings.length === 1 &&
       /^h[34]$/.test(owner.headings[0].tag)
     )

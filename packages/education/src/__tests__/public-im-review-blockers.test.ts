@@ -691,3 +691,218 @@ describe('round4 accepted IM blockers', () => {
     expect(resumed.failures.length).toBeLessThanOrEqual(32);
   });
 });
+
+describe('round5 localized descendant-heading blocker', () => {
+  const nestedCases = [1, 2, 3, 4, 5, 6].flatMap((level) =>
+    ['before', 'after'].map((position) => ({ level, position })),
+  );
+  it.each(
+    nestedCases,
+  )('denies nested h$level $position a direct PDF before any asset request', async ({
+    level,
+    position,
+  }) => {
+    const nested = `<div><section><h${level}>Teacher Guide</h${level}></section></div>`;
+    const body = `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4>${position === 'before' ? nested : ''}${link()}${position === 'after' ? nested : ''}</div>`;
+    const html = page(body);
+    expect(parseImFirstEditionPage(html, lesson).artifacts[0]?.allowed).toBe(
+      false,
+    );
+    const f = setup({ [lesson]: html });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((record) => record.visibility === 'catalog'),
+    ).toEqual([]);
+    expect(
+      result.policyExclusions?.some(
+        (omission) => omission.code === 'teacher_or_unknown_role',
+      ),
+    ).toBe(true);
+    expect(f.fetch.mock.calls).toHaveLength(1);
+  });
+  it('rejects an old selected revision after a nested sibling teacher heading appears, without a PDF GET', async () => {
+    const original = setup({ [lesson]: page(block()) });
+    const found = await original.adapter.enumerate({
+      cursor: cursor(),
+      checkpoint,
+    });
+    const selected = found.records.find(
+      (record) => record.visibility === 'catalog',
+    );
+    if (!selected)
+      throw new Error('Valid official resource-block fixture missing');
+    const changed = setup({
+      [lesson]: page(
+        `<div class="im-c-row__flex-resource"><h4 class="im-c-row__resource">Student Task Statements</h4><div><h4>Teacher Guide</h4></div>${link()}</div>`,
+      ),
+    });
+    await expect(
+      changed.adapter.acquire({
+        providerId,
+        stableId: selected.stableId,
+        revision: selected.revision,
+        format: 'pdf',
+      }),
+    ).rejects.toThrow('changed');
+    expect(changed.fetch.mock.calls).toHaveLength(1);
+  });
+  it('preserves direct sole labels and rejects a sole nested label or heading hidden behind a nested resource block', () => {
+    for (const body of [
+      block(),
+      `<table><tr><td>Student Task Statements</td><td>${link()}</td></tr></table>`,
+    ]) {
+      expect(
+        parseImFirstEditionPage(page(body), lesson).artifacts[0]?.allowed,
+      ).toBe(true);
+    }
+    for (const body of [
+      `<div class="im-c-row__flex-resource"><div><h4>Student Task Statements</h4></div>${link()}</div>`,
+      `<div class="im-c-row__flex-resource"><h4>Student Task Statements</h4><div class="im-c-row__flex-resource"><h4>Teacher Guide</h4></div>${link()}</div>`,
+    ])
+      expect(
+        parseImFirstEditionPage(page(body), lesson).artifacts[0]?.allowed,
+      ).toBe(false);
+  });
+  it.each([
+    'missing-revision',
+    'inaccessible-target',
+  ])('Drive contract recovery: same adapter and cursor resume after fixture %s metadata is repaired', async (reason) => {
+    let repaired = false;
+    const good = {
+      id: 'valid',
+      name: 'Worksheet',
+      mimeType: 'application/pdf',
+      parents: ['root'],
+      revisionId: 'valid-rev',
+    };
+    const drive: GoogleDriveFilesClient = {
+      listMetadataPage: vi.fn(async ({ folderId, pageToken } = {}) => {
+        if (folderId === 'other') return { entries: [] };
+        if (pageToken === 'next')
+          return {
+            entries: [{ ...good, id: 'later', revisionId: 'later-rev' }],
+          };
+        const entry =
+          reason === 'missing-revision'
+            ? {
+                id: 'broken',
+                name: 'Revision repaired in source',
+                mimeType: 'application/pdf',
+                parents: ['root'],
+                ...(repaired ? { revisionId: 'repaired-rev' } : {}),
+              }
+            : {
+                ...good,
+                id: 'shortcut',
+                mimeType: 'application/vnd.google-apps.shortcut',
+                shortcutDetails: {
+                  targetId: 'other',
+                  targetMimeType: 'application/vnd.google-apps.folder',
+                },
+              };
+        return { entries: [good, entry], nextPageToken: 'next' };
+      }),
+      getMetadataById: vi.fn(async () => {
+        if (!repaired) throw new Error('Source target inaccessible');
+        return {
+          id: 'other',
+          name: 'Reauthorized target',
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [],
+          revisionId: 'target-rev',
+        };
+      }),
+      acquireById: vi.fn(async () => {
+        throw new Error('Metadata recovery must not acquire content');
+      }),
+    };
+    const initialCursor = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        roots: ['root'],
+        pendingFolders: [{ folderId: 'root', visibility: 'catalog' }],
+        visitedFolders: [],
+      }),
+    ).toString('base64url');
+    let current: CatalogSyncCheckpoint = {
+      providerId: 'google-drive',
+      cursor: initialCursor,
+      runId: 'same-recovery-run',
+      importedCount: 1,
+      failures: [],
+      complete: false,
+    };
+    const rows = new Map([['existing', 'old-run']]);
+    const withdraw = vi.fn(async (_providerId: string, runId: string) => {
+      let count = 0;
+      for (const [stableId, seenRun] of rows)
+        if (seenRun !== runId) {
+          rows.delete(stableId);
+          count++;
+        }
+      return count;
+    });
+    const store: CatalogSyncStore = {
+      getCheckpoint: async () => current,
+      saveCheckpoint: async (value) => {
+        current = value;
+      },
+      upsert: vi.fn(async (record, runId) => {
+        rows.set(record.stableId, runId);
+      }),
+      withdrawUnseen: withdraw,
+    };
+    const adapter = new GoogleDriveCurriculumAdapter(drive, {
+      roots: [{ id: 'root' }],
+      authorizeShortcutTarget: async () => true,
+    });
+    const paused = await new CatalogSyncService(store, 0, 1).sync(
+      'google-drive',
+      adapter,
+    );
+    expect(paused).toMatchObject({
+      paused: true,
+      complete: false,
+      cursor: initialCursor,
+      runId: 'same-recovery-run',
+      failureSummary: { currentCount: 1 },
+    });
+    expect([...rows]).toEqual([['existing', 'old-run']]);
+    expect(withdraw).not.toHaveBeenCalled();
+    expect(store.upsert).not.toHaveBeenCalled();
+    repaired = true;
+    const resumed = await new CatalogSyncService(store, 0, 1).sync(
+      'google-drive',
+      adapter,
+    );
+    expect(resumed).toMatchObject({
+      complete: false,
+      paused: false,
+      runId: 'same-recovery-run',
+      failureSummary: { currentCount: 0, historicalCount: 1 },
+    });
+    expect(drive.listMetadataPage).toHaveBeenNthCalledWith(1, {
+      folderId: 'root',
+    });
+    expect(drive.listMetadataPage).toHaveBeenNthCalledWith(2, {
+      folderId: 'root',
+    });
+    expect(rows.has('existing')).toBe(true);
+    expect(withdraw).not.toHaveBeenCalled();
+    let terminal = resumed;
+    for (let step = 0; step < 3 && !terminal.complete; step++) {
+      terminal = await new CatalogSyncService(store, 0, 1).sync(
+        'google-drive',
+        adapter,
+      );
+      if (!terminal.complete) {
+        expect(rows.has('existing')).toBe(true);
+        expect(withdraw).not.toHaveBeenCalled();
+      }
+    }
+    expect(terminal.complete).toBe(true);
+    expect(withdraw).toHaveBeenCalledOnce();
+    expect(rows.has('later')).toBe(true);
+    expect(drive.acquireById).not.toHaveBeenCalled();
+  });
+});
