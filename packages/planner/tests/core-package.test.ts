@@ -129,3 +129,21 @@ it('locates the packaged app directory', async () => {
   expect(mod.appDir.endsWith('/app/')).toBe(true);
   expect(mod.appFile('index.html').endsWith('/app/index.html')).toBe(true);
 });
+
+it('runs the canonical cookbook coding-agent prompt under plain Node', () => {
+  const entry = pathToFileURL(join(out, 'core', 'index.js')).href;
+  const script = `
+    const core = await import(${JSON.stringify(entry)});
+    const cookbook = core.getLibraryCookbook('bakery').document;
+    const prompt = core.buildAgentPrompt(cookbook, { fallbackName: 'Node bakery' });
+    if (!prompt.text.includes(JSON.stringify(cookbook))) throw new Error('cookbook bytes changed');
+    if (prompt.bytes !== Buffer.byteLength(prompt.text, 'utf8')) throw new Error('incorrect UTF-8 size');
+    if (!prompt.version || !prompt.appName || !prompt.delimiter) throw new Error('prompt metadata missing');
+    console.log('canonical agent prompt Node consumer passed');
+  `;
+  expect(
+    execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+    }),
+  ).toContain('Node consumer passed');
+});

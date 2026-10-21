@@ -55,6 +55,8 @@ export interface PlannerProps {
    * too; the planner follows its `focus` tab.
    */
   controller?: PlannerController;
+  /** Complete Planner only: visible native export label; blank/omitted keeps the icon-only default. */
+  exportLabel?: string;
   /** Complete Planner only: primary header action with the same export capture. */
   headerAction?: PlannerExportAction;
   /** Optional first primary Export action; native download remains available. */

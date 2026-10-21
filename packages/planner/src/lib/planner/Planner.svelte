@@ -73,6 +73,7 @@ let {
   onready,
   entryMode = 'browse',
   exportAction,
+  exportLabel,
   headerAction,
   initialConversation,
   cookbookOffers,
@@ -80,6 +81,9 @@ let {
   onreset,
   resetDisabledReason,
 }: PlannerProps = $props();
+
+const nativeExportLabel = $derived(exportLabel?.trim() || 'Export the app');
+const showExportLabel = $derived(Boolean(exportLabel?.trim()));
 
 /** The mount's links: its pages are fragment routes, so no host router. */
 const hashHref = (path: string) => `#${path}`;
@@ -378,7 +382,7 @@ const slotItems = $derived<ShellSlotItem[]>([
   },
   {
     id: 'planner-export',
-    label: 'Export the app',
+    label: nativeExportLabel,
     slot: 'header.end' as const,
     render: exportLink,
   },
@@ -444,7 +448,8 @@ const dockToggles = $derived(
 {#snippet exportLink()}
   <HeaderIconLink
     href="#/configure/export/"
-    label="Export the app"
+    label={nativeExportLabel}
+    showLabel={showExportLabel}
     icon={EXPORT_ICON}
     current={exporting}
     transitionName="planner-export"

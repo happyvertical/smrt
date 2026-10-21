@@ -1,9 +1,9 @@
 <script lang="ts">
 /**
- * An icon-only link in the shell header's end slot: the planner's "Plan the
+ * A normally icon-only link in the shell header's end slot: the planner's "Plan the
  * app" (chef's hat) and "Export the app" (download) controls, in the mounted
  * `Planner` and the static app's layout alike. `label` is the accessible name
- * and the tooltip; `current` marks the control whose page is open
+ * and the tooltip; `showLabel` opts into visible text. `current` marks the control whose page is open
  * (`aria-current="page"`); `transitionName` is the `view-transition-name` it
  * carries while a route transition runs (one per control, unique on screen).
  */
@@ -17,6 +17,8 @@ interface Props {
   href: string;
   guideTarget?: string;
   label: string;
+  /** Opt-in visible text for a host-labelled action; other links stay icon-only. */
+  showLabel?: boolean;
   /** A smrt-ui preset icon name. */
   icon?: string;
   /** A custom icon path (wins over `icon`). */
@@ -30,6 +32,7 @@ let {
   href,
   guideTarget,
   label,
+  showLabel = false,
   icon,
   path,
   current = false,
@@ -42,6 +45,7 @@ const target = shellTargetAction(tryUseShellTargets());
 <a
   use:target={guideTarget ?? `item:${transitionName}`}
   class="header-link"
+  class:header-link--labelled={showLabel}
   {href}
   aria-label={label}
   title={label}
@@ -50,6 +54,7 @@ const target = shellTargetAction(tryUseShellTargets());
   {onclick}
 >
   <Icon {path} name={path ? undefined : icon} size={18} />
+  {#if showLabel}<span>{label}</span>{/if}
 </a>
 
 <style>
@@ -65,6 +70,13 @@ const target = shellTargetAction(tryUseShellTargets());
     block-size: 2rem;
     color: inherit;
     border-radius: var(--smrt-radius-medium, 0.5rem);
+  }
+  .header-link--labelled {
+    display: inline-flex;
+    gap: var(--smrt-spacing-1);
+    inline-size: auto;
+    padding-inline: var(--smrt-spacing-2);
+    white-space: nowrap;
   }
   .header-link:hover {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);

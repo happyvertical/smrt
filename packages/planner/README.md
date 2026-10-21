@@ -305,6 +305,19 @@ sends. Supply `initialConversation` before opening the native dock; seeding is
 not a way to replace an active conversation. The host retains the original
 transcript separately when original message identities/provenance matter.
 
+`exportLabel="Build"` labels the existing native Export shortcut and shows that
+text beside its icon. Its accessible name, tooltip and shell slot/menu title use
+the same label. Omitted or blank values retain the icon-only "Export the app"
+default. The action still opens the native Export page; it does not create a
+second action or change downloads.
+
+`buildAgentPrompt(cookbook, options?)` is available from the package root and
+`@happyvertical/smrt-planner/core`. It is the same pure builder used by the native
+Export page and returns `AgentPrompt` (`text`, UTF-8 `bytes`, `appName`, `version`,
+`delimiter`). `AgentPromptOptions` accepts `fallbackName` and `version`. A host
+callback returning prompt text should use `buildAgentPrompt(data.cookbook).text`.
+The core entry works in plain Node without a Svelte compiler.
+
 `headerAction={{ label, run }}` adds a primary button to the complete Planner header.
 It uses the same capture and busy/error safeguards as `exportAction`; hosts may
 pass the same callback to both entry points. The Export shortcut and native

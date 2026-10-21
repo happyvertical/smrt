@@ -66,3 +66,5 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `tests/core-package.test.ts` packages with svelte-package and runs it under bare `node`.
   `theme/theme.ts` reads the preset list from smrt-ui's Node-safe `@happyvertical/smrt-ui/themes/presets`
   (no copy, no drift test).
+
+- Host export integration: `PlannerProps.exportLabel` optionally gives the native export shortcut visible text and the same accessible/slot label; omitted/blank preserves its icon-only default. `HeaderIconLink.showLabel` is internal and defaults false. Root and Node-safe core barrels re-export the existing `buildAgentPrompt`, `AgentPrompt` and `AgentPromptOptions` from `cookbook/prompt.ts`; no second prompt implementation. Hosts needing a string use the returned `.text`.

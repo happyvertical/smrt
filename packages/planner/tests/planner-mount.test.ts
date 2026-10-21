@@ -30,6 +30,32 @@ describe('Planner component', () => {
     expect(body).toContain('href="#/configure/export/"');
   });
 
+  it('uses the host native export label without adding or replacing host actions', () => {
+    const { body } = render(Planner, {
+      props: {
+        exportLabel: 'Build blueprint',
+        headerAction: { label: 'Host action', run() {} },
+      },
+    });
+    expect(body).toContain('aria-label="Build blueprint"');
+    expect(body).toContain('title="Build blueprint"');
+    expect(body).toMatch(/<span>Build blueprint<\/span>/);
+    expect(body.match(/aria-label="Build blueprint"/g)).toHaveLength(1);
+    expect(body).not.toContain('aria-label="Export the app"');
+    expect(body).toContain('Host action');
+    expect(body).toContain('href="#/configure/export/"');
+  });
+
+  it.each([
+    '',
+    '   ',
+  ])('keeps an accessible native export fallback for blank %j', (exportLabel) => {
+    const { body } = render(Planner, { props: { exportLabel } });
+    expect(body).toContain('aria-label="Export the app"');
+    expect(body).toContain('title="Export the app"');
+    expect(body).not.toContain('<span>Export the app</span>');
+  });
+
   it('renders the app shell and its customization controls without a host router', () => {
     const { body } = render(Planner, { props: { basePath: '/planner' } });
     expect(body).toContain('smrt-admin-shell');
