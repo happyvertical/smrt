@@ -26,7 +26,10 @@ counterparty balance.
 Use `postReceivable`, `postPayable`, or `postSettlement` for exact ledger
 events. They take a tenant-scoped idempotency key and create journal plus lines
 under the framework's atomic retry claim. A replay with changed content is
-refused. Refunds and disputes must post a separate compensating entry with a
+refused. Idempotency is permanent, not bounded by the retry claim's
+retention window: after the claim is pruned, a retry resolves the existing
+journal by `(tenantId, ledgerId, key)` and returns it when the request digest
+matches, or refuses a changed replay. Refunds and disputes must post a separate compensating entry with a
 new key; posted ledger journals and their lines cannot be edited, deleted, or
 voided. Reverse the debit/credit accounts and set `settlesSourceRef` to the
 original open item when reducing it. Partial reversals use the partial integer

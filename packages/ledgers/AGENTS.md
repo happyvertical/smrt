@@ -30,6 +30,9 @@ accounts freeze scope/owner/type and cannot be deleted. Posted scoped journals a
 lines are immutable, including void/delete; use compensating postings.
 `postReceivable`/`postPayable`/`postSettlement` require exact ledgers and use one
 transactional claim per tenant/ledger/key with payload-digest replay validation.
+The journal's unique `(tenantId, ledgerId, idempotencyKey)` row is the permanent
+record: a retry after the `runOnce` claim is pruned (#4067) returns the original
+posted journal on a digest match, and refuses a mismatch or a non-posted row.
 See README for ownership, reversal, aging and dialect contracts.
 
 
