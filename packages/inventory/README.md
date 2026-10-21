@@ -171,7 +171,12 @@ Per-handler toggles (`installContractReserved`, `installFulfillmentShipped`) let
 |---|---|
 | `InventoryLocation` | Physical or virtual stocking site with open-ended `kind`. |
 | `StockLevel` | Materialized `(skuId, locationId, state) → qty` row. **Never mutate directly — use `StockService`.** |
-| `StockMovement` | Append-only audit row. One per mutation; two for transfers. |
+| `StockMovement` | Append-only audit row. One per mutation; two for transfers. Carries a nullable `lotId`. |
+| `Lot` | A batch (`kind: 'lot'`) or single unit (`'serial'`) with a number, attributes and status. **Write via `LotService`.** |
+| `LotStockLevel` | Materialized `(lotId, locationId, state) → qty` row. **Written only by `StockService`.** |
+| `LotUsage` | A lot used by a consumer (`consumerType` + `consumerId`; `'Lot'` for assemblies). Never deleted; `unlinked` instead. |
+| `LotCorrection` | Append-only record of every correction, with reason, old and new value. |
+| `LotDocument` | A stored file (an Asset id) attached to a lot. Detached, never deleted. |
 
 ### Collections
 
@@ -180,6 +185,10 @@ Per-handler toggles (`installContractReserved`, `installFulfillmentShipped`) let
 | `InventoryLocationCollection` | `findByCode`, `findByKind`, `findByPlace`, `findActive` |
 | `StockLevelCollection` | `getLevel`, `findBySku`, `findByLocation`, `totalForSku`, `totalForLocation` |
 | `StockMovementCollection` | `findBySku`, `findByLocation`, `findBySource`, `findByReason` |
+| `LotCollection` | `findByLotNumber(number, { skuId? })` (case-insensitive) |
+| `LotStockLevelCollection` | `getLevel(lotId, locationId, state?)`, `onHand(lotId, state?)` |
+| `LotUsageCollection` | `findActiveForLot`, `findForConsumer` |
+| `LotCorrectionCollection`, `LotDocumentCollection` | Read access |
 
 All catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in [`@happyvertical/smrt-products`](../products). This package adds the stock-motion layer (`InventoryLocation`, `StockLevel`, `StockMovement`, `StockService`) on top.
 
@@ -190,7 +199,26 @@ All catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in [`@h
 | `StockService` | The only sanctioned mutation surface. Six methods: `receive`, `reserve`, `release`, `fulfill`, `transfer`, `adjust`. |
 | `createStockService({ db })` | Convenience factory. |
 | `InsufficientStockError` | Thrown by `reserve` / `fulfill` / `transfer` / negative `adjust` when stock would go negative. Carries `skuId`, `locationId`, `state`, `requested`, `available`. |
+| `LotService` / `createLotService({ db })` | Lots and serials: `receiveLot`, `correctLotNumber`, `correctAttributes`, `setStatus`, `recordUsage`, `unlinkUsage`, `attachDocument`, `detachDocument`, `history`, `traceForward`, `traceBack`, `withTransaction`. |
+| `DuplicateLotError`, `LotInUseError`, `LotMismatchError`, `LotNotFoundError`, `LotCorrectionError` | Lot failures. |
 | `installInventoryDispatchHandlers({ dispatchBus, db })` | Opt-in DispatchBus wiring for `contract:created` and `fulfillment:shipped`. |
+
+### Lots and serials
+
+Pass `lotId` to any `StockService` mutation and the same deltas are applied per lot (with the same non-negative rule) and the lot is stamped on every movement; SKU-level balances behave as before. `LotService` creates the lots. Receiving a lot moves no stock, so compose both in one transaction:
+
+```typescript
+await stock.withTransaction(async (tx) => {
+  const lots = await createLotService({ db: tx.db });
+  const lot = await lots.receiveLot({ lotNumber: 'B-1042', skuId, receivedQty: 40 });
+  await tx.receive(skuId, locationId, 40, { lotId: lot.id });
+});
+await lots.recordUsage(lot.id, { consumerType: 'ProductionOrder', consumerId });
+const trace = await lots.traceForward(lot.id);        // where it went
+const sources = await lots.traceBack('ProductionOrder', consumerId); // where it came from
+```
+
+A lot number is not unique by default (one supplier lot can arrive on two receipts); pass `unique: true`, or `kind: 'serial'`, to make it so, or `idempotencyKey` to make a receipt retry-safe. Corrections always need a reason. No authorization is checked in the package; callers authorize and pass `actorProfileId`.
 
 ### Types
 
