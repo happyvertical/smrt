@@ -31,7 +31,6 @@
  * @packageDocumentation
  */
 
-import { createHash, randomUUID } from 'node:crypto';
 import {
   type DatabaseConfig,
   isUniqueViolationError,
@@ -192,10 +191,28 @@ function numberIdentity(
   kind: LotKind,
   skuId: string | null,
   searchKey: string,
-): string {
-  const key = `u:${kind}:${skuId ?? ''}:${searchKey}`;
+): Promise<string> {
+  return boundedIdentity(`u:${kind}:${skuId ?? ''}:${searchKey}`, 'uh:');
+}
+
+/**
+ * Keep an identity within the column: one that is too long is replaced by a
+ * SHA-256 digest. Web Crypto, not `node:crypto`, so the package root stays
+ * importable in the browser.
+ */
+async function boundedIdentity(
+  key: string,
+  hashPrefix: string,
+): Promise<string> {
   if (key.length <= MAX_IDENTITY_KEY) return key;
-  return `uh:${createHash('sha256').update(key).digest('hex')}`;
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(key),
+  );
+  const hex = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+  return `${hashPrefix}${hex}`;
 }
 
 function jsonOrEmpty(value: unknown): string {
@@ -279,9 +296,10 @@ export class LotService {
     const searchKey = lotSearchKey(lotNumber);
 
     let identityKey: string;
-    if (unique) identityKey = numberIdentity(kind, skuId, searchKey);
-    else if (input.idempotencyKey) identityKey = `k:${input.idempotencyKey}`;
-    else identityKey = `r:${randomUUID()}`;
+    if (unique) identityKey = await numberIdentity(kind, skuId, searchKey);
+    else if (input.idempotencyKey) {
+      identityKey = await boundedIdentity(`k:${input.idempotencyKey}`, 'kh:');
+    } else identityKey = `r:${globalThis.crypto.randomUUID()}`;
 
     // Look first: a unique violation aborts a Postgres transaction we may be
     // joined to, so the race below is the exception, not the normal path.
@@ -349,7 +367,11 @@ export class LotService {
       lot.lotNumber = next;
       lot.searchKey = lotSearchKey(next);
       if (lot.uniqueNumber) {
-        lot.identityKey = numberIdentity(lot.kind, lot.skuId, lot.searchKey);
+        lot.identityKey = await numberIdentity(
+          lot.kind,
+          lot.skuId,
+          lot.searchKey,
+        );
         const clash = await tx.findByIdentity(lot.identityKey);
         if (clash && clash.id !== lot.id) {
           throw new DuplicateLotError(next, clash.id ?? null);
