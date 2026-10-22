@@ -39,6 +39,23 @@ describe('presentedFilename (#4214)', () => {
       'Rechnung M\u00e4rz \u2014 2026.pdf',
     );
   });
+  it('removes other invisible format characters, including astral tag characters', () => {
+    for (const codePoint of [
+      0x00ad, 0x180e, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x206a, 0x206f,
+      0xfff9, 0xfffa, 0xfffb, 0xe0000, 0xe0001, 0xe0041, 0xe007f,
+    ])
+      expect(presentedFilename(`scan${char(codePoint)}.pdf`)).toBe('scan.pdf');
+    // A lone surrogate half is invalid text and is removed...
+    expect(presentedFilename(`scan${'\ud83d'}.pdf`)).toBe('scan.pdf');
+    // ...but a real surrogate pair (an emoji, outside the BMP) stays intact.
+    const page = char(0x1f4c4);
+    expect(page.length).toBe(2);
+    expect(presentedFilename(`${page} scan.pdf`)).toBe(`${page} scan.pdf`);
+    // A tag sequence next to a pair removes only the tags.
+    expect(
+      presentedFilename(`${page}${char(0xe0067)}${char(0xe007f)}.pdf`),
+    ).toBe(`${page}.pdf`);
+  });
   it('drops names that are not text, empty after cleaning, or too long', () => {
     expect(presentedFilename(undefined)).toBeUndefined();
     expect(presentedFilename(42)).toBeUndefined();

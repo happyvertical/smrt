@@ -11,6 +11,7 @@ import {
   safeFailure,
   text,
   timestamp,
+  withPresentedFilename,
 } from './common.js';
 
 export interface AuthenticatedSource extends SourceBinding {
@@ -109,9 +110,12 @@ export function createSourceDeliveryHandler(
           const snapshots = await binding.snapshotReference(reference);
           if (!snapshots.length)
             throw new SourceInputError('unavailable_bytes');
-          for (const part of snapshots)
+          for (const { filename, ...part } of snapshots)
             parts.push({
               ...part,
+              // Host snapshots may carry a name too; clean it like every other
+              // source so an odd name cannot fail the whole delivery (#4214).
+              ...withPresentedFilename(filename),
               sourceReference: part.sourceReference ?? reference,
             });
         }
