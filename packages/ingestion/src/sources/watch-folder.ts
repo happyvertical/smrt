@@ -16,6 +16,7 @@ import {
   SourceInputError,
   type SourceResult,
   safeFailure,
+  withPresentedFilename,
 } from './common.js';
 
 export interface WatchFolderOptions {
@@ -128,7 +129,7 @@ export class WatchFolderSourceAdapter {
             partId: 'original',
             mediaType,
             bytes,
-            filename: claim.filename,
+            ...withPresentedFilename(claim.filename),
             sourceReference: {
               owner: 'watch-folder',
               id: claim.filename,

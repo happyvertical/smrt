@@ -43,6 +43,26 @@ export function text(value: unknown): string {
     throw new SourceInputError('invalid');
   return value;
 }
+/**
+ * A name a source presented for a part (upload, attachment, folder entry),
+ * kept for labels only (#4214). Control characters are removed and the result
+ * trimmed; a name that is then empty or longer than the receipt service's
+ * 512-character bound is dropped, so an odd name falls back to the default
+ * label instead of failing the whole receipt. Never identity.
+ */
+export function presentedFilename(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+  const name = value.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return name && name.length <= 512 ? name : undefined;
+}
+/** `{ filename }` for a usable presented name, else nothing to spread. */
+export function withPresentedFilename(value: unknown): {
+  filename?: string;
+} {
+  const filename = presentedFilename(value);
+  return filename ? { filename } : {};
+}
 export function timestamp(value: unknown): Date {
   const date = new Date(text(value));
   if (!Number.isFinite(date.getTime())) throw new SourceInputError('invalid');
