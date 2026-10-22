@@ -779,13 +779,14 @@ describe('intake review host boundary', () => {
     // A resolved item is terminal: no suggestion preview or split re-extraction.
     cleanup();
     view.entry.item.disposition = {
-      kind: 'resolved_no_action',
-      reviewer: 'owner',
-      reason: '',
-      decidedAt: '2026-10-22T00:00:00.000Z',
+      state: 'resolved',
+      at: '2026-10-22T00:00:00.000Z',
     };
     render(IntakeReview, { host: host(view), itemId: 'item' });
-    await screen.findByTestId('disposition');
+    // Without the review-surface disposition only the closed state is shown.
+    expect((await screen.findByTestId('disposition')).textContent).toBe(
+      'Handled, no action',
+    );
     expect(screen.queryByRole('button', { name: 'Prepare review' })).toBeNull();
     expect(
       screen.queryByRole('button', { name: 'Save split and reprocess' }),
@@ -1270,6 +1271,10 @@ describe('intake review host boundary', () => {
     const view = catalogView();
     view.entry.state = 'resolved';
     view.entry.item.disposition = {
+      state: 'resolved',
+      at: '2026-10-22T00:00:00.000Z',
+    };
+    view.disposition = {
       kind: 'resolved_no_action',
       reviewer: 'owner',
       reason: 'Already paid',

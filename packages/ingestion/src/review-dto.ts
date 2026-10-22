@@ -1,5 +1,9 @@
 /** Browser-only view contracts. Every value must come from an authenticated host. */
-import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
+import type {
+  IntakeEvidenceDTO,
+  IntakeItemDTO,
+  ItemDisposition,
+} from './dto.js';
 import type {
   ActionResult,
   IntakeValues,
@@ -87,6 +91,8 @@ export interface ItemReviewView {
   generation?: GenerationOutput;
   /** Handlers the item's catalog currently offers a reviewer; presentation only. */
   catalog?: ProposalCatalogEntry[];
+  /** Reviewer and reason of a resolved item, loaded under review authority. */
+  disposition?: ItemDisposition;
   reviews: ReviewPage;
   /** Host-projected safe state, never raw server exception text. */
   availability: 'available' | 'stale' | 'revoked' | 'expired' | 'unavailable';

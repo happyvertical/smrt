@@ -79,7 +79,9 @@ any write. `createAction` (process authority) also refuses the reserved
 its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
 `assertReady` checks it, and both privacy deletion and retention expiry
 (`redactExecution`) redact its payload with the other item-owned tables.
-`resolveItem` captures an optional `reviewer_routing` feedback projection in the
+`IntakeItemDTO.disposition` is `{ state: 'resolved', at }` (row `created_at`,
+never redacted); `getItemDisposition` returns reviewer and reason under
+`reviewerAccess`. `resolveItem` captures an optional `reviewer_routing` feedback projection in the
 same transaction; a reviewer-selected action is captured when its approval is
 recorded (FEEDBACK.md).
 

@@ -91,12 +91,21 @@ export function createIntakeReviewHost(
       } catch {
         catalog = undefined;
       }
+      // Reviewer and reason come from the review surface, not the item DTO.
+      let disposition: ItemReviewView['disposition'];
+      if (item.disposition)
+        try {
+          disposition = await service.getItemDisposition(itemId);
+        } catch {
+          disposition = undefined;
+        }
       await service.getItem(itemId);
       return {
         entry: { item, label: label(item), state: summary.state, assignment },
         evidence,
         analysis,
         ...(catalog ? { catalog } : {}),
+        ...(disposition ? { disposition } : {}),
         reviews,
         availability: 'available',
         ...(analysis?.configuration.stage === 'interpret'

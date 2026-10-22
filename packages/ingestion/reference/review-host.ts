@@ -572,6 +572,13 @@ export class ReferenceReviewHost {
       } catch {
         catalog = undefined;
       }
+    let disposition: ItemReviewView['disposition'];
+    if (full && item.disposition)
+      try {
+        disposition = await service.getItemDisposition(itemId);
+      } catch {
+        disposition = undefined;
+      }
     await service.getItem(itemId);
     const entry: InboxEntry = {
       item,
@@ -584,6 +591,7 @@ export class ReferenceReviewHost {
       evidence: views,
       analysis,
       ...(catalog ? { catalog } : {}),
+      ...(disposition ? { disposition } : {}),
       ...(analysis?.configuration.stage === 'interpret'
         ? {
             generation: analysis.result.output

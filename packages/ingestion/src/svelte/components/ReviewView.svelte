@@ -318,8 +318,11 @@ onMount(() => {
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 {/if}
 {#if view.entry.item.disposition}
-{@const disposition = view.entry.item.disposition}
-<p data-testid="disposition">{t(M['ingestion.resolvedBy'], { reviewer: disposition.reviewer })}{#if disposition.reason}: {disposition.reason}{/if}</p>
+{#if view.disposition?.reviewer}
+<p data-testid="disposition">{t(M['ingestion.resolvedBy'], { reviewer: view.disposition.reviewer })}{#if view.disposition.reason}: {view.disposition.reason}{/if}</p>
+{:else}
+<p data-testid="disposition">{t(M['ingestion.resolved'])}</p>
+{/if}
 {:else}
 {#if host.startAction && view.catalog?.some((entry) => entry.kind === 'operation')}
 <fieldset class="start"><legend>{t(M['ingestion.startAs'])}</legend>

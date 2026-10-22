@@ -755,7 +755,12 @@ test('reviewer starts a chosen handler through preview and approval, and closes 
   const reloaded = await (
     await page.request.get(`/api/load?itemId=${paidId}`)
   ).json();
-  expect(reloaded.entry.item.disposition).toMatchObject({
+  // The item DTO carries only the state; reviewer and reason ride the review view.
+  expect(Object.keys(reloaded.entry.item.disposition).sort()).toEqual([
+    'at',
+    'state',
+  ]);
+  expect(reloaded.disposition).toMatchObject({
     kind: 'resolved_no_action',
     reviewer: 'owner',
     reason: 'Already paid',

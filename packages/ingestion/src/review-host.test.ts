@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { IntakeItemDTO } from './dto.js';
+import type { IntakeItemDTO, ItemDisposition } from './dto.js';
 import type { ReviewPage } from './review-dto.js';
 import { createIntakeReviewHost } from './review-host.js';
 import {
@@ -26,6 +26,9 @@ function fixture() {
     listHandlers: vi.fn(async () => [{ id: 'host:draft', version: '1' }]),
     startReviewerAction: vi.fn(async () => ({})),
     resolveItem: vi.fn(async () => ({})),
+    getItemDisposition: vi.fn(
+      async (): Promise<ItemDisposition | undefined> => undefined,
+    ),
   };
   const host = createIntakeReviewHost(service as unknown as IngestionService, {
     upload: async () => ({ itemId: item.id }),
@@ -119,18 +122,29 @@ describe('published review host projection', () => {
   });
   it('projects a reviewer disposition as the terminal resolved inbox state', async () => {
     const f = fixture();
+    const full = {
+      kind: 'resolved_no_action' as const,
+      reviewer: 'owner',
+      reason: 'Already paid',
+      decidedAt: '2026-10-22T00:00:00.000Z',
+    };
+    f.service.getItemDisposition.mockResolvedValue(full);
     f.service.getItem.mockResolvedValue({
       id: 'item',
       processingState: 'completed',
-      disposition: {
-        kind: 'resolved_no_action',
-        reviewer: 'owner',
-        reason: '',
-        decidedAt: '2026-10-22T00:00:00.000Z',
-      },
+      disposition: { state: 'resolved', at: '2026-10-22T00:00:00.000Z' },
     } as IntakeItemDTO);
     expect((await f.host.list({})).items[0].state).toBe('resolved');
     expect((await f.host.list({ state: 'waiting' })).items).toEqual([]);
+    // The inbox never asks for reviewer content.
+    expect(f.service.getItemDisposition).not.toHaveBeenCalled();
+    // The item view loads reviewer and reason through the review surface, and a
+    // denial there hides only that detail.
+    expect((await f.host.load('item')).disposition).toEqual(full);
+    f.service.getItemDisposition.mockRejectedValueOnce(new Error('Denied'));
+    const reader = await f.host.load('item');
+    expect(reader.disposition).toBeUndefined();
+    expect(reader.entry.state).toBe('resolved');
   });
   it('propagates denial rather than returning prior saved reviews', async () => {
     const f = fixture();

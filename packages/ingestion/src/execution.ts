@@ -2886,6 +2886,17 @@ export class IntakeExecutionService {
       return this.publish(db, item, preview, binding);
     });
   }
+  /** The full disposition (reviewer, reason) under the current reviewer authority. */
+  async getItemDisposition(
+    itemId: string,
+  ): Promise<ItemDisposition | undefined> {
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId);
+      await this.reviewerAccess(db, item);
+      const row = await this.disposition(db, String(item.id));
+      return row ? this.dispositionDTO(row) : undefined;
+    });
+  }
   /** Close an item as handled without an action. Terminal; replay returns the same disposition. */
   async resolveItem(input: ResolveItemInput): Promise<ItemDisposition> {
     const frozen = JSON.parse(

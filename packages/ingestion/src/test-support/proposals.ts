@@ -5762,9 +5762,34 @@ export function proposalSuite(
       expect(
         (await db.query('SELECT id FROM intake_review_decisions')).rows,
       ).toHaveLength(0);
-      expect((await service.getItem(generated.itemId)).disposition).toEqual(
+      // Item readers see only the state and time; the reviewer and reason come
+      // from the review surface under reviewer authority.
+      expect((await service.getItem(generated.itemId)).disposition).toEqual({
+        state: 'resolved',
+        at: clock.toISOString(),
+      });
+      expect(
+        (await service.listItems()).find((item) => item.id === generated.itemId)
+          ?.disposition,
+      ).toEqual({ state: 'resolved', at: clock.toISOString() });
+      // Unresolved items carry no disposition in the same batched read.
+      expect(
+        (await service.listItems()).filter((item) => item.disposition),
+      ).toHaveLength(1);
+      expect(await service.getItemDisposition(generated.itemId)).toEqual(
         disposition,
       );
+      expect((await host.load(generated.itemId)).disposition?.reviewer).toBe(
+        'owner',
+      );
+      reviewerAllowed = false;
+      await expect(
+        service.getItemDisposition(generated.itemId),
+      ).rejects.toThrow();
+      const readerView = await host.load(generated.itemId);
+      expect(readerView.entry.item.disposition?.state).toBe('resolved');
+      expect(readerView.disposition).toBeUndefined();
+      reviewerAllowed = true;
       expect((await host.load(generated.itemId)).entry.state).toBe('resolved');
       expect(
         (await host.list({ state: 'resolved' })).items.map(

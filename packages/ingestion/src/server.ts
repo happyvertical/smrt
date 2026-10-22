@@ -300,6 +300,10 @@ export class IngestionService {
   async resolveItem(input: ResolveItemInput) {
     return (await this.execution()).resolveItem(input);
   }
+  /** Reviewer and reason of a resolved item; requires reviewer authority. */
+  async getItemDisposition(itemId: string) {
+    return (await this.execution()).getItemDisposition(itemId);
+  }
   async previewPlan(input: PreviewPlanInput) {
     return (await this.execution()).previewPlan(input);
   }
@@ -1160,31 +1164,31 @@ export class IngestionService {
   }
   /** List only authorized active items; omitted items do not contribute counts. */
   async listItems(): Promise<IntakeItemDTO[]> {
-    const rows = await this.rows(
-      this.db,
-      'intake_items',
-      "visibility='active' AND expires_at>?",
-      [this.now().toISOString()],
-    );
+    // One statement reads the items and their disposition times together.
+    const rows = (
+      await this.db.query(
+        "SELECT i.*, d.created_at AS disposition_at FROM intake_items i LEFT JOIN intake_dispositions d ON d.tenant_id=i.tenant_id AND d.confidential_scope_id=i.confidential_scope_id AND d.item_id=i.id WHERE i.tenant_id=? AND i.confidential_scope_id=? AND i.visibility='active' AND i.expires_at>?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        this.now().toISOString(),
+      )
+    ).rows as Row[];
     const result: IntakeItemDTO[] = [];
+    const seen = new Set<string>();
     for (const row of rows) {
+      if (seen.has(String(row.id))) continue;
+      seen.add(String(row.id));
       try {
         await this.authorize('read', object(row.data));
-        result.push(await this.itemDTO(row));
+        result.push(this.itemDTO(row, row.disposition_at));
       } catch {
         /* no existence disclosure */
       }
     }
     return result;
   }
-  private async itemDTO(row: Row): Promise<IntakeItemDTO> {
-    const [disposition] = await this.rows(
-      this.db,
-      'intake_dispositions',
-      'item_id=? ORDER BY id LIMIT 1',
-      [row.id],
-    );
-    const data = disposition ? object(disposition.data) : undefined;
+  /** Only the disposition state and time; reviewer and reason need review authority. */
+  private itemDTO(row: Row, dispositionAt?: unknown): IntakeItemDTO {
     return {
       id: String(row.id),
       receiptState: String(row.receipt_state),
@@ -1192,21 +1196,25 @@ export class IngestionService {
       analysisRevision: Number(row.analysis_revision),
       cancelled: !!row.cancelled,
       traceId: String(row.trace_id),
-      ...(disposition
+      ...(dispositionAt !== undefined && dispositionAt !== null
         ? {
             disposition: {
-              kind: 'resolved_no_action' as const,
-              reviewer: typeof data?.reviewer === 'string' ? data.reviewer : '',
-              reason: typeof data?.reason === 'string' ? data.reason : '',
-              decidedAt:
-                typeof data?.decidedAt === 'string' ? data.decidedAt : '',
+              state: 'resolved' as const,
+              at: persistedDate(dispositionAt).toISOString(),
             },
           }
         : {}),
     };
   }
   async getItem(id: string): Promise<IntakeItemDTO> {
-    return this.itemDTO(await this.item(id, 'read'));
+    const item = await this.item(id, 'read');
+    const [disposition] = await this.rows(
+      this.db,
+      'intake_dispositions',
+      'item_id=? ORDER BY id LIMIT 1',
+      [item.id],
+    );
+    return this.itemDTO(item, disposition?.created_at);
   }
   async getEvidence(itemId: string): Promise<IntakeEvidenceDTO[]> {
     await this.item(itemId, 'read');

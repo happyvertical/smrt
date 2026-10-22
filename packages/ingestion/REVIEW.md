@@ -145,8 +145,12 @@ new action. The UI hides Approve, Defer, Apply, every edit control, suggestion
 preview and split controls on a resolved item.
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and
-`startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects the
-record, and `loadReviewSummary` reports inbox state `resolved` unless an action
+`startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects only
+`{ state: 'resolved', at }` to any item reader (`listItems` reads it in the same
+statement as the page); the reviewer and reason are returned only by
+`getItemDisposition`, which requires reviewer authority, and the review hosts put
+them on `ItemReviewView.disposition` (omitted when that read is denied, so the
+view shows only "Handled, no action"). `loadReviewSummary` reports inbox state `resolved` unless an action
 actually succeeded. Privacy deletion and retention expiry redact the reason and
 reviewer (`intake_dispositions.data`) and keep only the kind. The disposition is
 distinct from `reject`, which still means the proposal was wrong. Closing an item
