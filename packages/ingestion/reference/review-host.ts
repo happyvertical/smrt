@@ -24,8 +24,8 @@ import type {
   ItemReviewView,
   LogicalSplitInput,
   ReviewerInstructionInput,
-  ReviewerInstructionView,
 } from '../src/review-dto.js';
+import { loadInstructionView } from '../src/review-instruction-view.js';
 import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
   createSDKExtractionAdapter,
@@ -34,7 +34,6 @@ import {
   IngestionService,
   ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
-  reviewerInstructionView,
 } from '../src/server.js';
 import {
   ATTACH,
@@ -573,39 +572,7 @@ export class ReferenceReviewHost {
       state,
       assignment: await this.assignment(scope, itemId),
     };
-    const [latest] = await service.listReviewerInstructions(itemId);
-    const applied =
-      analysis?.configuration.stage === 'interpret' &&
-      analysis.configuration.reviewerInstruction
-        ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
-        : null;
-    let instruction: ReviewerInstructionView | undefined;
-    if (latest || applied) {
-      const reinterpretation = await service.getReinterpretationState(itemId);
-      const current =
-        latest && latest.id === reinterpretation.instructionInEffect
-          ? latest
-          : null;
-      instruction = {
-        current,
-        applied,
-        stale: !!analysis && !!current && current.id !== applied?.id,
-        ...(latest && !current ? { dropped: latest } : {}),
-        ...(reinterpretation.failure
-          ? { failure: reinterpretation.failure }
-          : {}),
-        ...(reinterpretation.reinterpreting ? { reinterpreting: true } : {}),
-        ...(analysis?.configuration.stage !== 'interpret' &&
-        reinterpretation.generationAttemptId
-          ? {
-              binding: {
-                attemptId: reinterpretation.generationAttemptId,
-                expectedRevision: reinterpretation.revision,
-              },
-            }
-          : {}),
-      };
-    }
+    const instruction = await loadInstructionView(service, itemId, analysis);
     return {
       entry,
       evidence: views,

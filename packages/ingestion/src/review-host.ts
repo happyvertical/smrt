@@ -7,13 +7,12 @@ import type {
   EvidenceView,
   InboxEntry,
   IntakeReviewHost,
-  ReviewerInstructionView,
 } from './review-dto.js';
+import { loadInstructionView } from './review-instruction-view.js';
 import { loadReviewSummary } from './review-summary.js';
 import {
   ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
-  reviewerInstructionView,
 } from './reviewer-instruction.js';
 import type { IngestionService } from './server.js';
 
@@ -89,39 +88,7 @@ export function createIntakeReviewHost(
         evidence.push({ ...(await options.evidence(part)), evidence: part });
       }
       const assignment = await options.assignment(itemId);
-      const [latest] = await service.listReviewerInstructions(itemId);
-      // Only a generation "applies" an instruction; a completed extraction
-      // carries the same record but has produced no suggestions yet.
-      const applied =
-        analysis?.configuration.stage === 'interpret' &&
-        analysis.configuration.reviewerInstruction
-          ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
-          : null;
-      let instruction: ReviewerInstructionView | undefined;
-      if (latest || applied) {
-        const state = await service.getReinterpretationState(itemId);
-        const current =
-          latest && latest.id === state.instructionInEffect ? latest : null;
-        instruction = {
-          current,
-          applied,
-          stale: !!analysis && !!current && current.id !== applied?.id,
-          ...(latest && !current ? { dropped: latest } : {}),
-          ...(state.failure ? { failure: state.failure } : {}),
-          ...(state.reinterpreting ? { reinterpreting: true } : {}),
-          // Without a displayable generation the reviewer can still retry or
-          // change the instruction against the latest completed generation.
-          ...(analysis?.configuration.stage !== 'interpret' &&
-          state.generationAttemptId
-            ? {
-                binding: {
-                  attemptId: state.generationAttemptId,
-                  expectedRevision: state.revision,
-                },
-              }
-            : {}),
-        };
-      }
+      const instruction = await loadInstructionView(service, itemId, analysis);
       await service.getItem(itemId);
       return {
         entry: { item, label: label(item), state: summary.state, assignment },
