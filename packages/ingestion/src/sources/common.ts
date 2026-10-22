@@ -157,7 +157,13 @@ export async function deliver(
       limits: binding.limits,
       deliveryKey,
       deliveredAt,
-      parts,
+      // The one place every source's names are cleaned (#4214): upload,
+      // host snapshot, vendor webhook, email and watched folder all deliver
+      // here, so an odd name never fails the receipt.
+      parts: parts.map(({ filename, ...part }) => ({
+        ...part,
+        ...withPresentedFilename(filename),
+      })),
     });
   } catch (error) {
     return safeFailure(error);

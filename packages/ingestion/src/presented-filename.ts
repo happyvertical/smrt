@@ -1,31 +1,31 @@
 /**
  * Source-presented file names (#4214): untrusted text kept for labels only,
  * never identity. One definition shared by the receipt service's strict check
- * and the source adapters' cleaner, so neither can store a name the other
+ * and the sources' cleaner (`deliver`), so neither can store a name the other
  * would refuse.
  *
- * Unsafe characters, all removed:
- * - C0 and C1 controls and DEL;
- * - soft hyphen U+00AD and Mongolian vowel separator U+180E;
- * - zero-width and directional marks (U+200B–U+200F, U+061C);
- * - line and paragraph separators (U+2028, U+2029);
- * - bidi embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069);
- * - word joiner and invisible operators (U+2060–U+2064), deprecated format
- *   characters (U+206A–U+206F), interlinear annotation marks (U+FFF9–U+FFFB)
- *   and the byte-order mark (U+FEFF);
- * - tag characters (U+E0000–U+E007F);
- * - lone surrogate halves (invalid text; real pairs such as emoji are kept).
+ * Unsafe characters, all removed, are defined by Unicode properties rather
+ * than a hand-kept list:
+ * - `Cc` control characters (C0, C1, DEL);
+ * - `Cf` format characters (bidi embeddings, overrides, isolates and marks,
+ *   zero-width characters, the BOM, soft hyphen, tag characters, interlinear
+ *   annotation marks, ...);
+ * - `Cs` lone surrogate halves (invalid text; real pairs such as emoji are
+ *   kept, since the `u` flag matches whole code points);
+ * - `Zl`/`Zp` line and paragraph separators (U+2028, U+2029);
+ * - `Default_Ignorable_Code_Point` (U+034F, Hangul fillers, variation
+ *   selectors, U+180E, U+2060-U+206F, ...): characters that render as
+ *   nothing. A consequence: emoji ZWJ sequences and emoji presentation
+ *   selectors are flattened (a family emoji shows as its members), which is
+ *   acceptable for a filename label.
  *
  * Bidi controls let `invoice` + U+202E + `fdp.exe` display as
  * `invoiceexe.pdf`; invisible characters make two different names look
  * identical. Out of scope: Unicode normalization (NFC/NFKC) and confusable
  * look-alike characters; the name stays untrusted display text.
  */
-// Escapes, never literal characters: an invisible character in source could
-// hide what a reviewer reads. The `u` flag makes the class match by code point
-// (needed for the tag block) so surrogate pairs are never split.
 const UNSAFE =
-  '[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2064\\u2066-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\u{e0000}-\\u{e007f}]';
+  '[\\p{Cc}\\p{Cf}\\p{Cs}\\p{Zl}\\p{Zp}\\p{Default_Ignorable_Code_Point}]';
 const UNSAFE_CHARACTER = new RegExp(UNSAFE, 'u');
 const UNSAFE_CHARACTERS = new RegExp(UNSAFE, 'gu');
 

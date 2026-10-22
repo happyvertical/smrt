@@ -23,17 +23,21 @@ construct the scope, retention policy or budgets from incoming document labels.
 parent relationships, optional upstream identity/version and an optional
 original `filename` (kept for labels on `IntakeEvidenceDTO.filename`, never
 part of receipt identity). The multipart upload source, email attachments and
-the watched folder all supply it, as may a host `snapshotReference` part; each
-removes control, bidi, zero-width, tag and other invisible format characters
-(the full list is in `src/presented-filename.ts`) and drops a name that is then
-empty or over 512 characters, so an odd name falls back to the default label
-instead of failing the receipt (`receive` itself rejects such a name from a
-direct caller as `invalid`, and names are cleaned again when read back). Unicode
-normalization (NFC/NFKC) and confusable look-alike characters are out of scope:
-the name is still untrusted text, so render it as text, never as markup or a
-path. The upstream `sourceReference` is stored but not exposed on
-the DTO, because its ids are locators (mailbox paths, folder entry names), not
-display text. Source adapters own
+the watched folder all supply it, as may a host `snapshotReference` part or a
+vendor webhook's verified parts. Every source delivers through one place that
+removes control, format (bidi, zero-width, tag), line-separator and
+default-ignorable characters (Unicode properties, see
+`src/presented-filename.ts`) and drops a name that is then empty or over 512
+characters, so an odd name falls back to the default label instead of failing
+the receipt (`receive` itself rejects such a name from a direct caller as
+`invalid`, and names are cleaned again when read back). Unicode normalization
+(NFC/NFKC) and confusable look-alike characters are out of scope: the name is
+still untrusted text, so render it as text, never as markup or a path. The
+upstream `sourceReference` is stored but not exposed on the DTO: its ids are
+upstream locators, not display text, and they are never cleaned. For email
+they are the provider's message locator (plus the attachment part id); for the
+watched folder the id is the raw folder entry name, whose cleaned form is what
+`filename` exposes. Source adapters own
 streaming and upstream snapshot retrieval. Receipt identity is tenant + source +
 delivery key; changing bytes or authenticated scope conflicts. Content equality
 in a different conversation does not deduplicate an arrival. The returned item

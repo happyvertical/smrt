@@ -56,6 +56,23 @@ describe('presentedFilename (#4214)', () => {
       presentedFilename(`${page}${char(0xe0067)}${char(0xe007f)}.pdf`),
     ).toBe(`${page}.pdf`);
   });
+  it('removes default-ignorable characters the old hand list missed', () => {
+    for (const codePoint of [
+      0x034f, // combining grapheme joiner
+      0x115f, // Hangul choseong filler
+      0x1160, // Hangul jungseong filler
+      0x3164, // Hangul filler
+      0xffa0, // halfwidth Hangul filler
+      0x180b, // Mongolian free variation selector
+      0xfe0f, // variation selector-16
+      0xe0100, // variation selector-17 (astral)
+    ])
+      expect(presentedFilename(`scan${char(codePoint)}.pdf`)).toBe('scan.pdf');
+    // Ordinary spaces and visible punctuation are not default-ignorable.
+    expect(presentedFilename('Q1 report (final).pdf')).toBe(
+      'Q1 report (final).pdf',
+    );
+  });
   it('drops names that are not text, empty after cleaning, or too long', () => {
     expect(presentedFilename(undefined)).toBeUndefined();
     expect(presentedFilename(42)).toBeUndefined();
