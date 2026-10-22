@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.57.19
+
+### Patch Changes
+
+- ### Features
+  
+  - specs, labelled header, guide holds, host reset (#4205) (planner)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.106.0 (#4198) (deps)
+  - chore: patch Node.js to 26.12.1 (Oct 2026 security releases) (#4201)
+- @happyvertical/smrt-config@0.57.19
+  - @happyvertical/smrt-scanner@0.57.19
+  - @happyvertical/smrt-types@0.57.19
+
 ## 0.57.18
 
 ### Patch Changes
