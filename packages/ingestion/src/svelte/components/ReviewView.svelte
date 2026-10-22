@@ -25,15 +25,13 @@ let view = $state<ItemReviewView>(),
   refreshFailed = $state(false),
   instructionBusy = $state(false),
   invalid = $state(false);
-// The reload answering a stale click keeps the busy note; later reloads that
-// show the item settled clear it.
+// The busy note after a stale click stays only while the item is still in
+// flight; any reload (including the one answering the click) that shows it
+// settled clears it.
 let busyJustSet = false;
 function settleBusy() {
   if (!instructionBusy) return;
-  if (busyJustSet) {
-    busyJustSet = false;
-    return;
-  }
+  busyJustSet = false;
   if (!inFlight(view)) instructionBusy = false;
 }
 /** Consecutive thrown poll ticks tolerated before failing closed. */
