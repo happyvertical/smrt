@@ -161,8 +161,11 @@ cannot read, expired or inactive items are omitted without disclosure, the host
 `authorize` runs once per distinct captured ceiling, and a failing `authorize`
 rejects the page rather than hiding its evidence), and publishes it as
 `InboxEntry.evidence` (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never
-text); the primary part is the shallowest non-`application/json` durable part
-(an upload's file, an email's first attachment), else the first part. That
+text); the primary part is chosen by role, not media type: the shallowest
+child part when any part has a parent (an upload's file under its capture
+record, an email's first attachment under the message, even when that child is
+JSON), else the first root part (a watched-folder file); part ids sort
+numerically. That
 `evidence` call must not read bytes. `IntakeInbox`/`InboxView` accept an
 optional `rowAside` snippet receiving the `InboxEntry`; without it a row renders
 the host's "Open original" link (new tab) and thumbnail when the URLs are

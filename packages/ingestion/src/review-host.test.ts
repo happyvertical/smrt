@@ -21,7 +21,7 @@ function fixture() {
       configuration: { stage: 'interpret' },
       result: { output: { proposals: { suggestions: [] } } },
     })),
-    getEvidence: vi.fn(async () => []),
+    getEvidence: vi.fn(async (): Promise<IntakeEvidenceDTO[]> => []),
     listEvidence: vi.fn(async () => new Map<string, IntakeEvidenceDTO[]>()),
   };
   const host = createIntakeReviewHost(service as unknown as IngestionService, {
@@ -66,6 +66,31 @@ describe('inbox primary evidence', () => {
     expect(primaryEvidence([message, second, first])).toBe(first);
     expect(primaryEvidence([message])).toBe(message);
     expect(primaryEvidence([])).toBeUndefined();
+  });
+  it('chooses the original by role, not media type, so JSON originals are not mistaken for records', () => {
+    // An uploaded .json file is the original, not its JSON capture record.
+    const capture = part('capture', 'capture', 'application/json');
+    const jsonFile = part('file', 'file', 'application/json', 'capture');
+    expect(primaryEvidence([capture, jsonFile])).toBe(jsonFile);
+    // A JSON-only email: the attachment, not the message record.
+    const message = part('message', 'message', 'application/json');
+    const jsonAttachment = part(
+      'a',
+      'attachment:0',
+      'application/json',
+      'message',
+    );
+    expect(primaryEvidence([message, jsonAttachment])).toBe(jsonAttachment);
+    // Attachment ids sort numerically: attachment:2 precedes attachment:10.
+    const tenth = part('j', 'attachment:10', 'application/pdf', 'message');
+    const second = part('b', 'attachment:2', 'application/pdf', 'message');
+    expect(primaryEvidence([message, tenth, second])).toBe(second);
+    // Without any child part, the first root part is the original.
+    const folderFile = part('o', 'original', 'application/pdf');
+    expect(primaryEvidence([folderFile])).toBe(folderFile);
+    const owner = part('w', 'owner', 'application/pdf');
+    const long = part('l', 'long', 'application/pdf');
+    expect(primaryEvidence([owner, long])).toBe(long);
   });
   it('projects one batched evidence read onto the page instead of a load per row', async () => {
     const f = fixture();

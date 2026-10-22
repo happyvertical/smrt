@@ -35,9 +35,12 @@ export interface IntakeReviewHostOptions {
 }
 
 /**
- * The original a row should preview: the shallowest non-metadata durable part
- * (an upload's file before its capture record, an email's first attachment
- * before the message JSON), falling back to the first part.
+ * The original a row should preview, chosen by role rather than media type:
+ * when any part has a parent, the record parts (an upload's capture record,
+ * an email's message) are skipped and the shallowest child wins (the uploaded
+ * file, the first attachment), even when that child is itself JSON. When no
+ * part has a parent (a watched-folder file, an email without attachments),
+ * the first root part is the original. Ties sort by part id, numerically.
  */
 export function primaryEvidence(
   parts: readonly IntakeEvidenceDTO[],
@@ -54,11 +57,11 @@ export function primaryEvidence(
     return level;
   };
   const ordered = [...parts].sort(
-    (a, b) => depth(a) - depth(b) || a.partId.localeCompare(b.partId),
+    (a, b) =>
+      depth(a) - depth(b) ||
+      a.partId.localeCompare(b.partId, 'en', { numeric: true }),
   );
-  return (
-    ordered.find((part) => part.mediaType !== 'application/json') ?? ordered[0]
-  );
+  return ordered.find((part) => depth(part) > 0) ?? ordered[0];
 }
 function withoutText<T extends { text?: string }>(view: T): Omit<T, 'text'> {
   const { text: _text, ...rest } = view;
