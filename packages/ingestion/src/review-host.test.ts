@@ -28,6 +28,12 @@ function fixture() {
     })),
     getEvidence: vi.fn(async () => []),
     listReviewerInstructions: vi.fn(async () => [] as ReviewerInstruction[]),
+    getReinterpretationState: vi.fn(async () => ({
+      revision: 4,
+      processingState: 'completed',
+      failure: null as string | null,
+      generationAttemptId: null as string | null,
+    })),
     recordReviewerInstruction: vi.fn(async () => ({
       id: 'analysis',
       revision: 4,

@@ -469,6 +469,8 @@ test('human page regrouping preserves the original and forces new review after r
 test('a reviewer instruction is recorded immutably, reinterpreted in the background and lands in place as trusted guidance', async ({
   page,
 }) => {
+  // Two real re-extractions plus background interpretation under Chromium.
+  test.setTimeout(150000);
   await signIn(page);
   const original = embeddedPDF('Purchase order 4471 from Badger Supply.');
   const itemId = await upload(
@@ -477,12 +479,19 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
     'application/pdf',
     original,
   );
+  // An action exists before the instruction: the item is "waiting", not
+  // "processing", when the reviewer asks for a re-read.
+  await page
+    .getByRole('button', { name: 'Prepare review', exact: true })
+    .click();
   await expect(
-    page.getByRole('button', { name: 'Prepare review', exact: true }),
+    page.getByRole('button', { name: 'Approve', exact: true }),
   ).toBeVisible();
   const before = await (
     await page.request.get(`/api/load?itemId=${itemId}`)
   ).json();
+  expect(before.entry.state).toBe('waiting');
+  expect(before.reviews.actions).toHaveLength(1);
   expect(before.instruction).toBeUndefined();
   expect(before.generation.provenance.reviewerInstruction).toBeUndefined();
   const text =
@@ -507,9 +516,14 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
   // The reviewer is not blocked: the item reports the background stage and the
   // page refreshes itself when the fenced interpretation completes.
   await expect(page.getByTestId('reinterpreting')).toBeVisible();
+  // The reviewer keeps working while it runs: a draft typed during the stage
+  // survives the in-place refresh.
+  await box.fill('draft while reinterpreting');
   await expect(page.getByTestId('applied-instruction')).toBeVisible({
     timeout: 30000,
   });
+  await expect(box).toHaveValue('draft while reinterpreting');
+  await box.fill('');
   await expect(page.getByTestId('applied-instruction')).toContainText(text);
   await expect(page.getByTestId('instruction-stale')).toHaveCount(0);
   await expect(page.getByTestId('reinterpreting')).toHaveCount(0);
@@ -520,6 +534,10 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
     await page.request.get(`/api/load?itemId=${itemId}`)
   ).json();
   expect(after.analysis.revision).toBe(before.analysis.revision + 2);
+  expect(after.reviews.actions[0].review.actionId).toBe(
+    before.reviews.actions[0].review.actionId,
+  );
+  expect(after.reviews.actions[0].review.state).toBe('stale');
   expect(after.instruction.current.id).toBe(after.instruction.applied.id);
   expect(after.instruction.stale).toBe(false);
   expect(after.instruction.applied).toMatchObject({

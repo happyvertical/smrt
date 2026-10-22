@@ -847,6 +847,116 @@ describe('intake review host boundary', () => {
       screen.queryByRole('textbox', { name: 'Instructions for the assistant' }),
     ).toBeNull();
   });
+  it('polls in place after an instruction when an action already exists, keeping drafts and never blanking the view', async () => {
+    const before = generationFor(page());
+    const processing = generationFor(page());
+    processing.analysis = undefined;
+    processing.generation = undefined;
+    processing.entry = {
+      ...processing.entry,
+      state: 'waiting',
+      item: { ...processing.entry.item, processingState: 'running' },
+    };
+    processing.reviews.actions[0].review.state = 'stale';
+    processing.instruction = {
+      current: instructionView('new'),
+      applied: null,
+      stale: false,
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    const after = generationFor(page());
+    after.instruction = {
+      current: instructionView('new'),
+      applied: instructionView('new'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [before, processing, processing, processing, after];
+    const load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.load = load;
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    const box = await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'File it.' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    await screen.findByTestId('reinterpreting');
+    // The earlier action is still listed (stale) and the state is not processing,
+    // yet the item-level processing flag drives the poll.
+    expect(screen.getByText('Waiting')).toBeTruthy();
+    const draftBox = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    }) as HTMLTextAreaElement;
+    expect(draftBox.value).toBe('');
+    await fireEvent.input(draftBox, { target: { value: 'second thoughts' } });
+    // A second record cannot be minted while a stage is in flight.
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Re-read with these instructions',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    const loadsBefore = load.mock.calls.length;
+    await screen.findByTestId('applied-instruction');
+    expect(load.mock.calls.length).toBeGreaterThan(loadsBefore);
+    // Patched in place: the same textarea element and its draft survive, and
+    // no loading placeholder was rendered between ticks.
+    expect(
+      screen.getByRole('textbox', { name: 'Instructions for the assistant' }),
+    ).toBe(draftBox);
+    expect(draftBox.value).toBe('second thoughts');
+    expect(screen.queryByText('Loading…')).toBeNull();
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    const settled = load.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(load.mock.calls.length).toBe(settled);
+  });
+  it('shows the safe failure and keeps the instruction form usable against the latest completed generation', async () => {
+    const view = page();
+    view.entry = {
+      ...view.entry,
+      state: 'failed',
+      item: { ...view.entry.item, processingState: 'needs_attention' },
+    };
+    view.instruction = {
+      current: instructionView('failed-run'),
+      applied: null,
+      stale: false,
+      failure: 'unavailable',
+      binding: { attemptId: 'last-generation', expectedRevision: 12 },
+    };
+    const callbacks = host(view);
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const failure = await screen.findByTestId('instruction-failure');
+    expect(failure.textContent).toContain('unavailable');
+    expect(screen.getByTestId('pending-instruction').textContent).toContain(
+      'Instruction failed-run',
+    );
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    const box = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'Try again, file it.' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    await waitFor(() =>
+      expect(callbacks.instruct).toHaveBeenCalledWith({
+        itemId: 'item',
+        attemptId: 'last-generation',
+        expectedRevision: 12,
+        text: 'Try again, file it.',
+        requestId: expect.any(String),
+      }),
+    );
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {
