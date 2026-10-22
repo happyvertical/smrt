@@ -1434,6 +1434,9 @@ export class IngestionService {
         throw new Error('Intake unavailable');
       return Buffer.from(data.snapshot, 'utf8');
     }
+    // An asset-less row without its snapshot marker is corrupt; never look up
+    // a null asset identifier (PostgreSQL rejects it as an invalid UUID).
+    if (!e.asset_id) throw new Error('Intake unavailable');
     const asset = await withTenant({ tenantId: this.scope.tenantId }, () =>
       this.options.assets.collection.get({ id: String(e.asset_id) }),
     );
