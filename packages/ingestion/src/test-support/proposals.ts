@@ -45,6 +45,7 @@ import {
   GenerationSourceStaleError,
   type IngestionOptions,
   IngestionService,
+  ReviewerInstructionStaleError,
 } from '../server.js';
 import {
   createSourceDeliveryHandler,
@@ -4315,6 +4316,308 @@ export function proposalSuite(
         requestId: 'missing-timing-retry',
       });
       expect(retried.revision).toBe(extracted.revision + 1);
+    });
+    /** Park one service inside its transaction at a named boundary. */
+    function holdAt(boundary: string) {
+      let release!: () => void;
+      let arrived!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reached = new Promise<void>((resolve) => {
+        arrived = resolve;
+      });
+      return {
+        reached,
+        release,
+        checkpoint: async (name: string) => {
+          if (name !== boundary) return;
+          arrived();
+          await gate;
+        },
+      };
+    }
+    /** A second service on its own PostgreSQL connection (shared queue on SQLite). */
+    async function peerService() {
+      if (dialect !== 'postgres')
+        return { peer: new IngestionService(options), close: async () => {} };
+      const url = new URL(process.env.DATABASE_URL!);
+      url.pathname = `/${database}`;
+      const connection = await getTestDatabase({
+        type: 'postgres',
+        url: url.toString(),
+        classes: [],
+      });
+      return {
+        peer: new IngestionService({ ...options, db: connection }),
+        close: async () => {
+          await connection.close?.();
+        },
+      };
+    }
+    async function settledWithin(promise: Promise<unknown>, ms: number) {
+      let settled = false;
+      promise.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      return settled;
+    }
+    it('serializes two reviewers recording instructions at the same revision across connections', async () => {
+      chooseCreate();
+      const input = await generate();
+      const hold = holdAt('instruction:guarded');
+      const first = new IngestionService({
+        ...options,
+        checkpoint: hold.checkpoint,
+      });
+      const { peer, close } = await peerService();
+      try {
+        const base = {
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+        };
+        const a = first.recordReviewerInstruction({
+          ...base,
+          text: 'Reviewer A.',
+          requestId: 'reviewer-a',
+        });
+        await hold.reached;
+        // A holds its transaction open between its guards and its append.
+        const b = peer.recordReviewerInstruction({
+          ...base,
+          text: 'Reviewer B.',
+          requestId: 'reviewer-b',
+        });
+        expect(await settledWithin(b, 300)).toBe(false);
+        hold.release();
+        const recorded = await a;
+        await expect(b).rejects.toThrow(ReviewerInstructionStaleError);
+        // No fork: one record, one revision.
+        expect(await service.listReviewerInstructions(input.itemId)).toEqual([
+          recorded.instruction,
+        ]);
+        expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+          recorded.revision,
+        );
+      } finally {
+        hold.release();
+        await close();
+      }
+    });
+    it('serializes an instruction against a concurrent split in both orders without losing either correction', async () => {
+      chooseCreate();
+      const input = await generate(await source(100000, true));
+      const evidence = await service.getEvidence(input.itemId);
+      const anchor = {
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+      };
+      const split = (requestId: string) => ({
+        ...anchor,
+        evidenceId: evidence[0].id,
+        groups: [[1], [2]],
+        requestId,
+      });
+      const { peer, close } = await peerService();
+      try {
+        // Instruction first, split racing it.
+        const holdInstruction = holdAt('instruction:guarded');
+        const a = new IngestionService({
+          ...options,
+          checkpoint: holdInstruction.checkpoint,
+        }).recordReviewerInstruction({
+          ...anchor,
+          text: 'File both documents.',
+          requestId: 'instruction-vs-split',
+        });
+        await holdInstruction.reached;
+        const b = peer.reviseLogicalSplit(split('split-vs-instruction'));
+        expect(await settledWithin(b, 300)).toBe(false);
+        holdInstruction.release();
+        const recorded = await a;
+        await expect(b).rejects.toThrow('Stale logical split');
+        expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+          recorded.revision,
+        );
+        // Split first on a fresh anchor, instruction racing it.
+        const guided = await reextractPDF(input.itemId, recorded.revision);
+        await service.generateProposals(guided.lease);
+        const fresh = {
+          itemId: input.itemId,
+          attemptId: guided.lease.attemptId,
+          expectedRevision: guided.lease.revision,
+        };
+        const holdSplit = holdAt('split:guarded');
+        const c = new IngestionService({
+          ...options,
+          checkpoint: holdSplit.checkpoint,
+        }).reviseLogicalSplit({
+          ...fresh,
+          evidenceId: evidence[0].id,
+          groups: [[1], [2]],
+          requestId: 'split-first',
+        });
+        await holdSplit.reached;
+        const d = peer.recordReviewerInstruction({
+          ...fresh,
+          text: 'Racing the split.',
+          requestId: 'instruction-racing-split',
+        });
+        expect(await settledWithin(d, 300)).toBe(false);
+        holdSplit.release();
+        const revised = await c;
+        // Refused rather than built from the pre-split configuration.
+        await expect(d).rejects.toThrow(ReviewerInstructionStaleError);
+        const lease = await service.claimAnalysis(
+          input.itemId,
+          revised.revision,
+          'extractor',
+        );
+        if (!lease) throw new Error('lease required');
+        const frozen = await service.getAnalysisInput(lease);
+        expect(frozen.configuration.humanCorrection).toMatchObject({
+          kind: 'logical_split',
+          requestId: 'split-first',
+        });
+        // The earlier instruction still travels; the racing one never recorded.
+        expect(frozen.configuration.reviewerInstruction).toMatchObject({
+          id: recorded.instruction.id,
+        });
+        expect(await service.listReviewerInstructions(input.itemId)).toEqual([
+          recorded.instruction,
+        ]);
+      } finally {
+        await close();
+      }
+    });
+    it('replays a double-clicked instruction or split whose duplicate commits after the unlocked replay check', async () => {
+      chooseCreate();
+      const input = await generate(await source(100000, true));
+      const evidence = await service.getEvidence(input.itemId);
+      const { peer, close } = await peerService();
+      try {
+        const click = {
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          text: 'File it.',
+          requestId: 'double-click',
+        };
+        // The first click passes its unlocked replay check, then parks.
+        const holdFirst = holdAt('instruction:checked');
+        const first = new IngestionService({
+          ...options,
+          checkpoint: holdFirst.checkpoint,
+        }).recordReviewerInstruction(click);
+        await holdFirst.reached;
+        // The second click runs to completion meanwhile.
+        const second = await peer.recordReviewerInstruction(click);
+        holdFirst.release();
+        // The first then finds the committed duplicate under the lock.
+        expect(await first).toEqual(second);
+        expect(await service.listReviewerInstructions(input.itemId)).toEqual([
+          second.instruction,
+        ]);
+        // Same for a split on the next generation.
+        const guided = await reextractPDF(input.itemId, second.revision);
+        await service.generateProposals(guided.lease);
+        const splitClick = {
+          itemId: input.itemId,
+          attemptId: guided.lease.attemptId,
+          expectedRevision: guided.lease.revision,
+          evidenceId: evidence[0].id,
+          groups: [[1], [2]],
+          requestId: 'double-click-split',
+        };
+        const holdSplit = holdAt('split:checked');
+        const firstSplit = new IngestionService({
+          ...options,
+          checkpoint: holdSplit.checkpoint,
+        }).reviseLogicalSplit(splitClick);
+        await holdSplit.reached;
+        const secondSplit = await peer.reviseLogicalSplit(splitClick);
+        holdSplit.release();
+        expect(await firstSplit).toEqual(secondSplit);
+        expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+          secondSplit.revision,
+        );
+      } finally {
+        await close();
+      }
+    });
+    it('expires the gap immediately when the extraction attempt is missing or leaseMs is not finite', async () => {
+      chooseCreate();
+      for (const corruption of ['missing-attempt', 'non-finite-lease']) {
+        const input = await generate();
+        const recorded = await service.recordReviewerInstruction({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          text: 'First instruction.',
+          requestId: `${corruption}-first`,
+        });
+        const extracted = await reextractOnly(input.itemId, recorded.revision);
+        expect(
+          (await service.getReinterpretationState(input.itemId)).reinterpreting,
+        ).toBe(true);
+        let restore: () => Promise<void>;
+        if (corruption === 'missing-attempt') {
+          await db.query(
+            'UPDATE intake_analyses SET current_attempt_id=NULL WHERE item_id=? AND revision=?',
+            input.itemId,
+            extracted.revision,
+          );
+          restore = async () => {};
+        } else {
+          const [item] = (
+            await db.query(
+              'SELECT data FROM intake_items WHERE id=?',
+              input.itemId,
+            )
+          ).rows;
+          const original =
+            typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+          const corrupted = structuredClone(original);
+          corrupted.limits.leaseMs = 'not-a-number';
+          await db.query(
+            'UPDATE intake_items SET data=? WHERE id=?',
+            JSON.stringify(corrupted),
+            input.itemId,
+          );
+          restore = async () => {
+            await db.query(
+              'UPDATE intake_items SET data=? WHERE id=?',
+              JSON.stringify(original),
+              input.itemId,
+            );
+          };
+        }
+        // No clock advance: malformed timing never holds retries forever.
+        expect(await service.getReinterpretationState(input.itemId)).toEqual({
+          revision: extracted.revision,
+          processingState: 'completed',
+          failure: 'not_started',
+          reinterpreting: false,
+          generationAttemptId: input.lease.attemptId,
+        });
+        const retried = await service.recordReviewerInstruction({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: extracted.revision,
+          text: 'Retry.',
+          requestId: `${corruption}-retry`,
+        });
+        expect(retried.revision).toBe(extracted.revision + 1);
+        await restore();
+      }
     });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();

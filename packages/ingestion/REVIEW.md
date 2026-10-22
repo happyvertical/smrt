@@ -176,8 +176,20 @@ result of `{ stale: true }`; the component treats it as refresh-and-retry
 same rather than surfacing it as an error. A retry from an older anchor carries forward the newest human
 split recorded after it (corrections chain through each extraction
 configuration), so a split followed by a failed stage is never silently
-dropped. All of this runs under the item lock in the same transaction as the
-append.
+dropped. **Concurrency.** `recordReviewerInstruction` and `reviseLogicalSplit` each
+run their whole decision in one transaction under the item row lock: the
+anchor snapshot read takes the lock first, the execution authorization of
+that snapshot takes it again (`UPDATE intake_items` row lock), the guard step
+re-asserts it explicitly, and
+the request-key replay check, the revision and later-work guards, the
+carried-forward split, the history read that sets `supersedesId`, and the
+append all run under it. On PostgreSQL a second reviewer at the same revision
+blocks on that lock and is then refused (`ReviewerInstructionStaleError` /
+`Stale logical split`), so the ledger cannot fork; an instruction racing a
+split (in either order) is refused rather than built from the pre-split
+configuration; and a double-click whose duplicate commits after the unlocked
+replay check is answered as a replay of the committed request, not a conflict
+or a denial.
 
 `ItemReviewView.instruction` exposes `current` (latest recorded), `applied` (the
 instruction the displayed **generation** ran under; a completed extraction alone

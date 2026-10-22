@@ -1144,7 +1144,11 @@ describe('intake review host boundary', () => {
         }),
       ),
     );
-    await screen.findByTestId('instruction-busy');
+    // The reload answering the click already shows the item settled, so the
+    // busy note is cleared at once; the view stays up and is not denied.
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    await screen.findByTestId('instruction-failure');
+    expect(screen.queryByTestId('instruction-busy')).toBeNull();
     expect(screen.getByText('Private invoice')).toBeTruthy();
     expect(screen.queryByText(/This view is unavailable/)).toBeNull();
     expect(
