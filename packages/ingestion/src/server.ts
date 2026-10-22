@@ -44,6 +44,7 @@ import type {
   CompletedAnalysisSnapshot,
   PreviewGeneratedInput,
 } from './proposal-dto.js';
+import { GenerationSourceStaleError } from './proposal-errors.js';
 import type {
   LogicalSplitInput,
   ReviewerInstruction,
@@ -1273,6 +1274,24 @@ export class IngestionService {
         throw new Error('Analysis request conflict');
       return { id: String(replay.id), revision: Number(replay.revision) };
     }
+    // An interpretation must pin the item's latest extraction. Checked under
+    // the item lock before anything is superseded, so a slow host appending a
+    // late interpretation cannot clobber a newer extraction (for example a
+    // reviewer's retry): it is refused and nothing is appended.
+    if (configuration.stage === 'interpret') {
+      const pinned = Number(
+        object(object(configuration.proposals).source).revision,
+      );
+      const latestExtraction = previous
+        .filter(
+          (row) => object(object(row.data).configuration).stage !== 'interpret',
+        )
+        .reduce(
+          (max, row) => Math.max(max, Number(row.revision)),
+          Number.NEGATIVE_INFINITY,
+        );
+      if (pinned !== latestExtraction) throw new GenerationSourceStaleError();
+    }
     const evidence = await this.rows(
       db,
       'intake_evidence',
@@ -1673,10 +1692,16 @@ export class IngestionService {
         ? object(attempt.data).completedAt
         : undefined;
       const leaseMs = Number(object(object(item.data).limits).leaseMs);
+      // Missing or malformed timing cannot hold retries forever: it counts as
+      // already expired, which is safe because a late append is refused.
+      const started =
+        typeof completedAt === 'string'
+          ? persistedDate(completedAt).getTime()
+          : Number.NaN;
       const deadline =
-        typeof completedAt === 'string' && Number.isFinite(leaseMs)
-          ? persistedDate(completedAt).getTime() + leaseMs
-          : Number.POSITIVE_INFINITY;
+        Number.isFinite(started) && Number.isFinite(leaseMs)
+          ? started + leaseMs
+          : Number.NEGATIVE_INFINITY;
       return this.now().getTime() <= deadline
         ? { phase: 'in_flight', failure: null, correction }
         : { phase: 'failed', failure: 'not_started', correction };
@@ -2722,7 +2747,10 @@ export class IngestionService {
 
 export * from './extraction.js';
 export type * from './feedback-contracts.js';
-export { GenerationSnapshotStaleError } from './proposal-errors.js';
+export {
+  GenerationSnapshotStaleError,
+  GenerationSourceStaleError,
+} from './proposal-errors.js';
 export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
