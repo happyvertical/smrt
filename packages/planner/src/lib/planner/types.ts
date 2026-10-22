@@ -27,6 +27,12 @@ export interface PlannerHandle {
   nativeAssistant?: BrowserAssistantTransport;
   /** Complete Planner only: open/focus the ready native dock; false if unavailable. */
   openAssistant?: () => Promise<boolean>;
+  /**
+   * Reset the saved plan, samples and native thread as the Reset control does.
+   * `silent` skips the host's `onreset` (the host is the caller and already
+   * knows); returns false when storage could not be cleared.
+   */
+  reset?: (options?: { silent?: boolean }) => boolean;
 }
 
 /** Detached, complete document and native thread captured together at action time. */

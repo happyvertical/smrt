@@ -558,7 +558,7 @@ const dockToggles = $derived(
   {...plannerShellProps()}
 >
   <ThemeBridge deferInitial={persistence === 'host'} presetOverride={applyCookbookTheme(shell.theme)} />
-  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" />
+  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" onreset={resetProject} />
   <main class="content">
     {#if sectionSlug}
       {#if cookbookStore.loaded}
