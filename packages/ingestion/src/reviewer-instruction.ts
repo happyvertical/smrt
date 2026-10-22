@@ -5,6 +5,17 @@ import type { ReviewerInstruction } from './review-dto.js';
 /** Reviewer instruction text ceiling; the prompt input budget still applies. */
 export const REVIEWER_INSTRUCTION_MAX_LENGTH = 4000;
 
+/**
+ * The anchor generation is superseded or a reinterpretation is still in flight.
+ * Hosts surface it as a refresh-and-retry signal, never as an access denial.
+ */
+export class ReviewerInstructionStaleError extends Error {
+  constructor() {
+    super('Stale reviewer instruction');
+    this.name = 'ReviewerInstructionStaleError';
+  }
+}
+
 /** Verify the record's own digest and project its browser-safe shape. */
 export function reviewerInstructionView(value: unknown): ReviewerInstruction {
   const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;

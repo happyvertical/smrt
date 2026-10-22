@@ -51,6 +51,7 @@ import type {
 } from './review-dto.js';
 import {
   REVIEWER_INSTRUCTION_MAX_LENGTH,
+  ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from './reviewer-instruction.js';
 
@@ -1560,46 +1561,15 @@ export class IngestionService {
       async (db, current) => {
         const item = await this.item(frozen.itemId, 'process', db);
         if (Number(item.analysis_revision) !== frozen.expectedRevision)
-          throw new Error('Stale reviewer instruction');
+          throw new ReviewerInstructionStaleError();
         let carriedCorrection: unknown;
         if (current.revision !== frozen.expectedRevision) {
-          const later = (
-            await this.rows(db, 'intake_analyses', 'item_id=? AND revision>?', [
-              frozen.itemId,
-              current.revision,
-            ])
-          ).sort((a, b) => Number(b.revision) - Number(a.revision));
-          const stage = (row: Row) =>
-            object(object(row.data).configuration).stage;
-          // The anchor is superseded by a newer completed interpretation or by
-          // work in flight. A completed extraction whose interpretation has not
-          // been appended yet is in flight too (the host is between stages), so
-          // a second reviewer cannot pre-empt it. Only a failed extraction, or a
-          // completed extraction whose own interpretation failed, is retryable.
-          const [latest] = later;
-          if (
-            later.some(
-              (row) =>
-                ['queued', 'running'].includes(String(row.state)) ||
-                (['completed', 'partial'].includes(String(row.state)) &&
-                  stage(row) === 'interpret'),
-            ) ||
-            (latest &&
-              stage(latest) !== 'interpret' &&
-              ['completed', 'partial'].includes(String(latest.state)))
-          )
-            throw new Error('Stale reviewer instruction');
-          // Corrections chain forward through each extraction configuration, so
-          // the newest later extraction holds the current human split; a retry
-          // from an older anchor must not silently drop one recorded after it.
-          const newestExtraction = later.find(
-            (row) => stage(row) !== 'interpret',
-          );
-          const correction = newestExtraction
-            ? object(object(newestExtraction.data).configuration)
-                .humanCorrection
-            : undefined;
-          if (correction !== undefined) carriedCorrection = correction;
+          // The same predicate drives getReinterpretationState, so the review
+          // UI and this guard always agree on "in flight".
+          const later = await this.laterWork(db, item, current.revision);
+          if (later.phase === 'in_flight' || later.phase === 'superseded')
+            throw new ReviewerInstructionStaleError();
+          carriedCorrection = later.correction;
         }
         const pin = object(object(current.configuration.proposals).source);
         const source = await this.completedAnalysisSnapshot(
@@ -1648,11 +1618,84 @@ export class IngestionService {
     if (!result) throw new Error('Reviewer instruction unavailable');
     return result;
   }
+  /**
+   * How the revisions after an anchor generation relate to it. Shared by the
+   * retry guard and getReinterpretationState so they cannot disagree.
+   * A completed extraction with no interpretation appended is in flight until
+   * its attempt's completion plus the item's analysis lease duration
+   * (`limits.leaseMs`, the same lease claimAnalysis grants); after that it is
+   * treated as a reinterpretation that did not start.
+   */
+  private async laterWork(
+    db: DatabaseInterface,
+    item: Row,
+    anchorRevision: number,
+  ): Promise<{
+    phase: 'none' | 'in_flight' | 'superseded' | 'failed';
+    failure: IntakeFailure | 'not_started' | null;
+    correction: unknown;
+  }> {
+    const later = (
+      await this.rows(db, 'intake_analyses', 'item_id=? AND revision>?', [
+        String(item.id),
+        anchorRevision,
+      ])
+    ).sort((a, b) => Number(b.revision) - Number(a.revision));
+    const stage = (row: Row) => object(object(row.data).configuration).stage;
+    // Corrections chain forward through each extraction configuration, so the
+    // newest later extraction holds the current human split; a retry from an
+    // older anchor must not silently drop one recorded after it.
+    const newestExtraction = later.find((row) => stage(row) !== 'interpret');
+    const correction = newestExtraction
+      ? object(object(newestExtraction.data).configuration).humanCorrection
+      : undefined;
+    const [latest] = later;
+    if (!latest) return { phase: 'none', failure: null, correction };
+    if (
+      later.some(
+        (row) =>
+          ['completed', 'partial'].includes(String(row.state)) &&
+          stage(row) === 'interpret',
+      )
+    )
+      return { phase: 'superseded', failure: null, correction };
+    if (later.some((row) => ['queued', 'running'].includes(String(row.state))))
+      return { phase: 'in_flight', failure: null, correction };
+    const [attempt] = latest.current_attempt_id
+      ? await this.rows(db, 'intake_analysis_attempts', 'id=? AND item_id=?', [
+          latest.current_attempt_id,
+          String(item.id),
+        ])
+      : [];
+    if (['completed', 'partial'].includes(String(latest.state))) {
+      // Extraction done, interpretation not appended: between stages.
+      const completedAt = attempt
+        ? object(attempt.data).completedAt
+        : undefined;
+      const leaseMs = Number(object(object(item.data).limits).leaseMs);
+      const deadline =
+        typeof completedAt === 'string' && Number.isFinite(leaseMs)
+          ? persistedDate(completedAt).getTime() + leaseMs
+          : Number.POSITIVE_INFINITY;
+      return this.now().getTime() <= deadline
+        ? { phase: 'in_flight', failure: null, correction }
+        : { phase: 'failed', failure: 'not_started', correction };
+    }
+    const safe = attempt?.safe_error ? String(attempt.safe_error) : '';
+    return {
+      phase: 'failed',
+      failure: failures.has(safe) ? (safe as IntakeFailure) : null,
+      correction,
+    };
+  }
   /** Pollable reinterpretation state: current revision, safe failure and the retry anchor. */
   async getReinterpretationState(itemId: string): Promise<{
     revision: number;
     processingState: string;
-    failure: IntakeFailure | null;
+    /** Safe category, or `not_started` when the interpretation was never appended in time. */
+    failure: IntakeFailure | 'not_started' | null;
+    /** True while work after the latest completed generation is in flight, including between stages. */
+    reinterpreting: boolean;
     /** Latest completed generation attempt; absent when none has completed. */
     generationAttemptId: string | null;
   }> {
@@ -1660,39 +1703,49 @@ export class IngestionService {
     const analyses = (
       await this.rows(this.db, 'intake_analyses', 'item_id=?', [itemId])
     ).sort((a, b) => Number(b.revision) - Number(a.revision));
-    let failure: IntakeFailure | null = null;
-    const latest = analyses[0];
-    if (
-      latest &&
-      String(latest.state) === 'needs_attention' &&
-      latest.current_attempt_id
-    ) {
-      const [attempt] = await this.rows(
+    const generation = analyses.find(
+      (row) =>
+        ['completed', 'partial'].includes(String(row.state)) &&
+        row.current_attempt_id &&
+        object(object(row.data).configuration).stage === 'interpret',
+    );
+    let failure: IntakeFailure | 'not_started' | null = null;
+    let reinterpreting = false;
+    if (generation) {
+      const later = await this.laterWork(
         this.db,
-        'intake_analysis_attempts',
-        'id=? AND item_id=?',
-        [latest.current_attempt_id, itemId],
+        item,
+        Number(generation.revision),
       );
-      if (attempt?.safe_error && failures.has(String(attempt.safe_error)))
-        failure = String(attempt.safe_error) as IntakeFailure;
-    }
-    let generationAttemptId: string | null = null;
-    for (const row of analyses) {
+      failure = later.failure;
+      reinterpreting = later.phase === 'in_flight';
+    } else {
+      const latest = analyses[0];
+      reinterpreting = ['queued', 'running'].includes(String(latest?.state));
       if (
-        !['completed', 'partial'].includes(String(row.state)) ||
-        !row.current_attempt_id ||
-        object(object(row.data).configuration).stage !== 'interpret'
-      )
-        continue;
-      generationAttemptId = String(row.current_attempt_id);
-      break;
+        latest &&
+        String(latest.state) === 'needs_attention' &&
+        latest.current_attempt_id
+      ) {
+        const [attempt] = await this.rows(
+          this.db,
+          'intake_analysis_attempts',
+          'id=? AND item_id=?',
+          [latest.current_attempt_id, itemId],
+        );
+        if (attempt?.safe_error && failures.has(String(attempt.safe_error)))
+          failure = String(attempt.safe_error) as IntakeFailure;
+      }
     }
     await this.item(itemId, 'read');
     return {
       revision: Number(item.analysis_revision),
       processingState: String(item.processing_state),
       failure,
-      generationAttemptId,
+      reinterpreting,
+      generationAttemptId: generation
+        ? String(generation.current_attempt_id)
+        : null,
     };
   }
   /** Immutable instruction history, newest first. History is never deleted. */
@@ -2676,6 +2729,7 @@ export {
 } from './review-host.js';
 export {
   REVIEWER_INSTRUCTION_MAX_LENGTH,
+  ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from './reviewer-instruction.js';
 export * from './sources/index.js';
