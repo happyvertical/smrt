@@ -738,6 +738,48 @@ export function foundationSuite(
       expect(await service.getEvidence(id)).toHaveLength(1);
       expect((await service.receive(receive())).kind).toBe('duplicate');
     });
+    it('lists a page of durable evidence in one query and omits what the scope cannot read (#4213)', async () => {
+      const first = await accepted('page-a');
+      const second = await accepted('page-b');
+      const unknown = '00000000-0000-4000-8000-000000000000';
+      const query = vi.spyOn(db, 'query');
+      const page = await service.listEvidence([first, second, unknown]);
+      expect(
+        query.mock.calls.filter(([sql]) =>
+          String(sql).includes('FROM intake_evidence'),
+        ),
+      ).toHaveLength(1);
+      query.mockRestore();
+      // An unknown id is omitted, not disclosed.
+      expect([...page.keys()].sort()).toEqual([first, second].sort());
+      expect(page.get(first)).toEqual(await service.getEvidence(first));
+      // A denied ceiling omits the rows; so does an expired item.
+      allowed = false;
+      expect((await service.listEvidence([first])).size).toBe(0);
+      allowed = true;
+      const now = clock;
+      clock = new Date(now.getTime() + 100001);
+      expect((await service.listEvidence([first])).size).toBe(0);
+      clock = now;
+      // A failing host authorization surfaces instead of hiding evidence.
+      const failing = new IngestionService({
+        ...options,
+        authorize: async () => {
+          throw new Error('authorization store down');
+        },
+      });
+      await expect(failing.listEvidence([first])).rejects.toThrow(
+        'authorization store down',
+      );
+      // Bounded, validated input.
+      expect((await service.listEvidence([])).size).toBe(0);
+      await expect(service.listEvidence(['not-a-uuid'])).rejects.toThrow(
+        'Invalid item page',
+      );
+      await expect(
+        service.listEvidence(Array.from({ length: 101 }, () => unknown)),
+      ).rejects.toThrow('Invalid item page');
+    });
     for (const operation of ['cancel', 'expire'] as const)
       it(`review second regression: ${operation} terminates queued and running parent analyses`, async () => {
         for (const running of [false, true]) {

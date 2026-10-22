@@ -1237,10 +1237,17 @@ export class IngestionService {
       const key = canonical(ceiling);
       let decision = ceilings.get(key);
       if (!decision) {
-        decision = this.authorize('read', { capturedCeiling: ceiling }).then(
-          () => true,
-          () => false,
-        );
+        // Same check as `authorize('read', …)`, but a denial omits the row
+        // while a failing host callback (e.g. a database error) rejects the
+        // page instead of silently hiding its evidence.
+        decision = this.options
+          .authorize({
+            scope: this.scope,
+            operation: 'read',
+            capturedCeiling: ceiling,
+            db: this.db,
+          })
+          .then((allowed) => allowed === true);
         ceilings.set(key, decision);
       }
       return decision;

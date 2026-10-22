@@ -156,7 +156,10 @@ receipt plus first extraction request), `assignment(itemId)` (durable read),
 replay protection), and `evidence(part)` (safe label/text or authenticated
 same-origin URL, optionally a same-origin `thumbnailUrl`). `list` calls
 `evidence` once per row for the item's primary part, read for the whole page by
-`service.listEvidence(itemIds)` in one query, and publishes it as
+`service.listEvidence(itemIds)` in one query (at most 100 ids; items the scope
+cannot read, expired or inactive items are omitted without disclosure, the host
+`authorize` runs once per distinct captured ceiling, and a failing `authorize`
+rejects the page rather than hiding its evidence), and publishes it as
 `InboxEntry.evidence` (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never
 text); the primary part is the shallowest non-`application/json` durable part
 (an upload's file, an email's first attachment), else the first part. That

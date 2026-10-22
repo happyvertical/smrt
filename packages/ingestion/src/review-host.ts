@@ -35,10 +35,6 @@ export interface IntakeReviewHostOptions {
 }
 
 /**
- * Create callbacks for one authenticated service scope. Create a fresh host when
- * the session changes; HTTP authentication and CSRF remain application duties.
- */
-/**
  * The original a row should preview: the shallowest non-metadata durable part
  * (an upload's file before its capture record, an email's first attachment
  * before the message JSON), falling back to the first part.
@@ -69,6 +65,10 @@ function withoutText<T extends { text?: string }>(view: T): Omit<T, 'text'> {
   return rest;
 }
 
+/**
+ * Create callbacks for one authenticated service scope. Create a fresh host when
+ * the session changes; HTTP authentication and CSRF remain application duties.
+ */
 export function createIntakeReviewHost(
   service: IngestionService,
   options: IntakeReviewHostOptions,
