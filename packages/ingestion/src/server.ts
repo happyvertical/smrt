@@ -438,16 +438,7 @@ const REDACTED_DIGESTS = [
   ['intake_review_decisions', 'binding_hash'],
   ['intake_executions', 'binding_hash'],
 ] as const;
-/** Keep the host's ceiling for later delete authorization, minus the principal:
- * nothing reads it after redaction and it would identify the person. */
-function redactedCeiling(value: unknown): Record<string, unknown> {
-  const ceiling = { ...object(value) };
-  if (ceiling.execution !== undefined) {
-    const { principalId: _principal, ...execution } = object(ceiling.execution);
-    ceiling.execution = execution;
-  }
-  return ceiling;
-}
+
 function mediaKind(mediaType: string): string {
   return mediaType.split(';')[0].trim().toLowerCase();
 }
@@ -3809,10 +3800,12 @@ export class IngestionService {
           );
         await db.query(
           "UPDATE intake_items SET data=?,trace_id='',submitter_id='',owner_key='',payload_digest=?,scope_digest=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+          // The captured ceiling, including execution.principalId, is kept:
+          // provider reconciliation of an in-flight external action after
+          // redaction authorizes under that principal, and later delete sweeps
+          // pass the ceiling to the host's authorize callback.
           canonical({
-            capturedCeiling: redactedCeiling(
-              object(item.data).capturedCeiling ?? {},
-            ),
+            capturedCeiling: object(item.data).capturedCeiling ?? {},
           }),
           REDACTED,
           REDACTED,
