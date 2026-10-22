@@ -110,10 +110,27 @@ imported: its already-imported object entries establish the context, and when
 it contributes only nested objects a declared `./objects` or `./models` entry
 stands in (`resolveProviderContextImport`). A package that publishes Svelte
 only under subpaths keeps its root import; the broader `isComponentBearingPackage`
-test (any Svelte export) only selects `ssr.noExternal` packages. Transitive-only
-object modules are loaded through `importSmrtDependency()` from their provider's
-context, which needs no root import. Regression: the `#4219` tests in
-`index.test.ts`, which load the generated register in a child Node process.
+test (any Svelte export) only selects `ssr.noExternal` packages. A `svelte`
+condition counts even with a plain `.js` target — that is what svelte-package
+and Vite library builds emit for a root that re-exports components, and every
+Svelte root in this workspace (`smrt-products`, `smrt-ui`, `smrt-svelte`,
+`smrt-planner`) has that shape and fails under plain Node; a Node-safe root
+that declares `svelte` anyway only loses an optional context import.
+Transitive-only object modules are loaded through `importSmrtDependency()`
+from their provider's context, which needs no root import.
+
+Not covered by contract: a package whose root is a Svelte entry AND whose
+`@smrt()` objects are exported only from that root. The object loop must then
+import the root (it is the only module exporting the constructors), so Vite
+SSR works but plain Node cannot load the register; generation warns once per
+package (`declares its package root as a Svelte entry`) and asks for a
+`./models` or `./objects` export. Regression: the `#4219` tests in
+`index.test.ts` (unit cases for `isComponentBearingRoot` /
+`resolveProviderContextImport`, a child-Node load of the generated register,
+the nested-only fallback, and the root-only warning).
+`scripts/survey-node-root-load.mjs` (run after `pnpm build`) reports which
+built workspace package roots plain Node can evaluate; it is a survey, not a
+gate, because `smrt-products`' root fails by contract.
 
 ## Lightweight discovery
 

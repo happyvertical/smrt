@@ -22,7 +22,11 @@ import {
   publishArtifactFiles,
   publishAtomicArtifact,
 } from './artifact-publication.js';
-import { smrtConsumer } from './index';
+import {
+  isComponentBearingRoot,
+  resolveProviderContextImport,
+  smrtConsumer,
+} from './index';
 
 function buildStart(plugin: Plugin, context: unknown): Promise<void> {
   const hook = plugin.buildStart;
@@ -1168,6 +1172,75 @@ describe('smrtConsumer registration generation', () => {
       classes: ['@test/pkg:ExternalThing'],
       collections: ['@test/pkg:ExternalThing', 'externalthings'],
     });
+  });
+
+  it('warns when a Svelte-root provider exports its objects only from that root (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+          './themes': { svelte: './dist/themes.js' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          RootOnlyThing: {
+            className: 'RootOnlyThing',
+            collection: 'rootonlythings',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          OtherRootThing: {
+            className: 'OtherRootThing',
+            collection: 'otherrootthings',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    const warnings: string[] = [];
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      });
+    try {
+      const plugin = smrtConsumer({
+        packages: ['@test/pkg'],
+        generateTypes: false,
+        projectRoot: tmpDir,
+        disableScanning: true,
+      });
+      await buildStart(plugin, {} as any);
+    } finally {
+      warn.mockRestore();
+    }
+
+    // The root is the only module that exports the constructor, so it is
+    // still imported (Vite SSR keeps working) and the build says why plain
+    // Node will not load the register — once per package.
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg';",
+    );
+    const svelteRootWarnings = warnings.filter((message) =>
+      message.includes('declares its package root'),
+    );
+    expect(svelteRootWarnings).toHaveLength(1);
+    expect(svelteRootWarnings[0]).toContain('@test/pkg');
+    expect(svelteRootWarnings[0]).toContain('./models or ./objects');
   });
 
   it('imports a component-bearing provider through its object entry when it contributes only nested objects (#4219)', async () => {
@@ -2385,5 +2458,118 @@ describe('smrtConsumer manifest resolution through package exports', () => {
           warning.includes('@test/smrt-discovered'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => {
+  it('reads a top-level svelte field as a Svelte root', () => {
+    expect(
+      isComponentBearingRoot({ name: '@test/pkg', svelte: './dist/index.js' }),
+    ).toBe(true);
+  });
+
+  it('reads a string exports target by its extension', () => {
+    expect(
+      isComponentBearingRoot({ name: '@test/pkg', exports: './dist/index.js' }),
+    ).toBe(false);
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: './dist/Widget.svelte',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores Svelte published only under subpaths when "." is absent', () => {
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: { './themes': { svelte: './dist/themes.js' } },
+      }),
+    ).toBe(false);
+  });
+
+  it('finds a svelte condition nested under another condition', () => {
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: {
+          '.': {
+            import: { svelte: './dist/index.js', default: './dist/index.js' },
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('treats a svelte condition with a plain .js target as a Svelte root', () => {
+    // svelte-package and Vite library builds emit exactly this for a root that
+    // re-exports components; the .svelte files sit one import deeper.
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the root for a missing package.json or a conditions-only map', () => {
+    expect(isComponentBearingRoot(undefined)).toBe(false);
+    expect(isComponentBearingRoot({ name: '@test/pkg' })).toBe(false);
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: { import: './dist/index.js', default: './dist/index.js' },
+      }),
+    ).toBe(false);
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: { svelte: './dist/index.js', default: './dist/index.js' },
+      }),
+    ).toBe(true);
+  });
+
+  it('picks the root, a server-safe object entry, or nothing', () => {
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: { '.': './dist/index.js' },
+      }),
+    ).toBe('@test/pkg');
+    expect(resolveProviderContextImport('@test/pkg', undefined)).toBe(
+      '@test/pkg',
+    );
+    const svelteRoot = { '.': { svelte: './dist/index.js' } };
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: { ...svelteRoot, './models': { default: './dist/models.js' } },
+      }),
+    ).toBe('@test/pkg/models');
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './objects': './dist/objects.js',
+          './models': { default: './dist/models.js' },
+        },
+      }),
+    ).toBe('@test/pkg/objects');
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: { ...svelteRoot, './models': { svelte: './dist/models.js' } },
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: svelteRoot,
+      }),
+    ).toBeUndefined();
   });
 });
