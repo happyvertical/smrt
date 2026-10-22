@@ -25,6 +25,17 @@ let view = $state<ItemReviewView>(),
   refreshFailed = $state(false),
   instructionBusy = $state(false),
   invalid = $state(false);
+// The reload answering a stale click keeps the busy note; later reloads that
+// show the item settled clear it.
+let busyJustSet = false;
+function settleBusy() {
+  if (!instructionBusy) return;
+  if (busyJustSet) {
+    busyJustSet = false;
+    return;
+  }
+  if (!inFlight(view)) instructionBusy = false;
+}
 /** Consecutive thrown poll ticks tolerated before failing closed. */
 const MAX_POLL_FAILURES = 3;
 let alive = true,
@@ -176,6 +187,7 @@ async function load(pageCount = loadedPages) {
       loadedPages = fetched.pages;
     view = fetched.result;
     splits = splitDrafts(view, {});
+    settleBusy();
   } catch {
     if (alive && ticket === epoch) deny();
   } finally {
@@ -203,6 +215,7 @@ async function refresh(ticket: number) {
       splits = splitDrafts(fetched.result, splits, view);
       view = fetched.result;
     }
+    settleBusy();
   } catch {
     if (!alive || ticket !== epoch) return;
     // A thrown tick may be transient: keep the view and keep backing off, but
@@ -271,6 +284,7 @@ function instruct() {
   const operation = host.instruct;
   if (!binding || !text || !operation || inFlight(view)) return;
   instructionBusy = false;
+  busyJustSet = false;
   const input = {
     itemId,
     ...binding,
@@ -283,6 +297,7 @@ function instruct() {
     const result = await operation(input);
     if (result && result.stale === true) {
       instructionBusy = true;
+      busyJustSet = true;
       return;
     }
     instruction = '';
