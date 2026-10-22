@@ -154,8 +154,8 @@ Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
 `assign(input)` (manager authorization, eligible assignees, durable CAS and request
 replay protection), and `evidence(part)` (safe label/text or authenticated
-same-origin URL, optionally a same-origin `thumbnailUrl`), which `load` calls
-for every part and `list` never calls.
+same-origin URL), which `load` calls for every part and `list` never calls;
+`load` sets no row preview on its entry.
 
 Row previews are opt-in through an optional fifth adapter,
 `rowEvidence(rows)`. When it is supplied, `list` reads the page's durable
@@ -166,8 +166,9 @@ ceiling; a failing `authorize` rejects the page). It then calls `rowEvidence`
 once with each row's primary part (`{ itemId, evidence }`) and publishes the
 returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
 (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
-from metadata without reading bytes; if `rowEvidence` throws, the page still
-lists without previews. When it is omitted, `list` makes no evidence read and
+from metadata without reading bytes; if `rowEvidence` throws or returns a
+malformed answer, the page still lists without previews, and a row without
+durable parts never gets one. When it is omitted, `list` makes no evidence read and
 rows show no original link. The primary part is chosen by role, not media
 type: the shallowest child part when any part has a parent (an upload's file
 under its capture record, an email's first attachment under the message, even

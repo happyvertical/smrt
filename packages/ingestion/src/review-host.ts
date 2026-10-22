@@ -80,10 +80,6 @@ export function primaryEvidence(
   );
   return ordered.find((part) => depth(part) > 0) ?? ordered[0];
 }
-function withoutText<T extends { text?: string }>(view: T): Omit<T, 'text'> {
-  const { text: _text, ...rest } = view;
-  return rest;
-}
 
 /**
  * Create callbacks for one authenticated service scope. Create a fresh host when
@@ -115,23 +111,34 @@ export function createIntakeReviewHost(
       if (primary) rows.push({ itemId: entry.item.id, evidence: primary });
     }
     if (!rows.length) return entries;
-    let views: ReadonlyMap<string, RowEvidenceView>;
+    const primaries = new Map(rows.map((row) => [row.itemId, row.evidence]));
+    // Everything that touches the host's answer is isolated: a throw, or a
+    // malformed answer (not a map, a non-text label), lists without previews
+    // rather than rejecting the page.
     try {
-      views = await options.rowEvidence(rows);
+      const views = await options.rowEvidence(rows);
+      return entries.map((entry) => {
+        const primary = primaries.get(entry.item.id);
+        // Only rows with a durable primary part can carry a preview, even if
+        // the host answers for another row.
+        if (!primary) return entry;
+        const view = views.get(entry.item.id);
+        if (!view) return entry;
+        if (typeof view.label !== 'string')
+          throw new Error('Invalid row evidence');
+        const evidence: InboxEvidence = {
+          evidence: primary,
+          label: view.label,
+        };
+        if (typeof view.viewUrl === 'string') evidence.viewUrl = view.viewUrl;
+        if (typeof view.thumbnailUrl === 'string')
+          evidence.thumbnailUrl = view.thumbnailUrl;
+        return { ...entry, evidence };
+      });
     } catch {
       // A preview failure must not block triage: list without previews.
       return entries;
     }
-    const primaries = new Map(rows.map((row) => [row.itemId, row.evidence]));
-    return entries.map((entry) => {
-      const view = views.get(entry.item.id);
-      const primary = primaries.get(entry.item.id);
-      if (!view || !primary) return entry;
-      const evidence: InboxEvidence = { evidence: primary, label: view.label };
-      if (view.viewUrl) evidence.viewUrl = view.viewUrl;
-      if (view.thumbnailUrl) evidence.thumbnailUrl = view.thumbnailUrl;
-      return { ...entry, evidence };
-    });
   };
   const entry = async (item: IntakeItemDTO): Promise<InboxEntry> => {
     const { state } = await loadReviewSummary(service, item);
@@ -175,16 +182,8 @@ export function createIntakeReviewHost(
       }
       const assignment = await options.assignment(itemId);
       await service.getItem(itemId);
-      const primary = primaryEvidence(evidence.map((view) => view.evidence));
-      const primaryView = evidence.find((view) => view.evidence === primary);
       return {
-        entry: {
-          item,
-          label: label(item),
-          state: summary.state,
-          assignment,
-          ...(primaryView ? { evidence: withoutText(primaryView) } : {}),
-        },
+        entry: { item, label: label(item), state: summary.state, assignment },
         evidence,
         analysis,
         reviews,

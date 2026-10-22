@@ -166,17 +166,60 @@ describe('inbox primary evidence', () => {
     expect(page.items.map((entry) => entry.item.id)).toEqual(['item']);
     expect(page.items[0].evidence).toBeUndefined();
   });
-  it('omits evidence for rows without durable parts and mirrors it on load', async () => {
+  it('leaves load unchanged: every part through evidence(part), no row preview on the entry', async () => {
     const f = fixture();
-    expect((await f.host.list({})).items[0].evidence).toBeUndefined();
     f.service.getEvidence.mockResolvedValue([
       part('message', 'message', 'application/json'),
       part('att', 'attachment:0', 'application/pdf', 'message'),
     ]);
     const view = await f.host.load('item');
-    expect(view.entry.evidence?.evidence.id).toBe('att');
-    expect(view.entry.evidence).not.toHaveProperty('text');
+    expect(view.entry).not.toHaveProperty('evidence');
     expect(view.evidence.map((e) => e.evidence.id)).toEqual(['message', 'att']);
+    expect(f.evidence).toHaveBeenCalledTimes(2);
+  });
+  it('gives no preview to a row without durable parts, even if the host answers for it', async () => {
+    const other = {
+      id: 'other',
+      processingState: 'completed',
+    } as IntakeItemDTO;
+    const rowEvidence = vi.fn(
+      async () =>
+        new Map<string, RowEvidenceView>([
+          ['item', { label: 'Original', viewUrl: '/original/item' }],
+          // Answers for a row that has no durable parts on this page.
+          ['other', { label: 'Phantom', viewUrl: '/original/other' }],
+        ]),
+    );
+    const f = fixture({ rowEvidence });
+    f.service.listItems.mockResolvedValue([f.item, other]);
+    f.service.listEvidence.mockResolvedValue(
+      new Map([['item', [part('file', 'file', 'application/pdf')]]]),
+    );
+    const page = await f.host.list({});
+    expect(rowEvidence).toHaveBeenCalledWith([
+      { itemId: 'item', evidence: part('file', 'file', 'application/pdf') },
+    ]);
+    expect(page.items[0].evidence?.viewUrl).toBe('/original/item');
+    expect(page.items[1].evidence).toBeUndefined();
+  });
+  it('still lists the page when rowEvidence returns a malformed answer', async () => {
+    for (const answer of [
+      null,
+      {},
+      [['item', { label: 'Original' }]],
+      new Map([['item', { label: 42 }]]),
+    ]) {
+      const f = fixture({
+        rowEvidence: async () =>
+          answer as unknown as ReadonlyMap<string, RowEvidenceView>,
+      });
+      f.service.listEvidence.mockResolvedValue(
+        new Map([['item', [part('file', 'file', 'application/pdf')]]]),
+      );
+      const page = await f.host.list({});
+      expect(page.items.map((entry) => entry.item.id)).toEqual(['item']);
+      expect(page.items[0].evidence).toBeUndefined();
+    }
   });
 });
 

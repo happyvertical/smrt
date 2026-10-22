@@ -67,21 +67,31 @@ export interface InboxEntry {
   state: InboxState;
   assignment: Assignment;
   /**
-   * The item's primary original (first non-metadata durable part), projected
-   * by the host for the whole page in one batched read; absent when the item
-   * has no durable evidence yet.
+   * An inbox row's preview of its primary original, present only on `list`
+   * entries and only when the host supplies the opt-in `rowEvidence` option
+   * (#4213). The part is chosen by role: the shallowest child part (an
+   * upload's file, an email's first attachment), else the first root part.
+   * `list` reads the page's durable parts in one batched query, asks
+   * `rowEvidence` once for the page, and fills this from its answer; it is
+   * absent when the host omits `rowEvidence`, does not answer for the row,
+   * or the item has no durable parts. `load` never sets it.
    */
   evidence?: InboxEvidence;
 }
-/** Page-safe evidence projection: identity, media type and host URLs, no text. */
-export type InboxEvidence = Omit<EvidenceView, 'text'>;
+/** A row's preview: the primary part's identity plus host URLs, never text. */
+export interface InboxEvidence {
+  evidence: IntakeEvidenceDTO;
+  label: string;
+  /** Host-authorized same-origin content URL, never an object-storage key. */
+  viewUrl?: string;
+  /** Optional host-authorized same-origin preview image for the row. */
+  thumbnailUrl?: string;
+}
 export interface EvidenceView {
   evidence: IntakeEvidenceDTO;
   label: string;
   /** Host-authorized same-origin content URL, never an object-storage key. */
   viewUrl?: string;
-  /** Optional host-authorized same-origin preview image for inbox rows. */
-  thumbnailUrl?: string;
   text?: string;
 }
 export interface ItemReviewView {
