@@ -3899,6 +3899,34 @@ export function proposalSuite(
         (await db.query('SELECT id FROM intake_actions')).rows,
       ).toHaveLength(0);
     });
+    it('drops the failure reason when the output-limit fallback runs (#4207 review)', async () => {
+      const reply = () => ({
+        completion: 'complete' as const,
+        output: JSON.parse(
+          '{"outcome":"accept","suggestions":[{"handlerId":"h","handlerVersion":"1","args":{},"explanation":"x"}]}',
+        ),
+      });
+      calls.mockImplementation(async () => reply());
+      const measured = await generate();
+      const failure = measured.output.provenance.failure;
+      expect(failure?.reason).toBeTruthy();
+      const published = (
+        await service.getCompletedAnalysis(
+          measured.itemId,
+          measured.lease.attemptId,
+        )
+      ).result;
+      const withReason = Buffer.byteLength(JSON.stringify(published));
+      const reasonBytes = Buffer.byteLength(JSON.stringify(failure));
+      // Fits before generation (no reason yet) but not once the reason is
+      // added, so only the fallback can publish it.
+      configuration.limits.maxOutputBytes =
+        withReason - Math.floor(reasonBytes / 2);
+      const limited = await generate();
+      expect(limited.output.warnings).toContain('output_limit');
+      expect(limited.output.offered).toEqual([]);
+      expect(limited.output.provenance.failure).toBeUndefined();
+    });
     it('records a bounded value-free validator reason next to malformed_output (#4207)', async () => {
       calls.mockResolvedValue({
         completion: 'complete',

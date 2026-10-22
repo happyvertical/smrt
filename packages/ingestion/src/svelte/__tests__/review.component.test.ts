@@ -995,9 +995,37 @@ describe('intake review host boundary', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(callbacks.preview).not.toHaveBeenCalled();
   });
-  it('keeps the typed draft and shows an inline refusal when the host rejects a preview', async () => {
+  it('fails closed when a preview throws, clearing originals and the view', async () => {
     const callbacks = host(needsReviewView(['title']));
     vi.mocked(callbacks.preview).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      {
+        target: {
+          value: JSON.stringify({ body: 'Minutes', title: 'Human title' }),
+        },
+      },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'This view is unavailable',
+    );
+    expect(screen.queryByTestId('evidence-viewer')).toBeNull();
+    expect(
+      screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+    ).toBeNull();
+    expect(screen.queryByText('confidential', { exact: false })).toBeNull();
+  });
+  it('keeps the typed draft and shows an inline refusal when the handler rejects the arguments', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.preview).mockResolvedValue({ rejected: 'invalid' });
     render(IntakeReview, { host: callbacks, itemId: 'item' });
     const prepare = await screen.findByRole('button', {
       name: 'Prepare review',
@@ -1012,8 +1040,9 @@ describe('intake review host boundary', () => {
     );
     await fireEvent.click(prepare);
     expect((await screen.findByRole('alert')).textContent).toContain(
-      'did not accept this preview',
+      'did not pass the handler validation',
     );
+    expect(screen.getByTestId('evidence-viewer')).toBeTruthy();
     expect(callbacks.preview).toHaveBeenCalledTimes(1);
     expect(callbacks.load).toHaveBeenCalledTimes(1);
     expect(
@@ -1049,7 +1078,7 @@ describe('intake review host boundary', () => {
     );
     expect(callbacks.preview).not.toHaveBeenCalled();
   });
-  it('reports a failed destination search inline without discarding the view or draft', async () => {
+  it('fails closed when a destination search throws, keeping only the in-memory draft', async () => {
     const callbacks = host(needsReviewView(['title']));
     vi.mocked(callbacks.candidates).mockRejectedValue(new Error('Denied'));
     render(IntakeReview, { host: callbacks, itemId: 'item' });
@@ -1066,17 +1095,21 @@ describe('intake review host boundary', () => {
       screen.getByRole('button', { name: 'Search destinations' }),
     );
     expect((await screen.findByRole('alert')).textContent).toContain(
-      'Destination search is unavailable',
+      'This view is unavailable',
     );
-    expect(callbacks.load).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('evidence-viewer')).toBeNull();
+    expect(
+      screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+    ).toBeNull();
+    // After an authorized refresh the reviewer's own typing is still there.
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(
       (
-        screen.getByRole('textbox', {
+        (await screen.findByRole('textbox', {
           name: 'Suggested arguments (JSON)',
-        }) as HTMLTextAreaElement
+        })) as HTMLTextAreaElement
       ).value,
     ).toBe(typed);
-    expect(screen.getByRole('button', { name: 'Prepare review' })).toBeTruthy();
   });
   it('keeps every card draft across a failed action and the following refresh', async () => {
     const view = needsReviewView(['title']);

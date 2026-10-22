@@ -4,6 +4,7 @@ import type { GenerationOutput } from './proposal-dto.js';
 import {
   describeSchemaErrors,
   PROPOSAL_REASON_LIMIT,
+  PROPOSAL_REASON_MAX_ERRORS,
   ProposalValidationError,
   schemaOwnedPath,
   validateSuggestions,
@@ -215,6 +216,41 @@ describe('proposal validator reasons', () => {
     });
     expect(error.reason).toMatch(/\+\d+ more$/);
     expect(error.reason.length).toBeLessThanOrEqual(PROPOSAL_REASON_LIMIT);
+  });
+  it('bounds work for repeated deep paths from a recursive schema (#4207 review)', () => {
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { child: { $ref: '#' } },
+    };
+    let instance: Record<string, unknown> = { extra: 'x' };
+    for (let depth = 0; depth < 3000; depth++) instance = { child: instance };
+    const error = {
+      instancePath: `${'/child'.repeat(3000)}`,
+      keyword: 'additionalProperties',
+      schemaPath: '#/additionalProperties',
+      params: { additionalProperty: 'extra' },
+      message: 'must NOT have additional properties',
+    };
+    const errors = new Array(100000).fill(error);
+    let walked = 0;
+    const tracked = new Proxy(errors, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && /^\d+$/.test(key)) walked++;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const started = performance.now();
+    const reason = describeSchemaErrors(tracked, schema, instance);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(walked).toBeLessThanOrEqual(PROPOSAL_REASON_MAX_ERRORS);
+    // `$ref` is not resolved, so only the first declared key is kept and the
+    // rest of the deep path is reported conservatively as `?`.
+    expect(reason).toMatch(/^\/child\/\?\/\?\/\?/);
+    expect(reason).toContain('… additionalProperties');
+    expect(reason).toMatch(/\+\d+ more$/);
+    expect(reason).not.toContain('extra');
+    expect(reason.length).toBeLessThanOrEqual(PROPOSAL_REASON_LIMIT);
   });
   it('summarizes a very large error list in bounded time', () => {
     const errors = Array.from({ length: 400000 }, (_, index) => ({

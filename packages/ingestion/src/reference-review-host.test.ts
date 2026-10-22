@@ -3,6 +3,7 @@ import {
   ReferenceReviewHost,
   type ReviewSession,
 } from '../reference/review-host.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 
 /**
  * The maintained fixture's `preview` must refuse the same cases as the
@@ -92,6 +93,26 @@ describe('reference review host preview with human arguments', () => {
       }),
     );
     expect(f.service.previewGeneratedProposals).not.toHaveBeenCalled();
+  });
+  it('maps only handler validation to a typed rejection on the review transport', async () => {
+    const f = fixture(analysis('interpret', 'proposals', offered));
+    f.service.previewProposal.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler arguments'),
+    );
+    await expect(f.host.previewForReview(scope, input)).resolves.toEqual({
+      rejected: 'invalid',
+    });
+    f.service.previewProposal.mockRejectedValueOnce(new Error('Access denied'));
+    await expect(f.host.previewForReview(scope, input)).rejects.toThrow(
+      'Access denied',
+    );
+    // The programmatic `preview` contract is unchanged: it still throws.
+    f.service.previewProposal.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler arguments'),
+    );
+    await expect(f.host.preview(scope, input)).rejects.toBeInstanceOf(
+      HandlerArgumentsInvalidError,
+    );
   });
   it.each([
     ['a failed attempt', analysis('interpret', 'provider_error', offered)],

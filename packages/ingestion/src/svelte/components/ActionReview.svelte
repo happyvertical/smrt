@@ -168,7 +168,7 @@ function choose(field: string, id: string) {
 {#if editable}
 {#if missing.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each missing as name (name)}<li>{name}</li>{/each}</ul>{/if}
 <Input aria-label={t(M['ingestion.reason'])} bind:value={reason} />
-{#if !action.plan && catalog}<CandidatePicker {host} {itemId} {catalog} onchoose={choose} />{/if}
+{#if !action.plan && catalog}<CandidatePicker {host} {itemId} {catalog} {deny} onchoose={choose} />{/if}
 {#if dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <div class="controls">{#if waiting}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button><Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}</div>

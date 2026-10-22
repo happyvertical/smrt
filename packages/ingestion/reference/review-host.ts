@@ -17,6 +17,7 @@ import type { ExtractionRequest } from '../src/extraction-types.js';
 import type { FeedbackConfiguration } from '../src/feedback-contracts.js';
 import * as models from '../src/models.js';
 import type { GenerationOutput } from '../src/proposal-dto.js';
+import { HandlerArgumentsInvalidError } from '../src/proposal-errors.js';
 import type {
   Assignment,
   InboxEntry,
@@ -724,6 +725,26 @@ export class ReferenceReviewHost {
         },
       ],
     });
+  }
+  /**
+   * Review-UI transport for `preview`: only the handler's own refusal of the
+   * arguments becomes the correctable `{ rejected: 'invalid' }` result; every
+   * other failure (denied, revoked, unavailable, unknown) still throws.
+   */
+  async previewForReview(
+    scope: ReviewSession,
+    input: Parameters<ReferenceReviewHost['preview']>[1],
+  ): Promise<
+    | Awaited<ReturnType<ReferenceReviewHost['preview']>>
+    | { rejected: 'invalid' }
+  > {
+    try {
+      return await this.preview(scope, input);
+    } catch (error) {
+      if (error instanceof HandlerArgumentsInvalidError)
+        return { rejected: 'invalid' };
+      throw error;
+    }
   }
   async decide(scope: ReviewSession, input: ReviewInput) {
     return (await this.service(scope)).service.submitDecision(input);

@@ -2385,7 +2385,10 @@ export class IngestionService {
 
 export * from './extraction.js';
 export type * from './feedback-contracts.js';
-export { GenerationSnapshotStaleError } from './proposal-errors.js';
+export {
+  GenerationSnapshotStaleError,
+  HandlerArgumentsInvalidError,
+} from './proposal-errors.js';
 export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
