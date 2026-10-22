@@ -156,15 +156,21 @@ and `nextCursor` is present only when more rows follow.
 
 Authority is rechecked at the same two levels `load` applies, but per page
 rather than per row: the host authorize callback once per distinct captured
-ceiling, and the execution read gate (policy, ceiling, handler and operation
-allowlists, principal) once per distinct (item, handler) bound by the page's
-saved actions. An item whose bound handler the actor cannot currently read is
-not listed at all, rather than listed with a state derived from actions the
-actor may not see; actions without a proposal bind no handler and are not
-gated, as in `listReviews`. Denied rows are skipped without disclosure and the
-page refills from the next rows. One call examines at most
+ceiling in a batch, and the execution read gate (policy, ceiling, handler and
+operation allowlists, principal) once per distinct (item, handler) bound by
+the page's saved actions. The list gate is read-only: it evaluates the same
+checks as `listReviews` without the retention write, so an item that the item
+view would narrow past its deadline is simply not listed. An item whose bound
+handler the actor cannot currently read is not listed at all, rather than
+listed with a state derived from actions the actor may not see; actions
+without a proposal bind no handler and are not gated, as in `listReviews`.
+Handler bindings are read once per batch, only for rows that passed the
+item-level gate. Denied or unreadable rows are skipped without disclosure and
+the page refills from the next rows. One service call examines at most
 `ITEM_SCAN_CEILING` (1000) rows; when a mostly-denied scope reaches it, the
-page comes back short with a `nextCursor` and the caller continues.
+page comes back short with a `nextCursor`. The host `list` honours that: a
+short service page with a cursor, or 1000 rows examined while filtering by
+assignee, ends the host call with the same cursor and the caller continues.
 
 The page's inbox state is the durable projection of the saved action journal
 and processing state, computed once per scanned row inside the page query;
@@ -178,7 +184,15 @@ in the execution service plus a migration, which this change does not take.
 Listing does not load original bytes.
 
 Newest-first paging relies on `intake_items_received_idx`
-(`tenant_id, confidential_scope_id, created_at`). This package ships no
+(`tenant_id, confidential_scope_id, created_at, id`), the full ordering key, so
+an unfiltered page is a backward index scan that stops at the page boundary;
+the foundation suite asserts that plan on both engines (SQLite
+`EXPLAIN QUERY PLAN`, PostgreSQL `EXPLAIN`), with the per-row state counters
+served by `intake_actions_item_idx`. The proof holds with planner statistics:
+without `ANALYZE`, SQLite preferred `intake_items_expiry_idx` plus a sort in
+the suite, so SQLite deployments should keep statistics current
+(`ANALYZE` / `PRAGMA optimize` after bulk loads); PostgreSQL autovacuum
+analyses the table on its own. This package ships no
 migration files: indexes are declared on the model, the build emits them into
 `dist/manifest.json`, and `smrt db:migrate` / the public migration API create
 them, which is how `intake_items_receipt_idx` shipped. Deploy the manifest

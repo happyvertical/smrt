@@ -375,7 +375,13 @@ export class IntakeExecutionService {
     if (!this.ajv.compile(schema)(value))
       throw new Error('Invalid handler payload');
   }
-  private async access(
+  /**
+   * The read-only half of `access`: current host authority, policy and
+   * ceiling allowlists and the retention deadline they imply. It writes
+   * nothing, so a listing may call it per (item, handler) without opening a
+   * transaction per row.
+   */
+  private async authority(
     db: DatabaseInterface,
     item: Row,
     handler: IntakeHandler,
@@ -418,6 +424,20 @@ export class IntakeExecutionService {
     const deadline = Math.min(
       time(item.expires_at),
       time(item.created_at) + policy.retentionMs,
+    );
+    return { current, ceiling, policy, deadline };
+  }
+  private async access(
+    db: DatabaseInterface,
+    item: Row,
+    handler: IntakeHandler,
+    operation: ExecutionAccessInput['operation'],
+  ) {
+    const { current, ceiling, policy, deadline } = await this.authority(
+      db,
+      item,
+      handler,
+      operation,
     );
     const enforce = async (executor: DatabaseInterface) => {
       const intents = this.retentionIntents.getStore();
@@ -672,8 +692,10 @@ export class IntakeExecutionService {
   }
   /**
    * Current read authority for one handler bound to a listed item: the same
-   * gate `listReviews` applies per action, exposed for page-level checks.
-   * Any failure answers false; the list discloses nothing about why.
+   * checks `listReviews` applies per action, without the retention write.
+   * An item that `access` would narrow past its deadline is not readable
+   * for listing purposes. Any failure answers false; the list discloses
+   * nothing about why.
    */
   async canReadHandler(
     item: Row,
@@ -681,13 +703,13 @@ export class IntakeExecutionService {
     handlerVersion: string,
   ): Promise<boolean> {
     try {
-      await this.access(
+      const { deadline } = await this.authority(
         this.db,
         item,
         this.handler(handlerId, handlerVersion),
         'read',
       );
-      return true;
+      return deadline > this.now().getTime();
     } catch {
       return false;
     }

@@ -120,6 +120,10 @@ export function proposalSuite(
     let reviewerAllowed: boolean;
     let policyReviewers: string[];
     let deniedHandlers: string[];
+    let deniedOperations: string[];
+    let policyAccess: string[];
+    let principalOverride: string | undefined;
+    let executionAuthorizations: number;
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
       await expect(
@@ -164,6 +168,10 @@ export function proposalSuite(
       reviewerAllowed = true;
       policyReviewers = ['owner', 'reviewer'];
       deniedHandlers = [];
+      deniedOperations = [];
+      policyAccess = ['private'];
+      principalOverride = undefined;
+      executionAuthorizations = 0;
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -228,6 +236,7 @@ export function proposalSuite(
         handlers,
         authorize: async ({ scope, db: executor }) => {
           authorizedExecutor = executor;
+          executionAuthorizations++;
           return {
             allowed:
               allowed &&
@@ -235,7 +244,7 @@ export function proposalSuite(
               scope.confidentialScopeId === 'private' &&
               ['owner', 'reviewer'].includes(scope.actorId),
             reviewer: reviewerAllowed,
-            principalId: principal,
+            principalId: principalOverride ?? principal,
             permissions,
             mutationBoundary: 'serialized',
             policy: [
@@ -244,14 +253,16 @@ export function proposalSuite(
                 handlers: handlers
                   .map((handler) => handler.id)
                   .filter((id) => !deniedHandlers.includes(id)),
-                operations: handlers.map((handler) =>
-                  'model' in handler.operation
-                    ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
-                    : handler.operation.playbookKey,
-                ),
+                operations: handlers
+                  .map((handler) =>
+                    'model' in handler.operation
+                      ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
+                      : handler.operation.playbookKey,
+                  )
+                  .filter((key) => !deniedOperations.includes(key)),
                 providers: providerAllowed ? ['fixture'] : [],
                 reviewers: policyReviewers,
-                access: ['private'],
+                access: policyAccess,
                 requireReview: true,
                 maxBytes: policyMaxBytes,
                 leaseMs: 1000,
@@ -792,6 +803,178 @@ export function proposalSuite(
       ).rejects.toThrow('Generation visibility changed');
     });
 
+    it('lists pages under the read-only execution gate: ceiling, policy, operation, access and principal denials', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: generated.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      await host.preview({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        index: 0,
+        requestId: randomUUID(),
+      });
+      // Trusted setup clones the item with its saved action and proposal so
+      // the handler gate runs for a whole page. Ten clones carry a captured
+      // ceiling without the bound handler.
+      const row = async (table: string, where: string, value: string) =>
+        (await db.query(`SELECT * FROM ${table} WHERE ${where}=?`, value))
+          .rows[0] as Record<string, unknown>;
+      const itemRow = await row('intake_items', 'id', generated.itemId);
+      const actionRow = await row(
+        'intake_actions',
+        'item_id',
+        generated.itemId,
+      );
+      const proposalRow = await row(
+        'intake_proposals',
+        'item_id',
+        generated.itemId,
+      );
+      const insert = async (
+        table: string,
+        template: Record<string, unknown>,
+        overrides: Record<string, unknown>,
+      ) => {
+        const values = { ...template, ...overrides };
+        const columns = Object.keys(values);
+        await db.query(
+          `INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
+          ...columns.map((column) => {
+            const value = values[column];
+            return value &&
+              typeof value === 'object' &&
+              !(value instanceof Date)
+              ? JSON.stringify(value)
+              : value;
+          }),
+        );
+      };
+      const json = (value: unknown) =>
+        typeof value === 'string' ? JSON.parse(value) : structuredClone(value);
+      const readable: string[] = [];
+      const mismatched: string[] = [];
+      const base = new Date(String(itemRow.created_at)).getTime();
+      for (let index = 0; index < 40; index++) {
+        const itemId = randomUUID();
+        const actionId = randomUUID();
+        const data = json(itemRow.data) as {
+          capturedCeiling: { execution: { handlers: string[] } };
+        };
+        if (index < 10) {
+          data.capturedCeiling.execution.handlers =
+            data.capturedCeiling.execution.handlers.filter(
+              (id) => id !== CREATE,
+            );
+          mismatched.push(itemId);
+        } else readable.push(itemId);
+        const at = new Date(base - (index + 1) * 1000).toISOString();
+        await insert('intake_items', itemRow, {
+          id: itemId,
+          slug: itemId,
+          delivery_key: `clone-${index}`,
+          created_at: at,
+          updated_at: at,
+          data,
+        });
+        await insert('intake_actions', actionRow, {
+          id: actionId,
+          slug: actionId,
+          item_id: itemId,
+          action_key: `clone-${index}`,
+        });
+        const proposalId = randomUUID();
+        await insert('intake_proposals', proposalRow, {
+          id: proposalId,
+          slug: proposalId,
+          item_id: itemId,
+          action_id: actionId,
+        });
+      }
+      const expiry = async () =>
+        (
+          await db.query('SELECT id,expires_at FROM intake_items ORDER BY id')
+        ).rows.map((r) => [String(r.id), String(r.expires_at)]);
+      const before = await expiry();
+      let writes = 0;
+      let queries = 0;
+      const counted = new Proxy(db, {
+        get(target, property) {
+          if (property === 'query')
+            return (...args: unknown[]) => {
+              queries++;
+              if (/^\s*(UPDATE|INSERT|DELETE)/i.test(String(args[0]))) writes++;
+              return (target.query as (...a: unknown[]) => unknown)(...args);
+            };
+          if (property === 'transaction')
+            return (...args: unknown[]) => {
+              writes++;
+              return (target.transaction as (...a: unknown[]) => unknown)(
+                ...args,
+              );
+            };
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const paged = new IngestionService({ ...options, db: counted });
+      executionAuthorizations = 0;
+      const page = await paged.listItems({ limit: 100 });
+      // The original (newest) plus the thirty clones whose ceiling still
+      // covers the handler, newest first; the ten mismatched clones are not
+      // listed and leak no state.
+      expect(page.items.map(({ item }) => item.id)).toEqual([
+        generated.itemId,
+        ...readable,
+      ]);
+      expect(page.items.every(({ state }) => state === 'waiting')).toBe(true);
+      expect(page.nextCursor).toBeUndefined();
+      // One execution authorization per (item, handler) in the page, and
+      // listing wrote nothing: no transaction, no retention narrowing.
+      expect(executionAuthorizations).toBe(41);
+      expect(writes).toBe(0);
+      expect(queries).toBeLessThanOrEqual(3);
+      expect(await expiry()).toEqual(before);
+      // Every other denial path of the execution read gate empties the page
+      // while the item view refuses as before.
+      const createKey = (() => {
+        const handler = handlers.find((h) => h.id === CREATE)!;
+        return 'model' in handler.operation
+          ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
+          : handler.operation.playbookKey;
+      })();
+      for (const deny of [
+        () => {
+          deniedHandlers = [CREATE];
+        },
+        () => {
+          deniedOperations = [createKey];
+        },
+        () => {
+          policyAccess = ['elsewhere'];
+        },
+        () => {
+          principalOverride = '44444444-4444-4444-8444-444444444444';
+        },
+      ]) {
+        deny();
+        expect((await paged.listItems({ limit: 100 })).items).toEqual([]);
+        expect((await host.list({})).items).toEqual([]);
+        await expect(host.load(generated.itemId)).rejects.toThrow(
+          'unavailable',
+        );
+        deniedHandlers = [];
+        deniedOperations = [];
+        policyAccess = ['private'];
+        principalOverride = undefined;
+      }
+      expect((await paged.listItems({ limit: 100 })).items).toHaveLength(31);
+      expect(await expiry()).toEqual(before);
+    });
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();
       const generated = await generate();

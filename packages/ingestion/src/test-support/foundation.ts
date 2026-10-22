@@ -1415,11 +1415,14 @@ export function foundationSuite(
       let visible = ordered.filter((row) => row.expected !== 'hidden');
       let queries = 0;
       let authorizations = 0;
+      let lastPage: { sql: string; params: unknown[] } | undefined;
       const counted = new Proxy(db, {
         get(target, property) {
           if (property === 'query')
             return (...args: unknown[]) => {
               queries++;
+              if (String(args[0]).includes('FROM intake_items i'))
+                lastPage = { sql: String(args[0]), params: args.slice(1) };
               return (target.query as (...a: unknown[]) => unknown)(...args);
             };
           const value = Reflect.get(target, property, target);
@@ -1551,6 +1554,46 @@ export function foundationSuite(
         ids(await paged.listItems({ state: 'failed', limit: 20 })),
       ).toEqual(ids(failedPage));
       expect(queries).toBe(1);
+
+      // Plan evidence: the unfiltered page walks intake_items_received_idx
+      // backwards and stops at the page boundary; no sort, no table scan.
+      // The per-row state counters use intake_actions_item_idx.
+      await paged.listItems();
+      expect(lastPage).toBeTruthy();
+      if (dialect === 'sqlite') {
+        await db.query('ANALYZE');
+        const plan = (
+          await db.query(
+            `EXPLAIN QUERY PLAN ${lastPage!.sql}`,
+            ...lastPage!.params,
+          )
+        ).rows.map((row) => String(row.detail));
+        expect(plan).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining('USING INDEX intake_items_received_idx'),
+            expect.stringContaining('USING INDEX intake_actions_item_idx'),
+          ]),
+        );
+        expect(plan.some((line) => /TEMP B-TREE FOR ORDER BY/.test(line))).toBe(
+          false,
+        );
+        expect(plan.some((line) => /^SCAN (i|intake_items)\b/.test(line))).toBe(
+          false,
+        );
+      } else {
+        await db.query('ANALYZE intake_items');
+        await db.query('ANALYZE intake_actions');
+        const plan = (
+          await db.query(`EXPLAIN ${lastPage!.sql}`, ...lastPage!.params)
+        ).rows
+          .map((row) => String(row['QUERY PLAN']))
+          .join('\n');
+        expect(plan).toContain(
+          'Index Scan Backward using intake_items_received_idx',
+        );
+        expect(plan).not.toContain('Seq Scan on intake_items');
+        expect(plan).not.toMatch(/^\s*->\s+Sort/m);
+      }
 
       // A mostly-denied actor: only the rare ceiling is readable, so a page
       // needs many rows. Each call examines at most ITEM_SCAN_CEILING rows,

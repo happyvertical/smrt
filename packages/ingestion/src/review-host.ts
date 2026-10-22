@@ -12,6 +12,7 @@ import { loadReviewSummary } from './review-summary.js';
 import {
   type IngestionService,
   ITEM_ID_FILTER_CEILING,
+  ITEM_SCAN_CEILING,
   isIntakeId,
 } from './server.js';
 
@@ -83,9 +84,13 @@ export function createIntakeReviewHost(
       }
       const items: InboxEntry[] = [];
       let cursor = input.cursor;
+      let examined = 0;
       // One query per page when every filter is pushed down. Only an
       // assignee filter the host cannot push down scans further pages, and
-      // each scan is still one query plus one batched assignment read.
+      // each scan is still one query plus one batched assignment read. A
+      // host call never examines more than ITEM_SCAN_CEILING rows: a short
+      // service page with a cursor (the service hit its own ceiling) or the
+      // host's own count ends the call with that cursor for the caller.
       for (;;) {
         const page = await service.listItems({
           limit,
@@ -93,6 +98,7 @@ export function createIntakeReviewHost(
           state: input.state,
           itemIds,
         });
+        examined += page.items.length;
         const read = await assignments(page.items.map(({ item }) => item.id));
         for (const [
           index,
@@ -117,6 +123,8 @@ export function createIntakeReviewHost(
             };
         }
         if (!page.nextCursor) return { items };
+        if (page.items.length < limit || examined >= ITEM_SCAN_CEILING)
+          return { items, nextCursor: page.nextCursor };
         cursor = page.nextCursor;
       }
     },

@@ -12,7 +12,7 @@ Before starting a service, deploy the package manifest through the public s-m-r-
 migration APIs or `smrt db:migrate`. `assertReady()` only checks existing tables.
 SQLite and PostgreSQL are supported; other engines fail construction. Index
 additions ship the same way: `intake_items_received_idx` (newest-first inbox
-paging) is declared on the model and reaches existing deployments through the
+paging on `tenant_id, confidential_scope_id, created_at, id`) is declared on the model and reaches existing deployments through the
 next manifest migration; there are no hand-written migration files in this
 package, and `smrt doctor --db` / `db:status --parity` report the index until
 it is applied.

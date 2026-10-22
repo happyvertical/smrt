@@ -155,6 +155,49 @@ describe('published review host projection', () => {
     expect(assignments).toHaveBeenCalledTimes(1);
     expect(assignments).toHaveBeenCalledWith(mine);
   });
+  it('returns a short service page with its cursor instead of scanning past the service ceiling', async () => {
+    const f = fixture();
+    f.service.listItems.mockResolvedValue({ items: [], nextCursor: 'ceiling' });
+    expect(await f.host.list({})).toEqual({ items: [], nextCursor: 'ceiling' });
+    expect(f.service.listItems).toHaveBeenCalledTimes(1);
+    const assignment = vi.fn(async () => ({ assigneeId: null, version: 0 }));
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment,
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    expect(await host.list({ assigneeId: 'me' })).toEqual({
+      items: [],
+      nextCursor: 'ceiling',
+    });
+    expect(f.service.listItems).toHaveBeenCalledTimes(2);
+  });
+  it('caps the assignee scan fallback at the scan ceiling and hands back the cursor', async () => {
+    const f = fixture();
+    const rows = Array.from({ length: 2000 }, (_, index) => ({
+      id: String(index).padStart(4, '0'),
+    }));
+    f.service.listItems.mockImplementation(pageSource(rows));
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    const page = await host.list({ assigneeId: 'nobody', limit: 100 });
+    // 1000 rows examined in ten 100-row service pages, then the call ends
+    // with the continuation; the caller decides whether to keep scanning.
+    expect(page.items).toEqual([]);
+    expect(page.nextCursor).toBe('0999');
+    expect(f.service.listItems).toHaveBeenCalledTimes(10);
+  });
   it('drops junk ids from the assignee pushdown instead of failing the list', async () => {
     const f = fixture();
     const rows = [

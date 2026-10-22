@@ -20,6 +20,7 @@ import type {
 import { generationSnapshotRead } from './execution-internal.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import './models.js';
+import type { IntakeExecutionService } from './execution.js';
 import type {
   IntakeExecutionOptions,
   PreviewPlanInput,
@@ -1277,32 +1278,53 @@ export class IngestionService {
       ).rows as Row[];
       const more = rows.length > batch;
       const candidates = rows.slice(0, batch);
+      // Item-level authority first, once per distinct ceiling in the batch.
+      // A row whose payload cannot be read is skipped, never fatal.
+      const passed = new Set<Row>();
+      for (const row of candidates) {
+        try {
+          if (await allowed(object(row.data))) passed.add(row);
+        } catch {
+          /* corrupt row: skipped and counted below */
+        }
+      }
+      // Handler bindings only for rows that passed and have saved actions:
+      // one read per batch, bounded by the batch size.
       const bindings = await handlers.bindings(
-        candidates.filter((row) => Number(row.action_count) > 0),
+        candidates.filter(
+          (row) => passed.has(row) && Number(row.action_count) > 0,
+        ),
       );
       let consumed = 0;
       for (const row of candidates) {
         consumed++;
         examined++;
-        after = {
-          receivedAt: persistedDate(row.created_at).toISOString(),
-          id: String(row.id),
-        };
-        if (!(await allowed(object(row.data)))) continue;
+        let position: { receivedAt: string; id: string } | undefined;
+        try {
+          position = {
+            receivedAt: persistedDate(row.created_at).toISOString(),
+            id: String(row.id),
+          };
+        } catch {
+          // A row with an unreadable receipt time cannot anchor a cursor; it
+          // is skipped and counted against the ceiling like any denied row.
+        }
+        if (position) after = position;
+        if (!position || !passed.has(row)) continue;
         if (!(await handlers.readable(row, bindings))) continue;
         items.push({
           item: this.itemDTO(row),
           state: String(row.inbox_state) as InboxState,
-          cursor: encodeItemCursor(after.receivedAt, after.id),
+          cursor: encodeItemCursor(position.receivedAt, position.id),
         });
         if (items.length === limit) break;
       }
       const remaining = more || consumed < candidates.length;
-      if (!remaining) return { items };
+      if (!remaining || !after) return { items };
       if (items.length === limit || examined >= ITEM_SCAN_CEILING)
         return {
           items,
-          nextCursor: encodeItemCursor(after!.receivedAt, after!.id),
+          nextCursor: encodeItemCursor(after.receivedAt, after.id),
         };
     }
   }
@@ -1333,9 +1355,18 @@ export class IngestionService {
    */
   private handlerGate() {
     const decisions = new Map<string, Promise<boolean>>();
-    const execution = this.options.execution
-      ? this.execution()
-      : Promise.resolve(undefined);
+    // Created only when a listed row actually binds a handler; a failure to
+    // construct the execution service reads as "not readable", never as an
+    // unhandled rejection.
+    let execution: Promise<IntakeExecutionService | undefined> | undefined;
+    const service = () => {
+      execution ??= (
+        this.options.execution
+          ? this.execution()
+          : Promise.resolve<IntakeExecutionService | undefined>(undefined)
+      ).catch(() => undefined);
+      return execution;
+    };
     return {
       bindings: async (
         rows: Row[],
@@ -1375,10 +1406,10 @@ export class IngestionService {
           const key = `${itemId}\u0000${handler.id}\u0000${handler.version}`;
           let decision = decisions.get(key);
           if (!decision) {
-            decision = execution
-              .then((service) =>
-                service
-                  ? service.canReadHandler(row, handler.id, handler.version)
+            decision = service()
+              .then((gate) =>
+                gate
+                  ? gate.canReadHandler(row, handler.id, handler.version)
                   : false,
               )
               .catch(() => false);
