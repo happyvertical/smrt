@@ -92,6 +92,7 @@ export function internalSourceSuite(
     let submitterPolicy: boolean | undefined;
     let policyReviewers: string[];
     let deniedExecutionItems: Set<string>;
+    let revokedReads: Set<string>;
     let generate: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     const scopes = ['private', 'shared'];
     const actors = ['sender', 'reviewer', 'other'];
@@ -103,6 +104,7 @@ export function internalSourceSuite(
       submitterPolicy = undefined;
       policyReviewers = ['reviewer'];
       deniedExecutionItems = new Set();
+      revokedReads = new Set();
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
         if (!base) throw new Error('PostgreSQL required');
@@ -214,8 +216,12 @@ export function internalSourceSuite(
           actorId: 'sender',
           confidentialScopeId: 'private',
         },
-        authorize: async ({ scope }) =>
+        authorize: async ({ scope, operation, capturedCeiling }) =>
           allowed &&
+          !(
+            operation === 'read' &&
+            revokedReads.has(String(capturedCeiling.tag ?? ''))
+          ) &&
           scope.tenantId === tenant &&
           scopes.includes(scope.confidentialScopeId) &&
           actors.includes(scope.actorId),
@@ -501,6 +507,34 @@ export function internalSourceSuite(
           ],
         },
         { dispatch: 'later' as unknown as 'inline' },
+        // PostgreSQL JSON cannot store these; both engines must reject alike.
+        {
+          parts: [
+            {
+              partId: 'body',
+              reference: { owner: 'message', id: 'x' },
+              snapshot: { text: 'before\u0000after' },
+            },
+          ],
+        },
+        {
+          parts: [
+            {
+              partId: 'body',
+              reference: { owner: 'message', id: 'x' },
+              snapshot: { text: 'lone \ud800 surrogate' },
+            },
+          ],
+        },
+        {
+          parts: [
+            {
+              partId: 'body',
+              reference: { owner: 'message', id: 'x' },
+              snapshot: { text: 'lone \udc00 low' },
+            },
+          ],
+        },
       ];
       for (const overrides of invalid)
         expect(
@@ -906,6 +940,34 @@ export function internalSourceSuite(
       await expect(shared.getItem(sharedReceipt.itemId)).rejects.toThrow(
         'Intake unavailable',
       );
+    });
+
+    it('omits a submission whose item-level read is revoked without disclosing its identity', async () => {
+      const visible = await interpreted();
+      const revokedId = randomUUID();
+      const input = message(revokedId);
+      input.capturedCeiling = { ...input.capturedCeiling, tag: 'revocable' };
+      const revokedItem = await accepted(input);
+      await service.interpretInline(revokedItem, {
+        requestId: randomUUID(),
+        extraction,
+      });
+      expect(
+        (await service.listOwnProposals()).items.map((e) => e.item.id).sort(),
+      ).toEqual([visible.itemId, revokedItem].sort());
+      revokedReads.add('revocable');
+      const page = await service.listOwnProposals();
+      expect(page.items.map((e) => e.item.id)).toEqual([visible.itemId]);
+      expect(page.items.some((e) => e.unavailable)).toBe(false);
+      expect(page.nextCursor).toBeUndefined();
+      expect(JSON.stringify(page)).not.toContain(revokedItem);
+      await expect(service.getItem(revokedItem)).rejects.toThrow(
+        'Intake unavailable',
+      );
+      revokedReads.clear();
+      expect(
+        (await service.listOwnProposals()).items.map((e) => e.item.id).sort(),
+      ).toEqual([visible.itemId, revokedItem].sort());
     });
 
     it('marks an unreadable submission unavailable without hiding the others and labels self-decisions', async () => {

@@ -74,7 +74,10 @@ For trusted internal sources the person who submitted an item may confirm or
 decline their own proposal without the reviewer inbox. `listOwnProposals`
 returns only items whose server-recorded `submitter_id` equals the current
 authenticated actor, each with its bounded saved review page reloaded under
-current item, handler and target authority; a denied item fails the whole page.
+current item, handler and target authority. An item the actor can no longer
+read is omitted entirely (no identity, state or count); an item that is still
+readable but whose reviews are denied by handler or target authority is
+returned as `{ item, reviews: null, unavailable: true }`.
 `submitOwnDecision` takes the same `ReviewInput` CAS fields and request ID as
 `submitDecision` and accepts `approve`, `reject` and `defer` only; `correct`
 belongs to the reviewer surface. It runs under the `review_own` execution
@@ -86,9 +89,8 @@ unchanged. The decision is a human decision by that actor, recorded with
 `mode: 'review_own'` and `selfDecision: true`; reviewer decisions carry
 `mode: 'review'`. A self-decision is not a reviewer judgment: it never feeds
 automation eligibility (machine authorization remains the separate evaluated
-`kind: 'machine'` path) and its feedback events carry the same marker. Own
-listings return `{ reviews: null, unavailable: true }` for a submission whose
-reviews cannot currently be read, disclosing nothing about the denied target.
+`kind: 'machine'` path) and its feedback events carry the same marker. The
+`unavailable` entry discloses nothing about the denied handler or target.
 `applyAction` then runs once under the approver's live grants exactly as
 for reviewer decisions. Hosts render this surface from their own authenticated
 session; presentation state confers no authority, and a source payload cannot

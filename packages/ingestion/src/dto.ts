@@ -113,7 +113,8 @@ export interface OwnProposalsInput {
 export interface OwnProposalsPage {
   items: Array<{
     item: IntakeItemDTO;
-    /** Null when the submission's reviews cannot currently be read. */
+    /** Null when the readable submission's reviews are denied; unreadable
+     * submissions are omitted from the page entirely. */
     reviews: import('./review-dto.js').ReviewPage | null;
     /** Set without a reason: nothing about the denied target is disclosed. */
     unavailable?: true;
