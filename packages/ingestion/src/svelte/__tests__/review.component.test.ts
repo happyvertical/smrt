@@ -1279,6 +1279,9 @@ describe('intake review host boundary', () => {
     // Terminal: the leftover waiting action can only be rejected.
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Defer' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Save edits for new review' }),
+    ).toBeNull();
     expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
     cleanup();
     const bare = host(catalogView());

@@ -17,7 +17,7 @@ export interface Props {
   action: ReviewAction;
   catalog?: ProposalCatalogEntry;
   currentAttemptId?: string;
-  /** A resolved item is terminal: approve/defer are hidden, reject remains. */
+  /** A resolved item is terminal: approve/correct/defer/apply and edits are hidden; only reject remains. */
   resolved?: boolean;
   run: (operation: () => Promise<unknown>) => Promise<void>;
   deny: () => void;
@@ -213,9 +213,9 @@ function choose(id: string) {
 {/if}
 {#if dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
-<div class="controls">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>
+<div class="controls">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan && !resolved}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>
 {/if}
-{#if action.plan?.stepIndex === 0 && action.plan.args && host.editPlan && planEditable}
+{#if action.plan?.stepIndex === 0 && action.plan.args && host.editPlan && planEditable && !resolved}
 <Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
 {#if !editable && dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if !editable && invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
@@ -223,13 +223,13 @@ function choose(id: string) {
 {/if}
 {#if action.review.state === 'authorized' && !resolved}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
 {/if}
-{#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction}
+{#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction && !resolved}
 <p>{t(M['ingestion.reviewAgain'])}</p>
 <Textarea aria-label={t(M['ingestion.args'])} bind:value={args} rows={8} />
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>
 {/if}
-{#if action.review.state === 'stale' && action.stalePlan && currentAttemptId && host.editPlan}
+{#if action.review.state === 'stale' && action.stalePlan && currentAttemptId && host.editPlan && !resolved}
 <p>{t(M['ingestion.reviewAgain'])}</p>
 <Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}

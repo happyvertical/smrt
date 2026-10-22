@@ -1391,6 +1391,9 @@ export class IntakeExecutionService {
       )
     )
       throw new Error('Proposal conflict');
+    // A resolved item is terminal: no new revision (correction, edit, re-preview).
+    if (await this.disposition(db, String(item.id)))
+      throw new Error('Item resolved');
     const [attempt] = await this.rows(
       db,
       'intake_analysis_attempts',
@@ -1577,9 +1580,10 @@ export class IntakeExecutionService {
       )
         throw new Error('Stale review');
       await this.verifyEvidence(db, bound);
-      // A resolved item is terminal: later approval would contradict the disposition.
+      // A resolved item is terminal: only reject remains; approval, correction or
+      // deferral would reopen a decision the disposition closed.
       if (
-        frozen.decision === 'approve' &&
+        frozen.decision !== 'reject' &&
         (await this.disposition(db, String(bound.item.id)))
       )
         throw new Error('Item resolved');
@@ -2596,6 +2600,25 @@ export class IntakeExecutionService {
       return { ...this.review(bound), state: 'authorized' };
     });
   }
+  /**
+   * Whether an `authorized` action still holds an unexpired approval for its
+   * current review version. An expired one can be neither applied nor rejected,
+   * so it must not keep the item open; `approved()` refuses resolved items.
+   */
+  private async approvalLive(
+    db: DatabaseInterface,
+    action: Row,
+  ): Promise<boolean> {
+    const decisions = await this.rows(
+      db,
+      'intake_review_decisions',
+      "action_id=? AND review_version=? AND decision='approve'",
+      [action.id, action.review_version],
+    );
+    return decisions.some(
+      (row) => time(object(row.data).expiresAt) > this.now().getTime(),
+    );
+  }
   /** Current terminal reviewer disposition, if any. */
   private async disposition(
     db: DatabaseInterface,
@@ -2880,12 +2903,18 @@ export class IntakeExecutionService {
           return this.dispositionDTO(existing);
         throw new Error('Item resolved');
       }
-      const pending = await this.rows(
+      const pending: Row[] = [];
+      for (const action of await this.rows(
         db,
         'intake_actions',
         "item_id=? AND state IN ('authorized','executing','outcome_unknown','succeeded')",
         [item.id],
-      );
+      ))
+        if (
+          action.state !== 'authorized' ||
+          (await this.approvalLive(db, action))
+        )
+          pending.push(action);
       if (pending.length)
         throw new Error('Item has pending or applied actions');
       if (!this.retained(item))

@@ -66,9 +66,11 @@ human routing is never machine authority.
 (`disposition = 'resolved_no_action'`, reason/reviewer in redactable `data`)
 under the item lock. Reviewer authority is taken from the first handler the
 captured ceiling and policy offer; no new grant exists. It refuses while any
-action is `authorized`, `executing`, `outcome_unknown` or `succeeded`; a
-`failed` action does not block it (an exhausted action cannot be rejected).
-Afterwards `submitDecision` refuses `approve` and the apply gate (`approved`)
+action is `authorized` with an unexpired approval for its current review
+version, `executing`, `outcome_unknown` or `succeeded`; `failed` actions and
+lapsed approvals do not block it (neither can be rejected). Afterwards
+`submitDecision` refuses everything but `reject`, `publish` refuses any new
+revision (correction, re-preview, plan preview) and the apply gate (`approved`)
 refuses any execution or retry for the item. `intake_dispositions` is a new model: deploy
 its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
 `assertReady` checks it, and both privacy deletion and retention expiry

@@ -5783,6 +5783,52 @@ export function proposalSuite(
           decision: 'approve',
         }),
       ).rejects.toThrow('Item resolved');
+      // Only reject remains: correction, deferral and re-preview would publish or
+      // park a revision the disposition already closed.
+      await expect(
+        service.submitDecision({
+          actionId: waiting.review.actionId,
+          expectedRevision: waiting.review.revision,
+          expectedReviewVersion: waiting.review.reviewVersion,
+          bindingHash: waiting.review.bindingHash,
+          requestId: 'correct-after-resolve',
+          decision: 'correct',
+          correctedArgs: { title: 'Corrected', body: 'Body' },
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.submitDecision({
+          actionId: waiting.review.actionId,
+          expectedRevision: waiting.review.revision,
+          expectedReviewVersion: waiting.review.reviewVersion,
+          bindingHash: waiting.review.bindingHash,
+          requestId: 'defer-after-resolve',
+          decision: 'defer',
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.previewProposal({
+          itemId: generated.itemId,
+          actionId: waiting.review.actionId,
+          attemptId: generated.lease.attemptId,
+          expectedRevision: waiting.review.revision,
+          requestId: 'repreview-after-resolve',
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args: { title: 'Edited', body: 'Body' },
+        }),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (await db.query('SELECT id FROM intake_review_decisions')).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_proposals WHERE action_id=?',
+            waiting.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(1);
       await expect(
         automationService(() => true).authorizeAutomatic(
           waiting.review.actionId,
@@ -5877,6 +5923,62 @@ export function proposalSuite(
           )
         ).rows,
       ).toHaveLength(0);
+      // An approval that expired can be neither applied nor rejected, so it must
+      // not keep the item open; once resolved it can never be applied.
+      const lapsed = await generate();
+      const [approved] = await service.previewGeneratedProposals({
+        itemId: lapsed.itemId,
+        attemptId: lapsed.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'expired-approval',
+            expectedRevision: 0,
+            requestId: 'expired-approval',
+          },
+        ],
+      });
+      if (approved.kind !== 'operation') throw new Error('Operation expected');
+      await service.submitDecision({
+        actionId: approved.review.actionId,
+        expectedRevision: approved.review.revision,
+        expectedReviewVersion: approved.review.reviewVersion,
+        bindingHash: approved.review.bindingHash,
+        requestId: 'approve-then-expire',
+        decision: 'approve',
+      });
+      await expect(
+        service.resolveItem({ ...input, itemId: lapsed.itemId }),
+      ).rejects.toThrow('pending or applied');
+      const [grant] = (
+        await db.query(
+          'SELECT data FROM intake_review_decisions WHERE action_id=?',
+          approved.review.actionId,
+        )
+      ).rows;
+      const approvalExpiry = Date.parse(
+        String(
+          (typeof grant.data === 'string' ? JSON.parse(grant.data) : grant.data)
+            .expiresAt,
+        ),
+      );
+      const beforeExpiry = clock;
+      clock = new Date(approvalExpiry + 1);
+      expect(
+        (await service.resolveItem({ ...input, itemId: lapsed.itemId })).kind,
+      ).toBe('resolved_no_action');
+      await expect(
+        service.applyAction(approved.review.actionId),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_executions WHERE action_id=?',
+            approved.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      clock = beforeExpiry;
       // Extraction-only items close the same way.
       const extraction = await source();
       expect(
