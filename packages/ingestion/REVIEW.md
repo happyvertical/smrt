@@ -175,7 +175,9 @@ gate. Note the host cost plainly: the execution `authorize` callback runs once
 per distinct (item, handler) bound by a scanned row that passed the item-level
 gate. Each item is its own authorization subject, so nothing is deduplicated
 across items; the count is bounded by rows scanned (at most
-`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. A host `authorize` callback that refuses hides the rows it covers; one that
+`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. Either host callback, the item-level `authorize` or the execution
+`authorize` behind the handler gate, follows the same rule: a refusal (false,
+or an access check that fails) hides the rows it covers, and a callback that
 throws rejects the whole page (and `listItems()`) with its error, as `load`
 does, so a transient failure never lets paging move past readable rows.
 Denied or unreadable rows are skipped without

@@ -387,16 +387,25 @@ export class IntakeExecutionService {
     item: Row,
     handler: IntakeHandler,
     operation: ExecutionAccessInput['operation'],
+    onHostError?: (error: unknown) => void,
   ) {
     const ceiling = this.ceiling(item);
-    const current = await this.config.authorize({
-      db,
-      scope: this.scope,
-      itemId: String(item.id),
-      capturedCeiling: ceiling,
-      operation,
-      handlerId: handler.id,
-    });
+    let current: Awaited<ReturnType<IntakeExecutionOptions['authorize']>>;
+    try {
+      current = await this.config.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(item.id),
+        capturedCeiling: ceiling,
+        operation,
+        handlerId: handler.id,
+      });
+    } catch (error) {
+      // Callers that turn refusals into "not readable" must still tell a
+      // failing host apart from a refusing one.
+      onHostError?.(error);
+      throw error;
+    }
     if (
       !current.allowed ||
       current.mutationBoundary !== 'serialized' ||
@@ -702,8 +711,10 @@ export class IntakeExecutionService {
    * narrow to is not listable, and neither is a cancelled item, which
    * `listReviews` refuses once it binds an action. Per-action target,
    * evidence and plan gates are not evaluated here; `load` still enforces
-   * them. Any failure answers false and the list discloses nothing about
-   * why. Package-internal: reachable only through a symbol the service holds,
+   * them. A refusal or any other failed check answers false and the list
+   * discloses nothing about why; a host `authorize` that throws propagates,
+   * as it does from `load`, so the page is rejected. Package-internal:
+   * reachable only through a symbol the service holds,
    * so callers cannot hand it an unscoped row.
    */
   async [listReadGate](
@@ -715,6 +726,7 @@ export class IntakeExecutionService {
       capability: unknown;
     },
   ): Promise<boolean> {
+    let hostFailure: { error: unknown } | undefined;
     try {
       if (item.cancelled) return false;
       const handler = this.operation(
@@ -725,9 +737,18 @@ export class IntakeExecutionService {
         canonical(handler.capability) !== canonical(binding.capability)
       )
         return false;
-      const { deadline } = await this.authority(this.db, item, handler, 'read');
+      const { deadline } = await this.authority(
+        this.db,
+        item,
+        handler,
+        'read',
+        (error) => {
+          hostFailure = { error };
+        },
+      );
       return deadline > this.now().getTime();
     } catch {
+      if (hostFailure) throw hostFailure.error;
       return false;
     }
   }

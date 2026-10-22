@@ -125,6 +125,8 @@ export function proposalSuite(
     let principalOverride: string | undefined;
     let policyRetentionMs: number | undefined;
     let executionAuthorizations: number;
+    let executionThrows: boolean;
+    let executionRefuses: boolean;
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
       await expect(
@@ -174,6 +176,8 @@ export function proposalSuite(
       principalOverride = undefined;
       policyRetentionMs = undefined;
       executionAuthorizations = 0;
+      executionThrows = false;
+      executionRefuses = false;
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -239,8 +243,11 @@ export function proposalSuite(
         authorize: async ({ scope, db: executor }) => {
           authorizedExecutor = executor;
           executionAuthorizations++;
+          if (executionThrows)
+            throw new Error('execution authorization unavailable');
           return {
             allowed:
+              !executionRefuses &&
               allowed &&
               scope.tenantId === tenant &&
               scope.confidentialScopeId === 'private' &&
@@ -1031,6 +1038,27 @@ export function proposalSuite(
         31,
       );
       expect(await expiry()).toEqual(before);
+      // A host execution `authorize` that throws rejects the page and the
+      // deprecated walk with its error, as `load` does; one that refuses
+      // (`allowed: false`) hides every row that binds a handler.
+      executionThrows = true;
+      await expect(paged.listItemsPage({ limit: 100 })).rejects.toThrow(
+        'execution authorization unavailable',
+      );
+      await expect(paged.listItems()).rejects.toThrow(
+        'execution authorization unavailable',
+      );
+      await expect(host.load(generated.itemId)).rejects.toThrow(
+        'execution authorization unavailable',
+      );
+      executionThrows = false;
+      executionRefuses = true;
+      expect((await paged.listItemsPage({ limit: 100 })).items).toEqual([]);
+      expect(await paged.listItems()).toEqual([]);
+      executionRefuses = false;
+      expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+        31,
+      );
       // Capability-only drift is caught like version drift, and a cancelled
       // item with saved proposals is omitted, as its item view refuses both.
       {
