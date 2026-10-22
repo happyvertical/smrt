@@ -22,12 +22,16 @@ let view = $state<ItemReviewView>(),
   error = $state(false),
   splits = $state<Record<string, string>>({}),
   instruction = $state(''),
+  refreshFailed = $state(false),
   invalid = $state(false);
+/** Consecutive thrown poll ticks tolerated before failing closed. */
+const MAX_POLL_FAILURES = 3;
 let alive = true,
   epoch = 0,
   loadedPages = 1,
   poll: ReturnType<typeof setTimeout> | undefined,
-  pollTicks = 0;
+  pollTicks = 0,
+  pollFailures = 0;
 onDestroy(() => {
   alive = false;
   epoch++;
@@ -119,18 +123,33 @@ async function fetchView(
     pages: refreshedPages,
   };
 }
-function splitDrafts(next: ItemReviewView, keep: Record<string, string>) {
-  return Object.fromEntries(
-    (next.generation?.splits ?? []).map((split) => [
+/** Keep only drafts the reviewer edited; untouched ones follow the new generation. */
+function splitDrafts(
+  next: ItemReviewView,
+  keep: Record<string, string>,
+  previous?: ItemReviewView,
+) {
+  const generated = new Map(
+    (previous?.generation?.splits ?? []).map((split) => [
       split.evidenceId,
-      keep[split.evidenceId] ?? JSON.stringify(split.groups),
+      JSON.stringify(split.groups),
     ]),
+  );
+  return Object.fromEntries(
+    (next.generation?.splits ?? []).map((split) => {
+      const draft = keep[split.evidenceId];
+      const edited =
+        draft !== undefined && draft !== generated.get(split.evidenceId);
+      return [split.evidenceId, edited ? draft : JSON.stringify(split.groups)];
+    }),
   );
 }
 async function load(pageCount = loadedPages) {
   const ticket = ++epoch;
   clearTimeout(poll);
   pollTicks = 0;
+  pollFailures = 0;
+  refreshFailed = false;
   view = undefined;
   splits = {};
   pending = true;
@@ -157,6 +176,9 @@ async function refresh(ticket: number) {
   try {
     const fetched = await fetchView(ticket, loadedPages);
     if (!fetched || !alive || ticket !== epoch) return;
+    pollFailures = 0;
+    refreshFailed = false;
+    // An explicit host denial fails closed at once.
     if (fetched.result.availability !== 'available') {
       view = fetched.result;
       splits = {};
@@ -164,11 +186,20 @@ async function refresh(ticket: number) {
     }
     if (JSON.stringify(fetched.result) !== JSON.stringify(view)) {
       loadedPages = fetched.pages;
-      splits = splitDrafts(fetched.result, splits);
+      splits = splitDrafts(fetched.result, splits, view);
       view = fetched.result;
     }
   } catch {
-    if (alive && ticket === epoch) deny();
+    if (!alive || ticket !== epoch) return;
+    // A thrown tick may be transient: keep the view and keep backing off, but
+    // a host may also throw for revoked access, so fail closed after a bound.
+    pollFailures++;
+    if (pollFailures >= MAX_POLL_FAILURES) {
+      refreshFailed = false;
+      deny();
+      return;
+    }
+    refreshFailed = true;
   } finally {
     if (alive && ticket === epoch && !pending) schedulePoll(ticket);
   }
@@ -289,6 +320,7 @@ onMount(() => {
 <header><h1>{t(M['ingestion.review'])}</h1><Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button></header>
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
+{#if refreshFailed}<p role="status" data-testid="refresh-retrying">{t(M['ingestion.refreshRetrying'])}</p>{/if}
 {#if view}
 {#if view.availability !== 'available'}<p role="alert">{t(M[`ingestion.${view.availability}`])}</p>
 {:else}
