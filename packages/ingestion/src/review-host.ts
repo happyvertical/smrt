@@ -182,42 +182,37 @@ export function createIntakeReviewHost(
           throw new Error('Repeated review cursor');
         if (cursor) cursors.add(cursor);
       } while (cursor);
-      // Only the handler's own refusal of the arguments is a correctable
-      // rejection; authority, availability and unknown failures still throw.
-      try {
-        if (input.args) {
-          const shared = {
-            itemId: input.itemId,
-            attemptId: input.attemptId,
-            expectedRevision,
-            requestId: input.requestId,
-            handlerId: suggestion.handlerId,
-            handlerVersion: suggestion.handlerVersion,
-            args,
-          };
-          if (handler.kind === 'plan')
-            await service.previewPlan({ ...shared, planKey: intentionKey });
-          else if (actionId)
-            await service.previewProposal({ ...shared, actionId });
-          return;
-        }
-        await service.previewGeneratedProposals({
+      // Every failure throws, as on main. A handler's refusal of the
+      // arguments throws `HandlerArgumentsInvalidError`; a transport that
+      // preserves its `name` lets the component keep the draft inline.
+      if (input.args) {
+        const shared = {
           itemId: input.itemId,
           attemptId: input.attemptId,
-          selections: [
-            {
-              index: input.index,
-              intentionKey,
-              expectedRevision,
-              requestId: input.requestId,
-            },
-          ],
-        });
-      } catch (error) {
-        if (error instanceof HandlerArgumentsInvalidError)
-          return { rejected: 'invalid' as const };
-        throw error;
+          expectedRevision,
+          requestId: input.requestId,
+          handlerId: suggestion.handlerId,
+          handlerVersion: suggestion.handlerVersion,
+          args,
+        };
+        if (handler.kind === 'plan')
+          await service.previewPlan({ ...shared, planKey: intentionKey });
+        else if (actionId)
+          await service.previewProposal({ ...shared, actionId });
+        return;
       }
+      await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.attemptId,
+        selections: [
+          {
+            index: input.index,
+            intentionKey,
+            expectedRevision,
+            requestId: input.requestId,
+          },
+        ],
+      });
     },
     async decide(input) {
       await service.submitDecision(input);

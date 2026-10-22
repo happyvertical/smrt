@@ -229,8 +229,9 @@ async function preview(index: number) {
     requestId: crypto.randomUUID(),
     ...(args ? { args } : {}),
   };
-  // Only the handler's validation refusal stays inline and keeps the view;
-  // any thrown failure (denied, revoked, unavailable, unknown) fails closed.
+  // Only the handler's validation refusal stays inline and keeps the view:
+  // a resolved `{ rejected: 'invalid' }` or a thrown error named
+  // `HandlerArgumentsInvalidError`. Anything else fails closed.
   const ticket = ++epoch;
   pending = true;
   error = false;
@@ -247,8 +248,17 @@ async function preview(index: number) {
     delete drafts[key];
     delete invalidDrafts[key];
     await load();
-  } catch {
-    if (alive && ticket === epoch) deny();
+  } catch (error) {
+    if (!alive || ticket !== epoch) return;
+    if (
+      (error as { name?: unknown } | null)?.name ===
+      'HandlerArgumentsInvalidError'
+    ) {
+      previewRejected = index;
+      pending = false;
+      return;
+    }
+    deny();
   }
 }
 function chooseFor(index: number) {
