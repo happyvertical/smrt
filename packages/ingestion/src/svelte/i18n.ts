@@ -57,6 +57,8 @@ export const M = defineMessages({
   'ingestion.appliedInstruction':
     'Suggestions were produced under this instruction',
   'ingestion.pendingInstruction': 'Latest instruction, not yet applied',
+  'ingestion.reinterpretFailed':
+    'The reinterpretation did not complete. Adjust the instruction or re-read again.',
   'ingestion.instructionStale':
     'Superseded: the current suggestions do not reflect the latest instruction.',
   'ingestion.result': 'Result',
