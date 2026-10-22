@@ -979,6 +979,82 @@ export function proposalSuite(
       }
       expect((await paged.listItems({ limit: 100 })).items).toHaveLength(31);
       expect(await expiry()).toEqual(before);
+      // A thousand further clones, all older, every one binding the handler.
+      // When policy drops that handler the whole scope is denied at the
+      // handler gate: one list call scans exactly the ceiling, reads
+      // bindings once per batch and authorizes once per (item, handler).
+      const bulk = async (
+        table: string,
+        template: Record<string, unknown>,
+        rowsToInsert: Array<Record<string, unknown>>,
+      ) => {
+        const columns = Object.keys({ ...template, ...rowsToInsert[0] });
+        for (let offset = 0; offset < rowsToInsert.length; offset += 50) {
+          const chunk = rowsToInsert.slice(offset, offset + 50);
+          await db.query(
+            `INSERT INTO ${table} (${columns.join(',')}) VALUES ${chunk
+              .map(() => `(${columns.map(() => '?').join(',')})`)
+              .join(',')}`,
+            ...chunk.flatMap((overrides) => {
+              const values = { ...template, ...overrides };
+              return columns.map((column) => {
+                const value = values[column];
+                return value &&
+                  typeof value === 'object' &&
+                  !(value instanceof Date)
+                  ? JSON.stringify(value)
+                  : value;
+              });
+            }),
+          );
+        }
+      };
+      const bulkItems: Array<Record<string, unknown>> = [];
+      const bulkActions: Array<Record<string, unknown>> = [];
+      const bulkProposals: Array<Record<string, unknown>> = [];
+      for (let index = 0; index < 1000; index++) {
+        const itemId = randomUUID();
+        const actionId = randomUUID();
+        const proposalId = randomUUID();
+        const at = new Date(base - (index + 100) * 1000).toISOString();
+        bulkItems.push({
+          id: itemId,
+          slug: itemId,
+          delivery_key: `bulk-${index}`,
+          created_at: at,
+          updated_at: at,
+        });
+        bulkActions.push({
+          id: actionId,
+          slug: actionId,
+          item_id: itemId,
+          action_key: `bulk-${index}`,
+        });
+        bulkProposals.push({
+          id: proposalId,
+          slug: proposalId,
+          item_id: itemId,
+          action_id: actionId,
+        });
+      }
+      await bulk('intake_items', itemRow, bulkItems);
+      await bulk('intake_actions', actionRow, bulkActions);
+      await bulk('intake_proposals', proposalRow, bulkProposals);
+      const afterBulk = await expiry();
+      deniedHandlers = [CREATE];
+      executionAuthorizations = 0;
+      queries = 0;
+      writes = 0;
+      const denied = await paged.listItems({ limit: 20 });
+      expect(denied.items).toEqual([]);
+      expect(denied.scanned).toBe(1000);
+      expect(denied.nextCursor).toBeTruthy();
+      // Refills grow 20, 20, 40, 80, then 100-row batches and a final 40:
+      // thirteen page reads and thirteen binding reads for a thousand rows.
+      expect(queries).toBeLessThanOrEqual(26);
+      expect(executionAuthorizations).toBe(1000);
+      expect(writes).toBe(0);
+      deniedHandlers = [];
       // Retention deadline: with a one-second policy window every clone
       // (received 1..40 s earlier) is past the deadline `access` would narrow
       // to, so the read-only gate omits them and writes nothing, while
@@ -991,7 +1067,7 @@ export function proposalSuite(
         ),
       ).toEqual([generated.itemId]);
       expect(writes).toBe(0);
-      expect(await expiry()).toEqual(before);
+      expect(await expiry()).toEqual(afterBulk);
       expect(
         (await service.listReviews(readable[0])).actions.map(
           (action) => action.review.state,

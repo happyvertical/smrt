@@ -89,6 +89,12 @@ export interface ListItemsInput {
   state?: InboxState;
   /** Restrict the page to these item IDs (host-side assignment pushdown). */
   itemIds?: string[];
+  /**
+   * Rows this call may examine, at most ITEM_SCAN_CEILING (the default). A
+   * host that scans across several calls passes its remaining budget so the
+   * sum never exceeds the ceiling.
+   */
+  scanLimit?: number;
 }
 /** Inbox items newest-first by receipt, with their durable state projection. */
 export interface IntakeItemPage {
@@ -1243,12 +1249,22 @@ export class IngestionService {
       (input.itemIds !== undefined &&
         (!Array.isArray(input.itemIds) ||
           input.itemIds.length > ITEM_ID_FILTER_CEILING ||
-          !input.itemIds.every(isIntakeId)))
+          !input.itemIds.every(isIntakeId))) ||
+      (input.scanLimit !== undefined &&
+        (!Number.isSafeInteger(input.scanLimit) ||
+          input.scanLimit < 1 ||
+          input.scanLimit > ITEM_SCAN_CEILING))
     )
       throw new Error('Invalid item page');
+    const scanCeiling = input.scanLimit ?? ITEM_SCAN_CEILING;
     if (input.itemIds && !input.itemIds.length)
       return { items: [], scanned: 0 };
     let after = input.cursor ? decodeItemCursor(input.cursor) : undefined;
+    // True while `after` is the row consumed last; a row whose receipt time
+    // cannot be read is skipped and counted, and only becomes an error when
+    // the page would have to continue from it.
+    let anchored = true;
+    let corrupt: string | undefined;
     const now = this.now().toISOString();
     const allowed = this.ceilingGate();
     const handlers = this.handlerGate();
@@ -1279,7 +1295,7 @@ export class IngestionService {
       // rows, and never past the scan ceiling.
       const wanted = limit - items.length;
       const batch = Math.min(
-        ITEM_SCAN_CEILING - examined,
+        scanCeiling - examined,
         Math.max(wanted, Math.min(ITEM_PAGE_CEILING, examined)),
       );
       // The state expression is evaluated once per scanned row in the derived
@@ -1303,39 +1319,37 @@ export class IngestionService {
           /* corrupt row: skipped and counted below */
         }
       }
+      // Handler bindings once per batch, for every row that passed and binds
+      // actions; the execution authorization behind them is memoised per
+      // (item, handler), so both are bounded by rows scanned, not by denials.
+      await handlers.resolve(
+        candidates.filter(
+          (row) => passed.has(row) && Number(row.action_count) > 0,
+        ),
+      );
       let consumed = 0;
-      for (const [index, row] of candidates.entries()) {
+      for (const row of candidates) {
         consumed++;
         examined++;
-        // A receipt time the service did not write cannot anchor a cursor;
-        // paging past it would silently repeat or skip rows, so it is a
-        // data error, not a denial.
-        let position: { receivedAt: string; id: string };
+        // A receipt time the service did not write cannot anchor a cursor:
+        // the row is skipped and counted, and reported only if the page
+        // would have to continue from it (see `anchored`).
+        let position: { receivedAt: string; id: string } | undefined;
         try {
           position = {
             receivedAt: receiptTime(row.created_at),
             id: String(row.id),
           };
         } catch {
-          throw new Error(
-            `Corrupt intake receipt time on item ${String(row.id)}`,
-          );
+          anchored = false;
+          corrupt = String(row.id);
         }
+        if (!position) continue;
         after = position;
+        anchored = true;
         if (!passed.has(row)) continue;
-        if (Number(row.action_count) > 0) {
-          // Handler bindings for the rows that may still fill this page,
-          // in order, no further than the remaining need.
-          await handlers.resolve(
-            candidates
-              .slice(index)
-              .filter(
-                (next) => passed.has(next) && Number(next.action_count) > 0,
-              )
-              .slice(0, limit - items.length),
-          );
-          if (!(await handlers.readable(row))) continue;
-        }
+        if (Number(row.action_count) > 0 && !(await handlers.readable(row)))
+          continue;
         items.push({
           item: this.itemDTO(row),
           state: String(row.inbox_state) as InboxState,
@@ -1344,13 +1358,16 @@ export class IngestionService {
         if (items.length === limit) break;
       }
       const remaining = more || consumed < candidates.length;
-      if (!remaining || !after) return { items, scanned: examined };
-      if (items.length === limit || examined >= ITEM_SCAN_CEILING)
+      if (!remaining) return { items, scanned: examined };
+      if (items.length === limit || examined >= scanCeiling) {
+        if (!anchored || !after)
+          throw new Error(`Corrupt intake receipt time on item ${corrupt}`);
         return {
           items,
           scanned: examined,
           nextCursor: encodeItemCursor(after.receivedAt, after.id),
         };
+      }
     }
   }
   /** One read authorization per distinct captured ceiling for a page of rows. */

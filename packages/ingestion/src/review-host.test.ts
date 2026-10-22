@@ -73,6 +73,7 @@ describe('published review host projection', () => {
       cursor: undefined,
       state: undefined,
       itemIds: undefined,
+      scanLimit: 1000,
     });
     expect(f.service.listReviews).not.toHaveBeenCalled();
     expect(f.service.getItem).not.toHaveBeenCalled();
@@ -205,7 +206,7 @@ describe('published review host projection', () => {
     // The cap counts rows the service scanned, not rows it returned: full
     // pages that each cost 500 denied rows stop after two service calls.
     let calls = 0;
-    f.service.listItems.mockImplementation(async (input) => {
+    f.service.listItems.mockImplementation(async (input = {}) => {
       calls++;
       const page = await pageSource(rows)(input);
       return { ...page, scanned: 500 };
@@ -214,6 +215,18 @@ describe('published review host projection', () => {
     expect(costly.items).toEqual([]);
     expect(costly.nextCursor).toBe('0199');
     expect(calls).toBe(2);
+    // The remaining budget travels with each call: after 999 scanned rows the
+    // next service call may scan one, and the host stops there.
+    const budgets: Array<number | undefined> = [];
+    f.service.listItems.mockImplementation(async (input = {}) => {
+      budgets.push(input.scanLimit);
+      const page = await pageSource(rows)(input);
+      return { ...page, scanned: budgets.length === 1 ? 999 : 1 };
+    });
+    const capped = await host.list({ assigneeId: 'nobody', limit: 100 });
+    expect(capped.items).toEqual([]);
+    expect(capped.nextCursor).toBe('0199');
+    expect(budgets).toEqual([1000, 1]);
   });
   it('drops junk ids from the assignee pushdown instead of failing the list', async () => {
     const f = fixture();

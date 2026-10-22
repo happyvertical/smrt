@@ -97,6 +97,9 @@ export function createIntakeReviewHost(
           cursor,
           state: input.state,
           itemIds,
+          // The remaining budget: the service never scans past it, so the
+          // host's total stays within ITEM_SCAN_CEILING across calls.
+          scanLimit: ITEM_SCAN_CEILING - examined,
         });
         examined += page.scanned;
         const read = await assignments(page.items.map(({ item }) => item.id));

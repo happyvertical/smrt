@@ -1599,18 +1599,42 @@ export function foundationSuite(
         expect(plan).not.toMatch(/^\s*->\s+Sort/m);
       }
 
-      // A receipt time the service never wrote is a data error named by row,
-      // not a silent skip that could repeat or lose rows; only SQLite can
-      // hold such text in a datetime column.
+      const rare = new IngestionService({
+        ...options,
+        db: counted,
+        authorize: async (input) => isSecret(input.capturedCeiling),
+      });
+      // A receipt time the service never wrote (only SQLite can hold such
+      // text in a datetime column) is skipped and counted like a denied row;
+      // it is reported by id only when a page would have to continue from it.
       if (dialect === 'sqlite') {
         const corrupt = visible[5].id;
+        // Text that sorts beside the row's real position but is not a time.
         await db.query(
-          "UPDATE intake_items SET created_at='not-a-time' WHERE id=?",
+          'UPDATE intake_items SET created_at=? WHERE id=?',
+          `${visible[5].receivedAt}x`,
           corrupt,
         );
-        await expect(paged.listItems()).rejects.toThrow(
-          `Corrupt intake receipt time on item ${corrupt}`,
+        const skipped = await paged.listItems();
+        expect(ids(skipped)).toEqual(
+          visible
+            .filter((row) => row.id !== corrupt)
+            .slice(0, 20)
+            .map((row) => row.id),
         );
+        expect(skipped.scanned).toBe(21);
+        // Continuing past the corrupt row re-examines it once per refill and
+        // still fills the page; only a page forced to stop on it reports it.
+        const past = await paged.listItems({ limit: 6 });
+        expect(ids(past)).toEqual(
+          visible
+            .filter((row) => row.id !== corrupt)
+            .slice(0, 6)
+            .map((row) => row.id),
+        );
+        await expect(
+          paged.listItems({ limit: 20, scanLimit: 6 }),
+        ).rejects.toThrow(`Corrupt intake receipt time on item ${corrupt}`);
         await db.query(
           'UPDATE intake_items SET created_at=? WHERE id=?',
           visible[5].receivedAt,
@@ -1618,6 +1642,14 @@ export function foundationSuite(
         );
         expect(ids(await paged.listItems())).toEqual(ids(first));
       }
+      // A caller's remaining budget bounds the scan below the ceiling.
+      for (const input of [{ scanLimit: 0 }, { scanLimit: 1001 }])
+        await expect(paged.listItems(input)).rejects.toThrow(
+          'Invalid item page',
+        );
+      const budgeted = await rare.listItems({ limit: 20, scanLimit: 120 });
+      expect(budgeted.scanned).toBe(120);
+      expect(budgeted.nextCursor).toBeTruthy();
       // Cursors are the normalised ISO text the service stores; an offset
       // form that parses to the same instant is refused rather than compared
       // as text against stored rows.
@@ -1633,11 +1665,7 @@ export function foundationSuite(
       // needs many rows. Each call examines at most ITEM_SCAN_CEILING rows,
       // returns what it found with a cursor, and the walk still sees every
       // readable row exactly once, newest first.
-      const rare = new IngestionService({
-        ...options,
-        db: counted,
-        authorize: async (input) => isSecret(input.capturedCeiling),
-      });
+      const rareCheck = async <T>(work: () => Promise<T>) => work();
       const hidden = ordered.filter((row) => row.expected === 'hidden');
       expect(hidden).toHaveLength(25);
       const found: string[] = [];
@@ -1648,10 +1676,11 @@ export function foundationSuite(
         queries = 0;
         const page = await rare.listItems({ limit: 20, cursor });
         calls++;
-        // One 20-row page read plus at most ten 100-row refills up to the
-        // 1000-row scan ceiling, each batch with at most one handler-binding
-        // read: bounded by the ceiling, not by the item count.
-        expect(queries).toBeLessThanOrEqual(22);
+        // Refills grow 20, 20, 40, 80, then 100-row batches up to the
+        // 1000-row scan ceiling (thirteen page reads), each batch with at
+        // most one handler-binding read when a passed row binds actions:
+        // bounded by the ceiling, not by the item count.
+        expect(queries).toBeLessThanOrEqual(26);
         if (page.nextCursor && page.items.length < 20) short = true;
         found.push(...ids(page));
         cursor = page.nextCursor;
