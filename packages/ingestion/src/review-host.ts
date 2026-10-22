@@ -88,7 +88,7 @@ export function createIntakeReviewHost(
         evidence.push({ ...(await options.evidence(part)), evidence: part });
       }
       const assignment = await options.assignment(itemId);
-      const [current] = await service.listReviewerInstructions(itemId);
+      const [latest] = await service.listReviewerInstructions(itemId);
       // Only a generation "applies" an instruction; a completed extraction
       // carries the same record but has produced no suggestions yet.
       const applied =
@@ -97,12 +97,15 @@ export function createIntakeReviewHost(
           ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
           : null;
       let instruction: ReviewerInstructionView | undefined;
-      if (current || applied) {
+      if (latest || applied) {
         const state = await service.getReinterpretationState(itemId);
+        const current =
+          latest && latest.id === state.instructionInEffect ? latest : null;
         instruction = {
-          current: current ?? null,
+          current,
           applied,
           stale: !!analysis && !!current && current.id !== applied?.id,
+          ...(latest && !current ? { dropped: latest } : {}),
           ...(state.failure ? { failure: state.failure } : {}),
           ...(state.reinterpreting ? { reinterpreting: true } : {}),
           // Without a displayable generation the reviewer can still retry or

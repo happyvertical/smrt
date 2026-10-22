@@ -191,7 +191,19 @@ configuration; and a double-click whose duplicate commits after the unlocked
 replay check is answered as a replay of the committed request, not a conflict
 or a denial.
 
-`ItemReviewView.instruction` exposes `current` (latest recorded), `applied` (the
+**Host reprocess.** A host reprocess (a plain `analyze()` extraction the host
+configures itself) cannot carry human corrections — `analyze` rejects
+`humanCorrection`/`reviewerInstruction` on extraction configurations — so it
+drops the split and the instruction alike, and neither is applied to its
+interpretations. The instruction is then reported as `dropped`, not pending:
+`getReinterpretationState().instructionInEffect` names the instruction the
+newest extraction carries (verified by digest) and is null after such a
+reprocess. History is unchanged; the reviewer can re-record the instruction,
+which supersedes the dropped one.
+
+`ItemReviewView.instruction` exposes `current` (the latest recorded instruction
+still in effect, i.e. carried by the newest extraction), optional `dropped`
+(the latest recorded instruction a reprocess dropped), `applied` (the
 instruction the displayed **generation** ran under; a completed extraction alone
 applies nothing), `stale` (the displayed suggestions predate the current
 instruction), optional `failure` and optional `binding`. Feedback examples that carry instruction

@@ -38,6 +38,7 @@ function fixture() {
       failure: null as string | null,
       reinterpreting: false,
       generationAttemptId: null as string | null,
+      instructionInEffect: 'current' as string | null,
     })),
     recordReviewerInstruction: vi.fn(async () => ({
       id: 'analysis',
@@ -194,6 +195,7 @@ describe('published review host projection', () => {
       failure: null,
       reinterpreting: true,
       generationAttemptId: 'generation',
+      instructionInEffect: 'current',
     });
     expect((await f.host.load('item')).instruction).toEqual({
       current: instruction('current'),
@@ -201,6 +203,26 @@ describe('published review host projection', () => {
       stale: true,
       reinterpreting: true,
       binding: { attemptId: 'generation', expectedRevision: 7 },
+    });
+  });
+  it('reports a reprocess-dropped instruction as dropped, not pending', async () => {
+    const f = fixture();
+    f.service.listReviewerInstructions.mockResolvedValue([
+      instruction('dropped'),
+    ]);
+    f.service.getReinterpretationState.mockResolvedValue({
+      revision: 9,
+      processingState: 'completed',
+      failure: null,
+      reinterpreting: false,
+      generationAttemptId: 'generation',
+      instructionInEffect: null,
+    });
+    expect((await f.host.load('item')).instruction).toEqual({
+      current: null,
+      applied: null,
+      stale: false,
+      dropped: instruction('dropped'),
     });
   });
 });

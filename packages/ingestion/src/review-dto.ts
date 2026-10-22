@@ -104,8 +104,18 @@ export interface ReviewerInstructionInput {
   requestId: string;
 }
 export interface ReviewerInstructionView {
-  /** Latest recorded instruction; future interpretations carry it. */
+  /**
+   * Latest recorded instruction that is still in effect: the item's newest
+   * extraction carries it, so its interpretations do. Null when none was
+   * recorded or a host reprocess dropped it (see `dropped`).
+   */
   current: ReviewerInstruction | null;
+  /**
+   * Latest recorded instruction that a host reprocess dropped (a reprocess
+   * builds its own configuration and cannot carry human corrections). It no
+   * longer applies; the reviewer can re-record it.
+   */
+  dropped?: ReviewerInstruction;
   /** The instruction the displayed generation was produced under. */
   applied: ReviewerInstruction | null;
   /** Displayed suggestions predate the current instruction. */

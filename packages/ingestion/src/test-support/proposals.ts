@@ -3501,6 +3501,7 @@ export function proposalSuite(
         reinterpreting: true,
         failure: null,
         generationAttemptId: input.lease.attemptId,
+        instructionInEffect: recorded.instruction.id,
       });
     });
     it('keeps the instruction beside a later split correction and still enforces the split', async () => {
@@ -3725,6 +3726,7 @@ export function proposalSuite(
         reinterpreting: false,
         failure: 'unavailable',
         generationAttemptId: guided.lease.attemptId,
+        instructionInEffect: second.instruction.id,
       });
       const retryInput = {
         itemId: input.itemId,
@@ -3854,6 +3856,7 @@ export function proposalSuite(
         reinterpreting: false,
         failure: 'unavailable',
         generationAttemptId: input.lease.attemptId,
+        instructionInEffect: recorded.instruction.id,
       });
       // The completed extraction belongs to the failed reinterpretation, so the
       // latest completed generation is still a valid retry anchor.
@@ -4174,6 +4177,7 @@ export function proposalSuite(
         failure: null,
         reinterpreting: true,
         generationAttemptId: input.lease.attemptId,
+        instructionInEffect: recorded.instruction.id,
       });
       await expect(
         service.recordReviewerInstruction(retryInput),
@@ -4195,6 +4199,7 @@ export function proposalSuite(
         failure: 'not_started',
         reinterpreting: false,
         generationAttemptId: input.lease.attemptId,
+        instructionInEffect: recorded.instruction.id,
       });
       const retried = await service.recordReviewerInstruction(retryInput);
       expect(retried.revision).toBe(extracted.revision + 1);
@@ -4307,6 +4312,7 @@ export function proposalSuite(
         failure: 'not_started',
         reinterpreting: false,
         generationAttemptId: input.lease.attemptId,
+        instructionInEffect: recorded.instruction.id,
       });
       const retried = await service.recordReviewerInstruction({
         itemId: input.itemId,
@@ -4607,6 +4613,7 @@ export function proposalSuite(
           failure: 'not_started',
           reinterpreting: false,
           generationAttemptId: input.lease.attemptId,
+          instructionInEffect: recorded.instruction.id,
         });
         const retried = await service.recordReviewerInstruction({
           itemId: input.itemId,
@@ -4618,6 +4625,75 @@ export function proposalSuite(
         expect(retried.revision).toBe(extracted.revision + 1);
         await restore();
       }
+    });
+    it('treats a host reprocess as dropping the instruction, like the split, and lets the reviewer re-record it', async () => {
+      chooseCreate();
+      const input = await generate();
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text: 'File it, do not bill it.',
+        requestId: 'reprocess-first',
+      });
+      const guided = await reextract(input.itemId, recorded.revision);
+      await service.generateProposals(guided.lease);
+      expect(
+        (await service.getReinterpretationState(input.itemId))
+          .instructionInEffect,
+      ).toBe(recorded.instruction.id);
+      // An ordinary host reprocess configures its own extraction.
+      const reprocess = await service.analyze(
+        input.itemId,
+        {
+          stage: 'extract',
+          extraction: { configurationRevision: '1', limits: extractionLimits },
+        },
+        'host-reprocess',
+      );
+      const reprocessed = await reextract(input.itemId, reprocess.revision);
+      expect(
+        reprocessed.frozen.configuration.reviewerInstruction,
+      ).toBeUndefined();
+      expect(reprocessed.frozen.configuration.humanCorrection).toBeUndefined();
+      calls.mockClear();
+      await service.generateProposals(reprocessed.lease);
+      expect(calls.mock.calls.at(-1)![0].reviewerInstruction).toBeUndefined();
+      expect(
+        (await output(reprocessed.lease)).provenance.reviewerInstruction,
+      ).toBeUndefined();
+      // History keeps it, but it is no longer in effect: reported as dropped.
+      expect(await service.listReviewerInstructions(input.itemId)).toEqual([
+        recorded.instruction,
+      ]);
+      const state = await service.getReinterpretationState(input.itemId);
+      expect(state.instructionInEffect).toBeNull();
+      expect(state.reinterpreting).toBe(false);
+      const view = await createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: input.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      }).load(input.itemId);
+      expect(view.instruction).toMatchObject({
+        current: null,
+        applied: null,
+        stale: false,
+        dropped: { id: recorded.instruction.id },
+      });
+      // Re-recording supersedes the dropped one and takes effect again.
+      const rerecorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: reprocessed.lease.attemptId,
+        expectedRevision: reprocessed.lease.revision,
+        text: 'File it, do not bill it.',
+        requestId: 'reprocess-rerecord',
+      });
+      expect(rerecorded.instruction.supersedesId).toBe(recorded.instruction.id);
+      expect(
+        (await service.getReinterpretationState(input.itemId))
+          .instructionInEffect,
+      ).toBe(rerecorded.instruction.id);
     });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();

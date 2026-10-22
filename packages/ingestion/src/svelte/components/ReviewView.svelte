@@ -359,6 +359,7 @@ onMount(() => {
 {#if view.instruction.failure === 'not_started'}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretNotStarted'])}</p>{:else if view.instruction.failure}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretFailed'])} ({view.instruction.failure})</p>{/if}
 {#if applied}<p data-testid="applied-instruction">{t(M['ingestion.appliedInstruction'])}: <q>{applied.text}</q></p>{#if view.instruction.stale}<p role="status" data-testid="instruction-stale">{t(M['ingestion.instructionStale'])}</p>{/if}{/if}
 {#if current && current.id !== applied?.id}<p data-testid="pending-instruction">{t(M['ingestion.pendingInstruction'])}: <q>{current.text}</q></p>{/if}
+{#if view.instruction.dropped}<p role="status" data-testid="dropped-instruction">{t(M['ingestion.droppedInstruction'])}: <q>{view.instruction.dropped.text}</q></p>{/if}
 {/if}
 {#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{/if}
 {#if host.instruct && instructionBinding(view)}

@@ -58,6 +58,8 @@ export const M = defineMessages({
     'Suggestions were produced under this instruction',
   'ingestion.pendingInstruction': 'Latest instruction, not yet applied',
   'ingestion.refreshRetrying': "Couldn't refresh; retrying.",
+  'ingestion.droppedInstruction':
+    "A reprocess replaced this item's extraction, so this instruction no longer applies. Re-record it to use it",
   'ingestion.reinterpretNotStarted':
     'The reinterpretation did not start. Re-read again to retry.',
   'ingestion.instructionBusy':

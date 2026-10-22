@@ -1775,6 +1775,13 @@ export class IngestionService {
     reinterpreting: boolean;
     /** Latest completed generation attempt; absent when none has completed. */
     generationAttemptId: string | null;
+    /**
+     * Id of the instruction carried by the item's newest extraction (verified
+     * by digest), or null. A host reprocess builds its own configuration and
+     * cannot carry human corrections, so it drops the instruction exactly as
+     * it drops a split.
+     */
+    instructionInEffect: string | null;
   }> {
     const item = await this.item(itemId, 'read');
     const analyses = (
@@ -1814,12 +1821,22 @@ export class IngestionService {
           failure = String(attempt.safe_error) as IntakeFailure;
       }
     }
+    const newestExtraction = analyses.find(
+      (row) => object(object(row.data).configuration).stage !== 'interpret',
+    );
+    const carried = newestExtraction
+      ? object(object(newestExtraction.data).configuration).reviewerInstruction
+      : undefined;
+    const instructionInEffect = carried
+      ? reviewerInstructionView(carried).id
+      : null;
     await this.item(itemId, 'read');
     return {
       revision: Number(item.analysis_revision),
       processingState: String(item.processing_state),
       failure,
       reinterpreting,
+      instructionInEffect,
       generationAttemptId: generation
         ? String(generation.current_attempt_id)
         : null,
