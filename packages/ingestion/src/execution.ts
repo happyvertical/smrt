@@ -1062,7 +1062,7 @@ export class IntakeExecutionService {
       !Number.isSafeInteger(limit) ||
       limit < 1 ||
       limit > 50 ||
-      (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
+      (input.cursor !== undefined && !UUID_CURSOR.test(input.cursor))
     )
       throw new Error('Invalid review page');
     return this.tx(async (db) => {
