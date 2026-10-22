@@ -45,6 +45,11 @@ generation. The handler validates the human arguments again before a
 `ActionReview` lists required arguments missing from the current draft while
 editing, and no authority or automation eligibility is added: a failed attempt,
 an unoffered handler or a foreign stage is still refused by the host.
+Unsent drafts live only in component memory, keyed by attempt and suggestion
+index. They survive Refresh, a failed callback, an action on another card and a
+transient `unavailable`/`stale` reload; a `revoked` or `expired` result
+discards them, a successful preview clears that card's draft, and an available
+reload drops drafts for attempts or cards no longer offered.
 
 The host's `load` callback supplies a current `ItemReviewView`, using
 `getCompletedAnalysis` with no historical fallback. Generated suggestions bind

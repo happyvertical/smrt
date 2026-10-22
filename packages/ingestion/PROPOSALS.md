@@ -116,9 +116,10 @@ The reason lists schema-owned paths, keywords and schema constants, for example
 `/suggestions/0 required (missingProperty=evidence)`, or the fixed internal check
 and its path, such as `Unoffered handler: /suggestions/0`. Path segments are
 kept only when they are keys declared under the schema's `properties` or
-indexes where the schema itself declares an array; a data key, numeric or not
-(for example under an open `additionalProperties` argument sub-schema), becomes
-`?`, and an extra property's name is never echoed.
+indexes into a value that actually is an array in the rejected reply; any other
+segment, numeric or not (for example a key under an open
+`additionalProperties` argument sub-schema, or a numeric key of an object),
+becomes `?`, and an extra property's name is never echoed.
 It never contains document text, argument values, evidence content or
 model-chosen keys, is cut at 1000 characters,
 and is dropped before the output-limit fallback. Hosts read it from the

@@ -118,19 +118,28 @@ async function load(pageCount = loadedPages) {
         JSON.stringify(split.groups),
       ]),
     );
-    const attemptId = view.analysis?.attemptId;
-    const current = new Set<string>();
-    (view.generation?.suggestions ?? []).forEach((suggestion, index) => {
-      if (!attemptId || suggestion.disposition !== 'needs_review') return;
-      const key = `${attemptId}:${index}`;
-      current.add(key);
-      drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
-    });
-    for (const key of Object.keys(drafts))
-      if (!current.has(key)) {
-        delete drafts[key];
-        delete invalidDrafts[key];
-      }
+    // Drafts follow availability: revoked or expired access discards them;
+    // a transient `unavailable` or `stale` result keeps them (nothing renders
+    // meanwhile) so the reviewer's typing survives until the view returns;
+    // an available view prunes drafts of attempts or cards no longer offered.
+    if (view.availability === 'revoked' || view.availability === 'expired') {
+      drafts = {};
+      invalidDrafts = {};
+    } else if (view.availability === 'available') {
+      const attemptId = view.analysis?.attemptId;
+      const current = new Set<string>();
+      (view.generation?.suggestions ?? []).forEach((suggestion, index) => {
+        if (!attemptId || suggestion.disposition !== 'needs_review') return;
+        const key = `${attemptId}:${index}`;
+        current.add(key);
+        drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
+      });
+      for (const key of Object.keys(drafts))
+        if (!current.has(key)) {
+          delete drafts[key];
+          delete invalidDrafts[key];
+        }
+    }
   } catch {
     if (alive && ticket === epoch) deny();
   } finally {
