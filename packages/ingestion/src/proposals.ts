@@ -1,6 +1,8 @@
 import {
   type DecisionRequest,
   executeDecision,
+  isEmbeddedDatabase,
+  withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
@@ -287,8 +289,22 @@ export class IngestionProposalService {
       )
       .slice(0, this.config.limits.maxHandlers);
   }
+  /** One discovery transaction for the whole catalog, not one per handler check. */
   async listHandlers(itemId: string): Promise<ProposalCatalogEntry[]> {
-    return (await this.catalog(itemId)).map(({ handler }) => handler);
+    const evidence = await this.service.getEvidence(itemId);
+    return this.execution[discoveryTransaction](
+      (work) =>
+        withEmbeddedWriteTransaction(
+          this.options.db,
+          isEmbeddedDatabase(this.options.db),
+          work,
+        ),
+      itemId,
+      async (_db, authorize) =>
+        (await this.catalog(itemId, { evidence, authorize })).map(
+          ({ handler }) => handler,
+        ),
+    );
   }
   /** Public retrieval derives catalog/candidates and compatibility on the server. */
   async retrieveFeedback(
