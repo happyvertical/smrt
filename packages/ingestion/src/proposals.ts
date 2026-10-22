@@ -44,6 +44,8 @@ import type {
 import { GenerationSnapshotStaleError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import {
+  PROPOSAL_REASON_LIMIT,
+  ProposalValidationError,
   record,
   safeUsage,
   text,
@@ -109,7 +111,11 @@ const pin = (source: CompletedAnalysisSnapshot): GenerationSourcePin => ({
 });
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 class StageFailure extends Error {
-  constructor(readonly category: IntakeFailure) {
+  /** Optional fixed diagnostic; never provider text or document content. */
+  constructor(
+    readonly category: IntakeFailure,
+    readonly reason?: string,
+  ) {
     super(category);
   }
 }
@@ -744,7 +750,10 @@ export class IngestionProposalService {
           output.provenance.feedback,
         );
         if (!['complete', 'unknown'].includes(generated.completion))
-          throw new StageFailure('malformed_output');
+          throw new StageFailure(
+            'malformed_output',
+            'Generator declared no validated completion',
+          );
         if (generated.completion === 'unknown')
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
@@ -805,6 +814,17 @@ export class IngestionProposalService {
       await this.live(lease, expected.catalogDigest);
       failure =
         error instanceof StageFailure ? error.category : 'malformed_output';
+      // Carry only fixed/value-free reasons; unknown errors may quote anything.
+      const reason =
+        error instanceof StageFailure ||
+        error instanceof ProposalValidationError
+          ? error.reason
+          : undefined;
+      if (reason)
+        output.provenance.failure = {
+          category: failure,
+          reason: reason.slice(0, PROPOSAL_REASON_LIMIT),
+        };
       output.outcome = 'provider_error';
       output.suggestions = [];
       output.splits = [];
@@ -817,6 +837,7 @@ export class IngestionProposalService {
       output.suggestions = [];
       output.splits = [];
       output.offered = [];
+      delete output.provenance.failure;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');
@@ -944,7 +965,10 @@ export class IngestionProposalService {
       result.provenance.provider !== this.decisionIdentity!.provider ||
       result.provenance.model !== this.decisionIdentity!.model
     )
-      throw new StageFailure('malformed_output');
+      throw new StageFailure(
+        'malformed_output',
+        'Decision provenance does not match the configured identity',
+      );
     const answers: Record<string, unknown> = {};
     for (const [key, question] of Object.entries(questions)) {
       const answer = result.answers[key];
@@ -991,7 +1015,10 @@ export class IngestionProposalService {
         route.type !== 'choice' ||
         risk.type !== 'score'
       )
-        throw new StageFailure('malformed_output');
+        throw new StageFailure(
+          'malformed_output',
+          `Decision answer types do not match the questions for suggestion ${index}`,
+        );
       const offered = output.offered.find(
         ({ handler }) =>
           handler.id === suggestion.handlerId &&
@@ -1011,7 +1038,10 @@ export class IngestionProposalService {
               candidate.model === reference.model,
           )!;
           if (match.type !== 'choice')
-            throw new StageFailure('malformed_output');
+            throw new StageFailure(
+              'malformed_output',
+              `Decision entity answer is not a choice for suggestion ${index}`,
+            );
           const probabilities = Object.values(match.probabilities).sort(
             (a, b) => b - a,
           );
