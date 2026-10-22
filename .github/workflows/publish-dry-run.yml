@@ -56,7 +56,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -206,7 +206,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -273,7 +273,7 @@ jobs:
         id: setup-environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'true'
           setup-playwright: 'true'
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}

@@ -105,7 +105,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -303,7 +303,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -374,7 +374,7 @@ jobs:
         id: setup-environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'true'
           setup-playwright: 'true'
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
@@ -451,7 +451,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           # This job consumes already-built, verified tarballs and its release
           # scripts use only Node built-ins. Reinstalling the workspace can
           # exhaust the recovery window before sequential npm publication.
@@ -653,7 +653,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -697,7 +697,7 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
