@@ -28,14 +28,23 @@ export interface FeedbackExample {
   judgment: 'correct' | 'incorrect';
   query: string;
   args: IntakeValues;
-  model: { provider: string; model: string; version: string };
-  promptVersion: string;
-  configurationVersion: string;
+  /** Generation context of an interpretation judgment; absent for reviewer routing. */
+  model?: { provider: string; model: string; version: string };
+  promptVersion?: string;
+  configurationVersion?: string;
+  /** Absent means an interpretation judgment on a model suggestion. */
+  kind?: 'reviewer_routing';
+  /** Reviewer routing only: `none` closed the item without an action (handlerId `none`). */
+  routing?: { choice: 'handler' | 'none'; reason: string };
 }
 export interface FeedbackReceipt {
   id: string;
   digest: string;
-  kind: 'interpretation' | 'action_decision' | 'downstream_outcome';
+  kind:
+    | 'interpretation'
+    | 'action_decision'
+    | 'downstream_outcome'
+    | 'reviewer_routing';
 }
 export interface FeedbackReferences {
   version: string;
