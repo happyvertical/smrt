@@ -335,28 +335,15 @@ export class IntakeFeedbackService {
     for (const field of ['provider', 'model', 'version']) text(model[field]);
     text(provenance.promptVersion);
     text(provenance.configurationVersion);
-    // A judgment made under reviewer guidance carries that guidance as part of
-    // the example; the generation's own provenance must name the same record.
-    const instructionRecord = object(
-      object(ctx.analysis).configuration,
-    ).reviewerInstruction;
-    const recorded = provenance.reviewerInstruction
-      ? object(provenance.reviewerInstruction)
-      : undefined;
-    let instruction: { id: string; digest: string; text: string } | undefined;
-    if (instructionRecord || recorded) {
-      const view = reviewerInstructionView(instructionRecord);
-      if (
-        !recorded ||
-        recorded.id !== view.id ||
-        recorded.digest !== view.digest
-      )
-        throw new Error('Feedback instruction integrity');
-      instruction = { id: view.id, digest: view.digest, text: view.text };
-    }
+    // A judgment made under reviewer guidance references that guidance by id
+    // and digest only; retrieval joins the text from the source's own record,
+    // so instruction text never counts against the write budget.
+    const instruction = this.instructionFor(ctx);
     return {
       query,
-      ...(instruction ? { instruction } : {}),
+      ...(instruction
+        ? { instruction: { id: instruction.id, digest: instruction.digest } }
+        : {}),
       model: {
         provider: String(model.provider),
         model: String(model.model),
@@ -368,6 +355,28 @@ export class IntakeFeedbackService {
       evidence: object(ctx.analysis).inputs,
       source: pin,
     };
+  }
+  /**
+   * The verified reviewer instruction the action's generation ran under: the
+   * authenticated extraction record must match the generation's provenance.
+   */
+  private instructionFor(
+    ctx: FeedbackActionContext,
+  ): { id: string; digest: string; text: string } | undefined {
+    const provenance = object(
+      object(object(ctx.result.output).proposals).provenance,
+    );
+    const instructionRecord = object(
+      object(ctx.analysis).configuration,
+    ).reviewerInstruction;
+    const recorded = provenance.reviewerInstruction
+      ? object(provenance.reviewerInstruction)
+      : undefined;
+    if (!instructionRecord && !recorded) return undefined;
+    const view = reviewerInstructionView(instructionRecord);
+    if (!recorded || recorded.id !== view.id || recorded.digest !== view.digest)
+      throw new Error('Feedback instruction integrity');
+    return { id: view.id, digest: view.digest, text: view.text };
   }
   /** Internal saved-action gate; the execution owner supplies its transaction. */
   async assertActionLineage(
@@ -552,6 +561,7 @@ export class IntakeFeedbackService {
         async (ctx) => {
           await this.authorize(ctx, 'retrieve');
           await this.provenance(ctx);
+          const guidance = this.instructionFor(ctx);
           const [current] = await this.rows(
             ctx.db,
             'id=? AND kind=? AND NOT EXISTS (SELECT 1 FROM intake_feedback successor WHERE successor.tenant_id=intake_feedback.tenant_id AND successor.confidential_scope_id=intake_feedback.confidential_scope_id AND successor.supersedes_id=intake_feedback.id)',
@@ -568,6 +578,17 @@ export class IntakeFeedbackService {
             data.promptVersion !== input.promptVersion ||
             data.configurationVersion !== input.configurationVersion ||
             digest(data.model) !== digest(input.model)
+          )
+            return undefined;
+          // The stored reference must still name the source's verified record.
+          const reference = data.instruction
+            ? object(data.instruction)
+            : undefined;
+          if (
+            !!reference !== !!guidance ||
+            (reference &&
+              (reference.id !== guidance?.id ||
+                reference.digest !== guidance?.digest))
           )
             return undefined;
           const offered = input.offered.find(
@@ -605,15 +626,7 @@ export class IntakeFeedbackService {
             model: data.model as FeedbackExample['model'],
             promptVersion: String(data.promptVersion),
             configurationVersion: String(data.configurationVersion),
-            ...(data.instruction
-              ? {
-                  instruction: {
-                    id: String(object(data.instruction).id),
-                    digest: String(object(data.instruction).digest),
-                    text: String(object(data.instruction).text),
-                  },
-                }
-              : {}),
+            ...(guidance ? { instruction: guidance } : {}),
           };
         },
         executor,
