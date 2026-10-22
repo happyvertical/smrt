@@ -6357,14 +6357,17 @@ export function proposalSuite(
       expect(
         (
           await db.query(
-            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=? ORDER BY id",
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
             third.itemId,
           )
-        ).rows.map(
-          (row) =>
-            (typeof row.data === 'string' ? JSON.parse(row.data) : row.data)
-              .revision,
-        ),
+        ).rows
+          .map(
+            (row) =>
+              (typeof row.data === 'string' ? JSON.parse(row.data) : row.data)
+                .revision,
+          )
+          // Ids are random UUIDs, so row order is not insertion order.
+          .sort((a, b) => a - b),
       ).toEqual([2, 3]);
       // Capture never vetoes the decision: an unavailable extraction pin or
       // malformed evidence skips the projection while approval/resolution commit.
