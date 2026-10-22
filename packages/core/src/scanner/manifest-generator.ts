@@ -2201,6 +2201,39 @@ export class ManifestGenerator {
   }
 
   /**
+   * Fill missing manifest metadata on a child's own redeclared field from the
+   * inherited (nearest declaring ancestor) definition it replaces.
+   *
+   * Child-wins: every property the child's own field carries is kept, so a
+   * redeclaration that sets its own options still replaces the ancestor's.
+   * But a bare redeclaration — no annotation, no decorator, common for STI
+   * discriminators like `override contractType = ContractType.ORDER` —
+   * converts to a bare field and would otherwise drop the ancestor's
+   * `enum` and `description` during this manifest-level merge, most visibly
+   * when the child's manifest comes from an external package built by a
+   * scanner that predates the raw-level fill (#4005). Fill only what is
+   * missing so closed literal sets and field docs survive the merge.
+   *
+   * @param inherited - The merged ancestor field being overridden.
+   * @param own - The child's own field definition, which wins.
+   * @returns The child's field with missing `enum`/`description` filled in.
+   */
+  private mergeInheritedFieldOverride(
+    inherited: FieldDefinition,
+    own: FieldDefinition,
+  ): FieldDefinition {
+    return {
+      ...own,
+      ...(own.enum === undefined && inherited.enum !== undefined
+        ? { enum: inherited.enum }
+        : {}),
+      ...(own.description === undefined && inherited.description !== undefined
+        ? { description: inherited.description }
+        : {}),
+    };
+  }
+
+  /**
    * Merge inherited fields into child classes (build-time inheritance resolution)
    *
    * For STI hierarchies, child classes don't define their own fields in source code
@@ -2348,6 +2381,16 @@ export class ManifestGenerator {
                 obj.className,
               );
               mergedFieldOwners.set(fieldName, ancestorName);
+            } else if (usesSTI) {
+              // Storage stays with its oldest owner; enum/docs follow the
+              // nearest declaring ancestor, including prebuilt manifests.
+              mergedFields[fieldName] = {
+                ...mergedFields[fieldName],
+                ...(fieldDef.enum !== undefined ? { enum: fieldDef.enum } : {}),
+                ...(fieldDef.description !== undefined
+                  ? { description: fieldDef.description }
+                  : {}),
+              };
             }
           }
         }
@@ -2388,7 +2431,10 @@ export class ManifestGenerator {
 
       // Add child's own fields (override any parent fields with same name)
       for (const [fieldName, fieldDef] of Object.entries(obj.fields)) {
-        mergedFields[fieldName] = fieldDef;
+        const inherited = mergedFields[fieldName];
+        mergedFields[fieldName] = inherited
+          ? this.mergeInheritedFieldOverride(inherited, fieldDef)
+          : fieldDef;
       }
 
       // Add child's own methods

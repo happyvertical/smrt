@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import raw from '../src/lib/catalog/catalog.json' with { type: 'json' };
 import { catalog } from '../src/lib/catalog/index.ts';
-import type { Catalog } from '../src/lib/catalog/types.ts';
 import { recipeNav, recipes } from '../src/lib/recipes/index.ts';
 import { navItemId } from '../src/lib/recipes/sections.ts';
 import { UPSTREAM_GAPS } from './upstream-gaps.ts';
@@ -95,26 +93,6 @@ describe('upstream gap ledger', () => {
       ).toBe(false);
     }
   });
-  it('expires: STI leaves still lose their discriminator enumeration', () => {
-    // `upstream/overlay.ts` lends a leaf its ancestor's enumeration; delete
-    // that once the manifest carries it on the leaves again.
-    const leaf = (raw as unknown as Catalog).packages
-      .flatMap((p) => p.models)
-      .find((m) => m.id === '@happyvertical/smrt-commerce:ProductionOrder');
-    const field = leaf?.fields.find((f) => f.name === 'contractType');
-    expect(field, 'contractType missing').toBeDefined();
-    expect(
-      field?.enum,
-      'leaves carry contractType values upstream now; delete the inherited enumeration in upstream/overlay.ts',
-    ).toBeUndefined();
-    // The overlay gives it back.
-    const shown = catalog.packages
-      .flatMap((p) => p.models)
-      .find((m) => m.id === leaf?.id)
-      ?.fields.find((f) => f.name === 'contractType');
-    expect(shown?.enum).toContain('production_order');
-  });
-
   it('expires: the smrt 0.56 gaps still exist', () => {
     const recipe = (id: string) => recipes.find((r) => r.id === id);
     for (const entry of UPSTREAM_GAPS.undescribedField) {
