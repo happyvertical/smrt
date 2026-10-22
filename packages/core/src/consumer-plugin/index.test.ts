@@ -1323,7 +1323,7 @@ describe('smrtConsumer registration generation', () => {
     expect(svelteRootWarnings[0]).toContain('loaded through @test/pkg');
   });
 
-  it('imports a component-bearing provider through its object entry when it contributes only nested objects (#4219)', async () => {
+  it('imports nothing for a component-bearing provider that contributes only nested objects (#4219)', async () => {
     const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
     const nestedModelDir = join(
       providerDir,
@@ -1375,10 +1375,11 @@ describe('smrtConsumer registration generation', () => {
     await buildStart(plugin, {} as any);
 
     const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
-    expect(content).toContain(
-      "import * as __smrt_provider_0 from '@test/pkg/objects';",
-    );
-    expect(content).not.toMatch(/from ['"]@test\/pkg['"]/);
+    // Neither the Svelte root nor a substitute subpath (the fixture declares
+    // `./objects`) is imported: the nested object is loaded through the
+    // provider's context, which needs only `import.meta.resolve(provider)`.
+    expect(content).not.toMatch(/from ['"]@test\/pkg(\/[^'"]*)?['"]/);
+    expect(content).not.toContain('__smrt_provider_0');
     expect(content).toContain(
       'await importSmrtDependency("@nested/model", "@test/pkg")',
     );
@@ -2612,7 +2613,7 @@ describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => 
     ).toBe(true);
   });
 
-  it('picks the root, a server-safe object entry, or nothing', () => {
+  it('picks the root, or nothing for a declared Svelte root', () => {
     expect(
       resolveProviderContextImport('@test/pkg', {
         name: '@test/pkg',
@@ -2622,144 +2623,16 @@ describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => 
     expect(resolveProviderContextImport('@test/pkg', undefined)).toBe(
       '@test/pkg',
     );
-    const svelteRoot = { '.': { svelte: './dist/index.js' } };
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: { ...svelteRoot, './models': { default: './dist/models.js' } },
-      }),
-    ).toBe('@test/pkg/models');
+    // A server-safe-looking subpath is never substituted for a Svelte root:
+    // one that reaches `.svelte` would re-create the failure (#4219).
     expect(
       resolveProviderContextImport('@test/pkg', {
         name: '@test/pkg',
         exports: {
-          ...svelteRoot,
-          './objects': './dist/objects.js',
+          '.': { svelte: './dist/index.js' },
           './models': { default: './dist/models.js' },
+          './objects': './dist/objects.js',
         },
-      }),
-    ).toBe('@test/pkg/objects');
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: { ...svelteRoot, './models': { svelte: './dist/models.js' } },
-      }),
-    ).toBeUndefined();
-    // Types-only or browser-only entries give Node nothing to load
-    // (ERR_PACKAGE_PATH_NOT_EXPORTED), so they are not picked either.
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: {
-          ...svelteRoot,
-          './objects': { types: './dist/objects.d.ts' },
-          './models': { browser: './dist/models.browser.js' },
-        },
-      }),
-    ).toBeUndefined();
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: {
-          ...svelteRoot,
-          './models': {
-            types: './dist/models.d.ts',
-            node: { import: './dist/models.js' },
-          },
-        },
-      }),
-    ).toBe('@test/pkg/models');
-    // Node walks conditions in key order and stops at the first match:
-    // a leading `node: null` means "not exported" even with a `default`.
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: {
-          ...svelteRoot,
-          './models': { node: null, default: './dist/models.js' },
-        },
-      }),
-    ).toBeUndefined();
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: {
-          ...svelteRoot,
-          './models': { default: './dist/models.js', node: null },
-        },
-      }),
-    ).toBe('@test/pkg/models');
-    // Arrays skip `null` entries and take the first resolving one; an empty
-    // or all-`null` array is not exported.
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: { ...svelteRoot, './models': [null, './dist/models.js'] },
-      }),
-    ).toBe('@test/pkg/models');
-    for (const unexported of [[], [null]]) {
-      expect(
-        resolveProviderContextImport('@test/pkg', {
-          name: '@test/pkg',
-          exports: { ...svelteRoot, './models': unexported },
-        }),
-      ).toBeUndefined();
-    }
-    // Nested under a matching condition, "not exported" (empty or all-`null`
-    // array) must stop the map, while "nothing matched" must fall through to
-    // the next condition. Directly under `./models` both look the same.
-    for (const unexported of [[], [null]]) {
-      expect(
-        resolveProviderContextImport('@test/pkg', {
-          name: '@test/pkg',
-          exports: {
-            ...svelteRoot,
-            './models': { node: unexported, default: './dist/models.js' },
-          },
-        }),
-      ).toBeUndefined();
-    }
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: {
-          ...svelteRoot,
-          './models': {
-            node: [{ browser: './dist/models.browser.js' }],
-            default: './dist/models.js',
-          },
-        },
-      }),
-    ).toBe('@test/pkg/models');
-    // `node-addons` and `module-sync` are default Node conditions.
-    for (const condition of ['node-addons', 'module-sync']) {
-      expect(
-        resolveProviderContextImport('@test/pkg', {
-          name: '@test/pkg',
-          exports: {
-            ...svelteRoot,
-            './models': { [condition]: './dist/models.js' },
-          },
-        }),
-      ).toBe('@test/pkg/models');
-    }
-    // A matching condition whose nested map matches nothing falls through.
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: {
-          ...svelteRoot,
-          './models': {
-            import: { browser: './dist/models.browser.js' },
-            default: './dist/models.js',
-          },
-        },
-      }),
-    ).toBe('@test/pkg/models');
-    expect(
-      resolveProviderContextImport('@test/pkg', {
-        name: '@test/pkg',
-        exports: svelteRoot,
       }),
     ).toBeUndefined();
   });

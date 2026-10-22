@@ -106,9 +106,11 @@ root as a Svelte entry (`isComponentBearingRoot`: a `svelte` field, or a `.`
 export with a `svelte` condition or a `.svelte`/`.css` target — e.g.
 `@happyvertical/smrt-products`, whose root re-exports its components and so
 reaches `@happyvertical/smrt-ui`'s `.svelte` files). Such a root is never
-imported: its already-imported object entries establish the context, and when
-it contributes only nested objects a declared `./objects` or `./models` entry
-stands in (`resolveProviderContextImport`). A package that publishes Svelte
+imported and no subpath is substituted for it (`resolveProviderContextImport`
+returns `undefined`): its already-imported object entries establish the
+context, a provider contributing only nested objects needs none because the
+transitive loader uses only `import.meta.resolve(provider)`, and a substitute
+`./models` whose JS reached `.svelte` would re-create the failure. A package that publishes Svelte
 only under subpaths keeps its root import; the broader `isComponentBearingPackage`
 test (any Svelte export) only selects `ssr.noExternal` packages. A `svelte`
 condition counts even with a plain `.js` target — that is what svelte-package
@@ -129,19 +131,12 @@ the import and warns once per package (`declares a Svelte root entry`), asking
 to verify the root under plain Node or publish the objects from `./models` or
 `./objects`. The declaration is a heuristic: a Node-safe root that declares
 `svelte` only by convention gets the same warning (a false positive, harmless —
-the import is kept) and, when it has no `./models`/`./objects`, loses only its
+the import is kept) and, when its objects come from subpaths, loses only its
 optional provider-context import. Regression: the `#4219` tests in
 `index.test.ts` (unit cases for `isComponentBearingRoot` /
 `resolveProviderContextImport`, a child-Node load of the generated register,
-the nested-only fallback, and the root-only warning).
-A chosen `./objects`/`./models` entry must also give a plain-Node `import` a
-target (`hasNodeLoadableTarget`, which follows Node's `resolvePackageTarget`
-with default conditions: conditions walked in key order, the first matching
-`node`/`import`/`module-sync`/`node-addons`/`default` decides, `null` means
-not exported, arrays skip `null` entries); a types-only, browser-only, or
-`null`-first entry is skipped rather than emitted as an import that would fail
-with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Target paths are not validated, so the
-check can only drop an optional context import.
+the nested-only provider that gets no import, and the root-only and transitive
+warnings).
 
 **Gate: `pnpm check:node-roots`** (root script; run after `pnpm build`). It
 runs `scripts/survey-node-root-load.mjs --strict --allow=<packages>`, which
@@ -152,8 +147,20 @@ is explicit and lives in the root `package.json` script: currently only
 `@happyvertical/smrt-products`, whose root re-exports its Svelte components by
 documented contract. A new entry needs the same justification; a model root
 that merely starts importing `@happyvertical/smrt-ui` must be fixed, not
-allowed. `--all` surveys every published package, including those without
-objects, as a report.
+allowed. `--strict` also fails when nothing was surveyed (run before
+`pnpm build`) and when an allow-listed package was not surveyed or now loads,
+so the list cannot go stale. `--all` surveys every published package,
+including those without objects, as a report.
+
+CI runs the gate in both Knowledge Freshness jobs of
+`.github/workflows/test-suite.yml`. In full mode (the merge queue, and every PR
+while `vars.CI_MERGE_QUEUE_ENABLED` is not `true`) it always runs. In affected
+mode it runs only when the `knowledge` paths filter matches, which covers
+`package.json` files and docs but not `packages/*/src/**`; a same-repo PR that
+makes a model root import smrt-ui only through source is therefore first
+caught in the merge queue, which still blocks the merge. The filter is not
+widened for this, because that would run the knowledge job on every PR. Run
+`pnpm check:node-roots` locally when changing a model package's root imports.
 
 ## Lightweight discovery
 

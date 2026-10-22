@@ -251,18 +251,14 @@ export function isComponentBearingRoot(
 }
 
 /**
- * Server-safe object entries a component-bearing provider may declare, in
- * preference order. These carry the package's `@smrt()` classes without its
- * components.
- */
-const PROVIDER_OBJECT_ENTRIES = ['./objects', './models'] as const;
-
-/**
  * Pick the module the generated register imports so a configured provider is
- * evaluated in Node's installed package context (#4187). The root is used
- * unless the package declares it as a Svelte entry; then a declared
- * server-safe object entry is used instead, and `undefined` means the provider
- * has nothing the register can load under plain Node (#4219).
+ * evaluated in Node's installed package context (#4187): the package root,
+ * unless the package declares that root as a Svelte entry, in which case
+ * nothing is imported for the provider (#4219). Its object entries, imported
+ * from their manifest `importPath`, already evaluate it in that context, and
+ * the transitive loader needs only `import.meta.resolve(provider)`, not an
+ * import. No substitute subpath is chosen: one that reaches `.svelte` would
+ * re-create the failure this avoids.
  *
  * @internal Exported for tests.
  */
@@ -270,79 +266,7 @@ export function resolveProviderContextImport(
   packageName: string,
   packageJson: ProviderPackageShape | undefined,
 ): string | undefined {
-  if (!isComponentBearingRoot(packageJson)) return packageName;
-  const exportsMap =
-    packageJson?.exports && typeof packageJson.exports === 'object'
-      ? (packageJson.exports as Record<string, unknown>)
-      : undefined;
-  for (const entry of PROVIDER_OBJECT_ENTRIES) {
-    const target = exportsMap?.[entry];
-    if (
-      target &&
-      !exportTargetNeedsViteCompilation(target) &&
-      hasNodeLoadableTarget(target)
-    ) {
-      return `${packageName}/${entry.slice(2)}`;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Conditions Node matches for an ESM `import` with default flags (`node-addons`
- * is on unless Node runs with `--no-addons`).
- */
-const NODE_IMPORT_CONDITIONS = new Set([
-  'node',
-  'import',
-  'module-sync',
-  'node-addons',
-  'default',
-]);
-
-/**
- * Resolve an `exports` target the way Node's `resolvePackageTarget` does for
- * an `import` with default conditions: a string is a target; `null` is "not
- * exported" and stops a conditions map; a conditions map is walked in key
- * order and the FIRST matching condition whose value resolves decides; an
- * array takes its first resolving entry, skipping `null` entries (an array
- * with no resolving entry and at least one `null`, or an empty array, is not
- * exported). `undefined` means nothing matched, so an outer map keeps looking.
- * Target strings are not validated (`'../x.js'`, a bare `'m.js'`, or a missing
- * file all count as targets), so a malformed or broken package can still
- * yield an import Node rejects.
- */
-function resolveNodeImportTarget(target: unknown): boolean | undefined {
-  if (typeof target === 'string') return true;
-  if (target === null) return false;
-  if (Array.isArray(target)) {
-    if (target.length === 0) return false;
-    let fallback: boolean | undefined;
-    for (const entry of target) {
-      const resolved = resolveNodeImportTarget(entry);
-      if (resolved === true) return true;
-      if (resolved === false) fallback = false;
-    }
-    return fallback;
-  }
-  if (typeof target !== 'object') return undefined;
-  for (const [condition, value] of Object.entries(
-    target as Record<string, unknown>,
-  )) {
-    if (!NODE_IMPORT_CONDITIONS.has(condition)) continue;
-    const resolved = resolveNodeImportTarget(value);
-    if (resolved !== undefined) return resolved;
-  }
-  return undefined;
-}
-
-/**
- * Whether an `exports` target gives a plain-Node `import` something to load.
- * A types-only or browser-only entry, or one whose first matching condition is
- * `null`, would fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
- */
-function hasNodeLoadableTarget(target: unknown): boolean {
-  return resolveNodeImportTarget(target) === true;
+  return isComponentBearingRoot(packageJson) ? undefined : packageName;
 }
 
 /**
@@ -2046,7 +1970,7 @@ async function generateRegistrationFile(
         isComponentBearingRoot(readInstalledPackageJson(rootPackageJsonPath))
       ) {
         console.warn(
-          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field or a "svelte" condition on its "." export) and exports ${(rootImportedObjects.get(importPath) ?? [objectName]).join(', ')} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
+          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field, or a "svelte" condition or a .svelte/.css target on its "." export) and exports ${(rootImportedObjects.get(importPath) ?? [objectName]).join(', ')} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
         );
       }
     }
@@ -2113,8 +2037,7 @@ async function generateRegistrationFile(
   // register must stay loadable under plain Node (`smrt db:migrate`, workers,
   // `.smrt/runtime/register.js`), so a root the provider declares as a Svelte
   // entry is never imported: its object entries already imported above
-  // establish the context, or a declared server-safe object entry stands in
-  // (#4219).
+  // establish the context (#4219).
   for (const packageName of manifest.smrtDependencies ?? []) {
     if (!isSameProjectAndProviderImport(packageName, packageName)) continue;
     const contextImport = resolveProviderContextImport(
@@ -2124,14 +2047,6 @@ async function generateRegistrationFile(
       ),
     );
     if (!contextImport || importsByPath.has(contextImport)) continue;
-    if (
-      contextImport !== packageName &&
-      Array.from(importsByPath.keys()).some(
-        (importPath) => packageNameFromImportPath(importPath) === packageName,
-      )
-    ) {
-      continue;
-    }
     importsByPath.set(contextImport, new Map());
   }
 
