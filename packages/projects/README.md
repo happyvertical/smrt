@@ -106,6 +106,24 @@ and question answer state remain separate lifecycles.
 renders authorized projections and emits typed answer/decision callbacks. It
 does not fetch records or decide application permissions.
 
+### Canonical project specification
+
+`ProjectSpecificationService` persists one canonical specification per tenant
+and qualified project target. Its `cookbook` is validated and canonicalized by
+`@happyvertical/smrt-core/cookbook`; `getCookbook()` returns the portable
+`Cookbook` from `@happyvertical/smrt-types`, including its `specs` requirements.
+`saveForProject({ ...scope, title, summary, cookbook, expectedRevision, actor })`
+requires a trusted manager actor. `expectedRevision: null` means create-only;
+updates require the currently observed revision. Validation rejects with
+`ProjectSpecificationValidationError` (`status: 400`); stale revisions reject
+with `ProjectGovernanceConflictError`.
+
+When project creation already owns a transaction, use
+`ProjectSpecificationService.create({ db: tx, transaction: 'caller' })` so the
+specification rolls back with the project. The default mode owns its transaction.
+An active caller tenant must match the target; hosts creating a child project
+enter that authorized child tenant context before saving.
+
 ### STI Hierarchy
 
 `PullRequest` extends `Issue` via single-table inheritance. Both share the same table, discriminated by `_meta_type`. PullRequest adds `headRef`, `baseRef`, `merged`, `draft`, `additions`, `deletions`, `changedFiles`.

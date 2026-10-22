@@ -35,6 +35,10 @@ export {
   ProjectQuestion,
   type ProjectQuestionOptions,
 } from './ProjectQuestion';
+export {
+  ProjectSpecification,
+  type ProjectSpecificationOptions,
+} from './ProjectSpecification.js';
 export { PullRequest, type PullRequestOptions } from './PullRequest';
 export { Repository, type RepositoryOptions } from './Repository';
 export * from './service-evidence.js';

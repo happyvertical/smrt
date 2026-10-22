@@ -58,6 +58,7 @@ export { ProjectGovernanceEventCollection } from './collections/ProjectGovernanc
 export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
 export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
 export { ProjectQuestionCollection } from './collections/ProjectQuestions';
+export { ProjectSpecificationCollection } from './collections/ProjectSpecifications.js';
 export { ProjectCollection } from './collections/Projects';
 export { PullRequestCollection } from './collections/PullRequests';
 export { RepositoryCollection } from './collections/Repositories';
@@ -109,6 +110,10 @@ export {
   ProjectQuestion,
   type ProjectQuestionOptions,
 } from './models/ProjectQuestion';
+export {
+  ProjectSpecification,
+  type ProjectSpecificationOptions,
+} from './models/ProjectSpecification.js';
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
 export * from './models/service-evidence.js';
@@ -136,6 +141,7 @@ export {
   withRepositoryClient,
 } from './repository-client-scope';
 export * from './services/index.js';
+export * from './services/project-specification-service.js';
 // Export types
 export type {
   AssistanceClassification,
