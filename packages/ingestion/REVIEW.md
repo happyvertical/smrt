@@ -115,7 +115,9 @@ attempt on the current analysis revision, and an operation handler the item's
 evidence media types offer. Plan handlers go through `previewPlan`. The server
 creates an action keyed `reviewer:<requestId>` with origin `reviewer-selected`
 (`createAction` refuses that key prefix and origin, so process authority cannot
-mint reviewer provenance),
+mint reviewer provenance; re-previewing such an action with `previewProposal`
+needs the reviewer grant and keeps its handler fixed, so only its arguments can
+be corrected),
 runs the handler's normal `validate`/`preview`, publishes a `waiting_review`
 revision and requires the same explicit approval and apply as a generated
 proposal. Replays with the same request return the same review; changed arguments
@@ -141,7 +143,9 @@ automated. `submitDecision` refuses every decision but `reject`, no new revision
 is published for the item, `applyAction` rechecks the disposition before any
 effect, and `analyze`, `reviseLogicalSplit` and `createAction` refuse the item
 under its lock before any write, so it is never reanalysed, re-split or given a
-new action. The UI hides Approve, Defer, Apply, every edit control, suggestion
+new action. `resolveItem` supersedes any queued or running analysis under the
+same lock and `claimAnalysis` refuses a resolved item, so no provider is called
+after a human closed it. The UI hides Approve, Defer, Apply, every edit control, suggestion
 preview and split controls on a resolved item.
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and

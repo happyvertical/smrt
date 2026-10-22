@@ -1514,7 +1514,10 @@ export class IngestionService {
       if (
         item.cancelled ||
         item.receipt_state !== 'ready' ||
-        Number(item.analysis_revision) !== revision
+        Number(item.analysis_revision) !== revision ||
+        // A resolved item is terminal; its provider is never called again.
+        (await this.rows(db, 'intake_dispositions', 'item_id=?', [itemId]))
+          .length
       )
         return null;
       const [analysis] = await this.rows(

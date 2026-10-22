@@ -75,7 +75,11 @@ refuses any execution or retry, and `IngestionService.analyze`,
 `reviseLogicalSplit` and `createAction` refuse the item under its lock before
 any write. `createAction` (process authority) also refuses the reserved
 `reviewer:` key prefix and `reviewer-selected` origin, which only
-`startReviewerAction` mints. `intake_dispositions` is a new model: deploy
+`startReviewerAction` mints; `previewProposal` on such an action requires
+`review` access and the current handler@version. `resolveItem` supersedes
+queued/running analyses and completes dispatch intents under the item lock, and
+`claimAnalysis` returns `null` for a resolved item. The feedback context's
+`settled` flag gates selection only; lineage re-checks ignore it (FEEDBACK.md). `intake_dispositions` is a new model: deploy
 its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
 `assertReady` checks it, and both privacy deletion and retention expiry
 (`redactExecution`) redact its payload with the other item-owned tables.

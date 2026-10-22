@@ -559,8 +559,9 @@ export class IntakeFeedbackService {
           const { digest: stored, ...body } = data;
           if (digest(body) !== stored) throw new Error('Feedback integrity');
           if (
+            // A reviewer-selected action never labels a model suggestion. A
+            // disposition says nothing about whether the suggestion was right.
             ctx.origin === 'reviewer-selected' ||
-            ctx.resolved ||
             data.revision !== ctx.review.revision ||
             data.bindingHash !== ctx.review.bindingHash ||
             data.attemptId !== ctx.attemptId ||
@@ -618,6 +619,8 @@ export class IntakeFeedbackService {
     row: Row,
     input: RetrieveFeedbackInput,
     executor?: DatabaseInterface,
+    /** Re-checking an earlier selection: only integrity and revocation count. */
+    lineage = false,
   ): Promise<FeedbackExample | undefined> {
     if (++this.exampleChecks > this.config.maxScan) return undefined;
     try {
@@ -731,7 +734,9 @@ export class IntakeFeedbackService {
             if (
               ctx.itemId !== itemId ||
               ctx.origin !== 'reviewer-selected' ||
-              !ctx.settled ||
+              // Settledness gates selection only; a later resolution, lapse or
+              // outcome change must not revoke an example already used.
+              (!lineage && !ctx.settled) ||
               data.revision !== ctx.review.revision ||
               data.bindingHash !== ctx.review.bindingHash ||
               data.attemptId !== ctx.attemptId ||
@@ -940,7 +945,7 @@ export class IntakeFeedbackService {
         const current = !row
           ? undefined
           : row.kind === 'reviewer_routing'
-            ? await this.routingExample(row, input, context.db)
+            ? await this.routingExample(row, input, context.db, true)
             : await this.example(row, input, context.db);
         if (
           !current ||
@@ -967,6 +972,8 @@ export class IntakeFeedbackService {
   private async support(
     ctx: FeedbackActionContext,
     ids: string[],
+    /** Re-checking stored support (read/adopt): only integrity and revocation count. */
+    lineage = false,
   ): Promise<Array<{ id: string; digest: string; query: string }>> {
     if (
       !Array.isArray(ids) ||
@@ -1005,9 +1012,9 @@ export class IntakeFeedbackService {
           origins.add(source.itemId);
           const { digest: stored, ...body } = data;
           const generationMatch = routing
-            ? source.origin === 'reviewer-selected' && source.settled
+            ? source.origin === 'reviewer-selected' &&
+              (lineage || source.settled)
             : source.origin !== 'reviewer-selected' &&
-              !source.resolved &&
               provenance.generation &&
               data.judgment === 'correct' &&
               data.promptVersion === provenance.promptVersion &&
@@ -1149,6 +1156,7 @@ export class IntakeFeedbackService {
     const current = await this.support(
       ctx,
       support.map((entry) => entry.id),
+      true,
     );
     if (
       digest(current.map(({ id, digest }) => ({ id, digest }))) !==

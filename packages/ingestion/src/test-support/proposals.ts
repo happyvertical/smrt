@@ -6570,6 +6570,341 @@ export function proposalSuite(
         disposition: [{ disposition: 'resolved_no_action', data: {} }],
       });
     });
+    it('interpretation judgments survive a disposition but never count when bound to a reviewer-selected action', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'interpretation-policy-1',
+          preview: 'Prefer drafts for meeting minutes',
+        }),
+        adopt: async () => ({
+          version: 'interpretation-policy-2',
+          auditId: 'audit',
+        }),
+      };
+      service = new IngestionService(options);
+      const training = await feedbackCase();
+      const one = await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'one',
+      });
+      const second = await feedbackCase();
+      const two = await service.recordFeedback({
+        ...second.binding,
+        judgment: 'correct',
+        requestId: 'two',
+      });
+      const receiver = await source(
+        100000,
+        false,
+        'Meeting minutes draft evidence',
+      );
+      const retrieved = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Meeting minutes draft evidence',
+          })
+        ).examples.map((example) => example.feedbackId);
+      const suggest = (requestId: string) =>
+        service.suggestRoutingRule({
+          ...second.binding,
+          supportingFeedbackIds: [one.id, two.id],
+          requestId,
+        });
+      expect(await retrieved()).toContain(one.id);
+      // Closing the item without action says nothing about the suggestion.
+      await service.resolveItem({
+        itemId: training.generated.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-training',
+      });
+      expect(await retrieved()).toContain(one.id);
+      expect(
+        (await suggest('suggest-after-resolve')).automaticActionEligible,
+      ).toBe(false);
+      // A judgment whose action now carries reviewer-selected provenance is a
+      // routing choice, never a model example or interpretation support.
+      const [action] = (
+        await db.query(
+          'SELECT data FROM intake_actions WHERE id=?',
+          training.binding.actionId,
+        )
+      ).rows;
+      const provenance =
+        typeof action.data === 'string' ? JSON.parse(action.data) : action.data;
+      await db.query(
+        'UPDATE intake_actions SET data=? WHERE id=?',
+        JSON.stringify({ ...provenance, origin: 'reviewer-selected' }),
+        training.binding.actionId,
+      );
+      expect(await retrieved()).not.toContain(one.id);
+      // (The second item's own generation selected it, so its lineage gate
+      // refuses first; either way it is not support.)
+      await expect(suggest('suggest-reviewer-origin')).rejects.toThrow(
+        /Rule evidence unavailable|Feedback eligibility changed/,
+      );
+    });
+    it('lineage re-checks ignore later resolution, approval lapse and outcome changes of examples already used', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const grantExpiry = async (actionId: string) => {
+        const [grant] = (
+          await db.query(
+            'SELECT data FROM intake_review_decisions WHERE action_id=?',
+            actionId,
+          )
+        ).rows;
+        return Date.parse(
+          String(
+            (typeof grant.data === 'string'
+              ? JSON.parse(grant.data)
+              : grant.data
+            ).expiresAt,
+          ),
+        );
+      };
+      const a = await source(
+        100000,
+        false,
+        'Customer purchase order 17 from Acme for widgets',
+      );
+      const aReview = await start(a.itemId, 'route-a');
+      await decide(aReview, 'approve', 'approve-a');
+      const c = await source(
+        100000,
+        false,
+        'Customer purchase order 42 from Globex for widgets',
+      );
+      const cReview = await start(c.itemId, 'route-c');
+      await decide(cReview, 'approve', 'approve-c');
+      await db.query(
+        "UPDATE intake_actions SET state='executing' WHERE id=?",
+        cReview.actionId,
+      );
+      // B's generation selects both reviewer choices as examples.
+      const b = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Umbrella for widgets',
+      );
+      chooseCreate(args);
+      const generated = await generate(b);
+      expect(
+        calls.mock.calls
+          .at(-1)![0]
+          .examples?.examples.map((example) => example.itemId)
+          .sort(),
+      ).toEqual([a.itemId, c.itemId].sort());
+      const [prepared] = await service.previewGeneratedProposals({
+        itemId: b.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'b-intention',
+            expectedRevision: 0,
+            requestId: 'b-preview',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      const reviewable = async () => {
+        await service.getCompletedAnalysis(b.itemId);
+        return service.getAction(prepared.review.actionId);
+      };
+      expect((await reviewable()).state).toBe('waiting_review');
+      // C's effect becomes of unknown outcome.
+      await db.query(
+        "UPDATE intake_actions SET state='outcome_unknown' WHERE id=?",
+        cReview.actionId,
+      );
+      expect((await reviewable()).state).toBe('waiting_review');
+      // A's approval lapses unapplied, then A is closed without action.
+      const beforeLapse = clock;
+      clock = new Date((await grantExpiry(aReview.actionId)) + 1);
+      expect((await reviewable()).state).toBe('waiting_review');
+      await service.resolveItem({
+        itemId: a.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-a',
+      });
+      clock = beforeLapse;
+      const current = await reviewable();
+      expect(
+        (
+          await service.submitDecision({
+            actionId: current.actionId,
+            expectedRevision: current.revision,
+            expectedReviewVersion: current.reviewVersion,
+            bindingHash: current.bindingHash,
+            requestId: 'approve-b',
+            decision: 'approve',
+          })
+        ).state,
+      ).toBe('authorized');
+      // Selection still applies settledness: a new retrieval excludes both.
+      expect(
+        (
+          await service.retrieveFeedback({
+            itemId: b.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples
+          .filter((example) => example.handlerId !== 'none')
+          .map((example) => example.itemId),
+      ).not.toEqual(expect.arrayContaining([a.itemId]));
+    });
+    it('a reviewer-selected action is re-previewed only under reviewer authority and with its handler fixed', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const item = await source(
+        100000,
+        false,
+        'Customer purchase order 5 from Acme for widgets',
+      );
+      const started = await start(item.itemId, 'route-fixed');
+      const repreview = (
+        handlerId: string,
+        requestId: string,
+        body = 'Corrected order',
+      ) =>
+        service.previewProposal({
+          itemId: item.itemId,
+          actionId: started.actionId,
+          attemptId: item.attemptId,
+          expectedRevision: started.revision,
+          requestId,
+          handlerId,
+          handlerVersion: '1',
+          args:
+            handlerId === CREATE
+              ? { ...args, body }
+              : { contentId: randomUUID(), evidenceId: randomUUID() },
+        });
+      await expect(repreview(ATTACH, 'switch-handler')).rejects.toThrow(
+        'Reviewer-selected handler is fixed',
+      );
+      reviewerAllowed = false;
+      await expect(repreview(CREATE, 'no-reviewer')).rejects.toThrow();
+      reviewerAllowed = true;
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_proposals WHERE action_id=?',
+            started.actionId,
+          )
+        ).rows,
+      ).toHaveLength(1);
+      const corrected = await repreview(CREATE, 'correct-args');
+      expect(corrected).toMatchObject({
+        revision: started.revision + 1,
+        state: 'waiting_review',
+      });
+      expect((await service.listReviews(item.itemId)).actions).toMatchObject([
+        { origin: 'reviewer-selected', handlerId: CREATE },
+      ]);
+    });
+    it('resolving an item supersedes queued analysis and is never claimed for a provider', async () => {
+      chooseCreate();
+      const item = await source();
+      const queued = await service.analyze(
+        item.itemId,
+        {
+          stage: 'extract',
+          extraction: { configurationRevision: '1', limits: extractionLimits },
+        },
+        'queued-before-resolve',
+      );
+      const providerCalls = calls.mock.calls.length;
+      await service.resolveItem({
+        itemId: item.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-queued',
+      });
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_analyses WHERE item_id=? AND revision=?',
+            item.itemId,
+            queued.revision,
+          )
+        ).rows,
+      ).toEqual([{ state: 'superseded' }]);
+      expect(
+        await service.claimAnalysis(item.itemId, queued.revision, 'worker'),
+      ).toBeNull();
+      expect(calls.mock.calls.length).toBe(providerCalls);
+    });
     it('reviewer-selected actions never label a generation, and lapsed or closed choices never support routing', async () => {
       enableFeedback();
       options.feedback!.policy = {

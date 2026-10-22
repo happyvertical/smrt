@@ -819,7 +819,6 @@ export class IntakeExecutionService {
           context,
           permissions,
           origin: typeof origin === 'string' ? origin : '',
-          resolved,
           settled,
           review: this.review(bound),
           itemId: String(bound.item.id),
@@ -1464,9 +1463,49 @@ export class IntakeExecutionService {
     const frozen = JSON.parse(canonical(input)) as PreviewProposalInput;
     return this.tx(async (db) => {
       const item = await this.item(db, frozen.itemId, true);
+      await this.assertReviewerRevision(db, item, frozen);
       const binding = await this.buildBinding(db, item, frozen);
       return this.publish(db, item, frozen, binding);
     });
+  }
+  /**
+   * A reviewer-selected action records a human routing choice: re-previewing it
+   * needs the reviewer grant (not just `preview`) and keeps its handler fixed,
+   * so only the arguments can be corrected.
+   */
+  private async assertReviewerRevision(
+    db: DatabaseInterface,
+    item: Row,
+    input: PreviewProposalInput,
+  ): Promise<void> {
+    const [action] = await this.rows(
+      db,
+      'intake_actions',
+      'id=? AND item_id=?',
+      [input.actionId, item.id],
+    );
+    if (!action || object(action.data).origin !== 'reviewer-selected') return;
+    const [current] = await this.rows(
+      db,
+      'intake_proposals',
+      'action_id=? AND revision=?',
+      [action.id, action.proposal_revision],
+    );
+    const binding = current
+      ? (object(object(current.data).binding) as unknown as Binding)
+      : undefined;
+    if (
+      !binding ||
+      binding.handlerId !== input.handlerId ||
+      binding.handlerVersion !== input.handlerVersion
+    )
+      throw new Error('Reviewer-selected handler is fixed');
+    await this.access(
+      db,
+      item,
+      this.operation(this.handler(input.handlerId, input.handlerVersion)),
+      'review',
+    );
   }
   /** Capture owner facts in the same transaction; these are never correctness labels. */
   private async feedbackEvent(
@@ -2947,6 +2986,21 @@ export class IntakeExecutionService {
       } catch {
         attempt = undefined;
       }
+      // A closed item is never sent to a provider again: supersede queued or
+      // running analysis under the item lock, as a new revision would.
+      for (const table of ['intake_analysis_attempts', 'intake_analyses'])
+        await db.query(
+          `UPDATE ${table} SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          item.id,
+        );
+      await db.query(
+        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state<>'completed'",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        item.id,
+      );
       const row = await this.insert(db, 'intake_dispositions', {
         item_id: item.id,
         request_key: key,
