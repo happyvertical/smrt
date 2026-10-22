@@ -11,13 +11,18 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   AnalysisOutput,
+  InlineInterpretation,
+  InlineInterpretationInput,
   IntakeEvidenceDTO,
   IntakeFailure,
   IntakeItemDTO,
   IntakeLimits,
+  OwnProposalsInput,
   ReceiptResult,
 } from './dto.js';
 import { generationSnapshotRead } from './execution-internal.js';
+import { extractAnalysis } from './extraction.js';
+import { extractWithProviders } from './extraction-providers.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import './models.js';
 import type {
@@ -75,22 +80,54 @@ export interface IntakePart {
   /** Original name as the source presented it; presentation only, never identity. */
   filename?: string;
 }
+/** A snapshot received by reference: the lifecycle owner keeps the bytes; no
+ * blob copy is preserved. Only the text/structured snapshot a stage needs is
+ * retained, redacted by the ordinary deletion path. The reference is identity,
+ * never authority. */
+export interface IntakeReferencePart {
+  partId: string;
+  parentPartId?: string;
+  /** Host-typed owner record the snapshot was read from (for example `message`). */
+  reference: { owner: string; id: string; version?: string };
+  snapshot: { text: string } | { structured: Record<string, unknown> };
+}
+/** Lifecycle owner for owner-bound retention; `kind` is host-typed. */
+export interface IntakeOwner {
+  kind: string;
+  id: string;
+}
+/** Host-resolved retention. Deadlines are always required: in `owner` mode they
+ * are the hard privacy ceiling while `expireOwned` follows the owner's lifecycle. */
+export type IntakeRetention =
+  | {
+      kind?: 'time';
+      version: string;
+      expiresAt: Date;
+      replayUntil: Date;
+      acceptAfter: Date;
+    }
+  | {
+      kind: 'owner';
+      owner: IntakeOwner;
+      version: string;
+      expiresAt: Date;
+      replayUntil: Date;
+      acceptAfter: Date;
+    };
 /** Host-resolved delivery and retention policy, never untrusted content labels. */
 export interface ReceiveInput {
   sourceId: string;
   sourceVersion: string;
   deliveryKey: string;
   deliveredAt: Date;
-  parts: IntakePart[];
+  parts: Array<IntakePart | IntakeReferencePart>;
   capturedCeiling: Record<string, unknown>;
-  retention: {
-    version: string;
-    expiresAt: Date;
-    replayUntil: Date;
-    acceptAfter: Date;
-  };
+  retention: IntakeRetention;
   limits: IntakeLimits;
   traceId?: string;
+  /** `inline` records no queued work for any revision; the host runs
+   * `interpretInline` in-process. Requires text/structured parts only. */
+  dispatch?: 'job' | 'inline';
 }
 /** Durable attempt claim. Its fence and token are verified on every completion. */
 export interface AnalysisLease {
@@ -233,6 +270,68 @@ const EVIDENCE_PAGE_CEILING = 100;
 function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
 }
+const inlineMedia = new Set(['text/plain', 'application/json']);
+function mediaKind(mediaType: string): string {
+  return mediaType.split(';')[0].trim().toLowerCase();
+}
+function ownerKey(owner: IntakeOwner): string {
+  nonempty(owner.kind);
+  nonempty(owner.id);
+  if (owner.kind.includes(':')) throw new Error('Invalid intake owner');
+  return `${owner.kind}:${owner.id}`;
+}
+type ReceivedPart = IntakePart & {
+  hash: string;
+  retain: 'copy' | 'reference';
+  snapshot?: string;
+};
+/** Normalize a copied or referenced part; referenced snapshots become bytes once. */
+function receivedPart(part: IntakePart | IntakeReferencePart): ReceivedPart {
+  nonempty(part.partId);
+  if (!('reference' in part)) {
+    nonempty(part.mediaType);
+    if (!(part.bytes instanceof Uint8Array)) throw new Error('Invalid part');
+    const bytes = Buffer.from(part.bytes);
+    const hash = bytesHash(bytes);
+    if (part.expectedHash && part.expectedHash !== hash)
+      throw new Error('Invalid hash');
+    // #4243: a copied part's presented filename is validated, never identity.
+    if (part.filename !== undefined) filename(part.filename);
+    return { ...part, bytes, hash, retain: 'copy' };
+  }
+  const reference = object(part.reference);
+  nonempty(reference.owner);
+  nonempty(reference.id);
+  if (reference.version !== undefined) nonempty(reference.version);
+  const snapshot = object(part.snapshot);
+  let mediaType: string;
+  let value: string;
+  if ('text' in snapshot && !('structured' in snapshot)) {
+    if (typeof snapshot.text !== 'string') throw new Error('Invalid snapshot');
+    mediaType = 'text/plain';
+    value = snapshot.text;
+  } else if ('structured' in snapshot && !('text' in snapshot)) {
+    mediaType = 'application/json';
+    value = canonical(object(snapshot.structured));
+  } else throw new Error('Invalid snapshot');
+  const bytes = Buffer.from(value, 'utf8');
+  return {
+    partId: part.partId,
+    ...(part.parentPartId === undefined
+      ? {}
+      : { parentPartId: part.parentPartId }),
+    mediaType,
+    bytes,
+    hash: bytesHash(bytes),
+    sourceReference: {
+      owner: reference.owner,
+      id: reference.id,
+      version: reference.version ?? '',
+    },
+    retain: 'reference',
+    snapshot: value,
+  };
+}
 function date(value: Date): string {
   if (!(value instanceof Date) || !Number.isFinite(value.getTime()))
     throw new Error('Invalid intake date');
@@ -305,6 +404,13 @@ export class IngestionService {
   }
   async getAction(actionId: string) {
     return (await this.execution()).getAction(actionId);
+  }
+  /** Own-submission review surface; see execution for its authority gate. */
+  async listOwnProposals(input: OwnProposalsInput = {}) {
+    return (await this.execution()).listOwnProposals(input);
+  }
+  async submitOwnDecision(input: ReviewInput) {
+    return (await this.execution()).submitOwnDecision(input);
   }
   async authorizeAutomatic(actionId: string) {
     return (await this.execution()).authorizeAutomatic(actionId);
@@ -484,7 +590,9 @@ export class IngestionService {
   async receive(input: ReceiveInput): Promise<ReceiptResult> {
     await this.authorize('receive', { capturedCeiling: input.capturedCeiling });
     const now = this.now();
-    let parts: Array<IntakePart & { hash: string }>;
+    let parts: ReceivedPart[];
+    let owner: IntakeOwner | null = null;
+    const inline = input.dispatch === 'inline';
     try {
       for (const value of [
         input.sourceId,
@@ -493,6 +601,21 @@ export class IngestionService {
         input.retention.version,
       ])
         nonempty(value);
+      if (
+        input.dispatch !== undefined &&
+        !['job', 'inline'].includes(input.dispatch)
+      )
+        throw new Error('Invalid dispatch mode');
+      const retention = input.retention;
+      if (
+        retention.kind !== undefined &&
+        !['time', 'owner'].includes(retention.kind)
+      )
+        throw new Error('Invalid retention mode');
+      if (retention.kind === 'owner') {
+        ownerKey(retention.owner);
+        owner = { kind: retention.owner.kind, id: retention.owner.id };
+      }
       for (const value of Object.values(input.limits)) integer(value);
       date(input.deliveredAt);
       date(input.retention.expiresAt);
@@ -509,20 +632,17 @@ export class IngestionService {
       const ids = new Set<string>();
       let total = 0;
       parts = input.parts.map((part) => {
-        nonempty(part.partId);
-        nonempty(part.mediaType);
-        if (ids.has(part.partId) || !(part.bytes instanceof Uint8Array))
-          throw new Error('Invalid part');
-        ids.add(part.partId);
-        total += part.bytes.byteLength;
-        const hash = bytesHash(part.bytes);
-        if (part.expectedHash && part.expectedHash !== hash)
-          throw new Error('Invalid hash');
-        if (part.filename !== undefined) filename(part.filename);
-        return { ...part, bytes: Buffer.from(part.bytes), hash };
+        const received = receivedPart(part);
+        if (ids.has(received.partId)) throw new Error('Invalid part');
+        ids.add(received.partId);
+        total += received.bytes.byteLength;
+        return received;
       });
       if (total > input.limits.maxBytes)
         return { kind: 'rejected', category: 'limit' };
+      // Inline receipts never queue work, so every part must be stage-ready text.
+      if (inline && parts.some((p) => !inlineMedia.has(mediaKind(p.mediaType))))
+        throw new Error('Inline receipt requires text or structured parts');
       for (const part of parts)
         if (
           part.parentPartId &&
@@ -541,6 +661,7 @@ export class IngestionService {
     } catch {
       return { kind: 'rejected', category: 'invalid' };
     }
+    // Existing copied receipts keep their exact identity; new modes extend it.
     const identity = parts
       .map((p) => ({
         partId: p.partId,
@@ -549,6 +670,7 @@ export class IngestionService {
         hash: p.hash,
         length: p.bytes.byteLength,
         sourceReference: p.sourceReference ?? null,
+        ...(p.retain === 'reference' ? { retain: 'reference' } : {}),
       }))
       .sort((a, b) => a.partId.localeCompare(b.partId));
     const payloadDigest = digest(identity);
@@ -556,6 +678,8 @@ export class IngestionService {
       scope: this.scope,
       ceiling: input.capturedCeiling,
       sourceVersion: input.sourceVersion,
+      ...(inline ? { dispatch: 'inline' } : {}),
+      ...(owner ? { owner } : {}),
     });
     const reservation = await this.tx(async (db) => {
       await this.authorize(
@@ -584,12 +708,18 @@ export class IngestionService {
           replay_until: date(input.retention.replayUntil),
           cancelled: false,
           trace_id: input.traceId ?? randomUUID(),
+          // The submitter is the authenticated actor of this service, recorded
+          // server-side; payload or source metadata never supplies it.
+          submitter_id: this.scope.actorId,
+          owner_key: owner ? ownerKey(owner) : '',
           data: canonical({
             capturedCeiling: input.capturedCeiling,
             limits: input.limits,
             retentionVersion: input.retention.version,
             deliveredAt: date(input.deliveredAt),
             dispatchTarget: this.dispatchTarget,
+            ...(inline ? { dispatch: 'inline' } : {}),
+            ...(owner ? { retentionOwner: owner } : {}),
           }),
         },
         'tenant_id,source_id,delivery_key',
@@ -630,8 +760,10 @@ export class IngestionService {
             parent_evidence_id: part.parentPartId
               ? evidenceIds.get(part.parentPartId)
               : null,
-            asset_id: randomUUID(),
-            state: 'intent',
+            // A referenced snapshot owns no asset: it is durable in the ledger
+            // row itself and leaves with the row's ordinary redaction.
+            asset_id: part.retain === 'reference' ? null : randomUUID(),
+            state: part.retain === 'reference' ? 'durable' : 'intent',
             content_hash: part.hash,
             byte_length: part.bytes.byteLength,
             media_type: part.mediaType,
@@ -641,6 +773,9 @@ export class IngestionService {
               ...(part.filename === undefined
                 ? {}
                 : { filename: part.filename }),
+              ...(part.retain === 'reference'
+                ? { retain: 'reference', snapshot: part.snapshot }
+                : {}),
             }),
           });
       }
@@ -653,7 +788,7 @@ export class IngestionService {
     await this.point('reserved');
     if (item.receipt_state === 'ready') {
       try {
-        await this.repairDispatches();
+        if (!inline) await this.repairDispatches();
       } catch {
         return { kind: 'retry', category: 'unavailable' };
       }
@@ -677,7 +812,8 @@ export class IngestionService {
     );
     if (!claimed.rows.length) return { kind: 'retry', category: 'busy' };
     try {
-      for (const part of parts) await this.preserve(itemId, part, token);
+      for (const part of parts)
+        if (part.retain === 'copy') await this.preserve(itemId, part, token);
       await this.point('evidence');
       await this.tx(async (db) => {
         await this.lock(db, itemId);
@@ -699,6 +835,7 @@ export class IngestionService {
           this.now().toISOString(),
         );
         if (!updated.rows.length) throw new Error('Lease lost');
+        // An inline receipt retains its route provenance but no deliverable intent.
         await this.insert(
           db,
           'intake_dispatches',
@@ -706,7 +843,7 @@ export class IngestionService {
             item_id: itemId,
             stage: 'analyze',
             revision: 1,
-            state: 'pending',
+            state: inline ? 'completed' : 'pending',
             job_id: '',
             deliveries: 0,
             data: canonical({ dispatchTarget: this.dispatchTarget }),
@@ -715,7 +852,7 @@ export class IngestionService {
         );
       });
       await this.point('ready');
-      await this.repairDispatches();
+      if (!inline) await this.repairDispatches();
       await this.point('ack');
       return {
         kind: reservation.created ? 'accepted' : 'duplicate',
@@ -1292,6 +1429,22 @@ export class IngestionService {
       [itemId, evidenceId],
     );
     if (!e) throw new Error('Intake unavailable');
+    const bytes = await this.evidenceBytes(e);
+    if (
+      bytes.length !== Number(e.byte_length) ||
+      bytesHash(bytes) !== e.content_hash
+    )
+      throw new Error('Intake integrity');
+    await this.item(itemId, 'read');
+    return bytes;
+  }
+  private async evidenceBytes(e: Row): Promise<Uint8Array> {
+    const data = object(e.data);
+    if (data.retain === 'reference') {
+      if (e.asset_id || typeof data.snapshot !== 'string')
+        throw new Error('Intake unavailable');
+      return Buffer.from(data.snapshot, 'utf8');
+    }
     const asset = await withTenant({ tenantId: this.scope.tenantId }, () =>
       this.options.assets.collection.get({ id: String(e.asset_id) }),
     );
@@ -1301,14 +1454,7 @@ export class IngestionService {
       asset.sourceUri !== e.source_uri
     )
       throw new Error('Intake unavailable');
-    const bytes = await this.options.assets.store.read(asset);
-    if (
-      bytes.length !== Number(e.byte_length) ||
-      bytesHash(bytes) !== e.content_hash
-    )
-      throw new Error('Intake integrity');
-    await this.item(itemId, 'read');
-    return bytes;
+    return this.options.assets.store.read(asset);
   }
   /** Append an immutable input revision. Reprocessing never creates actions. */
   async analyze(
@@ -1430,7 +1576,8 @@ export class IngestionService {
         item_id: itemId,
         stage: 'analyze',
         revision,
-        state: 'pending',
+        state:
+          object(item.data).dispatch === 'inline' ? 'completed' : 'pending',
         job_id: '',
         deliveries: 0,
         data: canonical({ dispatchTarget: this.dispatchTarget }),
@@ -1438,6 +1585,144 @@ export class IngestionService {
       'tenant_id,item_id,stage,revision',
     );
     return { id: String(analysis.id), revision };
+  }
+  /** Run one fenced stage in-process and reload its terminal projection. */
+  private async inlineStage(
+    itemId: string,
+    revision: number,
+    work: (lease: AnalysisLease) => Promise<unknown>,
+  ): Promise<InlineInterpretation['extraction']> {
+    const lease = await this.claimAnalysis(itemId, revision, 'inline');
+    if (lease) await work(lease);
+    return this.tx(async (db) => {
+      await this.lock(db, itemId);
+      await this.item(itemId, 'process', db);
+      const [analysis] = await this.rows(
+        db,
+        'intake_analyses',
+        'item_id=? AND revision=?',
+        [itemId, revision],
+      );
+      if (!analysis) throw new Error('Analysis unavailable');
+      const [attempt] = analysis.current_attempt_id
+        ? await this.rows(
+            db,
+            'intake_analysis_attempts',
+            'id=? AND item_id=?',
+            [analysis.current_attempt_id, itemId],
+          )
+        : [];
+      if (
+        !attempt ||
+        !['completed', 'partial', 'needs_attention', 'failed'].includes(
+          String(attempt.state),
+        )
+      )
+        throw new Error('Inline interpretation busy');
+      return {
+        analysisId: String(analysis.id),
+        revision,
+        attemptId: String(attempt.id),
+        state: String(
+          attempt.state,
+        ) as InlineInterpretation['extraction']['state'],
+        error: attempt.safe_error
+          ? (String(attempt.safe_error) as IntakeFailure)
+          : null,
+      };
+    });
+  }
+  /** Documented in-process receive-to-proposals path for `dispatch: 'inline'`
+   * receipts. Extraction (UTF-8 text/structured only) and interpretation use the
+   * same immutable revisions, fenced leases, catalog-live checks, provenance and
+   * failure categories as the job path; no queue intent is created or delivered. */
+  async interpretInline(
+    itemId: string,
+    input: InlineInterpretationInput,
+  ): Promise<InlineInterpretation> {
+    nonempty(input.requestId);
+    const item = await this.item(itemId, 'process');
+    if (object(item.data).dispatch !== 'inline')
+      throw new Error('Inline interpretation requires an inline receipt');
+    const extraction = {
+      configurationRevision: input.extraction.configurationRevision,
+      limits: structuredClone(input.extraction.limits),
+    };
+    const requested = await this.analyze(
+      itemId,
+      { stage: 'extract', extraction },
+      `inline:extract:${input.requestId}`,
+    );
+    const extracted = await this.inlineStage(
+      itemId,
+      requested.revision,
+      (lease) =>
+        extractAnalysis(
+          this,
+          lease,
+          { extract: (request) => extractWithProviders(request, {}) },
+          extraction,
+        ),
+    );
+    if (!['completed', 'partial'].includes(extracted.state))
+      return { itemId, extraction: extracted };
+    const interpretKey = `inline:interpret:${input.requestId}`;
+    // A retried request replays its immutable interpretation revision instead
+    // of preparing against a source that is no longer the current revision.
+    const interpretation =
+      (await this.analysisByRequest(itemId, interpretKey)) ??
+      (await this.analyze(
+        itemId,
+        await this.prepareGeneration(itemId, extracted.attemptId),
+        interpretKey,
+      ));
+    const generation = await this.inlineStage(
+      itemId,
+      interpretation.revision,
+      (lease) => this.generateProposals(lease),
+    );
+    if (!['completed', 'partial'].includes(generation.state))
+      return { itemId, extraction: extracted, generation };
+    return {
+      itemId,
+      extraction: extracted,
+      generation,
+      analysis: await this.getCompletedAnalysis(itemId, generation.attemptId),
+    };
+  }
+  private async analysisByRequest(
+    itemId: string,
+    requestKey: string,
+  ): Promise<{ id: string; revision: number } | null> {
+    const found = (
+      await this.rows(this.db, 'intake_analyses', 'item_id=?', [itemId])
+    ).find((row) => object(row.data).requestKey === requestKey);
+    return found
+      ? { id: String(found.id), revision: Number(found.revision) }
+      : null;
+  }
+  /** Owner-lifecycle hook: expire every active receipt bound to a deleted owner
+   * through the ordinary revoke-then-delete path. Returns the number scheduled. */
+  async expireOwned(owner: IntakeOwner): Promise<number> {
+    const key = ownerKey(owner);
+    const items = await this.rows(
+      this.db,
+      'intake_items',
+      "owner_key=? AND visibility='active'",
+      [key],
+    );
+    try {
+      for (const item of items) await this.scheduleExpiry(String(item.id));
+    } catch (error) {
+      try {
+        await this.repairDeletions();
+      } catch {
+        // Durable intents remain available to the next authorized repair.
+      }
+      throw error;
+    }
+    await this.repairDeletions();
+    return items.length;
   }
 
   /** Record an authenticated split correction and queue fresh extraction, never copy model output. */

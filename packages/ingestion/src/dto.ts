@@ -77,6 +77,53 @@ export interface AnalysisOutput {
   confidence?: number;
 }
 
+/** Host-selected extraction settings for an inline receipt; the same shape
+ * the job path persists in its `stage: 'extract'` configuration. */
+export interface InlineInterpretationInput {
+  /** Stable per receipt: retries replay the same immutable revisions. */
+  requestId: string;
+  extraction: {
+    configurationRevision: string;
+    limits: {
+      maxBytes: number;
+      maxPages: number;
+      maxPixels: number;
+      maxOutputBytes: number;
+      timeoutMs: number;
+      maxTokens: number;
+      workerHeapMb: number;
+    };
+  };
+}
+/** Terminal projection of one in-process stage; identical ledger semantics to a job. */
+export interface InlineStageResult {
+  analysisId: string;
+  revision: number;
+  attemptId: string;
+  state: 'completed' | 'partial' | 'needs_attention' | 'failed';
+  error: IntakeFailure | null;
+}
+export interface InlineInterpretation {
+  itemId: string;
+  extraction: InlineStageResult;
+  /** Absent when extraction did not complete or partially complete. */
+  generation?: InlineStageResult;
+  /** The authorized, catalog-live generation snapshot when generation completed. */
+  analysis?: import('./proposal-dto.js').CompletedAnalysisSnapshot;
+}
+/** Bounded own-submission listing; the cursor is an opaque item identifier. */
+export interface OwnProposalsInput {
+  cursor?: string;
+  limit?: number;
+}
+export interface OwnProposalsPage {
+  items: Array<{
+    item: IntakeItemDTO;
+    reviews: import('./review-dto.js').ReviewPage;
+  }>;
+  nextCursor?: string;
+}
+
 export type * from './feedback-dto.js';
 export type * from './proposal-dto.js';
 export type * from './review-dto.js';
