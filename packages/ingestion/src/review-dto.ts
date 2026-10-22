@@ -106,6 +106,12 @@ export interface IntakeReviewHost {
     attemptId: string;
     index: number;
     requestId: string;
+    /**
+     * Explicit human arguments completing a `needs_review` suggestion. The host
+     * publishes them through the ordinary operation/plan preview, never through
+     * the generated snapshot, so the handler validates them again.
+     */
+    args?: IntakeValues;
   }): Promise<void>;
   decide(input: ReviewInput): Promise<void>;
   apply(actionId: string): Promise<ActionResult>;

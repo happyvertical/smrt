@@ -4,10 +4,17 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy, onMount } from 'svelte';
 import type { EvidenceLocation } from '../../extraction-types.js';
+import type { GeneratedSuggestion } from '../../proposal-dto.js';
 import type { IntakeReviewHost, ItemReviewView } from '../../review-dto.js';
 import { M } from '../i18n.js';
-import { evidenceUrl, extractedContent, pageGroups } from '../view-utils.js';
+import {
+  argumentsObject,
+  evidenceUrl,
+  extractedContent,
+  pageGroups,
+} from '../view-utils.js';
 import ActionReview from './ActionReview.svelte';
+import CandidatePicker from './CandidatePicker.svelte';
 import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
   host: IntakeReviewHost;
@@ -19,6 +26,8 @@ let view = $state<ItemReviewView>(),
   pending = $state(false),
   error = $state(false),
   splits = $state<Record<string, string>>({}),
+  // Human drafts for `needs_review` suggestions, keyed by suggestion index.
+  drafts = $state<Record<number, string>>({}),
   invalid = $state(false);
 let alive = true,
   epoch = 0,
@@ -31,6 +40,7 @@ function deny() {
   epoch++;
   view = undefined;
   splits = {};
+  drafts = {};
   error = true;
   pending = false;
 }
@@ -38,6 +48,7 @@ async function load(pageCount = loadedPages) {
   const ticket = ++epoch;
   view = undefined;
   splits = {};
+  drafts = {};
   pending = true;
   error = false;
   invalid = false;
@@ -97,6 +108,13 @@ async function load(pageCount = loadedPages) {
         JSON.stringify(split.groups),
       ]),
     );
+    drafts = Object.fromEntries(
+      (view.generation?.suggestions ?? []).flatMap((suggestion, index) =>
+        suggestion.disposition === 'needs_review'
+          ? [[index, JSON.stringify(suggestion.args, null, 2)]]
+          : [],
+      ),
+    );
   } catch {
     if (alive && ticket === epoch) deny();
   } finally {
@@ -110,6 +128,7 @@ async function run(operation: () => Promise<unknown>) {
   error = false;
   view = undefined;
   splits = {};
+  drafts = {};
   try {
     await operation();
     if (alive && ticket === epoch) await load();
@@ -117,17 +136,72 @@ async function run(operation: () => Promise<unknown>) {
     if (alive && ticket === epoch) deny();
   }
 }
+function offeredHandler(suggestion: GeneratedSuggestion) {
+  return view?.generation?.offered.find(
+    (entry) =>
+      entry.handler.id === suggestion.handlerId &&
+      entry.handler.version === suggestion.handlerVersion,
+  )?.handler;
+}
+// Presentation only: the host rechecks stage, outcome, handler and authority.
+function previewable(suggestion: GeneratedSuggestion) {
+  return (
+    !!view?.analysis &&
+    view.generation?.outcome !== 'provider_error' &&
+    ['ready_for_review', 'needs_review'].includes(suggestion.disposition)
+  );
+}
+function edited(index: number) {
+  const suggestion = view?.generation?.suggestions[index];
+  return (
+    !!suggestion &&
+    drafts[index] !== undefined &&
+    drafts[index] !== JSON.stringify(suggestion.args, null, 2)
+  );
+}
+// Missing required arguments must be completed by the reviewer before preview.
+function canPreview(index: number) {
+  const suggestion = view?.generation?.suggestions[index];
+  return (
+    !!suggestion &&
+    previewable(suggestion) &&
+    (!suggestion.missingFields.length || edited(index))
+  );
+}
 function preview(index: number) {
   const analysis = view?.analysis;
   const suggestion = view?.generation?.suggestions[index];
-  if (!analysis || suggestion?.disposition !== 'ready_for_review') return;
+  if (!analysis || !suggestion || !canPreview(index)) return;
+  let args: Record<string, unknown> | undefined;
+  if (suggestion.disposition === 'needs_review' && edited(index)) {
+    try {
+      args = argumentsObject(drafts[index]);
+    } catch {
+      invalid = true;
+      return;
+    }
+  }
   const input = {
     itemId,
     attemptId: analysis.attemptId,
     index,
     requestId: crypto.randomUUID(),
+    ...(args ? { args } : {}),
   };
   void run(() => host.preview(input));
+}
+function chooseFor(index: number) {
+  return (field: string, id: string) => {
+    try {
+      drafts[index] = JSON.stringify(
+        { ...argumentsObject(drafts[index] ?? '{}'), [field]: id },
+        null,
+        2,
+      );
+    } catch {
+      invalid = true;
+    }
+  };
 }
 function split(evidenceId: string) {
   const analysis = view?.analysis;
@@ -224,7 +298,14 @@ onMount(() => {
 {#if suggestion.alternatives.length}<h4>{t(M['ingestion.alternatives'])}</h4><ul>{#each suggestion.alternatives as alternative}<li>{alternative}</li>{/each}</ul>{/if}
 {#if suggestion.missingFields.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each suggestion.missingFields as missing}<li>{missing}</li>{/each}</ul>{/if}
 <ul>{#each suggestion.evidence as reference}{@const url = locationUrl(reference.evidenceId,reference.location)}<li>{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(reference.location)}</Button>{:else}{locationLabel(reference.location)}{/if}</li>{/each}</ul>
-<Button disabled={suggestion.disposition !== 'ready_for_review' || !view.analysis} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
+{#if suggestion.disposition === 'needs_review' && previewable(suggestion)}
+{@const handler = offeredHandler(suggestion)}
+<p>{t(M['ingestion.completeSuggestion'])}</p>
+<Textarea aria-label={t(M['ingestion.suggestionArgs'])} bind:value={drafts[index]} rows={6} />
+{#if handler}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
+{#if edited(index)}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
+{/if}
+<Button disabled={!canPreview(index)} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
 </article>
 {/each}
 {#each generation.splits as proposed (proposed.evidenceId)}<div><Textarea aria-label={`${t(M['ingestion.split'])}: ${proposed.evidenceId}`} bind:value={splits[proposed.evidenceId]} /><Button disabled={!view.analysis} onclick={() => split(proposed.evidenceId)}>{t(M['ingestion.saveSplit'])}</Button></div>{/each}

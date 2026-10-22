@@ -1262,10 +1262,15 @@ export class IngestionProposalService {
         snapshot.result.output.proposals,
       ) as unknown as GenerationOutput;
       const suggestion = output.suggestions[selection.index];
+      // `needs_review` output may enter explicit human preview (#4208); the
+      // handler's own schema/validate/preview still decides whether it stands.
       if (
         !Number.isSafeInteger(selection.index) ||
         !suggestion ||
-        suggestion.disposition !== 'ready_for_review' ||
+        !['ready_for_review', 'needs_review'].includes(
+          suggestion.disposition,
+        ) ||
+        output.outcome === 'provider_error' ||
         output.automaticActionEligible !== false
       )
         throw new Error('Proposal is not ready for preview');

@@ -229,6 +229,93 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await other.close();
 });
 
+test('a reviewer completes a needs_review suggestion through the ordinary preview and approval path (#4208)', async ({
+  page,
+}) => {
+  await signIn(page);
+  const itemId = await upload(
+    page,
+    'statement.pdf',
+    'application/pdf',
+    embeddedPDF('Vendor statement [[missing-title]] retain this original.'),
+  );
+  const review = page.getByTestId('intake-review');
+  await expect(review).toContainText('Missing information');
+  await expect(review).toContainText(
+    'This suggestion needs review. Complete or confirm its arguments',
+  );
+  const prepare = page.getByRole('button', {
+    name: 'Prepare review',
+    exact: true,
+  });
+  await expect(prepare).toBeDisabled();
+  const snapshot = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(snapshot.generation.suggestions[0]).toMatchObject({
+    disposition: 'needs_review',
+    missingFields: ['title'],
+  });
+  // The generated arguments alone still fail the handler schema server-side.
+  const incomplete = await page.request.post('/api/preview', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId,
+      attemptId: snapshot.analysis.attemptId,
+      index: 0,
+      requestId: randomUUID(),
+    },
+  });
+  expect(incomplete.status()).toBe(409);
+  const draft = page.getByRole('textbox', {
+    name: 'Suggested arguments (JSON)',
+    exact: true,
+  });
+  await draft.fill(
+    JSON.stringify({
+      ...snapshot.generation.suggestions[0].args,
+      title: 'Human completed title',
+    }),
+  );
+  await expect(prepare).toBeEnabled();
+  await prepare.click();
+  const args = page.getByRole('textbox', {
+    name: 'Exact arguments (JSON)',
+    exact: true,
+  });
+  await expect(args).toHaveValue(/Human completed title/);
+  await expect(
+    page.getByRole('button', { name: 'Approve', exact: true }),
+  ).toBeEnabled();
+  const prepared = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  const action = prepared.reviews.actions[0];
+  expect(action.review.state).toBe('waiting_review');
+  expect(action.args).toMatchObject({ title: 'Human completed title' });
+  // The immutable generation still records what the model left unfilled.
+  expect(prepared.generation.suggestions[0].missingFields).toEqual(['title']);
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Apply approved action', exact: true })
+    .click();
+  await expect(
+    page.getByTestId(`action-${action.review.actionId}`),
+  ).toContainText('succeeded');
+  const final = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  const domain = await (
+    await page.request.get(
+      `/api/result?id=${final.reviews.actions[0].result.result.contentId}`,
+    )
+  ).json();
+  expect(domain).toMatchObject({
+    title: 'Human completed title',
+    status: 'draft',
+  });
+});
+
 test('authenticated originals, CSRF, assignment CAS and foreign tenant boundaries', async ({
   page,
   browser,
