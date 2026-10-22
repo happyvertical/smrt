@@ -30,7 +30,12 @@ default-ignorable characters (Unicode properties, see
 `src/presented-filename.ts`) and drops a name that is then empty or over 512
 characters, so an odd name falls back to the default label instead of failing
 the receipt (`receive` itself rejects such a name from a direct caller as
-`invalid`, and names are cleaned again when read back). Unicode normalization
+`invalid`, and names are cleaned again when read back). Removing every format
+and default-ignorable character has display-only effects, since nothing uses
+the name as identity: emoji ZWJ sequences and presentation selectors flatten,
+ZWNJ/ZWJ are removed from Persian and Indic text (letters may join
+differently), and ideographic variation selectors are removed (a CJK variant
+shows its base glyph). Unicode normalization
 (NFC/NFKC) and confusable look-alike characters are out of scope: the name is
 still untrusted text, so render it as text, never as markup or a path. The
 upstream `sourceReference` is stored but not exposed on the DTO: its ids are

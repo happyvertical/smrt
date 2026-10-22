@@ -37,8 +37,10 @@ export interface IntakeReviewHostOptions {
    * per `list` page with each listed row's primary durable part (metadata
    * only, read in one batched query); return item id -> `{ label, viewUrl?,
    * thumbnailUrl? }` built from metadata, without reading bytes. Rows missing
-   * from the map get no preview. When omitted, `list` reads no evidence and
-   * rows show no original link; if it throws, the page still lists without
+   * from the map get no preview. When omitted, rows show no original link and
+   * no host code is called; `list` still reads the page's evidence metadata
+   * once for filename labels (#4214), and lists with item-only labels if that
+   * read fails. If `rowEvidence` throws, the page still lists without
    * previews. `load` never calls it.
    */
   rowEvidence?(
@@ -119,9 +121,21 @@ export function createIntakeReviewHost(
    */
   const decorateRows = async (entries: InboxEntry[]): Promise<InboxEntry[]> => {
     if (!entries.length) return entries;
-    const parts = await service.listEvidence(
-      entries.map((entry) => entry.item.id),
-    );
+    let parts: Map<string, IntakeEvidenceDTO[]>;
+    try {
+      parts = await service.listEvidence(entries.map((entry) => entry.item.id));
+    } catch (error) {
+      // With `rowEvidence` the host opted into the batched read, so its
+      // failure (e.g. a failing authorize) rejects the page, as #4213
+      // defines. Without it, this read only improves labels: a host that
+      // never asked for evidence keeps listing, labelled as rows without
+      // evidence (no filenames), the way `listItems` merely hides rows.
+      if (options.rowEvidence) throw error;
+      return entries.map((entry) => ({
+        ...entry,
+        label: label(entry.item, []),
+      }));
+    }
     const named = entries.map((entry) => ({
       ...entry,
       label: label(entry.item, labelled(parts.get(entry.item.id) ?? [])),

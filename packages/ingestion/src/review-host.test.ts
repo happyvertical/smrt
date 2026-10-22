@@ -241,6 +241,25 @@ describe('labels from original names', () => {
     f.service.listEvidence.mockResolvedValue(new Map());
     expect((await f.host.list({})).items[0].label).toBe('Intake item');
   });
+  it('without rowEvidence, a failing evidence read lists with item labels instead of rejecting', async () => {
+    const f = fixture();
+    f.service.listEvidence.mockRejectedValue(new Error('Intake unavailable'));
+    const page = await f.host.list({});
+    expect(page.items.map((entry) => entry.item.id)).toEqual(['item']);
+    expect(page.items[0].label).toBe('Intake item');
+    expect(page.items[0].evidence).toBeUndefined();
+    // A host label gets no evidence, as for a row without parts.
+    const label = vi.fn(() => 'custom');
+    const custom = fixture({ label });
+    custom.service.listEvidence.mockRejectedValue(new Error('down'));
+    expect((await custom.host.list({})).items[0].label).toBe('custom');
+    expect(label).toHaveBeenCalledWith(custom.item, []);
+  });
+  it('with rowEvidence, a failing evidence read still rejects the page, as #4213 defines', async () => {
+    const f = fixture({ rowEvidence: async () => new Map() });
+    f.service.listEvidence.mockRejectedValue(new Error('Intake unavailable'));
+    await expect(f.host.list({})).rejects.toThrow('Intake unavailable');
+  });
   it('labels only from the primary part, never from another part with a name', async () => {
     const f = fixture();
     // The primary part (the attachment) has no name; the message record does.
