@@ -153,10 +153,11 @@ export function sourcesSuite(
       bytes = Buffer.from('%PDF-original'),
       fields: Record<string, string> = {},
       name = 'original',
+      deliveryKey = 'capture',
     ) {
       const form = new FormData();
       for (const [key, value] of Object.entries({
-        captureId: 'capture',
+        captureId: deliveryKey,
         capturedAt,
         captureSource: 'document',
         ...fields,
@@ -165,7 +166,7 @@ export function sourcesSuite(
       form.set('file', new Blob([bytes], { type }), name);
       const request = new Request('https://host/intake', {
         method: 'POST',
-        headers: { 'idempotency-key': 'capture' },
+        headers: { 'idempotency-key': deliveryKey },
         body: form,
       });
       // Serialize real multipart framing before delivery, as a network peer does.
@@ -421,6 +422,70 @@ export function sourcesSuite(
         ).text(),
       ).not.toContain('private-secret');
       expect(await count()).toBe(4);
+    });
+    it('cleans or drops upload and host-snapshot names instead of failing the delivery (#4214)', async () => {
+      // Built from code points: no invisible character appears in source.
+      const rlo = String.fromCodePoint(0x202e);
+      const filenames = async (receipt: { itemId?: string }) =>
+        (await service.getEvidence(receipt.itemId as string))
+          .filter((e) => e.partId !== 'capture')
+          .map((e) => e.filename);
+      // Multipart upload: a bidi override is removed, `blob` (the name a
+      // nameless Blob part gets) is not kept as a name.
+      const bidi = await (
+        await handler()(
+          await upload(
+            'application/pdf',
+            Buffer.from('%PDF-bidi'),
+            {},
+            `Acme${rlo}fdp.pdf`,
+            'upload-bidi',
+          ),
+        )
+      ).json();
+      expect(bidi.kind).toBe('accepted');
+      expect(await filenames(bidi)).toEqual(['Acmefdp.pdf']);
+      const blob = await (
+        await handler()(
+          await upload(
+            'application/pdf',
+            Buffer.from('%PDF-blob'),
+            {},
+            'blob',
+            'upload-blob',
+          ),
+        )
+      ).json();
+      expect(blob.kind).toBe('accepted');
+      expect(await filenames(blob)).toEqual([undefined]);
+      // Host snapshot parts go through the same cleaning.
+      const reference = { owner: 'asset', id: 'named', version: '1' };
+      binding.snapshotReference = async () => [
+        {
+          partId: 'owner',
+          mediaType: 'application/pdf',
+          bytes: Buffer.from('%PDF-named'),
+          filename: `Owned${rlo}fdp.exe`,
+        },
+        {
+          partId: 'long',
+          mediaType: 'application/pdf',
+          bytes: Buffer.from('%PDF-long-name'),
+          filename: 'x'.repeat(600),
+        },
+      ];
+      const snapshot = await (
+        await handler()(json({ capturedAt, reference }, 'snapshot-names'))
+      ).json();
+      expect(snapshot.kind).toBe('accepted');
+      expect(
+        (await service.getEvidence(snapshot.itemId))
+          .map((e) => [e.partId, e.filename])
+          .sort(),
+      ).toEqual([
+        ['long', undefined],
+        ['owner', 'Ownedfdp.exe'],
+      ]);
     });
     it('bounds chunked bodies and handles malformed JSON / upstream stream failure', async () => {
       const chunks = new ReadableStream<Uint8Array>({
