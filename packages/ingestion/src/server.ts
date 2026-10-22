@@ -1571,25 +1571,33 @@ export class IngestionService {
           ).sort((a, b) => Number(b.revision) - Number(a.revision));
           const stage = (row: Row) =>
             object(object(row.data).configuration).stage;
-          // The anchor is superseded only by a newer completed interpretation
-          // or by work in flight. A completed extraction whose own
-          // interpretation failed (or never started) is part of the failed
-          // reinterpretation being retried, not a newer result.
+          // The anchor is superseded by a newer completed interpretation or by
+          // work in flight. A completed extraction whose interpretation has not
+          // been appended yet is in flight too (the host is between stages), so
+          // a second reviewer cannot pre-empt it. Only a failed extraction, or a
+          // completed extraction whose own interpretation failed, is retryable.
+          const [latest] = later;
           if (
             later.some(
               (row) =>
                 ['queued', 'running'].includes(String(row.state)) ||
                 (['completed', 'partial'].includes(String(row.state)) &&
                   stage(row) === 'interpret'),
-            )
+            ) ||
+            (latest &&
+              stage(latest) !== 'interpret' &&
+              ['completed', 'partial'].includes(String(latest.state)))
           )
             throw new Error('Stale reviewer instruction');
           // Corrections chain forward through each extraction configuration, so
           // the newest later extraction holds the current human split; a retry
           // from an older anchor must not silently drop one recorded after it.
-          const newest = later.find((row) => stage(row) !== 'interpret');
-          const correction = newest
-            ? object(object(newest.data).configuration).humanCorrection
+          const newestExtraction = later.find(
+            (row) => stage(row) !== 'interpret',
+          );
+          const correction = newestExtraction
+            ? object(object(newestExtraction.data).configuration)
+                .humanCorrection
             : undefined;
           if (correction !== undefined) carriedCorrection = correction;
         }
