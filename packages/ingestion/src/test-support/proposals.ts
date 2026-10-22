@@ -3377,7 +3377,10 @@ export function proposalSuite(
           receipt.id,
         )
       ).rows;
-      expect(JSON.parse(String(row.data)).instruction).toEqual({
+      // SQLite returns the ledger payload as text; PostgreSQL jsonb is parsed.
+      const stored =
+        typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      expect(stored.instruction).toEqual({
         id: recorded.instruction.id,
         digest: recorded.instruction.digest,
         text: recorded.instruction.text,
