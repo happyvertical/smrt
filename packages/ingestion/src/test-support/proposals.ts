@@ -4118,6 +4118,139 @@ export function proposalSuite(
       }
     });
     it.each([
+      'gate',
+      'record',
+    ] as const)('forwards the decision context window and applies %s readiness (#4209)', async (readiness) => {
+      chooseCreate();
+      configuration.decisionMaxLen = 8192;
+      configuration.decisionReadiness = readiness;
+      const received: unknown[] = [];
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async (raw, options) => {
+            received.push(options);
+            const request = raw as DecisionRequest;
+            const answers: Record<string, unknown> = {};
+            // Shaped like the teamworks-os measurement: low support, flat route, high risk.
+            for (const [key, question] of Object.entries(request.questions)) {
+              if (question.type === 'predicate')
+                answers[key] = { type: 'predicate', probability: 0.37 };
+              else if (question.type === 'score')
+                answers[key] = {
+                  type: 'score',
+                  score: 2,
+                  confidence: 0.94,
+                  levels: question.criteria,
+                  probabilities: { '0': 0.03, '1': 0.03, '2': 0.94 },
+                };
+              else {
+                const choices = Object.keys(question.criteria);
+                const selected = `${CREATE}@1`;
+                const rest = (1 - 0.15) / (choices.length - 1);
+                answers[key] = {
+                  type: 'choice',
+                  choice: selected,
+                  confidence: 0.15,
+                  probabilities: Object.fromEntries(
+                    choices.map((choice) => [
+                      choice,
+                      choice === selected ? 0.15 : rest,
+                    ]),
+                  ),
+                };
+              }
+            }
+            return {
+              answers,
+              provenance: {
+                provider: identity.provider,
+                model: identity.model,
+              },
+              usage: { promptTokens: 3 },
+            };
+          },
+        },
+      };
+      const input = await generate();
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({
+        maxLen: 8192,
+        model: identity.model,
+      });
+      expect(input.output.provenance.decision).toMatchObject({
+        configured: true,
+        readiness,
+        maxLen: 8192,
+        answers: { supported_0: { type: 'predicate', probability: 0.37 } },
+        usage: { promptTokens: 3 },
+      });
+      expect(input.output.automaticActionEligible).toBe(false);
+      const frozen = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).configuration.proposals as Record<string, unknown>;
+      expect(frozen).toMatchObject({
+        decisionMaxLen: 8192,
+        minimumDecisionProbability: 0.8,
+        tieMargin: 0.1,
+      });
+      const preview = () =>
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'readiness',
+              expectedRevision: 0,
+              requestId: randomUUID(),
+            },
+          ],
+        });
+      if (readiness === 'gate') {
+        expect(frozen).not.toHaveProperty('decisionReadiness');
+        // A flat route distribution is a tie, so the gate reports ambiguity.
+        expect(input.output.outcome).toBe('ambiguous');
+        expect(input.output.suggestions[0].disposition).toBe('needs_review');
+        await expect(preview()).rejects.toThrow('not ready');
+      } else {
+        expect(frozen.decisionReadiness).toBe('record');
+        expect(input.output.outcome).toBe('proposals');
+        expect(input.output.suggestions[0].disposition).toBe(
+          'ready_for_review',
+        );
+        await expect(preview()).resolves.toHaveLength(1);
+      }
+    });
+    it.each([
+      ['decisionMaxLen', 0, 'Invalid decision context length'],
+      ['decisionMaxLen', 1.5, 'Invalid decision context length'],
+      ['decisionReadiness', 'auto', 'Invalid decision readiness'],
+    ] as const)('rejects an invalid %s setting before any provider call', async (key, value, message) => {
+      chooseCreate();
+      Object.assign(configuration, { [key]: value });
+      await expect(generation()).rejects.toThrow(message);
+      expect(calls).not.toHaveBeenCalled();
+    });
+    it('keeps read configuration equivalence over the decision settings', () => {
+      configuration.decisionMaxLen = 4096;
+      configuration.decisionReadiness = 'record';
+      const read = proposalReadConfiguration(configuration);
+      expect(read).toMatchObject({
+        decisionMaxLen: 4096,
+        decisionReadiness: 'record',
+      });
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposals: configuration,
+            proposalRead: { ...read, decisionReadiness: 'gate' },
+          }),
+      ).toThrow('Proposal read configuration mismatch');
+    });
+    it.each([
       'operation',
       'plan',
     ] as const)('reloads stale generated targets for %s before and after explicit re-preview', async (kind) => {

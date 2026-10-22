@@ -97,6 +97,10 @@ export interface GenerationOutput {
       provider?: string;
       model?: string;
       version?: string;
+      /** Whether the recorded answers were allowed to withhold readiness. */
+      readiness?: 'gate' | 'record';
+      /** Per-request token window forwarded to the client, when configured. */
+      maxLen?: number;
       answers?: IntakeValues;
       usage?: Record<string, number>;
     };
