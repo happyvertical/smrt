@@ -32,6 +32,20 @@ Plan membership contains the exact parent args/version so edits call
 `previewPlan`, not per-step correction. An item may have more review pages; the
 host must aggregate state across pages when projecting a production inbox state.
 
+A `needs_review` suggestion is completable, not only rejectable (#4208). The
+component shows its `missingFields`, an editable `Suggested arguments (JSON)`
+draft prefilled from the generated arguments, and the candidate picker for
+declared candidate fields; Prepare review stays disabled while required fields
+are still missing from an unchanged draft. An unchanged draft previews the
+generated snapshot as before; an edited draft is sent as `preview({..., args})`,
+which the published host publishes through the ordinary `previewProposal` /
+`previewPlan` with the same `ui:<index>` intention, never by rewriting the
+generation. The handler validates the human arguments again before a
+`waiting_review` action exists, approval remains a separate explicit decision,
+`ActionReview` lists required arguments missing from the current draft while
+editing, and no authority or automation eligibility is added: a failed attempt,
+an unoffered handler or a foreign stage is still refused by the host.
+
 The host's `load` callback supplies a current `ItemReviewView`, using
 `getCompletedAnalysis` with no historical fallback. Generated suggestions bind
 the **current generation attempt**, not `generation.source.attemptId` (the prior

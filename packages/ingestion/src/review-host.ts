@@ -247,7 +247,11 @@ export function createIntakeReviewHost(
         typeof input.attemptId !== 'string' ||
         !input.attemptId ||
         typeof input.requestId !== 'string' ||
-        !input.requestId.trim()
+        !input.requestId.trim() ||
+        (input.args !== undefined &&
+          (!input.args ||
+            typeof input.args !== 'object' ||
+            Array.isArray(input.args)))
       )
         throw new Error('Invalid preview');
       const analysis = await service.getCompletedAnalysis(
@@ -257,18 +261,25 @@ export function createIntakeReviewHost(
       const generation = (
         analysis.result.output as unknown as GenerationAnalysisOutput
       ).proposals;
+      const suggestion = generation?.suggestions[input.index];
+      // A `needs_review` suggestion is previewable by a person (#4208); a failed
+      // attempt, a missing handler or a foreign stage still is not.
       if (
         analysis.configuration.stage !== 'interpret' ||
-        generation?.suggestions[input.index]?.disposition !== 'ready_for_review'
+        generation.outcome === 'provider_error' ||
+        !suggestion ||
+        !['ready_for_review', 'needs_review'].includes(suggestion.disposition)
       )
         throw new Error('Preview unavailable');
-      const suggestion = generation.suggestions[input.index];
       const handler = generation.offered.find(
         ({ handler }) =>
           handler.id === suggestion.handlerId &&
           handler.version === suggestion.handlerVersion,
       )?.handler;
       if (!handler) throw new Error('Preview unavailable');
+      // Human-completed arguments go through the same explicit preview as an
+      // edit; they never rewrite the generation snapshot.
+      const args = input.args ? structuredClone(input.args) : suggestion.args;
       const intentionKey = `ui:${input.index}`;
       const actionId =
         handler.kind === 'plan'
@@ -302,10 +313,7 @@ export function createIntakeReviewHost(
             binding.args
           ) {
             const { intakeBindingDigest } = await import('./execution.js');
-            if (
-              intakeBindingDigest(binding.args) ===
-              intakeBindingDigest(suggestion.args)
-            )
+            if (intakeBindingDigest(binding.args) === intakeBindingDigest(args))
               return;
           }
           break;
@@ -315,6 +323,22 @@ export function createIntakeReviewHost(
           throw new Error('Repeated review cursor');
         if (cursor) cursors.add(cursor);
       } while (cursor);
+      if (input.args) {
+        const shared = {
+          itemId: input.itemId,
+          attemptId: input.attemptId,
+          expectedRevision,
+          requestId: input.requestId,
+          handlerId: suggestion.handlerId,
+          handlerVersion: suggestion.handlerVersion,
+          args,
+        };
+        if (handler.kind === 'plan')
+          await service.previewPlan({ ...shared, planKey: intentionKey });
+        else if (actionId)
+          await service.previewProposal({ ...shared, actionId });
+        return;
+      }
       await service.previewGeneratedProposals({
         itemId: input.itemId,
         attemptId: input.attemptId,

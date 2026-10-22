@@ -3668,6 +3668,9 @@ export function proposalSuite(
       const input = await generate();
       expect(input.output.warnings).toContain('candidate_set_truncated');
       expect(input.output.outcome).toBe('needs_review');
+      expect(input.output.suggestions[0].disposition).toBe('needs_review');
+      // Explicit human preview stays available (#4208); automation never is.
+      expect(input.output.automaticActionEligible).toBe(false);
       await expect(
         service.previewGeneratedProposals({
           itemId: input.itemId,
@@ -3681,7 +3684,7 @@ export function proposalSuite(
             },
           ],
         }),
-      ).rejects.toThrow('not ready');
+      ).resolves.toHaveLength(1);
     });
     it.each([
       'revoke',
@@ -3840,6 +3843,40 @@ export function proposalSuite(
         disposition: 'needs_review',
       });
       expect(input.output.suggestions[0].args).not.toHaveProperty('title');
+      // The generated arguments alone fail the handler schema; the reviewer
+      // completes them through the explicit human preview path (#4208).
+      await expect(
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'incomplete',
+              expectedRevision: 0,
+              requestId: 'incomplete',
+            },
+          ],
+        }),
+      ).rejects.toThrow('Invalid handler payload');
+      expect(
+        (await db.query('SELECT id FROM intake_proposals')).rows,
+      ).toHaveLength(0);
+      const actionId = await service.createAction(input.itemId, 'human', {
+        origin: 'generated-proposal',
+        intentionKey: 'human',
+      });
+      const review = await service.previewProposal({
+        itemId: input.itemId,
+        actionId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: 0,
+        requestId: 'human-preview',
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { ...input.output.suggestions[0].args, title: 'Human title' },
+      });
+      expect(review.state).toBe('waiting_review');
     });
     it.each([
       'unknown',
@@ -3876,6 +3913,20 @@ export function proposalSuite(
       expect(
         (await db.query('SELECT id FROM intake_actions')).rows,
       ).toHaveLength(0);
+      await expect(
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'failed',
+              expectedRevision: 0,
+              requestId: 'failed',
+            },
+          ],
+        }),
+      ).rejects.toThrow('not ready');
     });
     it('configured decision failure remains explicit and never silently falls back', async () => {
       chooseCreate();
@@ -4112,9 +4163,8 @@ export function proposalSuite(
             },
           ],
         });
-        if (mode === 'route-below')
-          await expect(preview).rejects.toThrow('not ready');
-        else await expect(preview).resolves.toHaveLength(1);
+        // Both dispositions reach explicit human preview (#4208).
+        await expect(preview).resolves.toHaveLength(1);
       }
     });
     it.each([
@@ -4213,7 +4263,7 @@ export function proposalSuite(
         // A flat route distribution is a tie, so the gate reports ambiguity.
         expect(input.output.outcome).toBe('ambiguous');
         expect(input.output.suggestions[0].disposition).toBe('needs_review');
-        await expect(preview()).rejects.toThrow('not ready');
+        await expect(preview()).resolves.toHaveLength(1);
       } else {
         expect(frozen.decisionReadiness).toBe('record');
         expect(input.output.outcome).toBe('proposals');

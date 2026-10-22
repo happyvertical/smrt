@@ -185,7 +185,7 @@ export default defineConfig({
             }
             const input = body.length ? JSON.parse(body.toString()) : {};
             const allowed: Record<string, string[]> = {
-              preview: ['itemId', 'attemptId', 'index', 'requestId'],
+              preview: ['itemId', 'attemptId', 'index', 'requestId', 'args'],
               decide: [
                 'actionId',
                 'expectedRevision',

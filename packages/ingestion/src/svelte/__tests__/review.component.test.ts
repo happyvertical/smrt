@@ -779,7 +779,7 @@ describe('intake review host boundary', () => {
   });
   it.each([
     'missing-analysis',
-    'needs-review',
+    'provider-error',
   ] as const)('does not offer misleading preview for %s', async (reason) => {
     const view = page();
     view.generation = {
@@ -809,6 +809,7 @@ describe('intake review host boundary', () => {
       automaticActionEligible: false,
     };
     if (reason !== 'missing-analysis') view.analysis = currentAnalysis();
+    if (reason === 'provider-error') view.generation.outcome = 'provider_error';
     view.generation.suggestions = [
       {
         handlerId: 'draft',
@@ -816,10 +817,9 @@ describe('intake review host boundary', () => {
         args: {},
         evidence: [],
         alternatives: [],
-        missingFields: ['title'],
-        explanation: 'Incomplete proposal',
-        disposition:
-          reason === 'needs-review' ? 'needs_review' : 'ready_for_review',
+        missingFields: [],
+        explanation: 'Proposal',
+        disposition: 'ready_for_review',
       },
     ];
     const callbacks = host(view);
@@ -830,6 +830,182 @@ describe('intake review host boundary', () => {
     expect((prepare as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(prepare);
     expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  function needsReviewView(missingFields: string[]) {
+    const view = page();
+    view.analysis = currentAnalysis();
+    view.generation = {
+      version: 1,
+      outcome: 'needs_review',
+      suggestions: [
+        {
+          handlerId: 'draft',
+          handlerVersion: '1',
+          args: { body: 'Minutes' },
+          evidence: [],
+          alternatives: [],
+          missingFields,
+          explanation: 'Incomplete proposal',
+          disposition: 'needs_review',
+        },
+      ],
+      splits: [],
+      warnings: [],
+      omittedSuggestions: 0,
+      source: {
+        attemptId: 'attempt',
+        revision: 2,
+        inputDigest: 'in',
+        outputDigest: 'out',
+        evidenceDigest: 'evidence',
+      },
+      offered: [
+        {
+          handler: {
+            id: 'draft',
+            version: '1',
+            description: 'Draft',
+            kind: 'operation',
+            capability: null,
+            argsSchema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['title', 'body'],
+              properties: { title: {}, body: {}, destination: {} },
+            },
+            references: {
+              destination: { kind: 'candidate', model: 'Document' },
+            },
+            operation: { model: 'Document', action: 'create', version: '1' },
+          },
+          candidates: [],
+        },
+      ],
+      provenance: {
+        configurationVersion: '1',
+        promptVersion: '1',
+        catalogDigest: 'catalog',
+        policyVersions: [],
+        generative: { provider: 'fixture', model: 'fixture', version: '1' },
+        decision: { configured: false },
+        usage: {},
+      },
+      automaticActionEligible: false,
+    };
+    view.reviews.actions = [];
+    return view;
+  }
+  it('lets a reviewer complete a needs_review suggestion before preview (#4208)', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.candidates).mockResolvedValue({
+      items: [
+        {
+          key: 'target',
+          model: 'Document',
+          id: 'authorized-id',
+          revision: '1',
+          label: 'Authorized destination',
+        },
+      ],
+      truncated: false,
+    });
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    expect(screen.getByText('Missing information')).toBeTruthy();
+    expect(screen.getByText('title')).toBeTruthy();
+    expect((prepare as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.change(
+      screen.getByRole('combobox', { name: 'Argument field' }),
+      { target: { value: 'destination' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Search destinations' }),
+    );
+    await screen.findByText('Authorized destination');
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose destination' }),
+    );
+    const draft = screen.getByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    }) as HTMLTextAreaElement;
+    expect(JSON.parse(draft.value)).toEqual({
+      body: 'Minutes',
+      destination: 'authorized-id',
+    });
+    await fireEvent.input(draft, {
+      target: {
+        value: JSON.stringify({
+          body: 'Minutes',
+          destination: 'authorized-id',
+          title: 'Human title',
+        }),
+      },
+    });
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    await waitFor(() =>
+      expect(callbacks.preview).toHaveBeenCalledWith({
+        itemId: 'item',
+        attemptId: 'generation-attempt',
+        index: 0,
+        requestId: expect.any(String),
+        args: {
+          body: 'Minutes',
+          destination: 'authorized-id',
+          title: 'Human title',
+        },
+      }),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+  });
+  it('previews a complete needs_review suggestion without inventing arguments', async () => {
+    const callbacks = host(needsReviewView([]));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    expect((prepare as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(prepare);
+    await waitFor(() => expect(callbacks.preview).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(callbacks.preview).mock.calls[0][0]).not.toHaveProperty(
+      'args',
+    );
+  });
+  it('rejects an unparsable suggestion draft locally without calling the host', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      { target: { value: '{"title":' } },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('shows required arguments missing from an action draft while editing', async () => {
+    const view = page();
+    view.generation = needsReviewView([]).generation;
+    view.generation!.suggestions = [];
+    view.reviews.actions[0].args = { title: 'Invoice', body: 'Body' };
+    render(IntakeReview, { host: host(view), itemId: 'item' });
+    const args = (await screen.findByRole('textbox', {
+      name: 'Exact arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    expect(screen.queryByText('Missing information')).toBeNull();
+    await fireEvent.input(args, { target: { value: '{"body":"x"}' } });
+    expect(await screen.findByText('Missing information')).toBeTruthy();
+    expect(screen.getByText('title')).toBeTruthy();
   });
   it('re-previews approved edits with exact action revision and dependencies, requiring new approval', async () => {
     const view = page();

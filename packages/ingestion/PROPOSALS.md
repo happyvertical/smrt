@@ -32,7 +32,8 @@ the authorized transaction executor. Query by tenant and confidential scope
 `limit + 1`) and report `hasMore`. The service projects candidate identity, model,
 revision and label, then checks every target with the owning execution callback.
 There are no hidden counts or pagination tokens. Truncated discovery forces
-`needs_review` and cannot enter generated preview.
+`needs_review`; a person may still preview it explicitly, and automation never
+becomes eligible.
 
 Completed generation reload checks process authority, the current attempt, and
 owner/candidate visibility in the same final transaction. Database-backed grant
@@ -212,7 +213,14 @@ await service.previewGeneratedProposals({
 
 `intentionKey` is the host's stable business-intention identity across generation
 revisions. Never derive a fresh key from model output, suggestion order or a retry.
-Selections must reference current persisted validated `ready_for_review` output.
+Selections must reference current persisted validated `ready_for_review` or
+`needs_review` output (#4208); a `provider_error` attempt, an unoffered handler or
+a non-interpretation stage is rejected. A `needs_review` suggestion whose
+`missingFields` are still absent fails the handler schema inside the ordinary
+preview (`Invalid handler payload`) and publishes nothing; the reviewer supplies
+the missing values through the explicit human path (`previewProposal` /
+`previewPlan`, as the published review host does for `preview({args})`), and the
+handler's `validate` and `preview` run again on the completed arguments.
 Each batch requires distinct suggestion indexes and intention keys; duplicate
 indexes are rejected before any operation or plan preview is written.
 The service rechecks current catalog/schema/target/source provenance, then calls
