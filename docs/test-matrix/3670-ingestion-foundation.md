@@ -170,7 +170,12 @@ the two race cases fail (the second writer is no longer blocked; the split race
 hangs) only when *every* item-row lock is removed, because the guards were
 already serialized twice before this change (the snapshot read's lock and the
 execution authorization's `item(db, id, true)` row lock, both in the same
-transaction before the guard step); missing-attempt and non-finite `leaseMs` gap timing expiring
+transaction before the guard step); the decision stage receiving the guidance
+exactly once under `reviewerGuidance` and never under `evidence` (all decision
+cases on both engines); the shared instruction-view projection used by both the
+published and reference hosts (`review-instruction-view.test.ts`: an instruction
+recorded between the history and state reads re-reads history instead of
+reporting a drop, `dropped` only when nothing is in effect); missing-attempt and non-finite `leaseMs` gap timing expiring
 immediately; and carried instruction text being
 counted in the exact feedback byte budget, with one byte short still failing
 closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`

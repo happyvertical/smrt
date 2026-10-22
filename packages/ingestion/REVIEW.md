@@ -167,15 +167,22 @@ cannot clobber the retry. Missing or malformed timing (no attempt, no
 `completedAt`, non-finite `leaseMs`) counts as already expired rather than
 holding retries forever. The "still being re-read" note shown after a stale
 result is cleared by the next reload that shows the item settled; the draft
-then carries a persistent "Another reinterpretation finished first; your
-instruction was not recorded." note until the reviewer edits or resubmits it. The guard and
+then carries a persistent "This item changed while you were writing; your
+instruction was not recorded." note (any stale cause: another reinterpretation,
+a split, or a host reprocess) until the reviewer edits or resubmits it. The guard and
 `getReinterpretationState` share one predicate, and the latter's
 `reinterpreting` flag (projected as `instruction.reinterpreting`) is true in
 the gap too, so the component keeps polling and keeps Re-read disabled there.
-The published host turns `ReviewerInstructionStaleError` into an `instruct`
-result of `{ stale: true }`; the component treats it as refresh-and-retry
-(reload with a note, draft kept), never as a denial. Custom hosts should do the
-same rather than surfacing it as an error. A retry from an older anchor builds on the **whole configuration**
+The published host maps two typed errors to `instruct` results:
+`ReviewerInstructionStaleError` → `{ stale: true }` (refresh-and-retry: reload
+with a note, draft kept) and `ReviewerInstructionInvalidError` → `{ invalid:
+true }` (empty, whitespace-only or over 4,000 characters: shown inline, draft
+kept). Neither is a denial. Custom hosts should map them the same way; a host
+that lets either propagate as a thrown error makes the component treat it like
+any other failed mutation, i.e. a whole-view deny with the "view unavailable"
+message, as before these results existed. The maintained fixture's
+`/api/instruct` now answers an invalid text with HTTP 200 `{ invalid: true }`
+instead of 409. A retry from an older anchor builds on the **whole configuration**
 of the newest extraction after it (replacing only the instruction), because that
 is the item's current configuration: corrections chain forward through it and a
 host reprocess replaces it. So a split followed by a failed stage is never

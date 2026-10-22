@@ -59,7 +59,7 @@ export const M = defineMessages({
   'ingestion.pendingInstruction': 'Latest instruction, not yet applied',
   'ingestion.refreshRetrying': "Couldn't refresh; retrying.",
   'ingestion.instructionNotRecorded':
-    'Another reinterpretation finished first; your instruction was not recorded.',
+    'This item changed while you were writing; your instruction was not recorded.',
   'ingestion.instructionLength': '{count} / {max} characters',
   'ingestion.instructionInvalid':
     'Enter an instruction of 1 to {max} characters. It was not recorded.',
