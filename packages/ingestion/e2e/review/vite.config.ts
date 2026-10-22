@@ -206,6 +206,13 @@ export default defineConfig({
                 'groups',
                 'requestId',
               ],
+              instruct: [
+                'itemId',
+                'attemptId',
+                'expectedRevision',
+                'text',
+                'requestId',
+              ],
               candidates: ['itemId', 'handlerId', 'handlerVersion', 'query'],
               editAction: [
                 'itemId',
@@ -269,6 +276,9 @@ export default defineConfig({
                 break;
               case 'split':
                 result = await app.split(scope, input);
+                break;
+              case 'instruct':
+                result = await app.instruct(scope, input);
                 break;
               case 'candidates':
                 result = await service.findCandidates(input);

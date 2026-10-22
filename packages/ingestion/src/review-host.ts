@@ -7,8 +7,10 @@ import type {
   EvidenceView,
   InboxEntry,
   IntakeReviewHost,
+  ReviewerInstructionView,
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
+import { reviewerInstructionView } from './reviewer-instruction.js';
 import type { IngestionService } from './server.js';
 
 /** Trusted application adapters, bound to the same authenticated session as service. */
@@ -28,6 +30,8 @@ export interface IntakeReviewHostOptions {
   enableFeedback?: boolean;
   /** Optional wakeup after a durable logical split has queued extraction. */
   onSplit?(itemId: string, revision: number): Promise<void>;
+  /** Optional wakeup after a durable reviewer instruction has queued reinterpretation. */
+  onInstruct?(itemId: string, revision: number): Promise<void>;
 }
 
 /**
@@ -81,12 +85,25 @@ export function createIntakeReviewHost(
         evidence.push({ ...(await options.evidence(part)), evidence: part });
       }
       const assignment = await options.assignment(itemId);
+      const [current] = await service.listReviewerInstructions(itemId);
+      const applied = analysis?.configuration.reviewerInstruction
+        ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
+        : null;
+      const instruction: ReviewerInstructionView | undefined =
+        current || applied
+          ? {
+              current: current ?? null,
+              applied,
+              stale: !!analysis && !!current && current.id !== applied?.id,
+            }
+          : undefined;
       await service.getItem(itemId);
       return {
         entry: { item, label: label(item), state: summary.state, assignment },
         evidence,
         analysis,
         reviews,
+        ...(instruction ? { instruction } : {}),
         availability: 'available',
         ...(analysis?.configuration.stage === 'interpret'
           ? {
@@ -204,6 +221,11 @@ export function createIntakeReviewHost(
     async split(input) {
       const result = await service.reviseLogicalSplit(input);
       await options.onSplit?.(input.itemId, result.revision);
+    },
+    async instruct(input) {
+      // Durable first; the reinterpretation runs through the normal dispatch path.
+      const result = await service.recordReviewerInstruction(input);
+      await options.onInstruct?.(input.itemId, result.revision);
     },
     ...(options.enableFeedback
       ? {

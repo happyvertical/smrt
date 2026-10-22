@@ -12,23 +12,39 @@ import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
   host: IntakeReviewHost;
   itemId: string;
+  /** Reload interval while the host reports the item as processing. */
+  pollMs?: number;
 }
-let { host, itemId }: Props = $props();
+let { host, itemId, pollMs = 2000 }: Props = $props();
 const { t } = useI18n();
 let view = $state<ItemReviewView>(),
   pending = $state(false),
   error = $state(false),
   splits = $state<Record<string, string>>({}),
+  instruction = $state(''),
   invalid = $state(false);
 let alive = true,
   epoch = 0,
-  loadedPages = 1;
+  loadedPages = 1,
+  poll: ReturnType<typeof setTimeout> | undefined;
 onDestroy(() => {
   alive = false;
   epoch++;
+  clearTimeout(poll);
 });
+// Background stages (reinterpretation after an instruction) finish without a
+// push channel; the existing authenticated load is simply repeated.
+function schedulePoll(ticket: number) {
+  clearTimeout(poll);
+  if (view?.availability !== 'available' || view.entry.state !== 'processing')
+    return;
+  poll = setTimeout(() => {
+    if (alive && ticket === epoch && !pending) void load();
+  }, pollMs);
+}
 function deny() {
   epoch++;
+  clearTimeout(poll);
   view = undefined;
   splits = {};
   error = true;
@@ -36,6 +52,7 @@ function deny() {
 }
 async function load(pageCount = loadedPages) {
   const ticket = ++epoch;
+  clearTimeout(poll);
   view = undefined;
   splits = {};
   pending = true;
@@ -100,12 +117,16 @@ async function load(pageCount = loadedPages) {
   } catch {
     if (alive && ticket === epoch) deny();
   } finally {
-    if (alive && ticket === epoch) pending = false;
+    if (alive && ticket === epoch) {
+      pending = false;
+      schedulePoll(ticket);
+    }
   }
 }
 async function run(operation: () => Promise<unknown>) {
   if (pending) return;
   const ticket = ++epoch;
+  clearTimeout(poll);
   pending = true;
   error = false;
   view = undefined;
@@ -148,6 +169,23 @@ function split(evidenceId: string) {
     requestId: crypto.randomUUID(),
   };
   void run(() => host.split(input));
+}
+function instruct() {
+  const analysis = view?.analysis;
+  const text = instruction.trim();
+  const operation = host.instruct;
+  if (!analysis || !text || !operation) return;
+  const input = {
+    itemId,
+    attemptId: analysis.attemptId,
+    expectedRevision: analysis.revision,
+    text,
+    requestId: crypto.randomUUID(),
+  };
+  void run(async () => {
+    await operation(input);
+    instruction = '';
+  });
 }
 function locationLabel(location: EvidenceLocation) {
   switch (location.kind) {
@@ -205,6 +243,15 @@ onMount(() => {
 {@const extracted = view.analysis ? extractedContent(view.analysis.result.output) : []}
 <h2>{view.entry.label}</h2><p>{t(M[`ingestion.${view.entry.state}`])}</p>
 <div class="review-grid"><EvidenceViewer evidence={view.evidence} /><div class="details">
+{#if view.instruction}
+{@const applied = view.instruction.applied}{@const current = view.instruction.current}
+{#if view.entry.state === 'processing' && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
+{#if applied}<p data-testid="applied-instruction">{t(M['ingestion.appliedInstruction'])}: <q>{applied.text}</q></p>{#if view.instruction.stale}<p role="status" data-testid="instruction-stale">{t(M['ingestion.instructionStale'])}</p>{/if}{/if}
+{#if current && current.id !== applied?.id}<p data-testid="pending-instruction">{t(M['ingestion.pendingInstruction'])}: <q>{current.text}</q></p>{/if}
+{/if}
+{#if host.instruct && view.analysis}
+<div><Textarea aria-label={t(M['ingestion.instructions'])} bind:value={instruction} /><Button disabled={!instruction.trim()} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
+{/if}
 {#if extracted.length}
 <h2>{t(M['ingestion.extracted'])}</h2>
 {#each extracted as segment}

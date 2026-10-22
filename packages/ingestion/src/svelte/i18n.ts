@@ -51,6 +51,14 @@ export const M = defineMessages({
   'ingestion.choose': 'Choose destination',
   'ingestion.split': 'Logical page groups (JSON)',
   'ingestion.saveSplit': 'Save split and reprocess',
+  'ingestion.instructions': 'Instructions for the assistant',
+  'ingestion.reinterpret': 'Re-read with these instructions',
+  'ingestion.reinterpreting': 'Reinterpreting…',
+  'ingestion.appliedInstruction':
+    'Suggestions were produced under this instruction',
+  'ingestion.pendingInstruction': 'Latest instruction, not yet applied',
+  'ingestion.instructionStale':
+    'Superseded: the current suggestions do not reflect the latest instruction.',
   'ingestion.result': 'Result',
   'ingestion.stale': 'Stale',
   'ingestion.revoked': 'Access revoked',

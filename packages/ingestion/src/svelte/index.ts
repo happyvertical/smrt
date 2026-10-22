@@ -7,6 +7,9 @@ export type {
   ItemReviewView,
   LogicalSplitInput,
   ReviewAction,
+  ReviewerInstruction,
+  ReviewerInstructionInput,
+  ReviewerInstructionView,
   ReviewPage,
 } from '../review-dto.js';
 export { default as EvidenceViewer } from './components/EvidenceViewer.svelte';
