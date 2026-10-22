@@ -37,6 +37,16 @@ requires human review; machine authorization requires explicit evaluated opt-ins
 at all three authority layers and remains separate provenance from human review.
 The reference handlers always require review; no evaluation claim is made here.
 
+`operation: 'review_own'` is the submitter-scoped decision gate (#4085). The
+service accepts it only when the host's `authorize` result carries
+`submitter: true`, the resolved policy's `submitterReview` is enabled (the
+application layer opts in; tenant/source layers may only set it `false`), and
+the item's server-recorded `submitter_id` (the receiving service's authenticated
+`scope.actorId`) equals the current actor. All other `review` checks apply
+unchanged; `correct` is refused. `listOwnProposals` reads with the ordinary
+`read` operation per handler. Hosts whose `authorize` switches exhaustively on
+the operation fail closed for the new value until they opt in.
+
 `mutationBoundary: 'serialized'` is an explicit host guarantee, not an inferred
 property of a permissions array: grant revocation must serialize with the supplied
 transaction, or the owning mutation must revalidate under its own lock. The host
