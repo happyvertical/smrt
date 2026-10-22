@@ -4276,17 +4276,22 @@ export function proposalSuite(
     it.each([
       'unavailable',
       'malformed',
+      'identity',
       'revoked',
+      'limit',
     ] as const)('record readiness keeps generated suggestions when the decision %s (#4209 review)', async (mode) => {
       chooseCreate();
       configuration.decisionReadiness = 'record';
       configuration.decision = {
         identity,
         client: {
-          getCapabilities: async () => ({ decisions: true }),
+          getCapabilities: async () => {
+            // Revoke before the first outbound gate so the gate itself denies.
+            if (mode === 'revoked') allowed = false;
+            return { decisions: true };
+          },
           decide: async (raw) => {
             if (mode === 'unavailable') throw new Error('decision-secret');
-            if (mode === 'revoked') allowed = false;
             const request = raw as DecisionRequest;
             const answers: Record<string, unknown> = {};
             for (const [key, question] of Object.entries(request.questions))
@@ -4318,7 +4323,7 @@ export function proposalSuite(
             return {
               answers,
               provenance: {
-                provider: identity.provider,
+                provider: mode === 'identity' ? 'other' : identity.provider,
                 model: identity.model,
               },
               usage: { promptTokens: 4 },
@@ -4332,6 +4337,32 @@ export function proposalSuite(
         await expect(
           service.generateProposals(pending.lease),
         ).rejects.toThrow();
+        expect(calls).toHaveBeenCalledTimes(1);
+        return;
+      }
+      if (mode === 'limit') {
+        // The byte budget is configuration, not a provider answer: it still
+        // ends the attempt. Measure the serialized decision request once, then
+        // set the policy ceiling one byte below it before the next generation
+        // (a ceiling change after generation is a catalog change and fails
+        // closed on its own), so only the decision request overflows.
+        const sourceText = 'م'.repeat(8000);
+        let requestBytes = 0;
+        const decide = configuration.decision.client.decide;
+        configuration.decision.client.decide = async (raw, options) => {
+          requestBytes = Buffer.byteLength(JSON.stringify(raw));
+          return decide(raw, options);
+        };
+        const measured = await generate(
+          await source(100000, false, sourceText),
+        );
+        expect(measured.output.warnings).not.toContain('limit');
+        policyMaxBytes = requestBytes - 1;
+        const limited = await generate(await source(100000, false, sourceText));
+        expect(limited.output.outcome).toBe('provider_error');
+        expect(limited.output.warnings).toContain('limit');
+        expect(limited.output.warnings).not.toContain('decision_unavailable');
+        expect(limited.output.suggestions).toEqual([]);
         return;
       }
       const input = await generate();
@@ -4340,6 +4371,11 @@ export function proposalSuite(
       expect(input.output.warnings).toContain(
         mode === 'unavailable' ? 'decision_unavailable' : 'decision_malformed',
       );
+      if (mode === 'identity')
+        expect(input.output.provenance.decision.usage).toEqual({
+          promptTokens: 4,
+        });
+      else expect(input.output.provenance.decision.usage).toBeUndefined();
       expect(input.output.warnings).not.toContain('malformed_output');
       expect(input.output.provenance.decision).toMatchObject({
         configured: true,

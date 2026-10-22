@@ -138,7 +138,52 @@ describe('proposal validator reasons', () => {
     expect(error.reason).not.toMatch(/Invoice|1234|twelve/);
     expect(schemaOwnedPath('/lines/Invoice 1234', argsSchema)).toBe('/lines/?');
     expect(schemaOwnedPath('/title', argsSchema)).toBe('/title');
-    expect(schemaOwnedPath('/Acme/0/x', argsSchema)).toBe('/?/0/?');
+    // Numeric keys are indexes only under an array schema; under an object
+    // (or an unknown node) they are data too.
+    expect(schemaOwnedPath('/lines/4417002231', argsSchema)).toBe('/lines/?');
+    expect(schemaOwnedPath('/Acme/0/x', argsSchema)).toBe('/?/?/?');
+    expect(
+      schemaOwnedPath('/items/3/sku', {
+        type: 'object',
+        properties: {
+          items: { type: 'array', items: { properties: { sku: {} } } },
+        },
+      }),
+    ).toBe('/items/3/sku');
+    const numericKeyError = failure(
+      {
+        outcome: 'proposals',
+        suggestions: [
+          {
+            handlerId: 'h',
+            handlerVersion: '1',
+            args: { title: 'x', lines: { '4417002231': 'twelve' } },
+            evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+            alternatives: [],
+            missingFields: [],
+            explanation: 'x',
+          },
+        ],
+        splits: [],
+      },
+      [
+        {
+          handler: {
+            id: 'h',
+            version: '1',
+            description: 'handler',
+            kind: 'operation',
+            capability: null,
+            argsSchema,
+            references: {},
+            operation: { model: 'M', action: 'a', version: '1' },
+          },
+          candidates: [],
+        },
+      ],
+    );
+    expect(numericKeyError.reason).toContain('/lines/? type (type=integer)');
+    expect(numericKeyError.reason).not.toContain('4417002231');
   });
   it('bounds the recorded reason', () => {
     const error = failure({

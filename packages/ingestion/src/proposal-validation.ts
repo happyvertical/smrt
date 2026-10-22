@@ -52,13 +52,14 @@ export function schemaOwnedPath(instancePath: string, schema: unknown): string {
   const kept: string[] = [];
   for (const raw of segments) {
     const segment = raw.replace(/~1/g, '/').replace(/~0/g, '~');
-    if (/^\d+$/.test(segment)) {
+    // An index is schema-owned only where the schema says "array"; a numeric
+    // key under an object (for example an invoice number) is data.
+    const arrays = nodes.filter(
+      (node) => node.type === 'array' || node.items !== undefined,
+    );
+    if (/^\d+$/.test(segment) && arrays.length) {
       kept.push(segment);
-      nodes = nodes.flatMap((node) =>
-        node.type === 'array' || node.items !== undefined
-          ? schemaNodes(node.items)
-          : [],
-      );
+      nodes = arrays.flatMap((node) => schemaNodes(node.items));
       continue;
     }
     const owners = nodes.filter((node) => {

@@ -115,9 +115,10 @@ The reason lists schema-owned paths, keywords and schema constants, for example
 `/outcome enum (allowedValues=proposals|unknown|...)` and
 `/suggestions/0 required (missingProperty=evidence)`, or the fixed internal check
 and its path, such as `Unoffered handler: /suggestions/0`. Path segments are
-kept only when they are array indexes or keys declared under the schema's
-`properties`; a data key (for example under an open `additionalProperties`
-argument sub-schema) becomes `?`, and an extra property's name is never echoed.
+kept only when they are keys declared under the schema's `properties` or
+indexes where the schema itself declares an array; a data key, numeric or not
+(for example under an open `additionalProperties` argument sub-schema), becomes
+`?`, and an extra property's name is never echoed.
 It never contains document text, argument values, evidence content or
 model-chosen keys, is cut at 1000 characters,
 and is dropped before the output-limit fallback. Hosts read it from the
@@ -180,13 +181,16 @@ answers as diagnostics and configure:
   authorized exactly as before and its answers, usage, `readiness` and `maxLen`
   are recorded, but the gate never changes `outcome` or `disposition`; readiness
   comes from the validator alone (`missingFields`, outcome, source completeness).
-  A provider error, timeout or byte-budget overflow is recorded as the
-  `decision_unavailable` warning and an identity or answer-shape mismatch as
-  `decision_malformed`, each with `provenance.decision` identity (and usage when
-  the provider returned any); the generated suggestions stay as they were. In
-  `gate` mode the same failures still end the attempt as `provider_error`.
-  Lease, catalog, policy and provider-allowlist revocation fail closed in both
-  modes.
+  A provider error or timeout is recorded as the `decision_unavailable`
+  warning and an identity or answer-shape mismatch as `decision_malformed`,
+  each with `provenance.decision` identity; usage is recorded when the provider
+  returned a result (identity mismatch) and is otherwise unavailable, because a
+  reply the SDK rejects never reaches this service. The generated suggestions
+  stay as they were. The serialized request exceeding the byte budget is a
+  configuration failure, not a provider answer: it ends the attempt as `limit`
+  in both modes, and in `gate` mode every failure above still ends the attempt
+  as `provider_error`. Lease, catalog, policy and provider-allowlist revocation
+  fail closed in both modes.
 
 Both settings are public configuration: they are part of
 `ProposalReadConfiguration`, the frozen `GenerationStageConfiguration.proposals`

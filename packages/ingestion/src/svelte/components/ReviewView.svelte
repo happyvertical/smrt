@@ -27,8 +27,13 @@ let view = $state<ItemReviewView>(),
   pending = $state(false),
   error = $state(false),
   splits = $state<Record<string, string>>({}),
-  // Human drafts for `needs_review` suggestions, keyed by suggestion index.
-  drafts = $state<Record<number, string>>({}),
+  // Human drafts for `needs_review` suggestions, keyed by `attemptId:index`.
+  // They survive refresh and actions on other cards and are cleared only by a
+  // successful preview of their own card or a denied view.
+  drafts = $state<Record<string, string>>({}),
+  // Drafts the reviewer tried to preview while unparsable; the alert clears
+  // as soon as the draft parses again.
+  invalidDrafts = $state<Record<string, true>>({}),
   // Suggestion whose last preview the host rejected; its draft is kept.
   previewRejected = $state<number>(),
   invalid = $state(false);
@@ -44,6 +49,7 @@ function deny() {
   view = undefined;
   splits = {};
   drafts = {};
+  invalidDrafts = {};
   error = true;
   pending = false;
 }
@@ -51,7 +57,6 @@ async function load(pageCount = loadedPages) {
   const ticket = ++epoch;
   view = undefined;
   splits = {};
-  drafts = {};
   previewRejected = undefined;
   pending = true;
   error = false;
@@ -112,13 +117,19 @@ async function load(pageCount = loadedPages) {
         JSON.stringify(split.groups),
       ]),
     );
-    drafts = Object.fromEntries(
-      (view.generation?.suggestions ?? []).flatMap((suggestion, index) =>
-        suggestion.disposition === 'needs_review'
-          ? [[index, JSON.stringify(suggestion.args, null, 2)]]
-          : [],
-      ),
-    );
+    const attemptId = view.analysis?.attemptId;
+    const current = new Set<string>();
+    (view.generation?.suggestions ?? []).forEach((suggestion, index) => {
+      if (!attemptId || suggestion.disposition !== 'needs_review') return;
+      const key = `${attemptId}:${index}`;
+      current.add(key);
+      drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
+    });
+    for (const key of Object.keys(drafts))
+      if (!current.has(key)) {
+        delete drafts[key];
+        delete invalidDrafts[key];
+      }
   } catch {
     if (alive && ticket === epoch) deny();
   } finally {
@@ -132,7 +143,6 @@ async function run(operation: () => Promise<unknown>) {
   error = false;
   view = undefined;
   splits = {};
-  drafts = {};
   try {
     await operation();
     if (alive && ticket === epoch) await load();
@@ -155,12 +165,25 @@ function previewable(suggestion: GeneratedSuggestion) {
     ['ready_for_review', 'needs_review'].includes(suggestion.disposition)
   );
 }
+function draftKey(index: number) {
+  return `${view?.analysis?.attemptId ?? ''}:${index}`;
+}
+function parseable(draft: string | undefined) {
+  if (draft === undefined) return false;
+  try {
+    argumentsObject(draft);
+    return true;
+  } catch {
+    return false;
+  }
+}
 function edited(index: number) {
   const suggestion = view?.generation?.suggestions[index];
+  const draft = drafts[draftKey(index)];
   return (
     !!suggestion &&
-    drafts[index] !== undefined &&
-    drafts[index] !== JSON.stringify(suggestion.args, null, 2)
+    draft !== undefined &&
+    draft !== JSON.stringify(suggestion.args, null, 2)
   );
 }
 // Every schema-required argument must be present in the draft before preview;
@@ -169,7 +192,7 @@ function canPreview(index: number) {
   const suggestion = view?.generation?.suggestions[index];
   if (!suggestion || !previewable(suggestion)) return false;
   if (suggestion.disposition !== 'needs_review') return true;
-  const draft = drafts[index];
+  const draft = drafts[draftKey(index)];
   if (draft === undefined) return false;
   if (suggestion.missingFields.length && !edited(index)) return false;
   const handler = offeredHandler(suggestion);
@@ -180,11 +203,12 @@ async function preview(index: number) {
   const suggestion = view?.generation?.suggestions[index];
   if (pending || !analysis || !suggestion || !canPreview(index)) return;
   let args: Record<string, unknown> | undefined;
+  const key = draftKey(index);
   if (suggestion.disposition === 'needs_review' && edited(index)) {
     try {
-      args = argumentsObject(drafts[index]);
+      args = argumentsObject(drafts[key]);
     } catch {
-      invalid = true;
+      invalidDrafts[key] = true;
       return;
     }
   }
@@ -203,7 +227,12 @@ async function preview(index: number) {
   previewRejected = undefined;
   try {
     await host.preview(input);
-    if (alive && ticket === epoch) await load();
+    if (alive && ticket === epoch) {
+      // Only a successful preview of this card consumes its draft.
+      delete drafts[key];
+      delete invalidDrafts[key];
+      await load();
+    }
   } catch {
     if (alive && ticket === epoch) {
       previewRejected = index;
@@ -213,14 +242,15 @@ async function preview(index: number) {
 }
 function chooseFor(index: number) {
   return (field: string, id: string) => {
+    const key = draftKey(index);
     try {
-      drafts[index] = JSON.stringify(
-        { ...argumentsObject(drafts[index] ?? '{}'), [field]: id },
+      drafts[key] = JSON.stringify(
+        { ...argumentsObject(drafts[key] ?? '{}'), [field]: id },
         null,
         2,
       );
     } catch {
-      invalid = true;
+      invalidDrafts[key] = true;
     }
   };
 }
@@ -321,10 +351,12 @@ onMount(() => {
 <ul>{#each suggestion.evidence as reference}{@const url = locationUrl(reference.evidenceId,reference.location)}<li>{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(reference.location)}</Button>{:else}{locationLabel(reference.location)}{/if}</li>{/each}</ul>
 {#if suggestion.disposition === 'needs_review' && previewable(suggestion)}
 {@const handler = offeredHandler(suggestion)}
+{@const key = draftKey(index)}
 <p>{t(M['ingestion.completeSuggestion'])}</p>
-<Textarea aria-label={t(M['ingestion.suggestionArgs'])} bind:value={drafts[index]} rows={6} />
-{#if handler}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
+<Textarea aria-label={t(M['ingestion.suggestionArgs'])} bind:value={drafts[key]} rows={6} />
+{#if handler}<CandidatePicker {host} {itemId} catalog={handler} onchoose={chooseFor(index)} />{/if}
 {#if edited(index)}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
+{#if invalidDrafts[key] && !parseable(drafts[key])}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 {/if}
 {#if previewRejected === index}<p role="alert">{t(M['ingestion.previewRejected'])}</p>{/if}
 <Button disabled={!canPreview(index)} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
