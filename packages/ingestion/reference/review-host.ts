@@ -561,6 +561,7 @@ export class ReferenceReviewHost {
           : {}),
       });
     }
+    const catalog = await service.listHandlers(itemId);
     await service.getItem(itemId);
     const entry: InboxEntry = {
       item,
@@ -572,6 +573,7 @@ export class ReferenceReviewHost {
       entry,
       evidence: views,
       analysis,
+      catalog,
       ...(analysis?.configuration.stage === 'interpret'
         ? {
             generation: analysis.result.output

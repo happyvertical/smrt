@@ -5518,6 +5518,568 @@ export function proposalSuite(
       expect(result.warnings).toContain('timeout');
     });
 
+    function automationService(eligible: () => boolean) {
+      const authorize = options.execution!.authorize;
+      return new IngestionService({
+        ...options,
+        execution: {
+          ...options.execution!,
+          authorize: async (input) => {
+            const access = await authorize(input);
+            return {
+              ...access,
+              policy: access.policy.map((layer) => ({
+                ...layer,
+                requireReview: false,
+                automation: { handlers: [CREATE], evaluationVersion: 'eval1' },
+              })) as typeof access.policy,
+            };
+          },
+          evaluateAutomatic: async () => ({
+            eligible: eligible(),
+            evaluationVersion: 'eval1',
+            certainty: 1,
+          }),
+        },
+      });
+    }
+    it('reviewer starts a chosen handler on items without, with failed and with wrong suggestions; same approval path, never automatic', async () => {
+      const assignment = async () => ({ assigneeId: null, version: 0 });
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: '' }),
+        assignment,
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      // No interpretation at all: extraction-only item.
+      const extraction = await source(
+        100000,
+        false,
+        'Customer purchase order 17 received from Acme',
+      );
+      const before = await host.load(extraction.itemId);
+      expect(before.generation).toBeUndefined();
+      expect(before.catalog?.map((entry) => entry.id).sort()).toEqual(
+        [ATTACH, CREATE].sort(),
+      );
+      expect(before.entry.state).toBe('unresolved');
+      const input = {
+        itemId: extraction.itemId,
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+        requestId: 'start-po-17',
+        reason: 'A received customer PO, not a vendor bill',
+      };
+      reviewerAllowed = false;
+      await expect(service.startReviewerAction(input)).rejects.toThrow();
+      reviewerAllowed = true;
+      await expect(
+        new IngestionService({
+          ...options,
+          scope: { ...options.scope, actorId: 'observer' },
+        }).startReviewerAction(input),
+      ).rejects.toThrow();
+      await expect(
+        service.startReviewerAction({ ...input, handlerId: 'missing:handler' }),
+      ).rejects.toThrow('Handler unavailable');
+      await expect(
+        service.startReviewerAction({ ...input, args: { title: '' } }),
+      ).rejects.toThrow();
+      const previousTypes = handlers[0].discovery!.mediaTypes;
+      handlers[0].discovery!.mediaTypes = ['image/png'];
+      await expect(service.startReviewerAction(input)).rejects.toThrow(
+        'Handler unavailable',
+      );
+      handlers[0].discovery!.mediaTypes = previousTypes;
+      for (const table of ['intake_actions', 'intake_proposals'])
+        expect((await db.query(`SELECT id FROM ${table}`)).rows).toHaveLength(
+          0,
+        );
+      const review = await service.startReviewerAction(input);
+      expect(review.state).toBe('waiting_review');
+      expect(review.revision).toBe(1);
+      expect(await service.startReviewerAction(input)).toEqual(review);
+      await expect(
+        service.startReviewerAction({
+          ...input,
+          args: { ...input.args, title: 'Changed' },
+        }),
+      ).rejects.toThrow('conflict');
+      await expect(
+        service.startReviewerAction({ ...input, reason: 'Changed reason' }),
+      ).rejects.toThrow('conflict');
+      const page = await service.listReviews(extraction.itemId);
+      expect(page.actions).toHaveLength(1);
+      expect(page.actions[0]).toMatchObject({
+        origin: 'reviewer-selected',
+        handlerId: CREATE,
+        args: input.args,
+        attemptId: extraction.attemptId,
+      });
+      expect((await host.load(extraction.itemId)).entry.state).toBe('waiting');
+      expect(
+        (await db.query('SELECT id FROM intake_feedback')).rows,
+      ).toHaveLength(0);
+      // Machine authorization never applies to a human routing choice.
+      const automatic = automationService(() => true);
+      await expect(
+        automatic.authorizeAutomatic(review.actionId),
+      ).rejects.toThrow('Automatic execution unavailable');
+      await expect(service.applyAction(review.actionId)).rejects.toThrow();
+      await service.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'approve-po-17',
+        decision: 'approve',
+      });
+      const applied = await service.applyAction(review.actionId);
+      expect(applied.state).toBe('succeeded');
+      const created = await (await Contents.create({ db })).get({
+        id: String(applied.result?.contentId),
+      });
+      expect(created?.title).toBe('Customer PO 17');
+      expect((await host.load(extraction.itemId)).entry.state).toBe(
+        'completed',
+      );
+      // A generated suggestion remains automation-eligible under the same opt-in.
+      chooseCreate();
+      const generated = await generate();
+      const [prepared] = await automatic.previewGeneratedProposals({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'automatic-control',
+            expectedRevision: 0,
+            requestId: 'automatic-control',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      expect(
+        (await automatic.authorizeAutomatic(prepared.review.actionId)).state,
+      ).toBe('authorized');
+      // Failed interpretation: a completed attempt with provider_error and no suggestion.
+      calls.mockRejectedValue(new Error('provider down'));
+      const failed = await generate();
+      expect(failed.output.outcome).toBe('provider_error');
+      expect(failed.output.suggestions).toHaveLength(0);
+      const fromFailed = await service.startReviewerAction({
+        ...input,
+        itemId: failed.itemId,
+        requestId: 'start-after-failure',
+      });
+      expect(fromFailed.state).toBe('waiting_review');
+      expect(
+        (await service.listReviews(failed.itemId)).actions[0].attemptId,
+      ).toBe(failed.lease.attemptId);
+      // Wrong suggestion: redirect to the handler the reviewer chooses instead.
+      chooseCreate({ title: 'Vendor bill', body: 'Wrong classification' });
+      const wrong = await generate();
+      const redirected = await service.startReviewerAction({
+        itemId: wrong.itemId,
+        handlerId: ATTACH,
+        handlerVersion: '1',
+        args: {
+          contentId: String(applied.result?.contentId),
+          evidenceId: (await service.getEvidence(wrong.itemId))[0].id,
+        },
+        requestId: 'start-attach',
+      });
+      expect(redirected.state).toBe('waiting_review');
+      expect(
+        (await service.listReviews(wrong.itemId)).actions.map(
+          (action) => action.handlerId,
+        ),
+      ).toEqual([ATTACH]);
+      await expect(
+        service.startReviewerAction({
+          ...input,
+          itemId: wrong.itemId,
+          requestId: 'start-expired',
+          handlerVersion: '2',
+        }),
+      ).rejects.toThrow('Handler unavailable');
+    });
+    it('reviewer closes an item as handled without action: terminal, distinct from reject, and visible as a queue state', async () => {
+      chooseCreate();
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: '' }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      const generated = await generate();
+      await host.preview({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        index: 0,
+        requestId: 'preview-before-resolve',
+      });
+      const [waiting] = (await service.listReviews(generated.itemId)).actions;
+      const input = {
+        itemId: generated.itemId,
+        disposition: 'resolve_no_action' as const,
+        requestId: 'resolve-paid-invoice',
+        reason: 'Already paid; nothing to do',
+      };
+      reviewerAllowed = false;
+      await expect(service.resolveItem(input)).rejects.toThrow();
+      reviewerAllowed = true;
+      await expect(
+        new IngestionService({
+          ...options,
+          scope: { ...options.scope, tenantId: randomUUID() },
+        }).resolveItem(input),
+      ).rejects.toThrow();
+      await expect(
+        service.resolveItem({ ...input, disposition: 'reject' as never }),
+      ).rejects.toThrow('Invalid disposition');
+      expect((await service.getItem(generated.itemId)).disposition).toBe(
+        undefined,
+      );
+      const disposition = await service.resolveItem(input);
+      expect(disposition).toEqual({
+        kind: 'resolved_no_action',
+        reviewer: 'owner',
+        reason: 'Already paid; nothing to do',
+        decidedAt: clock.toISOString(),
+      });
+      expect(await service.resolveItem(input)).toEqual(disposition);
+      await expect(
+        service.resolveItem({ ...input, requestId: 'resolve-again' }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.resolveItem({ ...input, reason: 'Changed' }),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (await db.query('SELECT disposition FROM intake_dispositions')).rows,
+      ).toEqual([{ disposition: 'resolved_no_action' }]);
+      expect(
+        (await db.query('SELECT id FROM intake_review_decisions')).rows,
+      ).toHaveLength(0);
+      expect((await service.getItem(generated.itemId)).disposition).toEqual(
+        disposition,
+      );
+      expect((await host.load(generated.itemId)).entry.state).toBe('resolved');
+      expect(
+        (await host.list({ state: 'resolved' })).items.map(
+          (entry) => entry.item.id,
+        ),
+      ).toEqual([generated.itemId]);
+      expect((await host.list({ state: 'waiting' })).items).toEqual([]);
+      // The leftover waiting action can still be rejected, never approved or automated.
+      await expect(
+        service.submitDecision({
+          actionId: waiting.review.actionId,
+          expectedRevision: waiting.review.revision,
+          expectedReviewVersion: waiting.review.reviewVersion,
+          bindingHash: waiting.review.bindingHash,
+          requestId: 'approve-after-resolve',
+          decision: 'approve',
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        automationService(() => true).authorizeAutomatic(
+          waiting.review.actionId,
+        ),
+      ).rejects.toThrow('Automatic execution unavailable');
+      await expect(
+        service.startReviewerAction({
+          itemId: generated.itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args: { title: 'Late', body: 'Late' },
+          requestId: 'start-after-resolve',
+        }),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (
+          await service.submitDecision({
+            actionId: waiting.review.actionId,
+            expectedRevision: waiting.review.revision,
+            expectedReviewVersion: waiting.review.reviewVersion,
+            bindingHash: waiting.review.bindingHash,
+            requestId: 'reject-after-resolve',
+            decision: 'reject',
+          })
+        ).state,
+      ).toBe('rejected');
+      expect((await host.load(generated.itemId)).entry.state).toBe('resolved');
+      // Pending or applied effects must be concluded before closing without action.
+      const other = await generate();
+      const [prepared] = await service.previewGeneratedProposals({
+        itemId: other.itemId,
+        attemptId: other.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'authorized-blocks-resolve',
+            expectedRevision: 0,
+            requestId: 'authorized-blocks-resolve',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      await service.submitDecision({
+        actionId: prepared.review.actionId,
+        expectedRevision: prepared.review.revision,
+        expectedReviewVersion: prepared.review.reviewVersion,
+        bindingHash: prepared.review.bindingHash,
+        requestId: 'approve-other',
+        decision: 'approve',
+      });
+      await expect(
+        service.resolveItem({ ...input, itemId: other.itemId }),
+      ).rejects.toThrow('pending or applied');
+      // Extraction-only items close the same way.
+      const extraction = await source();
+      expect(
+        (
+          await service.resolveItem({
+            ...input,
+            itemId: extraction.itemId,
+            reason: undefined,
+          })
+        ).reason,
+      ).toBe('');
+      expect((await host.load(extraction.itemId)).entry.state).toBe('resolved');
+      // Privacy deletion redacts the reason and keeps only the terminal kind.
+      await service.expire(extraction.itemId);
+      expect(
+        (
+          await db.query(
+            'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
+            extraction.itemId,
+          )
+        ).rows.map((row) => ({
+          disposition: row.disposition,
+          data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        })),
+      ).toEqual([{ disposition: 'resolved_no_action', data: {} }]);
+    });
+    it('reviewer routing choices become retrievable routing feedback and rule support without automation', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const first = await source(
+        100000,
+        false,
+        'Customer purchase order 17 from Acme for widgets',
+      );
+      const second = await source(
+        100000,
+        false,
+        'Customer purchase order 42 from Globex for widgets',
+      );
+      const closed = await source(
+        100000,
+        false,
+        'Paid invoice 9 from Initech, nothing to do',
+      );
+      await start(first.itemId, 'route-first');
+      await start(second.itemId, 'route-second');
+      await service.resolveItem({
+        itemId: closed.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'route-closed',
+        reason: 'Already paid',
+      });
+      const rows = (
+        await db.query(
+          'SELECT id,item_id,kind,data FROM intake_feedback ORDER BY id',
+        )
+      ).rows.map((row) => ({
+        ...row,
+        data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+      }));
+      expect(rows.map((row) => row.kind)).toEqual([
+        'reviewer_routing',
+        'reviewer_routing',
+        'reviewer_routing',
+      ]);
+      const byItem = (itemId: string) =>
+        rows.find((row) => row.item_id === itemId)!;
+      expect(byItem(first.itemId).data).toMatchObject({
+        choice: 'handler',
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args,
+        reviewer: 'owner',
+        reason: 'Customer purchase order',
+        attemptId: first.attemptId,
+      });
+      expect(byItem(first.itemId).data.query).toContain(
+        'Customer purchase order 17',
+      );
+      expect(byItem(closed.itemId).data).toMatchObject({
+        choice: 'none',
+        handlerId: null,
+        actionId: null,
+        reason: 'Already paid',
+      });
+      // Comparable later items retrieve the explicit choices, each under live authority.
+      const receiver = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Umbrella for widgets',
+      );
+      const retrieved = await service.retrieveFeedback({
+        itemId: receiver.itemId,
+        query: 'Customer purchase order 99 from Umbrella for widgets',
+      });
+      expect(retrieved.examples.map((example) => example.feedbackId)).toEqual(
+        [byItem(first.itemId).id, byItem(second.itemId).id].sort(),
+      );
+      expect(retrieved.examples[0]).toMatchObject({
+        kind: 'reviewer_routing',
+        handlerId: CREATE,
+        judgment: 'correct',
+        args,
+        routing: { choice: 'handler', reason: 'Customer purchase order' },
+      });
+      expect(retrieved.examples[0].model).toBeUndefined();
+      const paid = await source(
+        100000,
+        false,
+        'Paid invoice 12 from Initech, nothing to do',
+      );
+      const none = await service.retrieveFeedback({
+        itemId: paid.itemId,
+        query: 'Paid invoice 12 from Initech, nothing to do',
+      });
+      expect(none.examples.map((example) => example.handlerId)).toEqual([
+        'none',
+      ]);
+      expect(none.examples[0]).toMatchObject({
+        feedbackId: byItem(closed.itemId).id,
+        actionId: '',
+        routing: { choice: 'none', reason: 'Already paid' },
+      });
+      // Tenant/confidential scope and per-item authority still gate every example.
+      for (const scope of [
+        { ...options.scope, tenantId: '22222222-2222-4222-8222-222222222222' },
+        { ...options.scope, confidentialScopeId: 'other' },
+      ])
+        await expect(
+          new IngestionService({ ...options, scope }).retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          }),
+        ).rejects.toThrow();
+      const authorize = options.feedback!.authorize;
+      options.feedback!.authorize = async (input) =>
+        input.itemId !== first.itemId && (await authorize(input));
+      expect(
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples.map((example) => example.feedbackId),
+      ).toEqual([byItem(second.itemId).id]);
+      options.feedback!.authorize = authorize;
+      // Generation receives the same bounded examples as model input, not authority.
+      chooseCreate(args);
+      const generated = await generate(receiver);
+      expect(
+        calls.mock.calls
+          .at(-1)![0]
+          .examples?.examples.map((example) => example.feedbackId),
+      ).toEqual([byItem(first.itemId).id, byItem(second.itemId).id].sort());
+      expect(generated.output.automaticActionEligible).toBe(false);
+      // Repeated explicit choices support a routing suggestion; `none` and duplicates do not.
+      const third = await source(
+        100000,
+        false,
+        'Customer purchase order 7 from Hooli for widgets',
+      );
+      const review = await start(third.itemId, 'route-third');
+      const binding = {
+        itemId: third.itemId,
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+      };
+      const suggestion = await service.suggestRoutingRule({
+        ...binding,
+        supportingFeedbackIds: [
+          byItem(first.itemId).id,
+          byItem(second.itemId).id,
+        ],
+        requestId: 'suggest-routing',
+      });
+      expect(suggestion.rule).toMatchObject({
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args,
+      });
+      expect(suggestion.rule.matchTerms).toContain('purchase');
+      expect(suggestion.automaticActionEligible).toBe(false);
+      await expect(
+        service.suggestRoutingRule({
+          ...binding,
+          supportingFeedbackIds: [
+            byItem(first.itemId).id,
+            byItem(closed.itemId).id,
+          ],
+          requestId: 'suggest-none',
+        }),
+      ).rejects.toThrow('Rule evidence unavailable');
+      await expect(
+        service.suggestRoutingRule({
+          ...binding,
+          supportingFeedbackIds: [
+            byItem(first.itemId).id,
+            byItem(first.itemId).id,
+          ],
+          requestId: 'suggest-duplicate',
+        }),
+      ).rejects.toThrow('Insufficient rule evidence');
+      await expect(
+        automationService(() => true).authorizeAutomatic(review.actionId),
+      ).rejects.toThrow('Automatic execution unavailable');
+      // A corrected reviewer-selected action retires its routing example.
+      await service.submitDecision({
+        ...binding,
+        requestId: 'correct-third',
+        decision: 'correct',
+        correctedArgs: { title: 'Customer PO (corrected)', body: args.body },
+      });
+      expect(
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples.map((example) => example.itemId),
+      ).not.toContain(third.itemId);
+    });
     it('reloads only the current completed analysis without requiring a remembered attempt ID', async () => {
       chooseCreate();
       const input = await generate();

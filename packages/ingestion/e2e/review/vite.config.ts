@@ -239,6 +239,15 @@ export default defineConfig({
                 'requestId',
                 'supersedesId',
               ],
+              startAction: [
+                'itemId',
+                'handlerId',
+                'handlerVersion',
+                'args',
+                'requestId',
+                'reason',
+              ],
+              resolve: ['itemId', 'disposition', 'requestId', 'reason'],
               revoke: [],
             };
             const operation = url.pathname.slice('/api/'.length);
@@ -281,6 +290,12 @@ export default defineConfig({
                 break;
               case 'feedback':
                 result = await service.recordFeedback(input);
+                break;
+              case 'startAction':
+                result = await service.startReviewerAction(input);
+                break;
+              case 'resolve':
+                result = await service.resolveItem(input);
                 break;
               case 'revoke':
                 await app.revoke(scope.actorId);

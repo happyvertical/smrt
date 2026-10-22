@@ -625,3 +625,140 @@ test('switching intake context discards chooser retry state and fences a late re
     page.getByRole('button', { name: 'Upload', exact: true }),
   ).toBeDisabled();
 });
+
+test('reviewer starts a chosen handler and closes another item without action; both are captured as routing feedback', async ({
+  page,
+}) => {
+  await signIn(page);
+  const review = page.getByTestId('intake-review');
+  const itemId = await upload(
+    page,
+    'customer-po.txt',
+    'text/plain',
+    Buffer.from('Customer purchase order 17 from Acme for widgets'),
+  );
+  const picker = review.getByRole('combobox', { name: 'Handler' });
+  await expect(picker).toBeVisible();
+  await picker.selectOption(
+    '@happyvertical/smrt-ingestion-reference:create-draft@1',
+  );
+  const args = review.getByRole('textbox', {
+    name: 'Initial arguments (JSON)',
+  });
+  // Pre-filled from the same-handler suggestion, then changed by the reviewer.
+  await expect(args).toHaveValue(/Reviewed intake draft/);
+  await args.fill(
+    JSON.stringify({ title: 'Customer PO 17', body: 'Acme purchase order' }),
+  );
+  await review
+    .getByRole('textbox', { name: 'Reason', exact: true })
+    .fill('Customer PO, not a vendor bill');
+  const started = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/startAction') &&
+      response.request().method() === 'POST',
+  );
+  await review.getByRole('button', { name: 'Start action' }).click();
+  const startResponse = await started;
+  expect(startResponse.status()).toBe(200);
+  expect(startResponse.request().postDataJSON()).toMatchObject({
+    itemId,
+    handlerId: '@happyvertical/smrt-ingestion-reference:create-draft',
+    handlerVersion: '1',
+    args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+    reason: 'Customer PO, not a vendor bill',
+  });
+  await expect(review.getByText('Started by a reviewer')).toBeVisible();
+  const loaded = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(loaded.reviews.actions).toHaveLength(1);
+  expect(loaded.reviews.actions[0]).toMatchObject({
+    origin: 'reviewer-selected',
+    args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+  });
+  expect(loaded.entry.state).toBe('waiting');
+  await review.getByRole('button', { name: 'Approve', exact: true }).click();
+  await review
+    .getByRole('button', { name: 'Apply approved action', exact: true })
+    .click();
+  await expect(
+    page.getByTestId(`action-${loaded.reviews.actions[0].review.actionId}`),
+  ).toContainText('succeeded');
+  const applied = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  const domain = await (
+    await page.request.get(
+      `/api/result?id=${applied.reviews.actions[0].result.result.contentId}`,
+    )
+  ).json();
+  expect(domain).toMatchObject({ title: 'Customer PO 17', status: 'draft' });
+  // A second item is closed as handled without any action.
+  const paidId = await upload(
+    page,
+    'paid-invoice.txt',
+    'text/plain',
+    Buffer.from('Paid invoice 9 from Initech, nothing to do'),
+  );
+  await review
+    .getByRole('textbox', { name: 'Reason for no action' })
+    .fill('Already paid');
+  const resolved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/resolve') &&
+      response.request().method() === 'POST',
+  );
+  await review.getByRole('button', { name: 'Handled, no action' }).click();
+  expect((await resolved).status()).toBe(200);
+  await expect(review.getByTestId('disposition')).toContainText(
+    'Closed without action by owner: Already paid',
+  );
+  await expect(review.getByRole('combobox', { name: 'Handler' })).toHaveCount(
+    0,
+  );
+  const resolvedList = await (
+    await page.request.get('/api/list?state=resolved')
+  ).json();
+  expect(
+    resolvedList.items.map((entry: { item: { id: string } }) => entry.item.id),
+  ).toEqual([paidId]);
+  expect(
+    (
+      await page.request.post('/api/resolve', {
+        headers: { 'x-review-csrf': await csrf(page) },
+        data: {
+          itemId: paidId,
+          disposition: 'resolve_no_action',
+          requestId: randomUUID(),
+        },
+      })
+    ).status(),
+  ).toBe(409);
+  expect(
+    (
+      await page.request.post('/api/startAction', {
+        headers: { 'x-review-csrf': await csrf(page) },
+        data: {
+          itemId: paidId,
+          handlerId: '@happyvertical/smrt-ingestion-reference:create-draft',
+          handlerVersion: '1',
+          args: { title: 'Late', body: 'Late' },
+          requestId: randomUUID(),
+        },
+      })
+    ).status(),
+  ).toBe(409);
+  // No CSRF token: neither reviewer operation is accepted.
+  expect(
+    (
+      await page.request.post('/api/resolve', {
+        data: {
+          itemId,
+          disposition: 'resolve_no_action',
+          requestId: randomUUID(),
+        },
+      })
+    ).status(),
+  ).toBe(403);
+});
