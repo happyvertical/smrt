@@ -11,6 +11,7 @@ import type {
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
 import {
+  ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from './reviewer-instruction.js';
@@ -254,6 +255,8 @@ export function createIntakeReviewHost(
       } catch (error) {
         if (error instanceof ReviewerInstructionStaleError)
           return { stale: true as const };
+        if (error instanceof ReviewerInstructionInvalidError)
+          return { invalid: true as const };
         throw error;
       }
       await options.onInstruct?.(input.itemId, result.revision);

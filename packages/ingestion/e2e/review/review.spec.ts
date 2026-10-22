@@ -563,7 +563,8 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
       entry.evidence.mediaType === 'application/pdf',
   );
   expect(await (await page.request.get(pdf.viewUrl)).body()).toEqual(original);
-  // Whitespace-only instruction text fails server-side validation.
+  // Whitespace-only instruction text fails server-side validation, reported
+  // as a validation result rather than an error status.
   const blankText = await page.request.post('/api/instruct', {
     headers: { 'x-review-csrf': await csrf(page) },
     data: {
@@ -574,7 +575,8 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
       requestId: randomUUID(),
     },
   });
-  expect(blankText.status()).toBe(409);
+  expect(blankText.status()).toBe(200);
+  expect(await blankText.json()).toEqual({ invalid: true });
   // A superseding instruction replaces the first for future interpretations;
   // the earlier record remains in history.
   await box.fill('Second thoughts: file it under supplier correspondence.');

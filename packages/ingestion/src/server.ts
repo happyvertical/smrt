@@ -52,6 +52,7 @@ import type {
 } from './review-dto.js';
 import {
   REVIEWER_INSTRUCTION_MAX_LENGTH,
+  ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from './reviewer-instruction.js';
@@ -1533,7 +1534,7 @@ export class IngestionService {
       !frozen.text.trim() ||
       frozen.text.length > REVIEWER_INSTRUCTION_MAX_LENGTH
     )
-      throw new Error('Invalid reviewer instruction');
+      throw new ReviewerInstructionInvalidError();
     const requestKey = `instruction:${frozen.requestId}`;
     const intent = {
       kind: 'reviewer_instruction',
@@ -2826,6 +2827,7 @@ export {
 } from './review-host.js';
 export {
   REVIEWER_INSTRUCTION_MAX_LENGTH,
+  ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from './reviewer-instruction.js';

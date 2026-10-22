@@ -32,6 +32,7 @@ import {
   createSourceDeliveryHandler,
   extractAnalysis,
   IngestionService,
+  ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from '../src/server.js';
@@ -721,6 +722,8 @@ export class ReferenceReviewHost {
     } catch (error) {
       if (error instanceof ReviewerInstructionStaleError)
         return { stale: true as const };
+      if (error instanceof ReviewerInstructionInvalidError)
+        return { invalid: true as const };
       throw error;
     }
     const pending = this.process(scope, input.itemId, result.revision).catch(

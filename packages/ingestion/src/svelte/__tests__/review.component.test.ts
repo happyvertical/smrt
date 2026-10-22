@@ -1218,6 +1218,42 @@ describe('intake review host boundary', () => {
     expect(screen.queryByTestId('instruction-busy')).toBeNull();
     expect(screen.queryByTestId('reinterpreting')).toBeNull();
   });
+  it('limits instruction length client-side and shows a server validation result inline without denying', async () => {
+    const view = generationFor(page());
+    const callbacks = host(view);
+    callbacks.instruct = vi.fn(async () => ({ invalid: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const box = (await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    })) as HTMLTextAreaElement;
+    expect(box.maxLength).toBe(4000);
+    const button = screen.getByRole('button', {
+      name: 'Re-read with these instructions',
+    }) as HTMLButtonElement;
+    // A paste or script can still exceed maxlength; the client check holds.
+    await fireEvent.input(box, { target: { value: 'x'.repeat(4001) } });
+    expect(screen.getByTestId('instruction-length').textContent).toContain(
+      '4001 / 4000',
+    );
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(callbacks.instruct).not.toHaveBeenCalled();
+    // At the limit it may be sent; the server's validation result is inline.
+    await fireEvent.input(box, { target: { value: 'y'.repeat(4000) } });
+    expect(button.disabled).toBe(false);
+    await fireEvent.click(button);
+    await screen.findByTestId('instruction-invalid');
+    expect(callbacks.instruct).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Private invoice')).toBeTruthy();
+    expect(screen.queryByText(/This view is unavailable/)).toBeNull();
+    const kept = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    }) as HTMLTextAreaElement;
+    expect(kept.value).toBe('y'.repeat(4000));
+    // Editing the draft clears the note.
+    await fireEvent.input(kept, { target: { value: 'File it.' } });
+    expect(screen.queryByTestId('instruction-invalid')).toBeNull();
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {

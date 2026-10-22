@@ -24,7 +24,14 @@ let view = $state<ItemReviewView>(),
   instruction = $state(''),
   refreshFailed = $state(false),
   instructionBusy = $state(false),
+  // The draft the server refused as invalid; the note stays until it changes.
+  invalidDraft = $state<string>(),
   invalid = $state(false);
+/** Same ceiling the server enforces (REVIEWER_INSTRUCTION_MAX_LENGTH). */
+const INSTRUCTION_MAX_LENGTH = 4000;
+const instructionValid = $derived(
+  !!instruction.trim() && instruction.length <= INSTRUCTION_MAX_LENGTH,
+);
 // The busy note after a stale click stays only while the item is still in
 // flight; any reload (including the one answering the click) that shows it
 // settled clears it.
@@ -277,8 +284,9 @@ function instruct() {
   const binding = instructionBinding(view);
   const text = instruction.trim();
   const operation = host.instruct;
-  if (!binding || !text || !operation || inFlight(view)) return;
+  if (!binding || !instructionValid || !operation || inFlight(view)) return;
   instructionBusy = false;
+  invalidDraft = undefined;
   const input = {
     itemId,
     ...binding,
@@ -289,8 +297,12 @@ function instruct() {
   // the draft is kept; it is never treated as a denial.
   void run(async () => {
     const result = await operation(input);
-    if (result && result.stale === true) {
+    if (result && 'stale' in result && result.stale === true) {
       instructionBusy = true;
+      return;
+    }
+    if (result && 'invalid' in result && result.invalid === true) {
+      invalidDraft = instruction;
       return;
     }
     instruction = '';
@@ -363,7 +375,7 @@ onMount(() => {
 {/if}
 {#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{/if}
 {#if host.instruct && instructionBinding(view)}
-<div><Textarea aria-label={t(M['ingestion.instructions'])} bind:value={instruction} /><Button disabled={!instruction.trim() || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
+<div><Textarea aria-label={t(M['ingestion.instructions'])} aria-describedby="instruction-length" maxlength={INSTRUCTION_MAX_LENGTH} bind:value={instruction} /><p id="instruction-length" data-testid="instruction-length">{t(M['ingestion.instructionLength'], { count: instruction.length, max: INSTRUCTION_MAX_LENGTH })}</p>{#if invalidDraft !== undefined && invalidDraft === instruction}<p role="alert" data-testid="instruction-invalid">{t(M['ingestion.instructionInvalid'], { max: INSTRUCTION_MAX_LENGTH })}</p>{/if}<Button disabled={!instructionValid || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
 {/if}
 {#if extracted.length}
 <h2>{t(M['ingestion.extracted'])}</h2>

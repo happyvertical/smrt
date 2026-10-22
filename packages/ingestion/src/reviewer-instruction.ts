@@ -6,6 +6,17 @@ import type { ReviewerInstruction } from './review-dto.js';
 export const REVIEWER_INSTRUCTION_MAX_LENGTH = 4000;
 
 /**
+ * Instruction text is empty, whitespace-only or longer than the ceiling. Hosts
+ * surface it inline as a validation result, never as an access denial.
+ */
+export class ReviewerInstructionInvalidError extends Error {
+  constructor() {
+    super('Invalid reviewer instruction');
+    this.name = 'ReviewerInstructionInvalidError';
+  }
+}
+
+/**
  * The anchor generation is superseded or a reinterpretation is still in flight.
  * Hosts surface it as a refresh-and-retry signal, never as an access denial.
  */

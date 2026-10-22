@@ -170,11 +170,13 @@ export interface IntakeReviewHost {
   /**
    * Record reviewer guidance and request a background reinterpretation; never
    * approval. Resolves `{ stale: true }` when the anchor is superseded or work
-   * is still in flight, a refresh-and-retry signal rather than a denial.
+   * is still in flight, a refresh-and-retry signal rather than a denial, and
+   * `{ invalid: true }` when the text fails validation (empty, whitespace-only
+   * or longer than 4,000 characters), shown inline rather than as a denial.
    */
   instruct?: (
     input: ReviewerInstructionInput,
-  ) => Promise<void | { stale: true }>;
+  ) => Promise<void | { stale: true } | { invalid: true }>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,

@@ -3,6 +3,7 @@ import type { IntakeItemDTO } from './dto.js';
 import type { ReviewerInstruction, ReviewPage } from './review-dto.js';
 import { createIntakeReviewHost } from './review-host.js';
 import {
+  ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from './reviewer-instruction.js';
@@ -173,6 +174,10 @@ describe('published review host projection', () => {
       requestId: 'stale',
     };
     await expect(f.host.instruct?.(input)).resolves.toEqual({ stale: true });
+    f.service.recordReviewerInstruction.mockRejectedValueOnce(
+      new ReviewerInstructionInvalidError(),
+    );
+    await expect(f.host.instruct?.(input)).resolves.toEqual({ invalid: true });
     expect(f.woken).toEqual([]);
     f.service.recordReviewerInstruction.mockRejectedValueOnce(
       new Error('Intake unavailable'),
