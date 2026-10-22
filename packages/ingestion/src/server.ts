@@ -44,7 +44,7 @@ import type {
   CompletedAnalysisSnapshot,
   PreviewGeneratedInput,
 } from './proposal-dto.js';
-import type { LogicalSplitInput } from './review-dto.js';
+import type { InboxState, LogicalSplitInput } from './review-dto.js';
 
 /** Authenticated host context. Never construct this from transport JSON. */
 export interface IngestionScope {
@@ -77,6 +77,23 @@ export interface ReceiveInput {
   };
   limits: IntakeLimits;
   traceId?: string;
+}
+/** One inbox page request. Filters apply in the query, before the page is cut. */
+export interface ListItemsInput {
+  /** Rows per page; defaults to 20 and never exceeds 100. */
+  limit?: number;
+  /** Opaque continuation returned by the previous page. */
+  cursor?: string;
+  /** Durable inbox-state projection; see REVIEW.md for how it is derived. */
+  state?: InboxState;
+  /** Restrict the page to these item IDs (host-side assignment pushdown). */
+  itemIds?: string[];
+}
+/** Inbox items newest-first by receipt, with their durable state projection. */
+export interface IntakeItemPage {
+  /** `cursor` continues after that row, so a host may cut a page short of it. */
+  items: Array<{ item: IntakeItemDTO; state: InboxState; cursor: string }>;
+  nextCursor?: string;
 }
 /** Durable attempt claim. Its fence and token are verified on every completion. */
 export interface AnalysisLease {
@@ -208,6 +225,51 @@ function integer(value: unknown, max = 2_147_483_647): asserts value is number {
     value > max
   )
     throw new Error('Invalid intake limit');
+}
+const ITEM_PAGE_DEFAULT = 20;
+const ITEM_PAGE_CEILING = 100;
+/** The most ids one page may be restricted to before the host must fall back to scanning. */
+export const ITEM_ID_FILTER_CEILING = 1000;
+const INBOX_STATES: readonly InboxState[] = [
+  'processing',
+  'unresolved',
+  'waiting',
+  'failed',
+  'deferred',
+  'partially_completed',
+  'completed',
+];
+/** Correlated action counters; each uses intake_actions_item_idx for one scanned row. */
+function actionCount(where = ''): string {
+  return `(SELECT COUNT(*) FROM intake_actions a WHERE a.tenant_id = i.tenant_id AND a.confidential_scope_id = i.confidential_scope_id AND a.item_id = i.id${where ? ` AND ${where}` : ''})`;
+}
+/**
+ * Durable inbox-state projection of the saved action journal plus processing
+ * state. It mirrors the host's page-traversal classifier without live handler
+ * or target gates, so it filters and labels a list; `load` stays authoritative.
+ */
+const INBOX_STATE_SQL = `CASE WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
+/** Opaque (received-at, id) continuation; never a bare id, which is not ordered. */
+function encodeItemCursor(receivedAt: string, id: string): string {
+  return Buffer.from(JSON.stringify([receivedAt, id])).toString('base64url');
+}
+function decodeItemCursor(cursor: string): { receivedAt: string; id: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('Invalid item page');
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length !== 2 ||
+    typeof parsed[0] !== 'string' ||
+    !Number.isFinite(Date.parse(parsed[0])) ||
+    typeof parsed[1] !== 'string' ||
+    !uuid.test(parsed[1])
+  )
+    throw new Error('Invalid item page');
+  return { receivedAt: parsed[0], id: parsed[1] };
 }
 function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
@@ -1136,24 +1198,92 @@ export class IngestionService {
     }
     return repaired;
   }
-  /** List only authorized active items; omitted items do not contribute counts. */
-  async listItems(): Promise<IntakeItemDTO[]> {
-    const rows = await this.rows(
-      this.db,
-      'intake_items',
-      "visibility='active' AND expires_at>?",
-      [this.now().toISOString()],
-    );
-    const result: IntakeItemDTO[] = [];
-    for (const row of rows) {
-      try {
-        await this.authorize('read', object(row.data));
-        result.push(this.itemDTO(row));
-      } catch {
-        /* no existence disclosure */
+  /**
+   * One authorized inbox page, newest receipt first with the id as tiebreak.
+   * Tenant, confidential scope, retention, state and id filters all run in the
+   * query, so a page is full and `nextCursor` is absent only when nothing
+   * follows. The host authorize callback runs once per distinct captured
+   * ceiling in the page, never per row; denied rows are skipped without
+   * disclosing their existence and the page is refilled from the next rows.
+   */
+  async listItems(input: ListItemsInput = {}): Promise<IntakeItemPage> {
+    const limit = input.limit ?? ITEM_PAGE_DEFAULT;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > ITEM_PAGE_CEILING ||
+      (input.state !== undefined && !INBOX_STATES.includes(input.state)) ||
+      (input.itemIds !== undefined &&
+        (!Array.isArray(input.itemIds) ||
+          input.itemIds.length > ITEM_ID_FILTER_CEILING ||
+          input.itemIds.some((id) => typeof id !== 'string' || !uuid.test(id))))
+    )
+      throw new Error('Invalid item page');
+    if (input.itemIds && !input.itemIds.length) return { items: [] };
+    let after = input.cursor ? decodeItemCursor(input.cursor) : undefined;
+    const now = this.now().toISOString();
+    const ceilings = new Map<string, Promise<boolean>>();
+    const allowed = (data: Row): Promise<boolean> => {
+      const ceiling = object(data.capturedCeiling ?? {});
+      const key = canonical(ceiling);
+      let decision = ceilings.get(key);
+      if (!decision) {
+        decision = this.authorize('read', { capturedCeiling: ceiling }).then(
+          () => true,
+          () => false,
+        );
+        ceilings.set(key, decision);
       }
+      return decision;
+    };
+    const items: IntakeItemPage['items'] = [];
+    for (;;) {
+      const params: unknown[] = [
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        now,
+      ];
+      let where = '';
+      if (input.state) {
+        where += ` AND ${INBOX_STATE_SQL} = ?`;
+        params.push(input.state);
+      }
+      if (after) {
+        where += ' AND (i.created_at < ? OR (i.created_at = ? AND i.id < ?))';
+        params.push(after.receivedAt, after.receivedAt, after.id);
+      }
+      if (input.itemIds) {
+        where += ` AND i.id IN (${input.itemIds.map(() => '?').join(',')})`;
+        params.push(...input.itemIds);
+      }
+      const wanted = limit - items.length;
+      const rows = (
+        await this.db.query(
+          `SELECT i.*, ${INBOX_STATE_SQL} AS inbox_state FROM intake_items i WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where} ORDER BY i.created_at DESC, i.id DESC LIMIT ?`,
+          ...params,
+          wanted + 1,
+        )
+      ).rows as Row[];
+      const scanned = rows.slice(0, wanted);
+      for (const row of scanned) {
+        after = {
+          receivedAt: persistedDate(row.created_at).toISOString(),
+          id: String(row.id),
+        };
+        if (!(await allowed(object(row.data)))) continue;
+        items.push({
+          item: this.itemDTO(row),
+          state: String(row.inbox_state) as InboxState,
+          cursor: encodeItemCursor(after.receivedAt, after.id),
+        });
+      }
+      if (rows.length <= wanted || !after) return { items };
+      if (items.length >= limit)
+        return {
+          items,
+          nextCursor: encodeItemCursor(after.receivedAt, after.id),
+        };
     }
-    return result;
   }
   private itemDTO(row: Row): IntakeItemDTO {
     return {

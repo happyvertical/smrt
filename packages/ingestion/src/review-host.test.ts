@@ -5,7 +5,35 @@ import { createIntakeReviewHost } from './review-host.js';
 import {
   GenerationSnapshotStaleError,
   type IngestionService,
+  type IntakeItemPage,
+  type ListItemsInput,
 } from './server.js';
+
+/** A fake service page source: newest-first rows cut by limit/cursor/itemIds. */
+function pageSource(rows: Array<{ id: string; state?: string }>) {
+  return async (input: ListItemsInput = {}): Promise<IntakeItemPage> => {
+    const limit = input.limit ?? 20;
+    let candidates = rows
+      .filter(
+        (row) => !input.state || (row.state ?? 'unresolved') === input.state,
+      )
+      .filter((row) => !input.itemIds || input.itemIds.includes(row.id));
+    if (input.cursor) {
+      const index = candidates.findIndex((row) => row.id === input.cursor);
+      candidates = candidates.slice(index + 1);
+    }
+    const page = candidates.slice(0, limit);
+    return {
+      items: page.map((row) => ({
+        item: { id: row.id, processingState: 'completed' } as IntakeItemDTO,
+        state: (row.state ??
+          'unresolved') as IntakeItemPage['items'][0]['state'],
+        cursor: row.id,
+      })),
+      ...(candidates.length > limit ? { nextCursor: page.at(-1)!.id } : {}),
+    };
+  };
+}
 
 function fixture() {
   const item = { id: 'item', processingState: 'completed' } as IntakeItemDTO;
@@ -13,7 +41,7 @@ function fixture() {
   const last = { actions: [] } as ReviewPage;
   const service = {
     getItem: vi.fn(async () => item),
-    listItems: vi.fn(async () => [item]),
+    listItems: vi.fn(pageSource([{ id: 'item', state: 'completed' }])),
     listReviews: vi.fn(async (_id: string, page: { cursor?: string }) =>
       page.cursor ? last : first,
     ),
@@ -33,34 +61,134 @@ function fixture() {
 }
 
 describe('published review host projection', () => {
-  it('aggregates pages without reading original bytes for an inbox', async () => {
+  it('lists from one service page without per-row review or evidence reads', async () => {
     const f = fixture();
-    f.last.actions.push({
-      review: { state: 'succeeded' },
-    } as ReviewPage['actions'][number]);
-    expect((await f.host.list({})).items[0].state).toBe('completed');
+    const page = await f.host.list({});
+    expect(page.items[0].state).toBe('completed');
+    expect(page.nextCursor).toBeUndefined();
+    expect(f.service.listItems).toHaveBeenCalledTimes(1);
+    expect(f.service.listItems).toHaveBeenCalledWith({
+      limit: 20,
+      cursor: undefined,
+      state: undefined,
+      itemIds: undefined,
+    });
+    expect(f.service.listReviews).not.toHaveBeenCalled();
+    expect(f.service.getItem).not.toHaveBeenCalled();
     expect(f.service.getEvidence).not.toHaveBeenCalled();
   });
-  it('keeps a continuation cursor when filters exclude the entire scanned page', async () => {
+  it('pushes limit, cursor and state into the service page query', async () => {
     const f = fixture();
-    f.service.listItems.mockResolvedValue(
-      Array.from(
-        { length: 21 },
-        (_, index) =>
-          ({
-            id: String(index).padStart(2, '0'),
-            processingState: 'completed',
-          }) as IntakeItemDTO,
-      ),
-    );
-    const page = await f.host.list({ state: 'failed' });
-    expect(page.items).toEqual([]);
-    expect(page.nextCursor).toBe('19');
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      id: String(index).padStart(2, '0'),
+      state: index % 2 ? 'failed' : 'completed',
+    }));
+    f.service.listItems.mockImplementation(pageSource(rows));
+    const first = await f.host.list({ state: 'failed', limit: 5 });
+    expect(first.items.map((entry) => entry.item.id)).toEqual([
+      '01',
+      '03',
+      '05',
+      '07',
+      '09',
+    ]);
+    expect(first.nextCursor).toBe('09');
+    const second = await f.host.list({
+      state: 'failed',
+      limit: 5,
+      cursor: first.nextCursor,
+    });
+    expect(second.items.map((entry) => entry.item.id)).toEqual([
+      '11',
+      '13',
+      '15',
+      '17',
+      '19',
+    ]);
+    const last = await f.host.list({
+      state: 'failed',
+      limit: 10,
+      cursor: '19',
+    });
+    expect(last.items).toHaveLength(5);
+    expect(last.nextCursor).toBeUndefined();
+    expect(f.service.listItems).toHaveBeenCalledTimes(3);
   });
-  it('rejects repeating page cursors', async () => {
+  it('reads assignments once per page and pushes the assignee filter down when the host can', async () => {
+    const f = fixture();
+    const rows = Array.from({ length: 6 }, (_, index) => ({ id: `0${index}` }));
+    f.service.listItems.mockImplementation(pageSource(rows));
+    const assignments = vi.fn(
+      async (itemIds: string[]) =>
+        new Map(
+          itemIds.map((id) => [
+            id,
+            {
+              assigneeId: id === '02' || id === '04' ? 'me' : null,
+              version: 1,
+            },
+          ]),
+        ),
+    );
+    const assignedItemIds = vi.fn(async () => ['02', '04']);
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment: async () => {
+          throw new Error('per-row assignment must not run');
+        },
+        assignments,
+        assignedItemIds,
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    const page = await host.list({ assigneeId: 'me' });
+    expect(page.items.map((entry) => entry.item.id)).toEqual(['02', '04']);
+    expect(page.items[0].assignment).toEqual({ assigneeId: 'me', version: 1 });
+    expect(assignedItemIds).toHaveBeenCalledWith('me');
+    expect(f.service.listItems).toHaveBeenCalledTimes(1);
+    expect(f.service.listItems).toHaveBeenCalledWith(
+      expect.objectContaining({ itemIds: ['02', '04'] }),
+    );
+    expect(assignments).toHaveBeenCalledTimes(1);
+    expect(assignments).toHaveBeenCalledWith(['02', '04']);
+  });
+  it('fills a filtered page across service pages when the assignee filter cannot be pushed down', async () => {
+    const f = fixture();
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      id: String(index).padStart(2, '0'),
+    }));
+    f.service.listItems.mockImplementation(pageSource(rows));
+    const assignment = vi.fn(async (itemId: string) => ({
+      assigneeId: Number(itemId) % 4 === 3 ? 'me' : null,
+      version: 0,
+    }));
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment,
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    const page = await host.list({ assigneeId: 'me', limit: 2 });
+    expect(page.items.map((entry) => entry.item.id)).toEqual(['03', '07']);
+    expect(page.nextCursor).toBe('07');
+    const rest = await host.list({
+      assigneeId: 'me',
+      limit: 2,
+      cursor: page.nextCursor,
+    });
+    expect(rest.items.map((entry) => entry.item.id)).toEqual(['11']);
+    expect(rest.nextCursor).toBeUndefined();
+  });
+  it('rejects repeating review page cursors while projecting an item view', async () => {
     const f = fixture();
     f.last.nextCursor = 'next';
-    await expect(f.host.list({})).rejects.toThrow('Repeated review cursor');
+    await expect(f.host.load('item')).rejects.toThrow('Repeated review cursor');
   });
   it('keeps successful review history but omits stale generation output', async () => {
     const f = fixture();

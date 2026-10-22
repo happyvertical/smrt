@@ -584,25 +584,42 @@ export class ReferenceReviewHost {
   }
   async list(
     scope: ReviewSession,
-    input: { state?: InboxState; assigneeId?: string; cursor?: string },
+    input: {
+      state?: InboxState;
+      assigneeId?: string;
+      cursor?: string;
+      limit?: number;
+    },
   ) {
     const { service } = await this.service(scope);
-    const items = (await service.listItems())
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .filter((item) => !input.cursor || item.id > input.cursor)
-      .slice(0, 21);
-    const projected = [];
-    for (const item of items.slice(0, 20)) {
-      const entry = (await this.load(scope, item.id)).entry;
-      if (
-        (!input.state || entry.state === input.state) &&
-        (!input.assigneeId || entry.assignment.assigneeId === input.assigneeId)
-      )
-        projected.push(entry);
-    }
+    // This host owns review_assignments, so the assignee filter is pushed into
+    // the page query as an id restriction instead of a post-page filter.
+    const itemIds = input.assigneeId
+      ? (
+          await this.db.query(
+            'SELECT item_id FROM review_assignments WHERE tenant_id=? AND assignee_id=?',
+            scope.tenantId,
+            input.assigneeId,
+          )
+        ).rows.map((row) => String(row.item_id))
+      : undefined;
+    const page = await service.listItems({
+      limit: input.limit,
+      cursor: input.cursor,
+      state: input.state,
+      itemIds,
+    });
+    const projected: InboxEntry[] = [];
+    for (const { item, state } of page.items)
+      projected.push({
+        item,
+        label: `Intake ${item.id.slice(0, 8)}`,
+        state,
+        assignment: await this.assignment(scope, item.id),
+      });
     return {
       items: projected,
-      ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     };
   }
   async preview(

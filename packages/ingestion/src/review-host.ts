@@ -9,7 +9,7 @@ import type {
   IntakeReviewHost,
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
-import type { IngestionService } from './server.js';
+import { type IngestionService, ITEM_ID_FILTER_CEILING } from './server.js';
 
 /** Trusted application adapters, bound to the same authenticated session as service. */
 export interface IntakeReviewHostOptions {
@@ -17,6 +17,18 @@ export interface IntakeReviewHostOptions {
   upload: IntakeReviewHost['upload'];
   /** Read durable assignment state; assignment never grants ingestion permissions. */
   assignment(itemId: string): Promise<Assignment>;
+  /**
+   * Optional batched assignment read for one inbox page. Missing ids are
+   * unassigned at version 0. Without it, `list` calls `assignment` per row.
+   */
+  assignments?(itemIds: string[]): Promise<Map<string, Assignment>>;
+  /**
+   * Optional assignee pushdown: the item ids currently assigned to `assigneeId`.
+   * `list` restricts the page query to them, so a filtered page is cut in one
+   * query. Without it (or beyond ITEM_ID_FILTER_CEILING ids) `list` scans pages
+   * and filters by `assignment`, which is still honest but costs more rows.
+   */
+  assignedItemIds?(assigneeId: string): Promise<string[]>;
   /** Authorize manager/assignee and enforce durable CAS plus request-id replay checks. */
   assign: IntakeReviewHost['assign'];
   /** Produce safe text or an authenticated same-origin URL; never storage keys. */
@@ -40,32 +52,59 @@ export function createIntakeReviewHost(
 ): IntakeReviewHost {
   const label =
     options.label ?? ((item: IntakeItemDTO) => `Intake ${item.id.slice(0, 8)}`);
-  const entry = async (item: IntakeItemDTO): Promise<InboxEntry> => {
-    const { state } = await loadReviewSummary(service, item);
-    const assignment = await options.assignment(item.id);
-    await service.getItem(item.id);
-    return { item, label: label(item), state, assignment };
+  const assignments = async (
+    itemIds: string[],
+  ): Promise<Map<string, Assignment>> => {
+    if (!itemIds.length) return new Map();
+    if (options.assignments) return options.assignments(itemIds);
+    const read = new Map<string, Assignment>();
+    for (const itemId of itemIds)
+      read.set(itemId, await options.assignment(itemId));
+    return read;
   };
   return {
     async list(input) {
-      const items = (await service.listItems())
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .filter((item) => !input.cursor || item.id > input.cursor)
-        .slice(0, 21);
-      const projected: InboxEntry[] = [];
-      for (const item of items.slice(0, 20)) {
-        const current = await entry(item);
-        if (
-          (!input.state || current.state === input.state) &&
-          (!input.assigneeId ||
-            current.assignment.assigneeId === input.assigneeId)
-        )
-          projected.push(current);
+      const limit = input.limit ?? 20;
+      let itemIds: string[] | undefined;
+      if (input.assigneeId && options.assignedItemIds) {
+        const assigned = await options.assignedItemIds(input.assigneeId);
+        if (assigned.length <= ITEM_ID_FILTER_CEILING) itemIds = assigned;
       }
-      return {
-        items: projected,
-        ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
-      };
+      const items: InboxEntry[] = [];
+      let cursor = input.cursor;
+      // One query per page when every filter is pushed down. Only an
+      // assignee filter the host cannot push down scans further pages, and
+      // each scan is still one query plus one batched assignment read.
+      for (;;) {
+        const page = await service.listItems({
+          limit,
+          cursor,
+          state: input.state,
+          itemIds,
+        });
+        const read = await assignments(page.items.map(({ item }) => item.id));
+        for (const [
+          index,
+          { item, state, cursor: rowCursor },
+        ] of page.items.entries()) {
+          const assignment = read.get(item.id) ?? {
+            assigneeId: null,
+            version: 0,
+          };
+          if (input.assigneeId && assignment.assigneeId !== input.assigneeId)
+            continue;
+          items.push({ item, label: label(item), state, assignment });
+          if (items.length === limit)
+            return {
+              items,
+              ...(page.nextCursor || index < page.items.length - 1
+                ? { nextCursor: rowCursor }
+                : {}),
+            };
+        }
+        if (!page.nextCursor) return { items };
+        cursor = page.nextCursor;
+      }
     },
     async load(itemId, cursor) {
       const item = await service.getItem(itemId);

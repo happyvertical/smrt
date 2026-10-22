@@ -10,7 +10,14 @@ methods through their authenticated application transport.
 
 Before starting a service, deploy the package manifest through the public s-m-r-t
 migration APIs or `smrt db:migrate`. `assertReady()` only checks existing tables.
-SQLite and PostgreSQL are supported; other engines fail construction.
+SQLite and PostgreSQL are supported; other engines fail construction. Index
+additions ship the same way: `intake_items_received_idx` (newest-first inbox
+paging) is declared on the model and reaches existing deployments through the
+next manifest migration.
+
+`listItems({ limit?, cursor?, state?, itemIds? })` returns one authorized inbox
+page newest receipt first with each row's durable inbox state and continuation
+cursor; see [REVIEW.md](REVIEW.md) for the paging and authorization contract.
 
 A host supplies a database, AssetRuntime, authenticated tenant/actor/confidential
 scope, a live authorization callback, a registered jobs target, and an idempotent

@@ -147,14 +147,31 @@ action/plan preview CAS lookup, decisions, apply, corrections, candidates, split
 and feedback. Repeated preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.
-Lists scan 20 items per page; filtered pages may be empty with a `nextCursor`.
-Continue until the cursor is absent. Listing does not load original bytes.
+`list({ state?, assigneeId?, cursor?, limit? })` returns one page newest receipt
+first (`intake_items.created_at`, id tiebreak) through `service.listItems`.
+`limit` defaults to 20 and is capped at 100; the cursor is an opaque
+(received-at, id) continuation, never a bare id. Tenant, confidential scope,
+retention and the `state` filter run inside the page query, so a page is full
+and `nextCursor` is present only when more rows follow. The host authorize
+callback runs once per distinct captured ceiling in the page, not per row;
+denied rows are skipped without disclosure and the page refills. The page's
+inbox state is the durable projection of the saved action journal and
+processing state computed in that query; `load` remains the authoritative,
+live-gated projection for one item. Listing does not load original bytes.
+Newest-first paging relies on `intake_items_received_idx`
+(`tenant_id, confidential_scope_id, created_at`); deploy the manifest migration
+before upgrading hosts.
 
 Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
 `assign(input)` (manager authorization, eligible assignees, durable CAS and request
 replay protection), and `evidence(part)` (safe label/text or authenticated
 same-origin URL). Optional `label(item)` changes presentation. Optional
+`assignments(itemIds)` reads one page's assignments in one batch (otherwise
+`assignment` runs per row), and optional `assignedItemIds(assigneeId)` lets
+`list` push the assignee filter into the page query; without it an assignee
+filter scans further pages and filters by `assignment`, which stays correct but
+costs more rows. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment

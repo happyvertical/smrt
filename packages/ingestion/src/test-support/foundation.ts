@@ -1317,6 +1317,210 @@ export function foundationSuite(
         }),
       ).rejects.toThrow('conflict');
     });
+    it('pages the inbox newest-first with query-side filters, one authorize per ceiling and constant queries per page', async () => {
+      const seed = await accepted('page-seed');
+      const [template] = (
+        await db.query('SELECT * FROM intake_items WHERE id=?', seed)
+      ).rows as Array<Record<string, unknown>>;
+      const base = Date.parse('2026-10-01T00:00:00.000Z');
+      const total = 300;
+      type Seeded = { id: string; receivedAt: string; expected: string };
+      const seeded: Seeded[] = [];
+      const columns = Object.keys(template);
+      const secret = { handlers: ['secret'] };
+      // Trusted test setup copies the accepted row so paging is measured over
+      // hundreds of items without hundreds of receipts. The newest two share a
+      // timestamp to exercise the id tiebreak.
+      const pendingRows: unknown[][] = [];
+      const pendingActions: number[] = [];
+      const flush = async () => {
+        if (!pendingRows.length) return;
+        await db.query(
+          `INSERT INTO intake_items (${columns.join(',')}) VALUES ${pendingRows
+            .map(() => `(${columns.map(() => '?').join(',')})`)
+            .join(',')}`,
+          ...pendingRows.flat(),
+        );
+        pendingRows.length = 0;
+      };
+      for (let index = 0; index < total; index++) {
+        const receivedAt = new Date(
+          base + Math.min(index, total - 2) * 1000,
+        ).toISOString();
+        const id = randomUUID();
+        const data = JSON.parse(
+          typeof template.data === 'string'
+            ? template.data
+            : JSON.stringify(template.data),
+        );
+        const hidden = index % 60 === 5;
+        if (hidden) data.capturedCeiling = secret;
+        const processing =
+          index % 10 === 0
+            ? 'needs_attention'
+            : String(template.processing_state);
+        seeded.push({
+          id,
+          receivedAt,
+          expected: hidden
+            ? 'hidden'
+            : index % 50 === 7
+              ? 'deferred'
+              : index % 50 === 9
+                ? 'completed'
+                : index % 10 === 0
+                  ? 'failed'
+                  : 'processing',
+        });
+        const row: Record<string, unknown> = {
+          ...template,
+          id,
+          slug: id,
+          delivery_key: `page-${index}`,
+          created_at: receivedAt,
+          updated_at: receivedAt,
+          processing_state: processing,
+          data: JSON.stringify(data),
+        };
+        pendingRows.push(columns.map((column) => row[column]));
+        if (pendingRows.length === 50) await flush();
+        if (index % 50 === 7 || index % 50 === 9) pendingActions.push(index);
+      }
+      await flush();
+      for (const index of pendingActions)
+        await db.query(
+          "INSERT INTO intake_actions (id,slug,context,tenant_id,confidential_scope_id,item_id,action_key,state,proposal_revision,review_version,execution_attempt,fence,result_digest,data) VALUES (?,?,'',?,?,?,?,?,1,0,0,0,'','{}')",
+          randomUUID(),
+          randomUUID(),
+          tenant,
+          'confidential',
+          seeded[index].id,
+          `page-${index}`,
+          index % 50 === 7 ? 'deferred' : 'succeeded',
+        );
+      await db.query('DELETE FROM intake_items WHERE id=?', seed);
+      // Newest first: later index first, equal timestamps broken by id descending.
+      const ordered = [...seeded].sort(
+        (a, b) =>
+          b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id),
+      );
+      const visible = ordered.filter((row) => row.expected !== 'hidden');
+      let queries = 0;
+      let authorizations = 0;
+      const counted = new Proxy(db, {
+        get(target, property) {
+          if (property === 'query')
+            return (...args: unknown[]) => {
+              queries++;
+              return (target.query as (...a: unknown[]) => unknown)(...args);
+            };
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const paged = new IngestionService({
+        ...options,
+        db: counted,
+        authorize: async (input) => {
+          authorizations++;
+          if (JSON.stringify(input.capturedCeiling) === JSON.stringify(secret))
+            return false;
+          return options.authorize(input);
+        },
+      });
+      const ids = (page: Awaited<ReturnType<typeof paged.listItems>>) =>
+        page.items.map(({ item }) => item.id);
+
+      queries = authorizations = 0;
+      const first = await paged.listItems();
+      expect(ids(first)).toEqual(visible.slice(0, 20).map((row) => row.id));
+      expect(first.nextCursor).toBeTruthy();
+      expect(queries).toBe(1);
+      expect(authorizations).toBe(1);
+
+      queries = authorizations = 0;
+      const wide = await paged.listItems({ limit: 100 });
+      expect(ids(wide)).toEqual(visible.slice(0, 100).map((row) => row.id));
+      expect(wide.items.map(({ state }) => state)).toEqual(
+        visible.slice(0, 100).map((row) => row.expected),
+      );
+      // Two distinct captured ceilings in the page: one allow, one deny.
+      // Denied rows refill from the next rows with one more query.
+      expect(authorizations).toBe(2);
+      expect(queries).toBe(2);
+
+      const walked: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const page = await paged.listItems({ limit: 100, cursor });
+        walked.push(...ids(page));
+        cursor = page.nextCursor;
+        pages++;
+      } while (cursor);
+      expect(pages).toBe(3);
+      expect(walked).toEqual(visible.map((row) => row.id));
+      expect(new Set(walked).size).toBe(visible.length);
+
+      const tie = await paged.listItems({ limit: 1 });
+      const tied = await paged.listItems({ limit: 1, cursor: tie.nextCursor });
+      expect([...ids(tie), ...ids(tied)]).toEqual(
+        visible.slice(0, 2).map((row) => row.id),
+      );
+      expect(ordered[0].receivedAt).toBe(ordered[1].receivedAt);
+
+      for (const input of [
+        { limit: 0 },
+        { limit: 101 },
+        { limit: 1.5 },
+        { cursor: 'not-a-cursor' },
+        { cursor: Buffer.from('["x","y"]').toString('base64url') },
+        { state: 'bogus' as never },
+        { itemIds: ['forged'] },
+      ])
+        await expect(paged.listItems(input)).rejects.toThrow(
+          'Invalid item page',
+        );
+
+      const failed = visible.filter((row) => row.expected === 'failed');
+      queries = 0;
+      const failedPage = await paged.listItems({ state: 'failed', limit: 20 });
+      expect(ids(failedPage)).toEqual(failed.slice(0, 20).map((row) => row.id));
+      expect(failedPage.nextCursor).toBeTruthy();
+      expect(queries).toBe(1);
+      const failedRest = await paged.listItems({
+        state: 'failed',
+        limit: 20,
+        cursor: failedPage.nextCursor,
+      });
+      expect(ids(failedRest)).toEqual(failed.slice(20).map((row) => row.id));
+      expect(failedRest.nextCursor).toBeUndefined();
+      for (const state of ['deferred', 'completed'] as const) {
+        const page = await paged.listItems({ state });
+        expect(ids(page)).toEqual(
+          visible.filter((row) => row.expected === state).map((row) => row.id),
+        );
+        expect(page.nextCursor).toBeUndefined();
+      }
+      expect((await paged.listItems({ state: 'waiting' })).items).toEqual([]);
+
+      const chosen = [
+        visible[250].id,
+        visible[3].id,
+        ordered.find((r) => r.expected === 'hidden')!.id,
+      ];
+      expect(ids(await paged.listItems({ itemIds: chosen }))).toEqual([
+        visible[3].id,
+        visible[250].id,
+      ]);
+      expect(await paged.listItems({ itemIds: [] })).toEqual({ items: [] });
+
+      const outsider = new IngestionService({
+        ...options,
+        scope: { ...options.scope, confidentialScopeId: 'other' },
+      });
+      expect(await outsider.listItems({ limit: 100 })).toEqual({ items: [] });
+    });
     it('denies cross-tenant, cross-confidential and revoked access at reads and mutations', async () => {
       const id = await accepted();
       const evidence = (await service.getEvidence(id))[0];
@@ -1326,7 +1530,7 @@ export function foundationSuite(
         { ...options.scope, actorId: 'unrelated' },
       ]) {
         const outsider = new IngestionService({ ...options, scope });
-        expect(await outsider.listItems()).toEqual([]);
+        expect(await outsider.listItems()).toEqual({ items: [] });
         await expect(outsider.getItem(id)).rejects.toThrow('unavailable');
         await expect(outsider.getEvidence(id)).rejects.toThrow('unavailable');
         await expect(outsider.readEvidence(id, evidence.id)).rejects.toThrow(
@@ -1343,7 +1547,7 @@ export function foundationSuite(
       });
       expect((await delegate.getItem(id)).id).toBe(id);
       allowed = false;
-      expect(await service.listItems()).toEqual([]);
+      expect(await service.listItems()).toEqual({ items: [] });
       await expect(service.getItem(id)).rejects.toThrow('unavailable');
       await expect(service.createAction(id, 'forged', {})).rejects.toThrow(
         'unavailable',

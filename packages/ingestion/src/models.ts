@@ -25,6 +25,11 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
       name: 'intake_items_receipt_idx',
       columns: ['tenantId', 'receiptState', 'leaseUntil'],
     },
+    // Newest-first inbox paging within one authenticated scope (#4211).
+    {
+      name: 'intake_items_received_idx',
+      columns: ['tenantId', 'confidentialScopeId', 'createdAt'],
+    },
   ],
 })
 @TenantScoped({ mode: 'required' })
