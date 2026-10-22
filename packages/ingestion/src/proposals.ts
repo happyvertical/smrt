@@ -744,8 +744,12 @@ export class IngestionProposalService {
           : {}),
         ...(guidance ? { reviewerInstruction: guidance } : {}),
       };
+      // The instruction text is already inside `instructions` (the section the
+      // provider receives); `reviewerInstruction` is a convenience duplicate
+      // for custom generators. Measure it once.
+      const { reviewerInstruction: _duplicate, ...measured } = input;
       if (
-        bytes(input) >
+        bytes(measured) >
           Math.min(
             this.config.limits.maxInputBytes,
             ...catalog.map((entry) => entry.maxBytes),
@@ -763,7 +767,7 @@ export class IngestionProposalService {
         output.warnings.push('no_supported_interpretation');
       } else {
         if (
-          bytes(input) >
+          bytes(measured) >
           (await this.live(
             lease,
             expected.catalogDigest,

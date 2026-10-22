@@ -116,7 +116,12 @@ data. `GenerativeProposalInput.reviewerInstruction` exposes `{id, text}` to cust
 generators; `provenance.reviewerInstruction` records `{id, digest}`. The
 instruction never changes `offered`, `catalogDigest`, argument schemas,
 permissions or `automaticActionEligible`; a reply that follows guidance outside
-the catalog fails validation like any other hostile output. Learned examples are
+the catalog fails validation like any other hostile output. **Budget cost:** the instruction counts once against the input budget
+(`maxInputBytes`, each offered handler's `maxBytes` and the live policy
+ceiling), as its JSON-escaped text inside the prompt's guidance section — up
+to 4,000 characters plus escaping and the fixed guidance sentence. The
+`reviewerInstruction` field duplicated for custom generators is not counted
+again. Size `maxInputBytes` with that headroom. Learned examples are
 still retrieved for an instructed generation; only a logical split correction
 suppresses them. Every instruction costs a fresh extraction revision before the
 new interpretation: the predecessor-pin contract above (source = immediately

@@ -4695,6 +4695,46 @@ export function proposalSuite(
           .instructionInEffect,
       ).toBe(rerecorded.instruction.id);
     });
+    it('counts the instruction once against the input budget, exactly at the limit', async () => {
+      chooseCreate();
+      const text = `File as minutes. ${'Never raise an invoice. '.repeat(100)}`;
+      const instructed = async (requestId: string) => {
+        const input = await generate();
+        const recorded = await service.recordReviewerInstruction({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          text,
+          requestId,
+        });
+        const guided = await reextract(input.itemId, recorded.revision);
+        calls.mockClear();
+        await service.generateProposals(guided.lease);
+        return output(guided.lease);
+      };
+      await instructed('budget-measure');
+      const sent = calls.mock.calls.at(-1)![0];
+      const { reviewerInstruction: _duplicate, ...measured } = sent;
+      const size = Buffer.byteLength(JSON.stringify(measured));
+      // The old measurement counted the instruction twice.
+      expect(Buffer.byteLength(JSON.stringify(sent)) - size).toBeGreaterThan(
+        text.length,
+      );
+      expect(sent.instructions).toContain(JSON.stringify(text));
+      // Exactly at the limit the instructed input still reaches the provider.
+      configuration.limits.maxInputBytes = size;
+      service = new IngestionService(options);
+      const atLimit = await instructed('budget-at-limit');
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(atLimit.outcome).toBe('proposals');
+      // One byte less is refused before any provider I/O.
+      configuration.limits.maxInputBytes = size - 1;
+      service = new IngestionService(options);
+      const overLimit = await instructed('budget-over-limit');
+      expect(calls).not.toHaveBeenCalled();
+      expect(overLimit.outcome).toBe('provider_error');
+      expect(overLimit.warnings).toContain('limit');
+    });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();
       const forged = {
