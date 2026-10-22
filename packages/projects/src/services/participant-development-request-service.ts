@@ -6,7 +6,10 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { DevelopmentRequestCollection } from '../collections/DevelopmentRequests.js';
 import type { DevelopmentRequest } from '../models/DevelopmentRequest.js';
-import type { DevelopmentRequestVisibility } from '../types.js';
+import type {
+  DevelopmentRequestEvidence,
+  DevelopmentRequestVisibility,
+} from '../types.js';
 
 export interface ParticipantDevelopmentRequestInput {
   tenantId: string;
@@ -45,6 +48,82 @@ export class ParticipantDevelopmentRequestService {
   async submit(
     input: ParticipantDevelopmentRequestInput,
   ): Promise<DevelopmentRequest> {
+    return this.persist(input, {
+      participantId: input.requesterId,
+      evidence: [],
+      origin: 'participant',
+      discussion: '',
+      actorId: input.requesterId,
+      actorType: 'participant',
+    });
+  }
+
+  /** Trusted internal triage path; the host must authorize the supplied actor. */
+  async splitFrom(
+    parent: DevelopmentRequest,
+    input: {
+      type: 'bug' | 'feature' | 'task';
+      description: string;
+      actorRef: string;
+      reason: string;
+      /** Duplicate occurrence within identical type/description parts, independent of list order. */
+      occurrence: number;
+    },
+  ): Promise<DevelopmentRequest> {
+    if (
+      !parent.id ||
+      parent.integrationId ||
+      !input.actorRef.trim() ||
+      !input.reason.trim() ||
+      !Number.isSafeInteger(input.occurrence) ||
+      input.occurrence < 0
+    ) {
+      throw new TypeError(
+        'A participant parent and trusted triage actor are required.',
+      );
+    }
+    const description = input.description.trim();
+    const requestKey = stableId(
+      JSON.stringify([
+        'split',
+        parent.id,
+        input.type,
+        description,
+        input.occurrence,
+      ]),
+    );
+    return this.persist(
+      {
+        tenantId: parent.tenantId,
+        projectId: parent.projectId,
+        requesterId: parent.requesterId,
+        requestKey,
+        type: input.type,
+        description,
+        visibility: parent.visibility,
+      },
+      {
+        participantId: parent.participantId,
+        evidence: parent.getEvidence(),
+        origin: `split:${parent.id}`,
+        discussion: input.reason,
+        actorId: input.actorRef,
+        actorType: 'system',
+      },
+    );
+  }
+
+  private async persist(
+    input: ParticipantDevelopmentRequestInput,
+    provenance: {
+      participantId: string;
+      evidence: DevelopmentRequestEvidence[];
+      origin: string;
+      discussion: string;
+      actorId: string;
+      actorType: 'participant' | 'system';
+    },
+  ): Promise<DevelopmentRequest> {
     for (const value of [
       input.tenantId,
       input.projectId,
@@ -78,10 +157,12 @@ export class ParticipantDevelopmentRequestService {
     ) {
       throw new TypeError('Choose a valid request visibility.');
     }
+    const evidence = JSON.stringify(provenance.evidence);
     const identity = JSON.stringify([
       input.tenantId,
       input.projectId,
       input.requesterId,
+      provenance.origin,
       input.requestKey,
     ]);
     const id = stableId(`participant-request:${identity}`);
@@ -98,7 +179,7 @@ export class ParticipantDevelopmentRequestService {
           `INSERT INTO development_requests
           (id, slug, context, tenant_id, project_id, integration_id, requester_id,
            participant_id, type, description, evidence, visibility, origin, discussion, status)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, '[]', ?, 'participant', '', 'submitted')
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted')
          ON CONFLICT (id) DO NOTHING`,
           id,
           `participant-${id}`,
@@ -106,10 +187,13 @@ export class ParticipantDevelopmentRequestService {
           input.tenantId,
           input.projectId,
           input.requesterId,
-          input.requesterId,
+          provenance.participantId,
           input.type,
           description,
+          evidence,
           visibility,
+          provenance.origin,
+          provenance.discussion,
         );
         const requests = await DevelopmentRequestCollection.create({ db: tx });
         const request = await requests.findOne({
@@ -122,20 +206,25 @@ export class ParticipantDevelopmentRequestService {
           request.type !== input.type ||
           request.visibility !== visibility ||
           request.integrationId ||
-          request.origin !== 'participant'
+          request.origin !== provenance.origin ||
+          request.participantId !== provenance.participantId ||
+          request.evidence !== evidence ||
+          request.discussion !== provenance.discussion
         ) {
           throw new ParticipantDevelopmentRequestConflictError();
         }
         await tx.query(
           `INSERT INTO development_request_histories
           (id, slug, context, tenant_id, request_id, from_status, to_status, actor_type, actor_id, note)
-         VALUES (?, ?, '', ?, ?, '', 'submitted', 'participant', ?, '')
+         VALUES (?, ?, '', ?, ?, '', 'submitted', ?, ?, ?)
          ON CONFLICT (id) DO NOTHING`,
           historyId,
           `participant-${historyId}`,
           input.tenantId,
           id,
-          input.requesterId,
+          provenance.actorType,
+          provenance.actorId,
+          provenance.discussion,
         );
         return request;
       }),

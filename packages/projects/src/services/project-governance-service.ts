@@ -28,6 +28,15 @@ import type {
 const QUESTION_TYPE = '@happyvertical/smrt-projects:ProjectQuestion';
 const DECISION_TYPE = '@happyvertical/smrt-projects:ProjectDecision';
 type Database = ProjectQuestionCollection['db'];
+interface GovernanceEventDetails {
+  note?: string;
+  value?: string;
+  rationale?: string;
+  fromOwnerType?: ProjectGovernanceActor['type'] | '';
+  fromOwnerId?: string;
+  toOwnerType?: ProjectGovernanceActor['type'] | '';
+  toOwnerId?: string;
+}
 
 export class ProjectGovernanceConflictError extends Error {
   constructor(message = 'Project governance record has changed.') {
@@ -216,8 +225,17 @@ export class ProjectGovernanceService {
       undefined,
       'assigned',
       (question) => {
+        const fromOwnerType = question.ownerType;
+        const fromOwnerId = question.ownerId;
         assign(question, input.owner);
-        return { note: input.note ?? '' };
+        return {
+          note:
+            input.note ?? (input.owner ? 'Owner assigned.' : 'Owner cleared.'),
+          fromOwnerType,
+          fromOwnerId,
+          toOwnerType: question.ownerType,
+          toOwnerId: question.ownerId,
+        };
       },
       false,
     );
@@ -238,8 +256,17 @@ export class ProjectGovernanceService {
       undefined,
       'assigned',
       (decision) => {
+        const fromOwnerType = decision.ownerType;
+        const fromOwnerId = decision.ownerId;
         assign(decision, input.owner);
-        return { note: input.note ?? '' };
+        return {
+          note:
+            input.note ?? (input.owner ? 'Owner assigned.' : 'Owner cleared.'),
+          fromOwnerType,
+          fromOwnerId,
+          toOwnerType: decision.ownerType,
+          toOwnerId: decision.ownerId,
+        };
       },
       false,
     );
@@ -402,11 +429,7 @@ export class ProjectGovernanceService {
     },
     status: ProjectQuestionStatus | undefined,
     action: ProjectGovernanceAction,
-    apply: (question: ProjectQuestion) => {
-      note?: string;
-      value?: string;
-      rationale?: string;
-    },
+    apply: (question: ProjectQuestion) => GovernanceEventDetails,
     allowOwner = true,
   ): Promise<ProjectQuestion> {
     validateScope(input);
@@ -442,11 +465,7 @@ export class ProjectGovernanceService {
     },
     status: ProjectDecisionStatus | undefined,
     action: ProjectGovernanceAction,
-    apply: (decision: ProjectDecision) => {
-      note?: string;
-      value?: string;
-      rationale?: string;
-    },
+    apply: (decision: ProjectDecision) => GovernanceEventDetails,
     allowOwner = true,
   ): Promise<ProjectDecision> {
     validateScope(input);
@@ -514,7 +533,7 @@ export class ProjectGovernanceService {
     actor: ProjectGovernanceActor,
     fromStatus: string,
     toStatus: string,
-    details: { note?: string; value?: string; rationale?: string } = {},
+    details: GovernanceEventDetails = {},
   ): Promise<void> {
     const events = await ProjectGovernanceEventCollection.create({ db });
     await withTenant({ tenantId: record.tenantId }, () =>
@@ -531,6 +550,10 @@ export class ProjectGovernanceService {
         note: details.note ?? '',
         value: details.value ?? '',
         rationale: details.rationale ?? '',
+        fromOwnerType: details.fromOwnerType ?? '',
+        fromOwnerId: details.fromOwnerId ?? '',
+        toOwnerType: details.toOwnerType ?? '',
+        toOwnerId: details.toOwnerId ?? '',
         revision: record.revision,
       }),
     );

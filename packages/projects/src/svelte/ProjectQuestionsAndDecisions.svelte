@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   ProjectDecisionResolveInput,
@@ -8,10 +9,15 @@ import type {
 } from './project-governance-types.js';
 
 export interface Props {
+  /** Authorized question projections to display and resolve. */
   questions?: ProjectQuestionView[];
+  /** Authorized decision projections with their available choices. */
   decisions?: ProjectDecisionView[];
+  /** Disable resolution submissions while the host saves a change. */
   busy?: boolean;
+  /** Save an explicit owner answer with the observed revision. */
   onanswer?: (input: ProjectQuestionAnswerInput) => void | Promise<void>;
+  /** Save a selected outcome and rationale with the observed revision. */
   ondecide?: (input: ProjectDecisionResolveInput) => void | Promise<void>;
 }
 
@@ -80,11 +86,11 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             </ul>
           {/if}
           {#if question.status === 'open' && question.canResolve}
-            <form onsubmit={(event) => submitAnswer(event, question)}>
+            <Form onsubmit={(event) => submitAnswer(event, question)}>
               <label for={`answer-${question.id}`}>Answer</label>
-              <textarea id={`answer-${question.id}`} name="answer" required></textarea>
+              <Textarea id={`answer-${question.id}`} name="answer" required></Textarea>
               <Button type="submit" disabled={busy}>Save answer</Button>
-            </form>
+            </Form>
           {/if}
         </article>
       {/each}
@@ -126,23 +132,23 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             </ul>
           {/if}
           {#if decision.status === 'open' && decision.canResolve}
-            <form onsubmit={(event) => submitDecision(event, decision)}>
+            <Form onsubmit={(event) => submitDecision(event, decision)}>
               {#if decision.options?.length}
                 <label for={`outcome-${decision.id}`}>Outcome</label>
-                <select id={`outcome-${decision.id}`} name="outcome" required>
+                <Select id={`outcome-${decision.id}`} name="outcome" required>
                   <option value="">Select an option</option>
                   {#each decision.options as option (option.id)}
                     <option value={option.id}>{option.label}</option>
                   {/each}
-                </select>
+                </Select>
               {:else}
                 <label for={`outcome-${decision.id}`}>Outcome</label>
-                <input id={`outcome-${decision.id}`} name="outcome" required />
+                <Input id={`outcome-${decision.id}`} name="outcome" required />
               {/if}
               <label for={`rationale-${decision.id}`}>Rationale</label>
-              <textarea id={`rationale-${decision.id}`} name="rationale"></textarea>
+              <Textarea id={`rationale-${decision.id}`} name="rationale"></Textarea>
               <Button type="submit" disabled={busy}>Record decision</Button>
-            </form>
+            </Form>
           {/if}
         </article>
       {/each}
@@ -162,14 +168,12 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
   .items { display: grid; gap: var(--smrt-spacing-3); }
   article { border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); display: grid; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-4); }
   article header { align-items: start; display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); }
-  article header > div, form, .response { display: grid; gap: var(--smrt-spacing-2); }
+  article header > div, article :global(form), .response { display: grid; gap: var(--smrt-spacing-2); }
   .status { font-size: var(--smrt-typography-label-medium-size); text-transform: capitalize; }
   .references { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); list-style: none; margin: 0; padding: 0; }
   .references li { background: var(--smrt-color-surface-container); border-radius: var(--smrt-radius-small); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); }
-  form { border-top: var(--smrt-hairline); padding-top: var(--smrt-spacing-3); }
-  form :global(button) { justify-self: end; }
-  textarea { min-height: 5rem; resize: vertical; }
-  input, select, textarea { background: var(--smrt-color-surface); border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); color: inherit; padding: var(--smrt-spacing-2); }
+  article :global(form) { border-top: var(--smrt-hairline); padding-top: var(--smrt-spacing-3); }
+  article :global(form button) { justify-self: end; }
   @media (max-width: 40rem) { .section-heading, article header { align-items: stretch; flex-direction: column; } .section-heading > span, .status { align-self: start; } }
 }
 </style>

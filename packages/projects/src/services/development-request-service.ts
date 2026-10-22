@@ -165,7 +165,17 @@ export class DevelopmentRequestService {
         const description = part.description.trim();
         if (!description)
           throw new Error('Split request description is required.');
-        return { description, type: part.type ?? request.type };
+        const type = part.type ?? request.type;
+        if (
+          !request.integrationId &&
+          (!['bug', 'feature', 'task'].includes(type) ||
+            description.length > 8000)
+        ) {
+          throw new TypeError(
+            'Choose a valid participant split type and description.',
+          );
+        }
+        return { description, type };
       });
       const origin = `split:${request.id}`;
       const unmatchedExisting = await withTenant(
@@ -181,7 +191,11 @@ export class DevelopmentRequestService {
             orderBy: 'createdAt ASC',
           }),
       );
-      for (const [partIndex, { description, type }] of parts.entries()) {
+      const occurrences = new Map<string, number>();
+      for (const { description, type } of parts) {
+        const contentIdentity = JSON.stringify([type, description]);
+        const occurrence = occurrences.get(contentIdentity) ?? 0;
+        occurrences.set(contentIdentity, occurrence + 1);
         const existingIndex = unmatchedExisting.findIndex(
           (candidate) =>
             candidate.description.trim() === description &&
@@ -212,14 +226,12 @@ export class DevelopmentRequestService {
                   await ParticipantDevelopmentRequestService.create({
                     db: this.requests.db,
                   })
-                ).submit({
-                  tenantId: request.tenantId,
-                  projectId: request.projectId,
-                  requesterId: request.requesterId,
-                  requestKey: `split:${request.id}:${partIndex}`,
+                ).splitFrom(request, {
                   type: type as 'bug' | 'feature' | 'task',
                   description,
-                  visibility: request.visibility,
+                  actorRef: input.actorRef,
+                  reason: input.reason,
+                  occurrence,
                 }),
           );
         }

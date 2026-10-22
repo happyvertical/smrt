@@ -24,6 +24,10 @@ export interface ProjectGovernanceEventOptions
   value?: string;
   rationale?: string;
   revision?: number;
+  fromOwnerType?: ProjectGovernanceActorType | '';
+  fromOwnerId?: string;
+  toOwnerType?: ProjectGovernanceActorType | '';
+  toOwnerId?: string;
 }
 
 @TenantScoped({ mode: 'required' })
@@ -69,6 +73,11 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
 
   revision = 1;
 
+  fromOwnerType: ProjectGovernanceActorType | '' = '';
+  fromOwnerId = '';
+  toOwnerType: ProjectGovernanceActorType | '' = '';
+  toOwnerId = '';
+
   constructor(options: ProjectGovernanceEventOptions = {}) {
     super({ ...options, role: 'history' });
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -82,6 +91,13 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
     if (options.value !== undefined) this.value = options.value;
     if (options.rationale !== undefined) this.rationale = options.rationale;
     if (options.revision !== undefined) this.revision = options.revision;
+    if (options.fromOwnerType !== undefined)
+      this.fromOwnerType = options.fromOwnerType;
+    if (options.fromOwnerId !== undefined)
+      this.fromOwnerId = options.fromOwnerId;
+    if (options.toOwnerType !== undefined)
+      this.toOwnerType = options.toOwnerType;
+    if (options.toOwnerId !== undefined) this.toOwnerId = options.toOwnerId;
   }
 
   async beforeDelete(): Promise<void> {

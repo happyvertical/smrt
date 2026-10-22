@@ -149,27 +149,120 @@ describe('participant development request intake', () => {
     ).rejects.toThrow('require an integration');
   });
 
-  it('splits participant requests through the participant path with stable retries', async () => {
+  it('preserves persisted split provenance and triager history across reordered retries', async () => {
     const service = await ParticipantDevelopmentRequestService.create({ db });
-    const request = await service.submit(input);
+    const created = await service.submit(input);
+    const parentRequests = await DevelopmentRequestCollection.create({ db });
+    const request = await withTenant({ tenantId: tenantA }, () =>
+      parentRequests.get({ id: created.id! }),
+    );
+    if (!request) throw new Error('Parent request was not persisted.');
+    request.participantId = userB;
+    request.setEvidence([
+      { url: 'https://example.com/evidence', label: 'Original report' },
+    ]);
+    await withTenant({ tenantId: tenantA }, () => request.save());
     const triage = await DevelopmentRequestService.create({ db });
     const split = {
       decision: 'split' as const,
       actorRef: 'triager',
       reason: 'Separate scope',
       split: [
-        { description: 'First feature' },
-        { description: 'Second feature' },
+        { description: 'First feature', type: 'feature' },
+        { description: 'Second bug', type: 'bug' },
       ],
     };
     const result = await triage.triage(request, split);
     expect(result.splitRequests).toHaveLength(2);
-    expect(
-      result.splitRequests.every((part) => part.integrationId === null),
-    ).toBe(true);
-    const retry = await triage.triage(request, split);
+    const requests = await DevelopmentRequestCollection.create({ db });
+    const histories = await DevelopmentRequestHistoryCollection.create({ db });
+    for (const child of result.splitRequests) {
+      const reloaded = await withTenant({ tenantId: tenantA }, () =>
+        requests.get({ id: child.id! }),
+      );
+      expect(reloaded).toMatchObject({
+        tenantId: tenantA,
+        projectId: projectA,
+        integrationId: null,
+        requesterId: userA,
+        participantId: userB,
+        origin: `split:${request.id}`,
+        discussion: split.reason,
+        visibility: request.visibility,
+      });
+      expect(reloaded?.getEvidence()).toEqual(request.getEvidence());
+      const history = await histories.listForRequest(tenantA, child.id!);
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({
+        actorType: 'system',
+        actorId: 'triager',
+        note: split.reason,
+        toStatus: 'submitted',
+      });
+    }
+    const retry = await triage.triage(request, {
+      ...split,
+      split: [...split.split].reverse(),
+    });
     expect(retry.splitRequests.map((part) => part.id)).toEqual(
-      result.splitRequests.map((part) => part.id),
+      result.splitRequests.map((part) => part.id).reverse(),
+    );
+    const persisted = await withTenant({ tenantId: tenantA }, () =>
+      requests.list({ where: { origin: `split:${request.id}` } }),
+    );
+    expect(persisted).toHaveLength(2);
+  });
+
+  it('validates every participant split type before inserting any child', async () => {
+    const service = await ParticipantDevelopmentRequestService.create({ db });
+    const request = await service.submit(input);
+    const triage = await DevelopmentRequestService.create({ db });
+    await expect(
+      triage.triage(request, {
+        decision: 'split',
+        actorRef: 'triager',
+        reason: 'Separate scope',
+        split: [
+          { description: 'Valid first part', type: 'feature' },
+          { description: 'Invalid second part', type: 'unknown' },
+        ],
+      }),
+    ).rejects.toThrow('valid participant split');
+    const requests = await DevelopmentRequestCollection.create({ db });
+    const children = await withTenant({ tenantId: tenantA }, () =>
+      requests.list({ where: { origin: `split:${request.id}` } }),
+    );
+    expect(children).toHaveLength(0);
+    const reloaded = await withTenant({ tenantId: tenantA }, () =>
+      requests.get({ id: request.id! }),
+    );
+    expect(reloaded?.status).toBe('submitted');
+    expect(
+      await (
+        await DevelopmentRequestHistoryCollection.create({ db })
+      ).listForRequest(tenantA, request.id!),
+    ).toHaveLength(1);
+  });
+
+  it('keeps identical duplicate parts separate and stable on retry', async () => {
+    const request = await (
+      await ParticipantDevelopmentRequestService.create({ db })
+    ).submit(input);
+    const triage = await DevelopmentRequestService.create({ db });
+    const split = {
+      decision: 'split' as const,
+      actorRef: 'triager',
+      reason: 'Two occurrences',
+      split: [
+        { description: 'Same content', type: 'feature' },
+        { description: 'Same content', type: 'feature' },
+      ],
+    };
+    const first = await triage.triage(request, split);
+    expect(new Set(first.splitRequests.map((child) => child.id)).size).toBe(2);
+    const retry = await triage.triage(request, split);
+    expect(retry.splitRequests.map((child) => child.id)).toEqual(
+      first.splitRequests.map((child) => child.id),
     );
   });
 });

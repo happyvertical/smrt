@@ -127,6 +127,77 @@ describe('ProjectGovernanceService', () => {
     expect(unchanged.note).toBe('');
   });
 
+  it('records previous and next owner identities for every assignment', async () => {
+    const question = await service.createQuestion({
+      ...project,
+      prompt: 'Choose the owner',
+      owner,
+      actor: manager,
+    });
+    const agent = {
+      type: 'agent' as const,
+      id: '77777777-7777-4777-8777-777777777777',
+    };
+    await service.assignQuestion({
+      ...project,
+      questionId: question.id as string,
+      owner: agent,
+      expectedRevision: 1,
+      actor: manager,
+    });
+    await service.assignQuestion({
+      ...project,
+      questionId: question.id as string,
+      owner: null,
+      expectedRevision: 2,
+      actor: manager,
+    });
+    const history = await service.historyForQuestion({
+      ...project,
+      questionId: question.id as string,
+    });
+    expect(history[1]).toMatchObject({
+      action: 'assigned',
+      fromOwnerType: 'user',
+      fromOwnerId: owner.id,
+      toOwnerType: 'agent',
+      toOwnerId: agent.id,
+      actorId: manager.id,
+      revision: 2,
+    });
+    expect(history[2]).toMatchObject({
+      action: 'assigned',
+      fromOwnerType: 'agent',
+      fromOwnerId: agent.id,
+      toOwnerType: '',
+      toOwnerId: '',
+      revision: 3,
+    });
+    const decision = await service.createDecision({
+      ...project,
+      question: 'Assign decision?',
+      actor: manager,
+    });
+    await service.assignDecision({
+      ...project,
+      decisionId: decision.id as string,
+      owner,
+      expectedRevision: 1,
+      actor: manager,
+    });
+    const decisionHistory = await service.historyForDecision({
+      ...project,
+      decisionId: decision.id as string,
+    });
+    expect(decisionHistory[1]).toMatchObject({
+      action: 'assigned',
+      fromOwnerType: '',
+      fromOwnerId: '',
+      toOwnerType: 'user',
+      toOwnerId: owner.id,
+    });
+  });
+
   it('rejects stale writes without adding another event', async () => {
     const question = await service.createQuestion({
       ...project,

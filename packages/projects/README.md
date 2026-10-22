@@ -95,7 +95,8 @@ assignment, deferral, reopening, and supersession require manager authority.
 Records default to `visibility: 'internal'`; explicitly choose `client` for
 client-facing records and pass `{ visibility: 'client' }` to `listForProject`.
 Hosts authorize project access and strip private context references before
-projecting client views. Lifecycle history rejects updates and deletion.
+projecting client views. Lifecycle history rejects updates and deletion. Assignment events retain the
+previous and next owner identities, including explicit owner clearing.
 
 Questions and decisions retain typed references to the spec, cookbook,
 conversation, asset, or URL that raised them. They do not replace facts: an
