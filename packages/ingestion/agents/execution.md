@@ -70,8 +70,12 @@ action is `authorized` with an unexpired approval for its current review
 version, `executing`, `outcome_unknown` or `succeeded`; `failed` actions and
 lapsed approvals do not block it (neither can be rejected). Afterwards
 `submitDecision` refuses everything but `reject`, `publish` refuses any new
-revision (correction, re-preview, plan preview) and the apply gate (`approved`)
-refuses any execution or retry for the item. `intake_dispositions` is a new model: deploy
+revision (correction, re-preview, plan preview), the apply gate (`approved`)
+refuses any execution or retry, and `IngestionService.analyze`,
+`reviseLogicalSplit` and `createAction` refuse the item under its lock before
+any write. `createAction` (process authority) also refuses the reserved
+`reviewer:` key prefix and `reviewer-selected` origin, which only
+`startReviewerAction` mints. `intake_dispositions` is a new model: deploy
 its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
 `assertReady` checks it, and both privacy deletion and retention expiry
 (`redactExecution`) redact its payload with the other item-owned tables.

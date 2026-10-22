@@ -5818,6 +5818,38 @@ export function proposalSuite(
           args: { title: 'Edited', body: 'Body' },
         }),
       ).rejects.toThrow('Item resolved');
+      // Nor may the item be reanalysed, re-split or given a new action.
+      const analyses = async () =>
+        (
+          await db.query(
+            'SELECT id FROM intake_analyses WHERE item_id=?',
+            generated.itemId,
+          )
+        ).rows.length;
+      const analysesBefore = await analyses();
+      await expect(
+        service.createAction(generated.itemId, 'ui:late', {
+          origin: 'generated-proposal',
+          intentionKey: 'ui:late',
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.analyze(
+          generated.itemId,
+          { stage: 'extract' },
+          'late-analysis',
+        ),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.reviseLogicalSplit({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          evidenceId: randomUUID(),
+          expectedRevision: 1,
+          groups: [[1]],
+          requestId: 'split-after-resolve',
+        }),
+      ).rejects.toThrow('Item resolved');
       expect(
         (await db.query('SELECT id FROM intake_review_decisions')).rows,
       ).toHaveLength(0);
@@ -5829,6 +5861,15 @@ export function proposalSuite(
           )
         ).rows,
       ).toHaveLength(1);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_actions WHERE item_id=?',
+            generated.itemId,
+          )
+        ).rows,
+      ).toHaveLength(1);
+      expect(await analyses()).toBe(analysesBefore);
       await expect(
         automationService(() => true).authorizeAutomatic(
           waiting.review.actionId,
@@ -5882,6 +5923,36 @@ export function proposalSuite(
       await expect(
         service.resolveItem({ ...input, itemId: other.itemId }),
       ).rejects.toThrow('pending or applied');
+      // Effects in flight or of unknown outcome block it the same way.
+      for (const state of ['executing', 'outcome_unknown', 'succeeded']) {
+        await db.query(
+          'UPDATE intake_actions SET state=? WHERE id=?',
+          state,
+          prepared.review.actionId,
+        );
+        await expect(
+          service.resolveItem({ ...input, itemId: other.itemId }),
+        ).rejects.toThrow('pending or applied');
+      }
+      await db.query(
+        "UPDATE intake_actions SET state='authorized' WHERE id=?",
+        prepared.review.actionId,
+      );
+      // Process authority cannot mint reviewer-selected provenance.
+      await expect(
+        service.createAction(other.itemId, 'reviewer:forged', {
+          origin: 'generated-proposal',
+          intentionKey: 'reviewer:forged',
+        }),
+      ).rejects.toThrow('Reserved action provenance');
+      await expect(
+        service.createAction(other.itemId, 'ui:forged', {
+          origin: 'reviewer-selected',
+          intentionKey: 'ui:forged',
+          reviewer: 'owner',
+          reason: 'forged',
+        }),
+      ).rejects.toThrow('Reserved action provenance');
       // An action that exhausted its attempts cannot be rejected, so it must
       // not keep the item open; once resolved it can never be retried either.
       const create = handlers.find((handler) => handler.id === CREATE) as

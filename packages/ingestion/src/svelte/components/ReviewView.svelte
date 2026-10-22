@@ -311,10 +311,10 @@ onMount(() => {
 {#if suggestion.alternatives.length}<h4>{t(M['ingestion.alternatives'])}</h4><ul>{#each suggestion.alternatives as alternative}<li>{alternative}</li>{/each}</ul>{/if}
 {#if suggestion.missingFields.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each suggestion.missingFields as missing}<li>{missing}</li>{/each}</ul>{/if}
 <ul>{#each suggestion.evidence as reference}{@const url = locationUrl(reference.evidenceId,reference.location)}<li>{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(reference.location)}</Button>{:else}{locationLabel(reference.location)}{/if}</li>{/each}</ul>
-<Button disabled={suggestion.disposition !== 'ready_for_review' || !view.analysis} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
+{#if !view.entry.item.disposition}<Button disabled={suggestion.disposition !== 'ready_for_review' || !view.analysis} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>{/if}
 </article>
 {/each}
-{#each generation.splits as proposed (proposed.evidenceId)}<div><Textarea aria-label={`${t(M['ingestion.split'])}: ${proposed.evidenceId}`} bind:value={splits[proposed.evidenceId]} /><Button disabled={!view.analysis} onclick={() => split(proposed.evidenceId)}>{t(M['ingestion.saveSplit'])}</Button></div>{/each}
+{#if !view.entry.item.disposition}{#each generation.splits as proposed (proposed.evidenceId)}<div><Textarea aria-label={`${t(M['ingestion.split'])}: ${proposed.evidenceId}`} bind:value={splits[proposed.evidenceId]} /><Button disabled={!view.analysis} onclick={() => split(proposed.evidenceId)}>{t(M['ingestion.saveSplit'])}</Button></div>{/each}{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 {/if}
 {#if view.entry.item.disposition}

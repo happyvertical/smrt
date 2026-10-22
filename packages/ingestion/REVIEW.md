@@ -113,7 +113,9 @@ explicit `args`, `requestId`, optional `reason`) to `startReviewerAction`, which
 requires the current reviewer grant under that handler, a completed or partial
 attempt on the current analysis revision, and an operation handler the item's
 evidence media types offer. Plan handlers go through `previewPlan`. The server
-creates an action keyed `reviewer:<requestId>` with origin `reviewer-selected`,
+creates an action keyed `reviewer:<requestId>` with origin `reviewer-selected`
+(`createAction` refuses that key prefix and origin, so process authority cannot
+mint reviewer provenance),
 runs the handler's normal `validate`/`preview`, publishes a `waiting_review`
 revision and requires the same explicit approval and apply as a generated
 proposal. Replays with the same request return the same review; changed arguments
@@ -137,8 +139,10 @@ not keep the queue open). Afterwards only reject remains: those actions can no
 longer be approved, corrected, deferred, re-previewed, retried, applied or
 automated. `submitDecision` refuses every decision but `reject`, no new revision
 is published for the item, `applyAction` rechecks the disposition before any
-effect, and the UI hides Approve, Defer, Apply and every edit control on a
-resolved item.
+effect, and `analyze`, `reviseLogicalSplit` and `createAction` refuse the item
+under its lock before any write, so it is never reanalysed, re-split or given a
+new action. The UI hides Approve, Defer, Apply, every edit control, suggestion
+preview and split controls on a resolved item.
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and
 `startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects the

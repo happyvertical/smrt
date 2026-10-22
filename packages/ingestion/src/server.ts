@@ -432,6 +432,16 @@ export class IngestionService {
       }
     }
   }
+  /** Refuse under the caller's item lock when a terminal disposition exists. */
+  private async assertUnresolved(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<void> {
+    if (
+      (await this.rows(db, 'intake_dispositions', 'item_id=?', [itemId])).length
+    )
+      throw new Error('Item resolved');
+  }
   private async lock(db: DatabaseInterface, itemId: string): Promise<void> {
     const result = await db.query(
       'UPDATE intake_items SET analysis_revision = analysis_revision WHERE tenant_id = ? AND confidential_scope_id = ? AND id = ? RETURNING id',
@@ -1269,6 +1279,8 @@ export class IngestionService {
     const configDigest = digest(configuration);
     await this.lock(db, itemId);
     const item = await this.item(itemId, 'process', db);
+    // A resolved item is terminal: no reanalysis or split re-extraction.
+    await this.assertUnresolved(db, itemId);
     if (!(await this.matchesDispatchRoute(db, item)))
       throw new Error('Intake dispatch route unavailable');
     await this.bindDispatchRoute(db, item);
@@ -1380,6 +1392,7 @@ export class IngestionService {
     const replay = await this.tx(async (db) => {
       await this.lock(db, frozen.itemId);
       await this.item(frozen.itemId, 'process', db);
+      await this.assertUnresolved(db, frozen.itemId);
       const found = (
         await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
       ).find((row) => object(row.data).requestKey === requestKey);
@@ -2088,11 +2101,19 @@ export class IngestionService {
     provenance: Record<string, unknown>,
   ): Promise<string> {
     nonempty(actionKey);
+    // Reviewer-selected actions are minted only by `startReviewerAction` under
+    // reviewer authority; process authority must not forge routing provenance.
+    if (
+      actionKey.startsWith('reviewer:') ||
+      (provenance as { origin?: unknown }).origin === 'reviewer-selected'
+    )
+      throw new Error('Reserved action provenance');
     const payload = canonical(provenance);
     return this.tx(async (db) => {
       await this.lock(db, itemId);
       const item = await this.item(itemId, 'process', db);
       if (item.cancelled) throw new Error('Intake cancelled');
+      await this.assertUnresolved(db, itemId);
       const [existing] = await this.rows(
         db,
         'intake_actions',
