@@ -11,7 +11,6 @@ import {
   safeFailure,
   text,
   timestamp,
-  withPresentedFilename,
 } from './common.js';
 
 export interface AuthenticatedSource extends SourceBinding {
@@ -110,12 +109,10 @@ export function createSourceDeliveryHandler(
           const snapshots = await binding.snapshotReference(reference);
           if (!snapshots.length)
             throw new SourceInputError('unavailable_bytes');
-          for (const { filename, ...part } of snapshots)
+          // A host snapshot may carry a `filename`; `deliver` cleans it.
+          for (const part of snapshots)
             parts.push({
               ...part,
-              // Host snapshots may carry a name too; clean it like every other
-              // source so an odd name cannot fail the whole delivery (#4214).
-              ...withPresentedFilename(filename),
               sourceReference: part.sourceReference ?? reference,
             });
         }
@@ -143,7 +140,8 @@ export function createSourceDeliveryHandler(
             if (name !== 'file' || parts.length)
               throw new SourceInputError('invalid');
             // Keep the original name for labels; it never becomes identity.
-            // `blob` is the name a nameless Blob part gets, not a real one.
+            // `blob` is the name a nameless Blob part gets, not a real one;
+            // it is compared after cleaning, and `deliver` cleans the rest.
             const presented = presentedFilename(value.name);
             const original = presented === 'blob' ? undefined : presented;
             parts.push({

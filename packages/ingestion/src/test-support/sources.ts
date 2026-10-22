@@ -780,7 +780,13 @@ export function sourcesSuite(
       const restarted = new WatchFolderSourceAdapter(config);
       expect(await restarted.poll()).toEqual([]);
       clock += 11;
-      expect((await restarted.poll())[0].result.kind).toBe('accepted');
+      const accepted = (await restarted.poll())[0].result;
+      expect(accepted.kind).toBe('accepted');
+      // The folder entry name is the evidence filename (#4214).
+      if (!('itemId' in accepted)) throw new Error('receipt missing');
+      expect(
+        (await service.getEvidence(accepted.itemId)).map((e) => e.filename),
+      ).toEqual(['scan.pdf']);
       expect(await readdir(join(root, '.ingestion-processed'))).toEqual([
         claimId,
       ]);
@@ -875,6 +881,38 @@ export function sourcesSuite(
             (await db.query(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n,
           ),
         ).toBe(0);
+    });
+    it('cleans a vendor webhook part name instead of failing the delivery (#4214)', async () => {
+      // Built from code points: no invisible character appears in source.
+      const rlo = String.fromCodePoint(0x202e);
+      const endpoint = createVendorWebhookHandler({
+        maxRequestBytes: 100,
+        verify: async (_request, bytes) => ({
+          binding,
+          deliveryKey: 'vendor-named',
+          deliveredAt: new Date(capturedAt),
+          parts: [
+            {
+              partId: 'body',
+              mediaType: 'text/plain',
+              bytes,
+              filename: `Vendor\nreport${rlo}txt.exe`,
+            },
+          ],
+        }),
+      });
+      const receipt = await (
+        await endpoint(
+          new Request('https://host/vendor', {
+            method: 'POST',
+            body: 'vendor-named',
+          }),
+        )
+      ).json();
+      expect(receipt.kind).toBe('accepted');
+      expect(
+        (await service.getEvidence(receipt.itemId)).map((e) => e.filename),
+      ).toEqual(['Vendorreporttxt.exe']);
     });
   });
 }
