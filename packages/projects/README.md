@@ -63,6 +63,9 @@ await issue.rollback();
 | `Issue` | Issue/ticket (STI base). Methods: `sync()`, `incorporateFeedback()`, `rollback()`, `suggestLabels()`, `close()`, `addLabels()`, `addComment()` |
 | `PullRequest` | Pull request (STI subclass of Issue). Methods: `sync()`, `summarize()`, `merge()`, `markReady()`, `convertToDraft()`, `requestReviewers()`, `findLinkedIssue()` |
 | `Project` | Project board (GitHub Projects V2). Methods: `sync()`, `addItem()`, `moveItem()`, `listItems()`, `updateItemStatus()`, `analyzeHealth()` |
+| `ProjectQuestion` | A requested fact whose lifecycle is `open`, `answered`, `deferred`, or `superseded`. |
+| `ProjectDecision` | An owner choice with options, outcome, and rationale whose lifecycle is `open`, `decided`, `deferred`, or `superseded`. |
+| `ProjectGovernanceEvent` | Immutable question/decision history with actor, action, status transition, and revision. |
 | `Comment` | Comment on an issue or PR. AI methods: `isQuestion()`, `isApproval()`, `requestsChanges()`, `extractActionItems()`, `summarize()`, `getSentiment()` |
 | `Label` | Label/tag for issues; optionally scoped to a repository or a `Project`. Methods: `isTypeLabel()`, `isPriorityLabel()`, `getCategory()`, `createInRepository()` |
 
@@ -75,6 +78,71 @@ await issue.rollback();
 | `IssueCollection` | `discover()`, `findByProject()`, `findByRepository()`, `findOpen()`, `findByLabel()`, `findByAssignee()`, `findNeedingReview()`, `findWithUnincorporatedFeedback()`, `batchSync()` |
 | `PullRequestCollection` | `discover()`, `findByRepository()`, `findOpen()`, `batchSync()` |
 | `ProjectCollection` | Standard CRUD, `findByTitle()` |
+| `ProjectQuestionCollection` | Tenant-safe project listing and lookup. |
+| `ProjectDecisionCollection` | Tenant-safe project listing and lookup. |
+| `ProjectGovernanceEventCollection` | Ordered history for a question or decision. |
+
+### Project questions and decisions
+
+`ProjectGovernanceService` is the write boundary for owner questions and
+decisions. Host applications pass a qualified project record type and id, so
+the same contract can attach to the provider-backed `Project` in this package
+or to an application-owned project model. The service requires a tenant scope,
+a trusted actor projection, and an `expectedRevision` for every mutation. Only
+the assigned owner or a host-authorized manager may answer or decide;
+assignment, deferral, reopening, and supersession require manager authority.
+
+Records default to `visibility: 'internal'`; explicitly choose `client` for
+client-facing records and pass `{ visibility: 'client' }` to `listForProject`.
+Hosts authorize project access and strip private context references before
+projecting client views. Lifecycle history rejects updates and deletion. Assignment events retain the
+previous and next owner identities, including explicit owner clearing.
+
+Questions and decisions retain typed references to the spec, cookbook,
+conversation, asset, or URL that raised them. They do not replace facts: an
+extracted `open_question` fact may seed a `ProjectQuestion`, but fact provenance
+and question answer state remain separate lifecycles.
+
+`ProjectQuestionsAndDecisions` from `@happyvertical/smrt-projects/svelte`
+renders authorized projections and emits typed answer/decision callbacks. It
+does not fetch records or decide application permissions.
+
+### Canonical project specification
+
+`ProjectSpecificationService` persists one canonical specification per tenant
+and qualified project target. Its `cookbook` is validated and canonicalized by
+`@happyvertical/smrt-core/cookbook`; `getCookbook()` returns the portable
+`Cookbook` from `@happyvertical/smrt-types`, including its `specs` requirements.
+`saveForProject({ ...scope, title, summary, cookbook, expectedRevision, actor })`
+requires a trusted manager actor. `expectedRevision: null` means create-only;
+updates require the currently observed revision. Validation rejects with
+`ProjectSpecificationValidationError` (`status: 400`); stale revisions reject
+with `ProjectGovernanceConflictError`.
+
+When project creation already owns a transaction, use
+`ProjectSpecificationService.create({ db: tx, transaction: 'caller' })` so the
+specification rolls back with the project. The default mode owns its transaction.
+An active caller tenant must match the target; hosts creating a child project
+enter that authorized child tenant context before saving.
+
+### Participant development requests
+
+`ParticipantDevelopmentRequestService.create({ db }).submit()` accepts a trusted
+server-authorized participant identity, tenant/project, `requestKey`, type and
+description. It records participant provenance with a nullable `integrationId`;
+managed integration intake still requires a nonempty integration ID. Repeating
+the same actor/project/key returns the accepted request; changed payloads reject
+with `ParticipantDevelopmentRequestConflictError`. Request and initial history
+share one transaction. Hosts enforce project participation before calling this
+service and expose their own safe DTOs, never the collection mutation API.
+
+Existing databases must apply the generated migration that relaxes
+`development_requests.integration_id` to nullable and adds the specification,
+question, decision and history tables before enabling these surfaces. Run the
+normal manifest-based `db:migrate` and verify schema parity; existing managed
+request provenance is unchanged. `pnpm --filter @happyvertical/smrt-projects
+test:postgres` exercises all three workflows with the repository disposable
+PostgreSQL database wrapper.
 
 ### STI Hierarchy
 
