@@ -137,6 +137,34 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       records: [],
     });
   });
+  it('preserves published PDF v1 revision encoding across acquisition-cap changes', async () => {
+    const f = fixture();
+    const record = await discover(f);
+    expect(JSON.parse(record.revision)).toEqual({
+      v: 1,
+      page: expect.stringMatching(/^[a-f0-9]{64}$/),
+      etag: metadata.etag,
+      length: pdf.length,
+      modified: metadata['last-modified'],
+    });
+    const lower = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch: f.fetch,
+      maxPdfBytes: 5,
+    });
+    const page = await lower.enumerate({ cursor: start(), checkpoint });
+    expect(
+      page.records.find((r) => r.stableId === record.stableId)?.revision,
+    ).toBe(record.revision);
+    await expect(lower.acquire(acquireInput(record))).rejects.toThrow(
+      'revision',
+    );
+    expect(
+      f.fetch.mock.calls.filter(
+        ([url, init]) =>
+          String(url).startsWith(IM_ASSET_ORIGIN) && init?.method === 'GET',
+      ),
+    ).toHaveLength(0);
+  });
   it('rejects invalid revision values before requesting content', async () => {
     const record = await discover();
     const f = fixture();

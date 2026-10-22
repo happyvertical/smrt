@@ -146,20 +146,28 @@ regressions, dialect coverage, and the existing DuckDB setup limitations.
 `CatalogSyncAdapter` and `CatalogAcquireAdapter`; `fetch` is optional and defaults
 to the standard global Fetch API. Use the same factory for discovery and explicit
 private acquisition through `CatalogAcquisitionService`. No credential, mounted
-provider module, schema extension, or PDF fetch is needed for discovery.
+provider module or PDF fetch is needed for discovery. Apply the additive catalog
+representation column migration before using this version.
 
-The declared scope is public PDFs with explicit student/family labels on the
+The declared scope is public PDF-labeled artifacts with explicit student/family labels on the
 first-edition Kendall Hunt K–5, 6–8, and high-school teacher/family hierarchy,
 including Algebra 1 Supports and linked Spanish counterparts. Traversal starts
 at the official homepage and fixed curriculum roots; it follows direct course,
 unit, resources, family-materials, and lesson-preparation links. Teacher guides,
 answers, assessments, presentations, login-only links, unknown labels, HTML-only
-student lessons, non-PDF formats, and AccessIM/v.360 are excluded. Completion
+student lessons, unknown formats, and AccessIM/v.360 are excluded. Observed PDF or ZIP MIME is retained for those PDF-labeled links; other icon/link
+formats remain excluded. This adapter cannot acquire ZIP bytes. Completion
 means this declared scope only. Policy omissions appear in the bounded, invocation-local
 `CatalogSyncReport.exclusionSummary`, rather than the durable failure ledger.
 
 Each `enumerate` reads one HTML page (2 MB maximum) and at most four asset HEADs.
-It never GETs PDF content. Version-1 JSON cursors contain the remaining validated
+It never GETs asset content. Known PDF/ZIP HEAD metadata is retained even when
+the file exceeds the PDF acquisition cap; unknown MIME, missing/weak validators
+or transport failures pause the page without advancing. Each observed record has
+optional `representation` metadata with actual `format`, `mediaType`, positive safe
+`byteLength`, strong ETag/Last-Modified `validators`, and `acquisition` capability.
+A PDF is `supported` or `size-limit` with its observed `maxBytes`; ZIP is always
+`unsupported-format`. The source icon does not override the actual MIME. Version-1 JSON cursors contain the remaining validated
 hierarchy paths and an artifact offset plus source fingerprint when needed;
 persist the returned cursor unchanged. A fresh adapter can resume it. The cursor
 is capped at 64 KB and 384 pending paths; source pages are capped at 128 children
@@ -181,7 +189,8 @@ the adapter hashes the bytes with SHA-256. The generic service retains attributi
 and image/trademark notices and provides tenant, selection and idempotence checks.
 
 `timeoutMs` bounds the entire call, including streaming (default 20 seconds,
-maximum 60 seconds). `maxPdfBytes` defaults to 32 MiB (maximum 64 MiB). Requests
+maximum 60 seconds). `maxPdfBytes` bounds acquisition only and defaults to 32 MiB
+(maximum 64 MiB). Changing it does not change an existing PDF content revision. Requests
 use fixed official hosts and strict paths, reject redirects, and carry no source
 credentials. Rate limiting returns a resumable pause with Retry-After information;
 hosts must honor that delay before resuming rather than loop immediately.
@@ -225,3 +234,27 @@ history without guessed reclassification. An old coarse six-grade checkpoint
 with no cursor starts the new adapter at its root, preserves its imported count
 and history, and may complete/withdraw only at the new traversal's actual terminal
 page. History alone does not create an active pause.
+
+
+Before creating a new selection or writing files, hosts call
+`evaluateCatalogAcquisitionCapability(resource, format, { maxBytes })` on the
+fresh authoritative record inside their transaction, separately from legal
+`CatalogPolicy` authorization. The optional current limit can tighten the
+persisted limit, never loosen it. Denials distinguish unsupported format, size
+limit, unavailable format and invalid representation metadata. It does not
+control printing already pinned bytes. `CatalogAcquisitionService` repeats the
+capability guard for new fetches after its existing pinned-acquisition return;
+current actor, selection, revision and legal checks still precede that return.
+The adapter independently revalidates format, size, validators and content bytes.
+
+`normalizeCatalogRepresentation(unknown)` parses persisted JSON and returns a
+validated defensive copy. Missing, null and serialized JSON null mean legacy
+absence; the evaluator reports `verification: 'legacy'` without inventing measured
+support, and adapters still enforce their strict acquisition checks. Malformed
+present metadata throws `CatalogRepresentationError`; the evaluator explicitly
+denies `invalid-representation-metadata`. Never catch this error and replace it
+with absence in a read projection. `CatalogResource.getRepresentation()` and
+`setRepresentation()` use the same guard. `CatalogDatabaseSyncStore` persists the
+field and `CatalogReadService` preserves it in its metadata DTO. The nullable TEXT column migration leaves existing rows SQL NULL; new model/store
+values use serialized JSON null. Both mean legacy absence; runtime code
+does not create or alter schema.

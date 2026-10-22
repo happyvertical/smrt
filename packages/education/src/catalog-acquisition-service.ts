@@ -1,3 +1,7 @@
+import {
+  evaluateCatalogAcquisitionCapability,
+  normalizeCatalogRepresentation,
+} from './catalog-capability.js';
 import type {
   CatalogAcquireAdapter,
   CatalogActor,
@@ -116,6 +120,12 @@ export class CatalogAcquisitionService {
       format: request.format,
     });
     if (existing) return existing;
+    const capability = evaluateCatalogAcquisitionCapability(
+      resource,
+      request.format,
+    );
+    if (!capability.allowed)
+      throw new Error(`Catalog acquisition unavailable: ${capability.reason}`);
     const acquired = await this.adapter.acquire({
       providerId: resource.providerId,
       stableId: resource.stableId,
@@ -124,6 +134,16 @@ export class CatalogAcquisitionService {
     });
     if (acquired.revision !== request.revision)
       throw new Error('Provider returned an unpinned resource revision.');
+    const representation = normalizeCatalogRepresentation(
+      resource.representation,
+    );
+    if (
+      representation &&
+      acquired.bytes.byteLength !== representation.byteLength
+    )
+      throw new Error(
+        'Acquired bytes differ from observed representation length.',
+      );
     const actualHash = await digest(acquired.bytes);
     if (actualHash !== acquired.sha256.toLowerCase())
       throw new Error('Provider content hash did not match acquired bytes.');

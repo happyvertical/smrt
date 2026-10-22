@@ -1,0 +1,161 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  CatalogRepresentationError,
+  evaluateCatalogAcquisitionCapability as evaluate,
+  normalizeCatalogRepresentation as normalize,
+} from '../catalog-capability.js';
+import type {
+  CatalogResourceRepresentation,
+  CatalogSourceRecord,
+} from '../catalog-contracts.js';
+import { CatalogResource } from '../catalog-models.js';
+import { CatalogReadService } from '../catalog-read-service.js';
+
+const pdf: CatalogResourceRepresentation = {
+  format: 'pdf',
+  mediaType: 'application/pdf',
+  byteLength: 20,
+  validators: { etag: '"v1"', lastModified: 'Wed, 14 Dec 2022 12:29:18 GMT' },
+  acquisition: { status: 'supported', maxBytes: 30 },
+};
+const zip: CatalogResourceRepresentation = {
+  ...pdf,
+  format: 'zip',
+  mediaType: 'application/zip',
+  acquisition: { status: 'unsupported-format' },
+};
+const row: CatalogSourceRecord & { id: string } = {
+  id: 'id',
+  providerId: 'im',
+  stableId: 'student',
+  revision: '1',
+  canonicalUrl: 'https://example.test',
+  title: 'Student',
+  availableFormats: ['pdf'],
+  visibility: 'catalog',
+  licenseEvidence: { state: 'verified', permittedOperations: ['print'] },
+};
+describe('catalog acquisition capability boundary', () => {
+  it.each([
+    undefined,
+    null,
+    'null',
+  ])('preserves legacy absence %s without inventing measured support', (value) => {
+    expect(normalize(value)).toBeUndefined();
+    expect(
+      evaluate({ ...row, representation: value as undefined }, 'pdf'),
+    ).toEqual({ allowed: true, verification: 'legacy' });
+  });
+  it('normalizes observed metadata without sharing mutable nested objects', () => {
+    const normalized = normalize(JSON.stringify(pdf));
+    expect(normalized).toEqual(pdf);
+    expect(normalize(pdf)?.validators).not.toBe(pdf.validators);
+  });
+  it.each([
+    '',
+    'undefined',
+    '[]',
+    '{}',
+    { ...pdf, format: 'docx' },
+    { ...pdf, mediaType: 'application/zip' },
+    { ...pdf, byteLength: 0 },
+    { ...pdf, byteLength: Number.MAX_SAFE_INTEGER + 1 },
+    { ...pdf, byteLength: 1.5 },
+    { ...pdf, extra: true },
+    { ...pdf, validators: { ...pdf.validators, etag: 'W/"v1"' } },
+    { ...pdf, validators: { ...pdf.validators, lastModified: 'yesterday' } },
+    { ...pdf, acquisition: { status: 'supported', maxBytes: 10 } },
+    { ...pdf, acquisition: { status: 'size-limit', maxBytes: 30 } },
+    { ...pdf, acquisition: { status: 'unsupported-format' } },
+    { ...zip, acquisition: { status: 'supported', maxBytes: 30 } },
+    { ...zip, acquisition: { status: 'unsupported-format', maxBytes: 30 } },
+  ])('denies malformed present metadata instead of interpreting it as legacy: %j', (value) => {
+    expect(() => normalize(value)).toThrow(CatalogRepresentationError);
+    expect(
+      evaluate(
+        { ...row, representation: value as CatalogResourceRepresentation },
+        'pdf',
+      ),
+    ).toEqual({ allowed: false, reason: 'invalid-representation-metadata' });
+  });
+  it('uses a side-effect-free evaluator before any selection, file write or provider request', () => {
+    const createSelection = vi.fn();
+    const writeFile = vi.fn();
+    const request = vi.fn();
+    const result = evaluate(
+      { ...row, availableFormats: ['zip'], representation: zip },
+      'zip',
+    );
+    if (result.allowed) {
+      createSelection();
+      writeFile();
+      request();
+    }
+    expect(result).toMatchObject({
+      allowed: false,
+      reason: 'unsupported-format',
+    });
+    expect(createSelection).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+  it('allows observed PDF, can tighten but never loosen snapshots, and requires matching format', () => {
+    expect(evaluate({ ...row, representation: pdf }, 'pdf')).toEqual({
+      allowed: true,
+      verification: 'observed',
+    });
+    expect(
+      evaluate({ ...row, representation: pdf }, 'pdf', { maxBytes: 10 }),
+    ).toMatchObject({ allowed: false, reason: 'size-limit', maxBytes: 10 });
+    expect(
+      evaluate(
+        {
+          ...row,
+          representation: {
+            ...pdf,
+            acquisition: { status: 'size-limit', maxBytes: 10 },
+          },
+        },
+        'pdf',
+        { maxBytes: 100 },
+      ),
+    ).toMatchObject({ allowed: false, reason: 'size-limit', maxBytes: 10 });
+    expect(
+      evaluate({ ...row, representation: pdf }, 'pdf', { maxBytes: 0 }),
+    ).toMatchObject({
+      allowed: false,
+      reason: 'invalid-representation-metadata',
+    });
+    expect(evaluate({ ...row, representation: pdf }, 'zip')).toMatchObject({
+      allowed: false,
+      reason: 'format-unavailable',
+    });
+  });
+  it('does not erase malformed persisted model/read metadata into legacy absence', async () => {
+    const model = new CatalogResource();
+    model.representation = '{"format":"pdf"}';
+    expect(() => model.getRepresentation()).toThrow(CatalogRepresentationError);
+    expect(() =>
+      model.setRepresentation({
+        format: 'pdf',
+      } as CatalogResourceRepresentation),
+    ).toThrow(CatalogRepresentationError);
+    expect(model.representation).toBe('{"format":"pdf"}');
+    const service = new CatalogReadService({
+      search: async () => [
+        {
+          ...row,
+          representation:
+            '{"format":"pdf"}' as unknown as CatalogResourceRepresentation,
+        },
+      ],
+    });
+    await expect(
+      service.search({
+        tenantId: 'tenant',
+        actorUserId: 'guardian',
+        roles: ['guardian'],
+      }),
+    ).rejects.toThrow(CatalogRepresentationError);
+  });
+});

@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CatalogAcquisitionStore } from '../catalog-acquisition-service.js';
 import { CatalogAcquisitionService } from '../catalog-acquisition-service.js';
+import type { CatalogResourceRepresentation } from '../catalog-contracts.js';
+
+const limited: CatalogResourceRepresentation = {
+  format: 'pdf',
+  mediaType: 'application/pdf',
+  byteLength: 100,
+  validators: { etag: '"v1"', lastModified: 'Wed, 14 Dec 2022 12:29:18 GMT' },
+  acquisition: { status: 'size-limit', maxBytes: 50 },
+};
 
 const encoder = new TextEncoder();
 const bytes = encoder.encode('selected worksheet');
@@ -98,6 +107,10 @@ describe('CatalogAcquisitionService', () => {
 
   it('returns an existing pinned acquisition without downloading again', async () => {
     const state = store();
+    state.getResource = vi.fn(async () => ({
+      ...resource,
+      representation: limited,
+    }));
     state.findAcquisition = vi.fn(async () => ({
       id: 'old',
       tenantId: 'tenant',
@@ -111,6 +124,60 @@ describe('CatalogAcquisitionService', () => {
       new CatalogAcquisitionService(state, adapter).acquire(request),
     ).resolves.toMatchObject({ id: 'old' });
     expect(adapter.acquire).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    limited,
+    { format: 'pdf' } as CatalogResourceRepresentation,
+  ])('denies new unsupported or malformed acquisition before provider or file writes', async (representation) => {
+    const state = store();
+    state.getResource = vi.fn(async () => ({ ...resource, representation }));
+    const adapter = { acquire: vi.fn() };
+    await expect(
+      new CatalogAcquisitionService(state, adapter).acquire(request),
+    ).rejects.toThrow('Catalog acquisition unavailable');
+    expect(adapter.acquire).not.toHaveBeenCalled();
+    expect(state.createAcquisition).not.toHaveBeenCalled();
+  });
+
+  it('acquires a supported observed representation with its exact size', async () => {
+    const state = store();
+    state.getResource = vi.fn(async () => ({
+      ...resource,
+      representation: {
+        ...limited,
+        byteLength: bytes.byteLength,
+        acquisition: { status: 'supported' as const, maxBytes: 50 },
+      },
+    }));
+    const adapter = {
+      acquire: vi.fn(async () => ({ bytes, sha256: hash, revision: 'v1' })),
+    };
+    await expect(
+      new CatalogAcquisitionService(state, adapter).acquire(request),
+    ).resolves.toMatchObject({ sha256: hash });
+    expect(state.createAcquisition).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    1, 100,
+  ])('rejects expanded/truncated bytes versus observed size %d before writing', async (byteLength) => {
+    const state = store();
+    state.getResource = vi.fn(async () => ({
+      ...resource,
+      representation: {
+        ...limited,
+        byteLength,
+        acquisition: { status: 'supported' as const, maxBytes: 200 },
+      },
+    }));
+    const adapter = {
+      acquire: vi.fn(async () => ({ bytes, sha256: hash, revision: 'v1' })),
+    };
+    await expect(
+      new CatalogAcquisitionService(state, adapter).acquire(request),
+    ).rejects.toThrow('observed representation length');
+    expect(state.createAcquisition).not.toHaveBeenCalled();
   });
 
   it('rejects changed revisions and dishonest provider hashes', async () => {

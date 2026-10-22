@@ -55,3 +55,18 @@ pauses for unconfirmed coverage, without inventing an operational failure or
 withdrawing unseen rows. In Drive's catalog adapter, definite unsupported or
 out-of-boundary shortcut omissions are policy; missing revisions and inaccessible
 targets remain operational failures. The direct Drive discovery API is unchanged.
+
+
+Observed representation metadata and legal permissions are separate. Use the
+public `evaluateCatalogAcquisitionCapability` on a fresh record before creating
+new selection/file state, then apply `CatalogPolicy` independently. The
+`representation` serialized JSON field uses a nullable TEXT column (existing rows
+remain SQL NULL; new model/store values use JSON null); apply its
+additive manifest migration before runtime use. Missing/null remains legacy,
+but malformed present metadata must never be erased into legacy absence:
+`normalizeCatalogRepresentation` and the model getter throw a typed error and
+the evaluator returns an explicit denial. Known ZIP and over-cap PDF metadata
+are retained; technical acquisition restrictions never remove legal evidence.
+Current configured limits may tighten a recorded limit. Existing pinned-byte
+retries retain their actor/selection/revision/legal checks and do not become
+unavailable merely because future acquisition limits tightened.

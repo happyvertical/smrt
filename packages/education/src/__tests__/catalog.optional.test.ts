@@ -5,6 +5,7 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CourseCollection, CourseSectionCollection } from '../collections.js';
+import { assertRepresentationMigration } from './catalog-representation-persistence.js';
 import {
   assertAuthorizedPagination,
   assertLessonAssetTenantKey,
@@ -20,6 +21,16 @@ import {
 (isPostgresAvailable() ? describe : describe.skip)(
   'education catalog (postgres)',
   () => {
+    it('migrates legacy catalog representation and persists guarded observed metadata', async () => {
+      const isolated = await createIsolatedTestDbFromManifest({
+        includeObjects: ['CatalogResource', 'CatalogSyncState'],
+      });
+      try {
+        await assertRepresentationMigration(isolated.baseDb, 'postgres');
+      } finally {
+        await isolated.cleanup();
+      }
+    });
     beforeAll(() => enableTenancy());
     afterAll(() => disableTenancy());
     for (const [name, check] of [

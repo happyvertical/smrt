@@ -24,6 +24,11 @@ export type {
 } from './catalog-acquisition-service.js';
 export { CatalogAcquisitionService } from './catalog-acquisition-service.js';
 export {
+  CatalogRepresentationError,
+  evaluateCatalogAcquisitionCapability,
+  normalizeCatalogRepresentation,
+} from './catalog-capability.js';
+export {
   CatalogAcquisitionCollection,
   CatalogProviderCollection,
   CatalogResourceCollection,
@@ -32,10 +37,12 @@ export {
 } from './catalog-collections.js';
 export type {
   CatalogAcquireAdapter,
+  CatalogAcquisitionCapabilityDecision,
   CatalogActor,
   CatalogLicenseEvidence,
   CatalogLicenseState,
   CatalogOperation,
+  CatalogResourceRepresentation,
   CatalogSourceRecord,
   CatalogSyncAdapter,
   CatalogSyncCheckpoint,

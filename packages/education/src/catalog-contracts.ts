@@ -26,6 +26,30 @@ export interface CatalogLicenseEvidence {
   permittedOperations?: CatalogOperation[];
 }
 
+/** Observed bytes and NEW acquisition support; independent of legal permissions. */
+export interface CatalogResourceRepresentation {
+  format: 'pdf' | 'zip';
+  mediaType: 'application/pdf' | 'application/zip';
+  byteLength: number;
+  validators: { etag: string; lastModified: string };
+  acquisition:
+    | { status: 'supported'; maxBytes: number }
+    | { status: 'unsupported-format' }
+    | { status: 'size-limit'; maxBytes: number };
+}
+export type CatalogAcquisitionCapabilityDecision =
+  | { allowed: true; verification: 'observed' | 'legacy' }
+  | {
+      allowed: false;
+      reason:
+        | 'format-unavailable'
+        | 'unsupported-format'
+        | 'size-limit'
+        | 'invalid-representation-metadata';
+      maxBytes?: number;
+      byteLength?: number;
+    };
+
 /** A provider's durable source record. It remains distinct after deduplication. */
 export interface CatalogSourceRecord {
   providerId: string;
@@ -41,6 +65,7 @@ export interface CatalogSourceRecord {
   resourceType?: string;
   parentStableId?: string;
   availableFormats?: string[];
+  representation?: CatalogResourceRepresentation;
   licenseEvidence: CatalogLicenseEvidence;
   visibility: CatalogVisibility;
 }
