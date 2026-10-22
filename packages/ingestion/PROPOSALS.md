@@ -108,6 +108,20 @@ as `missingFields`, with `needs_review`; values are never invented to satisfy a
 schema. Observed page/time/source granularity is preserved. Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
 
+A rejected reply ends the attempt as `provider_error` with the `malformed_output`
+warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
+The reason lists Ajv paths, keywords and schema constants, for example
+`/outcome enum (allowedValues=proposals|unknown|...)` and
+`/suggestions/0 required (missingProperty=evidence)`, or the fixed internal check
+and its path, such as `Unoffered handler: /suggestions/0`. It never contains
+document text, argument values or evidence content, is cut at 1000 characters,
+and is dropped before the output-limit fallback. Hosts read it from the
+completed/partial analysis at `analysis.result.output.proposals.provenance.failure`.
+The SDK adapter constrains replies with a `json_schema` response format built
+from the validator's schema and the fixed instructions describe the shape; a
+custom `ProposalGenerator` receives no schema, so its raw reply meets the
+validator directly and the same reason is recorded.
+
 `createSDKProposalDecisionClient(client)` adapts an existing SDK client’s optional
 capability without changing its errors or protocol. Optional `decision` uses public core `executeDecision` and the existing SDK
 predicate, choice, score and batch contracts. Supported-effect predicates,

@@ -3856,6 +3856,27 @@ export function proposalSuite(
         (await db.query('SELECT id FROM intake_actions')).rows,
       ).toHaveLength(0);
     });
+    it('records a bounded value-free validator reason next to malformed_output (#4207)', async () => {
+      calls.mockResolvedValue({
+        completion: 'complete',
+        output: JSON.parse(
+          '{"outcome":"accept","suggestions":[{"handlerId":"h","handlerVersion":"1","args":{},"explanation":"x"}]}',
+        ),
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('provider_error');
+      expect(input.output.warnings).toContain('malformed_output');
+      const failure = input.output.provenance.failure;
+      expect(failure?.category).toBe('malformed_output');
+      expect(failure?.reason).toContain('/outcome enum (allowedValues=');
+      for (const property of ['evidence', 'alternatives', 'splits'])
+        expect(failure?.reason).toContain(`missingProperty=${property}`);
+      expect(failure?.reason).not.toContain('accept');
+      expect(failure?.reason.length).toBeLessThanOrEqual(1000);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
+      ).toHaveLength(0);
+    });
     it('configured decision failure remains explicit and never silently falls back', async () => {
       chooseCreate();
       configuration.decision = {
@@ -4465,6 +4486,10 @@ export function proposalSuite(
         expect(input.output.outcome).toBe('provider_error');
         expect(input.output.warnings).toContain('malformed_output');
         expect(input.output.suggestions).toEqual([]);
+        expect(input.output.provenance.failure).toEqual({
+          category: 'malformed_output',
+          reason: 'Generator declared no validated completion',
+        });
       }
     });
     it('preserves provider identity projection and safe error/usage fields', async () => {

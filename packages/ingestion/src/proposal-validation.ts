@@ -1,4 +1,4 @@
-import Ajv from 'ajv';
+import Ajv, { type ErrorObject } from 'ajv';
 import { intakeBindingDigest } from './execution.js';
 import type { IntakeValues } from './execution-dto.js';
 import { proposeDocumentSplits } from './extraction.js';
@@ -10,6 +10,65 @@ import type {
   ProposalEvidenceReference,
 } from './proposal-dto.js';
 
+/** Longest persisted reason; the rest is cut so the publication envelope stays bounded. */
+export const PROPOSAL_REASON_LIMIT = 1000;
+/**
+ * Validator failure with a bounded, value-free reason. The reason names JSON
+ * paths, schema keywords and schema constants only: never document text,
+ * argument values or evidence content.
+ */
+export class ProposalValidationError extends Error {
+  readonly reason: string;
+  constructor(message: string, detail?: string) {
+    super(message);
+    this.reason = (detail ? `${message}: ${detail}` : message).slice(
+      0,
+      PROPOSAL_REASON_LIMIT,
+    );
+  }
+}
+const identifier = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+/** Summarize Ajv errors by path, keyword and schema-owned params; data never appears. */
+export function describeSchemaErrors(
+  errors: ErrorObject[] | null | undefined,
+  limit = 20,
+  maxChars = PROPOSAL_REASON_LIMIT - 100,
+): string {
+  const parts: string[] = [];
+  for (const error of errors ?? []) {
+    const params = error.params as Record<string, unknown>;
+    const detail: string[] = [];
+    if (typeof params.missingProperty === 'string')
+      detail.push(`missingProperty=${params.missingProperty}`);
+    if (typeof params.additionalProperty === 'string')
+      detail.push(
+        `additionalProperty=${identifier.test(params.additionalProperty) ? params.additionalProperty : '?'}`,
+      );
+    if (Array.isArray(params.allowedValues))
+      detail.push(
+        `allowedValues=${params.allowedValues.map(String).join('|')}`,
+      );
+    if (params.allowedValue !== undefined)
+      detail.push(`allowedValue=${String(params.allowedValue)}`);
+    if (typeof params.type === 'string') detail.push(`type=${params.type}`);
+    if (typeof params.limit === 'number' || typeof params.limit === 'string')
+      detail.push(`limit=${String(params.limit)}`);
+    if (typeof params.passingSchemas !== 'undefined')
+      detail.push('oneOf=none|multiple');
+    const part = `${error.instancePath || '/'} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`;
+    if (!parts.includes(part)) parts.push(part);
+  }
+  const shown: string[] = [];
+  let length = 0;
+  for (const part of parts) {
+    if (shown.length >= limit || length + part.length + 2 > maxChars) break;
+    shown.push(part);
+    length += part.length + 2;
+  }
+  if (parts.length > shown.length)
+    shown.push(`+${parts.length - shown.length} more`);
+  return shown.join('; ');
+}
 export function record(value: unknown): IntakeValues {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Invalid proposal object');
@@ -176,7 +235,10 @@ export function validateSuggestions(
     validateFormats: false,
   });
   if (!ajv.validate(suggestionSchema(limits), raw))
-    throw new Error('Invalid generated proposals');
+    throw new ProposalValidationError(
+      'Invalid generated proposals',
+      describeSchemaErrors(ajv.errors),
+    );
   const input = raw as {
     outcome: GenerationOutput['outcome'];
     suggestions: Omit<GeneratedSuggestion, 'disposition'>[];
@@ -187,7 +249,10 @@ export function validateSuggestions(
     (['unknown', 'no_action'].includes(input.outcome) &&
       input.suggestions.length)
   )
-    throw new Error('Inconsistent proposal outcome');
+    throw new ProposalValidationError(
+      'Inconsistent proposal outcome',
+      `outcome=${input.outcome}, suggestions=${input.suggestions.length}`,
+    );
   const offeredKeys = new Set(
     offered.flatMap(({ handler, candidates }) => [
       `${handler.id}@${handler.version}`,
@@ -195,7 +260,8 @@ export function validateSuggestions(
     ]),
   );
   const suggestions = input.suggestions.map(
-    (suggestion): GeneratedSuggestion => {
+    (suggestion, index): GeneratedSuggestion => {
+      const path = `/suggestions/${index}`;
       const entry = offered.find(
         ({ handler }) =>
           handler.id === suggestion.handlerId &&
@@ -205,7 +271,7 @@ export function validateSuggestions(
         !entry ||
         suggestion.alternatives.some((key) => !offeredKeys.has(key))
       )
-        throw new Error('Unoffered handler');
+        throw new ProposalValidationError('Unoffered handler', path);
       const schema = ajv.compile(entry.handler.argsSchema);
       const valid = schema(suggestion.args);
       const missing = (schema.errors ?? [])
@@ -223,7 +289,10 @@ export function validateSuggestions(
         JSON.stringify([...suggestion.missingFields].sort()) !==
           JSON.stringify(missing)
       )
-        throw new Error('Invalid handler arguments');
+        throw new ProposalValidationError(
+          'Invalid handler arguments',
+          `${path}/args ${describeSchemaErrors(schema.errors) || 'missingFields do not match the schema'}`,
+        );
       for (const [field, reference] of Object.entries(
         entry.handler.references,
       )) {
@@ -236,12 +305,22 @@ export function validateSuggestions(
                 candidate.model === reference.model && candidate.id === value,
             )
           )
-            throw new Error('Unoffered target');
+            throw new ProposalValidationError(
+              'Unoffered target',
+              `${path}/args/${field}`,
+            );
         } else if (!extraction.some((result) => result.evidence.id === value))
-          throw new Error('Unknown evidence');
+          throw new ProposalValidationError(
+            'Unknown evidence',
+            `${path}/args/${field}`,
+          );
       }
-      for (const reference of suggestion.evidence)
-        assertEvidenceReference(reference, extraction);
+      for (const [position, reference] of suggestion.evidence.entries())
+        assertEvidenceReference(
+          reference,
+          extraction,
+          `${path}/evidence/${position}`,
+        );
       return {
         ...structuredClone(suggestion),
         disposition:
@@ -252,12 +331,15 @@ export function validateSuggestions(
     },
   );
   const seen = new Set<string>();
-  const splits = input.splits.map((split) => {
+  const splits = input.splits.map((split, index) => {
     const source = extraction.find(
       (entry) => entry.evidence.id === split.evidenceId,
     );
     if (!source || seen.has(split.evidenceId))
-      throw new Error('Invalid split source');
+      throw new ProposalValidationError(
+        'Invalid split source',
+        `/splits/${index}`,
+      );
     seen.add(split.evidenceId);
     const result = proposeDocumentSplits(source, revision, split.groups);
     return {
@@ -271,6 +353,7 @@ export function validateSuggestions(
 function assertEvidenceReference(
   reference: ProposalEvidenceReference,
   extraction: ExtractionResult[],
+  path: string,
 ) {
   const source = extraction.find(
     (entry) => entry.evidence.id === reference.evidenceId,
@@ -283,5 +366,5 @@ function assertEvidenceReference(
         intakeBindingDigest(reference.location),
     )
   )
-    throw new Error('Unknown evidence location');
+    throw new ProposalValidationError('Unknown evidence location', path);
 }

@@ -101,6 +101,11 @@ export interface GenerationOutput {
       usage?: Record<string, number>;
     };
     usage: Record<string, number>;
+    /**
+     * Bounded, value-free reason for a failed stage, next to its warning
+     * category: JSON paths, schema keywords and constants, never document text.
+     */
+    failure?: { category: string; reason: string };
   };
   automaticActionEligible: false;
 }
