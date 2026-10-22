@@ -24,6 +24,7 @@ import { generationSnapshotRead } from './execution-internal.js';
 import { extractAnalysis } from './extraction.js';
 import { extractWithProviders } from './extraction-providers.js';
 import { assertProposalLimits } from './proposal-limits.js';
+import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
 import './models.js';
 import type {
   IntakeExecutionOptions,
@@ -814,6 +815,8 @@ export class IngestionService {
     const itemId = String(item.id);
     await this.point('reserved');
     if (item.receipt_state === 'ready') {
+      if (await this.revokedBeforeAck(itemId))
+        return { kind: 'rejected', category: 'expired' };
       try {
         if (!inline) await this.repairDispatches();
       } catch {
@@ -837,7 +840,10 @@ export class IngestionService {
         now.toISOString(),
       ),
     );
-    if (!claimed.rows.length) return { kind: 'retry', category: 'busy' };
+    if (!claimed.rows.length)
+      return (await this.revokedBeforeAck(itemId))
+        ? { kind: 'rejected', category: 'expired' }
+        : { kind: 'retry', category: 'busy' };
     try {
       for (const part of parts)
         if (part.retain === 'copy') await this.preserve(itemId, part, token);
@@ -1477,7 +1483,9 @@ export class IngestionService {
   private async evidenceBytes(e: Row): Promise<Uint8Array> {
     const data = object(e.data);
     if (data.retain === 'reference') {
-      if (e.asset_id || typeof data.snapshot !== 'string')
+      // A referenced snapshot never owns an asset; one that does is corrupt.
+      if (e.asset_id) throw new Error('Intake integrity');
+      if (typeof data.snapshot !== 'string')
         throw new Error('Intake unavailable');
       return Buffer.from(data.snapshot, 'utf8');
     }
@@ -2782,7 +2790,10 @@ export class IngestionService {
           // database record has already been pruned.
           await this.options.assets.store.removeFile(asset);
         }
-      if (intent.state === 'completed') continue;
+      if (intent.state === 'completed') {
+        await this.releaseRedactedPrincipal(itemId);
+        continue;
+      }
       await this.options.purgeDerived({
         tenantId: this.scope.tenantId,
         itemId,
@@ -2821,12 +2832,14 @@ export class IngestionService {
           );
         await db.query(
           "UPDATE intake_items SET data=?,trace_id='',submitter_id='',owner_key='',payload_digest=?,scope_digest=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
-          // The captured ceiling, including execution.principalId, is kept:
-          // provider reconciliation of an in-flight external action after
-          // redaction authorizes under that principal, and later delete sweeps
-          // pass the ceiling to the host's authorize callback.
+          // The ceiling stays for later delete sweeps' host authorization;
+          // execution.principalId stays only while an external action may
+          // still be reconciled under it, and is released once it finishes.
           canonical({
-            capturedCeiling: object(item.data).capturedCeiling ?? {},
+            capturedCeiling: redactedCeiling(
+              object(object(item.data).capturedCeiling ?? {}),
+              await this.hasUnfinishedActions(db, itemId),
+            ),
           }),
           REDACTED,
           REDACTED,
@@ -2844,6 +2857,42 @@ export class IngestionService {
       completed++;
     }
     return completed;
+  }
+  private async hasUnfinishedActions(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<boolean> {
+    return (
+      (
+        await this.rows(
+          db,
+          'intake_actions',
+          `item_id=? AND state IN (${UNFINISHED_ACTION_STATES.map(() => '?').join(',')})`,
+          [itemId, ...UNFINISHED_ACTION_STATES],
+        )
+      ).length > 0
+    );
+  }
+  /** Later sweeps drop a principal retained for a reconciliation that has
+   * since reached a final state. */
+  private async releaseRedactedPrincipal(itemId: string): Promise<void> {
+    await this.tx(async (db) => {
+      await this.lock(db, itemId);
+      const [item] = await this.rows(db, 'intake_items', 'id=?', [itemId]);
+      if (!item || item.visibility === 'active') return;
+      if (await this.hasUnfinishedActions(db, itemId)) return;
+      const data = object(item.data);
+      const ceiling = object(data.capturedCeiling ?? {});
+      const released = redactedCeiling(ceiling, false);
+      if (canonical(released) === canonical(ceiling)) return;
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
+        canonical({ ...data, capturedCeiling: released }),
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        itemId,
+      );
+    });
   }
   /** Run host-configured expiry policy and retry interrupted deletion propagation. */
   async sweepRetention(): Promise<number> {

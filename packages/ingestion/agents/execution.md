@@ -58,7 +58,10 @@ every execution denial), so the item becomes an `unavailable` entry and host
 error text is not returned; hosts need no change. Other errors propagate,
 including a throwing grant store in `authorize`. The feedback anti-widening
 check also refuses a re-evaluation that turns `submitterReview` on.
-Deletion redaction blanks `submitter_id` and `owner_key` with the payloads.
+Deletion redaction blanks `submitter_id` and `owner_key` with the payloads and
+drops `execution.principalId` unless an external action is still `executing`
+or `outcome_unknown`; `finish` and the reconcile state update release it once
+none is left, and later deletion sweeps do the same.
 Hosts whose `authorize` switches exhaustively on the operation fail closed for
 the new value until they opt in.
 
