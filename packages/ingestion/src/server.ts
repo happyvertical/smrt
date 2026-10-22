@@ -1415,19 +1415,45 @@ export class IngestionService {
       );
       return replay;
     }
+    await this.point('split:checked');
     let result: { id: string; revision: number } | undefined;
     await (await this.proposalReader())[generationSnapshotRead](
       frozen.itemId,
       (work) => this.tx(work),
+      // Read the anchor without requiring it to be current: a concurrent
+      // duplicate must reach the locked replay check below instead of failing
+      // the read. Currency is enforced under the lock instead.
       (db) =>
         this.completedAnalysisSnapshot(
           db,
           frozen.itemId,
           frozen.attemptId,
-          true,
+          false,
         ),
       async (db, current) => {
-        if (current.revision !== frozen.expectedRevision)
+        // Every guard read and the append run under the item lock in this one
+        // transaction (the snapshot read above already took it; re-asserting it
+        // keeps the invariant local to this step).
+        await this.lock(db, frozen.itemId);
+        await this.point('split:locked');
+        const [found] = (
+          await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+        ).filter((row) => object(row.data).requestKey === requestKey);
+        if (found) {
+          // A duplicate that committed after our unlocked replay check.
+          if (
+            digest(object(object(found.data).configuration).humanCorrection) !==
+            digest(correction)
+          )
+            throw new Error('Split request conflict');
+          result = { id: String(found.id), revision: Number(found.revision) };
+          return;
+        }
+        const item = await this.item(frozen.itemId, 'process', db);
+        if (
+          current.revision !== frozen.expectedRevision ||
+          Number(item.analysis_revision) !== frozen.expectedRevision
+        )
           throw new Error('Stale logical split');
         const pin = object(object(current.configuration.proposals).source);
         const source = await this.completedAnalysisSnapshot(
@@ -1473,6 +1499,7 @@ export class IngestionService {
           pages.some((page) => !observed.has(page))
         )
           throw new Error('Split must cover observed pages exactly');
+        await this.point('split:guarded');
         // Re-extraction retains the supported immediate-predecessor interpretation pin.
         result = await this.appendAnalysis(
           db,
@@ -1562,6 +1589,7 @@ export class IngestionService {
       );
       return replay;
     }
+    await this.point('instruction:checked');
     let result:
       | { id: string; revision: number; instruction: ReviewerInstruction }
       | undefined;
@@ -1578,6 +1606,29 @@ export class IngestionService {
           false,
         ),
       async (db, current) => {
+        // Every guard read, the history read for supersedesId and the append
+        // run under the item lock in this one transaction (the snapshot read
+        // above already took it; re-asserting it keeps the invariant local).
+        await this.lock(db, frozen.itemId);
+        await this.point('instruction:locked');
+        const [found] = (
+          await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+        ).filter((row) => object(row.data).requestKey === requestKey);
+        if (found) {
+          // A duplicate (double-click) that committed after our unlocked
+          // replay check: replay it rather than refusing.
+          const record = object(
+            object(object(found.data).configuration).reviewerInstruction,
+          );
+          if (digest(replayIntent(record)) !== digest(intent))
+            throw new Error('Reviewer instruction request conflict');
+          result = {
+            id: String(found.id),
+            revision: Number(found.revision),
+            instruction: reviewerInstructionView(record),
+          };
+          return;
+        }
         const item = await this.item(frozen.itemId, 'process', db);
         if (Number(item.analysis_revision) !== frozen.expectedRevision)
           throw new ReviewerInstructionStaleError();
@@ -1616,6 +1667,7 @@ export class IngestionService {
           supersedesId: previous?.id ?? null,
         };
         const record = { ...body, digest: digest(body) };
+        await this.point('instruction:guarded');
         // Re-extraction retains the supported immediate-predecessor interpretation pin
         // and any existing split correction; the instruction travels beside it.
         const appended = await this.appendAnalysis(
