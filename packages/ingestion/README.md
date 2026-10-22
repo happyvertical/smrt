@@ -13,7 +13,9 @@ migration APIs or `smrt db:migrate`. `assertReady()` only checks existing tables
 SQLite and PostgreSQL are supported; other engines fail construction. Index
 additions ship the same way: `intake_items_received_idx` (newest-first inbox
 paging) is declared on the model and reaches existing deployments through the
-next manifest migration.
+next manifest migration; there are no hand-written migration files in this
+package, and `smrt doctor --db` / `db:status --parity` report the index until
+it is applied.
 
 `listItems({ limit?, cursor?, state?, itemIds? })` returns one authorized inbox
 page newest receipt first with each row's durable inbox state and continuation

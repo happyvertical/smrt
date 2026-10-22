@@ -116,21 +116,21 @@ describe('published review host projection', () => {
   });
   it('reads assignments once per page and pushes the assignee filter down when the host can', async () => {
     const f = fixture();
-    const rows = Array.from({ length: 6 }, (_, index) => ({ id: `0${index}` }));
+    const uid = (n: number) =>
+      `0b6e1c1e-5b9b-4a1e-9b1e-${String(n).padStart(12, '0')}`;
+    const rows = Array.from({ length: 6 }, (_, index) => ({ id: uid(index) }));
+    const mine = [uid(2), uid(4)];
     f.service.listItems.mockImplementation(pageSource(rows));
     const assignments = vi.fn(
       async (itemIds: string[]) =>
         new Map(
           itemIds.map((id) => [
             id,
-            {
-              assigneeId: id === '02' || id === '04' ? 'me' : null,
-              version: 1,
-            },
+            { assigneeId: mine.includes(id) ? 'me' : null, version: 1 },
           ]),
         ),
     );
-    const assignedItemIds = vi.fn(async () => ['02', '04']);
+    const assignedItemIds = vi.fn(async () => mine);
     const host = createIntakeReviewHost(
       f.service as unknown as IngestionService,
       {
@@ -145,15 +145,49 @@ describe('published review host projection', () => {
       },
     );
     const page = await host.list({ assigneeId: 'me' });
-    expect(page.items.map((entry) => entry.item.id)).toEqual(['02', '04']);
+    expect(page.items.map((entry) => entry.item.id)).toEqual(mine);
     expect(page.items[0].assignment).toEqual({ assigneeId: 'me', version: 1 });
     expect(assignedItemIds).toHaveBeenCalledWith('me');
     expect(f.service.listItems).toHaveBeenCalledTimes(1);
     expect(f.service.listItems).toHaveBeenCalledWith(
-      expect.objectContaining({ itemIds: ['02', '04'] }),
+      expect.objectContaining({ itemIds: mine }),
     );
     expect(assignments).toHaveBeenCalledTimes(1);
-    expect(assignments).toHaveBeenCalledWith(['02', '04']);
+    expect(assignments).toHaveBeenCalledWith(mine);
+  });
+  it('drops junk ids from the assignee pushdown instead of failing the list', async () => {
+    const f = fixture();
+    const rows = [
+      { id: '0b6e1c1e-5b9b-4a1e-9b1e-000000000001' },
+      { id: '0b6e1c1e-5b9b-4a1e-9b1e-000000000002' },
+    ];
+    f.service.listItems.mockImplementation(pageSource(rows));
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment: async () => ({ assigneeId: 'me', version: 1 }),
+        assignedItemIds: async () => ['not-an-id', rows[1].id, rows[1].id, ''],
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    const page = await host.list({ assigneeId: 'me' });
+    expect(page.items.map((entry) => entry.item.id)).toEqual([rows[1].id]);
+    expect(f.service.listItems).toHaveBeenCalledWith(
+      expect.objectContaining({ itemIds: [rows[1].id] }),
+    );
+    const none = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment: async () => ({ assigneeId: 'me', version: 1 }),
+        assignedItemIds: async () => ['junk'],
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    expect(await none.list({ assigneeId: 'me' })).toEqual({ items: [] });
   });
   it('fills a filtered page across service pages when the assignee filter cannot be pushed down', async () => {
     const f = fixture();

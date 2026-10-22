@@ -228,8 +228,18 @@ function integer(value: unknown, max = 2_147_483_647): asserts value is number {
 }
 const ITEM_PAGE_DEFAULT = 20;
 const ITEM_PAGE_CEILING = 100;
+/**
+ * The most rows one `listItems` call examines while refilling a page after
+ * denials. When it is reached the page is returned short with a `nextCursor`
+ * so the caller can continue; no single call scans an unbounded scope.
+ */
+export const ITEM_SCAN_CEILING = 10 * ITEM_PAGE_CEILING;
 /** The most ids one page may be restricted to before the host must fall back to scanning. */
 export const ITEM_ID_FILTER_CEILING = 1000;
+/** True for a value shaped like an intake item id; hosts use it to drop junk before a page query. */
+export function isIntakeId(value: unknown): value is string {
+  return typeof value === 'string' && uuid.test(value);
+}
 const INBOX_STATES: readonly InboxState[] = [
   'processing',
   'unresolved',
@@ -1202,9 +1212,12 @@ export class IngestionService {
    * One authorized inbox page, newest receipt first with the id as tiebreak.
    * Tenant, confidential scope, retention, state and id filters all run in the
    * query, so a page is full and `nextCursor` is absent only when nothing
-   * follows. The host authorize callback runs once per distinct captured
-   * ceiling in the page, never per row; denied rows are skipped without
-   * disclosing their existence and the page is refilled from the next rows.
+   * follows. Authority is rechecked at two levels, never per row: the host
+   * `authorize('read')` once per distinct captured ceiling in the page, and
+   * the execution read gate once per distinct (item, handler) among the page's
+   * saved actions, exactly as `load` would. Rows failing either are skipped
+   * without disclosure and the page refills from the next rows, examining at
+   * most ITEM_SCAN_CEILING rows per call before returning short with a cursor.
    */
   async listItems(input: ListItemsInput = {}): Promise<IntakeItemPage> {
     const limit = input.limit ?? ITEM_PAGE_DEFAULT;
@@ -1216,14 +1229,87 @@ export class IngestionService {
       (input.itemIds !== undefined &&
         (!Array.isArray(input.itemIds) ||
           input.itemIds.length > ITEM_ID_FILTER_CEILING ||
-          input.itemIds.some((id) => typeof id !== 'string' || !uuid.test(id))))
+          !input.itemIds.every(isIntakeId)))
     )
       throw new Error('Invalid item page');
     if (input.itemIds && !input.itemIds.length) return { items: [] };
     let after = input.cursor ? decodeItemCursor(input.cursor) : undefined;
     const now = this.now().toISOString();
+    const allowed = this.ceilingGate();
+    const handlers = this.handlerGate();
+    const items: IntakeItemPage['items'] = [];
+    let examined = 0;
+    for (;;) {
+      const params: unknown[] = [
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        now,
+      ];
+      let where = '';
+      if (after) {
+        where += ' AND (i.created_at < ? OR (i.created_at = ? AND i.id < ?))';
+        params.push(after.receivedAt, after.receivedAt, after.id);
+      }
+      if (input.itemIds) {
+        where += ` AND i.id IN (${input.itemIds.map(() => '?').join(',')})`;
+        params.push(...input.itemIds);
+      }
+      let filter = '';
+      if (input.state) {
+        filter = ' WHERE s.inbox_state = ?';
+        params.push(input.state);
+      }
+      // The first read fetches one page; refills after denials read larger
+      // batches so a mostly-denied scope costs few queries up to the ceiling.
+      const wanted = limit - items.length;
+      const batch =
+        examined === 0
+          ? wanted
+          : Math.min(ITEM_PAGE_CEILING, ITEM_SCAN_CEILING - examined);
+      // The state expression is evaluated once per scanned row in the derived
+      // table and reused by both the filter and the projection.
+      const rows = (
+        await this.db.query(
+          `SELECT * FROM (SELECT i.*, ${INBOX_STATE_SQL} AS inbox_state, ${actionCount()} AS action_count FROM intake_items i WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where}) s${filter} ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
+          ...params,
+          batch + 1,
+        )
+      ).rows as Row[];
+      const more = rows.length > batch;
+      const candidates = rows.slice(0, batch);
+      const bindings = await handlers.bindings(
+        candidates.filter((row) => Number(row.action_count) > 0),
+      );
+      let consumed = 0;
+      for (const row of candidates) {
+        consumed++;
+        examined++;
+        after = {
+          receivedAt: persistedDate(row.created_at).toISOString(),
+          id: String(row.id),
+        };
+        if (!(await allowed(object(row.data)))) continue;
+        if (!(await handlers.readable(row, bindings))) continue;
+        items.push({
+          item: this.itemDTO(row),
+          state: String(row.inbox_state) as InboxState,
+          cursor: encodeItemCursor(after.receivedAt, after.id),
+        });
+        if (items.length === limit) break;
+      }
+      const remaining = more || consumed < candidates.length;
+      if (!remaining) return { items };
+      if (items.length === limit || examined >= ITEM_SCAN_CEILING)
+        return {
+          items,
+          nextCursor: encodeItemCursor(after!.receivedAt, after!.id),
+        };
+    }
+  }
+  /** One read authorization per distinct captured ceiling for a page of rows. */
+  private ceilingGate(): (data: Row) => Promise<boolean> {
     const ceilings = new Map<string, Promise<boolean>>();
-    const allowed = (data: Row): Promise<boolean> => {
+    return (data) => {
       const ceiling = object(data.capturedCeiling ?? {});
       const key = canonical(ceiling);
       let decision = ceilings.get(key);
@@ -1236,54 +1322,73 @@ export class IngestionService {
       }
       return decision;
     };
-    const items: IntakeItemPage['items'] = [];
-    for (;;) {
-      const params: unknown[] = [
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        now,
-      ];
-      let where = '';
-      if (input.state) {
-        where += ` AND ${INBOX_STATE_SQL} = ?`;
-        params.push(input.state);
-      }
-      if (after) {
-        where += ' AND (i.created_at < ? OR (i.created_at = ? AND i.id < ?))';
-        params.push(after.receivedAt, after.receivedAt, after.id);
-      }
-      if (input.itemIds) {
-        where += ` AND i.id IN (${input.itemIds.map(() => '?').join(',')})`;
-        params.push(...input.itemIds);
-      }
-      const wanted = limit - items.length;
-      const rows = (
-        await this.db.query(
-          `SELECT i.*, ${INBOX_STATE_SQL} AS inbox_state FROM intake_items i WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where} ORDER BY i.created_at DESC, i.id DESC LIMIT ?`,
-          ...params,
-          wanted + 1,
-        )
-      ).rows as Row[];
-      const scanned = rows.slice(0, wanted);
-      for (const row of scanned) {
-        after = {
-          receivedAt: persistedDate(row.created_at).toISOString(),
-          id: String(row.id),
-        };
-        if (!(await allowed(object(row.data)))) continue;
-        items.push({
-          item: this.itemDTO(row),
-          state: String(row.inbox_state) as InboxState,
-          cursor: encodeItemCursor(after.receivedAt, after.id),
-        });
-      }
-      if (rows.length <= wanted || !after) return { items };
-      if (items.length >= limit)
-        return {
-          items,
-          nextCursor: encodeItemCursor(after.receivedAt, after.id),
-        };
-    }
+  }
+  /**
+   * The execution read gate `load` applies per action, batched for a page:
+   * one query resolves the saved handler bindings of the rows' actions, then
+   * one execution authorization per distinct (item, handler). An item whose
+   * bound handler the actor cannot currently read, or whose bindings cannot
+   * be resolved, is not listed. Actions without a proposal carry no handler
+   * and are not gated, as in `listReviews`.
+   */
+  private handlerGate() {
+    const decisions = new Map<string, Promise<boolean>>();
+    const execution = this.options.execution
+      ? this.execution()
+      : Promise.resolve(undefined);
+    return {
+      bindings: async (
+        rows: Row[],
+      ): Promise<Map<string, Array<{ id: string; version: string }>>> => {
+        const bound = new Map<string, Array<{ id: string; version: string }>>();
+        if (!rows.length) return bound;
+        const found = (
+          await this.db.query(
+            `SELECT p.item_id, p.data FROM intake_proposals p JOIN intake_actions a ON a.tenant_id = p.tenant_id AND a.confidential_scope_id = p.confidential_scope_id AND a.id = p.action_id AND a.proposal_revision = p.revision WHERE p.tenant_id = ? AND p.confidential_scope_id = ? AND p.item_id IN (${rows.map(() => '?').join(',')})`,
+            this.scope.tenantId,
+            this.scope.confidentialScopeId,
+            ...rows.map((row) => String(row.id)),
+          )
+        ).rows as Row[];
+        for (const row of found) {
+          const itemId = String(row.item_id);
+          const list = bound.get(itemId) ?? [];
+          try {
+            const binding = object(object(row.data).binding);
+            list.push({
+              id: String(binding.handlerId),
+              version: String(binding.handlerVersion),
+            });
+          } catch {
+            list.push({ id: '', version: '' });
+          }
+          bound.set(itemId, list);
+        }
+        return bound;
+      },
+      readable: async (
+        row: Row,
+        bindings: Map<string, Array<{ id: string; version: string }>>,
+      ): Promise<boolean> => {
+        const itemId = String(row.id);
+        for (const handler of bindings.get(itemId) ?? []) {
+          const key = `${itemId}\u0000${handler.id}\u0000${handler.version}`;
+          let decision = decisions.get(key);
+          if (!decision) {
+            decision = execution
+              .then((service) =>
+                service
+                  ? service.canReadHandler(row, handler.id, handler.version)
+                  : false,
+              )
+              .catch(() => false);
+            decisions.set(key, decision);
+          }
+          if (!(await decision)) return false;
+        }
+        return true;
+      },
+    };
   }
   private itemDTO(row: Row): IntakeItemDTO {
     return {

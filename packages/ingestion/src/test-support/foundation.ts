@@ -1317,94 +1317,102 @@ export function foundationSuite(
         }),
       ).rejects.toThrow('conflict');
     });
-    it('pages the inbox newest-first with query-side filters, one authorize per ceiling and constant queries per page', async () => {
+    it('pages the inbox newest-first with query-side filters, bounded authorization and page-proportional queries', async () => {
       const seed = await accepted('page-seed');
       const [template] = (
         await db.query('SELECT * FROM intake_items WHERE id=?', seed)
       ).rows as Array<Record<string, unknown>>;
       const base = Date.parse('2026-10-01T00:00:00.000Z');
-      const total = 300;
       type Seeded = { id: string; receivedAt: string; expected: string };
       const seeded: Seeded[] = [];
       const columns = Object.keys(template);
       const secret = { handlers: ['secret'] };
       // Trusted test setup copies the accepted row so paging is measured over
-      // hundreds of items without hundreds of receipts. The newest two share a
-      // timestamp to exercise the id tiebreak.
-      const pendingRows: unknown[][] = [];
-      const pendingActions: number[] = [];
-      const flush = async () => {
-        if (!pendingRows.length) return;
-        await db.query(
-          `INSERT INTO intake_items (${columns.join(',')}) VALUES ${pendingRows
-            .map(() => `(${columns.map(() => '?').join(',')})`)
-            .join(',')}`,
-          ...pendingRows.flat(),
-        );
-        pendingRows.length = 0;
-      };
-      for (let index = 0; index < total; index++) {
-        const receivedAt = new Date(
-          base + Math.min(index, total - 2) * 1000,
-        ).toISOString();
-        const id = randomUUID();
-        const data = JSON.parse(
-          typeof template.data === 'string'
-            ? template.data
-            : JSON.stringify(template.data),
-        );
-        const hidden = index % 60 === 5;
-        if (hidden) data.capturedCeiling = secret;
-        const processing =
-          index % 10 === 0
-            ? 'needs_attention'
-            : String(template.processing_state);
-        seeded.push({
-          id,
-          receivedAt,
-          expected: hidden
-            ? 'hidden'
-            : index % 50 === 7
-              ? 'deferred'
-              : index % 50 === 9
-                ? 'completed'
-                : index % 10 === 0
-                  ? 'failed'
-                  : 'processing',
-        });
-        const row: Record<string, unknown> = {
-          ...template,
-          id,
-          slug: id,
-          delivery_key: `page-${index}`,
-          created_at: receivedAt,
-          updated_at: receivedAt,
-          processing_state: processing,
-          data: JSON.stringify(data),
+      // hundreds of items without hundreds of receipts. Every 60th row carries
+      // a ceiling the actor may not read; every 50th row has a saved action.
+      async function seedRows(
+        count: number,
+        receivedAt: (index: number) => string,
+      ) {
+        const pendingRows: unknown[][] = [];
+        const pendingActions: number[] = [];
+        const flush = async () => {
+          if (!pendingRows.length) return;
+          await db.query(
+            `INSERT INTO intake_items (${columns.join(',')}) VALUES ${pendingRows
+              .map(() => `(${columns.map(() => '?').join(',')})`)
+              .join(',')}`,
+            ...pendingRows.flat(),
+          );
+          pendingRows.length = 0;
         };
-        pendingRows.push(columns.map((column) => row[column]));
-        if (pendingRows.length === 50) await flush();
-        if (index % 50 === 7 || index % 50 === 9) pendingActions.push(index);
+        const first = seeded.length;
+        for (let index = first; index < first + count; index++) {
+          const id = randomUUID();
+          const data = JSON.parse(
+            typeof template.data === 'string'
+              ? template.data
+              : JSON.stringify(template.data),
+          );
+          const hidden = index % 60 === 5;
+          if (hidden) data.capturedCeiling = secret;
+          seeded.push({
+            id,
+            receivedAt: receivedAt(index),
+            expected: hidden
+              ? 'hidden'
+              : index % 50 === 7
+                ? 'deferred'
+                : index % 50 === 9
+                  ? 'completed'
+                  : index % 10 === 0
+                    ? 'failed'
+                    : 'processing',
+          });
+          const row: Record<string, unknown> = {
+            ...template,
+            id,
+            slug: id,
+            delivery_key: `page-${index}`,
+            created_at: receivedAt(index),
+            updated_at: receivedAt(index),
+            processing_state:
+              index % 10 === 0
+                ? 'needs_attention'
+                : String(template.processing_state),
+            data: JSON.stringify(data),
+          };
+          pendingRows.push(columns.map((column) => row[column]));
+          if (pendingRows.length === 50) await flush();
+          if (index % 50 === 7 || index % 50 === 9) pendingActions.push(index);
+        }
+        await flush();
+        for (const index of pendingActions)
+          await db.query(
+            "INSERT INTO intake_actions (id,slug,context,tenant_id,confidential_scope_id,item_id,action_key,state,proposal_revision,review_version,execution_attempt,fence,result_digest,data) VALUES (?,?,'',?,?,?,?,?,1,0,0,0,'','{}')",
+            randomUUID(),
+            randomUUID(),
+            tenant,
+            'confidential',
+            seeded[index].id,
+            `page-${index}`,
+            index % 50 === 7 ? 'deferred' : 'succeeded',
+          );
       }
-      await flush();
-      for (const index of pendingActions)
-        await db.query(
-          "INSERT INTO intake_actions (id,slug,context,tenant_id,confidential_scope_id,item_id,action_key,state,proposal_revision,review_version,execution_attempt,fence,result_digest,data) VALUES (?,?,'',?,?,?,?,?,1,0,0,0,'','{}')",
-          randomUUID(),
-          randomUUID(),
-          tenant,
-          'confidential',
-          seeded[index].id,
-          `page-${index}`,
-          index % 50 === 7 ? 'deferred' : 'succeeded',
-        );
+      // The newest two share a timestamp to exercise the id tiebreak.
+      await seedRows(300, (index) =>
+        new Date(base + Math.min(index, 298) * 1000).toISOString(),
+      );
       await db.query('DELETE FROM intake_items WHERE id=?', seed);
       // Newest first: later index first, equal timestamps broken by id descending.
-      const ordered = [...seeded].sort(
-        (a, b) =>
-          b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id),
-      );
-      const visible = ordered.filter((row) => row.expected !== 'hidden');
+      const sorted = () =>
+        [...seeded].sort(
+          (a, b) =>
+            b.receivedAt.localeCompare(a.receivedAt) ||
+            b.id.localeCompare(a.id),
+        );
+      let ordered = sorted();
+      let visible = ordered.filter((row) => row.expected !== 'hidden');
       let queries = 0;
       let authorizations = 0;
       const counted = new Proxy(db, {
@@ -1418,13 +1426,14 @@ export function foundationSuite(
           return typeof value === 'function' ? value.bind(target) : value;
         },
       });
+      const isSecret = (ceiling: unknown) =>
+        JSON.stringify(ceiling) === JSON.stringify(secret);
       const paged = new IngestionService({
         ...options,
         db: counted,
         authorize: async (input) => {
           authorizations++;
-          if (JSON.stringify(input.capturedCeiling) === JSON.stringify(secret))
-            return false;
+          if (isSecret(input.capturedCeiling)) return false;
           return options.authorize(input);
         },
       });
@@ -1445,9 +1454,11 @@ export function foundationSuite(
         visible.slice(0, 100).map((row) => row.expected),
       );
       // Two distinct captured ceilings in the page: one allow, one deny.
-      // Denied rows refill from the next rows with one more query.
+      // Denied rows refill from the next rows with one more page read; rows
+      // with saved actions add one handler-binding read per batch.
       expect(authorizations).toBe(2);
-      expect(queries).toBe(2);
+      const wideQueries = queries;
+      expect(wideQueries).toBeLessThanOrEqual(4);
 
       const walked: string[] = [];
       let cursor: string | undefined;
@@ -1507,7 +1518,7 @@ export function foundationSuite(
       const chosen = [
         visible[250].id,
         visible[3].id,
-        ordered.find((r) => r.expected === 'hidden')!.id,
+        ordered.find((r) => r.expected === 'hidden')?.id ?? '',
       ];
       expect(ids(await paged.listItems({ itemIds: chosen }))).toEqual([
         visible[3].id,
@@ -1520,6 +1531,57 @@ export function foundationSuite(
         scope: { ...options.scope, confidentialScopeId: 'other' },
       });
       expect(await outsider.listItems({ limit: 100 })).toEqual({ items: [] });
+
+      // Five times the items, all older: the same pages cost the same queries.
+      await seedRows(1200, (index) =>
+        new Date(base - (index - 299) * 1000).toISOString(),
+      );
+      ordered = sorted();
+      visible = ordered.filter((row) => row.expected !== 'hidden');
+      expect(seeded).toHaveLength(1500);
+      queries = authorizations = 0;
+      expect(ids(await paged.listItems())).toEqual(ids(first));
+      expect(queries).toBe(1);
+      expect(authorizations).toBe(1);
+      queries = 0;
+      expect(ids(await paged.listItems({ limit: 100 }))).toEqual(ids(wide));
+      expect(queries).toBe(wideQueries);
+      queries = 0;
+      expect(
+        ids(await paged.listItems({ state: 'failed', limit: 20 })),
+      ).toEqual(ids(failedPage));
+      expect(queries).toBe(1);
+
+      // A mostly-denied actor: only the rare ceiling is readable, so a page
+      // needs many rows. Each call examines at most ITEM_SCAN_CEILING rows,
+      // returns what it found with a cursor, and the walk still sees every
+      // readable row exactly once, newest first.
+      const rare = new IngestionService({
+        ...options,
+        db: counted,
+        authorize: async (input) => isSecret(input.capturedCeiling),
+      });
+      const hidden = ordered.filter((row) => row.expected === 'hidden');
+      expect(hidden).toHaveLength(25);
+      const found: string[] = [];
+      let calls = 0;
+      let short = false;
+      cursor = undefined;
+      do {
+        queries = 0;
+        const page = await rare.listItems({ limit: 20, cursor });
+        calls++;
+        // One 20-row page read plus at most ten 100-row refills up to the
+        // 1000-row scan ceiling, each batch with at most one handler-binding
+        // read: bounded by the ceiling, not by the item count.
+        expect(queries).toBeLessThanOrEqual(22);
+        if (page.nextCursor && page.items.length < 20) short = true;
+        found.push(...ids(page));
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(short).toBe(true);
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(found).toEqual(hidden.map((row) => row.id));
     });
     it('denies cross-tenant, cross-confidential and revoked access at reads and mutations', async () => {
       const id = await accepted();

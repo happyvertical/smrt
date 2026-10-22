@@ -670,6 +670,28 @@ export class IntakeExecutionService {
       throw new Error('Handler version drift');
     return { item, action, proposal, binding, handler };
   }
+  /**
+   * Current read authority for one handler bound to a listed item: the same
+   * gate `listReviews` applies per action, exposed for page-level checks.
+   * Any failure answers false; the list discloses nothing about why.
+   */
+  async canReadHandler(
+    item: Row,
+    handlerId: string,
+    handlerVersion: string,
+  ): Promise<boolean> {
+    try {
+      await this.access(
+        this.db,
+        item,
+        this.handler(handlerId, handlerVersion),
+        'read',
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
   private review(bound: Bound): ProposalReview {
     return {
       actionId: String(bound.action.id),

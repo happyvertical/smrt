@@ -9,7 +9,11 @@ import type {
   IntakeReviewHost,
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
-import { type IngestionService, ITEM_ID_FILTER_CEILING } from './server.js';
+import {
+  type IngestionService,
+  ITEM_ID_FILTER_CEILING,
+  isIntakeId,
+} from './server.js';
 
 /** Trusted application adapters, bound to the same authenticated session as service. */
 export interface IntakeReviewHostOptions {
@@ -67,7 +71,14 @@ export function createIntakeReviewHost(
       const limit = input.limit ?? 20;
       let itemIds: string[] | undefined;
       if (input.assigneeId && options.assignedItemIds) {
-        const assigned = await options.assignedItemIds(input.assigneeId);
+        // Junk ids from the host narrow nothing and must not fail the list.
+        const assigned = [
+          ...new Set(
+            (await options.assignedItemIds(input.assigneeId)).filter(
+              isIntakeId,
+            ),
+          ),
+        ];
         if (assigned.length <= ITEM_ID_FILTER_CEILING) itemIds = assigned;
       }
       const items: InboxEntry[] = [];
@@ -94,6 +105,9 @@ export function createIntakeReviewHost(
           if (input.assigneeId && assignment.assigneeId !== input.assigneeId)
             continue;
           items.push({ item, label: label(item), state, assignment });
+          // The continuation is the last row actually returned, so an
+          // assignment that changed between the page read and the assignment
+          // read can only cost one extra scan, never skip or repeat a row.
           if (items.length === limit)
             return {
               items,

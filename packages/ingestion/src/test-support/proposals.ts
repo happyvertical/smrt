@@ -119,6 +119,7 @@ export function proposalSuite(
     let policyMaxBytes: number;
     let reviewerAllowed: boolean;
     let policyReviewers: string[];
+    let deniedHandlers: string[];
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
       await expect(
@@ -162,6 +163,7 @@ export function proposalSuite(
       policyMaxBytes = 100000;
       reviewerAllowed = true;
       policyReviewers = ['owner', 'reviewer'];
+      deniedHandlers = [];
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -239,7 +241,9 @@ export function proposalSuite(
             policy: [
               {
                 version: 'app1',
-                handlers: handlers.map((handler) => handler.id),
+                handlers: handlers
+                  .map((handler) => handler.id)
+                  .filter((id) => !deniedHandlers.includes(id)),
                 operations: handlers.map((handler) =>
                   'model' in handler.operation
                     ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
@@ -820,6 +824,18 @@ export function proposalSuite(
       expect(saved.reviews.actions).toHaveLength(1);
       expect(saved.reviews.actions[0].review.revision).toBe(1);
       expect(saved.entry.state).toBe('waiting');
+      expect((await host.list({})).items.map((entry) => entry.state)).toEqual([
+        'waiting',
+      ]);
+      // Policy no longer covers the bound handler: the list omits the item
+      // rather than deriving a state from actions the actor may not read, and
+      // the item view refuses as before (#4211 review).
+      deniedHandlers = [CREATE];
+      expect((await host.list({})).items).toEqual([]);
+      expect((await service.listItems()).items).toEqual([]);
+      await expect(host.load(generated.itemId)).rejects.toThrow('unavailable');
+      deniedHandlers = [];
+      expect((await host.list({})).items).toHaveLength(1);
       await expect(
         host.preview({
           itemId: generated.itemId,

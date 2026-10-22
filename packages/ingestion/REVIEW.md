@@ -152,15 +152,38 @@ first (`intake_items.created_at`, id tiebreak) through `service.listItems`.
 `limit` defaults to 20 and is capped at 100; the cursor is an opaque
 (received-at, id) continuation, never a bare id. Tenant, confidential scope,
 retention and the `state` filter run inside the page query, so a page is full
-and `nextCursor` is present only when more rows follow. The host authorize
-callback runs once per distinct captured ceiling in the page, not per row;
-denied rows are skipped without disclosure and the page refills. The page's
-inbox state is the durable projection of the saved action journal and
-processing state computed in that query; `load` remains the authoritative,
-live-gated projection for one item. Listing does not load original bytes.
+and `nextCursor` is present only when more rows follow.
+
+Authority is rechecked at the same two levels `load` applies, but per page
+rather than per row: the host authorize callback once per distinct captured
+ceiling, and the execution read gate (policy, ceiling, handler and operation
+allowlists, principal) once per distinct (item, handler) bound by the page's
+saved actions. An item whose bound handler the actor cannot currently read is
+not listed at all, rather than listed with a state derived from actions the
+actor may not see; actions without a proposal bind no handler and are not
+gated, as in `listReviews`. Denied rows are skipped without disclosure and the
+page refills from the next rows. One call examines at most
+`ITEM_SCAN_CEILING` (1000) rows; when a mostly-denied scope reaches it, the
+page comes back short with a `nextCursor` and the caller continues.
+
+The page's inbox state is the durable projection of the saved action journal
+and processing state, computed once per scanned row inside the page query;
+`load` remains the authoritative, live-gated projection for one item (it still
+projects individual stale actions, which the list does not). Cost is
+proportional to the page for unfiltered pages and common states, and to the
+number of items scanned until enough matches are found for rare states: the
+state is not persisted, because the action journal is append-only and
+projecting it into an indexed column would need a maintained denormalisation
+in the execution service plus a migration, which this change does not take.
+Listing does not load original bytes.
+
 Newest-first paging relies on `intake_items_received_idx`
-(`tenant_id, confidential_scope_id, created_at`); deploy the manifest migration
-before upgrading hosts.
+(`tenant_id, confidential_scope_id, created_at`). This package ships no
+migration files: indexes are declared on the model, the build emits them into
+`dist/manifest.json`, and `smrt db:migrate` / the public migration API create
+them, which is how `intake_items_receipt_idx` shipped. Deploy the manifest
+migration before upgrading hosts; `db:status --parity` reports the index as
+missing until then.
 
 Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
@@ -169,9 +192,12 @@ replay protection), and `evidence(part)` (safe label/text or authenticated
 same-origin URL). Optional `label(item)` changes presentation. Optional
 `assignments(itemIds)` reads one page's assignments in one batch (otherwise
 `assignment` runs per row), and optional `assignedItemIds(assigneeId)` lets
-`list` push the assignee filter into the page query; without it an assignee
-filter scans further pages and filters by `assignment`, which stays correct but
-costs more rows. Optional
+`list` push the assignee filter into the page query (junk ids are dropped, not
+fatal); without it an assignee filter scans further pages and filters by
+`assignment`, which stays correct but costs more rows. The page's continuation
+is always the last row actually returned, so an assignment that changes
+between the page read and the assignment read costs at most one extra scan and
+never skips or repeats a row. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment
