@@ -568,6 +568,53 @@ export function sourcesSuite(
       ).toMatchObject({ category: 'authentication' });
       expect(await count()).toBe(2);
     });
+    it('cleans or drops odd attachment names instead of failing the receipt (#4214)', async () => {
+      const adapter = new EmailSourceAdapter({
+        binding,
+        accountId: 'account',
+        readMessage: async () => ({
+          accountId: 'account',
+          messageId: 'rfc-odd-names',
+          threadId: 'thread-odd-names',
+          inReplyTo: '',
+          subject: 'odd names',
+          text: 'body',
+          html: '',
+          date: capturedAt,
+          attachments: [
+            {
+              partId: '0',
+              filename: 'bad\u0000name\n.pdf',
+              mediaType: 'application/pdf',
+              bytes: Buffer.from('%PDF-odd'),
+            },
+            {
+              partId: '1',
+              filename: 'x'.repeat(600),
+              mediaType: 'application/pdf',
+              bytes: Buffer.from('%PDF-long'),
+            },
+          ],
+        }),
+        acknowledge: async () => {},
+      });
+      const receipt = await adapter.receive({
+        locator: 'INBOX:uidvalidity:odd-names',
+        revision: '1',
+        checkpoint: '1',
+      });
+      expect(receipt.kind).toBe('accepted');
+      if (!('itemId' in receipt)) throw new Error('receipt missing');
+      expect(
+        (await service.getEvidence(receipt.itemId))
+          .filter((e) => e.partId.startsWith('attachment:'))
+          .map((e) => [e.partId, e.filename])
+          .sort(),
+      ).toEqual([
+        ['attachment:0', 'badname.pdf'],
+        ['attachment:1', undefined],
+      ]);
+    });
     it('retries failed email checkpoint without duplicating bytes and rejects missing/oversized attachments', async () => {
       const snapshot: EmailIntakeSnapshot = {
         accountId: 'account',

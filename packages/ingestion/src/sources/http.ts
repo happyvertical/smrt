@@ -3,6 +3,7 @@ import {
   boundedBytes,
   deliver,
   keys,
+  presentedFilename,
   record,
   type SourceBinding,
   SourceInputError,
@@ -138,8 +139,9 @@ export function createSourceDeliveryHandler(
             if (name !== 'file' || parts.length)
               throw new SourceInputError('invalid');
             // Keep the original name for labels; it never becomes identity.
-            const original =
-              typeof value.name === 'string' ? value.name.trim() : '';
+            // `blob` is the name a nameless Blob part gets, not a real one.
+            const presented = presentedFilename(value.name);
+            const original = presented === 'blob' ? undefined : presented;
             parts.push({
               partId: 'file',
               parentPartId: 'capture',
@@ -148,9 +150,7 @@ export function createSourceDeliveryHandler(
                 value.stream(),
                 binding.limits.maxBytes,
               ),
-              ...(original && original !== 'blob' && original.length <= 512
-                ? { filename: original }
-                : {}),
+              ...(original ? { filename: original } : {}),
             });
           }
         }
