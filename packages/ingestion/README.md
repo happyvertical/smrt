@@ -259,7 +259,9 @@ untouched, and a replay that switches mode conflicts.
 **Receive by reference.** A part may be `{ partId, reference: { owner, id,
 version? }, snapshot: { text } | { structured } }` instead of bytes. The
 service derives UTF-8 bytes once (`text/plain` or canonical `application/json`;
-text containing NUL or unpaired surrogates is rejected `invalid` on every engine),
+text, reference fields and owner identity containing NUL or unpaired
+surrogates are rejected `invalid` on every engine, and `expireOwned` refuses
+them, so distinct owners can never collapse onto one stored key),
 hashes them into the receipt identity, and stores only that snapshot in the
 durable evidence row; no AssetStore object or asset record is created, and
 `readEvidence` serves the snapshot after the same hash/length check. The
@@ -303,10 +305,10 @@ authenticated `scope.actorId` of the receiving service, server-side; payload
 and source metadata never supply it. `listOwnProposals({ cursor?, limit? })`
 lists only this actor's own active submissions with their saved review pages,
 reloaded under current item/handler/target authority, without the reviewer
-inbox. A submission the actor can no longer read is omitted entirely; a
-readable one whose reviews are denied by handler or target authority is
-returned as `{ item, reviews: null, unavailable: true }` with no reason, so one
-revoked target never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
+inbox. A submission the actor can no longer read is skipped before projection
+and never named by the cursor; a readable one whose reviews are denied by
+ingestion authority is returned as `{ item, reviews: null, unavailable: true }`
+with no reason, so one revoked grant never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
 `correct`) under the `review_own` authority: the host's execution `authorize`
 must return `submitter: true` for that actor, the application policy must opt
 in with `submitterReview: true` (narrower layers may only disable it), and the

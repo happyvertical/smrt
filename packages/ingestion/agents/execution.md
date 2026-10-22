@@ -47,9 +47,14 @@ unchanged; `correct` is refused. The decision row records `mode` and
 `selfDecision`, and `feedbackEvent` copies them as `decisionMode`/`selfDecision`;
 `authorizeAutomatic` never reads human decisions, so a self-decision cannot
 become automation evidence. `listOwnProposals` reads with the ordinary `read`
-operation per handler after an item-level `read` check: unreadable items are
-omitted entirely, and readable items whose reviews are denied become
-`unavailable` entries.
+operation per handler after an item-level `read` check. Unreadable items are
+skipped before projection in a bounded scan (1000 rows) and the cursor names
+only emitted items; readable items whose reviews raise the exported
+`IntakeAccessDeniedError` (message `Intake unavailable`, now the type of every
+execution denial) become `unavailable` entries, and any other error propagates.
+A host `assertTarget` that wants target denial treated as unavailable throws
+that type. The feedback anti-widening check also refuses a re-evaluation that
+turns `submitterReview` on.
 Deletion redaction blanks `submitter_id` and `owner_key` with the payloads.
 Hosts whose `authorize` switches exhaustively on the operation fail closed for
 the new value until they opt in.
