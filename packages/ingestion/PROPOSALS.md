@@ -99,6 +99,21 @@ for human preview; automatic eligibility always remains false. The service
 deadline aborts requests and prevents late publication; it does not claim to terminate computation at a remote
 provider or isolate native allocations. Extractor process limits remain separate.
 
+When the pinned extraction carries an authenticated reviewer instruction
+(REVIEW.md), `prepareGeneration` copies it into the interpretation configuration
+and `generateProposals` verifies that copy against the extraction record and its
+own digest before provider disclosure (`integrity` otherwise). The prompt then
+carries it in its own **trusted reviewer guidance** section after the fixed
+system instruction and handler contract: the guidance is named as authenticated
+human input, limited to the offered catalog, and the evidence remains untrusted
+data. `GenerativeProposalInput.reviewerInstruction` exposes `{id, text}` to custom
+generators; `provenance.reviewerInstruction` records `{id, digest}`. The
+instruction never changes `offered`, `catalogDigest`, argument schemas,
+permissions or `automaticActionEligible`; a reply that follows guidance outside
+the catalog fails validation like any other hostile output. Learned examples are
+still retrieved for an instructed generation; only a logical split correction
+suppresses them.
+
 Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.
 Candidate IDs must occur in the offered set, and evidence IDs in retained source

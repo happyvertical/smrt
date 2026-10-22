@@ -83,6 +83,15 @@ each step review; changed preview/preconditions require a fresh review.
 Abort/continue follows the pinned public playbook definition, with fresh authority
 at every step.
 
+Human corrections are the logical split and the reviewer instruction. Both are
+minted only by their authenticated review API under reviewer authority, written
+into a new immutable extraction configuration, and reach interpretation only as
+a digest-verified copy. Neither grants handlers, candidates, permissions or
+automation; `authorizeAutomatic` and preview/approval are unchanged for actions
+produced under an instruction. Recording either supersedes current suggestions
+and queues the existing dispatch stages; hosts wake their worker through
+`onSplit`/`onInstruct` and rely on dispatch repair otherwise.
+
 `continueIntakeReview` uses the existing jobs continuation context. Applications
 create tasks with owner, tenant and exact `{recordId, revision, inputKey}` binding
 and configure `authorizeMcpTask` to revalidate it. A continuation answer only wakes

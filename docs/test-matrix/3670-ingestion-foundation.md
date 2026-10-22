@@ -122,6 +122,31 @@ typecheck and affected repository gates run. Ingestion U/P, core PostgreSQL and
 full root runtime evidence carry forward because only test expectations and
 this matrix change; no numeric, UUID, conflict, timestamp or migration path changes.
 
+### #4212 reviewer instructions as trusted guidance
+
+`proposals.test.ts` and `proposals.postgres.test.ts` share three cases. The
+record case covers reviewer-grant and actor denial, empty/oversized text, stale
+revision, replay identity and changed-text conflict, immediate suggestion
+staleness, the extraction-configuration record (`kind`, id, digest, actor), the
+digest-verified interpretation copy, the separate trusted-guidance prompt section
+after the untrusted-evidence instruction, unchanged `offered`/`catalogDigest`,
+`provenance.reviewerInstruction`, `automaticActionEligible: false` with
+`authorizeAutomatic` refusal, supersession (`supersedesId`, newest-first history)
+and a guided reply naming an unoffered handler failing as `provider_error` with
+no domain effect. The injection case shows `analyze` refusing an extraction-stage
+instruction and a forged interpretation copy failing before provider disclosure
+while history stays empty. The feedback case shows the judgment carrying
+`{id, digest, text}`, `retrieveFeedback` returning it with the example, and the
+receiving generation seeing it only as example content. `review-host.test.ts`
+covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
+projection; the component suite covers the textarea/button binding, disabled
+empty text, polling through `processing` until the in-place update, and stale
+display; the Chromium suite records a real instruction, observes the background
+"Reinterpreting…" state, the in-place update, provenance, unchanged original
+bytes, a refused forged payload and supersession. No schema or migration changes:
+the record lives in the existing append-only analysis ledger beside the split
+correction.
+
 ### #4116 retained dispatch routing
 
 `foundation.test.ts` and `foundation.postgres.test.ts` share the `dispatch route

@@ -51,6 +51,14 @@ examples. A receiving item's provider grant cannot substitute for a source grant
 Superseded, revoked, deleted or incompatible sources are excluded. Current explicit human corrections
 take precedence: a generation carrying one does not retrieve learned examples.
 
+A judgment recorded on an action whose generation ran under a reviewer
+instruction (REVIEW.md) captures that instruction as `instruction: {id, digest,
+text}`; capture verifies it against the generation's own provenance. `retrieve`
+returns it as part of the example so comparable later items see the guidance
+that produced the judged suggestion. It is example content only: it does not
+transfer to the receiving generation's configuration or prompt section, and it
+expands no catalog, candidate, permission or automation eligibility.
+
 Full examples exist only in the authorized provider request. The SDK proposal
 adapter includes that typed selection in its serialized user message when
 present; disabled feedback leaves the original request shape unchanged. Saved generation

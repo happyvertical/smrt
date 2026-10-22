@@ -98,6 +98,51 @@ with `human_split_not_respected`. New proposals require new explicit review.
 The reference host runs these stages synchronously for browser determinism;
 production hosts dispatch the existing durable analysis jobs.
 
+## Reviewer instructions
+
+`recordReviewerInstruction({itemId, attemptId, expectedRevision, text,
+requestId})` records a plain-text instruction for one item ("This is a customer
+PO from Badger; file it, do not bill it") as the second kind of **human
+correction**. It is authorized exactly like `reviseLogicalSplit`: the current
+generation must pass the same-executor catalog/candidate gate and the reviewer
+grant plus policy reviewer list, and authority is checked before mutation and
+again before publication. Process access, `analyze`, and a client payload cannot
+mint one: `analyze` rejects a `reviewerInstruction` key on an extraction
+configuration, and an interpretation copy that differs from the pinned
+extraction's record fails with `Generation evidence changed` before provider
+disclosure. Text is required, trimmed-nonempty and at most 4,000 characters.
+
+The record is immutable: `{id, text, actorId, recordedAt, supersedesId, digest}`
+plus the request binding, written into a new extraction configuration beside
+any existing split correction. Recording supersedes current suggestions and
+approvals, queues the normal fenced re-extraction and interpretation through the
+existing dispatch path, and returns immediately; the reviewer keeps working
+while the item reports `processing`. `prepareGeneration` copies the instruction
+into the interpretation configuration, the generator receives it only after its
+digest matches the authoritative extraction record, and saved generation
+provenance records `reviewerInstruction: {id, digest}`. A later instruction
+records `supersedesId` and replaces the earlier one for future interpretations;
+`listReviewerInstructions(itemId)` returns the full history, newest first, and
+history is never deleted. The instruction steers the model only: it cannot add
+handlers, candidates, schemas, permissions or automation eligibility, replies
+are validated as usual, and suggestions still require explicit preview and
+approval. A replay with the same request ID returns the same revision; a changed
+text under the same request ID conflicts.
+
+`ItemReviewView.instruction` exposes `current` (latest recorded), `applied` (the
+instruction the displayed generation ran under) and `stale` (the displayed
+suggestions predate the current instruction). The optional host callback
+`IntakeReviewHost.instruct` is implemented by the published adapter when the
+service supports it, with an optional `onInstruct(itemId, revision)` wakeup
+mirroring `onSplit`. The review component renders "Instructions for the
+assistant" with "Re-read with these instructions", shows "Reinterpreting…" while
+the host reports `processing`, repeats the existing authenticated `load` on
+`pollMs` (default 2 s) until the stage lands, and then shows the instruction that
+produced the current suggestions, marking a superseded one as stale. There is no
+streaming channel; status is read through the existing item/analysis APIs. The
+maintained fixture records the instruction durably and then runs the stages in
+the background so the browser proof exercises the in-place update.
+
 `feedback` is an optional explicit correctness callback, separate from approval
 choice and execution success. No learning, feedback storage or rule promotion is
 implemented by these components; #3676 owns those services. Do not pass feedback
