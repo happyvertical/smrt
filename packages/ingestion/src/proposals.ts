@@ -1021,9 +1021,22 @@ export class IngestionProposalService {
       });
     } catch (error) {
       if (authorityError !== undefined) throw authorityError;
-      if (readiness !== 'record') throw error;
+      // The serialized request exceeding the byte budget is a configuration
+      // failure, not a provider answer: it ends the attempt in both modes.
+      if (
+        readiness !== 'record' ||
+        (error instanceof StageFailure && error.category === 'limit')
+      )
+        throw error;
       // Opt-out: the suggestions stay as generated; the failure is provenance.
-      recordFailure(decided ? 'decision_malformed' : 'decision_unavailable');
+      // A thrown SDK validation error carries no usage; record it when the
+      // error object happens to expose one.
+      recordFailure(
+        decided ? 'decision_malformed' : 'decision_unavailable',
+        error && typeof error === 'object' && 'usage' in error
+          ? (error as { usage?: unknown }).usage
+          : undefined,
+      );
     }
     await this.live(
       lease,

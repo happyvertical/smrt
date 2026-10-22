@@ -36,6 +36,8 @@ export const M = defineMessages({
   'ingestion.preview': 'Prepare review',
   'ingestion.args': 'Exact arguments (JSON)',
   'ingestion.suggestionArgs': 'Suggested arguments (JSON)',
+  'ingestion.searchFailed':
+    'Destination search is unavailable right now. Check your access and try again.',
   'ingestion.previewRejected':
     'The host did not accept this preview. Check the arguments and your current access, then try again.',
   'ingestion.completeSuggestion':

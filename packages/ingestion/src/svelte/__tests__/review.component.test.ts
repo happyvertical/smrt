@@ -1049,6 +1049,62 @@ describe('intake review host boundary', () => {
     );
     expect(callbacks.preview).not.toHaveBeenCalled();
   });
+  it('reports a failed destination search inline without discarding the view or draft', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.candidates).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const draft = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Keep me' });
+    await fireEvent.input(draft, { target: { value: typed } });
+    await fireEvent.change(
+      screen.getByRole('combobox', { name: 'Argument field' }),
+      { target: { value: 'destination' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Search destinations' }),
+    );
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Destination search is unavailable',
+    );
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(screen.getByRole('button', { name: 'Prepare review' })).toBeTruthy();
+  });
+  it('keeps unsent drafts across Refresh and clears the JSON alert once the draft parses', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const draft = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    await fireEvent.input(draft, { target: { value: '{"title":' } });
+    const prepare = screen.getByRole('button', { name: 'Prepare review' });
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Fixed' });
+    await fireEvent.input(draft, { target: { value: typed } });
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    expect(
+      (
+        (await screen.findByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        })) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
   it('shows required arguments missing from an action draft while editing', async () => {
     const view = page();
     view.generation = needsReviewView([]).generation;
