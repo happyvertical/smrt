@@ -260,6 +260,28 @@ function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
 }
 const inlineMedia = new Set(['text/plain', 'application/json']);
+/** Fixed marker for digests overwritten by privacy redaction. */
+const REDACTED = 'redacted';
+/** Content- or identity-derived digests; successful result digests are kept as
+ * the documented replay tombstone. */
+const REDACTED_DIGESTS = [
+  ['intake_analyses', 'input_digest'],
+  ['intake_analysis_attempts', 'output_digest'],
+  ['intake_plans', 'digest'],
+  ['intake_proposals', 'binding_hash'],
+  ['intake_review_decisions', 'binding_hash'],
+  ['intake_executions', 'binding_hash'],
+] as const;
+/** Keep the host's ceiling for later delete authorization, minus the principal:
+ * nothing reads it after redaction and it would identify the person. */
+function redactedCeiling(value: unknown): Record<string, unknown> {
+  const ceiling = { ...object(value) };
+  if (ceiling.execution !== undefined) {
+    const { principalId: _principal, ...execution } = object(ceiling.execution);
+    ceiling.execution = execution;
+  }
+  return ceiling;
+}
 function mediaKind(mediaType: string): string {
   return mediaType.split(';')[0].trim().toLowerCase();
 }
@@ -868,6 +890,8 @@ export class IngestionService {
       await this.point('ready');
       if (!inline) await this.repairDispatches();
       await this.point('ack');
+      if (await this.revokedBeforeAck(itemId))
+        return { kind: 'rejected', category: 'expired' };
       return {
         kind: reservation.created ? 'accepted' : 'duplicate',
         itemId,
@@ -883,8 +907,15 @@ export class IngestionService {
           token,
         ),
       );
+      // An owner deletion that won the race is final, not a retryable fault.
+      if (await this.revokedBeforeAck(itemId))
+        return { kind: 'rejected', category: 'expired' };
       return { kind: 'retry', category: 'unavailable' };
     }
+  }
+  private async revokedBeforeAck(itemId: string): Promise<boolean> {
+    const [row] = await this.rows(this.db, 'intake_items', 'id=?', [itemId]);
+    return !row || row.visibility !== 'active';
   }
   private async preserve(
     itemId: string,
@@ -1644,6 +1675,12 @@ export class IngestionService {
     nonempty(input.requestId);
     if (!storableText(input.requestId))
       throw new Error('Invalid intake identifier');
+    if (
+      typeof input.extraction?.configurationRevision !== 'string' ||
+      !input.extraction.configurationRevision ||
+      !storableText(input.extraction.configurationRevision)
+    )
+      throw new Error('Invalid extraction configuration');
     const item = await this.item(itemId, 'process');
     if (object(item.data).dispatch !== 'inline')
       throw new Error('Inline interpretation requires an inline receipt');
@@ -2780,11 +2817,26 @@ export class IngestionService {
         );
         // The owner and submitter links are payload provenance, not replay
         // identity: deletion severs them together with every other payload.
+        // Digests over actor, owner, text or arguments would let a deleted
+        // receipt be linked to its sender or a guessed text be confirmed.
+        // Replay after redaction is already refused, so none are needed.
+        for (const [table, column] of REDACTED_DIGESTS)
+          await db.query(
+            `UPDATE ${table} SET ${column}=? WHERE tenant_id=? AND confidential_scope_id=? AND item_id=?`,
+            REDACTED,
+            this.scope.tenantId,
+            this.scope.confidentialScopeId,
+            itemId,
+          );
         await db.query(
-          "UPDATE intake_items SET data=?,trace_id='',submitter_id='',owner_key='' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+          "UPDATE intake_items SET data=?,trace_id='',submitter_id='',owner_key='',payload_digest=?,scope_digest=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
           canonical({
-            capturedCeiling: object(item.data).capturedCeiling ?? {},
+            capturedCeiling: redactedCeiling(
+              object(item.data).capturedCeiling ?? {},
+            ),
           }),
+          REDACTED,
+          REDACTED,
           this.scope.tenantId,
           this.scope.confidentialScopeId,
           itemId,

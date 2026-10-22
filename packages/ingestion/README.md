@@ -263,7 +263,22 @@ recorded in the indexed `owner_key` column (`<kind>:<id>`, so `kind` cannot
 contain `:`). Deletion redaction blanks `owner_key` and `submitter_id` together
 with every payload: only the receipt identity (`delivery_key`) and the captured
 ceiling survive, so a redacted row no longer links an owner to an actor and a
-repeated `expireOwned` finds nothing. Services are confidential-scope bound, so
+repeated `expireOwned` finds nothing. Redaction also overwrites every
+identity- or content-derived digest (`payload_digest`, `scope_digest`, analysis
+`input_digest`, attempt `output_digest`, plan `digest` and proposal, decision
+and execution `binding_hash`) with the fixed marker `redacted`, and drops
+`execution.principalId` from the retained ceiling; successful result digests
+remain as the replay tombstone. `delivery_key` stays in plaintext because it is
+the unique receipt identity and the package holds no secret to key it: hosts
+must use an opaque value (for example a random UUID recorded with the message)
+and must not encode owner ids, sender ids or content in `deliveryKey`.
+
+Host ordering for owner deletion: first stop issuing receipts for the owner,
+then call `expireOwned`, and call it again once in-flight receipts settle (or
+from a periodic sweep). A receipt still in flight when its owner is expired
+returns `{ kind: 'rejected', category: 'expired' }` rather than `accepted`, but
+one that reserved its row after the first `expireOwned` is only found by the
+later call; until then the time ceiling bounds it. Services are confidential-scope bound, so
 a host whose owner has receipts in several confidential scopes calls
 `expireOwned` from each scope's service; a foreign tenant or scope sees zero.
 
@@ -299,10 +314,16 @@ must return `submitter: true` for that actor, the application policy must opt
 in with `submitterReview: true` (narrower layers may only disable it), and the
 item's recorded submitter must equal the current actor. Every other check is
 the ordinary one, and `applyAction` remains the single once-only effect path
-under the approver's live grants. The decision is recorded with
-`mode: 'review_own'` and `selfDecision: true` (and mirrored as `decisionMode` /
+under the approver's live grants. Because the effect runs as the receipt's
+captured `capturedCeiling.execution.principalId`, `review_own` additionally
+requires that principal to be the submitter itself (`submitter_id ===
+scope.actorId === principalId`), checked under the item lock at decision time
+and again at apply; a receipt captured for a bot or service principal can only
+be approved by a reviewer. The decision is recorded with `mode` (`review` or
+`review_own`) and `selfDecision`, which is true whenever the deciding actor is
+the item's submitter, in either mode (mirrored as `decisionMode` /
 `selfDecision` on feedback events), so a self-confirmation is never mistaken
-for a reviewer judgment and never contributes to automation eligibility. See
+for independent review and never contributes to automation eligibility. See
 [REVIEW.md](REVIEW.md) and [execution integration](agents/execution.md).
 
 ## Dispatch route ownership and legacy recovery
