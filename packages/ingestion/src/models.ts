@@ -32,6 +32,11 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
       name: 'intake_items_received_idx',
       columns: ['tenantId', 'confidentialScopeId', 'createdAt', 'id'],
     },
+    {
+      name: 'intake_items_submitter_idx',
+      columns: ['tenantId', 'submitterId'],
+    },
+    { name: 'intake_items_owner_idx', columns: ['tenantId', 'ownerKey'] },
   ],
 })
 @TenantScoped({ mode: 'required' })
@@ -91,6 +96,14 @@ export class IntakeItem extends SmrtObject {
 
   @field({ type: 'text', required: true })
   traceId: string = '';
+
+  /** Authenticated actor recorded by the server at receipt; never source metadata. */
+  @field({ type: 'text', required: true, default: '' })
+  submitterId: string = '';
+
+  /** `<kind>:<id>` of the lifecycle owner for owner-bound retention; '' otherwise. */
+  @field({ type: 'text', required: true, default: '' })
+  ownerKey: string = '';
 
   @field({ type: 'json', required: true })
   data: string = '{}';
