@@ -1312,10 +1312,9 @@ export function foundationSuite(
                 dialect,
                 input: {
                   ...input,
-                  parts: input.parts.map((p) => ({
-                    ...p,
-                    bytes: [...p.bytes],
-                  })),
+                  parts: input.parts.map((p) =>
+                    'bytes' in p ? { ...p, bytes: [...p.bytes] } : p,
+                  ),
                 },
                 storage: join(root, 'assets'),
                 scope: options.scope,
