@@ -28,8 +28,11 @@ export interface CatalogLicenseEvidence {
 
 /** Observed bytes and NEW acquisition support; independent of legal permissions. */
 export interface CatalogResourceRepresentation {
-  format: 'pdf' | 'zip';
-  mediaType: 'application/pdf' | 'application/zip';
+  format: 'pdf' | 'zip' | 'docx';
+  mediaType:
+    | 'application/pdf'
+    | 'application/zip'
+    | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   byteLength: number;
   validators: { etag: string; lastModified: string };
   acquisition:

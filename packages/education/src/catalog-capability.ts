@@ -4,6 +4,21 @@ import type {
   CatalogSourceRecord,
 } from './catalog-contracts.js';
 
+/** Closed observed MIME mapping; icons and file names never establish a format. */
+export const CATALOG_REPRESENTATION_MEDIA_TYPES = {
+  pdf: 'application/pdf',
+  zip: 'application/zip',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+} as const;
+export function catalogRepresentationFormat(
+  mediaType: string,
+): CatalogResourceRepresentation['format'] | undefined {
+  const token = mediaType.split(';', 1)[0].trim().toLowerCase();
+  return Object.entries(CATALOG_REPRESENTATION_MEDIA_TYPES).find(
+    ([, mime]) => mime === token,
+  )?.[0] as CatalogResourceRepresentation['format'] | undefined;
+}
+
 export class CatalogRepresentationError extends Error {
   readonly code = 'invalid-representation-metadata';
   constructor() {
@@ -50,10 +65,11 @@ export function normalizeCatalogRepresentation(
     'acquisition',
   ]);
   if (
-    !(
-      (record.format === 'pdf' && record.mediaType === 'application/pdf') ||
-      (record.format === 'zip' && record.mediaType === 'application/zip')
-    ) ||
+    typeof record.format !== 'string' ||
+    !Object.hasOwn(CATALOG_REPRESENTATION_MEDIA_TYPES, record.format) ||
+    CATALOG_REPRESENTATION_MEDIA_TYPES[
+      record.format as CatalogResourceRepresentation['format']
+    ] !== record.mediaType ||
     !positive(record.byteLength)
   )
     throw new CatalogRepresentationError();
@@ -71,7 +87,7 @@ export function normalizeCatalogRepresentation(
   const capability = object(record.acquisition);
   keys(capability, ['status', 'maxBytes']);
   let acquisition: CatalogResourceRepresentation['acquisition'];
-  if (record.format === 'zip') {
+  if (record.format !== 'pdf') {
     if (
       capability.status !== 'unsupported-format' ||
       capability.maxBytes !== undefined
@@ -93,7 +109,7 @@ export function normalizeCatalogRepresentation(
     };
   }
   return {
-    format: record.format,
+    format: record.format as CatalogResourceRepresentation['format'],
     mediaType: record.mediaType as CatalogResourceRepresentation['mediaType'],
     byteLength: record.byteLength,
     validators: {

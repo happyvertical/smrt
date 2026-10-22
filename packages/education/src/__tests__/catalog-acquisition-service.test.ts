@@ -140,6 +140,30 @@ describe('CatalogAcquisitionService', () => {
     expect(state.createAcquisition).not.toHaveBeenCalled();
   });
 
+  it('denies a legally permitted observed DOCX before provider and private acquisition writes', async () => {
+    const state = store();
+    state.getResource = vi.fn(async () => ({
+      ...resource,
+      availableFormats: ['docx'],
+      representation: {
+        ...limited,
+        format: 'docx' as const,
+        mediaType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document' as const,
+        acquisition: { status: 'unsupported-format' as const },
+      },
+    }));
+    const adapter = { acquire: vi.fn() };
+    await expect(
+      new CatalogAcquisitionService(state, adapter).acquire({
+        ...request,
+        format: 'docx',
+      }),
+    ).rejects.toThrow('unsupported-format');
+    expect(adapter.acquire).not.toHaveBeenCalled();
+    expect(state.createAcquisition).not.toHaveBeenCalled();
+  });
+
   it('acquires a supported observed representation with its exact size', async () => {
     const state = store();
     state.getResource = vi.fn(async () => ({

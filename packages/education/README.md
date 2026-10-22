@@ -149,24 +149,29 @@ private acquisition through `CatalogAcquisitionService`. No credential, mounted
 provider module or PDF fetch is needed for discovery. Apply the additive catalog
 representation column migration before using this version.
 
-The declared scope is public PDF-labeled artifacts with explicit student/family labels on the
-first-edition Kendall Hunt K–5, 6–8, and high-school teacher/family hierarchy,
-including Algebra 1 Supports and linked Spanish counterparts. Traversal starts
-at the official homepage and fixed curriculum roots; it follows direct course,
-unit, resources, family-materials, and lesson-preparation links. Teacher guides,
-answers, assessments, presentations, login-only links, unknown labels, HTML-only
-student lessons, unknown formats, and AccessIM/v.360 are excluded. Observed PDF or ZIP MIME is retained for those PDF-labeled links; other icon/link
-formats remain excluded. This adapter cannot acquire ZIP bytes. Completion
-means this declared scope only. Policy omissions appear in the bounded, invocation-local
-`CatalogSyncReport.exclusionSummary`, rather than the durable failure ledger.
+The declared metadata scope is public artifact links on the fixed official CMS
+host, with explicit student/family labels in the first-edition Kendall Hunt
+K–5, 6–8, and high-school teacher/family hierarchy, including Algebra 1 Supports
+and linked Spanish counterparts. Traversal starts at the official homepage and
+fixed curriculum roots; it follows direct course, unit, resources,
+family-materials, and lesson-preparation links. An icon or file-name label never
+establishes the observed format or grants role/rights. Teacher guides, answers,
+assessments, teacher presentations, login-only links, unknown roles, HTML-only
+student lessons, external-host artifacts and AccessIM/v.360 remain outside this
+metadata scope. External links are not followed or HEADed. Known PDF, ZIP and
+DOCX MIME types are retained; unknown MIME or validators pause enumeration,
+rather than silently omitting a source artifact. Only PDF bytes can be acquired.
+Completion means this declared scope only. Policy omissions appear in the
+bounded, invocation-local `CatalogSyncReport.exclusionSummary`, rather than the
+durable failure ledger.
 
 Each `enumerate` reads one HTML page (2 MB maximum) and at most four asset HEADs.
-It never GETs asset content. Known PDF/ZIP HEAD metadata is retained even when
+It never GETs asset content. Known PDF/ZIP/DOCX HEAD metadata is retained even when
 the file exceeds the PDF acquisition cap; unknown MIME, missing/weak validators
 or transport failures pause the page without advancing. Each observed record has
 optional `representation` metadata with actual `format`, `mediaType`, positive safe
 `byteLength`, strong ETag/Last-Modified `validators`, and `acquisition` capability.
-A PDF is `supported` or `size-limit` with its observed `maxBytes`; ZIP is always
+A PDF is `supported` or `size-limit` with its observed `maxBytes`; ZIP and DOCX are always
 `unsupported-format`. The source icon does not override the actual MIME. Version-1 JSON cursors contain the remaining validated
 hierarchy paths and an artifact offset plus source fingerprint when needed;
 persist the returned cursor unchanged. A fresh adapter can resume it. The cursor
@@ -258,3 +263,61 @@ with absence in a read projection. `CatalogResource.getRepresentation()` and
 field and `CatalogReadService` preserves it in its metadata DTO. The nullable TEXT column migration leaves existing rows SQL NULL; new model/store
 values use serialized JSON null. Both mean legacy absence; runtime code
 does not create or alter schema.
+
+
+### Recovering an old partial inventory after a semantic scope change
+
+Including previously omitted non-PDF links changes the canonical page semantics.
+This causes a one-time catalog revision change even when the publisher's HTML
+and PDF validators did not change. PDF v1 encoding remains unchanged, but its
+page fingerprint can change. An old chunk cursor must pause on a fingerprint
+mismatch; never reinterpret its artifact offset against the expanded inventory,
+remove its fingerprint, or mark it complete. An old coarse checkpoint with no
+cursor already starts root discovery naturally and needs no reset.
+
+There is no ordinary UI or cross-process restart operation. The following is an
+**operator-only procedure requiring proven quiescence**. Fence new catalog
+requests, disable/drain or terminate every catalog producer, job and automated
+continuation across **every pod/process**, and await all in-flight provider
+operations/writers, including successful and failing callbacks. Keep new writers
+fenced until the reset finishes. Browser Stop or a paused status alone is not
+quiescence: a late success or failure can overwrite a reset or withdraw old-run
+rows. The fresh run-ID check below does not provide concurrent CAS protection.
+
+With trusted `db`, `providerId` and the operator's `expectedRunId` (explicit
+`undefined` only for a legacy generation without one), use the existing public
+store API after establishing that precondition:
+
+```ts
+const store = new CatalogDatabaseSyncStore(db);
+const current = await store.getCheckpoint(providerId);
+if (!current || current.complete || !current.paused ||
+    current.runId !== expectedRunId) {
+  throw new Error('Expected paused catalog generation is no longer current.');
+}
+await store.saveCheckpoint({
+  ...current,
+  runId: globalThis.crypto.randomUUID(),
+  cursor: undefined,
+  importedCount: 0,
+  complete: false,
+  paused: false,
+  pauseReason: undefined,
+  failures: structuredClone(current.failures),
+});
+```
+
+Record the quiescence and reset in the operator's audit. This changes traversal
+state only: retain all source rows, bounded failure history/counts,
+`lastSuccessfulAt`, selections, acquisitions and private files. Do not delete
+rows/bytes or claim completion. After writers are re-enabled, ordinary sync
+starts at the current adapter's root under the fresh run ID; rows remain until
+an actual successful terminal generation permits withdrawal. A subsequent real
+source failure still pauses and cannot authorize withdrawal.
+
+Old catalog selection/acquisition retries may be stale after the one-time
+semantic revision change and still require current revision/rights checks.
+Previously assigned/materialized private bytes are not changed or deleted by
+catalog discovery; their private printing path is independent of later catalog
+revisions. A new selection through the current adapter keeps its revision and
+cached acquisition across a same-adapter refresh with unchanged source semantics.

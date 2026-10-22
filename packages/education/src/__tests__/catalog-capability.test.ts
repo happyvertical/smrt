@@ -46,6 +46,25 @@ describe('catalog acquisition capability boundary', () => {
       evaluate({ ...row, representation: value as undefined }, 'pdf'),
     ).toEqual({ allowed: true, verification: 'legacy' });
   });
+  it('normalizes actual DOCX and denies new acquisition independently of legal permission', () => {
+    const docx = {
+      ...zip,
+      format: 'docx',
+      mediaType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    expect(normalize(docx)).toEqual(docx);
+    expect(
+      evaluate(
+        {
+          ...row,
+          availableFormats: ['docx'],
+          representation: docx as CatalogResourceRepresentation,
+        },
+        'docx',
+      ),
+    ).toMatchObject({ allowed: false, reason: 'unsupported-format' });
+  });
   it('normalizes observed metadata without sharing mutable nested objects', () => {
     const normalized = normalize(JSON.stringify(pdf));
     expect(normalized).toEqual(pdf);
@@ -57,6 +76,20 @@ describe('catalog acquisition capability boundary', () => {
     '[]',
     '{}',
     { ...pdf, format: 'docx' },
+    {
+      ...zip,
+      format: 'docx',
+      mediaType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      acquisition: { status: 'supported', maxBytes: 30 },
+    },
+    {
+      ...zip,
+      format: 'docx',
+      mediaType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      acquisition: { status: 'size-limit', maxBytes: 10 },
+    },
     { ...pdf, mediaType: 'application/zip' },
     { ...pdf, byteLength: 0 },
     { ...pdf, byteLength: Number.MAX_SAFE_INTEGER + 1 },

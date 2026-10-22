@@ -1,4 +1,8 @@
-import { normalizeCatalogRepresentation } from '../catalog-capability.js';
+import {
+  CATALOG_REPRESENTATION_MEDIA_TYPES,
+  catalogRepresentationFormat,
+  normalizeCatalogRepresentation,
+} from '../catalog-capability.js';
 import type {
   CatalogAcquireAdapter,
   CatalogSourceRecord,
@@ -85,6 +89,9 @@ function observedMetadata(response: Response) {
   const lengthText = response.headers.get('content-length') ?? '';
   const length = Number(lengthText);
   const modified = response.headers.get('last-modified') ?? '';
+  const format = catalogRepresentationFormat(
+    response.headers.get('content-type') ?? '',
+  );
   if (
     response.headers.has('content-encoding') &&
     response.headers.get('content-encoding') !== 'identity'
@@ -97,18 +104,11 @@ function observedMetadata(response: Response) {
     !modified ||
     !Number.isFinite(Date.parse(modified)) ||
     modified.length > 100 ||
-    !/^application\/(?:pdf|zip)(?:\s*;|$)/i.test(
-      response.headers.get('content-type') ?? '',
-    )
+    !format
   )
     throw new Error(
-      'Metadata requires a strong ETag, positive safe length, Last-Modified, and recognized PDF or ZIP content type.',
+      'Metadata requires a strong ETag, positive safe length, Last-Modified, and recognized PDF, ZIP or DOCX content type.',
     );
-  const format = /^application\/pdf(?:\s*;|$)/i.test(
-    response.headers.get('content-type') ?? '',
-  )
-    ? 'pdf'
-    : 'zip';
   return { etag, length, modified, format } as const;
 }
 function validators(
@@ -203,7 +203,9 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             headers: {
               'accept-encoding': 'identity',
               accept: url.startsWith(IM_ASSET_ORIGIN)
-                ? 'application/pdf'
+                ? method === 'HEAD'
+                  ? Object.values(CATALOG_REPRESENTATION_MEDIA_TYPES).join(', ')
+                  : 'application/pdf'
                 : 'text/html',
               ...headers,
             },
@@ -360,14 +362,14 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
               const { format, ...metadata } = observedMetadata(response);
               const representation = normalizeCatalogRepresentation({
                 format,
-                mediaType: `application/${format}`,
+                mediaType: CATALOG_REPRESENTATION_MEDIA_TYPES[format],
                 byteLength: metadata.length,
                 validators: {
                   etag: metadata.etag,
                   lastModified: metadata.modified,
                 },
                 acquisition:
-                  format === 'zip'
+                  format !== 'pdf'
                     ? { status: 'unsupported-format' }
                     : {
                         status:
@@ -385,7 +387,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                       v: 2,
                       page: revision,
                       ...metadata,
-                      mediaType: 'application/zip',
+                      mediaType: CATALOG_REPRESENTATION_MEDIA_TYPES[format],
                     };
               const grade = page.band.startsWith('k5')
                 ? page.course === 'kindergarten'
@@ -450,7 +452,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             policyExclusions.push({
               code: 'declared_scope',
               message:
-                'Public first-edition PDF-labeled artifacts with observed PDF/ZIP representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, unknown formats, teacher/login and unknown-role material are excluded; AccessIM/v.360 is excluded.',
+                'Public first-edition official CMS artifact links with observed PDF/ZIP/DOCX representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, external-host artifacts, teacher/login and unknown-role material are excluded; unknown MIME/validators pause enumeration; AccessIM/v.360 is excluded.',
             });
           return {
             records: records.sort((a, b) =>

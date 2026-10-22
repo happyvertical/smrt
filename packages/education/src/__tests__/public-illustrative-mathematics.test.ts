@@ -261,6 +261,53 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       f.fetch.mock.calls.every(([, init]) => init?.redirect === 'error'),
     ).toBe(true);
   });
+  it('discovers no-icon DOCX links across bounded chunks and a reconstructed adapter', async () => {
+    const rows = Array.from({ length: 6 }, (_, i) =>
+      row('Student Handouts', `${id}${i}`)
+        .replace('class="im-c-filetype--pdf"', '')
+        .replace('>pdf<', '>docx<'),
+    ).join('');
+    const f = fixture({
+      html: page(rows),
+      head: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+    });
+    const first = await f.adapter.enumerate({ cursor: start(), checkpoint });
+    expect(first).toMatchObject({ complete: false });
+    expect(
+      first.records.filter((r) => r.visibility === 'catalog'),
+    ).toHaveLength(4);
+    expect(
+      f.fetch.mock.calls.filter(([, init]) => init?.method === 'HEAD'),
+    ).toHaveLength(4);
+    f.fetch.mockClear();
+    const resumed = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch: f.fetch,
+    });
+    const terminal = await resumed.enumerate({
+      cursor: first.nextCursor,
+      checkpoint,
+    });
+    expect(terminal.complete).toBe(true);
+    const all = [...first.records, ...terminal.records].filter(
+      (r) => r.visibility === 'catalog',
+    );
+    expect(new Set(all.map((r) => r.stableId)).size).toBe(6);
+    expect(
+      all.every(
+        (r) =>
+          r.representation?.format === 'docx' &&
+          r.representation.acquisition.status === 'unsupported-format',
+      ),
+    ).toBe(true);
+    expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+      'GET',
+      'HEAD',
+      'HEAD',
+    ]);
+  });
   it('supports all three bands, supports courses, linked translations and family hierarchy without navigation cycles', () => {
     for (const [root, link] of [
       ['/k5/curriculum.html', '/K5_ES/teachers/grade-4/units.html'],
@@ -304,7 +351,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       ).children,
     ).toEqual([]);
   });
-  it('classifies explicit table and resource-block labels; teacher, unknown, nonPDF and v360 stay excluded', async () => {
+  it('classifies explicit table and resource-block labels; teacher, unknown-role nonPDF and v360 stay excluded', async () => {
     const html = page(
       row('Teacher Guide') +
         row('Unknown future role', `${id}x`) +
@@ -322,7 +369,6 @@ describe('public first-edition IM metadata and selected acquisition', () => {
         'teacher_or_unknown_role',
         'different_edition',
         'login_required',
-        'unsupported_format',
       ]),
     );
   });
@@ -489,7 +535,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     expect(result).toMatchObject({ complete: false, paused: true });
     expect(result.exclusions?.[0].message).toContain('timed out');
   });
-  it('uses generic acquisition policy/idempotence and preserves notices with one private write', async () => {
+  it('keeps a new PDF pin stable across same-adapter refresh and cached retry with one private write', async () => {
     const f = fixture();
     const resource = {
       ...(await discover(f)),
@@ -529,6 +575,9 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       operation: 'print' as const,
     };
     const acquired = await service.acquire(request);
+    const refreshed = await discover(f);
+    expect(refreshed.revision).toBe(request.revision);
+    Object.assign(resource, refreshed);
     expect(await service.acquire(request)).toBe(acquired);
     expect(createAcquisition).toHaveBeenCalledTimes(1);
     expect(acquired.notices).toContain('respective licenses');
