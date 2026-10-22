@@ -68,7 +68,7 @@ Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
 `pnpm check:node-roots` (built model roots load under plain Node, #4219;
-allow-list in `packages/core/agents/build-knowledge.md`).
+allow-list in its root `package.json` script).
 `pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
 #2710) plus the `--smrt-*` gate (#3822), not through Turbo; no package defines
 its own `lint`/`format-check` script.

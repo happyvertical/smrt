@@ -2669,6 +2669,39 @@ describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => 
         },
       }),
     ).toBe('@test/pkg/models');
+    // Node walks conditions in key order and stops at the first match:
+    // a leading `node: null` means "not exported" even with a `default`.
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './models': { node: null, default: './dist/models.js' },
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './models': { default: './dist/models.js', node: null },
+        },
+      }),
+    ).toBe('@test/pkg/models');
+    // A matching condition whose nested map matches nothing falls through.
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './models': {
+            import: { browser: './dist/models.browser.js' },
+            default: './dist/models.js',
+          },
+        },
+      }),
+    ).toBe('@test/pkg/models');
     expect(
       resolveProviderContextImport('@test/pkg', {
         name: '@test/pkg',

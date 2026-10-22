@@ -288,19 +288,49 @@ export function resolveProviderContextImport(
   return undefined;
 }
 
+/** Conditions Node matches for an ESM `import` with default flags. */
+const NODE_IMPORT_CONDITIONS = new Set([
+  'node',
+  'import',
+  'module-sync',
+  'default',
+]);
+
 /**
- * Whether an `exports` target gives Node something to load: a bare string, or
- * a conditions map with a `node`, `import`, or `default` branch that does. A
- * types-only or browser-only entry would resolve to
- * `ERR_PACKAGE_PATH_NOT_EXPORTED` under plain Node.
+ * Resolve an `exports` target the way Node's PACKAGE_TARGET_RESOLVE does for
+ * an `import`: a string is a target; `null` is "not exported" and stops the
+ * search; a conditions map is walked in key order and the FIRST matching
+ * condition whose value resolves decides; an array takes its first resolving
+ * entry. `undefined` means nothing matched, so an outer map keeps looking.
+ */
+function resolveNodeImportTarget(target: unknown): boolean | undefined {
+  if (typeof target === 'string') return true;
+  if (target === null) return false;
+  if (Array.isArray(target)) {
+    for (const entry of target) {
+      const resolved = resolveNodeImportTarget(entry);
+      if (resolved !== undefined) return resolved;
+    }
+    return undefined;
+  }
+  if (typeof target !== 'object') return undefined;
+  for (const [condition, value] of Object.entries(
+    target as Record<string, unknown>,
+  )) {
+    if (!NODE_IMPORT_CONDITIONS.has(condition)) continue;
+    const resolved = resolveNodeImportTarget(value);
+    if (resolved !== undefined) return resolved;
+  }
+  return undefined;
+}
+
+/**
+ * Whether an `exports` target gives a plain-Node `import` something to load.
+ * A types-only or browser-only entry, or one whose first matching condition is
+ * `null`, would fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
  */
 function hasNodeLoadableTarget(target: unknown): boolean {
-  if (typeof target === 'string') return true;
-  if (!target || typeof target !== 'object') return false;
-  const conditions = target as Record<string, unknown>;
-  return ['node', 'import', 'default'].some((condition) =>
-    hasNodeLoadableTarget(conditions[condition]),
-  );
+  return resolveNodeImportTarget(target) === true;
 }
 
 /**
