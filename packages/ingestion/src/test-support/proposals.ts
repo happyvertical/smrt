@@ -5909,12 +5909,19 @@ export function proposalSuite(
         requestId: 'route-closed',
         reason: 'Already paid',
       });
-      const rows = (
+      const rows: Array<{
+        id: string;
+        item_id: string;
+        kind: string;
+        data: Record<string, unknown>;
+      }> = (
         await db.query(
           'SELECT id,item_id,kind,data FROM intake_feedback ORDER BY id',
         )
       ).rows.map((row) => ({
-        ...row,
+        id: String(row.id),
+        item_id: String(row.item_id),
+        kind: String(row.kind),
         data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
       }));
       expect(rows.map((row) => row.kind)).toEqual([

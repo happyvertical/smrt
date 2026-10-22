@@ -536,6 +536,7 @@ export class ReferenceReviewHost {
     scope: ReviewSession,
     itemId: string,
     cursor?: string,
+    full = true,
   ): Promise<ItemReviewView> {
     const { service } = await this.service(scope);
     const item = await service.getItem(itemId);
@@ -547,7 +548,8 @@ export class ReferenceReviewHost {
       cursor,
     );
     const { reviews, state } = await loadReviewSummary(service, item, cursor);
-    const evidence = await service.getEvidence(itemId);
+    // The inbox projection needs neither original bytes nor the offered catalog.
+    const evidence = full ? await service.getEvidence(itemId) : [];
     const views = [];
     for (const part of evidence) {
       const bytes = await service.readEvidence(itemId, part.id);
@@ -561,7 +563,7 @@ export class ReferenceReviewHost {
           : {}),
       });
     }
-    const catalog = await service.listHandlers(itemId);
+    const catalog = full ? await service.listHandlers(itemId) : undefined;
     await service.getItem(itemId);
     const entry: InboxEntry = {
       item,
@@ -573,7 +575,7 @@ export class ReferenceReviewHost {
       entry,
       evidence: views,
       analysis,
-      catalog,
+      ...(catalog ? { catalog } : {}),
       ...(analysis?.configuration.stage === 'interpret'
         ? {
             generation: analysis.result.output
@@ -595,7 +597,7 @@ export class ReferenceReviewHost {
       .slice(0, 21);
     const projected = [];
     for (const item of items.slice(0, 20)) {
-      const entry = (await this.load(scope, item.id)).entry;
+      const entry = (await this.load(scope, item.id, undefined, false)).entry;
       if (
         (!input.state || entry.state === input.state) &&
         (!input.assigneeId || entry.assignment.assigneeId === input.assigneeId)
