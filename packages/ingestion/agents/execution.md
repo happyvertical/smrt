@@ -94,7 +94,9 @@ interpretation — provider extraction budget is spent per correction because th
 predecessor pin is not reused); hosts wake their worker through
 `onSplit`/`onInstruct` and rely on dispatch repair otherwise. While a stage is
 queued/running the item reports `processing` regardless of earlier actions; a
-failed stage exposes its safe category through `getReinterpretationState`.
+failed stage (extraction or interpretation) exposes its safe category through
+`getReinterpretationState`, and a retry anchored on the latest completed
+generation carries forward any newer split correction.
 
 `continueIntakeReview` uses the existing jobs continuation context. Applications
 create tasks with owner, tenant and exact `{recordId, revision, inputKey}` binding

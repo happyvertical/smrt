@@ -957,6 +957,98 @@ describe('intake review host boundary', () => {
       }),
     );
   });
+  it('caps poll backoff at 5x, keeps the view through a transient error and fails closed after repeated errors', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const processing = page();
+      processing.entry = {
+        ...processing.entry,
+        state: 'processing',
+        item: { ...processing.entry.item, processingState: 'running' },
+      };
+      processing.instruction = {
+        current: instructionView('running'),
+        applied: null,
+        stale: false,
+      };
+      let failures = 0;
+      const load = vi.fn(async () => {
+        if (failures > 0) {
+          failures--;
+          throw new Error('Temporarily unavailable');
+        }
+        return structuredClone(processing);
+      });
+      const callbacks = host(processing);
+      callbacks.load = load;
+      render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 200 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(load).toHaveBeenCalledTimes(1);
+      // 200 * 1.5^n, capped at 5x = 1000.
+      const delays = [200, 300, 450, 675, 1000, 1000, 1000];
+      for (const [index, delay] of delays.entries()) {
+        await vi.advanceTimersByTimeAsync(delay - 1);
+        expect(load).toHaveBeenCalledTimes(index + 1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(load).toHaveBeenCalledTimes(index + 2);
+      }
+      // One thrown tick keeps the view and shows a non-blocking note.
+      failures = 1;
+      await vi.advanceTimersByTimeAsync(1000);
+      await tick();
+      expect(screen.getByText('Private invoice')).toBeTruthy();
+      expect(screen.getByTestId('refresh-retrying')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      // The next tick (still capped) recovers and clears the note.
+      await vi.advanceTimersByTimeAsync(1000);
+      await tick();
+      expect(screen.queryByTestId('refresh-retrying')).toBeNull();
+      expect(screen.getByText('Private invoice')).toBeTruthy();
+      // Three consecutive thrown ticks fail closed and stop polling.
+      failures = 3;
+      await vi.advanceTimersByTimeAsync(3000);
+      await tick();
+      expect(screen.queryByText('Private invoice')).toBeNull();
+      expect(screen.getByRole('alert').textContent).toContain('unavailable');
+      const stopped = load.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(load.mock.calls.length).toBe(stopped);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps edited split drafts across an in-place refresh but replaces untouched ones with the new generation', async () => {
+    const first = generationFor(page());
+    first.entry = {
+      ...first.entry,
+      item: { ...first.entry.item, processingState: 'running' },
+    };
+    first.generation!.splits = [
+      { evidenceId: 'original', groups: [[1], [2]], digest: 'a' },
+      { evidenceId: 'second', groups: [[1, 2]], digest: 'b' },
+    ];
+    const next = structuredClone(first);
+    next.entry.item.processingState = 'completed';
+    next.generation!.splits = [
+      { evidenceId: 'original', groups: [[1, 2, 3]], digest: 'c' },
+      { evidenceId: 'second', groups: [[1], [2], [3]], digest: 'd' },
+    ];
+    const callbacks = host(first);
+    const sequence = [first, next];
+    callbacks.load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    const edited = (await screen.findByRole('textbox', {
+      name: 'Logical page groups (JSON): original',
+    })) as HTMLTextAreaElement;
+    const untouched = screen.getByRole('textbox', {
+      name: 'Logical page groups (JSON): second',
+    }) as HTMLTextAreaElement;
+    await fireEvent.input(edited, { target: { value: '[[2],[1]]' } });
+    await waitFor(() => expect(untouched.value).toBe('[[1],[2],[3]]'));
+    expect(edited.value).toBe('[[2],[1]]');
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {

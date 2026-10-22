@@ -143,14 +143,20 @@ correction with `human_split_not_respected` still enforced; a tampered stored
 extraction record and a well-formed forged interpretation copy both failing
 before provider disclosure; replay of a superseded request ID, a concurrent
 double record (exactly one wins) and retry against the latest completed
-generation after a failed re-extraction; and carried instruction text being
+generation after a failed re-extraction, after a failed **interpretation**
+(old anchor rejected once a newer interpretation completes), and with a split
+recorded after the anchor carried into the retry; judgments storing only the
+instruction reference with retrieval joining the text; and carried instruction text being
 counted in the exact feedback byte budget, with one byte short still failing
 closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
 covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
 projection; the component suite covers the textarea/button binding, disabled
 empty text, polling through `processing` until the in-place update (also with an
 earlier action present, with drafts and the textarea element preserved and no
-loading placeholder), the failure/retry binding path, and stale display; the Chromium suite records a real instruction, observes the background
+loading placeholder), the failure/retry binding path, the 5× backoff cap under fake timers, a
+transient thrown tick keeping the view then recovering, three thrown ticks
+failing closed and stopping, edited-versus-untouched split drafts, and stale
+display; the Chromium suite records a real instruction, observes the background
 "Reinterpreting…" state, the in-place update, provenance, unchanged original
 bytes, a refused forged payload and supersession. No schema or migration changes:
 the record lives in the existing append-only analysis ledger beside the split

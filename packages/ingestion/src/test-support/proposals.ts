@@ -3381,10 +3381,11 @@ export function proposalSuite(
       // SQLite returns the ledger payload as text; PostgreSQL jsonb is parsed.
       const stored =
         typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      // The judgment references the instruction by id and digest only; the
+      // text is joined at retrieval from the source's authenticated record.
       expect(stored.instruction).toEqual({
         id: recorded.instruction.id,
         digest: recorded.instruction.digest,
-        text: recorded.instruction.text,
       });
       const receiver = await source(100000, false, text);
       const retrieved = await service.retrieveFeedback({
@@ -3829,6 +3830,108 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       expect(calls).not.toHaveBeenCalled();
       expect((await output(input.lease)).outcome).toBe('provider_error');
+    });
+    it('retries an instruction after its interpretation (not its extraction) fails', async () => {
+      chooseCreate();
+      const input = await generate();
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text: 'First instruction.',
+        requestId: 'interpret-failure-first',
+      });
+      // Extraction N+1 completes; interpretation N+2 fails.
+      const guided = await reextract(input.itemId, recorded.revision);
+      await service.failAnalysis(guided.lease, 'unavailable');
+      expect(await service.getReinterpretationState(input.itemId)).toEqual({
+        revision: guided.lease.revision,
+        processingState: 'needs_attention',
+        failure: 'unavailable',
+        generationAttemptId: input.lease.attemptId,
+      });
+      // The completed extraction belongs to the failed reinterpretation, so the
+      // latest completed generation is still a valid retry anchor.
+      const retried = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: guided.lease.revision,
+        text: 'Retry instruction.',
+        requestId: 'interpret-failure-retry',
+      });
+      expect(retried.revision).toBe(guided.lease.revision + 1);
+      expect(retried.instruction.supersedesId).toBe(recorded.instruction.id);
+      const recovered = await reextract(input.itemId, retried.revision);
+      calls.mockClear();
+      await service.generateProposals(recovered.lease);
+      expect(calls.mock.calls.at(-1)![0].reviewerInstruction).toEqual({
+        id: retried.instruction.id,
+        text: 'Retry instruction.',
+      });
+      const result = await output(recovered.lease);
+      expect(result.provenance.reviewerInstruction).toEqual({
+        id: retried.instruction.id,
+        digest: retried.instruction.digest,
+      });
+      expect(result.suggestions[0].disposition).toBe('ready_for_review');
+      // Once a newer interpretation has completed, the old anchor is stale.
+      await expect(
+        service.recordReviewerInstruction({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: recovered.lease.revision,
+          text: 'From a superseded anchor.',
+          requestId: 'superseded-anchor',
+        }),
+      ).rejects.toThrow('Stale reviewer instruction');
+    });
+    it('carries a split recorded after the anchor into an instruction retry after a failed re-extraction', async () => {
+      chooseCreate();
+      const input = await generate(await source(100000, true));
+      const evidence = await service.getEvidence(input.itemId);
+      const split = await service.reviseLogicalSplit({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        evidenceId: evidence[0].id,
+        groups: [[1], [2]],
+        requestId: 'split-before-failure',
+      });
+      const failing = await service.claimAnalysis(
+        input.itemId,
+        split.revision,
+        'extractor',
+      );
+      if (!failing) throw new Error('lease required');
+      await service.failAnalysis(failing, 'unavailable');
+      const retried = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: split.revision,
+        text: 'Two documents; file both.',
+        requestId: 'retry-keeps-split',
+      });
+      const both = await reextractPDF(input.itemId, retried.revision);
+      // The anchor predates the split, yet the retry keeps it.
+      expect(both.frozen.configuration.humanCorrection).toMatchObject({
+        kind: 'logical_split',
+        groups: [[1], [2]],
+        requestId: 'split-before-failure',
+      });
+      expect(both.frozen.configuration.reviewerInstruction).toMatchObject({
+        id: retried.instruction.id,
+        digest: retried.instruction.digest,
+      });
+      calls.mockClear();
+      await service.generateProposals(both.lease);
+      const generatorInput = calls.mock.calls.at(-1)![0];
+      expect(generatorInput.humanCorrection).toMatchObject({
+        groups: [[1], [2]],
+      });
+      expect(generatorInput.reviewerInstruction).toEqual({
+        id: retried.instruction.id,
+        text: 'Two documents; file both.',
+      });
     });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();

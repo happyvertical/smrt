@@ -145,8 +145,15 @@ interpretation fails, `getReinterpretationState(itemId)` returns the latest
 attempt's safe failure category and the latest completed generation attempt;
 the host projects them as `instruction.failure` and `instruction.binding`, and
 `recordReviewerInstruction` accepts that historical attempt as its anchor when
-`expectedRevision` is the item's current (failed) revision and no later revision
-completed or is in flight, so the reviewer can retry or change the instruction.
+`expectedRevision` is the item's current (failed) revision and no later
+**interpretation** completed and nothing is queued or running, so the reviewer
+can retry or change the instruction after either stage fails. A completed
+extraction whose own interpretation failed belongs to the failed attempt, not a
+newer result. A retry from an older anchor carries forward the newest human
+split recorded after it (corrections chain through each extraction
+configuration), so a split followed by a failed stage is never silently
+dropped. All of this runs under the item lock in the same transaction as the
+append.
 
 `ItemReviewView.instruction` exposes `current` (latest recorded), `applied` (the
 instruction the displayed **generation** ran under; a completed extraction alone
@@ -162,7 +169,11 @@ on `pollMs` (default 2 s, backing off to 5×) and patches the view in place —
 drafts, split edits, focus and the evidence viewer survive and no loading
 placeholder is shown — stops when the stage is no longer in flight, and then
 shows the instruction that produced the current suggestions, marking a
-superseded one as stale. A failed stage shows its safe category with the form
+superseded one as stale. An explicit host denial on a poll tick fails closed at
+once; a thrown tick is treated as transient (view and drafts kept, a
+"Couldn't refresh; retrying." note, backoff continues), but because hosts may
+also throw for revoked access, three consecutive thrown ticks fail closed.
+Split drafts survive a refresh only when the reviewer edited them. A failed stage shows its safe category with the form
 still available. There is no
 streaming channel; status is read through the existing item/analysis APIs. The
 maintained fixture records the instruction durably and then runs the stages in

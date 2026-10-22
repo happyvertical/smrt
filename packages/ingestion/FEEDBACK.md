@@ -52,13 +52,18 @@ Superseded, revoked, deleted or incompatible sources are excluded. Current expli
 take precedence: a generation carrying one does not retrieve learned examples.
 
 A judgment recorded on an action whose generation ran under a reviewer
-instruction (REVIEW.md) captures that instruction as `instruction: {id, digest,
-text}`; capture verifies it against the generation's own provenance. `retrieve`
-returns it as part of the example so comparable later items see the guidance
+instruction (REVIEW.md) stores only a reference, `instruction: {id, digest}`,
+after verifying the generation's provenance against the authenticated
+extraction record. **Write side:** the reference is ~100 bytes, so instruction
+text never counts against the judgment's write budget (`feedback.maxBytes` /
+`policy.maxBytes`) and cannot make `recordFeedback` fail with `Feedback
+limit`. `retrieve` re-verifies the source record and joins the text, returning
+`{id, digest, text}`; a stored reference that no longer matches the source's
+record excludes the example. It is returned as part of the example so comparable later items see the guidance
 that produced the judged suggestion. It is example content only: it does not
 transfer to the receiving generation's configuration or prompt section, and it
-expands no catalog, candidate, permission or automation eligibility. **Budget
-impact:** carried instruction text (up to 4,000 characters, more bytes for
+expands no catalog, candidate, permission or automation eligibility. **Read-side budget
+impact:** joined instruction text (up to 4,000 characters, more bytes for
 non-ASCII) counts toward the exact serialized selection budget — the narrowest
 of `feedback.maxBytes` and each offered handler's `policy.maxBytes` — like any
 other example field. The existing fail-closed rule is unchanged: an over-budget
