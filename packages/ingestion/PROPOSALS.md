@@ -111,11 +111,15 @@ use `proposeDocumentSplits`; originals and hashes remain intact.
 
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
-The reason lists Ajv paths, keywords and schema constants, for example
+The reason lists schema-owned paths, keywords and schema constants, for example
 `/outcome enum (allowedValues=proposals|unknown|...)` and
 `/suggestions/0 required (missingProperty=evidence)`, or the fixed internal check
-and its path, such as `Unoffered handler: /suggestions/0`. It never contains
-document text, argument values or evidence content, is cut at 1000 characters,
+and its path, such as `Unoffered handler: /suggestions/0`. Path segments are
+kept only when they are array indexes or keys declared under the schema's
+`properties`; a data key (for example under an open `additionalProperties`
+argument sub-schema) becomes `?`, and an extra property's name is never echoed.
+It never contains document text, argument values, evidence content or
+model-chosen keys, is cut at 1000 characters,
 and is dropped before the output-limit fallback. Hosts read it from the
 completed/partial analysis at `analysis.result.output.proposals.provenance.failure`.
 The SDK adapter constrains replies with a `json_schema` response format built
@@ -176,6 +180,13 @@ answers as diagnostics and configure:
   authorized exactly as before and its answers, usage, `readiness` and `maxLen`
   are recorded, but the gate never changes `outcome` or `disposition`; readiness
   comes from the validator alone (`missingFields`, outcome, source completeness).
+  A provider error, timeout or byte-budget overflow is recorded as the
+  `decision_unavailable` warning and an identity or answer-shape mismatch as
+  `decision_malformed`, each with `provenance.decision` identity (and usage when
+  the provider returned any); the generated suggestions stay as they were. In
+  `gate` mode the same failures still end the attempt as `provider_error`.
+  Lease, catalog, policy and provider-allowlist revocation fail closed in both
+  modes.
 
 Both settings are public configuration: they are part of
 `ProposalReadConfiguration`, the frozen `GenerationStageConfiguration.proposals`

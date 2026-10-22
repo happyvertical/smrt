@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { GenerationLimits } from './proposal-contracts.js';
+import type { GenerationOutput } from './proposal-dto.js';
 import {
   PROPOSAL_REASON_LIMIT,
   ProposalValidationError,
+  schemaOwnedPath,
   validateSuggestions,
 } from './proposal-validation.js';
 
@@ -15,9 +17,12 @@ const limits: GenerationLimits = {
   maxQueryLength: 1000,
   timeoutMs: 1000,
 };
-function failure(raw: unknown): ProposalValidationError {
+function failure(
+  raw: unknown,
+  offered: GenerationOutput['offered'] = [],
+): ProposalValidationError {
   try {
-    validateSuggestions(raw, [], [], limits, 1);
+    validateSuggestions(raw, offered, [], limits, 1);
   } catch (error) {
     if (error instanceof ProposalValidationError) return error;
     throw error;
@@ -62,8 +67,78 @@ describe('proposal validator reasons', () => {
       splits: [],
     });
     expect(error.reason).toContain('/suggestions/0/evidence/0/location type');
-    expect(error.reason).toContain('additionalProperty=?');
-    expect(error.reason).not.toMatch(/ACME|invoice/);
+    expect(error.reason).toContain('/suggestions/0 additionalProperties');
+    expect(error.reason).not.toMatch(/ACME|invoice|additionalProperty=/);
+  });
+  it('never echoes an extra property name, even an identifier-like one', () => {
+    const error = failure({
+      outcome: 'proposals',
+      suggestions: [
+        {
+          handlerId: 'h',
+          handlerVersion: '1',
+          args: {},
+          evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+          alternatives: [],
+          missingFields: [],
+          explanation: 'x',
+          AcmeCorp: true,
+        },
+      ],
+      splits: [],
+    });
+    expect(error.reason).toContain('/suggestions/0 additionalProperties');
+    expect(error.reason).not.toContain('AcmeCorp');
+  });
+  it('replaces data keys under open argument sub-schemas with ? (#4207 review)', () => {
+    const argsSchema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['title'],
+      properties: {
+        title: { type: 'string' },
+        lines: { type: 'object', additionalProperties: { type: 'integer' } },
+      },
+    };
+    const error = failure(
+      {
+        outcome: 'proposals',
+        suggestions: [
+          {
+            handlerId: 'h',
+            handlerVersion: '1',
+            args: { title: 'x', lines: { 'Invoice 1234': 'twelve' } },
+            evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+            alternatives: [],
+            missingFields: [],
+            explanation: 'x',
+          },
+        ],
+        splits: [],
+      },
+      [
+        {
+          handler: {
+            id: 'h',
+            version: '1',
+            description: 'handler',
+            kind: 'operation',
+            capability: null,
+            argsSchema,
+            references: {},
+            operation: { model: 'M', action: 'a', version: '1' },
+          },
+          candidates: [],
+        },
+      ],
+    );
+    expect(error.reason).toBe(
+      'Invalid handler arguments: /suggestions/0/args /lines/? type (type=integer)',
+    );
+    expect(error.reason).not.toMatch(/Invoice|1234|twelve/);
+    expect(schemaOwnedPath('/lines/Invoice 1234', argsSchema)).toBe('/lines/?');
+    expect(schemaOwnedPath('/title', argsSchema)).toBe('/title');
+    expect(schemaOwnedPath('/Acme/0/x', argsSchema)).toBe('/?/0/?');
   });
   it('bounds the recorded reason', () => {
     const error = failure({

@@ -644,7 +644,7 @@ export class ReferenceReviewHost {
     const suggestion = generation?.suggestions[input.index];
     if (
       current.configuration.stage !== 'interpret' ||
-      generation.outcome === 'provider_error' ||
+      generation?.outcome === 'provider_error' ||
       !suggestion ||
       !['ready_for_review', 'needs_review'].includes(suggestion.disposition)
     )
