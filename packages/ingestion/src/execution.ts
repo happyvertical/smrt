@@ -51,6 +51,14 @@ export type * from './execution-contracts.js';
 export type { IntakePolicy, IntakePolicyLayer } from './policy.js';
 export { resolveIntakePolicy } from './policy.js';
 
+/** Uniform no-disclosure denial (missing, foreign, revoked or inactive).
+ * Integrity, validation and database errors are never this type. */
+export class IntakeAccessDeniedError extends Error {
+  constructor() {
+    super('Intake unavailable');
+    this.name = 'IntakeAccessDeniedError';
+  }
+}
 class RetentionExpired extends Error {
   constructor(
     readonly itemId: string,
@@ -60,6 +68,8 @@ class RetentionExpired extends Error {
   }
 }
 type Row = Record<string, unknown>;
+const OWN_SCAN_BATCH = 50;
+const OWN_SCAN_CEILING = 1000;
 function object(value: unknown): IntakeValues {
   const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
@@ -207,7 +217,7 @@ export class IntakeExecutionService {
       this.scope.confidentialScopeId,
     );
     const item = result.rows[0];
-    if (!item) throw new Error('Intake unavailable');
+    if (!item) throw new IntakeAccessDeniedError();
     if (!this.retained(item)) await this.redactExecution(db, item);
     return item;
   }
@@ -316,14 +326,14 @@ export class IntakeExecutionService {
         db,
       }))
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     if (
       !expired &&
       (item.visibility !== 'active' ||
         time(item.expires_at) <= this.now().getTime() ||
         item.cancelled)
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     return item;
   }
   private ceiling(item: Row): ExecutionCeiling {
@@ -410,7 +420,7 @@ export class IntakeExecutionService {
       current.mutationBoundary !== 'serialized' ||
       current.principalId !== ceiling.principalId
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     const policy = resolveIntakePolicy(current.policy);
     const operationKey =
       'model' in handler.operation
@@ -424,12 +434,12 @@ export class IntakeExecutionService {
       !ceiling.operations.includes(operationKey) ||
       !policy.access.includes(this.scope.confidentialScopeId)
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     if (
       operation === 'review' &&
       (!current.reviewer || !policy.reviewers.includes(this.scope.actorId))
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     // Submitter decisions need the server-recorded receipt actor, a live host
     // grant and the application policy opt-in; source metadata supplies none.
     if (
@@ -438,7 +448,7 @@ export class IntakeExecutionService {
         !policy.submitterReview ||
         item.submitter_id !== this.scope.actorId)
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     const deadline = Math.min(
       time(item.expires_at),
       time(item.created_at) + policy.retentionMs,
@@ -673,7 +683,7 @@ export class IntakeExecutionService {
     proposalId?: string,
   ): Promise<Bound> {
     const [found] = await this.rows(db, 'intake_actions', 'id=?', [actionId]);
-    if (!found) throw new Error('Intake unavailable');
+    if (!found) throw new IntakeAccessDeniedError();
     const item = await this.item(db, String(found.item_id), lock, expired);
     const [action] = await this.rows(db, 'intake_actions', 'id=?', [actionId]);
     const [proposal] = await this.rows(
@@ -878,7 +888,8 @@ export class IntakeExecutionService {
       if (
         (prior.requireReview && !next.requireReview) ||
         next.minimumCertainty < prior.minimumCertainty ||
-        (!prior.consequentialAutomation && next.consequentialAutomation)
+        (!prior.consequentialAutomation && next.consequentialAutomation) ||
+        (!prior.submitterReview && next.submitterReview)
       )
         throw new Error('Feedback cannot widen policy');
       return result;
@@ -920,7 +931,7 @@ export class IntakeExecutionService {
       const [action] = await this.rows(db, 'intake_actions', 'id=?', [
         actionId,
       ]);
-      if (!action) throw new Error('Intake unavailable');
+      if (!action) throw new IntakeAccessDeniedError();
       const item = await this.item(db, String(action.item_id), true, true);
       const expiredReview = async (): Promise<ProposalReview> => {
         await this.redactExecution(db, item);
@@ -1385,7 +1396,7 @@ export class IntakeExecutionService {
       'id=? AND item_id=?',
       [input.actionId, input.itemId],
     );
-    if (!action) throw new Error('Intake unavailable');
+    if (!action) throw new IntakeAccessDeniedError();
     const prior = await this.rows(db, 'intake_proposals', 'action_id=?', [
       input.actionId,
     ]);
@@ -2126,7 +2137,7 @@ export class IntakeExecutionService {
       const [action] = await this.rows(db, 'intake_actions', 'id=?', [
         actionId,
       ]);
-      if (!action) throw new Error('Intake unavailable');
+      if (!action) throw new IntakeAccessDeniedError();
       const item = await this.item(db, String(action.item_id), true, true);
       const [current] = await this.rows(db, 'intake_actions', 'id=?', [
         actionId,
@@ -2926,33 +2937,45 @@ export class IntakeExecutionService {
       (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
     )
       throw new Error('Invalid review page');
-    const rows = (
-      await this.db.query(
-        `SELECT * FROM intake_items WHERE tenant_id=? AND confidential_scope_id=? AND submitter_id=? AND visibility='active' AND expires_at>?${input.cursor ? ' AND id>?' : ''} ORDER BY id LIMIT ?`,
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        this.scope.actorId,
-        this.now().toISOString(),
-        ...(input.cursor ? [input.cursor] : []),
-        limit + 1,
-      )
-    ).rows as Row[];
-    const items: OwnProposalsPage['items'] = [];
-    for (const row of rows.slice(0, limit)) {
-      // An item the actor can no longer read is omitted entirely: no identity,
-      // state or count is disclosed. Only readable items are projected.
-      let readable = false;
-      try {
-        readable = await this.options.authorize({
-          scope: this.scope,
-          operation: 'read',
-          capturedCeiling: object(object(row.data).capturedCeiling ?? {}),
-          db: this.db,
-        });
-      } catch {
-        readable = false;
+    // Unreadable rows are skipped before anything about them is projected,
+    // and the cursor only ever names an emitted item, so neither page shape
+    // nor cursor reveals them. The scan is bounded; a stretch of more than
+    // OWN_SCAN_CEILING unreadable rows fails closed instead of disclosing.
+    const readable: Row[] = [];
+    let more = false;
+    let after = input.cursor;
+    let scanned = 0;
+    scan: for (;;) {
+      const batch = (
+        await this.db.query(
+          `SELECT * FROM intake_items WHERE tenant_id=? AND confidential_scope_id=? AND submitter_id=? AND visibility='active' AND expires_at>?${after ? ' AND id>?' : ''} ORDER BY id LIMIT ?`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          this.scope.actorId,
+          this.now().toISOString(),
+          ...(after ? [after] : []),
+          OWN_SCAN_BATCH,
+        )
+      ).rows as Row[];
+      for (const row of batch) {
+        if (await this.readableOwn(row)) {
+          if (readable.length === limit) {
+            more = true;
+            break scan;
+          }
+          readable.push(row);
+        }
+        if (++scanned >= OWN_SCAN_CEILING) {
+          if (!readable.length) throw new Error('Own proposal scan limit');
+          more = true;
+          break scan;
+        }
       }
-      if (!readable) continue;
+      if (batch.length < OWN_SCAN_BATCH) break;
+      after = String(batch[batch.length - 1].id);
+    }
+    const items: OwnProposalsPage['items'] = [];
+    for (const row of readable) {
       const item: IntakeItemDTO = {
         id: String(row.id),
         receiptState: String(row.receipt_state),
@@ -2963,21 +2986,35 @@ export class IntakeExecutionService {
       };
       // A readable item whose reviews are denied (handler or target access)
       // must not hide the others; the entry says only that it is unavailable.
+      // Integrity, validation and database errors still propagate.
       try {
         items.push({
           item,
           reviews: await this.listReviews(item.id, { limit: 50 }),
         });
-      } catch {
+      } catch (error) {
+        if (!(error instanceof IntakeAccessDeniedError)) throw error;
         items.push({ item, reviews: null, unavailable: true });
       }
     }
     return {
       items,
-      ...(rows.length > limit
-        ? { nextCursor: String(rows[limit - 1].id) }
+      ...(more && items.length
+        ? { nextCursor: items[items.length - 1].item.id }
         : {}),
     };
+  }
+  private async readableOwn(row: Row): Promise<boolean> {
+    try {
+      return await this.options.authorize({
+        scope: this.scope,
+        operation: 'read',
+        capturedCeiling: object(object(row.data).capturedCeiling ?? {}),
+        db: this.db,
+      });
+    } catch {
+      return false;
+    }
   }
 }
 

@@ -277,7 +277,14 @@ function mediaKind(mediaType: string): string {
 function ownerKey(owner: IntakeOwner): string {
   nonempty(owner.kind);
   nonempty(owner.id);
-  if (owner.kind.includes(':')) throw new Error('Invalid intake owner');
+  // Distinct owners must never collapse onto one stored key (PostgreSQL would
+  // replace unpaired surrogates and reject NUL), so both parts must be storable.
+  if (
+    owner.kind.includes(':') ||
+    !storableText(owner.kind) ||
+    !storableText(owner.id)
+  )
+    throw new Error('Invalid intake owner');
   return `${owner.kind}:${owner.id}`;
 }
 /** PostgreSQL JSON cannot hold NUL or unpaired surrogates; SQLite can. Reject
@@ -317,6 +324,9 @@ function receivedPart(part: IntakePart | IntakeReferencePart): ReceivedPart {
   nonempty(reference.owner);
   nonempty(reference.id);
   if (reference.version !== undefined) nonempty(reference.version);
+  for (const value of [reference.owner, reference.id, reference.version])
+    if (typeof value === 'string' && !storableText(value))
+      throw new Error('Invalid reference');
   const snapshot = object(part.snapshot);
   let mediaType: string;
   let value: string;
@@ -1659,6 +1669,8 @@ export class IngestionService {
     input: InlineInterpretationInput,
   ): Promise<InlineInterpretation> {
     nonempty(input.requestId);
+    if (!storableText(input.requestId))
+      throw new Error('Invalid intake identifier');
     const item = await this.item(itemId, 'process');
     if (object(item.data).dispatch !== 'inline')
       throw new Error('Inline interpretation requires an inline receipt');
