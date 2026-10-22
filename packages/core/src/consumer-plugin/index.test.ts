@@ -1236,11 +1236,88 @@ describe('smrtConsumer registration generation', () => {
       "import * as __smrt_provider_0 from '@test/pkg';",
     );
     const svelteRootWarnings = warnings.filter((message) =>
-      message.includes('declares its package root'),
+      message.includes('declares a Svelte root entry'),
     );
     expect(svelteRootWarnings).toHaveLength(1);
     expect(svelteRootWarnings[0]).toContain('@test/pkg');
+    expect(svelteRootWarnings[0]).toContain('keeps the root import');
     expect(svelteRootWarnings[0]).toContain('./models or ./objects');
+  });
+
+  it('warns about a Svelte-root object module reached transitively through its provider (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const nestedModelDir = join(
+      providerDir,
+      'node_modules',
+      '@nested',
+      'model',
+    );
+    mkdirSync(nestedModelDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: { '.': './dist/index.js' },
+        dependencies: { '@nested/model': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(nestedModelDir, 'package.json'),
+      JSON.stringify({
+        name: '@nested/model',
+        version: '1.0.0',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@nested/model:Shared': {
+            className: 'Shared',
+            packageName: '@nested/model',
+            importPath: '@nested/model',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    const warnings: string[] = [];
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      });
+    try {
+      const plugin = smrtConsumer({
+        packages: ['@test/pkg'],
+        generateTypes: false,
+        projectRoot: tmpDir,
+        disableScanning: true,
+      });
+      await buildStart(plugin, {} as any);
+    } finally {
+      warn.mockRestore();
+    }
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      'await importSmrtDependency("@nested/model", "@test/pkg")',
+    );
+    const svelteRootWarnings = warnings.filter((message) =>
+      message.includes('declares a Svelte root entry'),
+    );
+    expect(svelteRootWarnings).toHaveLength(1);
+    expect(svelteRootWarnings[0]).toContain('@nested/model');
+    expect(svelteRootWarnings[0]).toContain('loaded through @test/pkg');
   });
 
   it('imports a component-bearing provider through its object entry when it contributes only nested objects (#4219)', async () => {

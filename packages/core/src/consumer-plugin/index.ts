@@ -1946,25 +1946,33 @@ async function generateRegistrationFile(
     }
     // An object exported only from a root the package declares as a Svelte
     // entry leaves the register no server-safe module to import: the root
-    // import below is the only way to reach the constructor, so Vite SSR
-    // works but plain Node (`smrt db:migrate`, workers) cannot load the
-    // register. Say so once per package rather than failing a build whose
+    // import (static, or transitive through the owning provider's context)
+    // is the only way to reach the constructor, so it is kept. Vite SSR
+    // works; plain Node (`smrt db:migrate`, workers) can load it only when
+    // that root really is Node-safe, which the declaration cannot prove
+    // either way. Say so once per package rather than failing a build whose
     // consumer may never run outside Vite (#4219).
+    const rootImportKey = `${providerPackageName ?? ''}\0${importPath}`;
     if (
-      appResolvable &&
       importPath === packageNameFromImportPath(importPath) &&
-      !svelteRootImportWarnings.has(importPath)
+      !svelteRootImportWarnings.has(rootImportKey)
     ) {
-      svelteRootImportWarnings.add(importPath);
+      svelteRootImportWarnings.add(rootImportKey);
+      const providerPackageJsonPath = appResolvable
+        ? undefined
+        : findInstalledPackageJson(providerPackageName as string, projectRoot);
+      const rootPackageJsonPath = appResolvable
+        ? findInstalledPackageJson(importPath, projectRoot)
+        : providerPackageJsonPath &&
+          findInstalledPackageJson(
+            importPath,
+            path.dirname(providerPackageJsonPath),
+          );
       if (
-        isComponentBearingRoot(
-          readInstalledPackageJson(
-            findInstalledPackageJson(importPath, projectRoot),
-          ),
-        )
+        isComponentBearingRoot(readInstalledPackageJson(rootPackageJsonPath))
       ) {
         console.warn(
-          `[smrt:consumer] ${importPath} declares its package root as a Svelte entry but exports ${objectName} only from that root; .smrt/register.js must import the root, which plain Node (smrt db:migrate, task/schedule workers) cannot load. Publish the package's @smrt() objects from a ./models or ./objects export.`,
+          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field or a "svelte" condition on its "." export) and exports ${objectName} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
         );
       }
     }

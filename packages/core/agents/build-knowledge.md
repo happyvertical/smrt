@@ -121,10 +121,16 @@ from their provider's context, which needs no root import.
 
 Not covered by contract: a package whose root is a Svelte entry AND whose
 `@smrt()` objects are exported only from that root. The object loop must then
-import the root (it is the only module exporting the constructors), so Vite
-SSR works but plain Node cannot load the register; generation warns once per
-package (`declares its package root as a Svelte entry`) and asks for a
-`./models` or `./objects` export. Regression: the `#4219` tests in
+import the root (it is the only module exporting the constructors) — statically
+when the app resolves the package, or through `importSmrtDependency()` when it
+is reached only through its provider — so Vite SSR works but plain Node can
+load the register only if that root happens to be Node-safe. Generation keeps
+the import and warns once per package (`declares a Svelte root entry`), asking
+to verify the root under plain Node or publish the objects from `./models` or
+`./objects`. The declaration is a heuristic: a Node-safe root that declares
+`svelte` only by convention gets the same warning (a false positive, harmless —
+the import is kept) and, when it has no `./models`/`./objects`, loses only its
+optional provider-context import. Regression: the `#4219` tests in
 `index.test.ts` (unit cases for `isComponentBearingRoot` /
 `resolveProviderContextImport`, a child-Node load of the generated register,
 the nested-only fallback, and the root-only warning).
