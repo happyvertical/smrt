@@ -1232,14 +1232,15 @@ export class IngestionService {
    * One authorized inbox page, newest receipt first with the id as tiebreak.
    * Tenant, confidential scope, retention, state and id filters all run in the
    * query, so a page is full and `nextCursor` is absent only when nothing
-   * follows. Authority is rechecked at two levels, never per row: the host
-   * `authorize('read')` once per distinct captured ceiling in the page, and
-   * the execution read gate once per distinct (item, handler) among the page's
-   * saved actions, exactly as `load` would. Rows failing either are skipped
-   * without disclosure and the page refills from the next rows, examining at
-   * most ITEM_SCAN_CEILING rows per call before returning short with a cursor.
+   * follows. Authority is rechecked at two levels: the host
+   * `authorize('read')` once per distinct captured ceiling, and the
+   * execution read gate once per distinct (item, handler) bound by a scanned
+   * row that passed the first. Rows failing either are skipped without
+   * disclosure and the page refills from the next rows, examining at most
+   * `scanLimit` (default ITEM_SCAN_CEILING) rows per call before returning
+   * short with a cursor.
    */
-  async listItems(input: ListItemsInput = {}): Promise<IntakeItemPage> {
+  async listItemsPage(input: ListItemsInput = {}): Promise<IntakeItemPage> {
     const limit = input.limit ?? ITEM_PAGE_DEFAULT;
     if (
       !Number.isSafeInteger(limit) ||
@@ -1259,12 +1260,18 @@ export class IngestionService {
     const scanCeiling = input.scanLimit ?? ITEM_SCAN_CEILING;
     if (input.itemIds && !input.itemIds.length)
       return { items: [], scanned: 0 };
-    let after = input.cursor ? decodeItemCursor(input.cursor) : undefined;
-    // True while `after` is the row consumed last; a row whose receipt time
-    // cannot be read is skipped and counted, and only becomes an error when
-    // the page would have to continue from it.
-    let anchored = true;
-    let corrupt: string | undefined;
+    const start = input.cursor ? decodeItemCursor(input.cursor) : undefined;
+    // `resume` is the last row with a service-written receipt time, the only
+    // position a returned cursor may name. `scanFrom` is the query anchor
+    // within this call; it also moves past rows whose stored receipt time the
+    // service did not write, by their raw stored text, so a run of such rows
+    // is read once per call rather than once per refill.
+    let resume = start;
+    let scanFrom: { key: unknown; id: string } | undefined = start && {
+      key: start.receivedAt,
+      id: start.id,
+    };
+    let progressed = false;
     const now = this.now().toISOString();
     const allowed = this.ceilingGate();
     const handlers = this.handlerGate();
@@ -1277,9 +1284,9 @@ export class IngestionService {
         now,
       ];
       let where = '';
-      if (after) {
+      if (scanFrom) {
         where += ' AND (i.created_at < ? OR (i.created_at = ? AND i.id < ?))';
-        params.push(after.receivedAt, after.receivedAt, after.id);
+        params.push(scanFrom.key, scanFrom.key, scanFrom.id);
       }
       if (input.itemIds) {
         where += ` AND i.id IN (${input.itemIds.map(() => '?').join(',')})`;
@@ -1292,7 +1299,7 @@ export class IngestionService {
       }
       // The first read fetches exactly the page. Refills after denials grow
       // with what has already been examined, from the page size up to 100
-      // rows, and never past the scan ceiling.
+      // rows, and never past the scan limit.
       const wanted = limit - items.length;
       const batch = Math.min(
         scanCeiling - examined,
@@ -1320,8 +1327,7 @@ export class IngestionService {
         }
       }
       // Handler bindings once per batch, for every row that passed and binds
-      // actions; the execution authorization behind them is memoised per
-      // (item, handler), so both are bounded by rows scanned, not by denials.
+      // actions: one read per batch, bounded by rows scanned.
       await handlers.resolve(
         candidates.filter(
           (row) => passed.has(row) && Number(row.action_count) > 0,
@@ -1331,44 +1337,63 @@ export class IngestionService {
       for (const row of candidates) {
         consumed++;
         examined++;
-        // A receipt time the service did not write cannot anchor a cursor:
-        // the row is skipped and counted, and reported only if the page
-        // would have to continue from it (see `anchored`).
-        let position: { receivedAt: string; id: string } | undefined;
+        let receivedAt: string | undefined;
         try {
-          position = {
-            receivedAt: receiptTime(row.created_at),
-            id: String(row.id),
-          };
+          receivedAt = receiptTime(row.created_at);
         } catch {
-          anchored = false;
-          corrupt = String(row.id);
+          /* receipt time the service did not write: skipped and counted */
         }
-        if (!position) continue;
-        after = position;
-        anchored = true;
+        if (receivedAt !== undefined)
+          scanFrom = { key: receivedAt, id: String(row.id) };
+        else if (typeof row.created_at === 'string')
+          scanFrom = { key: row.created_at, id: String(row.id) };
+        if (receivedAt === undefined) continue;
+        resume = { receivedAt, id: String(row.id) };
+        progressed = true;
         if (!passed.has(row)) continue;
         if (Number(row.action_count) > 0 && !(await handlers.readable(row)))
           continue;
         items.push({
           item: this.itemDTO(row),
           state: String(row.inbox_state) as InboxState,
-          cursor: encodeItemCursor(position.receivedAt, position.id),
+          cursor: encodeItemCursor(receivedAt, String(row.id)),
         });
         if (items.length === limit) break;
       }
       const remaining = more || consumed < candidates.length;
       if (!remaining) return { items, scanned: examined };
       if (items.length === limit || examined >= scanCeiling) {
-        if (!anchored || !after)
-          throw new Error(`Corrupt intake receipt time on item ${corrupt}`);
+        // A call that read only rows without a service-written receipt time
+        // has no position to hand back. The message names no row: the row may
+        // be one the actor may not read.
+        if (!progressed || !resume)
+          throw new Error('Corrupt intake receipt time');
         return {
           items,
           scanned: examined,
-          nextCursor: encodeItemCursor(after.receivedAt, after.id),
+          nextCursor: encodeItemCursor(resume.receivedAt, resume.id),
         };
       }
     }
+  }
+  /**
+   * Every authorized active item, newest receipt first.
+   * @deprecated Use `listItemsPage`. Kept so callers of the array-returning
+   * API keep working; it walks pages to exhaustion, so its cost grows with the
+   * scope. Items are gated exactly as on a page.
+   */
+  async listItems(): Promise<IntakeItemDTO[]> {
+    const all: IntakeItemDTO[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.listItemsPage({
+        limit: ITEM_PAGE_CEILING,
+        cursor,
+      });
+      all.push(...page.items.map(({ item }) => item));
+      cursor = page.nextCursor;
+    } while (cursor);
+    return all;
   }
   /** One read authorization per distinct captured ceiling for a page of rows. */
   private ceilingGate(): (data: Row) => Promise<boolean> {
@@ -1388,18 +1413,24 @@ export class IngestionService {
     };
   }
   /**
-   * The execution read gate `load` applies per action, batched for a page:
-   * the saved handler bindings of the rows' current proposals are projected
-   * in SQL (handler id and version only, distinct per item), read only for
-   * the rows that may still fill the page, then one execution authorization
-   * per distinct (item, handler). An item whose bound handler the actor
-   * cannot currently read, or whose bindings cannot be resolved, is not
-   * listed. Actions without a proposal carry no handler and are not gated,
-   * as in `listReviews`.
+   * The handler checks `listReviews` applies per action, batched for a page:
+   * the bindings of the rows' current proposals are projected in SQL
+   * (handler id, version, operation and capability; distinct per item) once
+   * per fetched batch, then `canReadHandler` runs once per distinct
+   * (item, handler) of a row that passed the item-level gate. An item whose
+   * bound handler the actor cannot currently read, whose binding drifted
+   * from the configured handler, or whose bindings cannot be resolved, is
+   * not listed. Actions without a proposal carry no handler and are not
+   * gated, as in `listReviews`.
    */
   private handlerGate() {
-    const decisions = new Map<string, Promise<boolean>>();
-    const bound = new Map<string, Array<{ id: string; version: string }>>();
+    type Bound = {
+      handlerId: string;
+      handlerVersion: string;
+      operation: unknown;
+      capability: unknown;
+    };
+    const bound = new Map<string, Bound[]>();
     // Created only when a listed row actually binds a handler; a failure to
     // construct the execution service reads as "not readable", never as an
     // unhandled rejection.
@@ -1412,14 +1443,20 @@ export class IngestionService {
       ).catch(() => undefined);
       return execution;
     };
-    const handlerId =
+    // The explicit cast keeps the projection valid where a deployment stores
+    // the declared JSON column as json or text rather than jsonb.
+    const field = (name: string, text: boolean) =>
       this.engine === 'sqlite'
-        ? "json_extract(p.data, '$.binding.handlerId')"
-        : "p.data->'binding'->>'handlerId'";
-    const handlerVersion =
-      this.engine === 'sqlite'
-        ? "json_extract(p.data, '$.binding.handlerVersion')"
-        : "p.data->'binding'->>'handlerVersion'";
+        ? `json_extract(p.data, '$.binding.${name}')`
+        : `(p.data::jsonb)->'binding'${text ? '->>' : '->'}'${name}'`;
+    const parsed = (value: unknown): unknown => {
+      if (typeof value !== 'string') return value;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return undefined;
+      }
+    };
     return {
       resolve: async (rows: Row[]): Promise<void> => {
         const pending = rows.filter((row) => !bound.has(String(row.id)));
@@ -1427,7 +1464,7 @@ export class IngestionService {
         for (const row of pending) bound.set(String(row.id), []);
         const found = (
           await this.db.query(
-            `SELECT DISTINCT p.item_id, ${handlerId} AS handler_id, ${handlerVersion} AS handler_version FROM intake_proposals p JOIN intake_actions a ON a.tenant_id = p.tenant_id AND a.confidential_scope_id = p.confidential_scope_id AND a.id = p.action_id AND a.proposal_revision = p.revision WHERE p.tenant_id = ? AND p.confidential_scope_id = ? AND p.item_id IN (${pending.map(() => '?').join(',')})`,
+            `SELECT DISTINCT p.item_id, ${field('handlerId', true)} AS handler_id, ${field('handlerVersion', true)} AS handler_version, ${field('operation', false)} AS operation, ${field('capability', false)} AS capability FROM intake_proposals p JOIN intake_actions a ON a.tenant_id = p.tenant_id AND a.confidential_scope_id = p.confidential_scope_id AND a.id = p.action_id AND a.proposal_revision = p.revision WHERE p.tenant_id = ? AND p.confidential_scope_id = ? AND p.item_id IN (${pending.map(() => '?').join(',')})`,
             this.scope.tenantId,
             this.scope.confidentialScopeId,
             ...pending.map((row) => String(row.id)),
@@ -1435,27 +1472,17 @@ export class IngestionService {
         ).rows as Row[];
         for (const row of found)
           bound.get(String(row.item_id))?.push({
-            id: row.handler_id == null ? '' : String(row.handler_id),
-            version:
+            handlerId: row.handler_id == null ? '' : String(row.handler_id),
+            handlerVersion:
               row.handler_version == null ? '' : String(row.handler_version),
+            operation: parsed(row.operation),
+            capability: parsed(row.capability),
           });
       },
       readable: async (row: Row): Promise<boolean> => {
-        const itemId = String(row.id);
-        for (const handler of bound.get(itemId) ?? []) {
-          const key = `${itemId}\u0000${handler.id}\u0000${handler.version}`;
-          let decision = decisions.get(key);
-          if (!decision) {
-            decision = service()
-              .then((gate) =>
-                gate
-                  ? gate.canReadHandler(row, handler.id, handler.version)
-                  : false,
-              )
-              .catch(() => false);
-            decisions.set(key, decision);
-          }
-          if (!(await decision)) return false;
+        for (const binding of bound.get(String(row.id)) ?? []) {
+          const gate = await service();
+          if (!gate || !(await gate.canReadHandler(row, binding))) return false;
         }
         return true;
       },

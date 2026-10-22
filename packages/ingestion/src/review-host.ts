@@ -92,7 +92,7 @@ export function createIntakeReviewHost(
       // service page with a cursor (the service hit its own ceiling) or the
       // host's own count ends the call with that cursor for the caller.
       for (;;) {
-        const page = await service.listItems({
+        const page = await service.listItemsPage({
           limit,
           cursor,
           state: input.state,

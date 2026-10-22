@@ -24,6 +24,7 @@ import type {
   ItemReviewView,
   LogicalSplitInput,
 } from '../src/review-dto.js';
+import { createIntakeReviewHost } from '../src/review-host.js';
 import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
   createSDKExtractionAdapter,
@@ -592,35 +593,51 @@ export class ReferenceReviewHost {
     },
   ) {
     const { service } = await this.service(scope);
-    // This host owns review_assignments, so the assignee filter is pushed into
-    // the page query as an id restriction instead of a post-page filter.
-    const itemIds = input.assigneeId
-      ? (
+    const notListing = async (): Promise<never> => {
+      throw new Error('Not used for listing');
+    };
+    // Listing composes the published host, so this reference gets the same
+    // paging, scan ceiling, junk-id filtering and assignee fallback as a
+    // production host. This host owns review_assignments and supplies the
+    // batched reads and the assignee pushdown.
+    return createIntakeReviewHost(service, {
+      upload: notListing,
+      assign: notListing,
+      evidence: notListing,
+      assignment: (itemId) => this.assignment(scope, itemId),
+      assignments: (itemIds) => this.assignments(scope, itemIds),
+      assignedItemIds: async (assigneeId) =>
+        (
           await this.db.query(
             'SELECT item_id FROM review_assignments WHERE tenant_id=? AND assignee_id=?',
             scope.tenantId,
-            input.assigneeId,
+            assigneeId,
           )
-        ).rows.map((row) => String(row.item_id))
-      : undefined;
-    const page = await service.listItems({
-      limit: input.limit,
-      cursor: input.cursor,
-      state: input.state,
-      itemIds,
-    });
-    const projected: InboxEntry[] = [];
-    for (const { item, state } of page.items)
-      projected.push({
-        item,
-        label: `Intake ${item.id.slice(0, 8)}`,
-        state,
-        assignment: await this.assignment(scope, item.id),
-      });
-    return {
-      items: projected,
-      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-    };
+        ).rows.map((row) => String(row.item_id)),
+    }).list(input);
+  }
+  /** One read for a listed page; the page itself is already authorized. */
+  async assignments(
+    scope: ReviewSession,
+    itemIds: string[],
+  ): Promise<Map<string, Assignment>> {
+    if (!itemIds.length) return new Map();
+    const rows = (
+      await this.db.query(
+        `SELECT item_id,assignee_id,version FROM review_assignments WHERE tenant_id=? AND item_id IN (${itemIds.map(() => '?').join(',')})`,
+        scope.tenantId,
+        ...itemIds,
+      )
+    ).rows;
+    return new Map(
+      rows.map((row) => [
+        String(row.item_id),
+        {
+          assigneeId: row.assignee_id ? String(row.assignee_id) : null,
+          version: Number(row.version ?? 0),
+        },
+      ]),
+    );
   }
   async preview(
     scope: ReviewSession,

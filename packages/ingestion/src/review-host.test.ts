@@ -42,7 +42,7 @@ function fixture() {
   const last = { actions: [] } as ReviewPage;
   const service = {
     getItem: vi.fn(async () => item),
-    listItems: vi.fn(pageSource([{ id: 'item', state: 'completed' }])),
+    listItemsPage: vi.fn(pageSource([{ id: 'item', state: 'completed' }])),
     listReviews: vi.fn(async (_id: string, page: { cursor?: string }) =>
       page.cursor ? last : first,
     ),
@@ -67,8 +67,8 @@ describe('published review host projection', () => {
     const page = await f.host.list({});
     expect(page.items[0].state).toBe('completed');
     expect(page.nextCursor).toBeUndefined();
-    expect(f.service.listItems).toHaveBeenCalledTimes(1);
-    expect(f.service.listItems).toHaveBeenCalledWith({
+    expect(f.service.listItemsPage).toHaveBeenCalledTimes(1);
+    expect(f.service.listItemsPage).toHaveBeenCalledWith({
       limit: 20,
       cursor: undefined,
       state: undefined,
@@ -85,7 +85,7 @@ describe('published review host projection', () => {
       id: String(index).padStart(2, '0'),
       state: index % 2 ? 'failed' : 'completed',
     }));
-    f.service.listItems.mockImplementation(pageSource(rows));
+    f.service.listItemsPage.mockImplementation(pageSource(rows));
     const first = await f.host.list({ state: 'failed', limit: 5 });
     expect(first.items.map((entry) => entry.item.id)).toEqual([
       '01',
@@ -114,7 +114,7 @@ describe('published review host projection', () => {
     });
     expect(last.items).toHaveLength(5);
     expect(last.nextCursor).toBeUndefined();
-    expect(f.service.listItems).toHaveBeenCalledTimes(3);
+    expect(f.service.listItemsPage).toHaveBeenCalledTimes(3);
   });
   it('reads assignments once per page and pushes the assignee filter down when the host can', async () => {
     const f = fixture();
@@ -122,7 +122,7 @@ describe('published review host projection', () => {
       `0b6e1c1e-5b9b-4a1e-9b1e-${String(n).padStart(12, '0')}`;
     const rows = Array.from({ length: 6 }, (_, index) => ({ id: uid(index) }));
     const mine = [uid(2), uid(4)];
-    f.service.listItems.mockImplementation(pageSource(rows));
+    f.service.listItemsPage.mockImplementation(pageSource(rows));
     const assignments = vi.fn(
       async (itemIds: string[]) =>
         new Map(
@@ -150,8 +150,8 @@ describe('published review host projection', () => {
     expect(page.items.map((entry) => entry.item.id)).toEqual(mine);
     expect(page.items[0].assignment).toEqual({ assigneeId: 'me', version: 1 });
     expect(assignedItemIds).toHaveBeenCalledWith('me');
-    expect(f.service.listItems).toHaveBeenCalledTimes(1);
-    expect(f.service.listItems).toHaveBeenCalledWith(
+    expect(f.service.listItemsPage).toHaveBeenCalledTimes(1);
+    expect(f.service.listItemsPage).toHaveBeenCalledWith(
       expect.objectContaining({ itemIds: mine }),
     );
     expect(assignments).toHaveBeenCalledTimes(1);
@@ -159,13 +159,13 @@ describe('published review host projection', () => {
   });
   it('returns a short service page with its cursor instead of scanning past the service ceiling', async () => {
     const f = fixture();
-    f.service.listItems.mockResolvedValue({
+    f.service.listItemsPage.mockResolvedValue({
       items: [],
       scanned: 1000,
       nextCursor: 'ceiling',
     });
     expect(await f.host.list({})).toEqual({ items: [], nextCursor: 'ceiling' });
-    expect(f.service.listItems).toHaveBeenCalledTimes(1);
+    expect(f.service.listItemsPage).toHaveBeenCalledTimes(1);
     const assignment = vi.fn(async () => ({ assigneeId: null, version: 0 }));
     const host = createIntakeReviewHost(
       f.service as unknown as IngestionService,
@@ -180,14 +180,14 @@ describe('published review host projection', () => {
       items: [],
       nextCursor: 'ceiling',
     });
-    expect(f.service.listItems).toHaveBeenCalledTimes(2);
+    expect(f.service.listItemsPage).toHaveBeenCalledTimes(2);
   });
   it('caps the assignee scan fallback at the scan ceiling and hands back the cursor', async () => {
     const f = fixture();
     const rows = Array.from({ length: 2000 }, (_, index) => ({
       id: String(index).padStart(4, '0'),
     }));
-    f.service.listItems.mockImplementation(pageSource(rows));
+    f.service.listItemsPage.mockImplementation(pageSource(rows));
     const host = createIntakeReviewHost(
       f.service as unknown as IngestionService,
       {
@@ -202,11 +202,11 @@ describe('published review host projection', () => {
     // with the continuation; the caller decides whether to keep scanning.
     expect(page.items).toEqual([]);
     expect(page.nextCursor).toBe('0999');
-    expect(f.service.listItems).toHaveBeenCalledTimes(10);
+    expect(f.service.listItemsPage).toHaveBeenCalledTimes(10);
     // The cap counts rows the service scanned, not rows it returned: full
     // pages that each cost 500 denied rows stop after two service calls.
     let calls = 0;
-    f.service.listItems.mockImplementation(async (input = {}) => {
+    f.service.listItemsPage.mockImplementation(async (input = {}) => {
       calls++;
       const page = await pageSource(rows)(input);
       return { ...page, scanned: 500 };
@@ -218,7 +218,7 @@ describe('published review host projection', () => {
     // The remaining budget travels with each call: after 999 scanned rows the
     // next service call may scan one, and the host stops there.
     const budgets: Array<number | undefined> = [];
-    f.service.listItems.mockImplementation(async (input = {}) => {
+    f.service.listItemsPage.mockImplementation(async (input = {}) => {
       budgets.push(input.scanLimit);
       const page = await pageSource(rows)(input);
       return { ...page, scanned: budgets.length === 1 ? 999 : 1 };
@@ -234,7 +234,7 @@ describe('published review host projection', () => {
       { id: '0b6e1c1e-5b9b-4a1e-9b1e-000000000001' },
       { id: '0b6e1c1e-5b9b-4a1e-9b1e-000000000002' },
     ];
-    f.service.listItems.mockImplementation(pageSource(rows));
+    f.service.listItemsPage.mockImplementation(pageSource(rows));
     const host = createIntakeReviewHost(
       f.service as unknown as IngestionService,
       {
@@ -247,7 +247,7 @@ describe('published review host projection', () => {
     );
     const page = await host.list({ assigneeId: 'me' });
     expect(page.items.map((entry) => entry.item.id)).toEqual([rows[1].id]);
-    expect(f.service.listItems).toHaveBeenCalledWith(
+    expect(f.service.listItemsPage).toHaveBeenCalledWith(
       expect.objectContaining({ itemIds: [rows[1].id] }),
     );
     const none = createIntakeReviewHost(
@@ -267,7 +267,7 @@ describe('published review host projection', () => {
     const rows = Array.from({ length: 12 }, (_, index) => ({
       id: String(index).padStart(2, '0'),
     }));
-    f.service.listItems.mockImplementation(pageSource(rows));
+    f.service.listItemsPage.mockImplementation(pageSource(rows));
     const assignment = vi.fn(async (itemId: string) => ({
       assigneeId: Number(itemId) % 4 === 3 ? 'me' : null,
       version: 0,

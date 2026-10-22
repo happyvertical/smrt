@@ -863,6 +863,7 @@ export function proposalSuite(
         typeof value === 'string' ? JSON.parse(value) : structuredClone(value);
       const readable: string[] = [];
       const mismatched: string[] = [];
+      const cloneProposals = new Map<string, string>();
       const base = new Date(String(itemRow.created_at)).getTime();
       for (let index = 0; index < 40; index++) {
         const itemId = randomUUID();
@@ -893,6 +894,7 @@ export function proposalSuite(
           action_key: `clone-${index}`,
         });
         const proposalId = randomUUID();
+        cloneProposals.set(itemId, proposalId);
         await insert('intake_proposals', proposalRow, {
           id: proposalId,
           slug: proposalId,
@@ -928,7 +930,7 @@ export function proposalSuite(
       });
       const paged = new IngestionService({ ...options, db: counted });
       executionAuthorizations = 0;
-      const page = await paged.listItems({ limit: 100 });
+      const page = await paged.listItemsPage({ limit: 100 });
       // The original (newest) plus the thirty clones whose ceiling still
       // covers the handler, newest first; the ten mismatched clones are not
       // listed and leak no state.
@@ -967,7 +969,7 @@ export function proposalSuite(
         },
       ]) {
         deny();
-        expect((await paged.listItems({ limit: 100 })).items).toEqual([]);
+        expect((await paged.listItemsPage({ limit: 100 })).items).toEqual([]);
         expect((await host.list({})).items).toEqual([]);
         await expect(host.load(generated.itemId)).rejects.toThrow(
           'unavailable',
@@ -977,7 +979,45 @@ export function proposalSuite(
         policyAccess = ['private'];
         principalOverride = undefined;
       }
-      expect((await paged.listItems({ limit: 100 })).items).toHaveLength(31);
+      expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+        31,
+      );
+      // Handler version drift: a clone whose saved binding no longer matches
+      // the configured handler is omitted, as its item view refuses it.
+      const driftedId = readable[0];
+      const driftProposal = cloneProposals.get(driftedId) ?? '';
+      const saved = (
+        await db.query(
+          'SELECT data FROM intake_proposals WHERE id=?',
+          driftProposal,
+        )
+      ).rows[0].data;
+      const drifted = json(saved) as {
+        binding: { operation: Record<string, unknown> };
+      };
+      drifted.binding.operation = {
+        ...drifted.binding.operation,
+        version: 'drifted',
+      };
+      await db.query(
+        'UPDATE intake_proposals SET data=? WHERE id=?',
+        JSON.stringify(drifted),
+        driftProposal,
+      );
+      const driftPage = await paged.listItemsPage({ limit: 100 });
+      expect(driftPage.items.map(({ item }) => item.id)).not.toContain(
+        driftedId,
+      );
+      expect(driftPage.items).toHaveLength(30);
+      await expect(host.load(driftedId)).rejects.toThrow('drift');
+      await db.query(
+        'UPDATE intake_proposals SET data=? WHERE id=?',
+        typeof saved === 'string' ? saved : JSON.stringify(saved),
+        driftProposal,
+      );
+      expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+        31,
+      );
       expect(await expiry()).toEqual(before);
       // A thousand further clones, all older, every one binding the handler.
       // When policy drops that handler the whole scope is denied at the
@@ -1045,7 +1085,7 @@ export function proposalSuite(
       executionAuthorizations = 0;
       queries = 0;
       writes = 0;
-      const denied = await paged.listItems({ limit: 20 });
+      const denied = await paged.listItemsPage({ limit: 20 });
       expect(denied.items).toEqual([]);
       expect(denied.scanned).toBe(1000);
       expect(denied.nextCursor).toBeTruthy();
@@ -1062,7 +1102,7 @@ export function proposalSuite(
       policyRetentionMs = 1000;
       writes = 0;
       expect(
-        (await paged.listItems({ limit: 100 })).items.map(
+        (await paged.listItemsPage({ limit: 100 })).items.map(
           ({ item }) => item.id,
         ),
       ).toEqual([generated.itemId]);
@@ -1115,7 +1155,7 @@ export function proposalSuite(
       // the item view refuses as before (#4211 review).
       deniedHandlers = [CREATE];
       expect((await host.list({})).items).toEqual([]);
-      expect((await service.listItems()).items).toEqual([]);
+      expect((await service.listItemsPage()).items).toEqual([]);
       await expect(host.load(generated.itemId)).rejects.toThrow('unavailable');
       deniedHandlers = [];
       expect((await host.list({})).items).toHaveLength(1);

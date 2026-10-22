@@ -17,9 +17,12 @@ next manifest migration; there are no hand-written migration files in this
 package, and `smrt doctor --db` / `db:status --parity` report the index until
 it is applied.
 
-`listItems({ limit?, cursor?, state?, itemIds? })` returns one authorized inbox
-page newest receipt first with each row's durable inbox state and continuation
-cursor; see [REVIEW.md](REVIEW.md) for the paging and authorization contract.
+`listItemsPage({ limit?, cursor?, state?, itemIds?, scanLimit? })` returns
+`{ items: [{ item, state, cursor }], scanned, nextCursor? }`: one authorized
+inbox page newest receipt first with each row's durable inbox state and
+continuation cursor, and the number of rows the call examined. `listItems()`
+remains as a deprecated array-returning walk over every page. See
+[REVIEW.md](REVIEW.md) for the paging and authorization contract.
 
 A host supplies a database, AssetRuntime, authenticated tenant/actor/confidential
 scope, a live authorization callback, a registered jobs target, and an idempotent

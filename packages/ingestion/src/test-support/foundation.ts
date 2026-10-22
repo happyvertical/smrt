@@ -1440,18 +1440,18 @@ export function foundationSuite(
           return options.authorize(input);
         },
       });
-      const ids = (page: Awaited<ReturnType<typeof paged.listItems>>) =>
+      const ids = (page: Awaited<ReturnType<typeof paged.listItemsPage>>) =>
         page.items.map(({ item }) => item.id);
 
       queries = authorizations = 0;
-      const first = await paged.listItems();
+      const first = await paged.listItemsPage();
       expect(ids(first)).toEqual(visible.slice(0, 20).map((row) => row.id));
       expect(first.nextCursor).toBeTruthy();
       expect(queries).toBe(1);
       expect(authorizations).toBe(1);
 
       queries = authorizations = 0;
-      const wide = await paged.listItems({ limit: 100 });
+      const wide = await paged.listItemsPage({ limit: 100 });
       expect(ids(wide)).toEqual(visible.slice(0, 100).map((row) => row.id));
       expect(wide.items.map(({ state }) => state)).toEqual(
         visible.slice(0, 100).map((row) => row.expected),
@@ -1467,7 +1467,7 @@ export function foundationSuite(
       let cursor: string | undefined;
       let pages = 0;
       do {
-        const page = await paged.listItems({ limit: 100, cursor });
+        const page = await paged.listItemsPage({ limit: 100, cursor });
         walked.push(...ids(page));
         cursor = page.nextCursor;
         pages++;
@@ -1475,9 +1475,14 @@ export function foundationSuite(
       expect(pages).toBe(3);
       expect(walked).toEqual(visible.map((row) => row.id));
       expect(new Set(walked).size).toBe(visible.length);
+      // The deprecated array API is the same walk.
+      expect((await paged.listItems()).map((item) => item.id)).toEqual(walked);
 
-      const tie = await paged.listItems({ limit: 1 });
-      const tied = await paged.listItems({ limit: 1, cursor: tie.nextCursor });
+      const tie = await paged.listItemsPage({ limit: 1 });
+      const tied = await paged.listItemsPage({
+        limit: 1,
+        cursor: tie.nextCursor,
+      });
       expect([...ids(tie), ...ids(tied)]).toEqual(
         visible.slice(0, 2).map((row) => row.id),
       );
@@ -1492,17 +1497,20 @@ export function foundationSuite(
         { state: 'bogus' as never },
         { itemIds: ['forged'] },
       ])
-        await expect(paged.listItems(input)).rejects.toThrow(
+        await expect(paged.listItemsPage(input)).rejects.toThrow(
           'Invalid item page',
         );
 
       const failed = visible.filter((row) => row.expected === 'failed');
       queries = 0;
-      const failedPage = await paged.listItems({ state: 'failed', limit: 20 });
+      const failedPage = await paged.listItemsPage({
+        state: 'failed',
+        limit: 20,
+      });
       expect(ids(failedPage)).toEqual(failed.slice(0, 20).map((row) => row.id));
       expect(failedPage.nextCursor).toBeTruthy();
       expect(queries).toBe(1);
-      const failedRest = await paged.listItems({
+      const failedRest = await paged.listItemsPage({
         state: 'failed',
         limit: 20,
         cursor: failedPage.nextCursor,
@@ -1510,24 +1518,26 @@ export function foundationSuite(
       expect(ids(failedRest)).toEqual(failed.slice(20).map((row) => row.id));
       expect(failedRest.nextCursor).toBeUndefined();
       for (const state of ['deferred', 'completed'] as const) {
-        const page = await paged.listItems({ state });
+        const page = await paged.listItemsPage({ state });
         expect(ids(page)).toEqual(
           visible.filter((row) => row.expected === state).map((row) => row.id),
         );
         expect(page.nextCursor).toBeUndefined();
       }
-      expect((await paged.listItems({ state: 'waiting' })).items).toEqual([]);
+      expect((await paged.listItemsPage({ state: 'waiting' })).items).toEqual(
+        [],
+      );
 
       const chosen = [
         visible[250].id,
         visible[3].id,
         ordered.find((r) => r.expected === 'hidden')?.id ?? '',
       ];
-      expect(ids(await paged.listItems({ itemIds: chosen }))).toEqual([
+      expect(ids(await paged.listItemsPage({ itemIds: chosen }))).toEqual([
         visible[3].id,
         visible[250].id,
       ]);
-      expect(await paged.listItems({ itemIds: [] })).toMatchObject({
+      expect(await paged.listItemsPage({ itemIds: [] })).toMatchObject({
         items: [],
       });
 
@@ -1535,7 +1545,7 @@ export function foundationSuite(
         ...options,
         scope: { ...options.scope, confidentialScopeId: 'other' },
       });
-      expect(await outsider.listItems({ limit: 100 })).toMatchObject({
+      expect(await outsider.listItemsPage({ limit: 100 })).toMatchObject({
         items: [],
       });
 
@@ -1547,22 +1557,22 @@ export function foundationSuite(
       visible = ordered.filter((row) => row.expected !== 'hidden');
       expect(seeded).toHaveLength(1500);
       queries = authorizations = 0;
-      expect(ids(await paged.listItems())).toEqual(ids(first));
+      expect(ids(await paged.listItemsPage())).toEqual(ids(first));
       expect(queries).toBe(1);
       expect(authorizations).toBe(1);
       queries = 0;
-      expect(ids(await paged.listItems({ limit: 100 }))).toEqual(ids(wide));
+      expect(ids(await paged.listItemsPage({ limit: 100 }))).toEqual(ids(wide));
       expect(queries).toBe(wideQueries);
       queries = 0;
       expect(
-        ids(await paged.listItems({ state: 'failed', limit: 20 })),
+        ids(await paged.listItemsPage({ state: 'failed', limit: 20 })),
       ).toEqual(ids(failedPage));
       expect(queries).toBe(1);
 
       // Plan evidence: the unfiltered page walks intake_items_received_idx
       // backwards and stops at the page boundary; no sort, no table scan.
       // The per-row state counters use intake_actions_item_idx.
-      await paged.listItems();
+      await paged.listItemsPage();
       expect(lastPage).toBeTruthy();
       if (dialect === 'sqlite') {
         await db.query('ANALYZE');
@@ -1605,56 +1615,77 @@ export function foundationSuite(
         authorize: async (input) => isSecret(input.capturedCeiling),
       });
       // A receipt time the service never wrote (only SQLite can hold such
-      // text in a datetime column) is skipped and counted like a denied row;
-      // it is reported by id only when a page would have to continue from it.
+      // text in a datetime column) is skipped and counted like a denied row.
+      // A call returns what it collected with a cursor at the last good row;
+      // only a call that read nothing but such rows fails, and its message
+      // names no row.
       if (dialect === 'sqlite') {
+        const setTime = (id: string, value: string) =>
+          db.query(
+            'UPDATE intake_items SET created_at=? WHERE id=?',
+            value,
+            id,
+          );
         const corrupt = visible[5].id;
         // Text that sorts beside the row's real position but is not a time.
-        await db.query(
-          'UPDATE intake_items SET created_at=? WHERE id=?',
-          `${visible[5].receivedAt}x`,
-          corrupt,
-        );
-        const skipped = await paged.listItems();
-        expect(ids(skipped)).toEqual(
-          visible
-            .filter((row) => row.id !== corrupt)
+        await setTime(corrupt, `${visible[5].receivedAt}x`);
+        const good = visible.filter((row) => row.id !== corrupt);
+        const skipped = await paged.listItemsPage();
+        expect(ids(skipped)).toEqual(good.slice(0, 20).map((row) => row.id));
+        expect(skipped.scanned).toBe(21);
+        // The batch ends on the corrupt row after five good ones: the five
+        // come back with a cursor instead of being discarded.
+        const partial = await paged.listItemsPage({ limit: 20, scanLimit: 6 });
+        expect(ids(partial)).toEqual(good.slice(0, 5).map((row) => row.id));
+        expect(partial.scanned).toBe(6);
+        expect(partial.nextCursor).toBeTruthy();
+        // The next call starts on the corrupt row: with a one-row budget it
+        // makes no progress and fails without naming the row; with a normal
+        // budget it passes the row and continues.
+        await expect(
+          paged.listItemsPage({
+            limit: 20,
+            scanLimit: 1,
+            cursor: partial.nextCursor,
+          }),
+        ).rejects.toThrow(/^Corrupt intake receipt time$/);
+        const resumed = await paged.listItemsPage({
+          limit: 20,
+          cursor: partial.nextCursor,
+        });
+        expect(ids(resumed)).toEqual(good.slice(5, 25).map((row) => row.id));
+        // A run of 130 such rows is passed within one call by its raw stored
+        // text, not re-read on every refill.
+        const run = ordered.slice(10, 140);
+        for (const row of run) await setTime(row.id, `${row.receivedAt}x`);
+        const inRun = new Set(run.map((row) => row.id));
+        queries = 0;
+        const pastRun = await paged.listItemsPage({ limit: 20 });
+        expect(ids(pastRun)).toEqual(
+          good
+            .filter((row) => !inRun.has(row.id))
             .slice(0, 20)
             .map((row) => row.id),
         );
-        expect(skipped.scanned).toBe(21);
-        // Continuing past the corrupt row re-examines it once per refill and
-        // still fills the page; only a page forced to stop on it reports it.
-        const past = await paged.listItems({ limit: 6 });
-        expect(ids(past)).toEqual(
-          visible
-            .filter((row) => row.id !== corrupt)
-            .slice(0, 6)
-            .map((row) => row.id),
-        );
-        await expect(
-          paged.listItems({ limit: 20, scanLimit: 6 }),
-        ).rejects.toThrow(`Corrupt intake receipt time on item ${corrupt}`);
-        await db.query(
-          'UPDATE intake_items SET created_at=? WHERE id=?',
-          visible[5].receivedAt,
-          corrupt,
-        );
-        expect(ids(await paged.listItems())).toEqual(ids(first));
+        expect(pastRun.scanned).toBeLessThan(200);
+        expect(queries).toBeLessThanOrEqual(12);
+        for (const row of [...run, visible[5]])
+          await setTime(row.id, row.receivedAt);
+        expect(ids(await paged.listItemsPage())).toEqual(ids(first));
       }
       // A caller's remaining budget bounds the scan below the ceiling.
       for (const input of [{ scanLimit: 0 }, { scanLimit: 1001 }])
-        await expect(paged.listItems(input)).rejects.toThrow(
+        await expect(paged.listItemsPage(input)).rejects.toThrow(
           'Invalid item page',
         );
-      const budgeted = await rare.listItems({ limit: 20, scanLimit: 120 });
+      const budgeted = await rare.listItemsPage({ limit: 20, scanLimit: 120 });
       expect(budgeted.scanned).toBe(120);
       expect(budgeted.nextCursor).toBeTruthy();
       // Cursors are the normalised ISO text the service stores; an offset
       // form that parses to the same instant is refused rather than compared
       // as text against stored rows.
       await expect(
-        paged.listItems({
+        paged.listItemsPage({
           cursor: Buffer.from(
             JSON.stringify(['2026-10-01T05:00:00.000+05:00', visible[0].id]),
           ).toString('base64url'),
@@ -1674,7 +1705,7 @@ export function foundationSuite(
       cursor = undefined;
       do {
         queries = 0;
-        const page = await rare.listItems({ limit: 20, cursor });
+        const page = await rare.listItemsPage({ limit: 20, cursor });
         calls++;
         // Refills grow 20, 20, 40, 80, then 100-row batches up to the
         // 1000-row scan ceiling (thirteen page reads), each batch with at
@@ -1698,7 +1729,8 @@ export function foundationSuite(
         { ...options.scope, actorId: 'unrelated' },
       ]) {
         const outsider = new IngestionService({ ...options, scope });
-        expect(await outsider.listItems()).toMatchObject({ items: [] });
+        expect(await outsider.listItemsPage()).toMatchObject({ items: [] });
+        expect(await outsider.listItems()).toEqual([]);
         await expect(outsider.getItem(id)).rejects.toThrow('unavailable');
         await expect(outsider.getEvidence(id)).rejects.toThrow('unavailable');
         await expect(outsider.readEvidence(id, evidence.id)).rejects.toThrow(
@@ -1715,7 +1747,8 @@ export function foundationSuite(
       });
       expect((await delegate.getItem(id)).id).toBe(id);
       allowed = false;
-      expect(await service.listItems()).toMatchObject({ items: [] });
+      expect(await service.listItemsPage()).toMatchObject({ items: [] });
+      expect(await service.listItems()).toEqual([]);
       await expect(service.getItem(id)).rejects.toThrow('unavailable');
       await expect(service.createAction(id, 'forged', {})).rejects.toThrow(
         'unavailable',

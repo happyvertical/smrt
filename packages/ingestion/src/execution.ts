@@ -691,24 +691,36 @@ export class IntakeExecutionService {
     return { item, action, proposal, binding, handler };
   }
   /**
-   * Current read authority for one handler bound to a listed item: the same
-   * checks `listReviews` applies per action, without the retention write.
-   * An item that `access` would narrow past its deadline is not readable
-   * for listing purposes. Any failure answers false; the list discloses
-   * nothing about why.
+   * Read authority for one handler binding of a listed item, read-only. It
+   * applies the handler checks `listReviews` applies before projecting an
+   * action: the bound handler must resolve to a single operation whose
+   * operation and capability still match the saved binding (no version
+   * drift), and the execution read gate (host authority, policy and ceiling
+   * handler/operation allowlists, `policy.access`, principal) must pass, but
+   * without the retention write; an item past the deadline `access` would
+   * narrow to is not listable. Per-action target, evidence and plan gates
+   * are not evaluated here; `load` still enforces them. Any failure answers
+   * false and the list discloses nothing about why.
    */
   async canReadHandler(
     item: Row,
-    handlerId: string,
-    handlerVersion: string,
+    binding: {
+      handlerId: string;
+      handlerVersion: string;
+      operation: unknown;
+      capability: unknown;
+    },
   ): Promise<boolean> {
     try {
-      const { deadline } = await this.authority(
-        this.db,
-        item,
-        this.handler(handlerId, handlerVersion),
-        'read',
+      const handler = this.operation(
+        this.handler(binding.handlerId, binding.handlerVersion),
       );
+      if (
+        canonical(handler.operation) !== canonical(binding.operation) ||
+        canonical(handler.capability) !== canonical(binding.capability)
+      )
+        return false;
+      const { deadline } = await this.authority(this.db, item, handler, 'read');
       return deadline > this.now().getTime();
     } catch {
       return false;

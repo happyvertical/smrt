@@ -148,7 +148,7 @@ and feedback. Repeated preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.
 `list({ state?, assigneeId?, cursor?, limit? })` returns one page newest receipt
-first (`intake_items.created_at`, id tiebreak) through `service.listItems`.
+first (`intake_items.created_at`, id tiebreak) through `service.listItemsPage`.
 `limit` defaults to 20 and is capped at 100; the cursor is an opaque
 (received-at, id) continuation, never a bare id. Tenant, confidential scope,
 retention and the `state` filter run inside the page query, so a page is full
@@ -160,16 +160,21 @@ ceiling in a batch, and the execution read gate (policy, ceiling, handler and
 operation allowlists, principal) once per distinct (item, handler) bound by
 the page's saved actions. The list gate is read-only: it evaluates the same
 checks as `listReviews` without the retention write, so an item that the item
-view would narrow past its deadline is simply not listed. An item whose bound
+view would narrow past its deadline is simply not listed. The list gate also
+resolves each bound handler and rejects version drift against the saved
+binding, as `listReviews` does; it does not evaluate per-action target,
+evidence or plan gates, so an item whose target became unreadable still lists
+and its item view refuses. An item whose bound
 handler the actor cannot currently read is not listed at all, rather than
 listed with a state derived from actions the actor may not see; actions
 without a proposal bind no handler and are not gated, as in `listReviews`.
 Handler bindings (handler id and version, projected in SQL, distinct per
 item) are read once per fetched batch for the rows that passed the item-level
 gate. Note the host cost plainly: the execution `authorize` callback runs once
-per distinct (item, handler) among the rows scanned, memoised within the call
-and bounded by rows scanned (at most `ITEM_SCAN_CEILING`), in host code rather
-than as N+1 database reads. Denied or unreadable rows are skipped without
+per distinct (item, handler) bound by a scanned row that passed the item-level
+gate. Each item is its own authorization subject, so nothing is deduplicated
+across items; the count is bounded by rows scanned (at most
+`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. Denied or unreadable rows are skipped without
 disclosure and the page refills from the next rows; refills grow from the page
 size to 100 rows per query, so a fully denied scope costs about a dozen page
 reads and as many binding reads per call. One service call examines at most
@@ -183,9 +188,17 @@ rows scanned across the service calls of one host call never exceed 1000: a
 short service page with a cursor, or an exhausted budget while filtering by
 assignee, ends the host call with the same cursor and the caller continues.
 Only rows the service wrote are supported: cursors carry the normalised ISO
-receipt time the service stores, and a row whose stored receipt time is not
-that text is skipped and counted like a denied row, reported by id only when
-a page would have to continue from it.
+receipt time the service stores. A row whose stored receipt time is not that
+text is skipped and counted like a denied row; within a call the scan moves
+past it by its raw stored text, and a returned cursor names the last good row
+before it. A call that reads nothing but such rows (a run at least as long as
+its scan limit, at most 1000) fails with `Corrupt intake receipt time`,
+naming no row, because the row may be one the actor may not read.
+
+`listItems()` remains as a deprecated wrapper returning every authorized
+active item as `IntakeItemDTO[]`: it walks `listItemsPage` to exhaustion, so
+items are newest-first and gated exactly as on a page, and its cost grows with
+the scope.
 
 The page's inbox state is the durable projection of the saved action journal
 and processing state, computed once per scanned row inside the page query;
