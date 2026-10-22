@@ -1561,21 +1561,37 @@ export class IngestionService {
         const item = await this.item(frozen.itemId, 'process', db);
         if (Number(item.analysis_revision) !== frozen.expectedRevision)
           throw new Error('Stale reviewer instruction');
+        let carriedCorrection: unknown;
         if (current.revision !== frozen.expectedRevision) {
-          const later = await this.rows(
-            db,
-            'intake_analyses',
-            'item_id=? AND revision>?',
-            [frozen.itemId, current.revision],
-          );
+          const later = (
+            await this.rows(db, 'intake_analyses', 'item_id=? AND revision>?', [
+              frozen.itemId,
+              current.revision,
+            ])
+          ).sort((a, b) => Number(b.revision) - Number(a.revision));
+          const stage = (row: Row) =>
+            object(object(row.data).configuration).stage;
+          // The anchor is superseded only by a newer completed interpretation
+          // or by work in flight. A completed extraction whose own
+          // interpretation failed (or never started) is part of the failed
+          // reinterpretation being retried, not a newer result.
           if (
-            later.some((row) =>
-              ['completed', 'partial', 'queued', 'running'].includes(
-                String(row.state),
-              ),
+            later.some(
+              (row) =>
+                ['queued', 'running'].includes(String(row.state)) ||
+                (['completed', 'partial'].includes(String(row.state)) &&
+                  stage(row) === 'interpret'),
             )
           )
             throw new Error('Stale reviewer instruction');
+          // Corrections chain forward through each extraction configuration, so
+          // the newest later extraction holds the current human split; a retry
+          // from an older anchor must not silently drop one recorded after it.
+          const newest = later.find((row) => stage(row) !== 'interpret');
+          const correction = newest
+            ? object(object(newest.data).configuration).humanCorrection
+            : undefined;
+          if (correction !== undefined) carriedCorrection = correction;
         }
         const pin = object(object(current.configuration.proposals).source);
         const source = await this.completedAnalysisSnapshot(
@@ -1608,7 +1624,13 @@ export class IngestionService {
         const appended = await this.appendAnalysis(
           db,
           frozen.itemId,
-          { ...source.configuration, reviewerInstruction: record },
+          {
+            ...source.configuration,
+            ...(carriedCorrection !== undefined
+              ? { humanCorrection: carriedCorrection }
+              : {}),
+            reviewerInstruction: record,
+          },
           requestKey,
         );
         result = { ...appended, instruction: reviewerInstructionView(record) };
