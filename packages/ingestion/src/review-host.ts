@@ -44,7 +44,13 @@ export interface IntakeReviewHostOptions {
   rowEvidence?(
     rows: readonly RowEvidenceRequest[],
   ): Promise<ReadonlyMap<string, RowEvidenceView>>;
-  label?(item: IntakeItemDTO): string;
+  /**
+   * Presentation label (#4214). `evidence` is the item's durable parts with
+   * the primary part first, so a host can label by the original filename;
+   * one-argument implementations keep working. The default is the primary
+   * part's own `filename`, else `Intake <8 hex>`.
+   */
+  label?(item: IntakeItemDTO, evidence: IntakeEvidenceDTO[]): string;
   /** Expose the optional feedback UI only when the service has feedback configured. */
   enableFeedback?: boolean;
   /** Optional wakeup after a durable logical split has queued extraction. */
@@ -90,34 +96,50 @@ export function createIntakeReviewHost(
   options: IntakeReviewHostOptions,
 ): IntakeReviewHost {
   const label =
-    options.label ?? ((item: IntakeItemDTO) => `Intake ${item.id.slice(0, 8)}`);
+    options.label ??
+    ((item: IntakeItemDTO, evidence: IntakeEvidenceDTO[]) =>
+      // The primary part's own name only, never another part's (#4214).
+      primaryEvidence(evidence)?.filename ?? `Intake ${item.id.slice(0, 8)}`);
+  /** The item's durable parts with the primary part first, for `label`. */
+  const labelled = (
+    parts: readonly IntakeEvidenceDTO[],
+  ): IntakeEvidenceDTO[] => {
+    const primary = primaryEvidence(parts);
+    return primary
+      ? [primary, ...parts.filter((part) => part !== primary)]
+      : [...parts];
+  };
   /**
-   * Opt-in row previews for a finished page. `list` applies this once to its
-   * final entries just before returning, so every return path decorates the
-   * same way. Without `rowEvidence` it makes no read and returns the entries
-   * unchanged. Fields are picked explicitly so a host value can never put
-   * text on a row.
+   * Label and, when the host opts in, preview a finished page. `list` applies
+   * this once to its final entries just before returning, so every return
+   * path decorates the same way. It reads the page's evidence metadata in one
+   * `listEvidence` query (labels use the original filename, #4214) and calls
+   * `rowEvidence` at most once (#4213). Preview fields are picked explicitly
+   * so a host value can never put text on a row.
    */
-  const withRowEvidence = async (
-    entries: InboxEntry[],
-  ): Promise<InboxEntry[]> => {
-    if (!options.rowEvidence || !entries.length) return entries;
+  const decorateRows = async (entries: InboxEntry[]): Promise<InboxEntry[]> => {
+    if (!entries.length) return entries;
     const parts = await service.listEvidence(
       entries.map((entry) => entry.item.id),
     );
+    const named = entries.map((entry) => ({
+      ...entry,
+      label: label(entry.item, labelled(parts.get(entry.item.id) ?? [])),
+    }));
+    if (!options.rowEvidence) return named;
     const rows: RowEvidenceRequest[] = [];
-    for (const entry of entries) {
+    for (const entry of named) {
       const primary = primaryEvidence(parts.get(entry.item.id) ?? []);
       if (primary) rows.push({ itemId: entry.item.id, evidence: primary });
     }
-    if (!rows.length) return entries;
+    if (!rows.length) return named;
     const primaries = new Map(rows.map((row) => [row.itemId, row.evidence]));
     // Everything that touches the host's answer is isolated: a throw, or a
     // malformed answer (not a map, a non-text label), lists without previews
     // rather than rejecting the page.
     try {
       const views = await options.rowEvidence(rows);
-      return entries.map((entry) => {
+      return named.map((entry) => {
         const primary = primaries.get(entry.item.id);
         // Only rows with a durable primary part can carry a preview, even if
         // the host answers for another row.
@@ -137,14 +159,15 @@ export function createIntakeReviewHost(
       });
     } catch {
       // A preview failure must not block triage: list without previews.
-      return entries;
+      return named;
     }
   };
   const entry = async (item: IntakeItemDTO): Promise<InboxEntry> => {
     const { state } = await loadReviewSummary(service, item);
     const assignment = await options.assignment(item.id);
     await service.getItem(item.id);
-    return { item, label: label(item), state, assignment };
+    // The label needs the page's evidence; `decorateRows` sets it.
+    return { item, label: '', state, assignment };
   };
   return {
     async list(input) {
@@ -163,7 +186,7 @@ export function createIntakeReviewHost(
           projected.push(current);
       }
       return {
-        items: await withRowEvidence(projected),
+        items: await decorateRows(projected),
         ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
       };
     },
@@ -183,7 +206,12 @@ export function createIntakeReviewHost(
       const assignment = await options.assignment(itemId);
       await service.getItem(itemId);
       return {
-        entry: { item, label: label(item), state: summary.state, assignment },
+        entry: {
+          item,
+          label: label(item, labelled(evidence.map((view) => view.evidence))),
+          state: summary.state,
+          assignment,
+        },
         evidence,
         analysis,
         reviews,

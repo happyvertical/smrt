@@ -20,7 +20,10 @@ transaction executor; it must intersect current grants with that ceiling. Never
 construct the scope, retention policy or budgets from incoming document labels.
 
 `receive` accepts bounded original byte buffers, with stable source part IDs,
-parent relationships and optional upstream identity/version. Source adapters own
+parent relationships, optional upstream identity/version and an optional
+original `filename` (kept for labels on `IntakeEvidenceDTO.filename`, never
+part of receipt identity). The multipart upload source, email attachments and
+the watched folder all supply it. Source adapters own
 streaming and upstream snapshot retrieval. Receipt identity is tenant + source +
 delivery key; changing bytes or authenticated scope conflicts. Content equality
 in a different conversation does not deduplicate an arrival. The returned item

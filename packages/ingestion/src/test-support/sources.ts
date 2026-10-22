@@ -152,6 +152,7 @@ export function sourcesSuite(
       type = 'application/pdf',
       bytes = Buffer.from('%PDF-original'),
       fields: Record<string, string> = {},
+      name = 'original',
     ) {
       const form = new FormData();
       for (const [key, value] of Object.entries({
@@ -161,7 +162,7 @@ export function sourcesSuite(
         ...fields,
       }))
         form.set(key, value);
-      form.set('file', new Blob([bytes], { type }), 'original');
+      form.set('file', new Blob([bytes], { type }), name);
       const request = new Request('https://host/intake', {
         method: 'POST',
         headers: { 'idempotency-key': 'capture' },
@@ -235,12 +236,52 @@ export function sourcesSuite(
       expect(await count()).toBe(2);
     });
     it('retains original upload bytes and capture metadata; replay conflicts and bounds fail explicitly', async () => {
-      const receipt = await (await handler()(await upload())).json();
+      const receipt = await (
+        await handler()(
+          await upload(
+            'application/pdf',
+            Buffer.from('%PDF-original'),
+            {},
+            'Acme March.pdf',
+          ),
+        )
+      ).json();
       expect(receipt.kind).toBe('accepted');
       const evidence = await service.getEvidence(receipt.itemId);
       const original = evidence.find((e) => e.partId === 'file')!;
       const capture = evidence.find((e) => e.partId === 'capture')!;
       expect(original.parentEvidenceId).toBe(capture.id);
+      // The multipart filename is kept for labels (#4214) without becoming identity.
+      expect(original.filename).toBe('Acme March.pdf');
+      expect(capture.filename).toBeUndefined();
+      const stored = (
+        await db.query(
+          'SELECT data FROM intake_evidence WHERE id=?',
+          original.id,
+        )
+      ).rows[0].data;
+      expect(typeof stored === 'string' ? JSON.parse(stored) : stored).toEqual({
+        filename: 'Acme March.pdf',
+        sourceReference: null,
+      });
+      // Same bytes and capture under another name replay the same receipt.
+      expect(
+        await (
+          await handler()(
+            await upload(
+              'application/pdf',
+              Buffer.from('%PDF-original'),
+              {},
+              'renamed.pdf',
+            ),
+          )
+        ).json(),
+      ).toMatchObject({ kind: 'duplicate', itemId: receipt.itemId });
+      expect(
+        (await service.getEvidence(receipt.itemId)).find(
+          (e) => e.partId === 'file',
+        )?.filename,
+      ).toBe('Acme March.pdf');
       expect(
         Buffer.from(
           await service.readEvidence(receipt.itemId, original.id),
@@ -468,6 +509,16 @@ export function sourcesSuite(
       const first = await adapter.receive(delivery);
       expect(first.kind).toBe('accepted');
       if (!('itemId' in first)) throw new Error('receipt missing');
+      // Attachment names and upstream identity are exposed on the DTO (#4214).
+      expect(
+        (await service.getEvidence(first.itemId))
+          .filter((e) => e.partId.startsWith('attachment:'))
+          .map((e) => [e.partId, e.filename, e.sourceReference?.owner])
+          .sort(),
+      ).toEqual([
+        ['attachment:0', 'a.pdf', 'message-attachment'],
+        ['attachment:1', 'b.tif', 'message-attachment'],
+      ]);
       const evidence = await service.getEvidence(first.itemId);
       expect(evidence).toHaveLength(3);
       const parent = evidence.find((e) => e.partId === 'message')!;
