@@ -1,6 +1,7 @@
 export * from './assistance-request-service.js';
 export * from './delivery-service.js';
 export * from './development-request-service.js';
+export * from './participant-development-request-service.js';
 export * from './project-board-service.js';
 export * from './project-governance-service.js';
 export * from './project-specification-service.js';

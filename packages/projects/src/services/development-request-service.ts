@@ -7,6 +7,7 @@ import {
   DevelopmentRequestWorkLinkCollection,
 } from '../models/delivery-control-plane.js';
 import type { DevelopmentTriageDecision } from '../types.js';
+import { ParticipantDevelopmentRequestService } from './participant-development-request-service.js';
 
 export interface DevelopmentWorkItem {
   type: string;
@@ -180,7 +181,7 @@ export class DevelopmentRequestService {
             orderBy: 'createdAt ASC',
           }),
       );
-      for (const { description, type } of parts) {
+      for (const [partIndex, { description, type }] of parts.entries()) {
         const existingIndex = unmatchedExisting.findIndex(
           (candidate) =>
             candidate.description.trim() === description &&
@@ -193,19 +194,33 @@ export class DevelopmentRequestService {
           splitRequests.push(unmatchedExisting.splice(existingIndex, 1)[0]);
         } else {
           splitRequests.push(
-            await this.requests.createManaged({
-              tenantId: request.tenantId,
-              projectId: request.projectId,
-              integrationId: request.integrationId,
-              requesterId: request.requesterId,
-              participantId: request.participantId || undefined,
-              type,
-              description,
-              evidence: request.getEvidence(),
-              visibility: request.visibility,
-              origin,
-              discussion: input.reason,
-            }),
+            request.integrationId
+              ? await this.requests.createManaged({
+                  tenantId: request.tenantId,
+                  projectId: request.projectId,
+                  integrationId: request.integrationId,
+                  requesterId: request.requesterId,
+                  participantId: request.participantId || undefined,
+                  type,
+                  description,
+                  evidence: request.getEvidence(),
+                  visibility: request.visibility,
+                  origin,
+                  discussion: input.reason,
+                })
+              : await (
+                  await ParticipantDevelopmentRequestService.create({
+                    db: this.requests.db,
+                  })
+                ).submit({
+                  tenantId: request.tenantId,
+                  projectId: request.projectId,
+                  requesterId: request.requesterId,
+                  requestKey: `split:${request.id}:${partIndex}`,
+                  type: type as 'bug' | 'feature' | 'task',
+                  description,
+                  visibility: request.visibility,
+                }),
           );
         }
       }

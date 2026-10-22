@@ -141,6 +141,11 @@ export {
   withRepositoryClient,
 } from './repository-client-scope';
 export * from './services/index.js';
+export {
+  ParticipantDevelopmentRequestConflictError,
+  type ParticipantDevelopmentRequestInput,
+  ParticipantDevelopmentRequestService,
+} from './services/participant-development-request-service.js';
 export * from './services/project-specification-service.js';
 // Export types
 export type {

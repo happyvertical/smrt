@@ -124,6 +124,25 @@ specification rolls back with the project. The default mode owns its transaction
 An active caller tenant must match the target; hosts creating a child project
 enter that authorized child tenant context before saving.
 
+### Participant development requests
+
+`ParticipantDevelopmentRequestService.create({ db }).submit()` accepts a trusted
+server-authorized participant identity, tenant/project, `requestKey`, type and
+description. It records participant provenance with a nullable `integrationId`;
+managed integration intake still requires a nonempty integration ID. Repeating
+the same actor/project/key returns the accepted request; changed payloads reject
+with `ParticipantDevelopmentRequestConflictError`. Request and initial history
+share one transaction. Hosts enforce project participation before calling this
+service and expose their own safe DTOs, never the collection mutation API.
+
+Existing databases must apply the generated migration that relaxes
+`development_requests.integration_id` to nullable and adds the specification,
+question, decision and history tables before enabling these surfaces. Run the
+normal manifest-based `db:migrate` and verify schema parity; existing managed
+request provenance is unchanged. `pnpm --filter @happyvertical/smrt-projects
+test:postgres` exercises all three workflows with the repository disposable
+PostgreSQL database wrapper.
+
 ### STI Hierarchy
 
 `PullRequest` extends `Issue` via single-table inheritance. Both share the same table, discriminated by `_meta_type`. PullRequest adds `headRef`, `baseRef`, `merged`, `draft`, `additions`, `deletions`, `changedFiles`.
