@@ -994,16 +994,18 @@ export function internalSourceSuite(
       expect(Object.keys(json(item.data) as object)).toEqual([
         'capturedCeiling',
       ]);
-      // No digest over actor, owner, text or arguments survives; the principal
-      // is dropped from the retained ceiling; the delivery key is opaque.
+      // No digest over actor, owner, text or arguments survives and the
+      // delivery key is opaque. The ceiling (with its principal) is retained
+      // for post-redaction reconciliation; nothing else carries the sender.
       expect(item.payload_digest).toBe('redacted');
       expect(item.scope_digest).toBe('redacted');
       expect(String(item.delivery_key)).not.toContain(mine.id);
       expect(String(item.delivery_key)).not.toContain(sender);
       const ceiling = (json(item.data) as Record<string, any>).capturedCeiling;
-      expect(ceiling.execution).toBeDefined();
-      expect(ceiling.execution.principalId).toBeUndefined();
-      expect(JSON.stringify(json(item.data))).not.toContain(sender);
+      expect(ceiling.execution.principalId).toBe(sender);
+      expect(Object.keys(json(item.data) as object)).toEqual([
+        'capturedCeiling',
+      ]);
       for (const [table, column] of [
         ['intake_analyses', 'input_digest'],
         ['intake_analysis_attempts', 'output_digest'],
