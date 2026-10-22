@@ -1512,6 +1512,8 @@ export class IngestionService {
     itemId: string,
     configuration: Record<string, unknown>,
     requestKey: string,
+    /** Inline only: the extraction attempt the interpretation pins. */
+    pinnedSourceAttemptId?: string,
   ): Promise<{ id: string; revision: number }> {
     nonempty(requestKey);
     const configDigest = digest(configuration);
@@ -1550,6 +1552,15 @@ export class IngestionService {
           Number.NEGATIVE_INFINITY,
         );
       if (pinned !== latestExtraction) throw new GenerationSourceStaleError();
+    }
+    // Inline only, after #4228's general check: the pinned extraction must
+    // also be the latest revision of any stage and its current attempt.
+    if (pinnedSourceAttemptId !== undefined) {
+      const latest = previous.find(
+        (a) => Number(a.revision) === Number(item.analysis_revision),
+      );
+      if (!latest || latest.current_attempt_id !== pinnedSourceAttemptId)
+        throw new Error('Generation source changed');
     }
     const evidence = await this.rows(
       db,
@@ -1701,9 +1712,9 @@ export class IngestionService {
     // of preparing against a source that is no longer the current revision.
     const interpretation =
       (await this.analysisByRequest(itemId, interpretKey)) ??
-      (await this.analyze(
+      (await this.appendInterpretation(
         itemId,
-        await this.prepareGeneration(itemId, extracted.attemptId),
+        extracted.attemptId,
         interpretKey,
       ));
     const generation = await this.inlineStage(
@@ -1719,6 +1730,36 @@ export class IngestionService {
       generation,
       analysis: await this.getCompletedAnalysis(itemId, generation.attemptId),
     };
+  }
+  /** Prepare outside the lock (it reads catalog and analysis), then append
+   * under it with the source pin rechecked. A concurrent identical request
+   * that appended first makes preparation fail; its revision is the replay. */
+  private async appendInterpretation(
+    itemId: string,
+    sourceAttemptId: string,
+    requestKey: string,
+  ): Promise<{ id: string; revision: number }> {
+    await this.point('inline:replay-miss');
+    let configuration: Record<string, unknown>;
+    try {
+      configuration = structuredClone(
+        await this.prepareGeneration(itemId, sourceAttemptId),
+      );
+    } catch (error) {
+      const replay = await this.analysisByRequest(itemId, requestKey);
+      if (replay) return replay;
+      throw error;
+    }
+    await this.point('inline:prepared');
+    return this.tx((db) =>
+      this.appendAnalysis(
+        db,
+        itemId,
+        configuration,
+        requestKey,
+        sourceAttemptId,
+      ),
+    );
   }
   private async analysisByRequest(
     itemId: string,
