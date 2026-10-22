@@ -80,9 +80,36 @@ export interface ItemReviewView {
   analysis?: CompletedAnalysisSnapshot;
   generation?: GenerationOutput;
   reviews: ReviewPage;
+  /** Present when an instruction was recorded or carried by the displayed generation. */
+  instruction?: ReviewerInstructionView;
   /** Host-projected safe state, never raw server exception text. */
   availability: 'available' | 'stale' | 'revoked' | 'expired' | 'unavailable';
   message?: string;
+}
+/** Immutable authenticated reviewer guidance for one item; it steers the model only. */
+export interface ReviewerInstruction {
+  id: string;
+  text: string;
+  actorId: string;
+  recordedAt: string;
+  /** The instruction this one replaced for future interpretations, if any. */
+  supersedesId: string | null;
+  digest: string;
+}
+export interface ReviewerInstructionInput {
+  itemId: string;
+  attemptId: string;
+  expectedRevision: number;
+  text: string;
+  requestId: string;
+}
+export interface ReviewerInstructionView {
+  /** Latest recorded instruction; future interpretations carry it. */
+  current: ReviewerInstruction | null;
+  /** The instruction the displayed generation was produced under. */
+  applied: ReviewerInstruction | null;
+  /** Displayed suggestions predate the current instruction. */
+  stale: boolean;
 }
 export interface LogicalSplitInput {
   itemId: string;
@@ -124,6 +151,8 @@ export interface IntakeReviewHost {
     requestId: string;
   }): Promise<void>;
   split(input: LogicalSplitInput): Promise<void>;
+  /** Record reviewer guidance and request a background reinterpretation; never approval. */
+  instruct?: (input: ReviewerInstructionInput) => Promise<void>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,

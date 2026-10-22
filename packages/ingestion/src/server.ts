@@ -44,7 +44,15 @@ import type {
   CompletedAnalysisSnapshot,
   PreviewGeneratedInput,
 } from './proposal-dto.js';
-import type { LogicalSplitInput } from './review-dto.js';
+import type {
+  LogicalSplitInput,
+  ReviewerInstruction,
+  ReviewerInstructionInput,
+} from './review-dto.js';
+import {
+  REVIEWER_INSTRUCTION_MAX_LENGTH,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
 
 /** Authenticated host context. Never construct this from transport JSON. */
 export interface IngestionScope {
@@ -1227,6 +1235,15 @@ export class IngestionService {
       frozen.stage !== 'interpret'
     )
       throw new Error('Human corrections require authenticated split revision');
+    // Interpretation copies are verified against the pinned extraction source
+    // before any provider disclosure (getGenerationInput).
+    if (
+      Object.hasOwn(frozen, 'reviewerInstruction') &&
+      frozen.stage !== 'interpret'
+    )
+      throw new Error(
+        'Reviewer instructions require authenticated instruction revision',
+      );
     return this.tx((db) => this.appendAnalysis(db, itemId, frozen, requestKey));
   }
   private async appendAnalysis(
@@ -1448,6 +1465,170 @@ export class IngestionService {
     );
     if (!result) throw new Error('Split unavailable');
     return result;
+  }
+  /**
+   * Record an authenticated reviewer instruction as an immutable human correction
+   * and queue a fresh extraction plus interpretation that carries it as trusted
+   * guidance. The text steers the model only; it never changes the catalog,
+   * candidates, schemas, permissions or automation eligibility.
+   */
+  async recordReviewerInstruction(input: ReviewerInstructionInput): Promise<{
+    id: string;
+    revision: number;
+    instruction: ReviewerInstruction;
+  }> {
+    const frozen = structuredClone(input);
+    nonempty(frozen.requestId);
+    nonempty(frozen.attemptId);
+    integer(frozen.expectedRevision);
+    if (
+      typeof frozen.text !== 'string' ||
+      !frozen.text.trim() ||
+      frozen.text.length > REVIEWER_INSTRUCTION_MAX_LENGTH
+    )
+      throw new Error('Invalid reviewer instruction');
+    const requestKey = `instruction:${frozen.requestId}`;
+    const intent = {
+      kind: 'reviewer_instruction',
+      itemId: frozen.itemId,
+      attemptId: frozen.attemptId,
+      expectedRevision: frozen.expectedRevision,
+      requestId: frozen.requestId,
+      actorId: this.scope.actorId,
+      text: frozen.text,
+    };
+    const replayIntent = (record: Record<string, unknown>) => {
+      const {
+        id: _id,
+        recordedAt: _recordedAt,
+        supersedesId: _supersedesId,
+        digest: _digest,
+        ...rest
+      } = record;
+      return rest;
+    };
+    const replay = await this.tx(async (db) => {
+      await this.lock(db, frozen.itemId);
+      await this.item(frozen.itemId, 'process', db);
+      const found = (
+        await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+      ).find((row) => object(row.data).requestKey === requestKey);
+      if (!found) return null;
+      const record = object(
+        object(object(found.data).configuration).reviewerInstruction,
+      );
+      if (digest(replayIntent(record)) !== digest(intent))
+        throw new Error('Reviewer instruction request conflict');
+      return {
+        id: String(found.id),
+        revision: Number(found.revision),
+        instruction: reviewerInstructionView(record),
+      };
+    });
+    if (replay) {
+      // Idempotency acknowledges only an intent the current reviewer may still access.
+      await (await this.proposalReader())[generationSnapshotRead](
+        frozen.itemId,
+        (work) => this.tx(work),
+        (db) =>
+          this.completedAnalysisSnapshot(
+            db,
+            frozen.itemId,
+            frozen.attemptId,
+            false,
+          ),
+        undefined,
+        true,
+      );
+      return replay;
+    }
+    let result:
+      | { id: string; revision: number; instruction: ReviewerInstruction }
+      | undefined;
+    await (await this.proposalReader())[generationSnapshotRead](
+      frozen.itemId,
+      (work) => this.tx(work),
+      (db) =>
+        this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          frozen.attemptId,
+          true,
+        ),
+      async (db, current) => {
+        if (current.revision !== frozen.expectedRevision)
+          throw new Error('Stale reviewer instruction');
+        const pin = object(object(current.configuration.proposals).source);
+        const source = await this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          String(pin.attemptId),
+          false,
+        );
+        for (const key of [
+          'attemptId',
+          'revision',
+          'inputDigest',
+          'outputDigest',
+          'evidenceDigest',
+        ] as const)
+          if (pin[key] !== source[key])
+            throw new Error('Instruction source changed');
+        const previous = source.configuration.reviewerInstruction
+          ? reviewerInstructionView(source.configuration.reviewerInstruction)
+          : null;
+        const body = {
+          ...intent,
+          id: randomUUID(),
+          recordedAt: date(this.now()),
+          supersedesId: previous?.id ?? null,
+        };
+        const record = { ...body, digest: digest(body) };
+        // Re-extraction retains the supported immediate-predecessor interpretation pin
+        // and any existing split correction; the instruction travels beside it.
+        const appended = await this.appendAnalysis(
+          db,
+          frozen.itemId,
+          { ...source.configuration, reviewerInstruction: record },
+          requestKey,
+        );
+        result = { ...appended, instruction: reviewerInstructionView(record) };
+      },
+      true,
+    );
+    if (!result) throw new Error('Reviewer instruction unavailable');
+    return result;
+  }
+  /** Immutable instruction history, newest first. History is never deleted. */
+  async listReviewerInstructions(
+    itemId: string,
+  ): Promise<ReviewerInstruction[]> {
+    await this.item(itemId, 'read');
+    const rows = await this.rows(this.db, 'intake_analyses', 'item_id=?', [
+      itemId,
+    ]);
+    const seen = new Set<string>();
+    const history: ReviewerInstruction[] = [];
+    for (const row of rows.sort(
+      (a, b) => Number(b.revision) - Number(a.revision),
+    )) {
+      const configuration = object(object(row.data).configuration);
+      // Only the authenticated mint writes an extraction-stage record; interpret
+      // copies are verified against it separately and never define history.
+      if (
+        configuration.stage === 'interpret' ||
+        !configuration.reviewerInstruction
+      )
+        continue;
+      const instruction = reviewerInstructionView(
+        configuration.reviewerInstruction,
+      );
+      if (seen.has(instruction.id)) continue;
+      seen.add(instruction.id);
+      history.push(instruction);
+    }
+    await this.item(itemId, 'read');
+    return history;
   }
   /** Allocate a fenced attempt; active leases cannot be stolen before expiry. */
   async claimAnalysis(
@@ -1752,6 +1933,8 @@ export class IngestionService {
       source.revision !== generation.revision - 1 ||
       digest(configuration.humanCorrection ?? null) !==
         digest(source.configuration.humanCorrection ?? null) ||
+      digest(configuration.reviewerInstruction ?? null) !==
+        digest(source.configuration.reviewerInstruction ?? null) ||
       digest(
         generation.evidence.map((entry) => ({
           id: entry.id,
@@ -2390,4 +2573,8 @@ export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
 } from './review-host.js';
+export {
+  REVIEWER_INSTRUCTION_MAX_LENGTH,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
 export * from './sources/index.js';

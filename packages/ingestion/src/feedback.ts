@@ -34,6 +34,7 @@ import {
   feedbackDiscoveryContext,
 } from './feedback-internal.js';
 import type { GenerationOutput } from './proposal-dto.js';
+import { reviewerInstructionView } from './reviewer-instruction.js';
 import type { IngestionOptions } from './server.js';
 
 type Row = Record<string, unknown>;
@@ -334,8 +335,28 @@ export class IntakeFeedbackService {
     for (const field of ['provider', 'model', 'version']) text(model[field]);
     text(provenance.promptVersion);
     text(provenance.configurationVersion);
+    // A judgment made under reviewer guidance carries that guidance as part of
+    // the example; the generation's own provenance must name the same record.
+    const instructionRecord = object(
+      object(ctx.analysis).configuration,
+    ).reviewerInstruction;
+    const recorded = provenance.reviewerInstruction
+      ? object(provenance.reviewerInstruction)
+      : undefined;
+    let instruction: { id: string; digest: string; text: string } | undefined;
+    if (instructionRecord || recorded) {
+      const view = reviewerInstructionView(instructionRecord);
+      if (
+        !recorded ||
+        recorded.id !== view.id ||
+        recorded.digest !== view.digest
+      )
+        throw new Error('Feedback instruction integrity');
+      instruction = { id: view.id, digest: view.digest, text: view.text };
+    }
     return {
       query,
+      ...(instruction ? { instruction } : {}),
       model: {
         provider: String(model.provider),
         model: String(model.model),
@@ -584,6 +605,15 @@ export class IntakeFeedbackService {
             model: data.model as FeedbackExample['model'],
             promptVersion: String(data.promptVersion),
             configurationVersion: String(data.configurationVersion),
+            ...(data.instruction
+              ? {
+                  instruction: {
+                    id: String(object(data.instruction).id),
+                    digest: String(object(data.instruction).digest),
+                    text: String(object(data.instruction).text),
+                  },
+                }
+              : {}),
           };
         },
         executor,

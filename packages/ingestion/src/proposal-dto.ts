@@ -85,6 +85,8 @@ export interface GenerationOutput {
       query: string;
       selection: import('./feedback-dto.js').FeedbackReferences;
     };
+    /** Identity of the reviewer instruction the model was guided by. */
+    reviewerInstruction?: { id: string; digest: string };
     configurationVersion: string;
     promptVersion: string;
     catalogDigest: string;
