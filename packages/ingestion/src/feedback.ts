@@ -356,6 +356,31 @@ export class IntakeFeedbackService {
       source: pin,
     };
   }
+  /** The example exactly as retrieval returns it; shared by the write-time size check. */
+  private exampleOf(
+    id: string,
+    stored: string,
+    data: Row,
+    ctx: FeedbackActionContext,
+    guidance?: { id: string; digest: string; text: string },
+  ): FeedbackExample {
+    return {
+      feedbackId: id,
+      digest: stored,
+      itemId: ctx.itemId,
+      actionId: ctx.review.actionId,
+      revision: ctx.review.revision,
+      handlerId: ctx.handlerId,
+      handlerVersion: ctx.handlerVersion,
+      judgment: data.judgment as 'correct' | 'incorrect',
+      query: String(data.query),
+      args: object(data.args),
+      model: data.model as FeedbackExample['model'],
+      promptVersion: String(data.promptVersion),
+      configurationVersion: String(data.configurationVersion),
+      ...(guidance ? { instruction: guidance } : {}),
+    };
+  }
   /**
    * The verified reviewer instruction the action's generation ran under: the
    * authenticated extraction record must match the generation's provenance.
@@ -465,6 +490,32 @@ export class IntakeFeedbackService {
           { ...body, digest: digest(body) },
           frozen.supersedesId ?? null,
         );
+        // The judgment stores only the instruction reference, but retrieval
+        // joins its text. Refuse here, inside the transaction, if that single
+        // joined example could never fit the handler's read budget; otherwise
+        // every later retrieval ranking it would fail closed scope-wide.
+        const guidance = this.instructionFor(ctx);
+        if (guidance) {
+          const data = object(row.data);
+          const selection = {
+            version: this.config.version,
+            configurationDigest: this.configurationDigest(),
+            examples: [
+              this.exampleOf(
+                String(row.id),
+                String(data.digest),
+                data,
+                ctx,
+                guidance,
+              ),
+            ],
+          };
+          if (
+            Buffer.byteLength(JSON.stringify(selection)) >
+            Math.min(this.config.maxBytes, ctx.context.policy.maxBytes)
+          )
+            throw new Error('Feedback instruction exceeds retrieval budget');
+        }
         await this.authorize(ctx, 'capture');
         if (digest(routing) !== digest(this.routing(ctx)))
           throw new Error('Routing projection changed');
@@ -612,22 +663,13 @@ export class IntakeFeedbackService {
             )
               return undefined;
           }
-          return {
-            feedbackId: String(current.id),
-            digest: String(stored),
-            itemId: ctx.itemId,
-            actionId: ctx.review.actionId,
-            revision: ctx.review.revision,
-            handlerId: ctx.handlerId,
-            handlerVersion: ctx.handlerVersion,
-            judgment: data.judgment as 'correct' | 'incorrect',
-            query: String(data.query),
-            args,
-            model: data.model as FeedbackExample['model'],
-            promptVersion: String(data.promptVersion),
-            configurationVersion: String(data.configurationVersion),
-            ...(guidance ? { instruction: guidance } : {}),
-          };
+          return this.exampleOf(
+            String(current.id),
+            String(stored),
+            data,
+            ctx,
+            guidance,
+          );
         },
         executor,
         input.providers ?? [input.model.provider],
