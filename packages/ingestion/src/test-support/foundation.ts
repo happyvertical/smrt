@@ -789,6 +789,30 @@ export function foundationSuite(
       const mixed = await gated.listEvidence([first, restricted, second]);
       expect([...mixed.keys()].sort()).toEqual([first, second].sort());
       expect(ceilingAuthorize).toHaveBeenCalledTimes(2);
+      // Each SQL predicate is needed on its own. A part still at reservation
+      // intent (item active) is not listed...
+      const intent = await accepted('page-intent');
+      await db.query(
+        "UPDATE intake_evidence SET state='intent' WHERE item_id=?",
+        intent,
+      );
+      expect((await service.listEvidence([intent])).size).toBe(0);
+      // ...nor is a durable part of an item that is no longer active. `expire`
+      // also revokes the parts, so the row is set directly to isolate the
+      // visibility predicate from the state predicate.
+      const inactive = await accepted('page-inactive');
+      await db.query(
+        "UPDATE intake_items SET visibility='expired' WHERE id=?",
+        inactive,
+      );
+      expect((await service.listEvidence([inactive])).size).toBe(0);
+      // A cancelled item stays active and readable, exactly as getEvidence
+      // agrees, so its evidence is still listed.
+      const cancelled = await accepted('page-cancelled');
+      await service.cancel(cancelled);
+      expect((await service.listEvidence([cancelled])).get(cancelled)).toEqual(
+        await service.getEvidence(cancelled),
+      );
       // A denied ceiling omits the rows; so does an expired item.
       allowed = false;
       expect((await service.listEvidence([first])).size).toBe(0);

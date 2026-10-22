@@ -12,6 +12,14 @@ import type {
 import { loadReviewSummary } from './review-summary.js';
 import type { IngestionService } from './server.js';
 
+/** One listed row's primary original, as passed to `rowEvidence`. */
+export interface RowEvidenceRequest {
+  itemId: string;
+  evidence: IntakeEvidenceDTO;
+}
+/** A host's preview for one row: label and same-origin URLs, never text. */
+export type RowEvidenceView = Omit<InboxEvidence, 'evidence'>;
+
 /** Trusted application adapters, bound to the same authenticated session as service. */
 export interface IntakeReviewHostOptions {
   /** Authenticate receipt, enforce upload limits, and request the first extraction. */
@@ -20,13 +28,22 @@ export interface IntakeReviewHostOptions {
   assignment(itemId: string): Promise<Assignment>;
   /** Authorize manager/assignee and enforce durable CAS plus request-id replay checks. */
   assign: IntakeReviewHost['assign'];
-  /**
-   * Produce safe text or an authenticated same-origin URL; never storage keys.
-   * `list` calls it for each row's primary part, so it must not read bytes.
-   */
+  /** Produce safe text or an authenticated same-origin URL; never storage keys. */
   evidence(
     evidence: IntakeEvidenceDTO,
   ): Promise<Omit<EvidenceView, 'evidence'>>;
+  /**
+   * Optional, opt-in row previews for the inbox (#4213). Called at most once
+   * per `list` page with each listed row's primary durable part (metadata
+   * only, read in one batched query); return item id -> `{ label, viewUrl?,
+   * thumbnailUrl? }` built from metadata, without reading bytes. Rows missing
+   * from the map get no preview. When omitted, `list` reads no evidence and
+   * rows show no original link; if it throws, the page still lists without
+   * previews. `load` never calls it.
+   */
+  rowEvidence?(
+    rows: readonly RowEvidenceRequest[],
+  ): Promise<ReadonlyMap<string, RowEvidenceView>>;
   label?(item: IntakeItemDTO): string;
   /** Expose the optional feedback UI only when the service has feedback configured. */
   enableFeedback?: boolean;
@@ -78,15 +95,43 @@ export function createIntakeReviewHost(
 ): IntakeReviewHost {
   const label =
     options.label ?? ((item: IntakeItemDTO) => `Intake ${item.id.slice(0, 8)}`);
-  const inboxEvidence = async (
-    parts: readonly IntakeEvidenceDTO[],
-  ): Promise<InboxEvidence | undefined> => {
-    const primary = primaryEvidence(parts);
-    if (!primary) return undefined;
-    return {
-      ...withoutText(await options.evidence(primary)),
-      evidence: primary,
-    };
+  /**
+   * Opt-in row previews for a finished page. `list` applies this once to its
+   * final entries just before returning, so every return path decorates the
+   * same way. Without `rowEvidence` it makes no read and returns the entries
+   * unchanged. Fields are picked explicitly so a host value can never put
+   * text on a row.
+   */
+  const withRowEvidence = async (
+    entries: InboxEntry[],
+  ): Promise<InboxEntry[]> => {
+    if (!options.rowEvidence || !entries.length) return entries;
+    const parts = await service.listEvidence(
+      entries.map((entry) => entry.item.id),
+    );
+    const rows: RowEvidenceRequest[] = [];
+    for (const entry of entries) {
+      const primary = primaryEvidence(parts.get(entry.item.id) ?? []);
+      if (primary) rows.push({ itemId: entry.item.id, evidence: primary });
+    }
+    if (!rows.length) return entries;
+    let views: ReadonlyMap<string, RowEvidenceView>;
+    try {
+      views = await options.rowEvidence(rows);
+    } catch {
+      // A preview failure must not block triage: list without previews.
+      return entries;
+    }
+    const primaries = new Map(rows.map((row) => [row.itemId, row.evidence]));
+    return entries.map((entry) => {
+      const view = views.get(entry.item.id);
+      const primary = primaries.get(entry.item.id);
+      if (!view || !primary) return entry;
+      const evidence: InboxEvidence = { evidence: primary, label: view.label };
+      if (view.viewUrl) evidence.viewUrl = view.viewUrl;
+      if (view.thumbnailUrl) evidence.thumbnailUrl = view.thumbnailUrl;
+      return { ...entry, evidence };
+    });
   };
   const entry = async (item: IntakeItemDTO): Promise<InboxEntry> => {
     const { state } = await loadReviewSummary(service, item);
@@ -110,16 +155,8 @@ export function createIntakeReviewHost(
         )
           projected.push(current);
       }
-      // One batched evidence read for the page; never one load per row.
-      const evidence = await service.listEvidence(
-        projected.map((entry) => entry.item.id),
-      );
-      for (const entry of projected) {
-        const primary = await inboxEvidence(evidence.get(entry.item.id) ?? []);
-        if (primary) entry.evidence = primary;
-      }
       return {
-        items: projected,
+        items: await withRowEvidence(projected),
         ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
       };
     },

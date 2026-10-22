@@ -154,19 +154,25 @@ Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
 `assign(input)` (manager authorization, eligible assignees, durable CAS and request
 replay protection), and `evidence(part)` (safe label/text or authenticated
-same-origin URL, optionally a same-origin `thumbnailUrl`). `list` calls
-`evidence` once per row for the item's primary part, read for the whole page by
-`service.listEvidence(itemIds)` in one query (at most 100 ids; items the scope
-cannot read, expired or inactive items are omitted without disclosure, the host
-`authorize` runs once per distinct captured ceiling, and a failing `authorize`
-rejects the page rather than hiding its evidence), and publishes it as
-`InboxEntry.evidence` (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never
-text); the primary part is chosen by role, not media type: the shallowest
-child part when any part has a parent (an upload's file under its capture
-record, an email's first attachment under the message, even when that child is
-JSON), else the first root part (a watched-folder file); part ids sort
-numerically. That
-`evidence` call must not read bytes. `IntakeInbox`/`InboxView` accept an
+same-origin URL, optionally a same-origin `thumbnailUrl`), which `load` calls
+for every part and `list` never calls.
+
+Row previews are opt-in through an optional fifth adapter,
+`rowEvidence(rows)`. When it is supplied, `list` reads the page's durable
+evidence metadata with one `service.listEvidence(itemIds)` query (at most 100
+ids; items the scope cannot read, and expired or inactive items, are omitted
+without disclosure; the host `authorize` runs once per distinct captured
+ceiling; a failing `authorize` rejects the page). It then calls `rowEvidence`
+once with each row's primary part (`{ itemId, evidence }`) and publishes the
+returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
+(`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
+from metadata without reading bytes; if `rowEvidence` throws, the page still
+lists without previews. When it is omitted, `list` makes no evidence read and
+rows show no original link. The primary part is chosen by role, not media
+type: the shallowest child part when any part has a parent (an upload's file
+under its capture record, an email's first attachment under the message, even
+when that child is JSON), else the first root part (a watched-folder file);
+part ids sort numerically. `IntakeInbox`/`InboxView` accept an
 optional `rowAside` snippet receiving the `InboxEntry`; without it a row renders
 the host's "Open original" link (new tab) and thumbnail when the URLs are
 same-origin; each link's accessible name is "Open original: <row label>", and

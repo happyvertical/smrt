@@ -210,7 +210,7 @@ function integer(value: unknown, max = 2_147_483_647): asserts value is number {
     throw new Error('Invalid intake limit');
 }
 /** The most items one batched page read may cover. */
-const ITEM_PAGE_CEILING = 100;
+const EVIDENCE_PAGE_CEILING = 100;
 function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
 }
@@ -1192,7 +1192,7 @@ export class IngestionService {
   ): Promise<Map<string, IntakeEvidenceDTO[]>> {
     if (
       !Array.isArray(itemIds) ||
-      itemIds.length > ITEM_PAGE_CEILING ||
+      itemIds.length > EVIDENCE_PAGE_CEILING ||
       itemIds.some((id) => typeof id !== 'string' || !uuid.test(id))
     )
       throw new Error('Invalid item page');
@@ -2454,5 +2454,7 @@ export { GenerationSnapshotStaleError } from './proposal-errors.js';
 export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
+  type RowEvidenceRequest,
+  type RowEvidenceView,
 } from './review-host.js';
 export * from './sources/index.js';

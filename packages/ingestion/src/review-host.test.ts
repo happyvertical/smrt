@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
 import type { ReviewPage } from './review-dto.js';
-import { createIntakeReviewHost, primaryEvidence } from './review-host.js';
+import {
+  createIntakeReviewHost,
+  type IntakeReviewHostOptions,
+  primaryEvidence,
+  type RowEvidenceRequest,
+  type RowEvidenceView,
+} from './review-host.js';
 import {
   GenerationSnapshotStaleError,
   type IngestionService,
 } from './server.js';
 
-function fixture() {
+function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
   const item = { id: 'item', processingState: 'completed' } as IntakeItemDTO;
   const first = { actions: [], nextCursor: 'next' } as ReviewPage;
   const last = { actions: [] } as ReviewPage;
@@ -24,20 +30,23 @@ function fixture() {
     getEvidence: vi.fn(async (): Promise<IntakeEvidenceDTO[]> => []),
     listEvidence: vi.fn(async () => new Map<string, IntakeEvidenceDTO[]>()),
   };
+  // The existing per-part adapter; `list` must never call it.
+  const evidence = vi.fn(async (part: IntakeEvidenceDTO) => ({
+    label: part.partId,
+    viewUrl: `/original/${part.id}`,
+    text: 'never on a row',
+    ...(part.mediaType.startsWith('image/')
+      ? { thumbnailUrl: `/thumb/${part.id}` }
+      : {}),
+  }));
   const host = createIntakeReviewHost(service as unknown as IngestionService, {
     upload: async () => ({ itemId: item.id }),
     assignment: async () => ({ assigneeId: null, version: 0 }),
     assign: async () => {},
-    evidence: async (part) => ({
-      label: part.partId,
-      viewUrl: `/original/${part.id}`,
-      text: 'never on a row',
-      ...(part.mediaType.startsWith('image/')
-        ? { thumbnailUrl: `/thumb/${part.id}` }
-        : {}),
-    }),
+    evidence,
+    ...overrides,
   });
-  return { host, service, first, last };
+  return { host, service, first, last, item, evidence };
 }
 function part(
   id: string,
@@ -92,30 +101,70 @@ describe('inbox primary evidence', () => {
     const long = part('l', 'long', 'application/pdf');
     expect(primaryEvidence([owner, long])).toBe(long);
   });
-  it('projects one batched evidence read onto the page instead of a load per row', async () => {
+  it('changes nothing for existing hosts: without rowEvidence, list reads no evidence', async () => {
     const f = fixture();
+    const page = await f.host.list({});
+    expect(f.service.listEvidence).not.toHaveBeenCalled();
+    expect(f.service.getEvidence).not.toHaveBeenCalled();
+    expect(f.evidence).not.toHaveBeenCalled();
+    expect(page.items[0].evidence).toBeUndefined();
+  });
+  it('with rowEvidence, reads the page once and asks the host once, never the per-part adapter', async () => {
+    const rowEvidence = vi.fn(
+      async (rows: readonly RowEvidenceRequest[]) =>
+        new Map(
+          rows.map((row) => [
+            row.itemId,
+            {
+              label: row.evidence.partId,
+              viewUrl: `/original/${row.evidence.id}`,
+              thumbnailUrl: `/thumb/${row.evidence.id}`,
+              // A host value that tries to put text on a row is ignored.
+              text: 'never on a row',
+            } as RowEvidenceView,
+          ]),
+        ),
+    );
+    const f = fixture({ rowEvidence });
+    const file = part('file', 'file', 'image/png', 'capture');
     f.service.listEvidence.mockResolvedValue(
       new Map([
-        [
-          'item',
-          [
-            part('capture', 'capture', 'application/json'),
-            part('file', 'file', 'image/png', 'capture'),
-          ],
-        ],
+        ['item', [part('capture', 'capture', 'application/json'), file]],
       ]),
     );
     const page = await f.host.list({});
     expect(f.service.listEvidence).toHaveBeenCalledTimes(1);
     expect(f.service.listEvidence).toHaveBeenCalledWith(['item']);
+    expect(rowEvidence).toHaveBeenCalledTimes(1);
+    expect(rowEvidence).toHaveBeenCalledWith([
+      { itemId: 'item', evidence: file },
+    ]);
+    expect(f.evidence).not.toHaveBeenCalled();
     expect(f.service.getEvidence).not.toHaveBeenCalled();
     expect(page.items[0].evidence).toEqual({
-      evidence: part('file', 'file', 'image/png', 'capture'),
+      evidence: file,
       label: 'file',
       viewUrl: '/original/file',
       thumbnailUrl: '/thumb/file',
     });
     expect(page.items[0].evidence).not.toHaveProperty('text');
+  });
+  it('with rowEvidence, skips the host call for a page without evidence and lists when it throws', async () => {
+    const empty = vi.fn(async () => new Map<string, RowEvidenceView>());
+    const none = fixture({ rowEvidence: empty });
+    expect((await none.host.list({})).items[0].evidence).toBeUndefined();
+    expect(empty).not.toHaveBeenCalled();
+    const failing = fixture({
+      rowEvidence: async () => {
+        throw new Error('preview service down');
+      },
+    });
+    failing.service.listEvidence.mockResolvedValue(
+      new Map([['item', [part('file', 'file', 'application/pdf')]]]),
+    );
+    const page = await failing.host.list({});
+    expect(page.items.map((entry) => entry.item.id)).toEqual(['item']);
+    expect(page.items[0].evidence).toBeUndefined();
   });
   it('omits evidence for rows without durable parts and mirrors it on load', async () => {
     const f = fixture();
