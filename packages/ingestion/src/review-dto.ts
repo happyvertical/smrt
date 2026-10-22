@@ -66,12 +66,22 @@ export interface InboxEntry {
   label: string;
   state: InboxState;
   assignment: Assignment;
+  /**
+   * The item's primary original (first non-metadata durable part), projected
+   * by the host for the whole page in one batched read; absent when the item
+   * has no durable evidence yet.
+   */
+  evidence?: InboxEvidence;
 }
+/** Page-safe evidence projection: identity, media type and host URLs, no text. */
+export type InboxEvidence = Omit<EvidenceView, 'text'>;
 export interface EvidenceView {
   evidence: IntakeEvidenceDTO;
   label: string;
   /** Host-authorized same-origin content URL, never an object-storage key. */
   viewUrl?: string;
+  /** Optional host-authorized same-origin preview image for inbox rows. */
+  thumbnailUrl?: string;
   text?: string;
 }
 export interface ItemReviewView {

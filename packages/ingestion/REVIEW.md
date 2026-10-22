@@ -154,7 +154,16 @@ Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
 `assign(input)` (manager authorization, eligible assignees, durable CAS and request
 replay protection), and `evidence(part)` (safe label/text or authenticated
-same-origin URL). Optional `label(item)` changes presentation. Optional
+same-origin URL, optionally a same-origin `thumbnailUrl`). `list` calls
+`evidence` once per row for the item's primary part, read for the whole page by
+`service.listEvidence(itemIds)` in one query, and publishes it as
+`InboxEntry.evidence` (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never
+text); the primary part is the shallowest non-`application/json` durable part
+(an upload's file, an email's first attachment), else the first part. That
+`evidence` call must not read bytes. `IntakeInbox`/`InboxView` accept an
+optional `rowAside` snippet receiving the `InboxEntry`; without it a row renders
+the host's "Open original" link (new tab) and thumbnail when the URLs are
+same-origin. Optional `label(item)` changes presentation. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment
