@@ -2,13 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IntakeItemDTO } from './dto.js';
 import type { ReviewerInstruction, ReviewPage } from './review-dto.js';
 import { createIntakeReviewHost } from './review-host.js';
-import { reviewerInstructionView } from './reviewer-instruction.js';
+import {
+  ReviewerInstructionStaleError,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
 import {
   GenerationSnapshotStaleError,
   type IngestionService,
 } from './server.js';
 
-vi.mock('./reviewer-instruction.js', () => ({
+vi.mock('./reviewer-instruction.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./reviewer-instruction.js')>()),
   reviewerInstructionView: (value: unknown) => value,
 }));
 
@@ -32,6 +36,7 @@ function fixture() {
       revision: 4,
       processingState: 'completed',
       failure: null as string | null,
+      reinterpreting: false,
       generationAttemptId: null as string | null,
     })),
     recordReviewerInstruction: vi.fn(async () => ({
@@ -153,5 +158,49 @@ describe('published review host projection', () => {
     expect(reviewerInstructionView(instruction('old'))).toEqual(
       instruction('old'),
     );
+  });
+  it('turns a stale instruction into a refresh signal and projects the in-flight gap', async () => {
+    const f = fixture();
+    f.service.recordReviewerInstruction.mockRejectedValueOnce(
+      new ReviewerInstructionStaleError(),
+    );
+    const input = {
+      itemId: 'item',
+      attemptId: 'attempt',
+      expectedRevision: 3,
+      text: 'File it.',
+      requestId: 'stale',
+    };
+    await expect(f.host.instruct?.(input)).resolves.toEqual({ stale: true });
+    expect(f.woken).toEqual([]);
+    f.service.recordReviewerInstruction.mockRejectedValueOnce(
+      new Error('Intake unavailable'),
+    );
+    await expect(f.host.instruct?.(input)).rejects.toThrow(
+      'Intake unavailable',
+    );
+    // Between stages: the displayed analysis is the extraction, so the host
+    // offers the retry anchor and marks the item as still reinterpreting.
+    f.service.listReviewerInstructions.mockResolvedValue([
+      instruction('current'),
+    ]);
+    f.service.getCompletedAnalysis.mockResolvedValue({
+      configuration: { stage: 'extract' },
+      result: { output: {} },
+    } as never);
+    f.service.getReinterpretationState.mockResolvedValue({
+      revision: 7,
+      processingState: 'completed',
+      failure: null,
+      reinterpreting: true,
+      generationAttemptId: 'generation',
+    });
+    expect((await f.host.load('item')).instruction).toEqual({
+      current: instruction('current'),
+      applied: null,
+      stale: true,
+      reinterpreting: true,
+      binding: { attemptId: 'generation', expectedRevision: 7 },
+    });
   });
 });

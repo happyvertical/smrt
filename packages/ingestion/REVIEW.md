@@ -151,7 +151,20 @@ can retry or change the instruction after either stage fails. A completed
 extraction whose own interpretation failed belongs to the failed attempt, not a
 newer result; a completed extraction whose interpretation has **not been
 appended yet** is in flight (the host is between stages) and is refused with
-`Stale reviewer instruction`, so a second reviewer cannot pre-empt it. A retry from an older anchor carries forward the newest human
+`ReviewerInstructionStaleError` (`Stale reviewer instruction`), so a second
+reviewer cannot pre-empt it. That gap expires: once the extraction attempt's
+completion plus the item's analysis lease duration (`limits.leaseMs`, the lease
+`claimAnalysis` grants) has passed with no interpretation appended — the host
+crashed or threw between `prepareGeneration` and `analyze` —
+`getReinterpretationState` reports `failure: 'not_started'` with the retry
+binding and the guard allows the retry. The guard and
+`getReinterpretationState` share one predicate, and the latter's
+`reinterpreting` flag (projected as `instruction.reinterpreting`) is true in
+the gap too, so the component keeps polling and keeps Re-read disabled there.
+The published host turns `ReviewerInstructionStaleError` into an `instruct`
+result of `{ stale: true }`; the component treats it as refresh-and-retry
+(reload with a note, draft kept), never as a denial. Custom hosts should do the
+same rather than surfacing it as an error. A retry from an older anchor carries forward the newest human
 split recorded after it (corrections chain through each extraction
 configuration), so a split followed by a failed stage is never silently
 dropped. All of this runs under the item lock in the same transaction as the

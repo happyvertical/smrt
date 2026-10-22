@@ -1049,6 +1049,112 @@ describe('intake review host boundary', () => {
     await waitFor(() => expect(untouched.value).toBe('[[1],[2],[3]]'));
     expect(edited.value).toBe('[[2],[1]]');
   });
+  it('keeps polling with re-read disabled through the gap between extraction and interpretation', async () => {
+    const before = generationFor(page());
+    // Between stages: extraction completed, interpretation not yet appended.
+    // The item and the inbox state look settled; only the server's own
+    // predicate (instruction.reinterpreting) says the work is still in flight.
+    const gap = page();
+    gap.entry = {
+      ...gap.entry,
+      state: 'unresolved',
+      item: { ...gap.entry.item, processingState: 'completed' },
+    };
+    gap.reviews.actions[0].review.state = 'stale';
+    gap.analysis = {
+      ...currentAnalysis(),
+      attemptId: 'extraction-attempt',
+      configuration: { stage: 'extract' },
+    };
+    gap.instruction = {
+      current: instructionView('new'),
+      applied: null,
+      stale: true,
+      reinterpreting: true,
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    const after = generationFor(page());
+    after.instruction = {
+      current: instructionView('new'),
+      applied: instructionView('new'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [gap, gap, after];
+    const load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.load = load;
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    const button = screen.getByRole('button', {
+      name: 'Re-read with these instructions',
+    }) as HTMLButtonElement;
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Instructions for the assistant' }),
+      { target: { value: 'Another instruction' } },
+    );
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(callbacks.instruct).not.toHaveBeenCalled();
+    // Polling did not stop in the gap: the interpretation lands in place.
+    await screen.findByTestId('applied-instruction');
+    expect(load.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+  });
+  it('treats a stale instruction result as refresh-and-retry, not a denial, and offers a retry when interpretation never started', async () => {
+    const view = page();
+    view.entry = {
+      ...view.entry,
+      state: 'unresolved',
+      item: { ...view.entry.item, processingState: 'completed' },
+    };
+    view.analysis = {
+      ...currentAnalysis(),
+      attemptId: 'extraction-attempt',
+      configuration: { stage: 'extract' },
+    };
+    view.instruction = {
+      current: instructionView('wedged'),
+      applied: null,
+      stale: true,
+      failure: 'not_started',
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    const callbacks = host(view);
+    callbacks.instruct = vi.fn(async () => ({ stale: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    expect(
+      (await screen.findByTestId('instruction-failure')).textContent,
+    ).toContain('did not start');
+    const box = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'Try again.' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    // The retry targets the server's anchor, not the displayed extraction.
+    await waitFor(() =>
+      expect(callbacks.instruct).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attemptId: 'generation-attempt',
+          expectedRevision: 10,
+        }),
+      ),
+    );
+    await screen.findByTestId('instruction-busy');
+    expect(screen.getByText('Private invoice')).toBeTruthy();
+    expect(screen.queryByText(/This view is unavailable/)).toBeNull();
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Instructions for the assistant',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe('Try again.');
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {

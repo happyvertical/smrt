@@ -151,7 +151,11 @@ interpreting, then accepted once interpretation fails; judgments storing only th
 instruction reference with retrieval joining the text, a write-time refusal when
 the joined example alone exceeds the read budget (nothing written), an exactly
 fitting judgment recording and retrieving at its exact size, one byte short
-refused, and re-signed stored references with a wrong digest or id excluded; and carried instruction text being
+refused, the handler `policy.maxBytes` side of the write-time `min()` refusing
+on its own, and re-signed stored references with a wrong digest or id excluded;
+a wedged gap (extraction completed, interpretation never appended) staying in
+flight up to exactly the item lease and then reporting `not_started` and
+accepting the retry, which recovers; and carried instruction text being
 counted in the exact feedback byte budget, with one byte short still failing
 closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
 covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
@@ -160,8 +164,10 @@ empty text, polling through `processing` until the in-place update (also with an
 earlier action present, with drafts and the textarea element preserved and no
 loading placeholder), the failure/retry binding path, the 5× backoff cap under fake timers, a
 transient thrown tick keeping the view then recovering, three thrown ticks
-failing closed and stopping, edited-versus-untouched split drafts, and stale
-display; the Chromium suite records a real instruction, observes the background
+failing closed and stopping, edited-versus-untouched split drafts, polling with
+Re-read disabled through the between-stages gap, a `{ stale: true }` result
+reloading with a note and keeping the draft instead of denying, the
+`not_started` retry against the server binding, and stale display; the Chromium suite records a real instruction, observes the background
 "Reinterpreting…" state, the in-place update, provenance, unchanged original
 bytes, a refused forged payload and supersession. No schema or migration changes:
 the record lives in the existing append-only analysis ledger beside the split

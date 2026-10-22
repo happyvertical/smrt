@@ -3496,6 +3496,7 @@ export function proposalSuite(
       expect(await service.getReinterpretationState(input.itemId)).toEqual({
         revision: recorded.revision,
         processingState: 'queued',
+        reinterpreting: true,
         failure: null,
         generationAttemptId: input.lease.attemptId,
       });
@@ -3719,6 +3720,7 @@ export function proposalSuite(
       expect(await service.getReinterpretationState(input.itemId)).toEqual({
         revision: second.revision,
         processingState: 'needs_attention',
+        reinterpreting: false,
         failure: 'unavailable',
         generationAttemptId: guided.lease.attemptId,
       });
@@ -3847,6 +3849,7 @@ export function proposalSuite(
       expect(await service.getReinterpretationState(input.itemId)).toEqual({
         revision: guided.lease.revision,
         processingState: 'needs_attention',
+        reinterpreting: false,
         failure: 'unavailable',
         generationAttemptId: input.lease.attemptId,
       });
@@ -4050,7 +4053,21 @@ export function proposalSuite(
       expect(
         (await db.query('SELECT id FROM intake_feedback')).rows,
       ).toHaveLength(0);
+      // The handler's policy ceiling is the other side of the min(): a large
+      // feedback budget does not let the joined example past a narrow policy.
       options.feedback!.maxBytes = 60000;
+      policyMaxBytes = 3500;
+      await expect(
+        service.recordFeedback({
+          ...binding,
+          judgment: 'correct',
+          requestId: 'too-large-for-policy',
+        }),
+      ).rejects.toThrow('Feedback instruction exceeds retrieval budget');
+      expect(
+        (await db.query('SELECT id FROM intake_feedback')).rows,
+      ).toHaveLength(0);
+      policyMaxBytes = 100000;
       const first = await service.recordFeedback({
         ...binding,
         judgment: 'correct',
@@ -4128,6 +4145,69 @@ export function proposalSuite(
           (example) => example.feedbackId,
         ),
       ).toEqual([fitting.id]);
+    });
+    it('expires a wedged gap after the analysis lease so the instruction can be retried', async () => {
+      chooseCreate();
+      const input = await generate();
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text: 'First instruction.',
+        requestId: 'wedge-first',
+      });
+      // Extraction completes; the host then crashes before appending the
+      // interpretation, so nothing ever runs again on its own.
+      const extracted = await reextractOnly(input.itemId, recorded.revision);
+      const retryInput = {
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: extracted.revision,
+        text: 'Retry after the wedge.',
+        requestId: 'wedge-retry',
+      };
+      expect(await service.getReinterpretationState(input.itemId)).toEqual({
+        revision: extracted.revision,
+        processingState: 'completed',
+        failure: null,
+        reinterpreting: true,
+        generationAttemptId: input.lease.attemptId,
+      });
+      await expect(
+        service.recordReviewerInstruction(retryInput),
+      ).rejects.toThrow('Stale reviewer instruction');
+      // Still in flight at exactly the lease boundary...
+      const leaseMs = 10000;
+      clock = new Date(clock.getTime() + leaseMs);
+      expect(
+        (await service.getReinterpretationState(input.itemId)).reinterpreting,
+      ).toBe(true);
+      await expect(
+        service.recordReviewerInstruction(retryInput),
+      ).rejects.toThrow('Stale reviewer instruction');
+      // ...and expired one millisecond later: reported and retryable.
+      clock = new Date(clock.getTime() + 1);
+      expect(await service.getReinterpretationState(input.itemId)).toEqual({
+        revision: extracted.revision,
+        processingState: 'completed',
+        failure: 'not_started',
+        reinterpreting: false,
+        generationAttemptId: input.lease.attemptId,
+      });
+      const retried = await service.recordReviewerInstruction(retryInput);
+      expect(retried.revision).toBe(extracted.revision + 1);
+      expect(retried.instruction.supersedesId).toBe(recorded.instruction.id);
+      const recovered = await reextract(input.itemId, retried.revision);
+      await service.generateProposals(recovered.lease);
+      expect(
+        (await output(recovered.lease)).provenance.reviewerInstruction,
+      ).toEqual({
+        id: retried.instruction.id,
+        digest: retried.instruction.digest,
+      });
+      expect(
+        (await service.getReinterpretationState(input.itemId)).failure,
+      ).toBeNull();
     });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();

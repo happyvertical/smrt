@@ -65,8 +65,11 @@ generation scope-wide, `recordFeedback` also builds that single joined example
 exactly as `retrieve` would and refuses with `Feedback instruction exceeds
 retrieval budget` (nothing is written) when it alone exceeds
 `min(feedback.maxBytes, handler policy.maxBytes)`. An example that fits exactly
-records and retrieves; a receiving item with a narrower budget still fails
-closed as below. It is returned as part of the example so comparable later items see the guidance
+records and retrieves. **This guard covers only the single-example case** on the
+judged handler's own budget: retrieval still sums up to `maxExamples` examples
+and takes the minimum across *every* offered handler of the receiving item, so a
+multi-example selection, or a receiving item with a narrower handler budget, can
+still exceed the budget and fails closed as below. It is returned as part of the example so comparable later items see the guidance
 that produced the judged suggestion. It is example content only: it does not
 transfer to the receiving generation's configuration or prompt section, and it
 expands no catalog, candidate, permission or automation eligibility. **Read-side budget
