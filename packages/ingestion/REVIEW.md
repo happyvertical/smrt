@@ -75,15 +75,20 @@ decline their own proposal without the reviewer inbox. `listOwnProposals`
 returns only items whose server-recorded `submitter_id` equals the current
 authenticated actor, each with its bounded saved review page reloaded under
 current item, handler and target authority. An item the actor can no longer
-read is skipped before projection: the page is filled from readable items only
-and `nextCursor` names the last emitted item and is present only when a further
-readable item exists, so neither the entries, the page size nor the cursor
-reveal it. The scan is bounded at 1000 candidate rows per call; a longer run of
-unreadable submissions fails closed with an error rather than a partial
-disclosure. An item that is still readable but whose reviews are denied by
-ingestion's own item, handler or policy authority (`IntakeAccessDeniedError`)
-is returned as `{ item, reviews: null, unavailable: true }`; integrity,
-validation and database errors, and other host callback errors, propagate.
+read (the host `authorize` returns false or throws `IntakeAccessDeniedError`)
+is skipped before projection: the page is filled from readable items only, in
+50-row batches, and `nextCursor` names the last emitted item and is present
+only when a further readable item was actually found. Neither the entries, the
+page size nor the cursor reveal a hidden item. If one call has to skip 1000
+hidden submissions it fails with `Own proposal scan limit` rather than return a
+short page or a cursor that stops inside the hidden run; this error is the only
+signal, and it says only that such a run exists. Any other `authorize` error
+propagates instead of shrinking the list. An item that is still readable but
+whose reviews are denied is returned as `{ item, reviews: null, unavailable:
+true }`: that covers ingestion's own denials and any throw from the host
+`assertTarget` (deleted or revoked targets), whose text is never returned.
+Integrity, validation and database errors from ingestion itself propagate. The
+reviewer `listReviews` surface keeps propagating host target errors unchanged.
 `submitOwnDecision` takes the same `ReviewInput` CAS fields and request ID as
 `submitDecision` and accepts `approve`, `reject` and `defer` only; `correct`
 belongs to the reviewer surface. It runs under the `review_own` execution
