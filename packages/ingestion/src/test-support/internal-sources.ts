@@ -11,6 +11,7 @@ import {
   CREATE,
   referenceHandlers,
 } from '../../reference/handlers.js';
+import { IntakeAccessDeniedError } from '../execution.js';
 import type {
   IntakeExecutionOptions,
   IntakeHandler,
@@ -94,6 +95,8 @@ export function internalSourceSuite(
     let deniedExecutionItems: Set<string>;
     let revokedReads: Set<string>;
     let failingExecutionItems: Set<string>;
+    let outageReads: Set<string>;
+    let deniedThrowReads: Set<string>;
     let onCapture: (() => void) | undefined;
     let generate: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     const scopes = ['private', 'shared'];
@@ -108,6 +111,8 @@ export function internalSourceSuite(
       deniedExecutionItems = new Set();
       revokedReads = new Set();
       failingExecutionItems = new Set();
+      outageReads = new Set();
+      deniedThrowReads = new Set();
       onCapture = undefined;
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -224,15 +229,23 @@ export function internalSourceSuite(
           actorId: 'sender',
           confidentialScopeId: 'private',
         },
-        authorize: async ({ scope, operation, capturedCeiling }) =>
-          allowed &&
-          !(
-            operation === 'read' &&
-            revokedReads.has(String(capturedCeiling.tag ?? ''))
-          ) &&
-          scope.tenantId === tenant &&
-          scopes.includes(scope.confidentialScopeId) &&
-          actors.includes(scope.actorId),
+        authorize: async ({ scope, operation, capturedCeiling }) => {
+          const tag = String(capturedCeiling.tag ?? '');
+          if (operation === 'read' && outageReads.has(tag))
+            throw new Error('read grant store offline');
+          if (operation === 'read' && deniedThrowReads.has(tag))
+            throw new IntakeAccessDeniedError();
+          return (
+            allowed &&
+            !(
+              operation === 'read' &&
+              revokedReads.has(String(capturedCeiling.tag ?? ''))
+            ) &&
+            scope.tenantId === tenant &&
+            scopes.includes(scope.confidentialScopeId) &&
+            actors.includes(scope.actorId)
+          );
+        },
         jobTarget: { objectType: workerType, method: 'process' },
         purgeDerived: async () => {},
         now: () => clock,
@@ -283,6 +296,60 @@ export function internalSourceSuite(
         },
       };
       service = new IngestionService(options);
+    }
+    /** Synthetic own rows with chosen ordered ids, cloned from a real receipt
+     * (fixture-owned construction; the service never sees forged authority). */
+    const syntheticId = (n: number) =>
+      `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
+    async function cloneOwnRows(
+      template: string,
+      rows: Array<{ n: number; tag: string }>,
+    ) {
+      const [source] = (
+        await db.query('SELECT * FROM intake_items WHERE id=?', template)
+      ).rows as Array<Record<string, unknown>>;
+      const columns = Object.keys(source);
+      const value = (v: unknown) =>
+        v instanceof Date
+          ? v.toISOString()
+          : v && typeof v === 'object'
+            ? JSON.stringify(v)
+            : v;
+      for (let start = 0; start < rows.length; start += 100) {
+        const chunk = rows.slice(start, start + 100);
+        const params: unknown[] = [];
+        for (const { n, tag } of chunk) {
+          const data = json(source.data) as Record<string, unknown>;
+          const row: Record<string, unknown> = {
+            ...source,
+            id: syntheticId(n),
+            slug: syntheticId(n),
+            delivery_key: `synthetic:${n}`,
+            data: JSON.stringify({
+              ...data,
+              capturedCeiling: {
+                ...(data.capturedCeiling as Record<string, unknown>),
+                tag,
+              },
+            }),
+          };
+          for (const column of columns) params.push(value(row[column]));
+        }
+        await db.query(
+          `INSERT INTO intake_items (${columns.join(',')}) VALUES ${chunk
+            .map(() => `(${columns.map(() => '?').join(',')})`)
+            .join(',')}`,
+          ...params,
+        );
+      }
+    }
+    async function hiddenTemplate() {
+      const input = message(randomUUID());
+      input.capturedCeiling = { ...input.capturedCeiling, tag: 'template' };
+      const itemId = await accepted(input);
+      revokedReads.add('template');
+      revokedReads.add('hidden');
+      return itemId;
     }
     async function rowsFor(table: string, itemId: string) {
       return (await db.query(`SELECT * FROM ${table} WHERE item_id=?`, itemId))
@@ -1033,6 +1100,129 @@ export function internalSourceSuite(
       for (const limit of [1, 2, 50]) {
         const none = await service.listOwnProposals({ limit });
         expect(none).toEqual({ items: [] });
+      }
+    });
+
+    it('pages readable own rows across the 50-row batch boundary with a confirmed cursor', async () => {
+      const template = await hiddenTemplate();
+      await cloneOwnRows(template, [
+        ...Array.from({ length: 49 }, (_, i) => ({ n: i + 1, tag: 'hidden' })),
+        { n: 50, tag: 'visible' },
+        { n: 51, tag: 'visible' },
+      ]);
+      const first = await service.listOwnProposals({ limit: 1 });
+      expect(first.items.map((e) => e.item.id)).toEqual([syntheticId(50)]);
+      expect(first.nextCursor).toBe(syntheticId(50));
+      const second = await service.listOwnProposals({
+        limit: 1,
+        cursor: first.nextCursor,
+      });
+      expect(second.items.map((e) => e.item.id)).toEqual([syntheticId(51)]);
+      expect(second.nextCursor).toBeUndefined();
+      const all = await service.listOwnProposals({ limit: 50 });
+      expect(all.items.map((e) => e.item.id)).toEqual([
+        syntheticId(50),
+        syntheticId(51),
+      ]);
+      expect(all.nextCursor).toBeUndefined();
+      for (const page of [first, second, all])
+        for (let n = 1; n < 50; n++)
+          expect(JSON.stringify(page)).not.toContain(syntheticId(n));
+    });
+
+    it('fails closed after skipping 1000 hidden own rows instead of returning a short page or cursor', async () => {
+      const template = await hiddenTemplate();
+      // 998 synthetic hidden rows sort first, then one readable row, then the
+      // hidden template: 999 hidden rows in total still list the readable one.
+      await cloneOwnRows(template, [
+        ...Array.from({ length: 998 }, (_, i) => ({ n: i + 1, tag: 'hidden' })),
+        { n: 2000, tag: 'visible' },
+      ]);
+      const page = await service.listOwnProposals();
+      expect(page).toEqual({
+        items: [
+          expect.objectContaining({
+            item: expect.objectContaining({ id: syntheticId(2000) }),
+          }),
+        ],
+      });
+      // The 1000th hidden row reaches the ceiling: an error, never a cursor.
+      await cloneOwnRows(template, [{ n: 999, tag: 'hidden' }]);
+      await expect(service.listOwnProposals()).rejects.toThrow(
+        'Own proposal scan limit',
+      );
+      await expect(service.listOwnProposals({ limit: 1 })).rejects.toThrow(
+        'Own proposal scan limit',
+      );
+    });
+
+    it('propagates a failing grant store but hides an explicit typed denial', async () => {
+      const visible = await interpreted();
+      const input = message(randomUUID());
+      input.capturedCeiling = { ...input.capturedCeiling, tag: 'grants' };
+      const other = await accepted(input);
+      outageReads.add('grants');
+      await expect(service.listOwnProposals()).rejects.toThrow(
+        'read grant store offline',
+      );
+      outageReads.clear();
+      deniedThrowReads.add('grants');
+      const page = await service.listOwnProposals();
+      expect(page.items.map((e) => e.item.id)).toEqual([visible.itemId]);
+      expect(JSON.stringify(page)).not.toContain(other);
+    });
+
+    it('marks an item unavailable when the reference host target check throws, without host text', async () => {
+      const first = await interpreted();
+      const second = await interpreted();
+      const contentIds: string[] = [];
+      for (const entry of [first, second]) {
+        const review = await previewFirst(
+          entry.itemId,
+          entry.generation.attemptId,
+        );
+        await service.submitOwnDecision(
+          decision(review, `apply:${entry.itemId}`),
+        );
+        const applied = await service.applyAction(review.actionId);
+        expect(applied.state).toBe('succeeded');
+        contentIds.push(String(applied.result?.contentId));
+      }
+      // The first target leaves this confidential scope: the unmodified
+      // reference host now throws a plain 'Target unavailable' Error for it.
+      await db.query(
+        "UPDATE contents SET context='elsewhere' WHERE id=?",
+        contentIds[0],
+      );
+      await expect(service.listReviews(first.itemId)).rejects.toThrow(
+        'Target unavailable',
+      );
+      const page = await service.listOwnProposals();
+      const entries = new Map(page.items.map((e) => [e.item.id, e]));
+      expect(entries.get(first.itemId)).toMatchObject({
+        reviews: null,
+        unavailable: true,
+      });
+      expect(entries.get(second.itemId)?.reviews?.actions[0].review.state).toBe(
+        'succeeded',
+      );
+      expect(JSON.stringify(page)).not.toContain('Target unavailable');
+      expect(JSON.stringify(page)).not.toContain(contentIds[0]);
+    });
+
+    it('rejects malformed cursors before they reach SQL', async () => {
+      const mine = await interpreted();
+      for (const cursor of [
+        '-'.repeat(36),
+        'z'.repeat(36),
+        `${mine.itemId}x`,
+      ]) {
+        await expect(service.listOwnProposals({ cursor })).rejects.toThrow(
+          'Invalid review page',
+        );
+        await expect(
+          service.listReviews(mine.itemId, { cursor }),
+        ).rejects.toThrow('Invalid review page');
       }
     });
 
