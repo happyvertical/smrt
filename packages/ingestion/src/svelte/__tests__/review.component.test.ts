@@ -1023,6 +1023,39 @@ describe('intake review host boundary', () => {
     ).toBeNull();
     expect(screen.queryByText('confidential', { exact: false })).toBeNull();
   });
+  it('treats a thrown HandlerArgumentsInvalidError as the inline refusal', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.preview).mockRejectedValue(
+      Object.assign(new Error('Invalid handler payload'), {
+        name: 'HandlerArgumentsInvalidError',
+      }),
+    );
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Human title' });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      { target: { value: typed } },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'did not pass the handler validation',
+    );
+    expect(screen.getByTestId('evidence-viewer')).toBeTruthy();
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+  });
   it('keeps the typed draft and shows an inline refusal when the handler rejects the arguments', async () => {
     const callbacks = host(needsReviewView(['title']));
     vi.mocked(callbacks.preview).mockResolvedValue({ rejected: 'invalid' });

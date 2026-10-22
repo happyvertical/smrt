@@ -362,10 +362,16 @@ export class IntakeExecutionService {
       throw new Error('Undeclared capability');
     return handler;
   }
+  /**
+   * `arguments` marks explicit reviewer/preview arguments: only their schema
+   * refusal is the correctable `HandlerArgumentsInvalidError`. Result-schema
+   * checks (apply, reconcile) keep the plain error.
+   */
   private validate(
     schema: IntakeValues,
     value: IntakeValues,
     limit: number,
+    arguments_ = false,
   ): void {
     if (
       Buffer.byteLength(canonical(value)) > limit ||
@@ -374,7 +380,9 @@ export class IntakeExecutionService {
     )
       throw new Error('Invalid handler payload');
     if (!this.ajv.compile(schema)(value))
-      throw new HandlerArgumentsInvalidError('Invalid handler payload');
+      throw arguments_
+        ? new HandlerArgumentsInvalidError('Invalid handler payload')
+        : new Error('Invalid handler payload');
   }
   private async access(
     db: DatabaseInterface,
@@ -1257,7 +1265,7 @@ export class IntakeExecutionService {
       // A symbolic ID validates against the handler schema, but is never executed.
       concrete[field] = `00000000-0000-4000-8000-000000000000`;
     }
-    this.validate(handler.argsSchema, concrete, policy.maxBytes);
+    this.validate(handler.argsSchema, concrete, policy.maxBytes, true);
     if (!(await handler.validate(input.args, context)).ok)
       throw new HandlerArgumentsInvalidError('Invalid handler arguments');
     const preview = await handler.preview(input.args, context);
@@ -1931,7 +1939,12 @@ export class IntakeExecutionService {
       );
       args[field] = targetId;
     }
-    this.validate(bound.handler.argsSchema, args, context.policy.maxBytes);
+    this.validate(
+      bound.handler.argsSchema,
+      args,
+      context.policy.maxBytes,
+      true,
+    );
     if (!(await bound.handler.validate(args, context)).ok)
       throw new HandlerArgumentsInvalidError('Invalid handler arguments');
     return args;
@@ -2565,9 +2578,9 @@ export class IntakeExecutionService {
         handler,
         'preview',
       );
-      this.validate(handler.argsSchema, frozen.args, policy.maxBytes);
+      this.validate(handler.argsSchema, frozen.args, policy.maxBytes, true);
       if (!(await handler.validate(frozen.args, context)).ok)
-        throw new Error('Invalid plan arguments');
+        throw new HandlerArgumentsInvalidError('Invalid plan arguments');
       const preview = await handler.preview(frozen.args, context);
       if (
         canonical(preview.normalizedArgs) !== canonical(frozen.args) ||

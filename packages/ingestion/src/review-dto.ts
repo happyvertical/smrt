@@ -140,8 +140,9 @@ export interface IntakeReviewHost {
      */
     args?: IntakeValues;
     /**
-     * Resolves `{ rejected: 'invalid' }` only when the handler's schema or
-     * `validate` refused the arguments; every other failure must throw.
+     * Throws on every failure. A handler's refusal of the arguments is
+     * `HandlerArgumentsInvalidError` (by `name`); a transport may instead
+     * resolve `{ rejected: 'invalid' }` for that one case.
      */
   }): Promise<void | PreviewRejection>;
   decide(input: ReviewInput): Promise<void>;

@@ -45,12 +45,21 @@ generation. The handler validates the human arguments again before a
 `ActionReview` lists required arguments missing from the current draft while
 editing, and no authority or automation eligibility is added: a failed attempt,
 an unoffered handler or a foreign stage is still refused by the host.
-`preview` resolves `{ rejected: 'invalid' }` (`PreviewRejection`) only when the
-handler's argument schema or `validate` refused the arguments (server-side
-`HandlerArgumentsInvalidError`); the component then keeps the view and draft
-and shows an inline message. Every thrown preview or candidate-search failure
-(denied, revoked, unavailable or unknown) clears the view exactly like any
-other failed callback.
+`preview` throws on every failure, as before. When the handler's argument
+schema or `validate` refused the arguments (operation or plan), the server
+throws `HandlerArgumentsInvalidError` (`name` set, messages unchanged); result
+schema checks keep a plain `Error`. The component shows an inline message and
+keeps the view and draft when `preview` either rejects with an error whose
+`name` is `HandlerArgumentsInvalidError` or resolves `{ rejected: 'invalid' }`
+(`PreviewRejection`). A transport that crosses a process boundary preserves
+the inline UX by keeping that name (for example re-throwing an `Error` with
+`name = 'HandlerArgumentsInvalidError'` in the browser callback) or by
+returning `{ rejected: 'invalid' }` for that case only, as the maintained
+fixture's `previewForReview` does. Without either, the refusal behaves like
+any other failure: the view is cleared exactly as before this change, and the
+reviewer's in-memory draft returns after an authorized refresh. Every other
+thrown preview or candidate-search failure (denied, revoked, unavailable or
+unknown) clears the view.
 Unsent drafts live only in component memory, keyed by attempt and suggestion
 index. They survive Refresh, a failed callback, an action on another card and a
 transient `unavailable`/`stale` reload; a `revoked` or `expired` result

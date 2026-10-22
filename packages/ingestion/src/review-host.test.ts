@@ -423,7 +423,7 @@ describe('published review host projection', () => {
     });
     expect(f.service.previewGeneratedProposals).not.toHaveBeenCalled();
   });
-  it('resolves a typed rejection only when the handler refuses the arguments', async () => {
+  it('keeps throwing as on main, with the typed error for argument refusals', async () => {
     const f = fixture();
     f.service.getCompletedAnalysis.mockResolvedValue(
       generation('needs_review') as never,
@@ -431,9 +431,18 @@ describe('published review host projection', () => {
     f.service.previewProposal.mockRejectedValueOnce(
       new HandlerArgumentsInvalidError('Invalid handler payload'),
     );
-    await expect(
-      f.host.preview({ ...previewInput, args: { body: 'Body' } }),
-    ).resolves.toEqual({ rejected: 'invalid' });
+    const refused = f.host.preview({ ...previewInput, args: { body: 'Body' } });
+    await expect(refused).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+    await expect(refused).rejects.toMatchObject({
+      name: 'HandlerArgumentsInvalidError',
+      message: 'Invalid handler payload',
+    });
+    f.service.previewGeneratedProposals.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler payload'),
+    );
+    await expect(f.host.preview(previewInput)).rejects.toBeInstanceOf(
+      HandlerArgumentsInvalidError,
+    );
     f.service.previewProposal.mockRejectedValueOnce(new Error('Access denied'));
     await expect(
       f.host.preview({ ...previewInput, args: { body: 'Body' } }),
