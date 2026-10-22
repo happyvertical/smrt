@@ -563,7 +563,15 @@ export class ReferenceReviewHost {
           : {}),
       });
     }
-    const catalog = full ? await service.listHandlers(itemId) : undefined;
+    // The offered catalog grants nothing; a catalog failure (not configured,
+    // bound exceeded, denied) only hides the start-action picker.
+    let catalog: ItemReviewView['catalog'];
+    if (full)
+      try {
+        catalog = await service.listHandlers(itemId);
+      } catch {
+        catalog = undefined;
+      }
     await service.getItem(itemId);
     const entry: InboxEntry = {
       item,
