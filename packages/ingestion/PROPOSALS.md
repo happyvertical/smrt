@@ -131,14 +131,58 @@ separately from generative provenance and unknown OCR certainty. The complete
 serialized decision request, including suggestions and questions, must fit the
 minimum configured/current policy byte ceiling before capability probing and
 again before deciding. A policy change between these boundaries fails closed.
-Ties, support probability or selected-handler confidence below
-`minimumDecisionProbability`, and actually incomplete extraction require review.
-Unknown provider
+Actually incomplete extraction always requires review. Unknown provider
 completion metadata is preserved as `source_completion_unknown`; it does not
 block otherwise schema-valid **human** preview or imply completeness. Automatic
 action eligibility remains false. An unconfigured decision path
 is recorded explicitly. Configured errors produce a durable safe failure outcome;
 they never silently switch to a generative decision fallback.
+
+### Decision readiness gate (#4209)
+
+For every suggestion `i` the request asks `supported_i` (predicate),
+`route_i` (choice over the offered `handlerId@version` keys plus `none`),
+`risk_i` (ordered score over `clear`, `uncertain`, `ambiguous`) and one
+`entity_i_<field>` choice per candidate-reference argument. The validated
+answers are always persisted under `provenance.decision.answers`. With the
+default `decisionReadiness: 'gate'` they are read as follows, and any failing
+check sets the suggestion to `needs_review` (a tie also sets the outcome to
+`ambiguous`):
+
+- `supported.probability >= minimumDecisionProbability` (default `0.8`).
+- `route.choice` equals the suggestion's own `handlerId@handlerVersion`,
+  `route.confidence >= minimumDecisionProbability`, and the gap between the two
+  largest route probabilities is greater than `tieMargin` (default `0.1`).
+- `risk.score < 1`: only the `clear` level passes; `uncertain` and `ambiguous`
+  require review.
+- Each entity match chooses the suggested candidate's key with confidence at or
+  above the threshold and a gap above `tieMargin`.
+
+These values are provider outputs read as if they were calibrated
+probabilities; nothing in this package calibrates them for this use. The
+teamworks-os measurement in #4209 (self-hosted Laya `typed-decisions`) found no
+separation between right and wrong suggestions: a correctly read vendor invoice
+scored `supported` 0.37, garbage input 0.45–0.50, a wrongly proposed purchase
+order 0.51, route confidence 0.003–0.15 and `risk` ≥ 0.94, so the gate sent
+every suggestion to review. Until a labelled sample shows separation, treat the
+answers as diagnostics and configure:
+
+- `decisionMaxLen`: positive integer forwarded unchanged as the per-request
+  `maxLen` of the decision client (the SDK Laya provider's token window; the
+  checkpoint default is 1024 and the serialized evidence plus suggestions is
+  otherwise truncated). Other clients ignore it.
+- `decisionReadiness: 'record'`: the decision still runs, is bounded and
+  authorized exactly as before and its answers, usage, `readiness` and `maxLen`
+  are recorded, but the gate never changes `outcome` or `disposition`; readiness
+  comes from the validator alone (`missingFields`, outcome, source completeness).
+
+Both settings are public configuration: they are part of
+`ProposalReadConfiguration`, the frozen `GenerationStageConfiguration.proposals`
+(present only when set, so existing digests are unchanged) and the completed
+snapshot authority check. Invalid values fail at proposal service construction.
+Neither mode affects automation: `automaticActionEligible` stays `false`, and
+`authorizeAutomatic` reads only the host's `evaluateAutomatic` callback and
+policy, never these answers.
 
 Output records zero, one or multiple suggestions, alternatives, missing fields,
 source links, proposed splits, versions, allowlisted usage, warnings and explicit

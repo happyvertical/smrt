@@ -1,4 +1,5 @@
 import {
+  type DecisionOptions,
   type DecisionRequest,
   executeDecision,
 } from '@happyvertical/smrt-core';
@@ -35,6 +36,7 @@ import type {
   CandidatePage,
   CompletedAnalysisSnapshot,
   GeneratedPreview,
+  GeneratedSuggestion,
   GenerationOutput,
   GenerationSourcePin,
   PreviewGeneratedInput,
@@ -162,6 +164,36 @@ export class IngestionProposalService {
     ])
       if (!Number.isFinite(value) || value < 0 || value > 1)
         throw new Error('Invalid decision threshold');
+    if (
+      config.decisionMaxLen !== undefined &&
+      (!Number.isSafeInteger(config.decisionMaxLen) ||
+        config.decisionMaxLen < 1)
+    )
+      throw new Error('Invalid decision context length');
+    if (
+      config.decisionReadiness !== undefined &&
+      !['gate', 'record'].includes(config.decisionReadiness)
+    )
+      throw new Error('Invalid decision readiness');
+  }
+  /** Frozen public decision settings; defaults are omitted so existing digests hold. */
+  private decisionSettings(): Pick<
+    GenerationStageConfiguration['proposals'],
+    | 'minimumDecisionProbability'
+    | 'tieMargin'
+    | 'decisionMaxLen'
+    | 'decisionReadiness'
+  > {
+    return {
+      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
+      tieMargin: this.config.tieMargin ?? 0.1,
+      ...(this.config.decisionMaxLen === undefined
+        ? {}
+        : { decisionMaxLen: this.config.decisionMaxLen }),
+      ...(this.config.decisionReadiness === 'record'
+        ? { decisionReadiness: 'record' as const }
+        : {}),
+    };
   }
   private readonly config: ProposalReadConfiguration;
   private generation(): ProposalConfiguration['generator'] {
@@ -437,9 +469,7 @@ export class IngestionProposalService {
         generator: this.identity,
         decision: this.decisionIdentity,
         limits: structuredClone(this.config.limits),
-        minimumDecisionProbability:
-          this.config.minimumDecisionProbability ?? 0.8,
-        tieMargin: this.config.tieMargin ?? 0.1,
+        ...this.decisionSettings(),
       },
     };
   }
@@ -574,8 +604,7 @@ export class IngestionProposalService {
       generator: this.identity,
       decision: this.decisionIdentity,
       limits: this.config.limits,
-      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
-      tieMargin: this.config.tieMargin ?? 0.1,
+      ...this.decisionSettings(),
     };
     if (digest(frozen) !== digest(expected))
       throw new Error('Generation configuration changed');
@@ -931,10 +960,19 @@ export class IngestionProposalService {
     };
     await assertRequestBudget();
     // Both SDK capability probing and deciding get a fresh gate, since either may use I/O.
+    const maxLen = this.config.decisionMaxLen;
+    const readiness = this.config.decisionReadiness ?? 'gate';
     const result = await this.deadline((signal) => {
       const gate = async () => {
         await assertRequestBudget();
         signal.throwIfAborted();
+      };
+      // `maxLen` is the SDK Laya per-request window; other clients ignore it.
+      const options: DecisionOptions & { maxLen?: number } = {
+        signal,
+        timeout: this.config.limits.timeoutMs,
+        model: this.decisionIdentity!.model,
+        ...(maxLen === undefined ? {} : { maxLen }),
       };
       return executeDecision(
         {
@@ -948,11 +986,7 @@ export class IngestionProposalService {
           },
         },
         request,
-        {
-          signal,
-          timeout: this.config.limits.timeoutMs,
-          model: this.decisionIdentity!.model,
-        },
+        options,
       );
     });
     await this.live(
@@ -1003,8 +1037,20 @@ export class IngestionProposalService {
       provider: this.decisionIdentity!.provider,
       model: this.decisionIdentity!.model,
       version: this.decisionIdentity!.version,
+      readiness,
+      ...(maxLen === undefined ? {} : { maxLen }),
       answers,
       usage: safeUsage(result.usage),
+    };
+    // In `record` mode the validated answers are provenance only: the gate is
+    // evaluated for shape but never changes outcome or disposition.
+    const withhold = (ambiguous: boolean, suggestion: GeneratedSuggestion) => {
+      if (readiness !== 'gate') return;
+      output.outcome =
+        ambiguous || output.outcome === 'ambiguous'
+          ? 'ambiguous'
+          : 'needs_review';
+      suggestion.disposition = 'needs_review';
     };
     output.suggestions.forEach((suggestion, index) => {
       const supported = result.answers[`supported_${index}`];
@@ -1051,19 +1097,15 @@ export class IngestionProposalService {
               (this.config.minimumDecisionProbability ?? 0.8) ||
             probabilities[0] - probabilities[1] <=
               (this.config.tieMargin ?? 0.1)
-          ) {
-            output.outcome = 'ambiguous';
-            suggestion.disposition = 'needs_review';
-          }
+          )
+            withhold(true, suggestion);
         }
       const sorted = Object.values(route.probabilities).sort((a, b) => b - a);
       if (
         sorted.length > 1 &&
         sorted[0] - sorted[1] <= (this.config.tieMargin ?? 0.1)
-      ) {
-        output.outcome = 'ambiguous';
-        suggestion.disposition = 'needs_review';
-      }
+      )
+        withhold(true, suggestion);
       if (
         supported.probability <
           (this.config.minimumDecisionProbability ?? 0.8) ||
@@ -1071,11 +1113,8 @@ export class IngestionProposalService {
         route.choice !==
           `${suggestion.handlerId}@${suggestion.handlerVersion}` ||
         risk.score >= 1
-      ) {
-        output.outcome =
-          output.outcome === 'ambiguous' ? 'ambiguous' : 'needs_review';
-        suggestion.disposition = 'needs_review';
-      }
+      )
+        withhold(false, suggestion);
     });
   }
   [generationSnapshotRead](
@@ -1145,8 +1184,7 @@ export class IngestionProposalService {
       generator: this.identity,
       decision: this.decisionIdentity,
       limits: this.config.limits,
-      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
-      tieMargin: this.config.tieMargin ?? 0.1,
+      ...this.decisionSettings(),
     };
     const configurationStale = digest(configuration) !== digest(expected);
     const output = record(
