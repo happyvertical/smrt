@@ -2689,6 +2689,32 @@ describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => 
         },
       }),
     ).toBe('@test/pkg/models');
+    // Arrays skip `null` entries and take the first resolving one; an empty
+    // or all-`null` array is not exported.
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: { ...svelteRoot, './models': [null, './dist/models.js'] },
+      }),
+    ).toBe('@test/pkg/models');
+    for (const unexported of [[], [null]]) {
+      expect(
+        resolveProviderContextImport('@test/pkg', {
+          name: '@test/pkg',
+          exports: { ...svelteRoot, './models': unexported },
+        }),
+      ).toBeUndefined();
+    }
+    // `node-addons` is a default Node condition.
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './models': { 'node-addons': './dist/models.js' },
+        },
+      }),
+    ).toBe('@test/pkg/models');
     // A matching condition whose nested map matches nothing falls through.
     expect(
       resolveProviderContextImport('@test/pkg', {

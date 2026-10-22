@@ -135,11 +135,13 @@ optional provider-context import. Regression: the `#4219` tests in
 `resolveProviderContextImport`, a child-Node load of the generated register,
 the nested-only fallback, and the root-only warning).
 A chosen `./objects`/`./models` entry must also give a plain-Node `import` a
-target (`hasNodeLoadableTarget`, which follows Node's rules: conditions walked
-in key order, the first matching `node`/`import`/`module-sync`/`default`
-decides, `null` means not exported); a types-only, browser-only, or
+target (`hasNodeLoadableTarget`, which follows Node's `resolvePackageTarget`
+with default conditions: conditions walked in key order, the first matching
+`node`/`import`/`module-sync`/`node-addons`/`default` decides, `null` means
+not exported, arrays skip `null` entries); a types-only, browser-only, or
 `null`-first entry is skipped rather than emitted as an import that would fail
-with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Target paths are not validated, so the
+check can only drop an optional context import.
 
 **Gate: `pnpm check:node-roots`** (root script; run after `pnpm build`). It
 runs `scripts/survey-node-root-load.mjs --strict --allow=<packages>`, which

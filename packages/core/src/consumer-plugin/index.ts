@@ -288,30 +288,41 @@ export function resolveProviderContextImport(
   return undefined;
 }
 
-/** Conditions Node matches for an ESM `import` with default flags. */
+/**
+ * Conditions Node matches for an ESM `import` with default flags (`node-addons`
+ * is on unless Node runs with `--no-addons`).
+ */
 const NODE_IMPORT_CONDITIONS = new Set([
   'node',
   'import',
   'module-sync',
+  'node-addons',
   'default',
 ]);
 
 /**
- * Resolve an `exports` target the way Node's PACKAGE_TARGET_RESOLVE does for
- * an `import`: a string is a target; `null` is "not exported" and stops the
- * search; a conditions map is walked in key order and the FIRST matching
- * condition whose value resolves decides; an array takes its first resolving
- * entry. `undefined` means nothing matched, so an outer map keeps looking.
+ * Resolve an `exports` target the way Node's `resolvePackageTarget` does for
+ * an `import` with default conditions: a string is a target; `null` is "not
+ * exported" and stops a conditions map; a conditions map is walked in key
+ * order and the FIRST matching condition whose value resolves decides; an
+ * array takes its first resolving entry, skipping `null` entries (an array
+ * with no resolving entry and at least one `null`, or an empty array, is not
+ * exported). `undefined` means nothing matched, so an outer map keeps looking.
+ * Target paths are not validated, so this can only skip an optional context
+ * import, never add one Node rejects for a reason this ignores.
  */
 function resolveNodeImportTarget(target: unknown): boolean | undefined {
   if (typeof target === 'string') return true;
   if (target === null) return false;
   if (Array.isArray(target)) {
+    if (target.length === 0) return false;
+    let fallback: boolean | undefined;
     for (const entry of target) {
       const resolved = resolveNodeImportTarget(entry);
-      if (resolved !== undefined) return resolved;
+      if (resolved === true) return true;
+      if (resolved === false) fallback = false;
     }
-    return undefined;
+    return fallback;
   }
   if (typeof target !== 'object') return undefined;
   for (const [condition, value] of Object.entries(
