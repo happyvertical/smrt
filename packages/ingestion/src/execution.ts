@@ -2914,6 +2914,20 @@ export class IntakeExecutionService {
     ).rows as Row[];
     const items: OwnProposalsPage['items'] = [];
     for (const row of rows.slice(0, limit)) {
+      // An item the actor can no longer read is omitted entirely: no identity,
+      // state or count is disclosed. Only readable items are projected.
+      let readable = false;
+      try {
+        readable = await this.options.authorize({
+          scope: this.scope,
+          operation: 'read',
+          capturedCeiling: object(object(row.data).capturedCeiling ?? {}),
+          db: this.db,
+        });
+      } catch {
+        readable = false;
+      }
+      if (!readable) continue;
       const item: IntakeItemDTO = {
         id: String(row.id),
         receiptState: String(row.receipt_state),
@@ -2922,7 +2936,7 @@ export class IntakeExecutionService {
         cancelled: !!row.cancelled,
         traceId: String(row.trace_id),
       };
-      // One unreadable submission (revoked item, handler or target access)
+      // A readable item whose reviews are denied (handler or target access)
       // must not hide the others; the entry says only that it is unavailable.
       try {
         items.push({

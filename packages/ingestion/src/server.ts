@@ -269,6 +269,20 @@ function ownerKey(owner: IntakeOwner): string {
   if (owner.kind.includes(':')) throw new Error('Invalid intake owner');
   return `${owner.kind}:${owner.id}`;
 }
+/** PostgreSQL JSON cannot hold NUL or unpaired surrogates; SQLite can. Reject
+ * them at validation so both engines answer `invalid` rather than diverge. */
+function storableText(value: string): boolean {
+  if (value.includes('\u0000')) return false;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
 type ReceivedPart = IntakePart & {
   hash: string;
   retain: 'copy' | 'reference';
@@ -296,7 +310,8 @@ function receivedPart(part: IntakePart | IntakeReferencePart): ReceivedPart {
   let mediaType: string;
   let value: string;
   if ('text' in snapshot && !('structured' in snapshot)) {
-    if (typeof snapshot.text !== 'string') throw new Error('Invalid snapshot');
+    if (typeof snapshot.text !== 'string' || !storableText(snapshot.text))
+      throw new Error('Invalid snapshot');
     mediaType = 'text/plain';
     value = snapshot.text;
   } else if ('structured' in snapshot && !('text' in snapshot)) {

@@ -240,7 +240,8 @@ untouched, and a replay that switches mode conflicts.
 
 **Receive by reference.** A part may be `{ partId, reference: { owner, id,
 version? }, snapshot: { text } | { structured } }` instead of bytes. The
-service derives UTF-8 bytes once (`text/plain` or canonical `application/json`),
+service derives UTF-8 bytes once (`text/plain` or canonical `application/json`;
+text containing NUL or unpaired surrogates is rejected `invalid` on every engine),
 hashes them into the receipt identity, and stores only that snapshot in the
 durable evidence row; no AssetStore object or asset record is created, and
 `readEvidence` serves the snapshot after the same hash/length check. The
@@ -284,9 +285,10 @@ authenticated `scope.actorId` of the receiving service, server-side; payload
 and source metadata never supply it. `listOwnProposals({ cursor?, limit? })`
 lists only this actor's own active submissions with their saved review pages,
 reloaded under current item/handler/target authority, without the reviewer
-inbox; a submission whose reviews cannot currently be read is returned as
-`{ item, reviews: null, unavailable: true }` with no reason, so one revoked
-target never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
+inbox. A submission the actor can no longer read is omitted entirely; a
+readable one whose reviews are denied by handler or target authority is
+returned as `{ item, reviews: null, unavailable: true }` with no reason, so one
+revoked target never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
 `correct`) under the `review_own` authority: the host's execution `authorize`
 must return `submitter: true` for that actor, the application policy must opt
 in with `submitterReview: true` (narrower layers may only disable it), and the
