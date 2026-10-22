@@ -1034,6 +1034,203 @@ describe('smrtConsumer registration generation', () => {
     });
   });
 
+  it('keeps the register loadable under plain Node when a provider root re-exports Svelte (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: '@fixture/consumer-app',
+        version: '1.0.0',
+        type: 'module',
+      }),
+    );
+    // A model package whose root also publishes components, like
+    // @happyvertical/smrt-products: `.` carries a `svelte` condition and its
+    // JS re-exports a `.svelte` file, while `./models` is the server entry.
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+          './models': { default: './dist/models.js' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'index.js'),
+      [
+        "export * from './models.js';",
+        "export { default as Widget } from './Widget.svelte';",
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'Widget.svelte'),
+      '<p>needs a Svelte-aware loader</p>\n',
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'models.js'),
+      [
+        'export class ExternalThing {}',
+        'export class ExternalThingCollection {}',
+        'ExternalThingCollection._itemClass = ExternalThing;',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          ExternalThing: {
+            className: 'ExternalThing',
+            importPath: '@test/pkg/models',
+            hasCollection: true,
+            collectionExportName: 'ExternalThingCollection',
+            collection: 'externalthings',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'index.js'),
+      [
+        'const classes = new Map();',
+        'const collections = new Map();',
+        'export const ObjectRegistry = {',
+        "  register(ctor, config) { classes.set(config.packageName + ':' + config.name, ctor); },",
+        '  registerCollection(name, ctor) { collections.set(name, ctor); },',
+        '  snapshot() { return { classes: [...classes.keys()], collections: [...collections.keys()] }; },',
+        '};',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'worker.mjs'),
+      [
+        "import '../.smrt/register.js';",
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'console.log(JSON.stringify(ObjectRegistry.snapshot()));',
+      ].join('\n'),
+    );
+
+    // The fixture reproduces the trap: plain Node cannot evaluate the root.
+    const rootLoad = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', "import '@test/pkg';"],
+      { cwd: tmpDir, encoding: 'utf8' },
+    );
+    expect(rootLoad.status).not.toBe(0);
+    expect(rootLoad.stderr).toContain('Unknown file extension ".svelte"');
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg/models';",
+    );
+    expect(content).not.toMatch(/from ['"]@test\/pkg['"]/);
+
+    // The same file a task/schedule worker or `smrt db:migrate` loads, under
+    // plain Node with no Vite in the process.
+    const worker = spawnSync(
+      process.execPath,
+      [join(tmpDir, 'src', 'worker.mjs')],
+      {
+        cwd: tmpDir,
+        encoding: 'utf8',
+      },
+    );
+    expect(worker.status, worker.stderr).toBe(0);
+    expect(
+      JSON.parse(worker.stdout.trim().split('\n').pop() as string),
+    ).toEqual({
+      classes: ['@test/pkg:ExternalThing'],
+      collections: ['@test/pkg:ExternalThing', 'externalthings'],
+    });
+  });
+
+  it('imports a component-bearing provider through its object entry when it contributes only nested objects (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const nestedModelDir = join(
+      providerDir,
+      'node_modules',
+      '@nested',
+      'model',
+    );
+    mkdirSync(nestedModelDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+          './objects': { default: './dist/objects.js' },
+        },
+        dependencies: { '@nested/model': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(nestedModelDir, 'package.json'),
+      JSON.stringify({ name: '@nested/model', version: '1.0.0' }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@nested/model:Shared': {
+            className: 'Shared',
+            packageName: '@nested/model',
+            importPath: '@nested/model',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg/objects';",
+    );
+    expect(content).not.toMatch(/from ['"]@test\/pkg['"]/);
+    expect(content).toContain(
+      'await importSmrtDependency("@nested/model", "@test/pkg")',
+    );
+  });
+
   it('aliases same-name exports and isolates their registration manifests', async () => {
     writeFileSync(
       join(tmpDir, 'node_modules', '@test', 'pkg', 'dist', 'manifest.json'),

@@ -157,6 +157,105 @@ function sameInstalledPackage(
   );
 }
 
+function readInstalledPackageJson(
+  packageJsonPath: string | undefined,
+): ConsumerPackageJson | undefined {
+  if (!packageJsonPath) return undefined;
+  try {
+    return JSON.parse(
+      fs.readFileSync(packageJsonPath, 'utf8'),
+    ) as ConsumerPackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether an `exports` target (or any condition under it) needs Vite to
+ * compile it: a `.svelte`/`.css` file or a `svelte` resolution condition.
+ */
+function exportTargetNeedsViteCompilation(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return value.endsWith('.svelte') || value.endsWith('.css');
+  }
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([condition, target]) =>
+      condition === 'svelte' || exportTargetNeedsViteCompilation(target),
+  );
+}
+
+/**
+ * A component-bearing package publishes Svelte entries (a `svelte` field, a
+ * `svelte` condition, or a `.svelte`/`.css` export target). Plain Node cannot
+ * evaluate such a package's root: it may re-export `.svelte` files directly or
+ * through another component library (#4219).
+ */
+function isComponentBearingPackage(
+  packageJson: ConsumerPackageJson | undefined,
+): boolean {
+  return (
+    typeof packageJson?.svelte === 'string' ||
+    exportTargetNeedsViteCompilation(packageJson?.exports)
+  );
+}
+
+/**
+ * Whether the package declares its ROOT as a Svelte entry: a `svelte` field or
+ * a `.` export with a `svelte` condition or a `.svelte`/`.css` target. Such a
+ * root (e.g. `@happyvertical/smrt-products`, which re-exports its components)
+ * cannot be evaluated by plain Node (#4219). A package that only publishes
+ * Svelte under a subpath keeps a Node-safe root, as the standards require.
+ */
+function isComponentBearingRoot(
+  packageJson: ConsumerPackageJson | undefined,
+): boolean {
+  if (typeof packageJson?.svelte === 'string') return true;
+  const exportsMap = packageJson?.exports;
+  if (!exportsMap) return false;
+  if (typeof exportsMap === 'string') {
+    return exportTargetNeedsViteCompilation(exportsMap);
+  }
+  const hasSubpathKeys = Object.keys(exportsMap).some((key) =>
+    key.startsWith('.'),
+  );
+  return exportTargetNeedsViteCompilation(
+    hasSubpathKeys ? exportsMap['.'] : exportsMap,
+  );
+}
+
+/**
+ * Server-safe object entries a component-bearing provider may declare, in
+ * preference order. These carry the package's `@smrt()` classes without its
+ * components.
+ */
+const PROVIDER_OBJECT_ENTRIES = ['./objects', './models'] as const;
+
+/**
+ * Pick the module the generated register imports so a configured provider is
+ * evaluated in Node's installed package context (#4187). The root is used
+ * unless the package declares it as a Svelte entry; then a declared
+ * server-safe object entry is used instead, and `undefined` means the provider
+ * has nothing the register can load under plain Node (#4219).
+ */
+function resolveProviderContextImport(
+  packageName: string,
+  packageJson: ConsumerPackageJson | undefined,
+): string | undefined {
+  if (!isComponentBearingRoot(packageJson)) return packageName;
+  const exportsMap =
+    packageJson?.exports && typeof packageJson.exports === 'object'
+      ? packageJson.exports
+      : undefined;
+  for (const entry of PROVIDER_OBJECT_ENTRIES) {
+    const target = exportsMap?.[entry];
+    if (target && !exportTargetNeedsViteCompilation(target)) {
+      return `${packageName}/${entry.slice(2)}`;
+    }
+  }
+  return undefined;
+}
+
 /**
  * SvelteKit route-hosting options for dependency models. Unlike `packages`,
  * `objects` is an HTTP exposure boundary: every entry must be an exact,
@@ -675,16 +774,6 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     external: string[];
     selective: Map<string, SelectiveSsrPackage>;
   } {
-    const needsViteCompilation = (value: unknown): boolean => {
-      if (typeof value === 'string') {
-        return value.endsWith('.svelte') || value.endsWith('.css');
-      }
-      if (!value || typeof value !== 'object') return false;
-      return Object.entries(value).some(
-        ([condition, target]) =>
-          condition === 'svelte' || needsViteCompilation(target),
-      );
-    };
     const external = new Set<string>();
     const selective = new Map<string, SelectiveSsrPackage>();
     const visited = new Set<string>();
@@ -702,22 +791,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       if (visited.has(visitKey)) continue;
       visited.add(visitKey);
 
-      let packageJson: ConsumerPackageJson | undefined;
-      if (packageJsonPath) {
-        try {
-          packageJson = JSON.parse(
-            fs.readFileSync(packageJsonPath, 'utf8'),
-          ) as ConsumerPackageJson;
-        } catch {
-          // Manifest loading reports an unavailable declared provider with the
-          // actionable package context. Keep the root external here so Vite
-          // does not inline a partial substitute while reporting that error.
-        }
-      }
+      // Manifest loading reports an unavailable or unreadable declared
+      // provider with the actionable package context. Keep the root external
+      // here so Vite does not inline a partial substitute while reporting
+      // that error.
+      const packageJson = readInstalledPackageJson(packageJsonPath);
 
-      const needsSvelteCompilation =
-        typeof packageJson?.svelte === 'string' ||
-        needsViteCompilation(packageJson?.exports);
+      const needsSvelteCompilation = isComponentBearingPackage(packageJson);
       const projectPackageJson = findInstalledPackageJson(
         packageName,
         projectRoot,
@@ -1745,17 +1825,6 @@ async function generateRegistrationFile(
     return sameInstalledPackage(projectPackageJson, providerImportPackageJson);
   };
 
-  // Configured providers remain ordinary static imports. Transitive-only
-  // object modules are loaded below through their owning provider context.
-  for (const packageName of manifest.smrtDependencies ?? []) {
-    if (
-      isSameProjectAndProviderImport(packageName, packageName) &&
-      !importsByPath.has(packageName)
-    ) {
-      importsByPath.set(packageName, new Map());
-    }
-  }
-
   const registrations: string[] = [];
   const registrationManifests: Record<string, ConsumerManifest> = {};
   let importedEntryCount = 0;
@@ -1901,6 +1970,34 @@ async function generateRegistrationFile(
     }
 
     registeredObjectCount++;
+  }
+
+  // Configured providers remain ordinary static imports so each is evaluated
+  // in Node's installed package context (#4187); transitive-only object
+  // modules are loaded below through their owning provider context. The
+  // register must stay loadable under plain Node (`smrt db:migrate`, workers,
+  // `.smrt/runtime/register.js`), so a root the provider declares as a Svelte
+  // entry is never imported: its object entries already imported above
+  // establish the context, or a declared server-safe object entry stands in
+  // (#4219).
+  for (const packageName of manifest.smrtDependencies ?? []) {
+    if (!isSameProjectAndProviderImport(packageName, packageName)) continue;
+    const contextImport = resolveProviderContextImport(
+      packageName,
+      readInstalledPackageJson(
+        findInstalledPackageJson(packageName, projectRoot),
+      ),
+    );
+    if (!contextImport || importsByPath.has(contextImport)) continue;
+    if (
+      contextImport !== packageName &&
+      Array.from(importsByPath.keys()).some(
+        (importPath) => packageNameFromImportPath(importPath) === packageName,
+      )
+    ) {
+      continue;
+    }
+    importsByPath.set(contextImport, new Map());
   }
 
   // Skip generation if no external entries

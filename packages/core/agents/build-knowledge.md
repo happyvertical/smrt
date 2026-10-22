@@ -94,6 +94,27 @@ so the artifact bundles them. SvelteKit
 virtual modules (`$env/*`, `$app/*`) are not available to a worker; an object
 importing one fails at worker startup. A failure fails the build.
 
+**Register imports stay Node-loadable (#4219).** `.smrt/register.js`
+(`generateRegistrationFile` in `src/consumer-plugin/index.ts`) is evaluated by
+plain Node — `smrt db:migrate`, every CLI, and the worker artifact above — as
+well as by Vite SSR, so it may only import modules Node can load. Each object
+is imported from its manifest `importPath` (the scanner's export-subpath match,
+e.g. `@happyvertical/smrt-products/models`). Each configured provider in
+`smrtDependencies` is also imported once so it is evaluated in Node's installed
+package context (#4187): the package root, unless the package declares that
+root as a Svelte entry (`isComponentBearingRoot`: a `svelte` field, or a `.`
+export with a `svelte` condition or a `.svelte`/`.css` target — e.g.
+`@happyvertical/smrt-products`, whose root re-exports its components and so
+reaches `@happyvertical/smrt-ui`'s `.svelte` files). Such a root is never
+imported: its already-imported object entries establish the context, and when
+it contributes only nested objects a declared `./objects` or `./models` entry
+stands in (`resolveProviderContextImport`). A package that publishes Svelte
+only under subpaths keeps its root import; the broader `isComponentBearingPackage`
+test (any Svelte export) only selects `ssr.noExternal` packages. Transitive-only
+object modules are loaded through `importSmrtDependency()` from their provider's
+context, which needs no root import. Regression: the `#4219` tests in
+`index.test.ts`, which load the generated register in a child Node process.
+
 ## Lightweight discovery
 
 Filesystem-only discovery, module-doc parsing, and graph freshness are owned by
