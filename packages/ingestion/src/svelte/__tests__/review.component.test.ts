@@ -1290,6 +1290,8 @@ describe('intake review host boundary', () => {
       screen.queryByRole('button', { name: 'Handled, no action' }),
     ).toBeNull();
     expect(screen.getByText('Started by a reviewer')).toBeTruthy();
+    // A reviewer-selected action is a routing choice, not a model suggestion to judge.
+    expect(screen.queryByText('Explicit correctness feedback')).toBeNull();
     // Terminal: the leftover waiting action can only be rejected.
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Defer' })).toBeNull();

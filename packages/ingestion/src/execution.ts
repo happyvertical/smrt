@@ -806,10 +806,21 @@ export class IntakeExecutionService {
         )
           throw new Error('Analysis input integrity');
         if (!this.retained(bound.item)) throw new Error('Feedback unavailable');
+        const resolved = !!(await this.disposition(db, String(bound.item.id)));
+        const state = String(bound.action.state);
+        const settled =
+          !resolved &&
+          (['executing', 'succeeded'].includes(state) ||
+            (state === 'authorized' &&
+              (await this.approvalLive(db, bound.action))));
+        const origin = object(bound.action.data).origin;
         return {
           db,
           context,
           permissions,
+          origin: typeof origin === 'string' ? origin : '',
+          resolved,
+          settled,
           review: this.review(bound),
           itemId: String(bound.item.id),
           attemptId: String(attempt.id),

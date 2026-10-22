@@ -58,8 +58,9 @@ the same bounds and lexical matcher. A routing example is returned only when its
 digest verifies, its attempt and evidence hashes are unchanged, the source item
 is still readable in the same tenant and confidential scope, every generation
 recipient is allowed by the source's live provider policy, and (for a chosen
-handler) the action is still `authorized`, `executing` or `succeeded`, its
-binding is still the current revision, and the handler with its candidate
+handler) the action is still reviewer-selected and settled — applied
+(`executing`, `succeeded`) or `authorized` with an unexpired approval, on an item
+without a disposition — its binding is still the current revision, and the handler with its candidate
 references is currently offered to the receiver. A `none` choice is
 revalidated under the first currently offered receiving handler the source item
 authorizes. Routing examples carry `kind: 'reviewer_routing'`,
@@ -70,13 +71,19 @@ provenance exactly like interpretation examples and are rechecked by the same
 lineage gates.
 
 `suggestRoutingRule` accepts `reviewer_routing` support only for `choice: 'handler'`
-records whose action is still approved or applied and whose handler, version and
+records whose action is still settled in the same sense (a lapsed, unapplied
+approval or a later disposition excludes it) and whose handler, version and
 full arguments match the receiving binding and each other, from distinct source
 items, under the live routing projection; `none`, rejected, deferred and
 re-corrected records never support a rule. Suggestions and adoptions keep every existing #3676
 rule: no catalog, candidate, permission or automation expansion, and
 `automaticActionEligible: false`. Reviewer-selected actions themselves are refused
-by `authorizeAutomatic`.
+by `authorizeAutomatic`. They are routing choices, never labels for a model
+suggestion: `recordFeedback` refuses an interpretation judgment on one (even
+when the item also carries a generation, and whatever its decision), retrieval
+and rule support ignore interpretation records bound to one or to a resolved
+item, and `ActionReview` hides the correctness buttons for them. Only
+`startReviewerAction` mints that origin; `createAction` refuses it.
 
 ## Retrieval and provider boundaries
 

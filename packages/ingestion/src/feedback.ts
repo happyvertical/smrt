@@ -426,8 +426,9 @@ export class IntakeFeedbackService {
         const { generation, ...provenance } = await this.provenance(ctx),
           routing = this.routing(ctx);
         // Interpretation judgments label a model suggestion; reviewer-selected
-        // actions are captured as routing choices by their owning operation.
-        if (!generation)
+        // actions are captured as routing choices by their owning operation,
+        // even when the item also carries a (different) model generation.
+        if (!generation || ctx.origin === 'reviewer-selected')
           throw new Error('Feedback requires a model suggestion');
         const body = {
           version: 1,
@@ -558,6 +559,8 @@ export class IntakeFeedbackService {
           const { digest: stored, ...body } = data;
           if (digest(body) !== stored) throw new Error('Feedback integrity');
           if (
+            ctx.origin === 'reviewer-selected' ||
+            ctx.resolved ||
             data.revision !== ctx.review.revision ||
             data.bindingHash !== ctx.review.bindingHash ||
             data.attemptId !== ctx.attemptId ||
@@ -727,9 +730,8 @@ export class IntakeFeedbackService {
             // new revision is approved and captured again.
             if (
               ctx.itemId !== itemId ||
-              !['authorized', 'executing', 'succeeded'].includes(
-                ctx.review.state,
-              ) ||
+              ctx.origin !== 'reviewer-selected' ||
+              !ctx.settled ||
               data.revision !== ctx.review.revision ||
               data.bindingHash !== ctx.review.bindingHash ||
               data.attemptId !== ctx.attemptId ||
@@ -1003,8 +1005,10 @@ export class IntakeFeedbackService {
           origins.add(source.itemId);
           const { digest: stored, ...body } = data;
           const generationMatch = routing
-            ? true
-            : provenance.generation &&
+            ? source.origin === 'reviewer-selected' && source.settled
+            : source.origin !== 'reviewer-selected' &&
+              !source.resolved &&
+              provenance.generation &&
               data.judgment === 'correct' &&
               data.promptVersion === provenance.promptVersion &&
               data.configurationVersion === provenance.configurationVersion &&
@@ -1014,10 +1018,6 @@ export class IntakeFeedbackService {
           if (
             digest(body) !== stored ||
             !generationMatch ||
-            (routing &&
-              !['authorized', 'executing', 'succeeded'].includes(
-                source.review.state,
-              )) ||
             data.revision !== source.review.revision ||
             data.bindingHash !== source.review.bindingHash ||
             data.attemptId !== source.attemptId ||

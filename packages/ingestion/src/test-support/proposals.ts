@@ -6545,6 +6545,171 @@ export function proposalSuite(
         disposition: [{ disposition: 'resolved_no_action', data: {} }],
       });
     });
+    it('reviewer-selected actions never label a generation, and lapsed or closed choices never support routing', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const receiver = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Umbrella for widgets',
+      );
+      chooseCreate(args);
+      await generate(receiver);
+      // A reviewer-selected action is a routing choice, never a label for the
+      // item's model generation, even after it was rejected.
+      const overridden = await start(receiver.itemId, 'route-over-generation');
+      await decide(overridden, 'reject', 'reject-over-generation');
+      const rejectedReview = await service.getAction(overridden.actionId);
+      await expect(
+        service.recordFeedback({
+          itemId: receiver.itemId,
+          actionId: rejectedReview.actionId,
+          expectedRevision: rejectedReview.revision,
+          expectedReviewVersion: rejectedReview.reviewVersion,
+          bindingHash: rejectedReview.bindingHash,
+          judgment: 'correct',
+          requestId: 'judge-reviewer-selected',
+        }),
+      ).rejects.toThrow('Feedback requires a model suggestion');
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='interpretation' AND item_id=?",
+            receiver.itemId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      const second = await source(
+        100000,
+        false,
+        'Customer purchase order 42 from Globex for widgets',
+      );
+      await decide(
+        await start(second.itemId, 'route-second'),
+        'approve',
+        'approve-second',
+      );
+      const [secondRow] = (
+        await db.query(
+          "SELECT id FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+          second.itemId,
+        )
+      ).rows;
+      const targetItem = await source(
+        100000,
+        false,
+        'Customer purchase order 7 from Hooli for widgets',
+      );
+      const target = await start(targetItem.itemId, 'route-target');
+      const supportBinding = {
+        itemId: targetItem.itemId,
+        actionId: target.actionId,
+        expectedRevision: target.revision,
+        expectedReviewVersion: target.reviewVersion,
+        bindingHash: target.bindingHash,
+      };
+      // A choice whose approval lapsed unapplied and whose item was then closed
+      // without action is neither an example nor rule support.
+      const lapsed = await source(
+        100000,
+        false,
+        'Customer purchase order 77 from Acme for widgets',
+      );
+      const retrievedNow = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples.map((example) => example.feedbackId);
+      const lapsedReview = await start(lapsed.itemId, 'route-lapsed');
+      await decide(lapsedReview, 'approve', 'approve-lapsed');
+      const [lapsedRow] = (
+        await db.query(
+          "SELECT id,data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+          lapsed.itemId,
+        )
+      ).rows;
+      expect(lapsedRow).toBeDefined();
+      expect(await retrievedNow()).toContain(String(lapsedRow.id));
+      expect(
+        (
+          await service.suggestRoutingRule({
+            ...supportBinding,
+            supportingFeedbackIds: [String(secondRow.id), String(lapsedRow.id)],
+            requestId: 'suggest-before-lapse',
+          })
+        ).automaticActionEligible,
+      ).toBe(false);
+      const [lapsedGrant] = (
+        await db.query(
+          'SELECT data FROM intake_review_decisions WHERE action_id=?',
+          lapsedReview.actionId,
+        )
+      ).rows;
+      const beforeLapse = clock;
+      clock = new Date(
+        Date.parse(
+          String(
+            (typeof lapsedGrant.data === 'string'
+              ? JSON.parse(lapsedGrant.data)
+              : lapsedGrant.data
+            ).expiresAt,
+          ),
+        ) + 1,
+      );
+      expect(await retrievedNow()).not.toContain(String(lapsedRow.id));
+      await service.resolveItem({
+        itemId: lapsed.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'route-lapsed-closed',
+      });
+      // Back inside the approval window, the disposition alone still excludes the
+      // handler choice (the item's own `none` record is a separate example).
+      clock = beforeLapse;
+      expect(await retrievedNow()).not.toContain(String(lapsedRow.id));
+      await expect(
+        service.suggestRoutingRule({
+          ...supportBinding,
+          supportingFeedbackIds: [String(secondRow.id), String(lapsedRow.id)],
+          requestId: 'suggest-lapsed',
+        }),
+      ).rejects.toThrow('Rule evidence unavailable');
+    });
     it('reloads only the current completed analysis without requiring a remembered attempt ID', async () => {
       chooseCreate();
       const input = await generate();
