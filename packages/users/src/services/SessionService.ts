@@ -13,6 +13,7 @@ import { UserCollection } from '../collections/UserCollection.js';
 import type { Membership } from '../models/Membership.js';
 import {
   DEFAULT_SESSION_TTL,
+  SESSION_DATA_KEYS,
   type Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -490,7 +491,18 @@ export class SessionService {
       ttl: session.getIdleSeconds() ?? this.defaultTTL,
       userAgent: session.userAgent,
       ipAddress: session.ipAddress,
-      data: session.data,
+      // Rotation must not launder the session's age: carry the ORIGINAL
+      // authentication time forward (a malformed stamp stays malformed, so
+      // it stays stale), or consumers that require a recent sign-in would
+      // see a brand new `created_at`.
+      data: {
+        ...session.data,
+        [SESSION_DATA_KEYS.authenticatedAt]:
+          session.data?.[SESSION_DATA_KEYS.authenticatedAt] ??
+          (session.created_at instanceof Date
+            ? session.created_at.toISOString()
+            : new Date(0).toISOString()),
+      },
       authMethod: session.authMethod,
       parentSessionId: session.parentSessionId,
     });

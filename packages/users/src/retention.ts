@@ -31,6 +31,7 @@ import { UsersCliAuthRequestCollection } from './collections/CliAuthRequestColle
 import { UsersLoginAttemptCollection } from './collections/LoginAttemptCollection.js';
 import { UsersLoginAuditEventCollection } from './collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from './collections/MagicLinkTokenCollection.js';
+import { UsersPasskeyChallengeCollection } from './collections/PasskeyChallengeCollection.js';
 import { SessionCollection } from './collections/SessionCollection.js';
 import { pruneOAuthCredentials } from './services/oauth-retention.js';
 
@@ -52,6 +53,9 @@ export const LOGIN_AUDIT_RETENTION_TASK = 'users-login-audit-events';
 /** How long login audit events are kept by default. */
 export const DEFAULT_LOGIN_AUDIT_RETENTION_DAYS = 90;
 
+/** Retention task name for consumed passkey ceremony challenges (#3275). */
+export const PASSKEY_CHALLENGES_RETENTION_TASK = 'users-passkey-challenges';
+
 /** Retention task for OAuth codes, refresh history/families and revocations. */
 export const OAUTH_CREDENTIALS_RETENTION_TASK = 'users-oauth-credentials';
 
@@ -63,6 +67,7 @@ export const USER_RETENTION_TASKS = [
   CLI_AUTH_RETENTION_TASK,
   LOGIN_ATTEMPTS_RETENTION_TASK,
   LOGIN_AUDIT_RETENTION_TASK,
+  PASSKEY_CHALLENGES_RETENTION_TASK,
 ] as const;
 
 /**
@@ -120,6 +125,17 @@ export function registerUserRetentionTasks(): void {
       // Each row carries the horizon of the limiter that wrote it, so the
       // sweep cannot erase a budget a custom-configured limiter still uses.
       return attempts.deleteIdle({ dryRun: context.dryRun });
+    },
+  });
+
+  registerRetentionTask({
+    name: PASSKEY_CHALLENGES_RETENTION_TASK,
+    description: 'Delete consumed passkey challenges past their expiry',
+    run: async (db, context) => {
+      const challenges = await UsersPasskeyChallengeCollection.create({ db });
+      // A ceremony stops verifying at its expiry, so its replay-ledger row is
+      // worthless from then on.
+      return challenges.deleteExpired({ dryRun: context.dryRun });
     },
   });
 

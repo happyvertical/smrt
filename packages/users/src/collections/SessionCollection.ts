@@ -8,6 +8,7 @@ import {
   DEFAULT_SESSION_TTL,
   generateSessionId,
   resolveSessionExpiry,
+  SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -357,6 +358,14 @@ export class SessionCollection extends SmrtCollection<Session> {
     key: string,
     value: unknown,
   ): Promise<boolean> {
+    // Server-set: tenant-switch rotation writes the authentication time and
+    // passkey sign-in writes the passkey row id; neither is caller data.
+    if (
+      key === SESSION_DATA_KEYS.authenticatedAt ||
+      key === SESSION_DATA_KEYS.passkeyCredentialId
+    ) {
+      return false;
+    }
     const session = await this.findValidSession(sessionId);
     if (!session) return false;
 

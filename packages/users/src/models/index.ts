@@ -40,6 +40,15 @@ export {
   UsersOAuthRefreshFamily,
   UsersOAuthRefreshGrant,
 } from './OAuthAuthorization.js';
+// Passkey credentials and consumed ceremony challenges (#3275)
+export {
+  type PasskeyChallengePurpose,
+  UsersPasskeyChallenge,
+} from './PasskeyChallenge.js';
+export {
+  type PasskeyDeviceType,
+  UsersPasskeyCredential,
+} from './PasskeyCredential.js';
 // Password credential (#3274)
 export { UsersPasswordCredential } from './PasswordCredential.js';
 export {
