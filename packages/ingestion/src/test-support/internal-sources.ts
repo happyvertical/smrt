@@ -542,8 +542,12 @@ export function internalSourceSuite(
           )
         ).rows[0].state,
       ).toBe('completed');
-      // A deleted owner never re-admits the same delivery as fresh work.
-      expect((await service.receive(message(id))).kind).toBe('rejected');
+      // A deleted owner never re-admits the same delivery as fresh work; once
+      // redaction completed the identity digests are gone, so it conflicts.
+      expect(await service.receive(message(id))).toEqual({
+        kind: 'rejected',
+        category: 'conflict',
+      });
       expect(await count('SELECT COUNT(*) AS n FROM intake_items')).toBe(2);
     });
 
@@ -732,14 +736,15 @@ export function internalSourceSuite(
         )
       ).rows;
       expect(copiedRow.asset_id).toBeTruthy();
-      // A referenced row that gains an asset is corrupt: never served from it.
+      // A referenced row that gains an asset is corrupt: the explicit guard
+      // refuses it (integrity), before any asset lookup could answer.
       await db.query(
         'UPDATE intake_evidence SET asset_id=? WHERE id=?',
         copiedRow.asset_id,
         structured.id,
       );
       await expect(service.readEvidence(itemId, structured.id)).rejects.toThrow(
-        'Intake unavailable',
+        'Intake integrity',
       );
       await db.query(
         'UPDATE intake_evidence SET asset_id=NULL WHERE id=?',
@@ -966,6 +971,13 @@ export function internalSourceSuite(
       await service.submitOwnDecision(decision(review, 'before-delete'));
       const applied = await service.applyAction(review.actionId);
       expect(applied.state).toBe('succeeded');
+      await service.appendPlan(
+        mine.itemId,
+        'chat-plan',
+        1,
+        [{ actionId: review.actionId, proposalRevision: review.revision }],
+        { kind: 'fixture' },
+      );
       const tables = [
         'intake_evidence',
         'intake_analyses',
@@ -974,6 +986,7 @@ export function internalSourceSuite(
         'intake_actions',
         'intake_proposals',
         'intake_review_decisions',
+        'intake_plans',
       ];
       for (const table of tables)
         expect((await rowsFor(table, mine.itemId)).length).toBeGreaterThan(0);
@@ -995,24 +1008,24 @@ export function internalSourceSuite(
       expect(Object.keys(json(item.data) as object)).toEqual([
         'capturedCeiling',
       ]);
-      // No digest over actor, owner, text or arguments survives and the
-      // delivery key is opaque. The ceiling (with its principal) is retained
-      // for post-redaction reconciliation; nothing else carries the sender.
+      // No digest over actor, owner, text or arguments survives, the delivery
+      // key is opaque, and with nothing left to reconcile the principal (here
+      // the sender) is dropped from the retained ceiling.
       expect(item.payload_digest).toBe('redacted');
       expect(item.scope_digest).toBe('redacted');
       expect(String(item.delivery_key)).not.toContain(mine.id);
       expect(String(item.delivery_key)).not.toContain(sender);
       const ceiling = (json(item.data) as Record<string, any>).capturedCeiling;
-      expect(ceiling.execution.principalId).toBe(sender);
-      expect(Object.keys(json(item.data) as object)).toEqual([
-        'capturedCeiling',
-      ]);
+      expect(ceiling.execution).toBeDefined();
+      expect(ceiling.execution.principalId).toBeUndefined();
+      expect(JSON.stringify(json(item.data))).not.toContain(sender);
       for (const [table, column] of [
         ['intake_analyses', 'input_digest'],
         ['intake_analysis_attempts', 'output_digest'],
         ['intake_proposals', 'binding_hash'],
         ['intake_review_decisions', 'binding_hash'],
         ['intake_executions', 'binding_hash'],
+        ['intake_plans', 'digest'],
       ]) {
         const rows = await rowsFor(table, mine.itemId);
         expect(rows.length, table).toBeGreaterThan(0);
@@ -1470,7 +1483,7 @@ export function internalSourceSuite(
     });
 
     it('reports a receipt revoked before acknowledgement as expired, never accepted', async () => {
-      for (const boundary of ['evidence', 'ready']) {
+      for (const boundary of ['reserved', 'evidence', 'ready']) {
         const id = randomUUID();
         const racing = new IngestionService({
           ...options,
@@ -1492,9 +1505,29 @@ export function internalSourceSuite(
         expect(row.visibility, boundary).toBe('expired');
         for (const evidence of await rowsFor('intake_evidence', String(row.id)))
           expect(json(evidence.data), boundary).toEqual({});
-        // The deleted delivery stays refused on replay.
-        expect((await service.receive(message(id))).kind).toBe('rejected');
+        // The deleted delivery stays refused on replay, as a conflict.
+        expect(await service.receive(message(id))).toEqual({
+          kind: 'rejected',
+          category: 'conflict',
+        });
       }
+      // A ready duplicate whose owner is expired mid-call is not a duplicate.
+      const id = randomUUID();
+      const itemId = await accepted(message(id));
+      const racing = new IngestionService({
+        ...options,
+        checkpoint: async (name) => {
+          if (name === 'reserved')
+            await service.expireOwned({ kind: 'message', id });
+        },
+      });
+      expect(await racing.receive(message(id))).toEqual({
+        kind: 'rejected',
+        category: 'expired',
+      });
+      await expect(service.getItem(itemId)).rejects.toThrow(
+        'Intake unavailable',
+      );
     });
 
     it('never leaves a deliverable intent for an inline receipt at any stage', async () => {
