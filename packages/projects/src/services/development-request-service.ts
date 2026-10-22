@@ -7,6 +7,7 @@ import {
   DevelopmentRequestWorkLinkCollection,
 } from '../models/delivery-control-plane.js';
 import type { DevelopmentTriageDecision } from '../types.js';
+import { ParticipantDevelopmentRequestService } from './participant-development-request-service.js';
 
 export interface DevelopmentWorkItem {
   type: string;
@@ -164,7 +165,17 @@ export class DevelopmentRequestService {
         const description = part.description.trim();
         if (!description)
           throw new Error('Split request description is required.');
-        return { description, type: part.type ?? request.type };
+        const type = part.type ?? request.type;
+        if (
+          !request.integrationId &&
+          (!['bug', 'feature', 'task'].includes(type) ||
+            description.length > 8000)
+        ) {
+          throw new TypeError(
+            'Choose a valid participant split type and description.',
+          );
+        }
+        return { description, type };
       });
       const origin = `split:${request.id}`;
       const unmatchedExisting = await withTenant(
@@ -180,7 +191,11 @@ export class DevelopmentRequestService {
             orderBy: 'createdAt ASC',
           }),
       );
+      const occurrences = new Map<string, number>();
       for (const { description, type } of parts) {
+        const contentIdentity = JSON.stringify([type, description]);
+        const occurrence = occurrences.get(contentIdentity) ?? 0;
+        occurrences.set(contentIdentity, occurrence + 1);
         const existingIndex = unmatchedExisting.findIndex(
           (candidate) =>
             candidate.description.trim() === description &&
@@ -193,19 +208,31 @@ export class DevelopmentRequestService {
           splitRequests.push(unmatchedExisting.splice(existingIndex, 1)[0]);
         } else {
           splitRequests.push(
-            await this.requests.createManaged({
-              tenantId: request.tenantId,
-              projectId: request.projectId,
-              integrationId: request.integrationId,
-              requesterId: request.requesterId,
-              participantId: request.participantId || undefined,
-              type,
-              description,
-              evidence: request.getEvidence(),
-              visibility: request.visibility,
-              origin,
-              discussion: input.reason,
-            }),
+            request.integrationId
+              ? await this.requests.createManaged({
+                  tenantId: request.tenantId,
+                  projectId: request.projectId,
+                  integrationId: request.integrationId,
+                  requesterId: request.requesterId,
+                  participantId: request.participantId || undefined,
+                  type,
+                  description,
+                  evidence: request.getEvidence(),
+                  visibility: request.visibility,
+                  origin,
+                  discussion: input.reason,
+                })
+              : await (
+                  await ParticipantDevelopmentRequestService.create({
+                    db: this.requests.db,
+                  })
+                ).splitFrom(request, {
+                  type: type as 'bug' | 'feature' | 'task',
+                  description,
+                  actorRef: input.actorRef,
+                  reason: input.reason,
+                  occurrence,
+                }),
           );
         }
       }
