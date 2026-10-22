@@ -35,6 +35,7 @@ import type {
   RetrieveFeedbackInput,
   SuggestRuleInput,
 } from './feedback-dto.js';
+import { isStorableFilename, presentedFilename } from './presented-filename.js';
 import {
   type ProposalConfiguration,
   type ProposalReadConfiguration,
@@ -202,16 +203,10 @@ function nonempty(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512)
     throw new Error('Invalid intake identifier');
 }
-/** A source-supplied display name: bounded text with no control characters. */
+/** A source-supplied display name: bounded text with no unsafe characters. */
 function filename(value: unknown): asserts value is string {
-  if (
-    typeof value !== 'string' ||
-    !value.trim() ||
-    value.length > 512 ||
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting them is the point
-    /[\u0000-\u001f\u007f]/.test(value)
-  )
-    throw new Error('Invalid intake filename');
+  // Same character set the source adapters strip (presented-filename.ts).
+  if (!isStorableFilename(value)) throw new Error('Invalid intake filename');
 }
 function integer(value: unknown, max = 2_147_483_647): asserts value is number {
   if (
@@ -1237,8 +1232,10 @@ export class IngestionService {
     return result;
   }
   private evidenceDTO(e: Row): IntakeEvidenceDTO {
-    const data = object(e.data);
-    const reference = data.sourceReference;
+    // Only the cleaned name is exposed. `sourceReference` stays in storage:
+    // its ids are upstream locators (mailbox paths, raw folder names), not
+    // display text, and no host needs them on the DTO.
+    const filename = presentedFilename(object(e.data).filename);
     return {
       id: String(e.id),
       partId: String(e.part_id),
@@ -1248,20 +1245,7 @@ export class IngestionService {
       mediaType: String(e.media_type),
       contentHash: String(e.content_hash),
       byteLength: Number(e.byte_length),
-      ...(typeof data.filename === 'string' && data.filename
-        ? { filename: data.filename }
-        : {}),
-      ...(reference &&
-      typeof reference === 'object' &&
-      !Array.isArray(reference)
-        ? {
-            sourceReference: {
-              owner: String((reference as Row).owner),
-              id: String((reference as Row).id),
-              version: String((reference as Row).version),
-            },
-          }
-        : {}),
+      ...(filename ? { filename } : {}),
     };
   }
   /** One read authorization per distinct captured ceiling for a page of rows. */

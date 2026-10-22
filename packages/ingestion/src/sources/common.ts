@@ -1,4 +1,5 @@
 import type { ReceiptResult } from '../dto.js';
+import { presentedFilename } from '../presented-filename.js';
 import type { IngestionService, IntakePart, ReceiveInput } from '../server.js';
 
 /** Host configuration, reconstructed from authenticated session/account state. */
@@ -45,17 +46,10 @@ export function text(value: unknown): string {
 }
 /**
  * A name a source presented for a part (upload, attachment, folder entry),
- * kept for labels only (#4214). Control characters are removed and the result
- * trimmed; a name that is then empty or longer than the receipt service's
- * 512-character bound is dropped, so an odd name falls back to the default
- * label instead of failing the whole receipt. Never identity.
+ * kept for labels only (#4214); see `../presented-filename.ts` for the unsafe
+ * character set it removes.
  */
-export function presentedFilename(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
-  const name = value.replace(/[\u0000-\u001f\u007f]/g, '').trim();
-  return name && name.length <= 512 ? name : undefined;
-}
+export { presentedFilename };
 /** `{ filename }` for a usable presented name, else nothing to spread. */
 export function withPresentedFilename(value: unknown): {
   filename?: string;

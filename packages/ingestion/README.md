@@ -23,10 +23,14 @@ construct the scope, retention policy or budgets from incoming document labels.
 parent relationships, optional upstream identity/version and an optional
 original `filename` (kept for labels on `IntakeEvidenceDTO.filename`, never
 part of receipt identity). The multipart upload source, email attachments and
-the watched folder all supply it; they remove control characters and drop a
-name that is then empty or over 512 characters, so an odd name falls back to
-the default label instead of failing the receipt (`receive` itself rejects such
-a name from a direct caller). Source adapters own
+the watched folder all supply it; they remove control, bidi, zero-width and
+line-separator characters (`src/presented-filename.ts`) and drop a name that is
+then empty or over 512 characters, so an odd name falls back to the default
+label instead of failing the receipt (`receive` itself rejects such a name from
+a direct caller). The name is still untrusted text: render it as text, never as
+markup or a path. The upstream `sourceReference` is stored but not exposed on
+the DTO, because its ids are locators (mailbox paths, folder entry names), not
+display text. Source adapters own
 streaming and upstream snapshot retrieval. Receipt identity is tenant + source +
 delivery key; changing bytes or authenticated scope conflicts. Content equality
 in a different conversation does not deduplicate an arrival. The returned item

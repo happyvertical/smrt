@@ -509,16 +509,17 @@ export function sourcesSuite(
       const first = await adapter.receive(delivery);
       expect(first.kind).toBe('accepted');
       if (!('itemId' in first)) throw new Error('receipt missing');
-      // Attachment names and upstream identity are exposed on the DTO (#4214).
-      expect(
-        (await service.getEvidence(first.itemId))
-          .filter((e) => e.partId.startsWith('attachment:'))
-          .map((e) => [e.partId, e.filename, e.sourceReference?.owner])
-          .sort(),
-      ).toEqual([
-        ['attachment:0', 'a.pdf', 'message-attachment'],
-        ['attachment:1', 'b.tif', 'message-attachment'],
+      // Attachment names are exposed on the DTO (#4214); the upstream
+      // locator (mailbox path) stays in storage and is not exposed.
+      const attachments = (await service.getEvidence(first.itemId)).filter(
+        (e) => e.partId.startsWith('attachment:'),
+      );
+      expect(attachments.map((e) => [e.partId, e.filename]).sort()).toEqual([
+        ['attachment:0', 'a.pdf'],
+        ['attachment:1', 'b.tif'],
       ]);
+      for (const attachment of attachments)
+        expect(attachment).not.toHaveProperty('sourceReference');
       const evidence = await service.getEvidence(first.itemId);
       expect(evidence).toHaveLength(3);
       const parent = evidence.find((e) => e.partId === 'message')!;
