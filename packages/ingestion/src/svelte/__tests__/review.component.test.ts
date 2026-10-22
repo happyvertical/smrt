@@ -1254,6 +1254,102 @@ describe('intake review host boundary', () => {
     await fireEvent.input(kept, { target: { value: 'File it.' } });
     expect(screen.queryByTestId('instruction-invalid')).toBeNull();
   });
+  it('keeps a not-recorded note on the draft after another reinterpretation wins, until the reviewer edits it', async () => {
+    const before = generationFor(page());
+    const other = generationFor(page());
+    other.instruction = {
+      current: instructionView('other'),
+      applied: instructionView('other'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [before, other];
+    callbacks.load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.instruct = vi.fn(async () => ({ stale: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'My instruction.' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    // The answering reload is already settled under someone else's instruction.
+    await screen.findByTestId('applied-instruction');
+    expect(
+      (await screen.findByTestId('instruction-not-recorded')).textContent,
+    ).toContain('was not recorded');
+    expect(screen.queryByTestId('instruction-busy')).toBeNull();
+    // It persists across a manual reload...
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(3));
+    expect(await screen.findByTestId('instruction-not-recorded')).toBeTruthy();
+    // ...until the reviewer edits the draft.
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Instructions for the assistant' }),
+      { target: { value: 'My revised instruction.' } },
+    );
+    expect(screen.queryByTestId('instruction-not-recorded')).toBeNull();
+  });
+  it('stops a superseded poll tick from fetching further pages after a newer load overtakes it', async () => {
+    let inFlight = true;
+    const pageFor = (cursor?: string) => {
+      const view = cursor ? reviewPage(2, 4) : reviewPage(0, 2, 'page-2');
+      view.entry = {
+        ...view.entry,
+        state: inFlight ? 'processing' : 'waiting',
+        item: {
+          ...view.entry.item,
+          processingState: inFlight ? 'running' : 'completed',
+        },
+      };
+      return view;
+    };
+    const requested: Array<string | undefined> = [];
+    let park: ReturnType<typeof deferred<ItemReviewView>> | undefined;
+    const callbacks = host(pageFor());
+    callbacks.load = vi.fn(async (_itemId: string, cursor?: string) => {
+      requested.push(cursor);
+      if (!cursor && park) return park.promise;
+      return pageFor(cursor);
+    });
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 200 });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Load more' }),
+    );
+    await waitFor(() =>
+      expect(requested).toEqual([undefined, undefined, 'page-2']),
+    );
+    // The next poll tick parks on its first page.
+    const parked = deferred<ItemReviewView>();
+    park = parked;
+    await waitFor(() => expect(requested).toHaveLength(4), { timeout: 2000 });
+    park = undefined;
+    // A newer load overtakes it and settles the item, so no later poll runs.
+    inFlight = false;
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() =>
+      expect(requested).toEqual([
+        undefined,
+        undefined,
+        'page-2',
+        undefined,
+        undefined,
+        'page-2',
+      ]),
+    );
+    await screen.findByText('Waiting');
+    // The superseded tick resolves late: it must not request page 2.
+    parked.resolve(pageFor());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await tick();
+    expect(requested).toHaveLength(6);
+    expect(screen.getByText('Waiting')).toBeTruthy();
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {

@@ -26,6 +26,9 @@ let view = $state<ItemReviewView>(),
   instructionBusy = $state(false),
   // The draft the server refused as invalid; the note stays until it changes.
   invalidDraft = $state<string>(),
+  // The draft a stale result left unrecorded; the note stays until the
+  // reviewer edits or resubmits it.
+  unrecordedDraft = $state<string>(),
   invalid = $state(false);
 /** Same ceiling the server enforces (REVIEWER_INSTRUCTION_MAX_LENGTH). */
 const INSTRUCTION_MAX_LENGTH = 4000;
@@ -287,6 +290,7 @@ function instruct() {
   if (!binding || !instructionValid || !operation || inFlight(view)) return;
   instructionBusy = false;
   invalidDraft = undefined;
+  unrecordedDraft = undefined;
   const input = {
     itemId,
     ...binding,
@@ -299,6 +303,7 @@ function instruct() {
     const result = await operation(input);
     if (result && 'stale' in result && result.stale === true) {
       instructionBusy = true;
+      unrecordedDraft = instruction;
       return;
     }
     if (result && 'invalid' in result && result.invalid === true) {
@@ -373,7 +378,7 @@ onMount(() => {
 {#if current && current.id !== applied?.id}<p data-testid="pending-instruction">{t(M['ingestion.pendingInstruction'])}: <q>{current.text}</q></p>{/if}
 {#if view.instruction.dropped}<p role="status" data-testid="dropped-instruction">{t(M['ingestion.droppedInstruction'])}: <q>{view.instruction.dropped.text}</q></p>{/if}
 {/if}
-{#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{/if}
+{#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{:else if unrecordedDraft !== undefined && unrecordedDraft === instruction}<p role="status" data-testid="instruction-not-recorded">{t(M['ingestion.instructionNotRecorded'])}</p>{/if}
 {#if host.instruct && instructionBinding(view)}
 <div><Textarea aria-label={t(M['ingestion.instructions'])} aria-describedby="instruction-length" maxlength={INSTRUCTION_MAX_LENGTH} bind:value={instruction} /><p id="instruction-length" data-testid="instruction-length">{t(M['ingestion.instructionLength'], { count: instruction.length, max: INSTRUCTION_MAX_LENGTH })}</p>{#if invalidDraft !== undefined && invalidDraft === instruction}<p role="alert" data-testid="instruction-invalid">{t(M['ingestion.instructionInvalid'], { max: INSTRUCTION_MAX_LENGTH })}</p>{/if}<Button disabled={!instructionValid || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
 {/if}

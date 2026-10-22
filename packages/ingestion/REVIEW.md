@@ -166,7 +166,9 @@ the item lock and before anything is superseded
 cannot clobber the retry. Missing or malformed timing (no attempt, no
 `completedAt`, non-finite `leaseMs`) counts as already expired rather than
 holding retries forever. The "still being re-read" note shown after a stale
-result is cleared by the next reload that shows the item settled. The guard and
+result is cleared by the next reload that shows the item settled; the draft
+then carries a persistent "Another reinterpretation finished first; your
+instruction was not recorded." note until the reviewer edits or resubmits it. The guard and
 `getReinterpretationState` share one predicate, and the latter's
 `reinterpreting` flag (projected as `instruction.reinterpreting`) is true in
 the gap too, so the component keeps polling and keeps Re-read disabled there.
