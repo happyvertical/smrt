@@ -69,7 +69,11 @@ class RetentionExpired extends Error {
 }
 type Row = Record<string, unknown>;
 const OWN_SCAN_BATCH = 50;
+/** Hidden (unreadable) own rows one call may skip before failing closed. */
 const OWN_SCAN_CEILING = 1000;
+/** Cursors are row identifiers; reject anything that is not a UUID before SQL. */
+const UUID_CURSOR =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function object(value: unknown): IntakeValues {
   const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
@@ -2934,17 +2938,18 @@ export class IntakeExecutionService {
       !Number.isSafeInteger(limit) ||
       limit < 1 ||
       limit > 50 ||
-      (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
+      (input.cursor !== undefined && !UUID_CURSOR.test(input.cursor))
     )
       throw new Error('Invalid review page');
-    // Unreadable rows are skipped before anything about them is projected,
-    // and the cursor only ever names an emitted item, so neither page shape
-    // nor cursor reveals them. The scan is bounded; a stretch of more than
-    // OWN_SCAN_CEILING unreadable rows fails closed instead of disclosing.
+    // Unreadable rows are skipped before anything about them is projected, and
+    // the cursor only names an emitted item when a further readable item was
+    // actually found, so neither page shape nor cursor reveals them. Skipping
+    // OWN_SCAN_CEILING hidden rows in one call fails closed with an error; a
+    // short page or a cursor never stands in for an unfinished scan.
     const readable: Row[] = [];
     let more = false;
     let after = input.cursor;
-    let scanned = 0;
+    let hidden = 0;
     scan: for (;;) {
       const batch = (
         await this.db.query(
@@ -2964,16 +2969,25 @@ export class IntakeExecutionService {
             break scan;
           }
           readable.push(row);
-        }
-        if (++scanned >= OWN_SCAN_CEILING) {
-          if (!readable.length) throw new Error('Own proposal scan limit');
-          more = true;
-          break scan;
-        }
+        } else if (++hidden >= OWN_SCAN_CEILING)
+          throw new Error('Own proposal scan limit');
       }
       if (batch.length < OWN_SCAN_BATCH) break;
       after = String(batch[batch.length - 1].id);
     }
+    // Host target checks are callbacks: on this surface any throw from one
+    // means "unavailable" and its text never reaches the submitter. Our own
+    // integrity, validation and database errors still propagate.
+    const reviews = new IntakeExecutionService(this.options, {
+      ...this.config,
+      assertTarget: async (target) => {
+        try {
+          return await this.config.assertTarget(target);
+        } catch {
+          throw new IntakeAccessDeniedError();
+        }
+      },
+    });
     const items: OwnProposalsPage['items'] = [];
     for (const row of readable) {
       const item: IntakeItemDTO = {
@@ -2990,7 +3004,7 @@ export class IntakeExecutionService {
       try {
         items.push({
           item,
-          reviews: await this.listReviews(item.id, { limit: 50 }),
+          reviews: await reviews.listReviews(item.id, { limit: 50 }),
         });
       } catch (error) {
         if (!(error instanceof IntakeAccessDeniedError)) throw error;
@@ -3004,16 +3018,22 @@ export class IntakeExecutionService {
         : {}),
     };
   }
+  /** Only an explicit denial hides a row; a failing grant store propagates
+   * instead of silently shrinking the list. */
   private async readableOwn(row: Row): Promise<boolean> {
+    const capturedCeiling = object(object(row.data).capturedCeiling ?? {});
     try {
-      return await this.options.authorize({
-        scope: this.scope,
-        operation: 'read',
-        capturedCeiling: object(object(row.data).capturedCeiling ?? {}),
-        db: this.db,
-      });
-    } catch {
-      return false;
+      return (
+        (await this.options.authorize({
+          scope: this.scope,
+          operation: 'read',
+          capturedCeiling,
+          db: this.db,
+        })) === true
+      );
+    } catch (error) {
+      if (error instanceof IntakeAccessDeniedError) return false;
+      throw error;
     }
   }
 }
