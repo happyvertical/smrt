@@ -12,6 +12,11 @@ export type {
   PlannerConversationSeed,
 } from './assistant/transport.ts';
 export {
+  type AgentPrompt,
+  type AgentPromptOptions,
+  buildAgentPrompt,
+} from './cookbook/prompt.ts';
+export {
   type ByoPresetDefinition,
   type ConfigResult,
   type CredentialPersistence,

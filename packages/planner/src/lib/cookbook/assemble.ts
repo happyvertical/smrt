@@ -16,6 +16,7 @@ export function assembleCookbook(
     overviews?: Record<string, OverviewOverride>;
     name?: string;
     description?: string;
+    specs?: string;
   } = {},
 ): Cookbook {
   const cookbook: Cookbook = {
@@ -25,6 +26,7 @@ export function assembleCookbook(
   };
   if (extras.name) cookbook.name = extras.name;
   if (extras.description) cookbook.description = extras.description;
+  if (extras.specs) cookbook.specs = extras.specs;
   if (extras.layout) cookbook.layout = extras.layout;
   const theme = compactTheme(extras.theme);
   if (theme) cookbook.theme = theme;

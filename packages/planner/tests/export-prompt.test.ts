@@ -110,6 +110,28 @@ describe('the agent prompt', () => {
     expect(prompt.text).not.toMatch(/^5\. /m);
   });
 
+  it('adds one step for the specs only when the cookbook has them', () => {
+    const none = buildAgentPrompt(cookbook);
+    expect(none.text).not.toContain('`specs`');
+    const withSpecs = buildAgentPrompt({
+      ...cookbook,
+      specs: 'Invoices export to PDF.\n\nAdmins approve refunds.',
+    });
+    expect(withSpecs.text).toContain(
+      `5. The cookbook's \`specs\` field lists product requirements beyond the recipes and features: after step 4, implement them in ${withSpecs.appName}, and report any you could not build.`,
+    );
+    expect(withSpecs.text.indexOf('5. The cookbook')).toBeGreaterThan(
+      withSpecs.text.indexOf('app install'),
+    );
+    const body = heredocBody(withSpecs.text, COOKBOOK_FILE) ?? '';
+    expect(JSON.parse(body).specs).toBe(
+      'Invoices export to PDF.\n\nAdmins approve refunds.',
+    );
+    expect(buildAgentPrompt({ ...cookbook, specs: '  ' }).text).not.toContain(
+      '5. The cookbook',
+    );
+  });
+
   it('installs in a subshell, so the reapply command runs from the cookbook directory', () => {
     // Followed in one shell, a bare `cd <app>` would leave the reapply
     // command resolving cookbook.json and --into <app> inside the app.

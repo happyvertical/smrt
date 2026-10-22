@@ -321,6 +321,7 @@ describe('runtime', () => {
     expect(applied.snapshot.app).toEqual({
       name: 'Bakery',
       description: null,
+      specs: null,
       cookbook: 'bakery',
     });
     // The engine undoes a whole-document change too (the old per-slice undo had none).

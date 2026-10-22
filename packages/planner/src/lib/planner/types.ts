@@ -27,6 +27,12 @@ export interface PlannerHandle {
   nativeAssistant?: BrowserAssistantTransport;
   /** Complete Planner only: open/focus the ready native dock; false if unavailable. */
   openAssistant?: () => Promise<boolean>;
+  /**
+   * Reset the saved plan, samples and native thread as the Reset control does.
+   * `silent` skips the host's `onreset` (the host is the caller and already
+   * knows); returns false when storage could not be cleared.
+   */
+  reset?: (options?: { silent?: boolean }) => boolean;
 }
 
 /** Detached, complete document and native thread captured together at action time. */
@@ -55,6 +61,19 @@ export interface PlannerProps {
    * too; the planner follows its `focus` tab.
    */
   controller?: PlannerController;
+  /**
+   * Complete Planner only: the header's navigation. `'icons'` (default) is the
+   * chef's hat and export icon. `'labelled'` shows four bordered, coloured
+   * buttons, Specs, Features, Styles and Build, each opening that group of
+   * configure tabs (`#/configure/specs/`, `recipes/`, `theme/`, `export/`);
+   * Features and Build keep the guide's `planner-customize` / `planner-export`
+   * targets, and Build uses `exportLabel` when set. The tab strip then shows
+   * only the opened button's group. Accents are the theme's info, success,
+   * tertiary and warning colours.
+   */
+  headerNav?: 'icons' | 'labelled';
+  /** Complete Planner only: visible native export label; blank/omitted keeps the icon-only default. */
+  exportLabel?: string;
   /** Complete Planner only: primary header action with the same export capture. */
   headerAction?: PlannerExportAction;
   /** Optional first primary Export action; native download remains available. */

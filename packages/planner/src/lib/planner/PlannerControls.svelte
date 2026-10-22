@@ -13,6 +13,7 @@ import ExportPanel from '../components/ExportPanel.svelte';
 import FeaturesPanel from '../components/FeaturesPanel.svelte';
 import RecipeCards from '../components/RecipeCards.svelte';
 import SettingsPanel from '../components/SettingsPanel.svelte';
+import SpecsPanel from '../components/SpecsPanel.svelte';
 import ThemeSection from '../components/ThemeSection.svelte';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { provideDataSource, tryUseDataSource } from '../data/context.ts';
@@ -20,6 +21,7 @@ import { createPlannerDataSource } from '../data/planner-source.ts';
 import { cookbookNavGroups } from '../library/menu.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import { PLANNER_TAB_IDS, type PlannerTabId } from './commands/index.ts';
+import { NAV_GROUP_TABS, navGroupOf } from './header-nav.ts';
 import { plannerController } from './instance.ts';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { plannerTab } from './tab.svelte.ts';
@@ -48,7 +50,18 @@ const DEFAULT_TABS: PlannerTabId[] = [
   'settings',
   'export',
 ];
-const UNLISTED_TABS: PlannerTabId[] = ['features', 'layout'];
+const UNLISTED_TABS: PlannerTabId[] = ['specs', 'features', 'layout'];
+// `headerNav: 'labelled'`: Specs and Features join the strip, which then shows
+// only the group of the header button that opened it.
+const LABELLED_TABS: PlannerTabId[] = [
+  'specs',
+  'cookbooks',
+  'recipes',
+  'features',
+  'theme',
+  'settings',
+  'export',
+];
 
 let {
   controller = plannerController,
@@ -58,6 +71,7 @@ let {
   persistence = 'self',
   projectPersistence,
   themeControls = false,
+  headerNav = 'icons',
   advancedStylesHref,
   tabs = DEFAULT_TABS,
   onready,
@@ -85,6 +99,7 @@ if (!tryUseDataSource()) provideDataSource(createPlannerDataSource());
 const hasAppState = tryGetAppStateContext() !== null;
 
 const labels: Record<PlannerTabId, string> = {
+  specs: 'Specs',
   cookbooks: 'Cookbooks',
   recipes: 'Recipes',
   features: 'Features',
@@ -93,11 +108,25 @@ const labels: Record<PlannerTabId, string> = {
   settings: 'Settings',
   export: 'Export',
 };
-const shown = $derived(tabs.filter((id) => PLANNER_TAB_IDS.includes(id)));
+const labelled = $derived(headerNav === 'labelled');
+const defaulted = $derived(tabs === DEFAULT_TABS);
+const listed = $derived(
+  (labelled && defaulted ? LABELLED_TABS : tabs).filter((id) =>
+    PLANNER_TAB_IDS.includes(id),
+  ),
+);
+// Labelled: only the clicked button's group (all of them if the host's own
+// `tabs` leave that group empty).
+const shown = $derived.by(() => {
+  if (!labelled) return listed;
+  const group = NAV_GROUP_TABS[navGroupOf(plannerTab.active)];
+  const grouped = listed.filter((id) => group.includes(id));
+  return grouped.length > 0 ? grouped : listed;
+});
 // Features and Layout left the default tab strip but stay reachable from
 // their links, the command palette and focus commands.
 const reachable = $derived<readonly PlannerTabId[]>(
-  tabs === DEFAULT_TABS ? [...shown, ...UNLISTED_TABS] : shown,
+  defaulted ? [...new Set([...listed, ...UNLISTED_TABS])] : listed,
 );
 const items = $derived(shown.map((id) => ({ id, label: labels[id] })));
 const active = $derived(
@@ -177,6 +206,9 @@ $effect(() => {
 {#snippet view()}
 <div class="planner" bind:this={root}>
   <Tabs tabs={items} {active} onchange={select} aria-label="Planner">
+    {#if reachable.includes('specs')}
+      <div hidden={active !== 'specs'}><SpecsPanel /></div>
+    {/if}
     {#if reachable.includes('cookbooks')}
       <div hidden={active !== 'cookbooks'}><CookbooksPanel /></div>
     {/if}

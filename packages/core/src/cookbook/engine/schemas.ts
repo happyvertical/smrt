@@ -236,13 +236,20 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
     },
     {
       name: 'set_name',
-      description: 'Name and describe the app. null clears a part.',
+      description: 'Name, describe and specify the app. null clears a part.',
       inputSchema: object({
         name: { type: ['string', 'null'], minLength: 1, maxLength: 60 },
         description: {
           type: ['string', 'null'],
           minLength: 1,
           maxLength: 400,
+        },
+        specs: {
+          type: ['string', 'null'],
+          minLength: 1,
+          maxLength: 20000,
+          description:
+            'Product requirements beyond recipes and features, as plain text or a short list.',
         },
       }),
     },

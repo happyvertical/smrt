@@ -68,6 +68,7 @@ export function canonical(doc: Cookbook): Cookbook {
     'version',
     'name',
     'description',
+    'specs',
     'recipes',
     'features',
     'policies',
@@ -81,6 +82,7 @@ export function canonical(doc: Cookbook): Cookbook {
     version: COOKBOOK_VERSION,
     ...(doc.name ? { name: doc.name } : {}),
     ...(doc.description ? { description: doc.description } : {}),
+    ...(doc.specs ? { specs: doc.specs } : {}),
     recipes: sortedUnique(doc.recipes),
     features: sortedUnique(doc.features),
     policies: [...doc.policies]

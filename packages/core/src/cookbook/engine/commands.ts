@@ -445,20 +445,27 @@ const handlers: { [N in CommandName]?: Handler<N> } = {
   },
   set_name(_catalog, state, input) {
     const doc = { ...state.doc };
-    for (const key of ['name', 'description'] as const) {
+    for (const key of ['name', 'description', 'specs'] as const) {
       const value = input[key];
       if (value === undefined) continue;
+      // Specs keep their internal newlines; only the ends are trimmed.
       const clean = value?.trim();
       if (clean) doc[key] = clean;
       else delete doc[key];
     }
     if (JSON.stringify(canonical(doc)) === JSON.stringify(state.doc))
       return done(state);
+    const onlySpecs =
+      input.specs !== undefined &&
+      input.name === undefined &&
+      input.description === undefined;
     return done(
       withDoc(state, doc),
       input.name
         ? `Named the app ${input.name.trim()}.`
-        : 'Updated the app details.',
+        : onlySpecs
+          ? 'Updated the app specs.'
+          : 'Updated the app details.',
     );
   },
   rename_section(catalog, state, { id, label }) {

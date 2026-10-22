@@ -67,9 +67,10 @@ export class CookbookStore {
   replacementGeneration = $state(0);
   /** The shell layout, owned here and passed to `AppShell`. */
   layout = $state<ShellLayout | undefined>();
-  /** The app's name and description (`set_name`); not shown in the UI yet. */
+  /** The app's name, description and specs (`set_name`); specs show in the Specs tab. */
   name = $state<string | undefined>();
   description = $state<string | undefined>();
+  specs = $state<string | undefined>();
   /** The app's theme; undefined is the default. The shell applies it live. */
   theme = $state<ThemeSetting | undefined>();
   /**
@@ -120,6 +121,7 @@ export class CookbookStore {
       >,
       name: this.name,
       description: this.description,
+      specs: this.specs,
     });
   }
 
@@ -145,6 +147,12 @@ export class CookbookStore {
     this.layout = isShellLayoutEmpty(next) ? undefined : next;
   }
 
+  /** The product specs from a text box: ends trimmed, blank clears. Saved like any other change. */
+  setSpecs(text: string): void {
+    const clean = text.trimEnd();
+    this.specs = clean.trim() ? clean : undefined;
+  }
+
   /** Replace everything from a validated cookbook. */
   apply(cookbook: Cookbook): void {
     recipeState.load(cookbook);
@@ -152,6 +160,7 @@ export class CookbookStore {
     this.theme = cookbook.theme;
     this.name = cookbook.name;
     this.description = cookbook.description;
+    this.specs = cookbook.specs;
     this.overviews = { ...(cookbook.overviews ?? {}) };
     followSettings(cookbook);
   }
@@ -211,6 +220,7 @@ export class CookbookStore {
     if (!options.preserveTheme) this.theme = undefined;
     this.name = undefined;
     this.description = undefined;
+    this.specs = undefined;
     this.overviews = {};
     this.saveBlocked = false;
     this.keepLegacyUrl = false;
