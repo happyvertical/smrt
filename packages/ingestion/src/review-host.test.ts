@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntakeItemDTO } from './dto.js';
-import type { ReviewPage } from './review-dto.js';
+import type { ReviewerInstruction, ReviewPage } from './review-dto.js';
 import { createIntakeReviewHost } from './review-host.js';
+import { reviewerInstructionView } from './reviewer-instruction.js';
 import {
   GenerationSnapshotStaleError,
   type IngestionService,
 } from './server.js';
+
+vi.mock('./reviewer-instruction.js', () => ({
+  reviewerInstructionView: (value: unknown) => value,
+}));
 
 function fixture() {
   const item = { id: 'item', processingState: 'completed' } as IntakeItemDTO;
@@ -18,18 +23,38 @@ function fixture() {
       page.cursor ? last : first,
     ),
     getCompletedAnalysis: vi.fn(async () => ({
-      configuration: { stage: 'interpret' },
+      configuration: { stage: 'interpret' } as Record<string, unknown>,
       result: { output: { proposals: { suggestions: [] } } },
     })),
     getEvidence: vi.fn(async () => []),
+    listReviewerInstructions: vi.fn(async () => [] as ReviewerInstruction[]),
+    recordReviewerInstruction: vi.fn(async () => ({
+      id: 'analysis',
+      revision: 4,
+      instruction: instruction('current'),
+    })),
   };
+  const woken: Array<[string, number]> = [];
   const host = createIntakeReviewHost(service as unknown as IngestionService, {
     upload: async () => ({ itemId: item.id }),
     assignment: async () => ({ assigneeId: null, version: 0 }),
     assign: async () => {},
     evidence: async () => ({ label: 'Original' }),
+    onInstruct: async (itemId, revision) => {
+      woken.push([itemId, revision]);
+    },
   });
-  return { host, service, first, last };
+  return { host, service, first, last, woken };
+}
+function instruction(id: string): ReviewerInstruction {
+  return {
+    id,
+    text: `Instruction ${id}`,
+    actorId: 'owner',
+    recordedAt: '2026-10-22T00:00:00.000Z',
+    supersedesId: null,
+    digest: `digest-${id}`,
+  };
 }
 
 describe('published review host projection', () => {
@@ -85,5 +110,42 @@ describe('published review host projection', () => {
     f.service.getCompletedAnalysis.mockRejectedValue(new Error('Denied'));
     await expect(f.host.load('item')).rejects.toThrow('Denied');
     expect(f.service.getEvidence).not.toHaveBeenCalled();
+  });
+  it('records an instruction durably, wakes the host and reports the applied instruction as stale once superseded', async () => {
+    const f = fixture();
+    const input = {
+      itemId: 'item',
+      attemptId: 'attempt',
+      expectedRevision: 3,
+      text: 'File it, do not bill it.',
+      requestId: 'request',
+    };
+    await f.host.instruct?.(input);
+    expect(f.service.recordReviewerInstruction).toHaveBeenCalledWith(input);
+    expect(f.woken).toEqual([['item', 4]]);
+    expect((await f.host.load('item')).instruction).toBeUndefined();
+    f.service.listReviewerInstructions.mockResolvedValue([
+      instruction('current'),
+      instruction('old'),
+    ]);
+    f.service.getCompletedAnalysis.mockResolvedValue({
+      configuration: {
+        stage: 'interpret',
+        reviewerInstruction: instruction('old'),
+      },
+      result: { output: { proposals: { suggestions: [] } } },
+    });
+    expect((await f.host.load('item')).instruction).toEqual({
+      current: instruction('current'),
+      applied: instruction('old'),
+      stale: true,
+    });
+    f.service.listReviewerInstructions.mockResolvedValue([instruction('old')]);
+    expect((await f.host.load('item')).instruction).toMatchObject({
+      stale: false,
+    });
+    expect(reviewerInstructionView(instruction('old'))).toEqual(
+      instruction('old'),
+    );
   });
 });

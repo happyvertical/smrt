@@ -720,6 +720,133 @@ describe('intake review host boundary', () => {
     await screen.findByText(/confidential/);
     expect(callbacks.decide).not.toHaveBeenCalled();
   });
+  function instructionView(
+    id: string,
+  ): NonNullable<ItemReviewView['instruction']>['current'] {
+    return {
+      id,
+      text: `Instruction ${id}`,
+      actorId: 'owner',
+      recordedAt: '2026-10-22T00:00:00.000Z',
+      supersedesId: null,
+      digest: `digest-${id}`,
+    };
+  }
+  function generationFor(view: ItemReviewView) {
+    view.generation = {
+      version: 1,
+      outcome: 'proposals',
+      suggestions: [],
+      splits: [],
+      warnings: [],
+      omittedSuggestions: 0,
+      source: {
+        attemptId: 'attempt',
+        revision: 2,
+        inputDigest: 'in',
+        outputDigest: 'out',
+        evidenceDigest: 'evidence',
+      },
+      offered: [],
+      provenance: {
+        configurationVersion: '1',
+        promptVersion: '1',
+        catalogDigest: 'catalog',
+        policyVersions: [],
+        generative: { provider: 'fixture', model: 'fixture', version: '1' },
+        decision: { configured: false },
+        usage: {},
+      },
+      automaticActionEligible: false,
+    };
+    view.analysis = currentAnalysis();
+    return view;
+  }
+  it('records reviewer instructions against the current analysis revision and polls until the background reinterpretation lands in place', async () => {
+    const before = generationFor(page());
+    const processing: ItemReviewView = {
+      ...page(),
+      entry: {
+        ...page().entry,
+        state: 'processing',
+        item: { ...page().entry.item, processingState: 'running' },
+      },
+      instruction: {
+        current: instructionView('new'),
+        applied: null,
+        stale: false,
+      },
+    };
+    const after = generationFor(page());
+    after.instruction = {
+      current: instructionView('new'),
+      applied: instructionView('new'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [before, processing, processing, after];
+    const load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.load = load;
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    const box = await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    const button = screen.getByRole('button', {
+      name: 'Re-read with these instructions',
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(load).toHaveBeenCalledTimes(1);
+    await fireEvent.input(box, { target: { value: '  ' } });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(box, {
+      target: { value: 'Customer PO from Badger. File it, do not bill it.' },
+    });
+    await fireEvent.click(button);
+    await waitFor(() =>
+      expect(callbacks.instruct).toHaveBeenCalledWith({
+        itemId: 'item',
+        attemptId: 'generation-attempt',
+        expectedRevision: 9,
+        text: 'Customer PO from Badger. File it, do not bill it.',
+        requestId: expect.any(String),
+      }),
+    );
+    await screen.findByTestId('reinterpreting');
+    expect(screen.getByTestId('pending-instruction').textContent).toContain(
+      'Instruction new',
+    );
+    await screen.findByTestId('applied-instruction');
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    expect(screen.queryByTestId('instruction-stale')).toBeNull();
+    expect(load.mock.calls.length).toBeGreaterThanOrEqual(4);
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('shows which instruction produced the current suggestions and marks a superseded one as stale', async () => {
+    const view = generationFor(page());
+    view.instruction = {
+      current: instructionView('later'),
+      applied: instructionView('earlier'),
+      stale: true,
+    };
+    const callbacks = host(view);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    expect(
+      (await screen.findByTestId('applied-instruction')).textContent,
+    ).toContain('Instruction earlier');
+    expect(screen.getByTestId('instruction-stale')).toBeTruthy();
+    expect(screen.getByTestId('pending-instruction').textContent).toContain(
+      'Instruction later',
+    );
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    // Without an instruct callback the control is absent; presence confers nothing.
+    expect(
+      screen.queryByRole('textbox', { name: 'Instructions for the assistant' }),
+    ).toBeNull();
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {

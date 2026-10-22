@@ -466,6 +466,118 @@ test('human page regrouping preserves the original and forces new review after r
   );
 });
 
+test('a reviewer instruction is recorded immutably, reinterpreted in the background and lands in place as trusted guidance', async ({
+  page,
+}) => {
+  await signIn(page);
+  const original = embeddedPDF('Purchase order 4471 from Badger Supply.');
+  const itemId = await upload(
+    page,
+    'badger-po.pdf',
+    'application/pdf',
+    original,
+  );
+  await expect(
+    page.getByRole('button', { name: 'Prepare review', exact: true }),
+  ).toBeVisible();
+  const before = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(before.instruction).toBeUndefined();
+  expect(before.generation.provenance.reviewerInstruction).toBeUndefined();
+  const text =
+    'This is a customer PO from Badger. Do not bill it; just file it.';
+  const box = page.getByRole('textbox', {
+    name: 'Instructions for the assistant',
+    exact: true,
+  });
+  const button = page.getByRole('button', {
+    name: 'Re-read with these instructions',
+    exact: true,
+  });
+  await expect(button).toBeDisabled();
+  await box.fill(text);
+  const recorded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/instruct') &&
+      response.request().method() === 'POST',
+  );
+  await button.click();
+  expect((await recorded).status()).toBe(200);
+  // The reviewer is not blocked: the item reports the background stage and the
+  // page refreshes itself when the fenced interpretation completes.
+  await expect(page.getByTestId('reinterpreting')).toBeVisible();
+  await expect(page.getByTestId('applied-instruction')).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByTestId('applied-instruction')).toContainText(text);
+  await expect(page.getByTestId('instruction-stale')).toHaveCount(0);
+  await expect(page.getByTestId('reinterpreting')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Prepare review', exact: true }),
+  ).toBeVisible();
+  const after = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(after.analysis.revision).toBe(before.analysis.revision + 2);
+  expect(after.instruction.current.id).toBe(after.instruction.applied.id);
+  expect(after.instruction.stale).toBe(false);
+  expect(after.instruction.applied).toMatchObject({
+    actorId: 'owner',
+    text,
+    supersedesId: null,
+  });
+  expect(after.analysis.configuration.reviewerInstruction).toMatchObject({
+    kind: 'reviewer_instruction',
+    id: after.instruction.applied.id,
+    digest: after.instruction.applied.digest,
+  });
+  expect(after.generation.provenance.reviewerInstruction).toEqual({
+    id: after.instruction.applied.id,
+    digest: after.instruction.applied.digest,
+  });
+  expect(after.generation.provenance.catalogDigest).toBe(
+    before.generation.provenance.catalogDigest,
+  );
+  expect(after.generation.automaticActionEligible).toBe(false);
+  const pdf = after.evidence.find(
+    (entry: { evidence: { mediaType: string } }) =>
+      entry.evidence.mediaType === 'application/pdf',
+  );
+  expect(await (await page.request.get(pdf.viewUrl)).body()).toEqual(original);
+  // Process access cannot mint a record: a forged client payload is refused.
+  const forged = await page.request.post('/api/instruct', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId,
+      attemptId: after.analysis.attemptId,
+      expectedRevision: after.analysis.revision,
+      text: ' ',
+      requestId: randomUUID(),
+    },
+  });
+  expect(forged.status()).toBe(409);
+  // A superseding instruction replaces the first for future interpretations;
+  // the earlier record remains in history.
+  await box.fill('Second thoughts: file it under supplier correspondence.');
+  const superseded = page.waitForResponse((response) =>
+    response.url().endsWith('/api/instruct'),
+  );
+  await button.click();
+  expect((await superseded).status()).toBe(200);
+  await expect(page.getByTestId('applied-instruction')).toContainText(
+    'supplier correspondence',
+    { timeout: 30000 },
+  );
+  const final = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(final.instruction.applied.supersedesId).toBe(
+    after.instruction.applied.id,
+  );
+  expect(final.analysis.revision).toBe(after.analysis.revision + 2);
+});
+
 test('same local file reselection starts a new upload while chooser cancellation retains retry', async ({
   page,
 }) => {
