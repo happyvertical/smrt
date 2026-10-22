@@ -42,6 +42,7 @@ import {
   type AnalysisLease,
   createIntakeReviewHost,
   GenerationSnapshotStaleError,
+  GenerationSourceStaleError,
   type IngestionOptions,
   IngestionService,
 } from '../server.js';
@@ -4209,6 +4210,112 @@ export function proposalSuite(
         (await service.getReinterpretationState(input.itemId)).failure,
       ).toBeNull();
     });
+    it('refuses a slow host late interpretation after a retry so the retried instruction survives and completes', async () => {
+      chooseCreate();
+      const input = await generate();
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text: 'First instruction.',
+        requestId: 'slow-host-first',
+      });
+      // r1: the extraction completes and the host prepares the interpretation,
+      // but its job then sits in a slow queue past the lease window.
+      const r1 = await reextractOnly(input.itemId, recorded.revision);
+      const late = await service.prepareGeneration(input.itemId, r1.attemptId);
+      clock = new Date(clock.getTime() + 10000 + 1);
+      expect(
+        (await service.getReinterpretationState(input.itemId)).failure,
+      ).toBe('not_started');
+      // r2: the reviewer retries.
+      const retried = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: r1.revision,
+        text: 'Retried instruction.',
+        requestId: 'slow-host-retry',
+      });
+      expect(retried.revision).toBe(r1.revision + 1);
+      // The slow host finally appends r1's interpretation: refused, nothing
+      // appended, and r2 is not superseded.
+      await expect(
+        service.analyze(input.itemId, late, `generation:${r1.attemptId}`),
+      ).rejects.toThrow(GenerationSourceStaleError);
+      expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+        retried.revision,
+      );
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_analyses WHERE item_id=? AND revision=?',
+            input.itemId,
+            retried.revision,
+          )
+        ).rows[0].state,
+      ).toBe('queued');
+      // r2 runs to completion under the retried instruction.
+      const recovered = await reextract(input.itemId, retried.revision);
+      calls.mockClear();
+      await service.generateProposals(recovered.lease);
+      expect(calls.mock.calls.at(-1)![0].reviewerInstruction).toEqual({
+        id: retried.instruction.id,
+        text: 'Retried instruction.',
+      });
+      const result = await output(recovered.lease);
+      expect(result.provenance.reviewerInstruction).toEqual({
+        id: retried.instruction.id,
+        digest: retried.instruction.digest,
+      });
+      expect(result.suggestions[0].disposition).toBe('ready_for_review');
+    });
+    it('treats a gap with missing completion timing as expired immediately instead of never', async () => {
+      chooseCreate();
+      const input = await generate();
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text: 'First instruction.',
+        requestId: 'missing-timing-first',
+      });
+      const extracted = await reextractOnly(input.itemId, recorded.revision);
+      expect(
+        (await service.getReinterpretationState(input.itemId)).reinterpreting,
+      ).toBe(true);
+      // Strip completedAt from the extraction attempt (no clock advance).
+      const [attempt] = (
+        await db.query(
+          'SELECT id,data FROM intake_analysis_attempts WHERE id=?',
+          extracted.attemptId,
+        )
+      ).rows;
+      const data =
+        typeof attempt.data === 'string'
+          ? JSON.parse(attempt.data)
+          : attempt.data;
+      delete data.completedAt;
+      await db.query(
+        'UPDATE intake_analysis_attempts SET data=? WHERE id=?',
+        JSON.stringify(data),
+        attempt.id,
+      );
+      expect(await service.getReinterpretationState(input.itemId)).toEqual({
+        revision: extracted.revision,
+        processingState: 'completed',
+        failure: 'not_started',
+        reinterpreting: false,
+        generationAttemptId: input.lease.attemptId,
+      });
+      const retried = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: extracted.revision,
+        text: 'Retry without timing.',
+        requestId: 'missing-timing-retry',
+      });
+      expect(retried.revision).toBe(extracted.revision + 1);
+    });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();
       const forged = {
@@ -6369,22 +6476,26 @@ export function proposalSuite(
         input.itemId,
         input.attemptId,
       );
-      await service.analyze(
+      const intervening = await service.analyze(
         input.itemId,
         { stage: 'extract', replacement: true },
         'intervening-extraction',
       );
-      const analysis = await service.analyze(
-        input.itemId,
-        config,
-        'stale-preparation',
+      // Refused at append time under the item lock: nothing is appended and
+      // the intervening extraction is not superseded.
+      await expect(
+        service.analyze(input.itemId, config, 'stale-preparation'),
+      ).rejects.toThrow(GenerationSourceStaleError);
+      expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+        intervening.revision,
       );
-      const lease = await service.claimAnalysis(
-        input.itemId,
-        analysis.revision,
-        'worker',
-      );
-      await expect(service.generateProposals(lease!)).rejects.toThrow();
+      expect(
+        await service.claimAnalysis(
+          input.itemId,
+          intervening.revision,
+          'worker',
+        ),
+      ).not.toBeNull();
       expect(calls).not.toHaveBeenCalled();
     });
 

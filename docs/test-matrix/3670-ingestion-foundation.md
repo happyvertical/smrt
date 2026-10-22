@@ -155,7 +155,11 @@ refused, the handler `policy.maxBytes` side of the write-time `min()` refusing
 on its own, and re-signed stored references with a wrong digest or id excluded;
 a wedged gap (extraction completed, interpretation never appended) staying in
 flight up to exactly the item lease and then reporting `not_started` and
-accepting the retry, which recovers; and carried instruction text being
+accepting the retry, which recovers; a slow host's late interpretation append
+after that retry refused with `GenerationSourceStaleError` (nothing appended, the
+retry still queued, then completing under the retried instruction); missing
+completion timing treated as expired immediately; the existing superseded
+preparation case now refused at append time; and carried instruction text being
 counted in the exact feedback byte budget, with one byte short still failing
 closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
 covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
@@ -166,7 +170,8 @@ loading placeholder), the failure/retry binding path, the 5× backoff cap under 
 transient thrown tick keeping the view then recovering, three thrown ticks
 failing closed and stopping, edited-versus-untouched split drafts, polling with
 Re-read disabled through the between-stages gap, a `{ stale: true }` result
-reloading with a note and keeping the draft instead of denying, the
+reloading with a note and keeping the draft instead of denying, the note
+cleared once a later poll shows the item settled, the
 `not_started` retry against the server binding, and stale display; the Chromium suite records a real instruction, observes the background
 "Reinterpreting…" state, the in-place update, provenance, unchanged original
 bytes, a refused forged payload and supersession. No schema or migration changes:

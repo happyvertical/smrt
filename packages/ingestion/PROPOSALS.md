@@ -64,6 +64,12 @@ that declaration and its target authorization semantics.
    or pass an explicit attempt ID to additionally reject stale client state.
    Queued/running revisions never return an older completed attempt.
 
+`analyze` refuses an interpretation configuration whose pinned source is not
+the item's latest extraction, checked under the item lock before anything is
+superseded (`GenerationSourceStaleError`, nothing appended). A preparation
+superseded by a later extraction therefore fails at append time rather than
+after a revision was created.
+
 A generation revision does not rewrite terminal extraction. Reprocessing starts
 with a new extraction revision, followed by interpretation, while the host keeps
 the same business intention keys. An interrupted still-current generation lease

@@ -1155,6 +1155,65 @@ describe('intake review host boundary', () => {
       ).value,
     ).toBe('Try again.');
   });
+  it('clears the still-being-re-read note once a later reload shows the item settled', async () => {
+    const wedged = page();
+    wedged.entry = {
+      ...wedged.entry,
+      state: 'unresolved',
+      item: { ...wedged.entry.item, processingState: 'completed' },
+    };
+    wedged.analysis = {
+      ...currentAnalysis(),
+      attemptId: 'extraction-attempt',
+      configuration: { stage: 'extract' },
+    };
+    wedged.instruction = {
+      current: instructionView('wedged'),
+      applied: null,
+      stale: true,
+      failure: 'not_started',
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    // Another reviewer's retry is in flight when this one is refused...
+    const inFlightView = structuredClone(wedged);
+    inFlightView.instruction = {
+      current: instructionView('other'),
+      applied: null,
+      stale: true,
+      reinterpreting: true,
+    };
+    // ...and then lands.
+    const settled = generationFor(page());
+    settled.instruction = {
+      current: instructionView('other'),
+      applied: instructionView('other'),
+      stale: false,
+    };
+    const callbacks = host(wedged);
+    const sequence = [wedged, inFlightView, inFlightView, settled];
+    callbacks.load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.instruct = vi.fn(async () => ({ stale: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'Try again.' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    // The reload answering the click keeps the note while work is in flight.
+    await screen.findByTestId('instruction-busy');
+    await screen.findByTestId('reinterpreting');
+    expect(screen.getByTestId('instruction-busy')).toBeTruthy();
+    // Once a poll shows the item settled, the note is gone.
+    await screen.findByTestId('applied-instruction');
+    expect(screen.queryByTestId('instruction-busy')).toBeNull();
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {

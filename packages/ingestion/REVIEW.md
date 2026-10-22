@@ -154,10 +154,19 @@ appended yet** is in flight (the host is between stages) and is refused with
 `ReviewerInstructionStaleError` (`Stale reviewer instruction`), so a second
 reviewer cannot pre-empt it. That gap expires: once the extraction attempt's
 completion plus the item's analysis lease duration (`limits.leaseMs`, the lease
-`claimAnalysis` grants) has passed with no interpretation appended — the host
-crashed or threw between `prepareGeneration` and `analyze` —
+`claimAnalysis` grants) has passed with no interpretation appended,
 `getReinterpretationState` reports `failure: 'not_started'` with the retry
-binding and the guard allows the retry. The guard and
+binding and the guard allows the retry. `not_started` means **the
+interpretation did not start within the lease window**: the host crashed,
+threw between `prepareGeneration` and `analyze`, or its queue is merely slow.
+Pre-empting a slow but healthy host is safe because `analyze` refuses an
+interpretation whose pinned extraction is no longer the item's latest, under
+the item lock and before anything is superseded
+(`GenerationSourceStaleError`, nothing appended): the slow host's late append
+cannot clobber the retry. Missing or malformed timing (no attempt, no
+`completedAt`, non-finite `leaseMs`) counts as already expired rather than
+holding retries forever. The "still being re-read" note shown after a stale
+result is cleared by the next reload that shows the item settled. The guard and
 `getReinterpretationState` share one predicate, and the latter's
 `reinterpreting` flag (projected as `instruction.reinterpreting`) is true in
 the gap too, so the component keeps polling and keeps Re-read disabled there.
