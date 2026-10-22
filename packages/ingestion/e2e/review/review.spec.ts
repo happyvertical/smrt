@@ -725,8 +725,11 @@ test('reviewer starts a chosen handler through preview and approval, and closes 
   expect(
     resolvedList.items.map((entry: { item: { id: string } }) => entry.item.id),
   ).toEqual([paidId]);
-  // The fixture maps every refused mutation to one safe 409 body; no raw error text.
-  const refused = { error: 'Review unavailable; refresh current state' };
+  // The fixture answers refusals with the safe message plus the gate's reason.
+  const refused = {
+    error: 'Review unavailable; refresh current state',
+    reason: 'Item resolved',
+  };
   const resolveAgain = await page.request.post('/api/resolve', {
     headers: { 'x-review-csrf': await csrf(page) },
     data: {

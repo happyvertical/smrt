@@ -5836,7 +5836,8 @@ export function proposalSuite(
       await expect(
         service.resolveItem({ ...input, itemId: other.itemId }),
       ).rejects.toThrow('pending or applied');
-      // A failed (retryable) action also blocks closing without action.
+      // An action that exhausted its attempts cannot be rejected, so it must
+      // not keep the item open; once resolved it can never be retried either.
       const create = handlers.find((handler) => handler.id === CREATE) as
         | OperationHandler
         | undefined;
@@ -5853,9 +5854,13 @@ export function proposalSuite(
         'failed',
       );
       create.execution = { kind: 'database', apply };
+      expect(
+        (await service.resolveItem({ ...input, itemId: other.itemId })).kind,
+      ).toBe('resolved_no_action');
       await expect(
-        service.resolveItem({ ...input, itemId: other.itemId }),
-      ).rejects.toThrow('pending or applied');
+        service.applyAction(prepared.review.actionId),
+      ).rejects.toThrow('Item resolved');
+      expect((await host.load(other.itemId)).entry.state).toBe('resolved');
       // Defence in depth: even an authorized state reached after resolution cannot apply.
       await db.query(
         "UPDATE intake_actions SET state='authorized' WHERE id=?",
@@ -5905,13 +5910,19 @@ export function proposalSuite(
         })),
       ).toEqual([{ disposition: 'resolved_no_action', data: {} }]);
       clock = new Date(clock.getTime() - 1_500_000);
-      // Privacy deletion redacts the reason and keeps only the terminal kind.
-      await service.expire(extraction.itemId);
+      // Privacy deletion of a fresh, still-retained item redacts the same way.
+      const deleted = (await source()).itemId;
+      await service.resolveItem({
+        ...input,
+        itemId: deleted,
+        requestId: 'resolve-deleted',
+      });
+      await service.expire(deleted);
       expect(
         (
           await db.query(
             'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
-            extraction.itemId,
+            deleted,
           )
         ).rows.map((row) => ({
           disposition: row.disposition,
@@ -6253,6 +6264,110 @@ export function proposalSuite(
               .revision,
         ),
       ).toEqual([2, 3]);
+      // Capture never vetoes the decision: an unavailable extraction pin or
+      // malformed evidence skips the projection while approval/resolution commit.
+      const routingRows = async (itemId: string) =>
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            itemId,
+          )
+        ).rows;
+      const pinned = await generate(
+        await source(
+          100000,
+          false,
+          'Quarterly rainfall totals for the orchard',
+        ),
+      );
+      const pinnedStart = await start(pinned.itemId, 'route-pinned');
+      await db.query(
+        "UPDATE intake_analysis_attempts SET output_digest='tampered' WHERE id=?",
+        pinned.attemptId,
+      );
+      expect(
+        (await decide(pinnedStart, 'approve', 'approve-pinned')).state,
+      ).toBe('authorized');
+      expect(await routingRows(pinned.itemId)).toHaveLength(0);
+      const malformed = await generate(
+        await source(100000, false, 'Greenhouse humidity log for the orchard'),
+      );
+      const malformedStart = await start(malformed.itemId, 'route-malformed');
+      await db.query(
+        "UPDATE intake_analyses SET data='{}' WHERE id=(SELECT analysis_id FROM intake_analysis_attempts WHERE id=?)",
+        malformed.lease.attemptId,
+      );
+      expect(
+        (await decide(malformedStart, 'approve', 'approve-malformed')).state,
+      ).toBe('authorized');
+      expect(await routingRows(malformed.itemId)).toHaveLength(0);
+      const malformedClose = await generate(
+        await source(100000, false, 'Soil acidity notes for the orchard'),
+      );
+      await db.query(
+        "UPDATE intake_analyses SET data='{}' WHERE id=(SELECT analysis_id FROM intake_analysis_attempts WHERE id=?)",
+        malformedClose.lease.attemptId,
+      );
+      expect(
+        (
+          await service.resolveItem({
+            itemId: malformedClose.itemId,
+            disposition: 'resolve_no_action',
+            requestId: 'resolve-malformed',
+          })
+        ).kind,
+      ).toBe('resolved_no_action');
+      expect(await routingRows(malformedClose.itemId)).toHaveLength(0);
+      // Retention expiry and privacy deletion redact routing feedback and the
+      // disposition alike, keeping only kinds.
+      const redacted = async (itemId: string) => ({
+        feedback: (
+          await db.query(
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            itemId,
+          )
+        ).rows.map((row) =>
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ),
+        disposition: (
+          await db.query(
+            'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
+            itemId,
+          )
+        ).rows.map((row) => ({
+          disposition: row.disposition,
+          data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        })),
+      });
+      const expiring = await source(100000, false, 'Expiring paid invoice');
+      await service.resolveItem({
+        itemId: expiring.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-expiring',
+        reason: 'Paid',
+      });
+      expect((await redacted(expiring.itemId)).feedback).toMatchObject([
+        { choice: 'none', reason: 'Paid' },
+      ]);
+      clock = new Date(clock.getTime() + 1_500_000);
+      await service.listReviews(expiring.itemId);
+      expect(await redacted(expiring.itemId)).toEqual({
+        feedback: [{}],
+        disposition: [{ disposition: 'resolved_no_action', data: {} }],
+      });
+      clock = new Date(clock.getTime() - 1_500_000);
+      const purged = await source(100000, false, 'Deleted paid invoice');
+      await service.resolveItem({
+        itemId: purged.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-purged',
+        reason: 'Paid',
+      });
+      await service.expire(purged.itemId);
+      expect(await redacted(purged.itemId)).toEqual({
+        feedback: [{}],
+        disposition: [{ disposition: 'resolved_no_action', data: {} }],
+      });
     });
     it('reloads only the current completed analysis without requiring a remembered attempt ID', async () => {
       chooseCreate();

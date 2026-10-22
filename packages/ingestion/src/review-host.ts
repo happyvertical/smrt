@@ -1,7 +1,6 @@
 /** Server-side implementation of the transport-neutral review callback contract. */
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
 import type { GenerationAnalysisOutput } from './proposal-dto.js';
-import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { loadReviewAnalysis } from './review-analysis.js';
 import type {
   Assignment,
@@ -84,11 +83,13 @@ export function createIntakeReviewHost(
       }
       const assignment = await options.assignment(itemId);
       // The offered catalog lets a reviewer start any handler; it grants nothing.
+      // A catalog failure (not configured, bound exceeded, denied) only hides the
+      // start-action picker; existing reviews stay reviewable.
       let catalog: ItemReviewView['catalog'];
       try {
         catalog = await service.listHandlers(itemId);
-      } catch (error) {
-        if (!(error instanceof ProposalsNotConfiguredError)) throw error;
+      } catch {
+        catalog = undefined;
       }
       await service.getItem(itemId);
       return {

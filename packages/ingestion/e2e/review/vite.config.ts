@@ -303,9 +303,13 @@ export default defineConfig({
                 break;
             }
             respond(200, result ?? {});
-          } catch {
+          } catch (error) {
+            // Fixture only: the safe message plus the service's refusal reason
+            // so browser tests can assert which gate refused. The UI never
+            // renders this body.
             respond(409, {
               error: 'Review unavailable; refresh current state',
+              reason: error instanceof Error ? error.message : 'unknown',
             });
           }
         });

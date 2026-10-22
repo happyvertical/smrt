@@ -109,8 +109,13 @@ describe('published review host projection', () => {
       new ProposalsNotConfiguredError(),
     );
     expect((await f.host.load('item')).catalog).toBeUndefined();
-    f.service.listHandlers.mockRejectedValueOnce(new Error('Denied'));
-    await expect(f.host.load('item')).rejects.toThrow('Denied');
+    // Any catalog failure hides only the picker; saved reviews stay reviewable.
+    f.service.listHandlers.mockRejectedValueOnce(
+      new Error('Authorized catalog exceeds configured bound'),
+    );
+    const degraded = await f.host.load('item');
+    expect(degraded.catalog).toBeUndefined();
+    expect(degraded.reviews).toBe(f.first);
   });
   it('projects a reviewer disposition as the terminal resolved inbox state', async () => {
     const f = fixture();

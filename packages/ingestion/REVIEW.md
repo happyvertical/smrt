@@ -129,11 +129,13 @@ exposes the provenance so `ActionReview` can label human-started actions.
 The optional `resolve` callback forwards `ResolveItemInput`
 (`disposition: 'resolve_no_action'`, `requestId`, optional `reason`) to
 `resolveItem`. It needs reviewer authority under any handler the item's captured
-ceiling offers and refuses while an action is `authorized`, `failed` (still
-retryable), `executing`, `outcome_unknown` or `succeeded`; waiting, deferred and
-rejected actions may remain and can still be rejected, but can no longer be
-approved, applied or automated (`applyAction` rechecks the disposition before any
-effect).
+ceiling offers and refuses while an action is `authorized`, `executing`,
+`outcome_unknown` or `succeeded`; waiting, deferred, rejected and failed actions
+may remain (a failed action cannot be rejected once its attempts are exhausted,
+so it must not keep the queue open). Afterwards those actions can still be
+rejected, but can no longer be approved, retried, applied or automated:
+`applyAction` rechecks the disposition before any effect, and the UI hides
+Approve, Defer and Apply on a resolved item.
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and
 `startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects the
@@ -194,9 +196,10 @@ options)` with a service constructed from the current authenticated session.
 The returned `IntakeReviewHost` implements inbox state projection across saved
 review pages, current generation loading, stable `ui:<index>` intention keys,
 action/plan preview CAS lookup, decisions, apply, corrections, candidates, split,
-feedback, the offered `catalog`, `startAction` and `resolve`. When neither
-`proposals` nor `proposalRead` is configured the catalog is omitted
-(`ProposalsNotConfiguredError`); other catalog denials propagate. Repeated
+feedback, the offered `catalog`, `startAction` and `resolve`. Any catalog
+failure (not configured, bound exceeded, denied) omits `catalog`, so the picker
+disappears while existing reviews stay reviewable; item, review and evidence
+denials still propagate as before. Repeated
 preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.

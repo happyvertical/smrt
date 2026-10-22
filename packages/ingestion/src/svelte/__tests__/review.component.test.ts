@@ -1276,6 +1276,10 @@ describe('intake review host boundary', () => {
       screen.queryByRole('button', { name: 'Handled, no action' }),
     ).toBeNull();
     expect(screen.getByText('Started by a reviewer')).toBeTruthy();
+    // Terminal: the leftover waiting action can only be rejected.
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Defer' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
     cleanup();
     const bare = host(catalogView());
     delete bare.startAction;

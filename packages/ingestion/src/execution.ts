@@ -1664,6 +1664,9 @@ export class IntakeExecutionService {
             requestId: frozen.requestId,
             reason:
               typeof provenance.reason === 'string' ? provenance.reason : '',
+            ...(typeof provenance.reviewer === 'string'
+              ? { startedBy: provenance.reviewer }
+              : {}),
             handler: {
               handlerId: bound.handler.id,
               handlerVersion: bound.handler.version,
@@ -2692,6 +2695,8 @@ export class IntakeExecutionService {
     choice: {
       requestId: string;
       reason: string;
+      /** Actor who started the action; the current actor is the approver. */
+      startedBy?: string;
       handler?: {
         handlerId: string;
         handlerVersion: string;
@@ -2718,32 +2723,42 @@ export class IntakeExecutionService {
       [item.id, key],
     );
     if (replay) return;
-    const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
-      attempt.analysis_id,
-    ]);
-    const inputs = object(analysis.data).inputs;
-    if (!Array.isArray(inputs)) throw new Error('Invalid evidence');
-    const body = {
-      version: 1,
-      choice: choice.handler ? 'handler' : 'none',
-      handlerId: choice.handler?.handlerId ?? null,
-      handlerVersion: choice.handler?.handlerVersion ?? null,
-      args: choice.handler?.args ?? null,
-      actionId: choice.handler?.review.actionId ?? null,
-      proposalId: choice.handler?.review.proposalId ?? null,
-      revision: choice.handler?.review.revision ?? null,
-      bindingHash: choice.handler?.review.bindingHash ?? null,
-      attemptId: String(attempt.id),
-      attemptDigest: String(attempt.output_digest),
-      analysisRevision: Number(analysis.revision),
-      evidence: inputs,
-      query: await this.extractedQuery(db, item, attempt),
-      reviewer: this.scope.actorId,
-      reason: choice.reason,
-      requestId: choice.requestId,
-      decidedAt: this.now().toISOString(),
-    };
-    const data = { ...body, digest: intakeBindingDigest(body) };
+    // The projection's own source checks never veto the authoritative decision
+    // or disposition: an unavailable pin or malformed evidence skips capture.
+    // Storage failures below still propagate and roll back.
+    let data: Row;
+    try {
+      const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+        attempt.analysis_id,
+      ]);
+      const inputs = object(analysis.data).inputs;
+      if (!Array.isArray(inputs)) throw new Error('Invalid evidence');
+      const body = {
+        version: 1,
+        choice: choice.handler ? 'handler' : 'none',
+        handlerId: choice.handler?.handlerId ?? null,
+        handlerVersion: choice.handler?.handlerVersion ?? null,
+        args: choice.handler?.args ?? null,
+        actionId: choice.handler?.review.actionId ?? null,
+        proposalId: choice.handler?.review.proposalId ?? null,
+        revision: choice.handler?.review.revision ?? null,
+        bindingHash: choice.handler?.review.bindingHash ?? null,
+        attemptId: String(attempt.id),
+        attemptDigest: String(attempt.output_digest),
+        analysisRevision: Number(analysis.revision),
+        evidence: inputs,
+        query: await this.extractedQuery(db, item, attempt),
+        reviewer: this.scope.actorId,
+        startedBy: choice.startedBy ?? null,
+        approvedBy: choice.handler ? this.scope.actorId : null,
+        reason: choice.reason,
+        requestId: choice.requestId,
+        decidedAt: this.now().toISOString(),
+      };
+      data = { ...body, digest: intakeBindingDigest(body) };
+    } catch {
+      return;
+    }
     if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
       return;
     await this.insert(db, 'intake_feedback', {
@@ -2868,7 +2883,7 @@ export class IntakeExecutionService {
       const pending = await this.rows(
         db,
         'intake_actions',
-        "item_id=? AND state IN ('authorized','failed','executing','outcome_unknown','succeeded')",
+        "item_id=? AND state IN ('authorized','executing','outcome_unknown','succeeded')",
         [item.id],
       );
       if (pending.length)

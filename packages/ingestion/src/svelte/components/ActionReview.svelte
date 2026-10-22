@@ -17,11 +17,21 @@ export interface Props {
   action: ReviewAction;
   catalog?: ProposalCatalogEntry;
   currentAttemptId?: string;
+  /** A resolved item is terminal: approve/defer are hidden, reject remains. */
+  resolved?: boolean;
   run: (operation: () => Promise<unknown>) => Promise<void>;
   deny: () => void;
 }
-let { host, itemId, action, catalog, currentAttemptId, run, deny }: Props =
-  $props();
+let {
+  host,
+  itemId,
+  action,
+  catalog,
+  currentAttemptId,
+  resolved = false,
+  run,
+  deny,
+}: Props = $props();
 const { t } = useI18n();
 // ReviewView keys this editor by action/revision/reviewVersion; edits are local to that binding.
 let args = $state(untrack(() => JSON.stringify(action.args, null, 2) ?? '')),
@@ -203,7 +213,7 @@ function choose(id: string) {
 {/if}
 {#if dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
-<div class="controls">{#if waiting}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button><Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}</div>
+<div class="controls">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>
 {/if}
 {#if action.plan?.stepIndex === 0 && action.plan.args && host.editPlan && planEditable}
 <Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
@@ -211,7 +221,7 @@ function choose(id: string) {
 {#if !editable && invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
-{#if action.review.state === 'authorized'}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
+{#if action.review.state === 'authorized' && !resolved}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
 {/if}
 {#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction}
 <p>{t(M['ingestion.reviewAgain'])}</p>

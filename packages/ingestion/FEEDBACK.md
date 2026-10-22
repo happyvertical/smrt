@@ -40,11 +40,14 @@ final: `resolveItem` (REVIEW.md) records `choice: 'none'` keyed
 action. Starting an action records nothing; rejecting or deferring it never
 produces an example. The record needs no model suggestion: it binds the current
 completed/partial attempt (`attemptId`, output digest, analysis revision, frozen
-evidence hashes and the extracted text as `query`), the reviewer, the start
-reason, and for a handler choice the `handlerId@version`, exact approved
-arguments and the approved action binding (revision and binding hash). Denied or
-oversized capture skips the projection and leaves the authoritative decision or
-disposition intact; database failures still roll everything back. There is no
+evidence hashes and the extracted text as `query`), the acting reviewer
+(`reviewer`, also `approvedBy` for a handler choice), the actor who started the
+action (`startedBy`), the start reason, and for a handler choice the
+`handlerId@version`, exact approved arguments and the approved action binding
+(revision and binding hash). Denied or oversized capture, an unavailable source
+pin or malformed evidence skip the projection and leave the authoritative
+decision or disposition intact; database write failures still roll everything
+back. There is no
 supersession: a correction after approval (`previewProposal` on the current
 revision) changes the revision, which retires the old record from retrieval and
 support until the new revision is approved and captured again; a correction
