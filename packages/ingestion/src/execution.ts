@@ -462,11 +462,14 @@ export class IntakeExecutionService {
       throw new IntakeAccessDeniedError();
     // Submitter decisions need the server-recorded receipt actor, a live host
     // grant and the application policy opt-in; source metadata supplies none.
+    // The effect runs as the captured principal, so a self-decision is only a
+    // decision by that principal: a bot or service principal needs a reviewer.
     if (
       operation === 'review_own' &&
       (current.submitter !== true ||
         !policy.submitterReview ||
-        item.submitter_id !== this.scope.actorId)
+        item.submitter_id !== this.scope.actorId ||
+        ceiling.principalId !== this.scope.actorId)
     )
       throw new IntakeAccessDeniedError();
     const deadline = Math.min(
@@ -1730,7 +1733,7 @@ export class IntakeExecutionService {
           kind: 'human',
           // A submitter deciding their own proposal is never a reviewer judgment.
           mode,
-          selfDecision: mode === 'review_own',
+          selfDecision: bound.item.submitter_id === this.scope.actorId,
         }),
       });
       await this.feedbackEvent(
@@ -1955,6 +1958,13 @@ export class IntakeExecutionService {
     )
       throw new Error('Approval required');
     const decisionData = object(decision.data);
+    // Recheck at apply: a self-decision authorizes only its own principal.
+    if (
+      decisionData.mode === 'review_own' &&
+      (decisionData.reviewer !== bound.item.submitter_id ||
+        bound.item.submitter_id !== this.ceiling(bound.item).principalId)
+    )
+      throw new Error('Approval required');
     if (decisionData.kind === 'machine') {
       const access = await this.access(
         db,

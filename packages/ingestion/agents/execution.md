@@ -42,9 +42,11 @@ service accepts it only when the host's `authorize` result carries
 `submitter: true`, the resolved policy's `submitterReview` is enabled (the
 application layer opts in; tenant/source layers may only set it `false`), and
 the item's server-recorded `submitter_id` (the receiving service's authenticated
-`scope.actorId`) equals the current actor. All other `review` checks apply
+`scope.actorId`) equals the current actor and the captured
+`execution.principalId`; apply rechecks that a `review_own` decision's reviewer
+is that submitter and principal. All other `review` checks apply
 unchanged; `correct` is refused. The decision row records `mode` and
-`selfDecision`, and `feedbackEvent` copies them as `decisionMode`/`selfDecision`;
+`selfDecision` (decider is the submitter, in either mode), and `feedbackEvent` copies them as `decisionMode`/`selfDecision`;
 `authorizeAutomatic` never reads human decisions, so a self-decision cannot
 become automation evidence. `listOwnProposals` reads with the ordinary `read`
 operation per handler after an item-level `read` check. Unreadable items are

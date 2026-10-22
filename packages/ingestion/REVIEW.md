@@ -129,11 +129,15 @@ reviewer `listReviews` surface keeps propagating host target errors unchanged.
 belongs to the reviewer surface. It runs under the `review_own` execution
 operation: the host's `authorize` must return `submitter: true`, the resolved
 policy must have `submitterReview` enabled, and the recorded submitter must be
-the current actor. Policy enablement, handler/operation allowlists, captured
+the current actor and also the receipt's captured execution principal (the
+identity the effect runs as), checked under the item lock and again at apply.
+A receipt captured for a bot or service principal is never self-approvable. Policy enablement, handler/operation allowlists, captured
 ceiling, confidential access, retention and the first-valid-decision lock are
 unchanged. The decision is a human decision by that actor, recorded with
-`mode: 'review_own'` and `selfDecision: true`; reviewer decisions carry
-`mode: 'review'`. A self-decision is not a reviewer judgment: it never feeds
+`mode: 'review_own'`; reviewer decisions carry `mode: 'review'`. In both modes
+`selfDecision` is true exactly when the deciding actor is the item's
+submitter, so a reviewer approving their own submission is never independent
+review. A self-decision is not a reviewer judgment: it never feeds
 automation eligibility (machine authorization remains the separate evaluated
 `kind: 'machine'` path) and its feedback events carry the same marker. The
 `unavailable` entry discloses nothing about the denied handler or target.

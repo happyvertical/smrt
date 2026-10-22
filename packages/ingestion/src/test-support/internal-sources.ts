@@ -33,6 +33,10 @@ import { dropExecutionDatabase } from './postgres-cleanup.js';
 
 const tenant = '11111111-1111-4111-8111-111111111111';
 const principal = '33333333-3333-4333-8333-333333333333';
+/** The chat sender: their own captured execution principal. */
+const sender = principal;
+/** A service principal a host might capture for a bot-relayed message. */
+const bot = '44444444-4444-4444-8444-444444444444';
 const identity = { provider: 'fixture', model: 'deterministic', version: '1' };
 const extraction = {
   configurationRevision: '1',
@@ -102,7 +106,16 @@ export function internalSourceSuite(
     let onCapture: (() => void) | undefined;
     let generate: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     const scopes = ['private', 'shared'];
-    const actors = ['sender', 'reviewer', 'other'];
+    const actors = [sender, 'reviewer', 'other'];
+    // Opaque delivery keys: hosts must not encode owner ids in deliveryKey.
+    const deliveryKeys = new Map<string, string>();
+    const opaqueKey = (owner: string) => {
+      const known = deliveryKeys.get(owner);
+      if (known) return known;
+      const created = randomUUID();
+      deliveryKeys.set(owner, created);
+      return created;
+    };
     beforeEach(async () => {
       root = await mkdtemp(join(tmpdir(), 'internal-'));
       clock = new Date('2026-10-20T00:00:00Z');
@@ -147,7 +160,7 @@ export function internalSourceSuite(
       };
       const execution: IntakeExecutionOptions = {
         handlers,
-        authorize: async ({ scope, itemId }) => {
+        authorize: async ({ scope, itemId, capturedCeiling }) => {
           if (failingExecutionItems.has(itemId))
             throw new Error('grant store offline');
           return {
@@ -159,7 +172,7 @@ export function internalSourceSuite(
               actors.includes(scope.actorId),
             reviewer: scope.actorId === 'reviewer',
             submitter: submitterGrant,
-            principalId: principal,
+            principalId: capturedCeiling.principalId,
             permissions: ['contents.create', 'contents.addAsset'],
             mutationBoundary: 'serialized',
             policy: [
@@ -228,7 +241,7 @@ export function internalSourceSuite(
         assets: await createAssetRuntime({ db, storage: join(root, 'assets') }),
         scope: {
           tenantId: tenant,
-          actorId: 'sender',
+          actorId: sender,
           confidentialScopeId: 'private',
         },
         authorize: async ({ scope, operation, capturedCeiling }) => {
@@ -365,7 +378,7 @@ export function internalSourceSuite(
       return {
         sourceId: 'chat',
         sourceVersion: '1',
-        deliveryKey: `message:${id}`,
+        deliveryKey: opaqueKey(`message:${id}`),
         deliveredAt: clock,
         parts: [
           {
@@ -487,7 +500,7 @@ export function internalSourceSuite(
       const [item] = (
         await db.query('SELECT * FROM intake_items WHERE id=?', itemId)
       ).rows;
-      expect(item.submitter_id).toBe('sender');
+      expect(item.submitter_id).toBe(sender);
       expect(item.owner_key).toBe(`message:${id}`);
       // Replays keep receipt identity; a different retention mode conflicts.
       expect(await service.receive(message(id))).toMatchObject({
@@ -666,6 +679,13 @@ export function internalSourceSuite(
         await expect(
           service.interpretInline(itemId, { requestId, extraction }),
         ).rejects.toThrow('Invalid intake identifier');
+      for (const configurationRevision of ['r\u0000', 'r\udc00', ''])
+        await expect(
+          service.interpretInline(itemId, {
+            requestId: 'valid-request',
+            extraction: { ...extraction, configurationRevision },
+          }),
+        ).rejects.toThrow('Invalid extraction configuration');
       expect(await count('SELECT COUNT(*) AS n FROM intake_analyses')).toBe(0);
     });
 
@@ -703,6 +723,28 @@ export function internalSourceSuite(
         ),
       ).toEqual({ request: 'bricks', qty: 2 });
       expect(await count('SELECT COUNT(*) AS n FROM assets')).toBe(1);
+      const copied = evidence.find((e) => e.partId === 'note');
+      if (!copied) throw new Error('Missing copy');
+      const [copiedRow] = (
+        await db.query(
+          'SELECT asset_id FROM intake_evidence WHERE id=?',
+          copied.id,
+        )
+      ).rows;
+      expect(copiedRow.asset_id).toBeTruthy();
+      // A referenced row that gains an asset is corrupt: never served from it.
+      await db.query(
+        'UPDATE intake_evidence SET asset_id=? WHERE id=?',
+        copiedRow.asset_id,
+        structured.id,
+      );
+      await expect(service.readEvidence(itemId, structured.id)).rejects.toThrow(
+        'Intake unavailable',
+      );
+      await db.query(
+        'UPDATE intake_evidence SET asset_id=NULL WHERE id=?',
+        structured.id,
+      );
       expect(await service.expireOwned({ kind: 'message', id })).toBe(1);
       expect(await count('SELECT COUNT(*) AS n FROM assets')).toBe(0);
     });
@@ -843,7 +885,7 @@ export function internalSourceSuite(
         await db.query('SELECT data FROM intake_review_decisions')
       ).rows;
       expect(json(recorded.data)).toMatchObject({
-        reviewer: 'sender',
+        reviewer: sender,
         kind: 'human',
       });
       // Identical replay returns the same review; changed content conflicts.
@@ -922,6 +964,8 @@ export function internalSourceSuite(
       const mine = await interpreted();
       const review = await previewFirst(mine.itemId, mine.generation.attemptId);
       await service.submitOwnDecision(decision(review, 'before-delete'));
+      const applied = await service.applyAction(review.actionId);
+      expect(applied.state).toBe('succeeded');
       const tables = [
         'intake_evidence',
         'intake_analyses',
@@ -951,6 +995,37 @@ export function internalSourceSuite(
       expect(Object.keys(json(item.data) as object)).toEqual([
         'capturedCeiling',
       ]);
+      // No digest over actor, owner, text or arguments survives; the principal
+      // is dropped from the retained ceiling; the delivery key is opaque.
+      expect(item.payload_digest).toBe('redacted');
+      expect(item.scope_digest).toBe('redacted');
+      expect(String(item.delivery_key)).not.toContain(mine.id);
+      expect(String(item.delivery_key)).not.toContain(sender);
+      const ceiling = (json(item.data) as Record<string, any>).capturedCeiling;
+      expect(ceiling.execution).toBeDefined();
+      expect(ceiling.execution.principalId).toBeUndefined();
+      expect(JSON.stringify(json(item.data))).not.toContain(sender);
+      for (const [table, column] of [
+        ['intake_analyses', 'input_digest'],
+        ['intake_analysis_attempts', 'output_digest'],
+        ['intake_proposals', 'binding_hash'],
+        ['intake_review_decisions', 'binding_hash'],
+        ['intake_executions', 'binding_hash'],
+      ]) {
+        const rows = await rowsFor(table, mine.itemId);
+        expect(rows.length, table).toBeGreaterThan(0);
+        for (const row of rows) expect(row[column], table).toBe('redacted');
+      }
+      for (const row of await rowsFor('intake_evidence', mine.itemId))
+        expect(row.content_hash).toBe('');
+      // The successful result digest stays as the documented replay tombstone.
+      const [action] = await rowsFor('intake_actions', mine.itemId);
+      expect(action.result_digest).toBe(applied.resultDigest);
+      expect(await service.applyAction(review.actionId)).toMatchObject({
+        state: 'succeeded',
+        resultDigest: applied.resultDigest,
+        tombstone: true,
+      });
       // Severed links: neither the owner hook nor the own list can find it again.
       expect(await service.expireOwned({ kind: 'message', id: mine.id })).toBe(
         0,
@@ -1036,7 +1111,9 @@ export function internalSourceSuite(
       const mine = await interpreted();
       const shared = within({ confidentialScopeId: 'shared' });
       const sharedReceipt = await shared.receive(
-        message(mine.id, undefined, { deliveryKey: `shared:${mine.id}` }),
+        message(mine.id, undefined, {
+          deliveryKey: opaqueKey(`shared:${mine.id}`),
+        }),
       );
       if (!('itemId' in sharedReceipt)) throw new Error('Receipt failed');
       const foreignTenant = within({
@@ -1301,6 +1378,146 @@ export function internalSourceSuite(
       expect(generate).toHaveBeenCalledTimes(1);
     });
 
+    it('refuses a self-decision whose effect would run as a different captured principal', async () => {
+      const input = message(randomUUID());
+      const execution = input.capturedCeiling.execution as Record<
+        string,
+        unknown
+      >;
+      input.capturedCeiling = {
+        ...input.capturedCeiling,
+        execution: { ...execution, principalId: bot },
+      };
+      const itemId = await accepted(input);
+      const run = await service.interpretInline(itemId, {
+        requestId: randomUUID(),
+        extraction,
+      });
+      if (!run.generation) throw new Error('Generation missing');
+      const review = await previewFirst(itemId, run.generation.attemptId);
+      expect(
+        (await service.listOwnProposals()).items.map((e) => e.item.id),
+      ).toEqual([itemId]);
+      await expect(
+        service.submitOwnDecision(decision(review, 'bot-self')),
+      ).rejects.toThrow('Intake unavailable');
+      expect(
+        (await db.query('SELECT id FROM intake_review_decisions')).rows,
+      ).toHaveLength(0);
+      // A reviewer can still approve it; the effect then runs as the bot.
+      await as('reviewer').submitDecision(decision(review, 'bot-review'));
+      expect((await service.applyAction(review.actionId)).state).toBe(
+        'succeeded',
+      );
+    });
+
+    it('rechecks at apply that a self-decision authorizes only its own principal', async () => {
+      const mine = await interpreted();
+      const review = await previewFirst(mine.itemId, mine.generation.attemptId);
+      await service.submitOwnDecision(decision(review, 'self'));
+      // Fixture-only tampering: the receipt's captured principal no longer
+      // matches the submitter after the decision was recorded.
+      const [item] = (
+        await db.query('SELECT data FROM intake_items WHERE id=?', mine.itemId)
+      ).rows;
+      const data = json(item.data) as Record<string, any>;
+      data.capturedCeiling.execution.principalId = bot;
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        JSON.stringify(data),
+        mine.itemId,
+      );
+      await expect(service.applyAction(review.actionId)).rejects.toThrow(
+        'Approval required',
+      );
+      expect(await count('SELECT COUNT(*) AS n FROM contents')).toBe(0);
+    });
+
+    it('marks a reviewer approving their own submission as a self-decision', async () => {
+      const reviewer = as('reviewer');
+      const id = randomUUID();
+      const receipt = await reviewer.receive(message(id));
+      if (!('itemId' in receipt)) throw new Error('Receipt failed');
+      const run = await reviewer.interpretInline(receipt.itemId, {
+        requestId: randomUUID(),
+        extraction,
+      });
+      if (!run.generation) throw new Error('Generation missing');
+      const [saved] = await reviewer.previewGeneratedProposals({
+        itemId: receipt.itemId,
+        attemptId: run.generation.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'reviewer-own',
+            expectedRevision: 0,
+            requestId: `preview:${receipt.itemId}`,
+          },
+        ],
+      });
+      if (saved.kind !== 'operation') throw new Error('Operation expected');
+      await reviewer.submitDecision(decision(saved.review, 'reviewer-self'));
+      const [recorded] = (
+        await db.query('SELECT data FROM intake_review_decisions')
+      ).rows;
+      expect(json(recorded.data)).toMatchObject({
+        reviewer: 'reviewer',
+        mode: 'review',
+        selfDecision: true,
+      });
+    });
+
+    it('reports a receipt revoked before acknowledgement as expired, never accepted', async () => {
+      for (const boundary of ['evidence', 'ready']) {
+        const id = randomUUID();
+        const racing = new IngestionService({
+          ...options,
+          checkpoint: async (name) => {
+            if (name === boundary)
+              await service.expireOwned({ kind: 'message', id });
+          },
+        });
+        expect(await racing.receive(message(id)), boundary).toEqual({
+          kind: 'rejected',
+          category: 'expired',
+        });
+        const [row] = (
+          await db.query(
+            'SELECT * FROM intake_items WHERE delivery_key=?',
+            opaqueKey(`message:${id}`),
+          )
+        ).rows;
+        expect(row.visibility, boundary).toBe('expired');
+        for (const evidence of await rowsFor('intake_evidence', String(row.id)))
+          expect(json(evidence.data), boundary).toEqual({});
+        // The deleted delivery stays refused on replay.
+        expect((await service.receive(message(id))).kind).toBe('rejected');
+      }
+    });
+
+    it('never leaves a deliverable intent for an inline receipt at any stage', async () => {
+      const id = randomUUID();
+      const itemId = await accepted(message(id));
+      const undelivered = async () => {
+        for (const intent of await rowsFor('intake_dispatches', itemId))
+          expect(intent).toMatchObject({ state: 'completed', job_id: '' });
+        expect(await service.repairDispatches()).toBe(0);
+        expect(await count('SELECT COUNT(*) AS n FROM _smrt_jobs')).toBe(0);
+      };
+      await undelivered();
+      expect(await service.receive(message(id))).toMatchObject({
+        kind: 'duplicate',
+        itemId,
+      });
+      await undelivered();
+      await service.interpretInline(itemId, {
+        requestId: `interpret:${id}`,
+        extraction,
+      });
+      await undelivered();
+      expect((await rowsFor('intake_dispatches', itemId)).length).toBe(2);
+    });
+
     it('refuses a feedback write across which submitter review authority widens', async () => {
       enableFeedback();
       const mine = await interpreted();
@@ -1429,7 +1646,7 @@ export function internalSourceSuite(
         expect.objectContaining({
           actionId: firstReview.actionId,
           kind: 'human',
-          reviewer: 'sender',
+          reviewer: sender,
           mode: 'review_own',
           selfDecision: true,
         }),
@@ -1448,7 +1665,7 @@ export function internalSourceSuite(
       ).rows.map((row) => json(row.data) as Record<string, unknown>);
       expect(feedback).toEqual([
         expect.objectContaining({
-          reviewer: 'sender',
+          reviewer: sender,
           decisionMode: 'review_own',
           selfDecision: true,
         }),
