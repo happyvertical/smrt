@@ -43,9 +43,14 @@ service accepts it only when the host's `authorize` result carries
 application layer opts in; tenant/source layers may only set it `false`), and
 the item's server-recorded `submitter_id` (the receiving service's authenticated
 `scope.actorId`) equals the current actor. All other `review` checks apply
-unchanged; `correct` is refused. `listOwnProposals` reads with the ordinary
-`read` operation per handler. Hosts whose `authorize` switches exhaustively on
-the operation fail closed for the new value until they opt in.
+unchanged; `correct` is refused. The decision row records `mode` and
+`selfDecision`, and `feedbackEvent` copies them as `decisionMode`/`selfDecision`;
+`authorizeAutomatic` never reads human decisions, so a self-decision cannot
+become automation evidence. `listOwnProposals` reads with the ordinary `read`
+operation per handler and isolates per-item failures as `unavailable` entries.
+Deletion redaction blanks `submitter_id` and `owner_key` with the payloads.
+Hosts whose `authorize` switches exhaustively on the operation fail closed for
+the new value until they opt in.
 
 `mutationBoundary: 'serialized'` is an explicit host guarantee, not an inferred
 property of a permissions array: grant revocation must serialize with the supplied

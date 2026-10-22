@@ -487,6 +487,13 @@ export class IntakeFeedbackService {
             input.kind === 'action_decision'
               ? object(event.data).reviewer
               : null,
+          decisionMode:
+            input.kind === 'action_decision'
+              ? (object(event.data).mode ?? 'review')
+              : null,
+          selfDecision:
+            input.kind === 'action_decision' &&
+            object(event.data).selfDecision === true,
           observedBy: this.scope().actorId,
           principalId: object(event.data).principalId ?? null,
           signal: state,

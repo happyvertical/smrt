@@ -257,7 +257,12 @@ to that owner is revoked and removed through the existing `expire` /
 `repairDeletions` protocol, which redacts the snapshot together with every
 other payload, and the deleted delivery is never re-admitted. The owner key is
 recorded in the indexed `owner_key` column (`<kind>:<id>`, so `kind` cannot
-contain `:`).
+contain `:`). Deletion redaction blanks `owner_key` and `submitter_id` together
+with every payload: only the receipt identity (`delivery_key`) and the captured
+ceiling survive, so a redacted row no longer links an owner to an actor and a
+repeated `expireOwned` finds nothing. Services are confidential-scope bound, so
+a host whose owner has receipts in several confidential scopes calls
+`expireOwned` from each scope's service; a foreign tenant or scope sees zero.
 
 **Inline mode.** `receive({ ..., dispatch: 'inline' })` requires text/structured
 parts only, records the route provenance but **no deliverable dispatch intent**
@@ -279,14 +284,19 @@ authenticated `scope.actorId` of the receiving service, server-side; payload
 and source metadata never supply it. `listOwnProposals({ cursor?, limit? })`
 lists only this actor's own active submissions with their saved review pages,
 reloaded under current item/handler/target authority, without the reviewer
-inbox. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
+inbox; a submission whose reviews cannot currently be read is returned as
+`{ item, reviews: null, unavailable: true }` with no reason, so one revoked
+target never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
 `correct`) under the `review_own` authority: the host's execution `authorize`
 must return `submitter: true` for that actor, the application policy must opt
 in with `submitterReview: true` (narrower layers may only disable it), and the
 item's recorded submitter must equal the current actor. Every other check is
 the ordinary one, and `applyAction` remains the single once-only effect path
-under the approver's live grants. See [REVIEW.md](REVIEW.md) and
-[execution integration](agents/execution.md).
+under the approver's live grants. The decision is recorded with
+`mode: 'review_own'` and `selfDecision: true` (and mirrored as `decisionMode` /
+`selfDecision` on feedback events), so a self-confirmation is never mistaken
+for a reviewer judgment and never contributes to automation eligibility. See
+[REVIEW.md](REVIEW.md) and [execution integration](agents/execution.md).
 
 ## Dispatch route ownership and legacy recovery
 
