@@ -4274,6 +4274,88 @@ export function proposalSuite(
       }
     });
     it.each([
+      'unavailable',
+      'malformed',
+      'revoked',
+    ] as const)('record readiness keeps generated suggestions when the decision %s (#4209 review)', async (mode) => {
+      chooseCreate();
+      configuration.decisionReadiness = 'record';
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async (raw) => {
+            if (mode === 'unavailable') throw new Error('decision-secret');
+            if (mode === 'revoked') allowed = false;
+            const request = raw as DecisionRequest;
+            const answers: Record<string, unknown> = {};
+            for (const [key, question] of Object.entries(request.questions))
+              answers[key] =
+                question.type === 'predicate'
+                  ? {
+                      type: 'predicate',
+                      probability: mode === 'malformed' ? 9 : 0.5,
+                    }
+                  : question.type === 'score'
+                    ? {
+                        type: 'score',
+                        score: 0,
+                        confidence: 1,
+                        levels: question.criteria,
+                        probabilities: { '0': 1, '1': 0, '2': 0 },
+                      }
+                    : {
+                        type: 'choice',
+                        choice: `${CREATE}@1`,
+                        confidence: 1,
+                        probabilities: Object.fromEntries(
+                          Object.keys(question.criteria).map((choice) => [
+                            choice,
+                            choice === `${CREATE}@1` ? 1 : 0,
+                          ]),
+                        ),
+                      };
+            return {
+              answers,
+              provenance: {
+                provider: identity.provider,
+                model: identity.model,
+              },
+              usage: { promptTokens: 4 },
+            };
+          },
+        },
+      };
+      if (mode === 'revoked') {
+        // Authority is never traded for the opt-out: a revoked lease still fails closed.
+        const pending = await generation();
+        await expect(
+          service.generateProposals(pending.lease),
+        ).rejects.toThrow();
+        return;
+      }
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.suggestions[0].disposition).toBe('ready_for_review');
+      expect(input.output.warnings).toContain(
+        mode === 'unavailable' ? 'decision_unavailable' : 'decision_malformed',
+      );
+      expect(input.output.warnings).not.toContain('malformed_output');
+      expect(input.output.provenance.decision).toMatchObject({
+        configured: true,
+        provider: identity.provider,
+        readiness: 'record',
+      });
+      expect(input.output.provenance.decision.answers).toBeUndefined();
+      expect(input.output.automaticActionEligible).toBe(false);
+      expect(JSON.stringify(input.output)).not.toContain('decision-secret');
+      // Gate mode is unchanged: the same failure ends the attempt.
+      configuration.decisionReadiness = 'gate';
+      const gated = await generate();
+      expect(gated.output.outcome).toBe('provider_error');
+      expect(gated.output.suggestions).toEqual([]);
+    });
+    it.each([
       ['decisionMaxLen', 0, 'Invalid decision context length'],
       ['decisionMaxLen', 1.5, 'Invalid decision context length'],
       ['decisionReadiness', 'auto', 'Invalid decision readiness'],

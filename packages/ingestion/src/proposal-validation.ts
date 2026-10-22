@@ -27,10 +27,71 @@ export class ProposalValidationError extends Error {
     );
   }
 }
-const identifier = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
-/** Summarize Ajv errors by path, keyword and schema-owned params; data never appears. */
+type SchemaNode = Record<string, unknown>;
+/** Every object node an instance at this position may be validated against. */
+function schemaNodes(node: unknown): SchemaNode[] {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return [];
+  const current = node as SchemaNode;
+  const nested = ['oneOf', 'anyOf', 'allOf'].flatMap((keyword) =>
+    Array.isArray(current[keyword])
+      ? (current[keyword] as unknown[]).flatMap(schemaNodes)
+      : [],
+  );
+  return [current, ...nested];
+}
+/**
+ * Keep only path segments the schema itself names: array indexes and keys
+ * declared under `properties`. Anything else (keys under
+ * `additionalProperties`/`patternProperties`, or an unknown key) is data and
+ * becomes `?`.
+ */
+export function schemaOwnedPath(instancePath: string, schema: unknown): string {
+  if (!instancePath) return '/';
+  let nodes = schemaNodes(schema);
+  const segments = instancePath.split('/').slice(1);
+  const kept: string[] = [];
+  for (const raw of segments) {
+    const segment = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (/^\d+$/.test(segment)) {
+      kept.push(segment);
+      nodes = nodes.flatMap((node) =>
+        node.type === 'array' || node.items !== undefined
+          ? schemaNodes(node.items)
+          : [],
+      );
+      continue;
+    }
+    const owners = nodes.filter((node) => {
+      const properties = node.properties;
+      return (
+        !!properties &&
+        typeof properties === 'object' &&
+        Object.hasOwn(properties as object, segment)
+      );
+    });
+    if (owners.length) {
+      kept.push(segment);
+      nodes = owners.flatMap((node) =>
+        schemaNodes((node.properties as SchemaNode)[segment]),
+      );
+    } else {
+      kept.push('?');
+      nodes = nodes.flatMap((node) =>
+        typeof node.additionalProperties === 'object'
+          ? schemaNodes(node.additionalProperties)
+          : [],
+      );
+    }
+  }
+  return `/${kept.join('/')}`;
+}
+/**
+ * Summarize Ajv errors by schema-owned path, keyword and schema-owned params.
+ * Data never appears: an extra property's name is model output and is omitted.
+ */
 export function describeSchemaErrors(
   errors: ErrorObject[] | null | undefined,
+  schema: unknown,
   limit = 20,
   maxChars = PROPOSAL_REASON_LIMIT - 100,
 ): string {
@@ -40,10 +101,6 @@ export function describeSchemaErrors(
     const detail: string[] = [];
     if (typeof params.missingProperty === 'string')
       detail.push(`missingProperty=${params.missingProperty}`);
-    if (typeof params.additionalProperty === 'string')
-      detail.push(
-        `additionalProperty=${identifier.test(params.additionalProperty) ? params.additionalProperty : '?'}`,
-      );
     if (Array.isArray(params.allowedValues))
       detail.push(
         `allowedValues=${params.allowedValues.map(String).join('|')}`,
@@ -55,7 +112,7 @@ export function describeSchemaErrors(
       detail.push(`limit=${String(params.limit)}`);
     if (typeof params.passingSchemas !== 'undefined')
       detail.push('oneOf=none|multiple');
-    const part = `${error.instancePath || '/'} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`;
+    const part = `${schemaOwnedPath(error.instancePath, schema)} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`;
     if (!parts.includes(part)) parts.push(part);
   }
   const shown: string[] = [];
@@ -234,10 +291,11 @@ export function validateSuggestions(
     allErrors: true,
     validateFormats: false,
   });
-  if (!ajv.validate(suggestionSchema(limits), raw))
+  const shape = suggestionSchema(limits);
+  if (!ajv.validate(shape, raw))
     throw new ProposalValidationError(
       'Invalid generated proposals',
-      describeSchemaErrors(ajv.errors),
+      describeSchemaErrors(ajv.errors, shape),
     );
   const input = raw as {
     outcome: GenerationOutput['outcome'];
@@ -291,7 +349,7 @@ export function validateSuggestions(
       )
         throw new ProposalValidationError(
           'Invalid handler arguments',
-          `${path}/args ${describeSchemaErrors(schema.errors) || 'missingFields do not match the schema'}`,
+          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema) || 'missingFields do not match the schema'}`,
         );
       for (const [field, reference] of Object.entries(
         entry.handler.references,

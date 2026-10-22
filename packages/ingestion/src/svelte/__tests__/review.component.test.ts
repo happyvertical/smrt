@@ -964,7 +964,9 @@ describe('intake review host boundary', () => {
     expect(callbacks.apply).not.toHaveBeenCalled();
   });
   it('previews a complete needs_review suggestion without inventing arguments', async () => {
-    const callbacks = host(needsReviewView([]));
+    const view = needsReviewView([]);
+    view.generation!.suggestions[0].args = { title: 'Minutes', body: 'Body' };
+    const callbacks = host(view);
     render(IntakeReview, { host: callbacks, itemId: 'item' });
     const prepare = await screen.findByRole('button', {
       name: 'Prepare review',
@@ -991,6 +993,60 @@ describe('intake review host boundary', () => {
     );
     await fireEvent.click(prepare);
     expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('keeps the typed draft and shows an inline refusal when the host rejects a preview', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.preview).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Human title' });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      { target: { value: typed } },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'did not accept this preview',
+    );
+    expect(callbacks.preview).toHaveBeenCalledTimes(1);
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(screen.getByText('Missing information')).toBeTruthy();
+    expect((prepare as HTMLButtonElement).disabled).toBe(false);
+  });
+  it('keeps Prepare review disabled until every schema-required argument is in the draft', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    const draft = screen.getByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    });
+    // Edited, but `title` is still absent: the handler schema would reject it.
+    await fireEvent.input(draft, {
+      target: { value: JSON.stringify({ body: 'Minutes', note: 'x' }) },
+    });
+    await tick();
+    expect((prepare as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(draft, {
+      target: { value: JSON.stringify({ body: 'Minutes', title: 'T' }) },
+    });
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
     expect(callbacks.preview).not.toHaveBeenCalled();
   });
   it('shows required arguments missing from an action draft while editing', async () => {

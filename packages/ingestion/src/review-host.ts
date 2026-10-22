@@ -124,7 +124,7 @@ export function createIntakeReviewHost(
       // attempt, a missing handler or a foreign stage still is not.
       if (
         analysis.configuration.stage !== 'interpret' ||
-        generation.outcome === 'provider_error' ||
+        generation?.outcome === 'provider_error' ||
         !suggestion ||
         !['ready_for_review', 'needs_review'].includes(suggestion.disposition)
       )

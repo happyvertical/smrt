@@ -949,60 +949,122 @@ export class IngestionProposalService {
       questions,
     };
     const requestBytes = bytes(request);
-    const assertRequestBudget = async () => {
-      const maxInputBytes = await this.live(
-        lease,
-        output.provenance.catalogDigest,
-        output.offered,
-        output.provenance.feedback,
-      );
-      if (requestBytes > maxInputBytes) throw new StageFailure('limit');
-    };
-    await assertRequestBudget();
-    // Both SDK capability probing and deciding get a fresh gate, since either may use I/O.
+    const identity = this.decisionIdentity;
     const maxLen = this.config.decisionMaxLen;
     const readiness = this.config.decisionReadiness ?? 'gate';
-    const result = await this.deadline((signal) => {
-      const gate = async () => {
-        await assertRequestBudget();
-        signal.throwIfAborted();
-      };
-      // `maxLen` is the SDK Laya per-request window; other clients ignore it.
-      const options: DecisionOptions & { maxLen?: number } = {
-        signal,
-        timeout: this.config.limits.timeoutMs,
-        model: this.decisionIdentity!.model,
+    // Authority failures must always fail closed; only provider/shape failures
+    // may be recorded in `record` mode.
+    let authorityError: unknown;
+    let decided = false;
+    const assertRequestBudget = async () => {
+      let maxInputBytes: number;
+      try {
+        maxInputBytes = await this.live(
+          lease,
+          output.provenance.catalogDigest,
+          output.offered,
+          output.provenance.feedback,
+        );
+      } catch (error) {
+        authorityError = error;
+        throw error;
+      }
+      if (requestBytes > maxInputBytes) throw new StageFailure('limit');
+    };
+    const recordFailure = (
+      warning: 'decision_unavailable' | 'decision_malformed',
+      usage?: unknown,
+    ) => {
+      output.warnings.push(warning);
+      output.provenance.decision = {
+        configured: true,
+        provider: identity.provider,
+        model: identity.model,
+        version: identity.version,
+        readiness,
         ...(maxLen === undefined ? {} : { maxLen }),
+        ...(usage === undefined ? {} : { usage: safeUsage(usage) }),
       };
-      return executeDecision(
-        {
-          getCapabilities: async () => {
-            await gate();
-            return configured.client.getCapabilities?.() ?? {};
+    };
+    let result: Awaited<ReturnType<typeof executeDecision>> | undefined;
+    try {
+      await assertRequestBudget();
+      // Both SDK capability probing and deciding get a fresh gate, since either may use I/O.
+      result = await this.deadline((signal) => {
+        const gate = async () => {
+          await assertRequestBudget();
+          signal.throwIfAborted();
+        };
+        // `maxLen` is the SDK Laya per-request window; other clients ignore it.
+        const options: DecisionOptions & { maxLen?: number } = {
+          signal,
+          timeout: this.config.limits.timeoutMs,
+          model: identity.model,
+          ...(maxLen === undefined ? {} : { maxLen }),
+        };
+        return executeDecision(
+          {
+            getCapabilities: async () => {
+              await gate();
+              return configured.client.getCapabilities?.() ?? {};
+            },
+            decide: async (request: unknown, options?: unknown) => {
+              await gate();
+              const answer = await configured.client.decide(request, options);
+              decided = true;
+              return answer;
+            },
           },
-          decide: async (request: unknown, options?: unknown) => {
-            await gate();
-            return configured.client.decide(request, options);
-          },
-        },
-        request,
-        options,
-      );
-    });
+          request,
+          options,
+        );
+      });
+    } catch (error) {
+      if (authorityError !== undefined) throw authorityError;
+      if (readiness !== 'record') throw error;
+      // Opt-out: the suggestions stay as generated; the failure is provenance.
+      recordFailure(decided ? 'decision_malformed' : 'decision_unavailable');
+    }
     await this.live(
       lease,
       output.provenance.catalogDigest,
       output.offered,
       output.provenance.feedback,
     );
-    if (
-      result.provenance.provider !== this.decisionIdentity!.provider ||
-      result.provenance.model !== this.decisionIdentity!.model
-    )
+    if (!result) return;
+    const malformed =
+      result.provenance.provider !== identity.provider ||
+      result.provenance.model !== identity.model ||
+      output.suggestions.some((suggestion, index) => {
+        const supported = result.answers[`supported_${index}`];
+        const route = result.answers[`route_${index}`];
+        const risk = result.answers[`risk_${index}`];
+        if (
+          supported?.type !== 'predicate' ||
+          route?.type !== 'choice' ||
+          risk?.type !== 'score'
+        )
+          return true;
+        const offered = output.offered.find(
+          ({ handler }) =>
+            handler.id === suggestion.handlerId &&
+            handler.version === suggestion.handlerVersion,
+        );
+        return Object.entries(offered?.handler.references ?? {}).some(
+          ([field, reference]) =>
+            reference.kind === 'candidate' &&
+            Object.hasOwn(suggestion.args, field) &&
+            result.answers[`entity_${index}_${field}`]?.type !== 'choice',
+        );
+      });
+    if (malformed) {
+      if (readiness === 'record')
+        return recordFailure('decision_malformed', result.usage);
       throw new StageFailure(
         'malformed_output',
-        'Decision provenance does not match the configured identity',
+        'Decision answers do not match the configured identity or question types',
       );
+    }
     const answers: Record<string, unknown> = {};
     for (const [key, question] of Object.entries(questions)) {
       const answer = result.answers[key];

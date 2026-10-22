@@ -11,6 +11,7 @@ import {
   argumentsObject,
   evidenceUrl,
   extractedContent,
+  missingRequired,
   pageGroups,
 } from '../view-utils.js';
 import ActionReview from './ActionReview.svelte';
@@ -28,6 +29,8 @@ let view = $state<ItemReviewView>(),
   splits = $state<Record<string, string>>({}),
   // Human drafts for `needs_review` suggestions, keyed by suggestion index.
   drafts = $state<Record<number, string>>({}),
+  // Suggestion whose last preview the host rejected; its draft is kept.
+  previewRejected = $state<number>(),
   invalid = $state(false);
 let alive = true,
   epoch = 0,
@@ -49,6 +52,7 @@ async function load(pageCount = loadedPages) {
   view = undefined;
   splits = {};
   drafts = {};
+  previewRejected = undefined;
   pending = true;
   error = false;
   invalid = false;
@@ -159,19 +163,22 @@ function edited(index: number) {
     drafts[index] !== JSON.stringify(suggestion.args, null, 2)
   );
 }
-// Missing required arguments must be completed by the reviewer before preview.
+// Every schema-required argument must be present in the draft before preview;
+// the host and handler still validate the published arguments.
 function canPreview(index: number) {
   const suggestion = view?.generation?.suggestions[index];
-  return (
-    !!suggestion &&
-    previewable(suggestion) &&
-    (!suggestion.missingFields.length || edited(index))
-  );
+  if (!suggestion || !previewable(suggestion)) return false;
+  if (suggestion.disposition !== 'needs_review') return true;
+  const draft = drafts[index];
+  if (draft === undefined) return false;
+  if (suggestion.missingFields.length && !edited(index)) return false;
+  const handler = offeredHandler(suggestion);
+  return !handler || !missingRequired(handler.argsSchema, draft).length;
 }
-function preview(index: number) {
+async function preview(index: number) {
   const analysis = view?.analysis;
   const suggestion = view?.generation?.suggestions[index];
-  if (!analysis || !suggestion || !canPreview(index)) return;
+  if (pending || !analysis || !suggestion || !canPreview(index)) return;
   let args: Record<string, unknown> | undefined;
   if (suggestion.disposition === 'needs_review' && edited(index)) {
     try {
@@ -188,7 +195,21 @@ function preview(index: number) {
     requestId: crypto.randomUUID(),
     ...(args ? { args } : {}),
   };
-  void run(() => host.preview(input));
+  // A rejected preview keeps the current view and the typed draft; the
+  // reviewer sees the refusal on the suggestion and can correct and retry.
+  const ticket = ++epoch;
+  pending = true;
+  error = false;
+  previewRejected = undefined;
+  try {
+    await host.preview(input);
+    if (alive && ticket === epoch) await load();
+  } catch {
+    if (alive && ticket === epoch) {
+      previewRejected = index;
+      pending = false;
+    }
+  }
 }
 function chooseFor(index: number) {
   return (field: string, id: string) => {
@@ -305,6 +326,7 @@ onMount(() => {
 {#if handler}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
 {#if edited(index)}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {/if}
+{#if previewRejected === index}<p role="alert">{t(M['ingestion.previewRejected'])}</p>{/if}
 <Button disabled={!canPreview(index)} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
 </article>
 {/each}

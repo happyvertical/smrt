@@ -168,6 +168,11 @@ describe('published review host projection', () => {
   it.each([
     ['a failed attempt', generation('needs_review', 'provider_error'), {}],
     [
+      'an interpretation without proposal output',
+      { configuration: { stage: 'interpret' }, result: { output: {} } },
+      {},
+    ],
+    [
       'a foreign stage',
       {
         ...generation('ready_for_review'),
