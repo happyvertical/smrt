@@ -308,8 +308,9 @@ const NODE_IMPORT_CONDITIONS = new Set([
  * array takes its first resolving entry, skipping `null` entries (an array
  * with no resolving entry and at least one `null`, or an empty array, is not
  * exported). `undefined` means nothing matched, so an outer map keeps looking.
- * Target paths are not validated, so this can only skip an optional context
- * import, never add one Node rejects for a reason this ignores.
+ * Target strings are not validated (`'../x.js'`, a bare `'m.js'`, or a missing
+ * file all count as targets), so a malformed or broken package can still
+ * yield an import Node rejects.
  */
 function resolveNodeImportTarget(target: unknown): boolean | undefined {
   if (typeof target === 'string') return true;

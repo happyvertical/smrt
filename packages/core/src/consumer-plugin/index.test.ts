@@ -2705,16 +2705,44 @@ describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => 
         }),
       ).toBeUndefined();
     }
-    // `node-addons` is a default Node condition.
+    // Nested under a matching condition, "not exported" (empty or all-`null`
+    // array) must stop the map, while "nothing matched" must fall through to
+    // the next condition. Directly under `./models` both look the same.
+    for (const unexported of [[], [null]]) {
+      expect(
+        resolveProviderContextImport('@test/pkg', {
+          name: '@test/pkg',
+          exports: {
+            ...svelteRoot,
+            './models': { node: unexported, default: './dist/models.js' },
+          },
+        }),
+      ).toBeUndefined();
+    }
     expect(
       resolveProviderContextImport('@test/pkg', {
         name: '@test/pkg',
         exports: {
           ...svelteRoot,
-          './models': { 'node-addons': './dist/models.js' },
+          './models': {
+            node: [{ browser: './dist/models.browser.js' }],
+            default: './dist/models.js',
+          },
         },
       }),
     ).toBe('@test/pkg/models');
+    // `node-addons` and `module-sync` are default Node conditions.
+    for (const condition of ['node-addons', 'module-sync']) {
+      expect(
+        resolveProviderContextImport('@test/pkg', {
+          name: '@test/pkg',
+          exports: {
+            ...svelteRoot,
+            './models': { [condition]: './dist/models.js' },
+          },
+        }),
+      ).toBe('@test/pkg/models');
+    }
     // A matching condition whose nested map matches nothing falls through.
     expect(
       resolveProviderContextImport('@test/pkg', {
