@@ -94,6 +94,8 @@ export interface ListItemsInput {
 export interface IntakeItemPage {
   /** `cursor` continues after that row, so a host may cut a page short of it. */
   items: Array<{ item: IntakeItemDTO; state: InboxState; cursor: string }>;
+  /** Rows this call examined, including denied and skipped ones; hosts cap on it. */
+  scanned: number;
   nextCursor?: string;
 }
 /** Durable attempt claim. Its fence and token are verified on every completion. */
@@ -260,6 +262,12 @@ function actionCount(where = ''): string {
  * or target gates, so it filters and labels a list; `load` stays authoritative.
  */
 const INBOX_STATE_SQL = `CASE WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
+/** The exact text the service stores for a receipt time; the only cursor form. */
+function receiptTime(value: unknown): string {
+  const text = persistedDate(value).toISOString();
+  if (text !== new Date(text).toISOString()) throw new Error('Invalid time');
+  return text;
+}
 /** Opaque (received-at, id) continuation; never a bare id, which is not ordered. */
 function encodeItemCursor(receivedAt: string, id: string): string {
   return Buffer.from(JSON.stringify([receivedAt, id])).toString('base64url');
@@ -271,11 +279,14 @@ function decodeItemCursor(cursor: string): { receivedAt: string; id: string } {
   } catch {
     throw new Error('Invalid item page');
   }
+  // The receipt time must be the normalised ISO form the service stores, so
+  // the bound compares like the stored text on SQLite as well as PostgreSQL.
   if (
     !Array.isArray(parsed) ||
     parsed.length !== 2 ||
     typeof parsed[0] !== 'string' ||
     !Number.isFinite(Date.parse(parsed[0])) ||
+    new Date(parsed[0]).toISOString() !== parsed[0] ||
     typeof parsed[1] !== 'string' ||
     !uuid.test(parsed[1])
   )
@@ -295,6 +306,7 @@ function date(value: Date): string {
 export class IngestionService {
   private readonly db: DatabaseInterface;
   private readonly scope: IngestionScope;
+  private readonly engine: 'sqlite' | 'postgres';
   private readonly dispatchTarget: IntakeDispatchTarget;
   constructor(private readonly options: IngestionOptions) {
     if (options.proposals) assertProposalLimits(options.proposals.limits);
@@ -323,6 +335,7 @@ export class IngestionService {
     );
     if (!['sqlite', 'postgres'].includes(engine) || !this.db.transaction)
       throw new Error('Ingestion requires transactional SQLite or PostgreSQL');
+    this.engine = engine as 'sqlite' | 'postgres';
     nonempty(options.jobTarget.objectType);
     nonempty(options.jobTarget.method);
     this.dispatchTarget = Object.freeze({
@@ -1233,7 +1246,8 @@ export class IngestionService {
           !input.itemIds.every(isIntakeId)))
     )
       throw new Error('Invalid item page');
-    if (input.itemIds && !input.itemIds.length) return { items: [] };
+    if (input.itemIds && !input.itemIds.length)
+      return { items: [], scanned: 0 };
     let after = input.cursor ? decodeItemCursor(input.cursor) : undefined;
     const now = this.now().toISOString();
     const allowed = this.ceilingGate();
@@ -1260,13 +1274,14 @@ export class IngestionService {
         filter = ' WHERE s.inbox_state = ?';
         params.push(input.state);
       }
-      // The first read fetches one page; refills after denials read larger
-      // batches so a mostly-denied scope costs few queries up to the ceiling.
+      // The first read fetches exactly the page. Refills after denials grow
+      // with what has already been examined, from the page size up to 100
+      // rows, and never past the scan ceiling.
       const wanted = limit - items.length;
-      const batch =
-        examined === 0
-          ? wanted
-          : Math.min(ITEM_PAGE_CEILING, ITEM_SCAN_CEILING - examined);
+      const batch = Math.min(
+        ITEM_SCAN_CEILING - examined,
+        Math.max(wanted, Math.min(ITEM_PAGE_CEILING, examined)),
+      );
       // The state expression is evaluated once per scanned row in the derived
       // table and reused by both the filter and the projection.
       const rows = (
@@ -1288,30 +1303,39 @@ export class IngestionService {
           /* corrupt row: skipped and counted below */
         }
       }
-      // Handler bindings only for rows that passed and have saved actions:
-      // one read per batch, bounded by the batch size.
-      const bindings = await handlers.bindings(
-        candidates.filter(
-          (row) => passed.has(row) && Number(row.action_count) > 0,
-        ),
-      );
       let consumed = 0;
-      for (const row of candidates) {
+      for (const [index, row] of candidates.entries()) {
         consumed++;
         examined++;
-        let position: { receivedAt: string; id: string } | undefined;
+        // A receipt time the service did not write cannot anchor a cursor;
+        // paging past it would silently repeat or skip rows, so it is a
+        // data error, not a denial.
+        let position: { receivedAt: string; id: string };
         try {
           position = {
-            receivedAt: persistedDate(row.created_at).toISOString(),
+            receivedAt: receiptTime(row.created_at),
             id: String(row.id),
           };
         } catch {
-          // A row with an unreadable receipt time cannot anchor a cursor; it
-          // is skipped and counted against the ceiling like any denied row.
+          throw new Error(
+            `Corrupt intake receipt time on item ${String(row.id)}`,
+          );
         }
-        if (position) after = position;
-        if (!position || !passed.has(row)) continue;
-        if (!(await handlers.readable(row, bindings))) continue;
+        after = position;
+        if (!passed.has(row)) continue;
+        if (Number(row.action_count) > 0) {
+          // Handler bindings for the rows that may still fill this page,
+          // in order, no further than the remaining need.
+          await handlers.resolve(
+            candidates
+              .slice(index)
+              .filter(
+                (next) => passed.has(next) && Number(next.action_count) > 0,
+              )
+              .slice(0, limit - items.length),
+          );
+          if (!(await handlers.readable(row))) continue;
+        }
         items.push({
           item: this.itemDTO(row),
           state: String(row.inbox_state) as InboxState,
@@ -1320,10 +1344,11 @@ export class IngestionService {
         if (items.length === limit) break;
       }
       const remaining = more || consumed < candidates.length;
-      if (!remaining || !after) return { items };
+      if (!remaining || !after) return { items, scanned: examined };
       if (items.length === limit || examined >= ITEM_SCAN_CEILING)
         return {
           items,
+          scanned: examined,
           nextCursor: encodeItemCursor(after.receivedAt, after.id),
         };
     }
@@ -1347,14 +1372,17 @@ export class IngestionService {
   }
   /**
    * The execution read gate `load` applies per action, batched for a page:
-   * one query resolves the saved handler bindings of the rows' actions, then
-   * one execution authorization per distinct (item, handler). An item whose
-   * bound handler the actor cannot currently read, or whose bindings cannot
-   * be resolved, is not listed. Actions without a proposal carry no handler
-   * and are not gated, as in `listReviews`.
+   * the saved handler bindings of the rows' current proposals are projected
+   * in SQL (handler id and version only, distinct per item), read only for
+   * the rows that may still fill the page, then one execution authorization
+   * per distinct (item, handler). An item whose bound handler the actor
+   * cannot currently read, or whose bindings cannot be resolved, is not
+   * listed. Actions without a proposal carry no handler and are not gated,
+   * as in `listReviews`.
    */
   private handlerGate() {
     const decisions = new Map<string, Promise<boolean>>();
+    const bound = new Map<string, Array<{ id: string; version: string }>>();
     // Created only when a listed row actually binds a handler; a failure to
     // construct the execution service reads as "not readable", never as an
     // unhandled rejection.
@@ -1367,42 +1395,37 @@ export class IngestionService {
       ).catch(() => undefined);
       return execution;
     };
+    const handlerId =
+      this.engine === 'sqlite'
+        ? "json_extract(p.data, '$.binding.handlerId')"
+        : "p.data->'binding'->>'handlerId'";
+    const handlerVersion =
+      this.engine === 'sqlite'
+        ? "json_extract(p.data, '$.binding.handlerVersion')"
+        : "p.data->'binding'->>'handlerVersion'";
     return {
-      bindings: async (
-        rows: Row[],
-      ): Promise<Map<string, Array<{ id: string; version: string }>>> => {
-        const bound = new Map<string, Array<{ id: string; version: string }>>();
-        if (!rows.length) return bound;
+      resolve: async (rows: Row[]): Promise<void> => {
+        const pending = rows.filter((row) => !bound.has(String(row.id)));
+        if (!pending.length) return;
+        for (const row of pending) bound.set(String(row.id), []);
         const found = (
           await this.db.query(
-            `SELECT p.item_id, p.data FROM intake_proposals p JOIN intake_actions a ON a.tenant_id = p.tenant_id AND a.confidential_scope_id = p.confidential_scope_id AND a.id = p.action_id AND a.proposal_revision = p.revision WHERE p.tenant_id = ? AND p.confidential_scope_id = ? AND p.item_id IN (${rows.map(() => '?').join(',')})`,
+            `SELECT DISTINCT p.item_id, ${handlerId} AS handler_id, ${handlerVersion} AS handler_version FROM intake_proposals p JOIN intake_actions a ON a.tenant_id = p.tenant_id AND a.confidential_scope_id = p.confidential_scope_id AND a.id = p.action_id AND a.proposal_revision = p.revision WHERE p.tenant_id = ? AND p.confidential_scope_id = ? AND p.item_id IN (${pending.map(() => '?').join(',')})`,
             this.scope.tenantId,
             this.scope.confidentialScopeId,
-            ...rows.map((row) => String(row.id)),
+            ...pending.map((row) => String(row.id)),
           )
         ).rows as Row[];
-        for (const row of found) {
-          const itemId = String(row.item_id);
-          const list = bound.get(itemId) ?? [];
-          try {
-            const binding = object(object(row.data).binding);
-            list.push({
-              id: String(binding.handlerId),
-              version: String(binding.handlerVersion),
-            });
-          } catch {
-            list.push({ id: '', version: '' });
-          }
-          bound.set(itemId, list);
-        }
-        return bound;
+        for (const row of found)
+          bound.get(String(row.item_id))?.push({
+            id: row.handler_id == null ? '' : String(row.handler_id),
+            version:
+              row.handler_version == null ? '' : String(row.handler_version),
+          });
       },
-      readable: async (
-        row: Row,
-        bindings: Map<string, Array<{ id: string; version: string }>>,
-      ): Promise<boolean> => {
+      readable: async (row: Row): Promise<boolean> => {
         const itemId = String(row.id);
-        for (const handler of bindings.get(itemId) ?? []) {
+        for (const handler of bound.get(itemId) ?? []) {
           const key = `${itemId}\u0000${handler.id}\u0000${handler.version}`;
           let decision = decisions.get(key);
           if (!decision) {

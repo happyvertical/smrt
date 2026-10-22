@@ -98,7 +98,7 @@ export function createIntakeReviewHost(
           state: input.state,
           itemIds,
         });
-        examined += page.items.length;
+        examined += page.scanned;
         const read = await assignments(page.items.map(({ item }) => item.id));
         for (const [
           index,

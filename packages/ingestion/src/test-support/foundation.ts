@@ -1527,13 +1527,17 @@ export function foundationSuite(
         visible[3].id,
         visible[250].id,
       ]);
-      expect(await paged.listItems({ itemIds: [] })).toEqual({ items: [] });
+      expect(await paged.listItems({ itemIds: [] })).toMatchObject({
+        items: [],
+      });
 
       const outsider = new IngestionService({
         ...options,
         scope: { ...options.scope, confidentialScopeId: 'other' },
       });
-      expect(await outsider.listItems({ limit: 100 })).toEqual({ items: [] });
+      expect(await outsider.listItems({ limit: 100 })).toMatchObject({
+        items: [],
+      });
 
       // Five times the items, all older: the same pages cost the same queries.
       await seedRows(1200, (index) =>
@@ -1595,6 +1599,36 @@ export function foundationSuite(
         expect(plan).not.toMatch(/^\s*->\s+Sort/m);
       }
 
+      // A receipt time the service never wrote is a data error named by row,
+      // not a silent skip that could repeat or lose rows; only SQLite can
+      // hold such text in a datetime column.
+      if (dialect === 'sqlite') {
+        const corrupt = visible[5].id;
+        await db.query(
+          "UPDATE intake_items SET created_at='not-a-time' WHERE id=?",
+          corrupt,
+        );
+        await expect(paged.listItems()).rejects.toThrow(
+          `Corrupt intake receipt time on item ${corrupt}`,
+        );
+        await db.query(
+          'UPDATE intake_items SET created_at=? WHERE id=?',
+          visible[5].receivedAt,
+          corrupt,
+        );
+        expect(ids(await paged.listItems())).toEqual(ids(first));
+      }
+      // Cursors are the normalised ISO text the service stores; an offset
+      // form that parses to the same instant is refused rather than compared
+      // as text against stored rows.
+      await expect(
+        paged.listItems({
+          cursor: Buffer.from(
+            JSON.stringify(['2026-10-01T05:00:00.000+05:00', visible[0].id]),
+          ).toString('base64url'),
+        }),
+      ).rejects.toThrow('Invalid item page');
+
       // A mostly-denied actor: only the rare ceiling is readable, so a page
       // needs many rows. Each call examines at most ITEM_SCAN_CEILING rows,
       // returns what it found with a cursor, and the walk still sees every
@@ -1635,7 +1669,7 @@ export function foundationSuite(
         { ...options.scope, actorId: 'unrelated' },
       ]) {
         const outsider = new IngestionService({ ...options, scope });
-        expect(await outsider.listItems()).toEqual({ items: [] });
+        expect(await outsider.listItems()).toMatchObject({ items: [] });
         await expect(outsider.getItem(id)).rejects.toThrow('unavailable');
         await expect(outsider.getEvidence(id)).rejects.toThrow('unavailable');
         await expect(outsider.readEvidence(id, evidence.id)).rejects.toThrow(
@@ -1652,7 +1686,7 @@ export function foundationSuite(
       });
       expect((await delegate.getItem(id)).id).toBe(id);
       allowed = false;
-      expect(await service.listItems()).toEqual({ items: [] });
+      expect(await service.listItems()).toMatchObject({ items: [] });
       await expect(service.getItem(id)).rejects.toThrow('unavailable');
       await expect(service.createAction(id, 'forged', {})).rejects.toThrow(
         'unavailable',

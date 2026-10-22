@@ -164,13 +164,19 @@ view would narrow past its deadline is simply not listed. An item whose bound
 handler the actor cannot currently read is not listed at all, rather than
 listed with a state derived from actions the actor may not see; actions
 without a proposal bind no handler and are not gated, as in `listReviews`.
-Handler bindings are read once per batch, only for rows that passed the
-item-level gate. Denied or unreadable rows are skipped without disclosure and
-the page refills from the next rows. One service call examines at most
-`ITEM_SCAN_CEILING` (1000) rows; when a mostly-denied scope reaches it, the
-page comes back short with a `nextCursor`. The host `list` honours that: a
-short service page with a cursor, or 1000 rows examined while filtering by
-assignee, ends the host call with the same cursor and the caller continues.
+Handler bindings (handler id and version, projected in SQL, distinct per
+item) are read only for the rows that may still fill the page. Note the host
+cost plainly: the execution `authorize` callback runs once per (item, handler)
+in the page, bounded by the page, in host code rather than as N+1 database
+reads. Denied or unreadable rows are skipped without disclosure and the page
+refills from the next rows; refills grow from the page size to 100 rows per
+query. One service call examines at most `ITEM_SCAN_CEILING` (1000) rows and
+reports the count as `scanned`; when a mostly-denied scope reaches the ceiling
+the page comes back short with a `nextCursor`. The host `list` honours that: a
+short service page with a cursor, or 1000 scanned rows summed over service
+pages while filtering by assignee, ends the host call with the same cursor and
+the caller continues. A receipt time the service never wrote is reported as a
+data error naming the row, never paged past silently.
 
 The page's inbox state is the durable projection of the saved action journal
 and processing state, computed once per scanned row inside the page query;

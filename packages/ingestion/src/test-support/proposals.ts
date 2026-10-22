@@ -123,6 +123,7 @@ export function proposalSuite(
     let deniedOperations: string[];
     let policyAccess: string[];
     let principalOverride: string | undefined;
+    let policyRetentionMs: number | undefined;
     let executionAuthorizations: number;
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
@@ -171,6 +172,7 @@ export function proposalSuite(
       deniedOperations = [];
       policyAccess = ['private'];
       principalOverride = undefined;
+      policyRetentionMs = undefined;
       executionAuthorizations = 0;
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
@@ -266,6 +268,9 @@ export function proposalSuite(
                 requireReview: true,
                 maxBytes: policyMaxBytes,
                 leaseMs: 1000,
+                ...(policyRetentionMs === undefined
+                  ? {}
+                  : { retentionMs: policyRetentionMs }),
               },
               { version: policyVersion },
               { version: 'source1' },
@@ -974,6 +979,25 @@ export function proposalSuite(
       }
       expect((await paged.listItems({ limit: 100 })).items).toHaveLength(31);
       expect(await expiry()).toEqual(before);
+      // Retention deadline: with a one-second policy window every clone
+      // (received 1..40 s earlier) is past the deadline `access` would narrow
+      // to, so the read-only gate omits them and writes nothing, while
+      // `listReviews` on such a clone tombstones its action as expired.
+      policyRetentionMs = 1000;
+      writes = 0;
+      expect(
+        (await paged.listItems({ limit: 100 })).items.map(
+          ({ item }) => item.id,
+        ),
+      ).toEqual([generated.itemId]);
+      expect(writes).toBe(0);
+      expect(await expiry()).toEqual(before);
+      expect(
+        (await service.listReviews(readable[0])).actions.map(
+          (action) => action.review.state,
+        ),
+      ).toEqual(['expired']);
+      policyRetentionMs = undefined;
     });
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();

@@ -24,6 +24,7 @@ function pageSource(rows: Array<{ id: string; state?: string }>) {
     }
     const page = candidates.slice(0, limit);
     return {
+      scanned: page.length,
       items: page.map((row) => ({
         item: { id: row.id, processingState: 'completed' } as IntakeItemDTO,
         state: (row.state ??
@@ -157,7 +158,11 @@ describe('published review host projection', () => {
   });
   it('returns a short service page with its cursor instead of scanning past the service ceiling', async () => {
     const f = fixture();
-    f.service.listItems.mockResolvedValue({ items: [], nextCursor: 'ceiling' });
+    f.service.listItems.mockResolvedValue({
+      items: [],
+      scanned: 1000,
+      nextCursor: 'ceiling',
+    });
     expect(await f.host.list({})).toEqual({ items: [], nextCursor: 'ceiling' });
     expect(f.service.listItems).toHaveBeenCalledTimes(1);
     const assignment = vi.fn(async () => ({ assigneeId: null, version: 0 }));
@@ -197,6 +202,18 @@ describe('published review host projection', () => {
     expect(page.items).toEqual([]);
     expect(page.nextCursor).toBe('0999');
     expect(f.service.listItems).toHaveBeenCalledTimes(10);
+    // The cap counts rows the service scanned, not rows it returned: full
+    // pages that each cost 500 denied rows stop after two service calls.
+    let calls = 0;
+    f.service.listItems.mockImplementation(async (input) => {
+      calls++;
+      const page = await pageSource(rows)(input);
+      return { ...page, scanned: 500 };
+    });
+    const costly = await host.list({ assigneeId: 'nobody', limit: 100 });
+    expect(costly.items).toEqual([]);
+    expect(costly.nextCursor).toBe('0199');
+    expect(calls).toBe(2);
   });
   it('drops junk ids from the assignee pushdown instead of failing the list', async () => {
     const f = fixture();
