@@ -881,7 +881,7 @@ export class IngestionProposalService {
   private async decide(
     lease: AnalysisLease,
     output: GenerationOutput,
-    input: unknown,
+    input: GenerativeProposalInput,
   ) {
     const configured = this.decision;
     if (!configured || !this.decisionIdentity)
@@ -938,10 +938,25 @@ export class IngestionProposalService {
           };
         }
     });
+    // Trusted reviewer guidance travels once, under its own key, never under
+    // `evidence` (untrusted document text): the evidence-side input drops the
+    // convenience duplicate and carries the un-guided base instructions.
+    const {
+      reviewerInstruction: guidance,
+      instructions: _guided,
+      ...evidenceSide
+    } = input;
     const request: DecisionRequest = {
       state: JSON.parse(
         JSON.stringify({
-          evidence: input,
+          evidence: {
+            ...evidenceSide,
+            instructions: proposalInstructionsFor(
+              input.offered,
+              input.evidence,
+            ),
+          },
+          ...(guidance ? { reviewerGuidance: guidance } : {}),
           suggestions: output.suggestions,
         }),
       ),

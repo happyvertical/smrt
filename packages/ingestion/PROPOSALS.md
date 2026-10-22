@@ -121,7 +121,10 @@ the catalog fails validation like any other hostile output. **Budget cost:** the
 ceiling), as its JSON-escaped text inside the prompt's guidance section — up
 to 4,000 characters plus escaping and the fixed guidance sentence. The
 `reviewerInstruction` field duplicated for custom generators is not counted
-again. Size `maxInputBytes` with that headroom. Learned examples are
+again. The decision stage also carries it once: its request state holds the
+evidence-side input with the un-guided base instructions under `evidence`, and
+the guidance only under a separate `reviewerGuidance` key, never under
+`evidence`; the decision budget measures that serialized request as sent. Size `maxInputBytes` with that headroom. Learned examples are
 still retrieved for an instructed generation; only a logical split correction
 suppresses them. Every instruction costs a fresh extraction revision before the
 new interpretation: the predecessor-pin contract above (source = immediately

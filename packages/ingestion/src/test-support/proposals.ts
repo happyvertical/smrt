@@ -4793,6 +4793,48 @@ export function proposalSuite(
         digest: retried.instruction.digest,
       });
     });
+    it('sends reviewer guidance to the decision stage once, under its own key and never as evidence', async () => {
+      chooseCreate();
+      const seen: { request?: DecisionRequest } = {};
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async (raw) => {
+            seen.request = raw as DecisionRequest;
+            throw new Error('Captured for inspection');
+          },
+        },
+      };
+      service = new IngestionService(options);
+      const input = await generate();
+      const text = 'This is a customer PO from Badger; file it, never bill it.';
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text,
+        requestId: 'decision-guidance',
+      });
+      const guided = await reextract(input.itemId, recorded.revision);
+      seen.request = undefined;
+      await service.generateProposals(guided.lease);
+      const latestRequest = () => seen.request;
+      const captured = latestRequest();
+      if (!captured) throw new Error('decision request required');
+      const state = captured.state as Record<string, Record<string, unknown>>;
+      expect(state.reviewerGuidance).toEqual({
+        id: recorded.instruction.id,
+        text,
+      });
+      expect(state.evidence).not.toHaveProperty('reviewerInstruction');
+      expect(String(state.evidence.instructions)).not.toContain(
+        'Trusted reviewer guidance',
+      );
+      expect(String(state.evidence.instructions)).not.toContain(text);
+      // The guidance appears exactly once in what is actually sent.
+      expect(JSON.stringify(captured).split(text).length - 1).toBe(1);
+    });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();
       const forged = {
