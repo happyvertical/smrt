@@ -128,6 +128,69 @@ describe('InheritanceResolver', () => {
       );
     });
 
+    it('fills missing metadata on a bare grandchild STI override from the declaring ancestor (#4005)', () => {
+      const contractTypeBase = {
+        name: 'contractType',
+        typeAnnotation: 'ContractType',
+        initializer: 'ContractType.ORDER',
+        hasDecimalPoint: false,
+        numericValue: null,
+        decorators: [
+          {
+            name: 'field',
+            arguments: ["{ description: 'The kind of contract.' }"],
+          },
+        ],
+        optional: false,
+        isStatic: false,
+        readonly: false,
+        accessibility: 'public' as const,
+        line: 1,
+      };
+      // Bare `override contractType = ContractType.ORDER` — no annotation,
+      // no decorators, as the commerce Contract leaves redeclare it.
+      const bareOverride = {
+        ...contractTypeBase,
+        typeAnnotation: null,
+        decorators: [],
+        line: 3,
+      };
+      const resolver = new InheritanceResolver();
+      resolver.addClasses([
+        createClass('SmrtObject', null),
+        createClass('Contract', 'SmrtObject', [contractTypeBase], {
+          tableStrategy: 'sti',
+        }),
+        // SalesContract inherits contractType without redeclaring it
+        createClass('SalesContract', 'Contract'),
+        createClass('Order', 'SalesContract', [bareOverride]),
+      ]);
+
+      const resolved = resolver.resolveAll();
+      const order = resolved.find((item) => item.className === 'Order');
+      const raw = order?.allFields.find(
+        (field) => field.name === 'contractType',
+      );
+      // Leaf-wins: the leaf's own declaration supplies position evidence
+      expect(raw?.line).toBe(3);
+      expect(raw?.initializer).toBe('ContractType.ORDER');
+      // Filled from the nearest DECLARING ancestor (Contract, two levels up)
+      expect(raw?.typeAnnotation).toBe('ContractType');
+      expect(raw?.decorators).toEqual(contractTypeBase.decorators);
+
+      // The converted manifest keeps the enum and description of the
+      // inherited declaration instead of degrading to a bare text field
+      const manifest = new ManifestAdapter().toManifest(resolved, {
+        typeAliases: { ContractType: "'order' | 'estimate' | 'lease'" },
+      });
+      const field =
+        manifest.objects['order']?.fields.contractType ??
+        manifest.objects['@test:order']?.fields.contractType;
+      expect(field?.type).toBe('text');
+      expect(field?.enum).toEqual(['order', 'estimate', 'lease']);
+      expect(field?.description).toBe('The kind of contract.');
+    });
+
     it('should merge inherited fields for STI', () => {
       const resolver = new InheritanceResolver();
       resolver.addClasses([
