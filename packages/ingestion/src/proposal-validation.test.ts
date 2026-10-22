@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type { GenerationOutput } from './proposal-dto.js';
 import {
+  describeSchemaErrors,
   PROPOSAL_REASON_LIMIT,
   ProposalValidationError,
   schemaOwnedPath,
@@ -140,16 +141,37 @@ describe('proposal validator reasons', () => {
     expect(schemaOwnedPath('/title', argsSchema)).toBe('/title');
     // Numeric keys are indexes only under an array schema; under an object
     // (or an unknown node) they are data too.
-    expect(schemaOwnedPath('/lines/4417002231', argsSchema)).toBe('/lines/?');
-    expect(schemaOwnedPath('/Acme/0/x', argsSchema)).toBe('/?/?/?');
     expect(
-      schemaOwnedPath('/items/3/sku', {
-        type: 'object',
-        properties: {
-          items: { type: 'array', items: { properties: { sku: {} } } },
-        },
+      schemaOwnedPath('/lines/4417002231', argsSchema, {
+        lines: { '4417002231': 'x' },
       }),
+    ).toBe('/lines/?');
+    expect(schemaOwnedPath('/Acme/0/x', argsSchema, { Acme: [{ x: 1 }] })).toBe(
+      '/?/0/?',
+    );
+    expect(schemaOwnedPath('/Acme/0/x', argsSchema, { Acme: { '0': 1 } })).toBe(
+      '/?/?/?',
+    );
+    const union = {
+      type: 'object',
+      properties: {
+        items: {
+          anyOf: [
+            { type: 'array', items: { properties: { sku: {} } } },
+            { type: 'object', additionalProperties: { type: 'string' } },
+          ],
+        },
+      },
+    };
+    expect(
+      schemaOwnedPath('/items/3/sku', union, { items: [{}, {}, {}, {}] }),
     ).toBe('/items/3/sku');
+    // The same path under the object branch is a numeric data key.
+    expect(
+      schemaOwnedPath('/items/4417002231', union, {
+        items: { '4417002231': 1 },
+      }),
+    ).toBe('/items/?');
     const numericKeyError = failure(
       {
         outcome: 'proposals',
@@ -193,6 +215,33 @@ describe('proposal validator reasons', () => {
     });
     expect(error.reason).toMatch(/\+\d+ more$/);
     expect(error.reason.length).toBeLessThanOrEqual(PROPOSAL_REASON_LIMIT);
+  });
+  it('summarizes a very large error list in bounded time', () => {
+    const errors = Array.from({ length: 400000 }, (_, index) => ({
+      instancePath: `/splits/0/groups/${index}`,
+      keyword: 'type',
+      schemaPath: '#/x',
+      params: { type: 'array' },
+      message: 'must be array',
+    }));
+    const started = performance.now();
+    const reason = describeSchemaErrors(
+      errors,
+      {
+        type: 'object',
+        properties: {
+          splits: {
+            type: 'array',
+            items: { properties: { groups: { type: 'array', items: {} } } },
+          },
+        },
+      },
+      { splits: [{ groups: new Array(400000).fill(1) }] },
+    );
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(reason).toContain('/splits/0/groups/0 type (type=array)');
+    expect(reason).toMatch(/\+399980 more$/);
+    expect(reason.length).toBeLessThanOrEqual(PROPOSAL_REASON_LIMIT);
   });
   it('reports internal checks by path only', () => {
     const error = failure({

@@ -28,8 +28,8 @@ let view = $state<ItemReviewView>(),
   error = $state(false),
   splits = $state<Record<string, string>>({}),
   // Human drafts for `needs_review` suggestions, keyed by `attemptId:index`.
-  // They survive refresh and actions on other cards and are cleared only by a
-  // successful preview of their own card or a denied view.
+  // They survive refresh, failures and actions on other cards and are cleared
+  // only by a successful preview of their own card.
   drafts = $state<Record<string, string>>({}),
   // Drafts the reviewer tried to preview while unparsable; the alert clears
   // as soon as the draft parses again.
@@ -48,8 +48,9 @@ function deny() {
   epoch++;
   view = undefined;
   splits = {};
-  drafts = {};
-  invalidDrafts = {};
+  // Drafts are the reviewer's own typed text, never host data: they are kept
+  // in memory (nothing renders while the view is denied) so a failed refresh
+  // or a failed action on another card does not discard them.
   error = true;
   pending = false;
 }

@@ -956,6 +956,9 @@ export class IngestionProposalService {
     // may be recorded in `record` mode.
     let authorityError: unknown;
     let decided = false;
+    // Tokens are spent even when the SDK rejects the reply's shape; keep the
+    // provider-reported usage so record mode can persist it.
+    let spent: unknown;
     const assertRequestBudget = async () => {
       let maxInputBytes: number;
       try {
@@ -1012,6 +1015,8 @@ export class IngestionProposalService {
               await gate();
               const answer = await configured.client.decide(request, options);
               decided = true;
+              if (answer && typeof answer === 'object' && 'usage' in answer)
+                spent = (answer as { usage?: unknown }).usage;
               return answer;
             },
           },
@@ -1028,14 +1033,12 @@ export class IngestionProposalService {
         (error instanceof StageFailure && error.category === 'limit')
       )
         throw error;
-      // Opt-out: the suggestions stay as generated; the failure is provenance.
-      // A thrown SDK validation error carries no usage; record it when the
-      // error object happens to expose one.
+      // Opt-out: the suggestions stay as generated; the failure is provenance,
+      // including whatever usage the provider reported before the SDK rejected
+      // the reply's shape.
       recordFailure(
         decided ? 'decision_malformed' : 'decision_unavailable',
-        error && typeof error === 'object' && 'usage' in error
-          ? (error as { usage?: unknown }).usage
-          : undefined,
+        spent,
       );
     }
     await this.live(
