@@ -11,6 +11,7 @@ import {
   CREATE,
   referenceHandlers,
 } from '../../reference/handlers.js';
+import type { InlineInterpretation } from '../dto.js';
 import { IntakeAccessDeniedError } from '../execution.js';
 import type {
   IntakeExecutionOptions,
@@ -1146,6 +1147,9 @@ export function internalSourceSuite(
           }),
         ],
       });
+      const single = await service.listOwnProposals({ limit: 1 });
+      expect(single.items.map((e) => e.item.id)).toEqual([syntheticId(2000)]);
+      expect(single.nextCursor).toBeUndefined();
       // The 1000th hidden row reaches the ceiling: an error, never a cursor.
       await cloneOwnRows(template, [{ n: 999, tag: 'hidden' }]);
       await expect(service.listOwnProposals()).rejects.toThrow(
@@ -1224,6 +1228,76 @@ export function internalSourceSuite(
           service.listReviews(mine.itemId, { cursor }),
         ).rejects.toThrow('Invalid review page');
       }
+    });
+
+    it('replays one inline request raced by an identical concurrent call', async () => {
+      const id = randomUUID();
+      const itemId = await accepted(message(id));
+      const request = { requestId: `race:${id}`, extraction };
+      let held: Promise<InlineInterpretation> | undefined;
+      // The first call is held between its replay lookup and its append while
+      // the identical second call runs to completion.
+      const racing: IngestionService = new IngestionService({
+        ...options,
+        checkpoint: async (name) => {
+          if (name !== 'inline:replay-miss' || held) return;
+          held = racing.interpretInline(itemId, request);
+          await held;
+        },
+      });
+      const [first, second] = await Promise.all([
+        racing.interpretInline(itemId, request),
+        (async () => {
+          while (!held) await new Promise((resolve) => setTimeout(resolve, 5));
+          return held;
+        })(),
+      ]);
+      expect(first.extraction.attemptId).toBe(second.extraction.attemptId);
+      expect(first.generation?.attemptId).toBe(second.generation?.attemptId);
+      expect(first.generation?.state).toBe('completed');
+      expect(first.analysis?.attemptId).toBe(second.analysis?.attemptId);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect((await rowsFor('intake_analyses', itemId)).length).toBe(2);
+      expect(await count('SELECT COUNT(*) AS n FROM _smrt_jobs')).toBe(0);
+    });
+
+    it('refuses an inline interpretation whose pinned extraction a concurrent reprocess superseded', async () => {
+      const id = randomUUID();
+      const itemId = await accepted(message(id));
+      let held: Promise<InlineInterpretation> | undefined;
+      // Hold the first call after it prepared against extraction revision 1;
+      // a different request reprocesses and interprets in the meantime.
+      const racing: IngestionService = new IngestionService({
+        ...options,
+        checkpoint: async (name) => {
+          if (name !== 'inline:prepared' || held) return;
+          held = racing.interpretInline(itemId, {
+            requestId: `later:${id}`,
+            extraction,
+          });
+          await held;
+        },
+      });
+      await expect(
+        racing.interpretInline(itemId, {
+          requestId: `earlier:${id}`,
+          extraction,
+        }),
+      ).rejects.toThrow('Generation source changed');
+      const later = await held;
+      expect(later?.generation?.state).toBe('completed');
+      const analyses = await rowsFor('intake_analyses', itemId);
+      expect(
+        analyses.map((row) => Number(row.revision)).sort((a, b) => a - b),
+      ).toEqual([1, 2, 3]);
+      expect(
+        analyses.some(
+          (row) =>
+            (json(row.data) as Record<string, unknown>).requestKey ===
+            `inline:interpret:earlier:${id}`,
+        ),
+      ).toBe(false);
+      expect(generate).toHaveBeenCalledTimes(1);
     });
 
     it('refuses a feedback write across which submitter review authority widens', async () => {
