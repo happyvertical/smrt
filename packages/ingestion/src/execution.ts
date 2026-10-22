@@ -1517,6 +1517,10 @@ export class IntakeExecutionService {
       handlerVersion: bound.handler.version,
       signal,
       reviewer: kind === 'action_decision' ? eventData.reviewer : null,
+      decisionMode:
+        kind === 'action_decision' ? (eventData.mode ?? 'review') : null,
+      selfDecision:
+        kind === 'action_decision' && eventData.selfDecision === true,
       observedBy: this.scope.actorId,
       principalId: eventData.principalId ?? null,
       reason: kind === 'action_decision' ? (eventData.reason ?? '') : '',
@@ -1609,6 +1613,9 @@ export class IntakeExecutionService {
           policyVersions: policy.versions,
           decidedAt: this.now().toISOString(),
           kind: 'human',
+          // A submitter deciding their own proposal is never a reviewer judgment.
+          mode,
+          selfDecision: mode === 'review_own',
         }),
       });
       await this.feedbackEvent(
@@ -2915,10 +2922,16 @@ export class IntakeExecutionService {
         cancelled: !!row.cancelled,
         traceId: String(row.trace_id),
       };
-      items.push({
-        item,
-        reviews: await this.listReviews(item.id, { limit: 50 }),
-      });
+      // One unreadable submission (revoked item, handler or target access)
+      // must not hide the others; the entry says only that it is unavailable.
+      try {
+        items.push({
+          item,
+          reviews: await this.listReviews(item.id, { limit: 50 }),
+        });
+      } catch {
+        items.push({ item, reviews: null, unavailable: true });
+      }
     }
     return {
       items,

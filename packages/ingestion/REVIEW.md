@@ -82,8 +82,14 @@ operation: the host's `authorize` must return `submitter: true`, the resolved
 policy must have `submitterReview` enabled, and the recorded submitter must be
 the current actor. Policy enablement, handler/operation allowlists, captured
 ceiling, confidential access, retention and the first-valid-decision lock are
-unchanged, and the decision is recorded as an ordinary human decision by that
-actor. `applyAction` then runs once under the approver's live grants exactly as
+unchanged. The decision is a human decision by that actor, recorded with
+`mode: 'review_own'` and `selfDecision: true`; reviewer decisions carry
+`mode: 'review'`. A self-decision is not a reviewer judgment: it never feeds
+automation eligibility (machine authorization remains the separate evaluated
+`kind: 'machine'` path) and its feedback events carry the same marker. Own
+listings return `{ reviews: null, unavailable: true }` for a submission whose
+reviews cannot currently be read, disclosing nothing about the denied target.
+`applyAction` then runs once under the approver's live grants exactly as
 for reviewer decisions. Hosts render this surface from their own authenticated
 session; presentation state confers no authority, and a source payload cannot
 nominate a submitter.
