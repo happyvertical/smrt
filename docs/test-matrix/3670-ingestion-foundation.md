@@ -187,7 +187,8 @@ cleared once a later poll shows the item settled (and at once when the reload
 answering the click is already settled), the
 `not_started` retry against the server binding, and stale display; the Chromium suite records a real instruction, observes the background
 "Reinterpreting…" state, the in-place update, provenance, unchanged original
-bytes, a refused forged payload and supersession. No schema or migration changes:
+bytes, whitespace-only instruction text refused by server-side validation, and
+supersession. No schema or migration changes:
 the record lives in the existing append-only analysis ledger beside the split
 correction.
 

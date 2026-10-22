@@ -563,8 +563,8 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
       entry.evidence.mediaType === 'application/pdf',
   );
   expect(await (await page.request.get(pdf.viewUrl)).body()).toEqual(original);
-  // Process access cannot mint a record: a forged client payload is refused.
-  const forged = await page.request.post('/api/instruct', {
+  // Whitespace-only instruction text fails server-side validation.
+  const blankText = await page.request.post('/api/instruct', {
     headers: { 'x-review-csrf': await csrf(page) },
     data: {
       itemId,
@@ -574,7 +574,7 @@ test('a reviewer instruction is recorded immutably, reinterpreted in the backgro
       requestId: randomUUID(),
     },
   });
-  expect(forged.status()).toBe(409);
+  expect(blankText.status()).toBe(409);
   // A superseding instruction replaces the first for future interpretations;
   // the earlier record remains in history.
   await box.fill('Second thoughts: file it under supplier correspondence.');
