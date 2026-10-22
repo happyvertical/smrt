@@ -21,11 +21,12 @@ it is applied.
 `{ items: [{ item, state, cursor }], scanned, nextCursor? }`: one authorized
 inbox page newest receipt first with each row's durable inbox state and
 continuation cursor, and the number of rows the call examined. `listItems()`
-remains as a deprecated array-returning walk over every page. Without the
-optional `cursorKey` service option every cursor names a returned row and a
-page that returns nothing within its scan limit fails with
-`IntakeScanLimitError`; with a server secret of at least 32 bytes, cursors are
-sealed and such a page resumes past what it skipped. `scanned` is for host
+remains as a deprecated array-returning method that walks the private page
+scan to the end. Without the optional `cursorKey` service option every cursor
+names the last row the actor can read, and a page that finds no readable row
+within its scan limit fails with `IntakeScanLimitError`; with a server secret
+of at least 32 bytes, cursors are sealed and such a page resumes past what it
+skipped. `scanned` is for host
 accounting only. See [REVIEW.md](REVIEW.md) for the paging and authorization
 contract.
 

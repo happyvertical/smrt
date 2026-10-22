@@ -147,7 +147,7 @@ export interface IngestionOptions {
    * Optional server secret (at least 32 bytes) that seals inbox page cursors.
    * With it, a page that spends its scan limit on unreadable rows can hand
    * back an opaque position past them; without it, a cursor only ever names
-   * a returned row. Never derive it from request data.
+   * the last row the actor can read. Never derive it from request data.
    */
   cursorKey?: string | Uint8Array;
   /** Recheck current access for EVERY boundary, including worker completion. */
@@ -254,7 +254,7 @@ export const ITEM_PAGE_CEILING = 100;
 /**
  * The most rows one `listItemsPage` call examines, whatever its filters.
  * When it is reached the page is returned short with a `nextCursor`, or the
- * call fails with `IntakeScanLimitError` when it returned nothing and may not
+ * call fails with `IntakeScanLimitError` when it found no readable row and may not
  * disclose a position; no single call scans an unbounded scope.
  */
 export const ITEM_SCAN_CEILING = 10 * ITEM_PAGE_CEILING;
@@ -309,10 +309,11 @@ function receiptTime(row: Row): string | undefined {
   return undefined;
 }
 /**
- * A page call spent its scan limit without returning a row. Without a
- * `cursorKey` the service may not hand back a position derived from rows the
- * actor cannot read, so the call fails closed instead; the message names no
- * row. Hosts that already collected rows return them with their cursor.
+ * A page call spent its scan limit without finding a row the actor can read,
+ * or would otherwise hand back its own input cursor. Without a `cursorKey`
+ * the service may not return a position derived from rows the actor cannot
+ * read, so the call fails closed instead; the message names no row. Hosts
+ * that already collected rows return them with their cursor.
  */
 export class IntakeScanLimitError extends Error {
   constructor() {
@@ -325,17 +326,16 @@ interface ItemPosition {
   key: string;
   id: string;
 }
-/** Sealed cursor plaintext size; every sealed cursor has the same length. */
-const SEALED_CURSOR_BYTES = 256;
+/**
+ * Sealed cursor plaintext size; every sealed cursor has the same length. The
+ * page query admits only receipt values and ids of at most 64 characters, so
+ * any scan position fits even when every character is JSON-escaped.
+ */
+const SEALED_CURSOR_BYTES = 512;
+/** The longest stored receipt value or id the page query admits on SQLite. */
+const SCAN_KEY_CHARS = 64;
 function samePosition(a: ItemPosition, b: ItemPosition): boolean {
   return a.key === b.key && a.id === b.id;
-}
-/** Whether a scan position fits the fixed sealed-cursor plaintext. */
-function sealable(position: ItemPosition): boolean {
-  return (
-    Buffer.byteLength(JSON.stringify([position.key, position.id])) <=
-    SEALED_CURSOR_BYTES
-  );
 }
 /** Opaque (received-at, id) continuation; never a bare id, which is not ordered. */
 function encodeItemCursor(receivedAt: string, id: string): string {
@@ -1409,11 +1409,15 @@ export class IngestionService {
     // restriction is left to the planner, which then looks ids up directly.
     // A non-text receipt value (an integer, say) sorts after every text value
     // on SQLite and always satisfies `created_at < ?`, so the scan could
-    // never move past it; such rows are service-foreign and excluded.
+    // never move past it; an over-long receipt value or id could not be
+    // carried by any cursor. Such rows are service-foreign and excluded.
+    // PostgreSQL types both columns, so neither case arises there.
     const sqlite = this.engine === 'sqlite';
     const pinned =
       sqlite && !input.itemIds ? ' INDEXED BY intake_items_received_idx' : '';
-    const textOnly = sqlite ? " AND typeof(i.created_at) = 'text'" : '';
+    const textOnly = sqlite
+      ? ` AND typeof(i.created_at) = 'text' AND length(i.created_at) <= ${SCAN_KEY_CHARS} AND length(i.id) <= ${SCAN_KEY_CHARS}`
+      : '';
     // The exact stored receipt value (for the scan anchor) and, on
     // PostgreSQL, whether it has a sub-millisecond part a cursor cannot carry.
     const receipt = sqlite
@@ -1454,15 +1458,19 @@ export class IngestionService {
       const candidates = rows.slice(0, batch);
       // Authority first, for every fetched row, so that a readable row the
       // state filter excludes may still anchor the cursor. Item-level
-      // authority runs once per distinct ceiling; a row whose payload cannot
-      // be read is skipped, never fatal.
+      // authority runs once per distinct ceiling. A row whose payload cannot
+      // be parsed is skipped and counted; a host authorization that throws
+      // rejects the whole page, as `load` does, so a transient failure can
+      // never let paging move past rows the actor may be allowed to read.
       const passed = new Set<Row>();
       for (const row of candidates) {
+        let data: Row;
         try {
-          if (await allowed(object(row.data))) passed.add(row);
+          data = object(row.data);
         } catch {
-          /* corrupt row: skipped and counted below */
+          continue;
         }
+        if (await allowed(data)) passed.add(row);
       }
       // Handler bindings once per batch, for every row that passed and binds
       // actions: one read per batch, bounded by rows scanned.
@@ -1478,17 +1486,19 @@ export class IngestionService {
         // A receipt time the service did not write is not listed; the scan
         // position moves past it by its exact stored value so it is neither
         // re-read nor allowed to shift the order of its neighbours.
+        // A row whose id is not a UUID is likewise service-foreign: it is
+        // passed by its raw id and never listed or named by an unsealed
+        // cursor, which only ever carries UUIDs.
+        const id = String(row.id);
         const receivedAt = receiptTime(row);
-        if (receivedAt !== undefined)
-          scanFrom = { key: receivedAt, id: String(row.id) };
-        else if (typeof row.receipt_raw === 'string') {
-          const raw = { key: row.receipt_raw, id: String(row.id) };
-          if (sealable(raw)) scanFrom = raw;
-        }
-        if (receivedAt === undefined || !passed.has(row)) continue;
+        if (receivedAt !== undefined) scanFrom = { key: receivedAt, id };
+        else if (typeof row.receipt_raw === 'string')
+          scanFrom = { key: row.receipt_raw, id };
+        if (receivedAt === undefined || !isIntakeId(id) || !passed.has(row))
+          continue;
         if (Number(row.action_count) > 0 && !(await handlers.readable(row)))
           continue;
-        const position = { key: receivedAt, id: String(row.id) };
+        const position = { key: receivedAt, id };
         lastReadable = position;
         if (input.state && row.inbox_state !== input.state) continue;
         items.push({
@@ -1564,7 +1574,8 @@ export class IngestionService {
         parsed.length !== 2 ||
         typeof parsed[0] !== 'string' ||
         !parsed[0] ||
-        !isIntakeId(parsed[1])
+        typeof parsed[1] !== 'string' ||
+        !parsed[1]
       )
         throw new Error('shape');
       return { key: parsed[0], id: parsed[1] };
@@ -1598,18 +1609,31 @@ export class IngestionService {
       from = scan.scanFrom;
     }
   }
-  /** One read authorization per distinct captured ceiling for a page of rows. */
+  /**
+   * One read authorization per distinct captured ceiling for a page of rows.
+   * A refusal hides the rows; a malformed ceiling hides its row; a host
+   * callback that throws rejects the page with that error.
+   */
   private ceilingGate(): (data: Row) => Promise<boolean> {
     const ceilings = new Map<string, Promise<boolean>>();
     return (data) => {
-      const ceiling = object(data.capturedCeiling ?? {});
+      let ceiling: Record<string, unknown>;
+      try {
+        ceiling = object(data.capturedCeiling ?? {});
+      } catch {
+        return Promise.resolve(false);
+      }
       const key = canonical(ceiling);
       let decision = ceilings.get(key);
       if (!decision) {
-        decision = this.authorize('read', { capturedCeiling: ceiling }).then(
-          () => true,
-          () => false,
-        );
+        decision = Promise.resolve(
+          this.options.authorize({
+            scope: this.scope,
+            operation: 'read',
+            capturedCeiling: ceiling,
+            db: this.db,
+          }),
+        ).then((granted) => granted === true);
         ceilings.set(key, decision);
       }
       return decision;

@@ -1777,6 +1777,107 @@ export function foundationSuite(
           );
         }
         for (const row of ints) await setTime(row.id, row.receivedAt);
+        // An over-long receipt value (ISO text plus 600 characters) could not
+        // be carried by any cursor; such rows are excluded by the page query
+        // too, so unkeyed, keyed and deprecated walks all reach the end.
+        const long = ordered.slice(200, 350);
+        for (const row of long)
+          await setTime(row.id, `${row.receivedAt}${'x'.repeat(600)}`);
+        const inLong = new Set(long.map((row) => row.id));
+        const expectedShort = ordered
+          .filter((row) => !inLong.has(row.id))
+          .map((row) => row.id);
+        for (const walker of [
+          full,
+          new IngestionService({
+            ...options,
+            db: counted,
+            cursorKey: 'k'.repeat(32),
+          }),
+        ]) {
+          const walked: string[] = [];
+          let at: string | undefined;
+          let calls = 0;
+          do {
+            const page = await walker.listItemsPage({ limit: 100, cursor: at });
+            walked.push(...ids(page));
+            at = page.nextCursor;
+            calls++;
+            expect(calls).toBeLessThan(40);
+          } while (at);
+          expect(walked).toEqual(expectedShort);
+          expect((await walker.listItems()).map((item) => item.id)).toEqual(
+            expectedShort,
+          );
+        }
+        // A keyed one-row page that starts right before the long run: had the
+        // long rows been fetched, it would have to seal a position on one.
+        const keyedLong = new IngestionService({
+          ...options,
+          db: counted,
+          cursorKey: 'k'.repeat(32),
+        });
+        const firstHundred = await keyedLong.listItemsPage({ limit: 100 });
+        const secondHundred = await keyedLong.listItemsPage({
+          limit: 100,
+          cursor: firstHundred.nextCursor,
+        });
+        const pastLong = await keyedLong.listItemsPage({
+          limit: 20,
+          scanLimit: 1,
+          cursor: secondHundred.nextCursor,
+        });
+        expect(ids(pastLong)).toEqual([ordered[350].id]);
+        for (const row of long) await setTime(row.id, row.receivedAt);
+        // A readable row whose id is not a UUID is skipped and counted like a
+        // non-canonical receipt time: never listed, never named by an
+        // unsealed cursor, and passed by a sealed one that stops on it.
+        const anchorRow = visible[10];
+        const legacy = ['legacy-a', 'legacy-b', 'legacy-c'];
+        for (const [n, id] of legacy.entries()) {
+          const at = new Date(
+            Date.parse(anchorRow.receivedAt) - 100 * (n + 1),
+          ).toISOString();
+          const row: Record<string, unknown> = {
+            ...template,
+            id,
+            slug: id,
+            delivery_key: `legacy-${n}`,
+            created_at: at,
+            updated_at: at,
+          };
+          await db.query(
+            `INSERT INTO intake_items (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
+            ...columns.map((column) => row[column]),
+          );
+        }
+        const nextAfterAnchor =
+          ordered[ordered.findIndex((row) => row.id === anchorRow.id) + 1];
+        const keyedLegacy = new IngestionService({
+          ...options,
+          db: counted,
+          cursorKey: 'k'.repeat(32),
+          authorize: async (input) =>
+            isSecret(input.capturedCeiling) ? false : options.authorize(input),
+        });
+        for (const walker of [paged, keyedLegacy]) {
+          // Twelve rows: the eleven newest canonical rows, then legacy-a.
+          const stop = await walker.listItemsPage({ limit: 20, scanLimit: 12 });
+          expect(ids(stop)).toEqual(visible.slice(0, 11).map((row) => row.id));
+          expect(stop.nextCursor).toBeTruthy();
+          const resumed = await walker.listItemsPage({
+            limit: 1,
+            cursor: stop.nextCursor,
+          });
+          expect(ids(resumed)).toEqual([nextAfterAnchor.id]);
+        }
+        expect(
+          (await full.listItems()).filter((item) => legacy.includes(item.id)),
+        ).toEqual([]);
+        await db.query(
+          `DELETE FROM intake_items WHERE id IN (${legacy.map(() => '?').join(',')})`,
+          ...legacy,
+        );
       }
       // A parseable but non-canonical receipt time between two canonical
       // neighbours (no milliseconds on SQLite, a sub-millisecond part on
@@ -1843,6 +1944,79 @@ export function foundationSuite(
           odd.id,
         );
         expect(ids(await paged.listItemsPage())).toEqual(ids(first));
+      }
+      // A call never hands back its own input cursor. A database that returns
+      // the anchor row again (as SQLite did for integer receipt values before
+      // they were excluded) makes a page fail closed, keyed or not, and the
+      // deprecated walk stop with an error instead of looping.
+      {
+        let replay: unknown[] | undefined;
+        let lastRows: unknown[] = [];
+        const sticky = new Proxy(db, {
+          get(target, property) {
+            if (property === 'query')
+              return async (...args: unknown[]) => {
+                const result = await (
+                  target.query as (
+                    ...a: unknown[]
+                  ) => Promise<{ rows: unknown[] }>
+                )(...args);
+                if (!String(args[0]).includes('FROM intake_items i'))
+                  return result;
+                lastRows = result.rows;
+                return replay ? { ...result, rows: replay } : result;
+              };
+            const value = Reflect.get(target, property, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+        for (const cursorKey of [undefined, 'k'.repeat(32)]) {
+          replay = undefined;
+          const stuck = new IngestionService({
+            ...options,
+            db: sticky,
+            ...(cursorKey ? { cursorKey } : {}),
+            authorize: async (input) =>
+              isSecret(input.capturedCeiling)
+                ? false
+                : options.authorize(input),
+          });
+          const one = await stuck.listItemsPage({ limit: 1 });
+          replay = Array.from({ length: 101 }, () => lastRows[0]);
+          await expect(
+            stuck.listItemsPage({
+              limit: 20,
+              scanLimit: 1,
+              cursor: one.nextCursor,
+            }),
+          ).rejects.toThrow(/^Intake scan limit$/);
+          await expect(stuck.listItems()).rejects.toThrow(
+            'Intake list made no progress',
+          );
+        }
+      }
+      // A host authorization that throws rejects the page and the deprecated
+      // walk with its error, as `load` does, instead of hiding rows; a
+      // refusal still hides them quietly.
+      {
+        const flaky = new IngestionService({
+          ...options,
+          db: counted,
+          authorize: async (input) => {
+            if (isSecret(input.capturedCeiling))
+              throw new Error('host authorization unavailable');
+            return options.authorize(input);
+          },
+        });
+        await expect(flaky.listItemsPage({ limit: 100 })).rejects.toThrow(
+          'host authorization unavailable',
+        );
+        await expect(flaky.listItems()).rejects.toThrow(
+          'host authorization unavailable',
+        );
+        expect(ids(await paged.listItemsPage({ limit: 100 }))).toEqual(
+          visible.slice(0, 100).map((row) => row.id),
+        );
       }
       // A caller's remaining budget bounds the scan below the ceiling.
       for (const input of [{ scanLimit: 0 }, { scanLimit: 1001 }])

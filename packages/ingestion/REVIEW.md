@@ -175,7 +175,10 @@ gate. Note the host cost plainly: the execution `authorize` callback runs once
 per distinct (item, handler) bound by a scanned row that passed the item-level
 gate. Each item is its own authorization subject, so nothing is deduplicated
 across items; the count is bounded by rows scanned (at most
-`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. Denied or unreadable rows are skipped without
+`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. A host `authorize` callback that refuses hides the rows it covers; one that
+throws rejects the whole page (and `listItems()`) with its error, as `load`
+does, so a transient failure never lets paging move past readable rows.
+Denied or unreadable rows are skipped without
 disclosure and the page refills from the next rows; refills grow from the page
 size to 100 rows per query, so a fully denied scope costs about a dozen page
 reads and as many binding reads per call. One service call examines at most
@@ -196,11 +199,13 @@ millisecond ISO receipt time the service stores. A row whose stored receipt
 time is not that form (on SQLite anything but `YYYY-MM-DDTHH:MM:SS.mmmZ`,
 including a parseable value without milliseconds or with an offset; on
 PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
-actor's access, and counts toward the scan. On SQLite a non-text stored value
-(an integer, say) is excluded by the page query itself, because it sorts after
-every text value and the scan could never move past it. Within a call the scan moves past
-it by its exact stored value, and a returned cursor names the last canonical
-row before it. A call that finds no readable row within its scan limit (at
+actor's access, and counts toward the scan, as does a row whose id is not a
+UUID. On SQLite a non-text stored value (an integer, say) and a receipt value
+or id longer than 64 characters are excluded by the page query itself: the
+first sorts after every text value so the scan could never move past it, and
+the second could not be carried by any cursor. Within a call the scan moves
+past a service-foreign row by its exact stored value, and an unsealed cursor
+names the last row before it that the actor can read. A call that finds no readable row within its scan limit (at
 most 1000) fails closed with `IntakeScanLimitError` unless a `cursorKey` is
 configured, as below. The host
 `list` returns what earlier service calls collected, with their cursor, when
@@ -226,7 +231,7 @@ Listing does not load original bytes.
 
 Cursors never disclose an unreadable row. Without a `cursorKey` in the
 service options, every cursor (each row's and `nextCursor`) names a row the
-actor can read; a page that spends its scan limit before filling hands back
+actor can read (the last one when a page stops early); a page that spends its scan limit before filling hands back
 the last such row, and one that found none fails closed with
 `IntakeScanLimitError` (`Intake scan limit`, no id or time). A run of rows the
 actor cannot read (refused by the captured ceiling or the execution gate, or

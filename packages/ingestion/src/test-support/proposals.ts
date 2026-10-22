@@ -946,6 +946,18 @@ export function proposalSuite(
       expect(writes).toBe(0);
       expect(queries).toBeLessThanOrEqual(3);
       expect(await expiry()).toEqual(before);
+      // The cursor anchor is set only after the handler gate: a budget stop
+      // inside the run of handler-denied clones names the last readable row
+      // (the original item), never one of them.
+      const stopped = await paged.listItemsPage({ limit: 20, scanLimit: 6 });
+      expect(stopped.items.map(({ item }) => item.id)).toEqual([
+        generated.itemId,
+      ]);
+      const named = JSON.parse(
+        Buffer.from(String(stopped.nextCursor), 'base64url').toString('utf8'),
+      );
+      expect(named[1]).toBe(generated.itemId);
+      expect(mismatched).not.toContain(named[1]);
       // Every other denial path of the execution read gate empties the page
       // while the item view refuses as before.
       const createKey = (() => {
