@@ -753,6 +753,42 @@ export function foundationSuite(
       // An unknown id is omitted, not disclosed.
       expect([...page.keys()].sort()).toEqual([first, second].sort());
       expect(page.get(first)).toEqual(await service.getEvidence(first));
+      // Rows of another tenant or confidential scope are never returned, even
+      // when that scope's authorization allows everything: the query itself
+      // is tenant- and scope-bound.
+      for (const scope of [
+        { ...options.scope, tenantId: otherTenant },
+        { ...options.scope, confidentialScopeId: 'other' },
+      ]) {
+        const outsider = new IngestionService({
+          ...options,
+          scope,
+          authorize: async () => true,
+        });
+        expect((await outsider.listEvidence([first, second])).size).toBe(0);
+      }
+      // A mixed page: one row under a ceiling the host denies is omitted
+      // while the readable rows are returned, with one authorization per
+      // distinct captured ceiling, not per item.
+      const restrictedInput = receive('page-restricted');
+      restrictedInput.capturedCeiling = { restricted: true };
+      const restrictedResult = await service.receive(restrictedInput);
+      if (!('itemId' in restrictedResult))
+        throw new Error(JSON.stringify(restrictedResult));
+      const restricted = restrictedResult.itemId;
+      const ceilingAuthorize = vi.fn(
+        async ({
+          capturedCeiling,
+        }: Parameters<IngestionOptions['authorize']>[0]) =>
+          capturedCeiling.restricted !== true,
+      );
+      const gated = new IngestionService({
+        ...options,
+        authorize: ceilingAuthorize,
+      });
+      const mixed = await gated.listEvidence([first, restricted, second]);
+      expect([...mixed.keys()].sort()).toEqual([first, second].sort());
+      expect(ceilingAuthorize).toHaveBeenCalledTimes(2);
       // A denied ceiling omits the rows; so does an expired item.
       allowed = false;
       expect((await service.listEvidence([first])).size).toBe(0);

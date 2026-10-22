@@ -166,7 +166,10 @@ text); the primary part is the shallowest non-`application/json` durable part
 `evidence` call must not read bytes. `IntakeInbox`/`InboxView` accept an
 optional `rowAside` snippet receiving the `InboxEntry`; without it a row renders
 the host's "Open original" link (new tab) and thumbnail when the URLs are
-same-origin. Optional `label(item)` changes presentation. Optional
+same-origin; each link's accessible name is "Open original: <row label>", and
+a row shows no wrapper when neither URL is usable. The slot is a plain `div`,
+not an `aside` landmark, so a page does not add one landmark per row. Optional
+`label(item)` changes presentation. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment

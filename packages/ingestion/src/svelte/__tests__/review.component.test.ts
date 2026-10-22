@@ -1069,11 +1069,19 @@ describe('intake review host boundary', () => {
     const callbacks = host(view);
     const { container } = render(IntakeInbox, { host: callbacks });
     await screen.findByText('Private invoice');
-    const link = screen.getByRole('link', { name: 'Open original' });
+    // Each row's link names the item it opens, so a list of them is usable.
+    const link = screen.getByRole('link', {
+      name: 'Open original: Private invoice',
+    });
+    expect(link.textContent).toBe('Open original');
     expect(link.getAttribute('href')).toBe(`${location.origin}/original`);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
-    const image = container.querySelector('li aside img') as HTMLImageElement;
+    // Not a landmark per row.
+    expect(container.querySelector('aside')).toBeNull();
+    const image = container.querySelector(
+      'li .row-aside img',
+    ) as HTMLImageElement;
     expect(image.getAttribute('src')).toBe(`${location.origin}/thumbnail.png`);
     expect(image.getAttribute('alt')).toBe('Email original');
     expect(callbacks.load).not.toHaveBeenCalled();
@@ -1088,13 +1096,14 @@ describe('intake review host boundary', () => {
     };
     const { container, unmount } = render(IntakeInbox, { host: host(view) });
     await screen.findByText('Private invoice');
-    expect(screen.queryByRole('link', { name: 'Open original' })).toBeNull();
-    expect(container.querySelector('li aside img')).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Open original/ })).toBeNull();
+    // With both URLs refused there is nothing to show, so no empty wrapper.
+    expect(container.querySelector('li .row-aside')).toBeNull();
     unmount();
     const bare = page();
     const second = render(IntakeInbox, { host: host(bare) });
     await screen.findByText('Private invoice');
-    expect(second.container.querySelector('li aside')).toBeNull();
+    expect(second.container.querySelector('li .row-aside')).toBeNull();
   });
   it('renders a host rowAside snippet with the page entry instead of the default aside', async () => {
     const view = page();
@@ -1113,8 +1122,9 @@ describe('intake review host boundary', () => {
     });
     await screen.findByText('Private invoice');
     expect(screen.getByTestId('row-aside').textContent).toBe('item:original');
-    expect(screen.queryByRole('link', { name: 'Open original' })).toBeNull();
-    expect(container.querySelectorAll('li aside')).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: /^Open original/ })).toBeNull();
+    expect(container.querySelectorAll('li .row-aside')).toHaveLength(1);
+    expect(container.querySelector('aside')).toBeNull();
   });
   it('filters and assigns using the host assignment version', async () => {
     const callbacks = host();
