@@ -1240,6 +1240,9 @@ describe('smrtConsumer registration generation', () => {
     );
     expect(svelteRootWarnings).toHaveLength(1);
     expect(svelteRootWarnings[0]).toContain('@test/pkg');
+    expect(svelteRootWarnings[0]).toContain(
+      'exports OtherRootThing, RootOnlyThing only from that root',
+    );
     expect(svelteRootWarnings[0]).toContain('keeps the root import');
     expect(svelteRootWarnings[0]).toContain('./models or ./objects');
   });

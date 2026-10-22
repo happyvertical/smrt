@@ -1879,6 +1879,20 @@ async function generateRegistrationFile(
 
   const collectionClassMemo = new WeakMap<object, boolean>();
   const svelteRootImportWarnings = new Set<string>();
+  // External objects imported from a package ROOT, grouped by package, so the
+  // Svelte-root warning below can name every affected object once per package.
+  const rootImportedObjects = new Map<string, string[]>();
+  for (const [objectName, def] of Object.entries(manifestObjects)) {
+    if (!def.packageName || def.packageName === manifest.packageName) continue;
+    const objectImportPath = def.importPath || def.packageName;
+    if (objectImportPath !== packageNameFromImportPath(objectImportPath)) {
+      continue;
+    }
+    const names = rootImportedObjects.get(objectImportPath) ?? [];
+    names.push(def.className || def.exportName || objectName);
+    names.sort((left, right) => left.localeCompare(right));
+    rootImportedObjects.set(objectImportPath, names);
+  }
 
   const isCollectionClass = (
     def: ConsumerObjectDefinition | undefined,
@@ -1952,12 +1966,11 @@ async function generateRegistrationFile(
     // that root really is Node-safe, which the declaration cannot prove
     // either way. Say so once per package rather than failing a build whose
     // consumer may never run outside Vite (#4219).
-    const rootImportKey = `${providerPackageName ?? ''}\0${importPath}`;
     if (
       importPath === packageNameFromImportPath(importPath) &&
-      !svelteRootImportWarnings.has(rootImportKey)
+      !svelteRootImportWarnings.has(importPath)
     ) {
-      svelteRootImportWarnings.add(rootImportKey);
+      svelteRootImportWarnings.add(importPath);
       const providerPackageJsonPath = appResolvable
         ? undefined
         : findInstalledPackageJson(providerPackageName as string, projectRoot);
@@ -1972,7 +1985,7 @@ async function generateRegistrationFile(
         isComponentBearingRoot(readInstalledPackageJson(rootPackageJsonPath))
       ) {
         console.warn(
-          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field or a "svelte" condition on its "." export) and exports ${objectName} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
+          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field or a "svelte" condition on its "." export) and exports ${(rootImportedObjects.get(importPath) ?? [objectName]).join(', ')} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
         );
       }
     }
