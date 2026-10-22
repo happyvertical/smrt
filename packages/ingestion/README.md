@@ -240,16 +240,26 @@ other payload, and the deleted delivery is never re-admitted. The owner key is
 recorded in the indexed `owner_key` column (`<kind>:<id>`, so `kind` cannot
 contain `:`). Deletion redaction blanks `owner_key` and `submitter_id` together
 with every payload: only the receipt identity (`delivery_key`) and the captured
-ceiling survive, so a redacted row no longer links an owner to an actor and a
+ceiling survive, and the ceiling loses `execution.principalId` unless an
+external action is still `executing` or `outcome_unknown`. So once nothing is
+left to reconcile, a redacted row no longer links an owner to an actor, and a
 repeated `expireOwned` finds nothing. Redaction also overwrites every
 identity- or content-derived digest (`payload_digest`, `scope_digest`, analysis
 `input_digest`, attempt `output_digest`, plan `digest` and proposal, decision
 and execution `binding_hash`) with the fixed marker `redacted`; successful
-result digests remain as the replay tombstone. The captured ceiling, including
-`execution.principalId`, is retained: reconciling an external action that was
-still in flight when the item was redacted authorizes under that principal,
-and later delete sweeps pass the ceiling to the host. Hosts that need the
-principal unlinkable should capture an opaque principal identifier. `delivery_key` stays in plaintext because it is
+result digests remain as the replay tombstone. The principal is retained only
+for an external action that was still in flight when the item was redacted,
+because reconciling it authorizes under that principal; it is dropped when that
+reconciliation reaches a final state, or by the next `repairDeletions` /
+`sweepRetention` pass. For a self-approvable receipt the principal is the
+submitter, so until then it identifies the sender. A successful result digest
+is a plain SHA-256 of the canonical result, so it can confirm a guessed result:
+keep handler results to record ids or opaque references, never content.
+
+A replay of a deleted delivery is rejected and never becomes fresh work. While
+deletion is still pending it returns `rejected/expired`; once redaction has
+completed the identity digests are gone, so it returns `rejected/conflict`.
+Sources treat both as terminal and must not retry. `delivery_key` stays in plaintext because it is
 the unique receipt identity and the package holds no secret to key it: hosts
 must use an opaque value (for example a random UUID recorded with the message)
 and must not encode owner ids, sender ids or content in `deliveryKey`.
