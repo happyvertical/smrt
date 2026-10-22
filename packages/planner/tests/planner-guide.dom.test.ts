@@ -281,3 +281,30 @@ it('holds a narrated spotlight for the requested time within bounds', async () =
     document.querySelector('[data-smrt-component="ControlSpotlight"]'),
   ).toBeNull();
 });
+it('lets the host reset the saved plan, quietly or through its onreset', async () => {
+  const onreset = vi.fn();
+  app = mount(Planner, {
+    target,
+    props: {
+      entryMode: 'planning',
+      persistence: 'host',
+      onreset,
+      onready: (value: PlannerHandle) => {
+        handle = value;
+      },
+    },
+  });
+  await settle();
+  cookbookStore.setSpecs('Free shirt over $100');
+  expect(cookbookStore.snapshot().specs).toBe('Free shirt over $100');
+  expect(handle?.reset?.({ silent: true })).toBe(true);
+  expect(cookbookStore.snapshot().specs).toBeUndefined();
+  expect(onreset).not.toHaveBeenCalled();
+  cookbookStore.setSpecs('Again');
+  expect(handle?.reset?.()).toBe(true);
+  expect(cookbookStore.snapshot().specs).toBeUndefined();
+  expect(onreset).toHaveBeenCalledOnce();
+  // Nothing saved: the reset still completes and still reports through onreset.
+  expect(handle?.reset?.()).toBe(true);
+  expect(onreset).toHaveBeenCalledTimes(2);
+});

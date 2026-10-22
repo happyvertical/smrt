@@ -418,3 +418,40 @@ it('validates contextual controls and current generation at the existing guide b
   ).toMatchObject({ ok: false });
   expect(highlight).toHaveBeenCalledTimes(1);
 });
+it('forwards a finite non-negative holdMs to the guide and refuses the rest', async () => {
+  const highlight = vi.fn(async () => ({ ok: true }));
+  const { client } = setup(undefined, { highlight, dismiss: vi.fn() });
+  const state = await client.snapshot();
+  expect(
+    await client.guide({
+      generation: state.generation,
+      kind: 'control',
+      control: 'specs',
+      holdMs: 12000,
+    }),
+  ).toEqual({ ok: true });
+  expect(highlight).toHaveBeenLastCalledWith({
+    kind: 'control',
+    control: 'specs',
+    holdMs: 12000,
+  });
+  expect(
+    await client.guide({
+      generation: state.generation,
+      kind: 'arrival',
+      holdMs: 0,
+    }),
+  ).toEqual({ ok: true });
+  expect(highlight).toHaveBeenLastCalledWith({ kind: 'arrival', holdMs: 0 });
+  for (const holdMs of [-5, Number.NaN, Number.POSITIVE_INFINITY, '9000']) {
+    expect(
+      await client.guide({
+        generation: state.generation,
+        kind: 'control',
+        control: 'styles',
+        holdMs: holdMs as number,
+      }),
+    ).toMatchObject({ ok: false });
+  }
+  expect(highlight).toHaveBeenCalledTimes(2);
+});

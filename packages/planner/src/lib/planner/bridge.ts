@@ -264,7 +264,10 @@ export function bindPlannerCommandPort(options: {
               String(input.control),
             )) ||
           (input.kind !== 'control' && input.control !== undefined) ||
-          (input.holdMs !== undefined && typeof input.holdMs !== 'number') ||
+          (input.holdMs !== undefined &&
+            (typeof input.holdMs !== 'number' ||
+              !Number.isFinite(input.holdMs) ||
+              input.holdMs < 0)) ||
           !options.guide
         )
           value = {
