@@ -1109,6 +1109,39 @@ describe('intake review host boundary', () => {
     expect(restored.map((area) => area.value)).toEqual([first, second]);
     expect(callbacks.preview).not.toHaveBeenCalled();
   });
+  it.each([
+    ['unavailable', true],
+    ['stale', true],
+    ['revoked', false],
+    ['expired', false],
+  ] as const)('a %s refresh keeps drafts: %s', async (availability, kept) => {
+    const ready = needsReviewView(['title']);
+    const callbacks = host(ready);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const draft = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Typed' });
+    await fireEvent.input(draft, { target: { value: typed } });
+    vi.mocked(callbacks.load).mockResolvedValueOnce({
+      ...structuredClone(ready),
+      availability,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      ).toBeNull(),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    const restored = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    expect(restored.value).toBe(
+      kept ? typed : JSON.stringify({ body: 'Minutes' }, null, 2),
+    );
+  });
   it('keeps unsent drafts across Refresh and clears the JSON alert once the draft parses', async () => {
     const callbacks = host(needsReviewView(['title']));
     render(IntakeReview, { host: callbacks, itemId: 'item' });
