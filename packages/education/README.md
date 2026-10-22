@@ -159,20 +159,28 @@ establishes the observed format or grants role/rights. Teacher guides, answers,
 assessments, teacher presentations, login-only links, unknown roles, HTML-only
 student lessons, external-host artifacts and AccessIM/v.360 remain outside this
 metadata scope. External links are not followed or HEADed. Known PDF, ZIP and
-DOCX MIME types are retained; unknown MIME or validators pause enumeration,
-rather than silently omitting a source artifact. Only PDF bytes can be acquired.
+DOCX MIME types are retained. Otherwise eligible artifacts with an absent or
+unrecognized Content-Type remain explicit unknown metadata with acquisition
+denied; malformed MIME or invalid validators pause enumeration rather than
+silently omitting an artifact. Only PDF bytes can be acquired.
 Completion means this declared scope only. Policy omissions appear in the
 bounded, invocation-local `CatalogSyncReport.exclusionSummary`, rather than the
 durable failure ledger.
 
 Each `enumerate` reads one HTML page (2 MB maximum) and at most four asset HEADs.
 It never GETs asset content. Known PDF/ZIP/DOCX HEAD metadata is retained even when
-the file exceeds the PDF acquisition cap; unknown MIME, missing/weak validators
-or transport failures pause the page without advancing. Each observed record has
+the file exceeds the PDF acquisition cap. Missing/weak validators, malformed MIME
+or access/transport failures pause the page without advancing. Each observed record has
 optional `representation` metadata with actual `format`, `mediaType`, positive safe
 `byteLength`, strong ETag/Last-Modified `validators`, and `acquisition` capability.
 A PDF is `supported` or `size-limit` with its observed `maxBytes`; ZIP and DOCX are always
-`unsupported-format`. The source icon does not override the actual MIME. Version-1 JSON cursors contain the remaining validated
+`unsupported-format`. An unknown representation has `format: 'unknown'`,
+`mediaType: null` for an absent header or the actual unrecognized canonical MIME,
+`availableFormats: []`, and `acquisition.status: 'unknown-format'` with a
+`missing-content-type` or `unrecognized-content-type` reason. Its observed size,
+validators and legal evidence remain intact; the evaluator denies new acquisition.
+Unknown v2 revisions encode MIME absence or the observed token explicitly.
+The source icon does not override the actual MIME. Version-1 JSON cursors contain the remaining validated
 hierarchy paths and an artifact offset plus source fingerprint when needed;
 persist the returned cursor unchanged. A fresh adapter can resume it. The cursor
 is capped at 64 KB and 384 pending paths; source pages are capped at 128 children
@@ -245,11 +253,11 @@ Before creating a new selection or writing files, hosts call
 `evaluateCatalogAcquisitionCapability(resource, format, { maxBytes })` on the
 fresh authoritative record inside their transaction, separately from legal
 `CatalogPolicy` authorization. The optional current limit can tighten the
-persisted limit, never loosen it. Denials distinguish unsupported format, size
-limit, unavailable format and invalid representation metadata. It does not
+persisted limit, never loosen it. Denials distinguish unknown format, unsupported
+format, size limit, unavailable format and invalid representation metadata. It does not
 control printing already pinned bytes. `CatalogAcquisitionService` repeats the
 capability guard for new fetches after its existing pinned-acquisition return;
-current actor, selection, revision and legal checks still precede that return.
+current actor, selection, revision, available-format and legal checks still precede that return.
 The adapter independently revalidates format, size, validators and content bytes.
 
 `normalizeCatalogRepresentation(unknown)` parses persisted JSON and returns a
