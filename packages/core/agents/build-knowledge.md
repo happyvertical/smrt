@@ -134,9 +134,22 @@ optional provider-context import. Regression: the `#4219` tests in
 `index.test.ts` (unit cases for `isComponentBearingRoot` /
 `resolveProviderContextImport`, a child-Node load of the generated register,
 the nested-only fallback, and the root-only warning).
-`scripts/survey-node-root-load.mjs` (run after `pnpm build`) reports which
-built workspace package roots plain Node can evaluate; it is a survey, not a
-gate, because `smrt-products`' root fails by contract.
+A chosen `./objects`/`./models` entry must also give Node a target (a bare
+string, or a `node`/`import`/`default` branch — `hasNodeLoadableTarget`);
+a types-only or browser-only entry is skipped rather than emitted as an import
+that would fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+**Gate: `pnpm check:node-roots`** (root script; run after `pnpm build`). It
+runs `scripts/survey-node-root-load.mjs --strict --allow=<packages>`, which
+spawns `node --input-type=module -e "await import('<name>')"` from every
+built workspace package whose manifest declares `@smrt()` objects and fails on
+any root plain Node cannot evaluate that is not allow-listed. The allow-list
+is explicit and lives in the root `package.json` script: currently only
+`@happyvertical/smrt-products`, whose root re-exports its Svelte components by
+documented contract. A new entry needs the same justification; a model root
+that merely starts importing `@happyvertical/smrt-ui` must be fixed, not
+allowed. `--all` surveys every published package, including those without
+objects, as a report.
 
 ## Lightweight discovery
 

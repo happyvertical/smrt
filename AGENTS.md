@@ -64,13 +64,14 @@ use [CONTEXT-MAP.md](CONTEXT-MAP.md) for cross-package orientation.
 ## Validation
 
 Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
-`pnpm build`. Start with package checks, then relevant root checks:
+`pnpm build`. Package checks first, then root checks:
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
-`pnpm knowledge:check --strict --format markdown`, and `pnpm audit:policy`.
-`pnpm lint` runs Biome directly (`biome ci`, pinned to CI's exact version,
-#2710) and the `--smrt-*` gate (#3822) rather than through Turbo — no package defines its own `lint` or
-`format-check` script (see [standards](docs/content/standards.md));
-`pnpm format-check` is the same check under its documented name.
+`pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
+`pnpm check:node-roots` (built model roots load under plain Node, #4219;
+allow-list in `packages/core/agents/build-knowledge.md`).
+`pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
+#2710) plus the `--smrt-*` gate (#3822), not through Turbo; no package defines
+its own `lint`/`format-check` script.
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
 SMRT tests require `smrtVitestPlugin()`. Restart Vitest after adding decorated

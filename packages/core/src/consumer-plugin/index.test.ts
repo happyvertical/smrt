@@ -2645,6 +2645,30 @@ describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => 
         exports: { ...svelteRoot, './models': { svelte: './dist/models.js' } },
       }),
     ).toBeUndefined();
+    // Types-only or browser-only entries give Node nothing to load
+    // (ERR_PACKAGE_PATH_NOT_EXPORTED), so they are not picked either.
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './objects': { types: './dist/objects.d.ts' },
+          './models': { browser: './dist/models.browser.js' },
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          ...svelteRoot,
+          './models': {
+            types: './dist/models.d.ts',
+            node: { import: './dist/models.js' },
+          },
+        },
+      }),
+    ).toBe('@test/pkg/models');
     expect(
       resolveProviderContextImport('@test/pkg', {
         name: '@test/pkg',

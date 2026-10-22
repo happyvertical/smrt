@@ -277,11 +277,30 @@ export function resolveProviderContextImport(
       : undefined;
   for (const entry of PROVIDER_OBJECT_ENTRIES) {
     const target = exportsMap?.[entry];
-    if (target && !exportTargetNeedsViteCompilation(target)) {
+    if (
+      target &&
+      !exportTargetNeedsViteCompilation(target) &&
+      hasNodeLoadableTarget(target)
+    ) {
       return `${packageName}/${entry.slice(2)}`;
     }
   }
   return undefined;
+}
+
+/**
+ * Whether an `exports` target gives Node something to load: a bare string, or
+ * a conditions map with a `node`, `import`, or `default` branch that does. A
+ * types-only or browser-only entry would resolve to
+ * `ERR_PACKAGE_PATH_NOT_EXPORTED` under plain Node.
+ */
+function hasNodeLoadableTarget(target: unknown): boolean {
+  if (typeof target === 'string') return true;
+  if (!target || typeof target !== 'object') return false;
+  const conditions = target as Record<string, unknown>;
+  return ['node', 'import', 'default'].some((condition) =>
+    hasNodeLoadableTarget(conditions[condition]),
+  );
 }
 
 /**

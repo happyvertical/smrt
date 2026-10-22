@@ -403,6 +403,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # #4219: same gate as the full-mode Knowledge Freshness job.
+      - name: Check Node-loadable model package roots
+        run: pnpm check:node-roots
+
   workbench-browser:
     name: Workbench Consumer and Browser
     # In affected mode, let the core and package shard matrices consume the
@@ -658,6 +662,13 @@ jobs:
 
       - name: Check MCP config
         run: pnpm run check:mcp-config
+
+      # #4219: every built model package root must load under plain Node, so
+      # the generated consumer register (smrt db:migrate, workers) can import
+      # it. Allow-list lives in the root script; see
+      # packages/core/agents/build-knowledge.md.
+      - name: Check Node-loadable model package roots
+        run: pnpm check:node-roots
 
       # Sweep S5 (#1376): blocking gate. Fails on stale agent docs, dangling
       # references, missing package docs, or drifted domain-knowledge artifacts.
