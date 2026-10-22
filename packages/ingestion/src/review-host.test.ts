@@ -6,7 +6,7 @@ import {
   GenerationSnapshotStaleError,
   type IngestionService,
   type IntakeItemPage,
-  IntakeReceiptTimeError,
+  IntakeScanLimitError,
   type ListItemsInput,
 } from './server.js';
 
@@ -158,6 +158,21 @@ describe('published review host projection', () => {
     expect(assignments).toHaveBeenCalledTimes(1);
     expect(assignments).toHaveBeenCalledWith(mine);
   });
+  it('clamps the requested page size to the service range instead of failing', async () => {
+    const f = fixture();
+    for (const [requested, sent] of [
+      [500, 100],
+      [0, 1],
+      [2.7, 2],
+      [Number.NaN, 20],
+    ] as const) {
+      f.service.listItemsPage.mockClear();
+      await f.host.list({ limit: requested });
+      expect(f.service.listItemsPage).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: sent }),
+      );
+    }
+  });
   it('keeps collected items when a later service call fails without progress', async () => {
     const f = fixture();
     const rows = Array.from({ length: 300 }, (_, index) => ({
@@ -166,7 +181,7 @@ describe('published review host projection', () => {
     let calls = 0;
     f.service.listItemsPage.mockImplementation(async (input = {}) => {
       calls++;
-      if (calls === 2) throw new IntakeReceiptTimeError();
+      if (calls === 2) throw new IntakeScanLimitError();
       const page = await pageSource(rows)(input);
       return { ...page, scanned: 999 };
     });
@@ -192,7 +207,7 @@ describe('published review host projection', () => {
     // Failing on the very first call has no position to hand back.
     calls = 1;
     await expect(host.list({ assigneeId: 'me', limit: 20 })).rejects.toThrow(
-      'Corrupt intake receipt time',
+      'Intake scan limit',
     );
   });
   it('returns a short service page with its cursor instead of scanning past the service ceiling', async () => {

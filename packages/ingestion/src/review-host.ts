@@ -11,8 +11,9 @@ import type {
 import { loadReviewSummary } from './review-summary.js';
 import {
   type IngestionService,
-  IntakeReceiptTimeError,
+  IntakeScanLimitError,
   ITEM_ID_FILTER_CEILING,
+  ITEM_PAGE_CEILING,
   ITEM_SCAN_CEILING,
   isIntakeId,
 } from './server.js';
@@ -70,7 +71,11 @@ export function createIntakeReviewHost(
   };
   return {
     async list(input) {
-      const limit = input.limit ?? 20;
+      // The contract caps `limit` at the service maximum rather than failing.
+      const requested = input.limit ?? 20;
+      const limit = Number.isFinite(requested)
+        ? Math.min(ITEM_PAGE_CEILING, Math.max(1, Math.floor(requested)))
+        : 20;
       let itemIds: string[] | undefined;
       if (input.assigneeId && options.assignedItemIds) {
         // Junk ids from the host narrow nothing and must not fail the list.
@@ -105,14 +110,11 @@ export function createIntakeReviewHost(
             scanLimit: ITEM_SCAN_CEILING - examined,
           });
         } catch (error) {
-          // A later call that made no progress (a small remaining budget
-          // landing on rows without a canonical receipt time) must not
-          // discard what earlier calls collected: hand back the position
-          // reached so far and let the caller continue.
-          if (
-            error instanceof IntakeReceiptTimeError &&
-            cursor !== input.cursor
-          )
+          // A later call that spent a small remaining budget without
+          // returning a row must not discard what earlier calls collected:
+          // hand back the position reached so far (a row the actor can read)
+          // and let the caller continue.
+          if (error instanceof IntakeScanLimitError && cursor !== input.cursor)
             return { items, ...(cursor ? { nextCursor: cursor } : {}) };
           throw error;
         }

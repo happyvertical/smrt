@@ -30,6 +30,7 @@ import type {
 import {
   type DiscoveryGate,
   discoveryTransaction,
+  listReadGate,
   type TransactionRunner,
 } from './execution-internal.js';
 import {
@@ -698,11 +699,14 @@ export class IntakeExecutionService {
    * drift), and the execution read gate (host authority, policy and ceiling
    * handler/operation allowlists, `policy.access`, principal) must pass, but
    * without the retention write; an item past the deadline `access` would
-   * narrow to is not listable. Per-action target, evidence and plan gates
-   * are not evaluated here; `load` still enforces them. Any failure answers
-   * false and the list discloses nothing about why.
+   * narrow to is not listable, and neither is a cancelled item, which
+   * `listReviews` refuses once it binds an action. Per-action target,
+   * evidence and plan gates are not evaluated here; `load` still enforces
+   * them. Any failure answers false and the list discloses nothing about
+   * why. Package-internal: reachable only through a symbol the service holds,
+   * so callers cannot hand it an unscoped row.
    */
-  async canReadHandler(
+  async [listReadGate](
     item: Row,
     binding: {
       handlerId: string;
@@ -712,6 +716,7 @@ export class IntakeExecutionService {
     },
   ): Promise<boolean> {
     try {
+      if (item.cancelled) return false;
       const handler = this.operation(
         this.handler(binding.handlerId, binding.handlerVersion),
       );

@@ -162,7 +162,8 @@ the page's saved actions. The list gate is read-only: it evaluates the same
 checks as `listReviews` without the retention write, so an item that the item
 view would narrow past its deadline is simply not listed. The list gate also
 resolves each bound handler and rejects version drift against the saved
-binding, as `listReviews` does; it does not evaluate per-action target,
+binding and omits a cancelled item, as `listReviews` does; it does not
+evaluate per-action target,
 evidence or plan gates, so an item whose target became unreadable still lists
 and its item view refuses. An item whose bound
 handler the actor cannot currently read is not listed at all, rather than
@@ -180,10 +181,10 @@ size to 100 rows per query, so a fully denied scope costs about a dozen page
 reads and as many binding reads per call. One service call examines at most
 `ITEM_SCAN_CEILING` (1000) rows, or the caller's smaller `scanLimit`, and
 reports the count as `scanned`; when a mostly-denied scope reaches the ceiling
-the page comes back short with a `nextCursor`. `scanned` counts rows the page
-query returned; with a rare `state` filter the database itself may examine
-many more rows inside the query before returning them, which the ceiling does
-not bound. The host `list` passes its remaining budget as `scanLimit`, so the
+the page comes back short with a `nextCursor`. The `state` filter is applied
+to fetched batches, so it is bounded by the same scan limit: a rare state
+yields short pages with a cursor rather than an unbounded walk inside one
+query. The host `list` passes its remaining budget as `scanLimit`, so the
 rows scanned across the service calls of one host call never exceed 1000: a
 short service page with a cursor, or an exhausted budget while filtering by
 assignee, ends the host call with the same cursor and the caller continues.
@@ -195,16 +196,16 @@ PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
 actor's access, and counts toward the scan. Within a call the scan moves past
 it by its exact stored value, and a returned cursor names the last canonical
 row before it. A call that reads nothing but such rows (a run at least as long
-as its scan limit, at most 1000) fails with `IntakeReceiptTimeError`
-(`Corrupt intake receipt time`), naming no row, because the row may be one the
-actor may not read. The host `list` returns what earlier service calls
-collected, with their cursor, when a later call fails that way.
+as its scan limit, at most 1000) and returns nothing fails closed with
+`IntakeScanLimitError` unless a `cursorKey` is configured, as above. The host
+`list` returns what earlier service calls collected, with their cursor, when
+a later call fails that way.
 
 `listItems()` is deprecated and kept only for callers of the array-returning
 API. It walks every page, so its cost grows with the scope, including one
 execution authorization per (item, handler) across the whole scope, and it may
-throw `IntakeReceiptTimeError` on a run of non-canonical rows longer than the
-page scan limit. Items are newest-first and gated exactly as on a page.
+throw `IntakeScanLimitError` on a run of unreadable or non-canonical rows
+longer than the page scan limit when no `cursorKey` is configured. Items are newest-first and gated exactly as on a page.
 
 The page's inbox state is the durable projection of the saved action journal
 and processing state, computed once per scanned row inside the page query;
@@ -217,16 +218,29 @@ projecting it into an indexed column would need a maintained denormalisation
 in the execution service plus a migration, which this change does not take.
 Listing does not load original bytes.
 
+Cursors never disclose an unreadable row. Without a `cursorKey` in the
+service options, every cursor (each row's and `nextCursor`) names a row the
+call returned; a page that spends its scan limit before filling hands back the
+last returned row, and one that returned nothing fails closed with
+`IntakeScanLimitError` (`Intake scan limit`, no id or time). A run of
+unreadable rows at least as long as the scan limit therefore stops an unkeyed
+walk there. With a `cursorKey` (a server secret of at least 32 bytes), every
+cursor is sealed with AES-256-GCM, bound to the tenant, confidential scope and
+actor, and a budget-stopped page returns a sealed position past what it
+skipped, so the walk always progresses. `scanned` is for trusted host
+accounting and must not be sent to clients; a short page with a cursor tells
+a caller only that unlisted rows exist, never which.
+
 Newest-first paging relies on `intake_items_received_idx`
 (`tenant_id, confidential_scope_id, created_at, id`), the full ordering key, so
 an unfiltered page is a backward index scan that stops at the page boundary;
 the foundation suite asserts that plan on both engines (SQLite
 `EXPLAIN QUERY PLAN`, PostgreSQL `EXPLAIN`), with the per-row state counters
-served by `intake_actions_item_idx`. The proof holds with planner statistics:
-without `ANALYZE`, SQLite preferred `intake_items_expiry_idx` plus a sort in
-the suite, so SQLite deployments should keep statistics current
-(`ANALYZE` / `PRAGMA optimize` after bulk loads); PostgreSQL autovacuum
-analyses the table on its own. This package ships no
+served by `intake_actions_item_idx`. On SQLite the page query pins the index with `INDEXED BY` (except under an
+id restriction, where direct id lookups are cheaper), because without planner
+statistics SQLite otherwise picks `intake_items_expiry_idx` plus a sort; the
+SQLite plan check runs without `ANALYZE`. A deployment must have applied the
+manifest migration, or the page query fails with a missing-index error. This package ships no
 migration files: indexes are declared on the model, the build emits them into
 `dist/manifest.json`, and `smrt db:migrate` / the public migration API create
 them, which is how `intake_items_receipt_idx` shipped. Deploy the manifest

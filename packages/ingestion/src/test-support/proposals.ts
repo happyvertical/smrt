@@ -1019,6 +1019,61 @@ export function proposalSuite(
         31,
       );
       expect(await expiry()).toEqual(before);
+      // Capability-only drift is caught like version drift, and a cancelled
+      // item with saved proposals is omitted, as its item view refuses both.
+      {
+        const target = readable[1];
+        const proposalId = cloneProposals.get(target) ?? '';
+        const stored = (
+          await db.query(
+            'SELECT data FROM intake_proposals WHERE id=?',
+            proposalId,
+          )
+        ).rows[0].data;
+        const changed = json(stored) as {
+          binding: { capability?: Record<string, unknown> };
+        };
+        changed.binding.capability = {
+          ...(changed.binding.capability ?? {}),
+          drifted: true,
+        };
+        await db.query(
+          'UPDATE intake_proposals SET data=? WHERE id=?',
+          JSON.stringify(changed),
+          proposalId,
+        );
+        const capabilityPage = await paged.listItemsPage({ limit: 100 });
+        expect(capabilityPage.items.map(({ item }) => item.id)).not.toContain(
+          target,
+        );
+        expect(capabilityPage.items).toHaveLength(30);
+        await expect(host.load(target)).rejects.toThrow('drift');
+        await db.query(
+          'UPDATE intake_proposals SET data=? WHERE id=?',
+          typeof stored === 'string' ? stored : JSON.stringify(stored),
+          proposalId,
+        );
+        const cancelled = readable[2];
+        await db.query(
+          'UPDATE intake_items SET cancelled=? WHERE id=?',
+          dialect === 'postgres' ? true : 1,
+          cancelled,
+        );
+        const cancelledPage = await paged.listItemsPage({ limit: 100 });
+        expect(cancelledPage.items.map(({ item }) => item.id)).not.toContain(
+          cancelled,
+        );
+        expect(cancelledPage.items).toHaveLength(30);
+        await expect(host.load(cancelled)).rejects.toThrow('unavailable');
+        await db.query(
+          'UPDATE intake_items SET cancelled=? WHERE id=?',
+          dialect === 'postgres' ? false : 0,
+          cancelled,
+        );
+        expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+          31,
+        );
+      }
       // A thousand further clones, all older, every one binding the handler.
       // When policy drops that handler the whole scope is denied at the
       // handler gate: one list call scans exactly the ceiling, reads
@@ -1085,10 +1140,12 @@ export function proposalSuite(
       executionAuthorizations = 0;
       queries = 0;
       writes = 0;
-      const denied = await paged.listItemsPage({ limit: 20 });
-      expect(denied.items).toEqual([]);
-      expect(denied.scanned).toBe(1000);
-      expect(denied.nextCursor).toBeTruthy();
+      // Nothing is readable and no cursor key is configured, so after the
+      // full 1000-row scan the call fails closed rather than disclose a
+      // position derived from unreadable rows.
+      await expect(paged.listItemsPage({ limit: 20 })).rejects.toThrow(
+        /^Intake scan limit$/,
+      );
       // Refills grow 20, 20, 40, 80, then 100-row batches and a final 40:
       // thirteen page reads and thirteen binding reads for a thousand rows.
       expect(queries).toBeLessThanOrEqual(26);

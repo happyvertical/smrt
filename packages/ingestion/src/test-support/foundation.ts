@@ -1509,7 +1509,10 @@ export function foundationSuite(
       });
       expect(ids(failedPage)).toEqual(failed.slice(0, 20).map((row) => row.id));
       expect(failedPage.nextCursor).toBeTruthy();
-      expect(queries).toBe(1);
+      // The state filter runs on fetched batches (20, 20, 40, 80, 100 rows),
+      // so a rare state is bounded by the scan limit like any other filter.
+      const failedQueries = queries;
+      expect(failedQueries).toBeLessThanOrEqual(8);
       const failedRest = await paged.listItemsPage({
         state: 'failed',
         limit: 20,
@@ -1567,7 +1570,7 @@ export function foundationSuite(
       expect(
         ids(await paged.listItemsPage({ state: 'failed', limit: 20 })),
       ).toEqual(ids(failedPage));
-      expect(queries).toBe(1);
+      expect(queries).toBe(failedQueries);
 
       // Plan evidence: the unfiltered page walks intake_items_received_idx
       // backwards and stops at the page boundary; no sort, no table scan.
@@ -1575,7 +1578,15 @@ export function foundationSuite(
       await paged.listItemsPage();
       expect(lastPage).toBeTruthy();
       if (dialect === 'sqlite') {
-        await db.query('ANALYZE');
+        // No planner statistics: the plan must come from the pinned index,
+        // not from ANALYZE output a deployment may never produce.
+        expect(
+          (
+            await db.query(
+              "SELECT name FROM sqlite_master WHERE name='sqlite_stat1'",
+            )
+          ).rows,
+        ).toEqual([]);
         const plan = (
           await db.query(
             `EXPLAIN QUERY PLAN ${lastPage!.sql}`,
@@ -1591,9 +1602,12 @@ export function foundationSuite(
         expect(plan.some((line) => /TEMP B-TREE FOR ORDER BY/.test(line))).toBe(
           false,
         );
-        expect(plan.some((line) => /^SCAN (i|intake_items)\b/.test(line))).toBe(
-          false,
-        );
+        expect(
+          plan.some(
+            (line) =>
+              /^SCAN (i|intake_items)\b/.test(line) && !line.includes('USING'),
+          ),
+        ).toBe(false);
       } else {
         await db.query('ANALYZE intake_items');
         await db.query('ANALYZE intake_actions');
@@ -1648,7 +1662,7 @@ export function foundationSuite(
             scanLimit: 1,
             cursor: partial.nextCursor,
           }),
-        ).rejects.toThrow(/^Corrupt intake receipt time$/);
+        ).rejects.toThrow(/^Intake scan limit$/);
         const resumed = await paged.listItemsPage({
           limit: 20,
           cursor: partial.nextCursor,
@@ -1728,6 +1742,151 @@ export function foundationSuite(
         }),
       ).rejects.toThrow('Invalid item page');
 
+      // Cursor disclosure: no output may carry the id or receipt time of a
+      // row the actor cannot read. A, B, C, D are the newest rows; B and C
+      // are made unreadable.
+      {
+        // Past the two newest rows, which share a timestamp by design.
+        const [A, B, C, D] = visible.slice(2, 6);
+        const start = (await paged.listItemsPage({ limit: 2 })).nextCursor;
+        const saved = new Map<string, unknown>();
+        for (const row of [B, C]) {
+          const stored = (
+            await db.query('SELECT data FROM intake_items WHERE id=?', row.id)
+          ).rows[0].data;
+          saved.set(row.id, stored);
+          const data =
+            typeof stored === 'string'
+              ? JSON.parse(stored)
+              : structuredClone(stored);
+          data.capturedCeiling = secret;
+          await db.query(
+            'UPDATE intake_items SET data=? WHERE id=?',
+            JSON.stringify(data),
+            row.id,
+          );
+        }
+        const leaks = (cursor: string | undefined) => {
+          if (!cursor) return false;
+          const text = Buffer.from(cursor, 'base64url').toString('latin1');
+          return [B, C].some(
+            (row) =>
+              text.includes(row.id) ||
+              text.includes(row.receivedAt) ||
+              cursor.includes(row.id),
+          );
+        };
+        const opened = (cursor: string | undefined) =>
+          JSON.parse(Buffer.from(String(cursor), 'base64url').toString('utf8'));
+        // Without a key: A is returned and the budget runs into B and C; the
+        // cursor names A, the last returned row.
+        const plain = await paged.listItemsPage({
+          limit: 20,
+          scanLimit: 3,
+          cursor: start,
+        });
+        expect(ids(plain)).toEqual([A.id]);
+        expect(opened(plain.nextCursor)).toEqual([A.receivedAt, A.id]);
+        expect(leaks(plain.nextCursor)).toBe(false);
+        // From A the next two rows are unreadable: no position may be
+        // disclosed, so the call fails closed without naming either.
+        const closed = await paged
+          .listItemsPage({ limit: 20, scanLimit: 2, cursor: plain.nextCursor })
+          .then(
+            () => undefined,
+            (error: Error) => error,
+          );
+        expect(closed?.message).toBe('Intake scan limit');
+        expect(
+          [B.id, C.id, B.receivedAt, C.receivedAt].some((value) =>
+            String(closed?.message).includes(value),
+          ),
+        ).toBe(false);
+        // With a key every cursor is sealed: the same call returns an opaque
+        // position past B and C that decodes to nothing readable, and the
+        // next call continues at D.
+        const key = 'k'.repeat(32);
+        const sealed = new IngestionService({
+          ...options,
+          db: counted,
+          cursorKey: key,
+          authorize: async (input) =>
+            isSecret(input.capturedCeiling) ? false : options.authorize(input),
+        });
+        const atA = await sealed.listItemsPage({ limit: 3 });
+        expect(ids(atA)).toEqual([visible[0].id, visible[1].id, A.id]);
+        expect(() => opened(atA.nextCursor)).toThrow();
+        const pastBC = await sealed.listItemsPage({
+          limit: 20,
+          scanLimit: 2,
+          cursor: atA.nextCursor,
+        });
+        expect(pastBC.items).toEqual([]);
+        expect(pastBC.scanned).toBe(2);
+        expect(leaks(pastBC.nextCursor)).toBe(false);
+        expect(() => opened(pastBC.nextCursor)).toThrow();
+        expect(
+          ids(
+            await sealed.listItemsPage({ limit: 1, cursor: pastBC.nextCursor }),
+          ),
+        ).toEqual([D.id]);
+        // Sealed and plain cursors are not interchangeable, tampering is
+        // refused, and a sealed cursor is bound to the actor that got it.
+        const bad = `${String(pastBC.nextCursor).slice(0, -2)}AA`;
+        for (const [service, cursor] of [
+          [sealed, plain.nextCursor],
+          [paged, pastBC.nextCursor],
+          [sealed, bad],
+          [
+            new IngestionService({
+              ...options,
+              cursorKey: key,
+              scope: { ...options.scope, actorId: 'delegate' },
+            }),
+            pastBC.nextCursor,
+          ],
+        ] as const)
+          await expect(
+            service.listItemsPage({ cursor: String(cursor) }),
+          ).rejects.toThrow('Invalid item page');
+        expect(
+          () => new IngestionService({ ...options, cursorKey: 'short' }),
+        ).toThrow('at least 32 bytes');
+        // An actor who can read nothing: a full scan of 1000 ceiling-denied
+        // rows fails closed without a key; with a key it hands back a sealed
+        // position and the walk ends after the remaining rows.
+        const nobodyOptions = {
+          ...options,
+          db: counted,
+          authorize: async () => false,
+        };
+        await expect(
+          new IngestionService(nobodyOptions).listItemsPage(),
+        ).rejects.toThrow(/^Intake scan limit$/);
+        const nobody = new IngestionService({
+          ...nobodyOptions,
+          cursorKey: key,
+        });
+        const firstScan = await nobody.listItemsPage();
+        expect(firstScan.items).toEqual([]);
+        expect(firstScan.scanned).toBe(1000);
+        expect(firstScan.nextCursor).toBeTruthy();
+        const lastScan = await nobody.listItemsPage({
+          cursor: firstScan.nextCursor,
+        });
+        expect(lastScan.items).toEqual([]);
+        expect(lastScan.scanned).toBe(500);
+        expect(lastScan.nextCursor).toBeUndefined();
+        for (const row of [B, C])
+          await db.query(
+            'UPDATE intake_items SET data=? WHERE id=?',
+            typeof saved.get(row.id) === 'string'
+              ? saved.get(row.id)
+              : JSON.stringify(saved.get(row.id)),
+            row.id,
+          );
+        expect(ids(await paged.listItemsPage())).toEqual(ids(first));
+      }
       // A mostly-denied actor: only the rare ceiling is readable, so a page
       // needs many rows. Each call examines at most ITEM_SCAN_CEILING rows,
       // returns what it found with a cursor, and the walk still sees every

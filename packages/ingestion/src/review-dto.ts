@@ -94,7 +94,7 @@ export interface LogicalSplitInput {
 }
 /** Transport-neutral callbacks. Implement on an authenticated host; props confer no permission. */
 export interface IntakeReviewHost {
-  /** Newest receipt first; `limit` defaults to 20 and is capped by the host. */
+  /** Newest receipt first; `limit` defaults to 20 and is clamped to 1..100. */
   list(input: {
     state?: InboxState;
     assigneeId?: string;
