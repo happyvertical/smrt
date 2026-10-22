@@ -111,6 +111,8 @@ export function proposalSuite(
     let configuration: ProposalConfiguration;
     let handlers: IntakeHandler[];
     let allowed: boolean;
+    /** Deny exactly the next execution authorization, then restore. */
+    let denyNextAuthorize = false;
     let clock: Date;
     let permissions: string[];
     let providerAllowed: boolean;
@@ -157,6 +159,7 @@ export function proposalSuite(
       root = await mkdtemp(join(tmpdir(), 'proposal-'));
       clock = new Date('2026-10-09T00:00:00Z');
       allowed = true;
+      denyNextAuthorize = false;
       providerAllowed = true;
       policyVersion = 'tenant1';
       policyMaxBytes = 100000;
@@ -226,8 +229,11 @@ export function proposalSuite(
         handlers,
         authorize: async ({ scope, db: executor }) => {
           authorizedExecutor = executor;
+          const deniedOnce = denyNextAuthorize;
+          denyNextAuthorize = false;
           return {
             allowed:
+              !deniedOnce &&
               allowed &&
               scope.tenantId === tenant &&
               scope.confidentialScopeId === 'private' &&
@@ -4286,8 +4292,9 @@ export function proposalSuite(
         identity,
         client: {
           getCapabilities: async () => {
-            // Revoke before the first outbound gate so the gate itself denies.
-            if (mode === 'revoked') allowed = false;
+            // Deny exactly the gate before `decide`; authority is restored
+            // afterwards, so only the gate's own error can fail the attempt.
+            if (mode === 'revoked') denyNextAuthorize = true;
             return { decisions: true };
           },
           decide: async (raw) => {
@@ -4332,12 +4339,18 @@ export function proposalSuite(
         },
       };
       if (mode === 'revoked') {
-        // Authority is never traded for the opt-out: a revoked lease still fails closed.
-        const pending = await generation();
-        await expect(
-          service.generateProposals(pending.lease),
-        ).rejects.toThrow();
-        expect(calls).toHaveBeenCalledTimes(1);
+        // Authority is never traded for the opt-out: the gate's denial is
+        // rethrown, so the attempt fails like any other stage failure (the
+        // outer recheck passes again because the denial was one-shot). Without
+        // the authority rethrow, record mode would instead keep the
+        // suggestions and record `decision_unavailable`.
+        const failed = await generate();
+        expect(denyNextAuthorize).toBe(false);
+        expect(failed.output.outcome).toBe('provider_error');
+        expect(failed.output.suggestions).toEqual([]);
+        expect(failed.output.warnings).not.toContain('decision_unavailable');
+        expect(failed.output.warnings).not.toContain('decision_malformed');
+        expect(failed.output.provenance.decision.answers).toBeUndefined();
         return;
       }
       if (mode === 'limit') {
@@ -4371,11 +4384,14 @@ export function proposalSuite(
       expect(input.output.warnings).toContain(
         mode === 'unavailable' ? 'decision_unavailable' : 'decision_malformed',
       );
-      if (mode === 'identity')
+      // Usage is kept whenever the provider replied, even when the SDK then
+      // rejected the reply's shape; only a thrown client call has none.
+      if (mode === 'unavailable')
+        expect(input.output.provenance.decision.usage).toBeUndefined();
+      else
         expect(input.output.provenance.decision.usage).toEqual({
           promptTokens: 4,
         });
-      else expect(input.output.provenance.decision.usage).toBeUndefined();
       expect(input.output.warnings).not.toContain('malformed_output');
       expect(input.output.provenance.decision).toMatchObject({
         configured: true,

@@ -181,6 +181,21 @@ describe('published review host projection', () => {
       {},
     ],
     ['array arguments', generation('needs_review'), { args: [] }],
+    [
+      'an unoffered handler with human arguments',
+      {
+        ...generation('needs_review'),
+        result: {
+          output: {
+            proposals: {
+              ...generation('needs_review').result.output.proposals,
+              offered: [],
+            },
+          },
+        },
+      },
+      { args: { title: 'x', body: 'y' } },
+    ],
   ] as const)('refuses preview for %s', async (_name, analysis, extra) => {
     const f = fixture();
     f.service.getCompletedAnalysis.mockResolvedValue(analysis as never);

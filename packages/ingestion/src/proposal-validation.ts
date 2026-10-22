@@ -40,28 +40,40 @@ function schemaNodes(node: unknown): SchemaNode[] {
   return [current, ...nested];
 }
 /**
- * Keep only path segments the schema itself names: array indexes and keys
- * declared under `properties`. Anything else (keys under
- * `additionalProperties`/`patternProperties`, or an unknown key) is data and
- * becomes `?`.
+ * Keep only path segments the schema itself names: indexes into an actual
+ * array in the instance, and keys declared under `properties`. Anything else
+ * (keys under `additionalProperties`/`patternProperties`, numeric keys of an
+ * object, or an unknown key) is data and becomes `?`.
  */
-export function schemaOwnedPath(instancePath: string, schema: unknown): string {
+export function schemaOwnedPath(
+  instancePath: string,
+  schema: unknown,
+  instance?: unknown,
+): string {
   if (!instancePath) return '/';
   let nodes = schemaNodes(schema);
+  let value: unknown = instance;
   const segments = instancePath.split('/').slice(1);
   const kept: string[] = [];
   for (const raw of segments) {
     const segment = raw.replace(/~1/g, '/').replace(/~0/g, '~');
-    // An index is schema-owned only where the schema says "array"; a numeric
-    // key under an object (for example an invoice number) is data.
-    const arrays = nodes.filter(
-      (node) => node.type === 'array' || node.items !== undefined,
-    );
-    if (/^\d+$/.test(segment) && arrays.length) {
+    // An index is schema-owned only when the parent value really is an array;
+    // the schema alone cannot tell an index from a numeric data key when a
+    // union allows both shapes.
+    if (/^\d+$/.test(segment) && Array.isArray(value)) {
       kept.push(segment);
-      nodes = arrays.flatMap((node) => schemaNodes(node.items));
+      value = value[Number(segment)];
+      nodes = nodes.flatMap((node) =>
+        node.type === 'array' || node.items !== undefined
+          ? schemaNodes(node.items)
+          : [],
+      );
       continue;
     }
+    value =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)[segment]
+        : undefined;
     const owners = nodes.filter((node) => {
       const properties = node.properties;
       return (
@@ -93,11 +105,18 @@ export function schemaOwnedPath(instancePath: string, schema: unknown): string {
 export function describeSchemaErrors(
   errors: ErrorObject[] | null | undefined,
   schema: unknown,
+  instance?: unknown,
   limit = 20,
   maxChars = PROPOSAL_REASON_LIMIT - 100,
 ): string {
-  const parts: string[] = [];
-  for (const error of errors ?? []) {
+  // Bounded work: a huge reply can carry hundreds of thousands of errors, so
+  // dedupe with a set and stop once enough distinct parts are collected.
+  const parts = new Set<string>();
+  const all = errors ?? [];
+  let consumed = 0;
+  for (const error of all) {
+    if (parts.size >= limit) break;
+    consumed++;
     const params = error.params as Record<string, unknown>;
     const detail: string[] = [];
     if (typeof params.missingProperty === 'string')
@@ -113,18 +132,19 @@ export function describeSchemaErrors(
       detail.push(`limit=${String(params.limit)}`);
     if (typeof params.passingSchemas !== 'undefined')
       detail.push('oneOf=none|multiple');
-    const part = `${schemaOwnedPath(error.instancePath, schema)} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`;
-    if (!parts.includes(part)) parts.push(part);
+    parts.add(
+      `${schemaOwnedPath(error.instancePath, schema, instance)} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`,
+    );
   }
   const shown: string[] = [];
   let length = 0;
   for (const part of parts) {
-    if (shown.length >= limit || length + part.length + 2 > maxChars) break;
+    if (length + part.length + 2 > maxChars) break;
     shown.push(part);
     length += part.length + 2;
   }
-  if (parts.length > shown.length)
-    shown.push(`+${parts.length - shown.length} more`);
+  const omitted = parts.size - shown.length + (all.length - consumed);
+  if (omitted > 0) shown.push(`+${omitted} more`);
   return shown.join('; ');
 }
 export function record(value: unknown): IntakeValues {
@@ -296,7 +316,7 @@ export function validateSuggestions(
   if (!ajv.validate(shape, raw))
     throw new ProposalValidationError(
       'Invalid generated proposals',
-      describeSchemaErrors(ajv.errors, shape),
+      describeSchemaErrors(ajv.errors, shape, raw),
     );
   const input = raw as {
     outcome: GenerationOutput['outcome'];
@@ -350,7 +370,7 @@ export function validateSuggestions(
       )
         throw new ProposalValidationError(
           'Invalid handler arguments',
-          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema) || 'missingFields do not match the schema'}`,
+          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args) || 'missingFields do not match the schema'}`,
         );
       for (const [field, reference] of Object.entries(
         entry.handler.references,

@@ -183,14 +183,18 @@ answers as diagnostics and configure:
   comes from the validator alone (`missingFields`, outcome, source completeness).
   A provider error or timeout is recorded as the `decision_unavailable`
   warning and an identity or answer-shape mismatch as `decision_malformed`,
-  each with `provenance.decision` identity; usage is recorded when the provider
-  returned a result (identity mismatch) and is otherwise unavailable, because a
-  reply the SDK rejects never reaches this service. The generated suggestions
-  stay as they were. The serialized request exceeding the byte budget is a
+  each with `provenance.decision` identity and the provider-reported usage
+  whenever a reply came back (including one whose shape the SDK then
+  rejected); only a thrown client call or timeout has no usage. The generated
+  suggestions stay as they were. The serialized request exceeding the byte budget is a
   configuration failure, not a provider answer: it ends the attempt as `limit`
   in both modes, and in `gate` mode every failure above still ends the attempt
   as `provider_error`. Lease, catalog, policy and provider-allowlist revocation
   fail closed in both modes.
+
+Successful output also records `provenance.decision.readiness` (`'gate'` or
+`'record'`) and `maxLen` when set; configuration digests are unchanged, but
+persisted output is therefore not byte-identical to earlier releases.
 
 Both settings are public configuration: they are part of
 `ProposalReadConfiguration`, the frozen `GenerationStageConfiguration.proposals`

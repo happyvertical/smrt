@@ -1078,6 +1078,37 @@ describe('intake review host boundary', () => {
     ).toBe(typed);
     expect(screen.getByRole('button', { name: 'Prepare review' })).toBeTruthy();
   });
+  it('keeps every card draft across a failed action and the following refresh', async () => {
+    const view = needsReviewView(['title']);
+    view.generation!.suggestions.push({
+      ...structuredClone(view.generation!.suggestions[0]),
+      args: { body: 'Second' },
+    });
+    view.generation!.splits = [
+      { evidenceId: 'original', groups: [[1]], digest: 'split' },
+    ];
+    const callbacks = host(view);
+    vi.mocked(callbacks.split).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const drafts = (await screen.findAllByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement[];
+    expect(drafts).toHaveLength(2);
+    const first = JSON.stringify({ body: 'Minutes', title: 'A' });
+    const second = JSON.stringify({ body: 'Second', title: 'B' });
+    await fireEvent.input(drafts[0], { target: { value: first } });
+    await fireEvent.input(drafts[1], { target: { value: second } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Save split and reprocess' }),
+    );
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    const restored = (await screen.findAllByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement[];
+    expect(restored.map((area) => area.value)).toEqual([first, second]);
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
   it('keeps unsent drafts across Refresh and clears the JSON alert once the draft parses', async () => {
     const callbacks = host(needsReviewView(['title']));
     render(IntakeReview, { host: callbacks, itemId: 'item' });
