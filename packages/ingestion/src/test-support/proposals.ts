@@ -4735,6 +4735,64 @@ export function proposalSuite(
       expect(overLimit.outcome).toBe('provider_error');
       expect(overLimit.warnings).toContain('limit');
     });
+    it('retries from an older anchor on the failed reprocess configuration without reverting it or resurrecting a split', async () => {
+      chooseCreate();
+      const input = await generate(await source(100000, true));
+      const evidence = await service.getEvidence(input.itemId);
+      // The anchor generation's extraction carries a human split.
+      const split = await service.reviseLogicalSplit({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        evidenceId: evidence[0].id,
+        groups: [[1], [2]],
+        requestId: 'anchor-split',
+      });
+      const anchor = await reextractPDF(input.itemId, split.revision);
+      expect(anchor.frozen.configuration.humanCorrection).toMatchObject({
+        kind: 'logical_split',
+      });
+      await service.generateProposals(anchor.lease);
+      // A host reprocess with a changed configuration (and no split) fails.
+      const reprocess = await service.analyze(
+        input.itemId,
+        {
+          stage: 'extract',
+          extraction: { configurationRevision: '2', limits: extractionLimits },
+        },
+        'reprocess-changed-config',
+      );
+      const failing = await service.claimAnalysis(
+        input.itemId,
+        reprocess.revision,
+        'extractor',
+      );
+      if (!failing) throw new Error('lease required');
+      await service.failAnalysis(failing, 'unavailable');
+      // Retry from the older anchor builds on the reprocess configuration.
+      const retried = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: anchor.lease.attemptId,
+        expectedRevision: reprocess.revision,
+        text: 'File both documents.',
+        requestId: 'retry-on-reprocess-config',
+      });
+      const lease = await service.claimAnalysis(
+        input.itemId,
+        retried.revision,
+        'extractor',
+      );
+      if (!lease) throw new Error('lease required');
+      const frozen = await service.getAnalysisInput(lease);
+      expect(frozen.configuration.extraction).toMatchObject({
+        configurationRevision: '2',
+      });
+      expect(frozen.configuration.humanCorrection).toBeUndefined();
+      expect(frozen.configuration.reviewerInstruction).toMatchObject({
+        id: retried.instruction.id,
+        digest: retried.instruction.digest,
+      });
+    });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();
       const forged = {

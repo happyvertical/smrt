@@ -173,10 +173,12 @@ the gap too, so the component keeps polling and keeps Re-read disabled there.
 The published host turns `ReviewerInstructionStaleError` into an `instruct`
 result of `{ stale: true }`; the component treats it as refresh-and-retry
 (reload with a note, draft kept), never as a denial. Custom hosts should do the
-same rather than surfacing it as an error. A retry from an older anchor carries forward the newest human
-split recorded after it (corrections chain through each extraction
-configuration), so a split followed by a failed stage is never silently
-dropped. **Concurrency.** `recordReviewerInstruction` and `reviseLogicalSplit` each
+same rather than surfacing it as an error. A retry from an older anchor builds on the **whole configuration**
+of the newest extraction after it (replacing only the instruction), because that
+is the item's current configuration: corrections chain forward through it and a
+host reprocess replaces it. So a split followed by a failed stage is never
+silently dropped, and a failed reprocess's changed configuration is neither
+reverted nor overlaid with a split it dropped. **Concurrency.** `recordReviewerInstruction` and `reviseLogicalSplit` each
 run their whole decision in one transaction under the item row lock: the
 anchor snapshot read takes the lock first, the execution authorization of
 that snapshot takes it again (`UPDATE intake_items` row lock), the guard step

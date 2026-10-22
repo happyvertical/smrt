@@ -1633,14 +1633,14 @@ export class IngestionService {
         const item = await this.item(frozen.itemId, 'process', db);
         if (Number(item.analysis_revision) !== frozen.expectedRevision)
           throw new ReviewerInstructionStaleError();
-        let carriedCorrection: unknown;
+        let carriedConfiguration: Record<string, unknown> | undefined;
         if (current.revision !== frozen.expectedRevision) {
           // The same predicate drives getReinterpretationState, so the review
           // UI and this guard always agree on "in flight".
           const later = await this.laterWork(db, item, current.revision);
           if (later.phase === 'in_flight' || later.phase === 'superseded')
             throw new ReviewerInstructionStaleError();
-          carriedCorrection = later.correction;
+          carriedConfiguration = later.configuration;
         }
         const pin = object(object(current.configuration.proposals).source);
         const source = await this.completedAnalysisSnapshot(
@@ -1675,10 +1675,7 @@ export class IngestionService {
           db,
           frozen.itemId,
           {
-            ...source.configuration,
-            ...(carriedCorrection !== undefined
-              ? { humanCorrection: carriedCorrection }
-              : {}),
+            ...(carriedConfiguration ?? source.configuration),
             reviewerInstruction: record,
           },
           requestKey,
@@ -1705,7 +1702,7 @@ export class IngestionService {
   ): Promise<{
     phase: 'none' | 'in_flight' | 'superseded' | 'failed';
     failure: IntakeFailure | 'not_started' | null;
-    correction: unknown;
+    configuration: Record<string, unknown> | undefined;
   }> {
     const later = (
       await this.rows(db, 'intake_analyses', 'item_id=? AND revision>?', [
@@ -1714,15 +1711,16 @@ export class IngestionService {
       ])
     ).sort((a, b) => Number(b.revision) - Number(a.revision));
     const stage = (row: Row) => object(object(row.data).configuration).stage;
-    // Corrections chain forward through each extraction configuration, so the
-    // newest later extraction holds the current human split; a retry from an
-    // older anchor must not silently drop one recorded after it.
+    // The newest later extraction's configuration is the item's current one:
+    // corrections chain forward through it, and a host reprocess replaces it
+    // (dropping corrections). A retry from an older anchor builds on it so it
+    // neither reverts a reprocess nor drops or resurrects a split.
     const newestExtraction = later.find((row) => stage(row) !== 'interpret');
-    const correction = newestExtraction
-      ? object(object(newestExtraction.data).configuration).humanCorrection
+    const configuration = newestExtraction
+      ? object(object(newestExtraction.data).configuration)
       : undefined;
     const [latest] = later;
-    if (!latest) return { phase: 'none', failure: null, correction };
+    if (!latest) return { phase: 'none', failure: null, configuration };
     if (
       later.some(
         (row) =>
@@ -1730,9 +1728,9 @@ export class IngestionService {
           stage(row) === 'interpret',
       )
     )
-      return { phase: 'superseded', failure: null, correction };
+      return { phase: 'superseded', failure: null, configuration };
     if (later.some((row) => ['queued', 'running'].includes(String(row.state))))
-      return { phase: 'in_flight', failure: null, correction };
+      return { phase: 'in_flight', failure: null, configuration };
     const [attempt] = latest.current_attempt_id
       ? await this.rows(db, 'intake_analysis_attempts', 'id=? AND item_id=?', [
           latest.current_attempt_id,
@@ -1756,14 +1754,14 @@ export class IngestionService {
           ? started + leaseMs
           : Number.NEGATIVE_INFINITY;
       return this.now().getTime() <= deadline
-        ? { phase: 'in_flight', failure: null, correction }
-        : { phase: 'failed', failure: 'not_started', correction };
+        ? { phase: 'in_flight', failure: null, configuration }
+        : { phase: 'failed', failure: 'not_started', configuration };
     }
     const safe = attempt?.safe_error ? String(attempt.safe_error) : '';
     return {
       phase: 'failed',
       failure: failures.has(safe) ? (safe as IntakeFailure) : null,
-      correction,
+      configuration,
     };
   }
   /** Pollable reinterpretation state: current revision, safe failure and the retry anchor. */
