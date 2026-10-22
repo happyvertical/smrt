@@ -89,8 +89,12 @@ into a new immutable extraction configuration, and reach interpretation only as
 a digest-verified copy. Neither grants handlers, candidates, permissions or
 automation; `authorizeAutomatic` and preview/approval are unchanged for actions
 produced under an instruction. Recording either supersedes current suggestions
-and queues the existing dispatch stages; hosts wake their worker through
-`onSplit`/`onInstruct` and rely on dispatch repair otherwise.
+and queues the existing dispatch stages (a new extraction revision, then
+interpretation — provider extraction budget is spent per correction because the
+predecessor pin is not reused); hosts wake their worker through
+`onSplit`/`onInstruct` and rely on dispatch repair otherwise. While a stage is
+queued/running the item reports `processing` regardless of earlier actions; a
+failed stage exposes its safe category through `getReinterpretationState`.
 
 `continueIntakeReview` uses the existing jobs continuation context. Applications
 create tasks with owner, tenant and exact `{recordId, revision, inputKey}` binding

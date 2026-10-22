@@ -129,16 +129,41 @@ are validated as usual, and suggestions still require explicit preview and
 approval. A replay with the same request ID returns the same revision; a changed
 text under the same request ID conflicts.
 
+**Cost.** Each recorded instruction appends a new extraction revision, so the
+item is extracted again before it is interpreted again: cheap for embedded-text
+PDFs and plain text, but OCR/speech hosts spend provider budget per instruction,
+exactly as they do per split correction. The pinned extraction is not reused
+because the interpretation contract requires its source to be the immediately
+preceding revision and `getCompletedAnalysis(itemId, attemptId)` serves only
+the current revision (PROPOSALS.md, "Durable stages"); reusing it would mean
+weakening that predecessor pin, which protects every generation from an
+intervening reprocess, so this feature follows the split path instead.
+
+**State and failure.** An in-flight stage (queued/running) reports the item as
+`processing` even when earlier, now-stale actions exist. If the re-extraction or
+interpretation fails, `getReinterpretationState(itemId)` returns the latest
+attempt's safe failure category and the latest completed generation attempt;
+the host projects them as `instruction.failure` and `instruction.binding`, and
+`recordReviewerInstruction` accepts that historical attempt as its anchor when
+`expectedRevision` is the item's current (failed) revision and no later revision
+completed or is in flight, so the reviewer can retry or change the instruction.
+
 `ItemReviewView.instruction` exposes `current` (latest recorded), `applied` (the
-instruction the displayed generation ran under) and `stale` (the displayed
-suggestions predate the current instruction). The optional host callback
+instruction the displayed **generation** ran under; a completed extraction alone
+applies nothing), `stale` (the displayed suggestions predate the current
+instruction), optional `failure` and optional `binding`. Feedback examples that carry instruction
+text count it toward the feedback byte budget (FEEDBACK.md). The optional host callback
 `IntakeReviewHost.instruct` is implemented by the published adapter when the
 service supports it, with an optional `onInstruct(itemId, revision)` wakeup
 mirroring `onSplit`. The review component renders "Instructions for the
 assistant" with "Re-read with these instructions", shows "Reinterpreting…" while
-the host reports `processing`, repeats the existing authenticated `load` on
-`pollMs` (default 2 s) until the stage lands, and then shows the instruction that
-produced the current suggestions, marking a superseded one as stale. There is no
+the item's stage is queued/running, repeats the existing authenticated `load`
+on `pollMs` (default 2 s, backing off to 5×) and patches the view in place —
+drafts, split edits, focus and the evidence viewer survive and no loading
+placeholder is shown — stops when the stage is no longer in flight, and then
+shows the instruction that produced the current suggestions, marking a
+superseded one as stale. A failed stage shows its safe category with the form
+still available. There is no
 streaming channel; status is read through the existing item/analysis APIs. The
 maintained fixture records the instruction durably and then runs the stages in
 the background so the browser proof exercises the in-place update.

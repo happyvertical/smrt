@@ -57,7 +57,17 @@ text}`; capture verifies it against the generation's own provenance. `retrieve`
 returns it as part of the example so comparable later items see the guidance
 that produced the judged suggestion. It is example content only: it does not
 transfer to the receiving generation's configuration or prompt section, and it
-expands no catalog, candidate, permission or automation eligibility.
+expands no catalog, candidate, permission or automation eligibility. **Budget
+impact:** carried instruction text (up to 4,000 characters, more bytes for
+non-ASCII) counts toward the exact serialized selection budget — the narrowest
+of `feedback.maxBytes` and each offered handler's `policy.maxBytes` — like any
+other example field. The existing fail-closed rule is unchanged: an over-budget
+selection rejects with `Feedback limit` and generation records
+`provider_error` without provider I/O; examples are not silently trimmed. Hosts
+that enable reviewer instructions together with feedback should size
+`feedback.maxBytes` (and the policy ceilings) for at least
+`maxExamples × (4,000 characters of instruction + the example's own fields)`,
+or lower `maxExamples`.
 
 Full examples exist only in the authorized provider request. The SDK proposal
 adapter includes that typed selection in its serialized user message when

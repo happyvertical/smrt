@@ -137,11 +137,20 @@ no domain effect. The injection case shows `analyze` refusing an extraction-stag
 instruction and a forged interpretation copy failing before provider disclosure
 while history stays empty. The feedback case shows the judgment carrying
 `{id, digest, text}`, `retrieveFeedback` returning it with the example, and the
-receiving generation seeing it only as example content. `review-host.test.ts`
+receiving generation seeing it only as example content. Further shared cases cover `processing` state with earlier (stale) actions and
+`getReinterpretationState`; an instruction retained beside a later split
+correction with `human_split_not_respected` still enforced; a tampered stored
+extraction record and a well-formed forged interpretation copy both failing
+before provider disclosure; replay of a superseded request ID, a concurrent
+double record (exactly one wins) and retry against the latest completed
+generation after a failed re-extraction; and carried instruction text being
+counted in the exact feedback byte budget, with one byte short still failing
+closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
 covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
 projection; the component suite covers the textarea/button binding, disabled
-empty text, polling through `processing` until the in-place update, and stale
-display; the Chromium suite records a real instruction, observes the background
+empty text, polling through `processing` until the in-place update (also with an
+earlier action present, with drafts and the textarea element preserved and no
+loading placeholder), the failure/retry binding path, and stale display; the Chromium suite records a real instruction, observes the background
 "Reinterpreting…" state, the in-place update, provenance, unchanged original
 bytes, a refused forged payload and supersession. No schema or migration changes:
 the record lives in the existing append-only analysis ledger beside the split

@@ -112,7 +112,11 @@ instruction never changes `offered`, `catalogDigest`, argument schemas,
 permissions or `automaticActionEligible`; a reply that follows guidance outside
 the catalog fails validation like any other hostile output. Learned examples are
 still retrieved for an instructed generation; only a logical split correction
-suppresses them.
+suppresses them. Every instruction costs a fresh extraction revision before the
+new interpretation: the predecessor-pin contract above (source = immediately
+preceding revision, current-revision reads) is deliberately left intact rather
+than reused for a same-source second interpretation, so OCR/speech hosts budget
+one extraction per instruction, as for split corrections.
 
 Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.
