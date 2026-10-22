@@ -182,12 +182,15 @@ answers as diagnostics and configure:
   authorized exactly as before and its answers, usage, `readiness` and `maxLen`
   are recorded, but the gate never changes `outcome` or `disposition`; readiness
   comes from the validator alone (`missingFields`, outcome, source completeness).
-  A provider error or timeout is recorded as the `decision_unavailable`
-  warning and an identity or answer-shape mismatch as `decision_malformed`,
-  each with `provenance.decision` identity and the provider-reported usage
-  whenever a reply came back (including one whose shape the SDK then
-  rejected); only a thrown client call or timeout has no usage. The generated
-  suggestions stay as they were. The serialized request exceeding the byte budget is a
+  A client error or timeout is recorded as the `decision_unavailable`
+  warning. A reply that comes back and then fails the core `executeDecision`
+  identity or answer-shape check is recorded as `decision_malformed` with the
+  reply's usage; this is the path for injected `DecisionClient`s. SDK clients,
+  including the Laya provider behind `createSDKProposalDecisionClient`,
+  validate the reply's shape inside `client.decide` and throw, so a malformed
+  SDK reply is recorded as `decision_unavailable` with no usage. Every case
+  records the `provenance.decision` identity. The generated suggestions stay
+  as they were. The serialized request exceeding the byte budget is a
   configuration failure, not a provider answer: it ends the attempt as `limit`
   in both modes, and in `gate` mode every failure above still ends the attempt
   as `provider_error`. Lease, catalog, policy and provider-allowlist revocation

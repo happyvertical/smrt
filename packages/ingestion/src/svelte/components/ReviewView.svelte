@@ -229,25 +229,26 @@ async function preview(index: number) {
     requestId: crypto.randomUUID(),
     ...(args ? { args } : {}),
   };
-  // A rejected preview keeps the current view and the typed draft; the
-  // reviewer sees the refusal on the suggestion and can correct and retry.
+  // Only the handler's validation refusal stays inline and keeps the view;
+  // any thrown failure (denied, revoked, unavailable, unknown) fails closed.
   const ticket = ++epoch;
   pending = true;
   error = false;
   previewRejected = undefined;
   try {
-    await host.preview(input);
-    if (alive && ticket === epoch) {
-      // Only a successful preview of this card consumes its draft.
-      delete drafts[key];
-      delete invalidDrafts[key];
-      await load();
-    }
-  } catch {
-    if (alive && ticket === epoch) {
+    const outcome = await host.preview(input);
+    if (!alive || ticket !== epoch) return;
+    if (outcome?.rejected === 'invalid') {
       previewRejected = index;
       pending = false;
+      return;
     }
+    // Only a successful preview of this card consumes its draft.
+    delete drafts[key];
+    delete invalidDrafts[key];
+    await load();
+  } catch {
+    if (alive && ticket === epoch) deny();
   }
 }
 function chooseFor(index: number) {
@@ -364,7 +365,7 @@ onMount(() => {
 {@const key = draftKey(index)}
 <p>{t(M['ingestion.completeSuggestion'])}</p>
 <Textarea aria-label={t(M['ingestion.suggestionArgs'])} bind:value={drafts[key]} rows={6} />
-{#if handler}<CandidatePicker {host} {itemId} catalog={handler} onchoose={chooseFor(index)} />{/if}
+{#if handler}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
 {#if edited(index)}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalidDrafts[key] && !parseable(drafts[key])}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 {/if}

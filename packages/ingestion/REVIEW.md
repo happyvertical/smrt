@@ -45,6 +45,12 @@ generation. The handler validates the human arguments again before a
 `ActionReview` lists required arguments missing from the current draft while
 editing, and no authority or automation eligibility is added: a failed attempt,
 an unoffered handler or a foreign stage is still refused by the host.
+`preview` resolves `{ rejected: 'invalid' }` (`PreviewRejection`) only when the
+handler's argument schema or `validate` refused the arguments (server-side
+`HandlerArgumentsInvalidError`); the component then keeps the view and draft
+and shows an inline message. Every thrown preview or candidate-search failure
+(denied, revoked, unavailable or unknown) clears the view exactly like any
+other failed callback.
 Unsent drafts live only in component memory, keyed by attempt and suggestion
 index. They survive Refresh, a failed callback, an action on another card and a
 transient `unavailable`/`stale` reload; a `revoked` or `expired` result

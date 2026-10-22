@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import type { ReviewPage } from './review-dto.js';
 import {
   createIntakeReviewHost,
@@ -421,6 +422,22 @@ describe('published review host projection', () => {
       args: { body: 'Body', title: 'Human title' },
     });
     expect(f.service.previewGeneratedProposals).not.toHaveBeenCalled();
+  });
+  it('resolves a typed rejection only when the handler refuses the arguments', async () => {
+    const f = fixture();
+    f.service.getCompletedAnalysis.mockResolvedValue(
+      generation('needs_review') as never,
+    );
+    f.service.previewProposal.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler payload'),
+    );
+    await expect(
+      f.host.preview({ ...previewInput, args: { body: 'Body' } }),
+    ).resolves.toEqual({ rejected: 'invalid' });
+    f.service.previewProposal.mockRejectedValueOnce(new Error('Access denied'));
+    await expect(
+      f.host.preview({ ...previewInput, args: { body: 'Body' } }),
+    ).rejects.toThrow('Access denied');
   });
   it('previews a needs_review suggestion from the generated snapshot when no arguments are supplied', async () => {
     const f = fixture();

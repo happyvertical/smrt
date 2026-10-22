@@ -38,6 +38,7 @@ import {
   feedbackDiscoveryContext,
 } from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
 
@@ -373,7 +374,7 @@ export class IntakeExecutionService {
     )
       throw new Error('Invalid handler payload');
     if (!this.ajv.compile(schema)(value))
-      throw new Error('Invalid handler payload');
+      throw new HandlerArgumentsInvalidError('Invalid handler payload');
   }
   private async access(
     db: DatabaseInterface,
@@ -1258,7 +1259,7 @@ export class IntakeExecutionService {
     }
     this.validate(handler.argsSchema, concrete, policy.maxBytes);
     if (!(await handler.validate(input.args, context)).ok)
-      throw new Error('Invalid handler arguments');
+      throw new HandlerArgumentsInvalidError('Invalid handler arguments');
     const preview = await handler.preview(input.args, context);
     if (canonical(preview.normalizedArgs) !== canonical(input.args))
       throw new Error(
@@ -1932,7 +1933,7 @@ export class IntakeExecutionService {
     }
     this.validate(bound.handler.argsSchema, args, context.policy.maxBytes);
     if (!(await bound.handler.validate(args, context)).ok)
-      throw new Error('Invalid handler arguments');
+      throw new HandlerArgumentsInvalidError('Invalid handler arguments');
     return args;
   }
   private retained(item: Row): boolean {

@@ -102,6 +102,10 @@ export function schemaOwnedPath(
  * Summarize Ajv errors by schema-owned path, keyword and schema-owned params.
  * Data never appears: an extra property's name is model output and is omitted.
  */
+/** Ajv errors examined per summary, duplicates included. */
+export const PROPOSAL_REASON_MAX_ERRORS = 200;
+/** Longest single path rendered; deeper paths keep their prefix. */
+const PATH_LIMIT = 160;
 export function describeSchemaErrors(
   errors: ErrorObject[] | null | undefined,
   schema: unknown,
@@ -109,14 +113,20 @@ export function describeSchemaErrors(
   limit = 20,
   maxChars = PROPOSAL_REASON_LIMIT - 100,
 ): string {
-  // Bounded work: a huge reply can carry hundreds of thousands of errors, so
-  // dedupe with a set and stop once enough distinct parts are collected.
+  // Bounded work: a huge or deeply recursive reply can carry hundreds of
+  // thousands of (often identical) errors, so examine at most a fixed number
+  // of errors in total, walk each distinct instance path once, and stop as
+  // soon as enough distinct parts are collected.
   const parts = new Set<string>();
+  const paths = new Map<string, string>();
   const all = errors ?? [];
   let consumed = 0;
-  for (const error of all) {
-    if (parts.size >= limit) break;
-    consumed++;
+  while (
+    consumed < all.length &&
+    consumed < PROPOSAL_REASON_MAX_ERRORS &&
+    parts.size < limit
+  ) {
+    const error = all[consumed++];
     const params = error.params as Record<string, unknown>;
     const detail: string[] = [];
     if (typeof params.missingProperty === 'string')
@@ -132,8 +142,14 @@ export function describeSchemaErrors(
       detail.push(`limit=${String(params.limit)}`);
     if (typeof params.passingSchemas !== 'undefined')
       detail.push('oneOf=none|multiple');
+    let path = paths.get(error.instancePath);
+    if (path === undefined) {
+      path = schemaOwnedPath(error.instancePath, schema, instance);
+      if (path.length > PATH_LIMIT) path = `${path.slice(0, PATH_LIMIT)}…`;
+      paths.set(error.instancePath, path);
+    }
     parts.add(
-      `${schemaOwnedPath(error.instancePath, schema, instance)} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`,
+      `${path} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`,
     );
   }
   const shown: string[] = [];

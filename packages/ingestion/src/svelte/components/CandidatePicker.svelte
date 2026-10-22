@@ -13,17 +13,17 @@ export interface Props {
   host: IntakeReviewHost;
   itemId: string;
   catalog: ProposalCatalogEntry;
+  /** A failed search fails closed: the owning view discards its payloads. */
+  deny: () => void;
   /** Called only with a declared candidate field and an id from the current authorized page. */
   onchoose: (field: string, id: string) => void;
 }
-let { host, itemId, catalog, onchoose }: Props = $props();
+let { host, itemId, catalog, deny, onchoose }: Props = $props();
 const { t } = useI18n();
 let query = $state(''),
   field = $state(''),
   candidates = $state<CandidatePage>(),
-  searching = $state(false),
-  // A failed search is reported here; it never discards the surrounding view.
-  failed = $state(false);
+  searching = $state(false);
 let alive = true;
 onDestroy(() => {
   alive = false;
@@ -37,7 +37,6 @@ async function search() {
   if (searching) return;
   searching = true;
   candidates = undefined;
-  failed = false;
   try {
     const result = await host.candidates({
       itemId,
@@ -47,7 +46,7 @@ async function search() {
     });
     if (alive) candidates = result;
   } catch {
-    if (alive) failed = true;
+    if (alive) deny();
   } finally {
     if (alive) searching = false;
   }
@@ -69,6 +68,5 @@ function choose(id: string) {
 <Select aria-label={t(M['ingestion.field'])} bind:value={field}><option value="">{t(M['ingestion.field'])}</option>{#each fields as name (name)}<option value={name}>{name}</option>{/each}</Select>
 <Input aria-label={t(M['ingestion.query'])} bind:value={query} />
 <Button onclick={search} disabled={searching}>{t(M['ingestion.search'])}</Button>
-{#if failed}<p role="alert">{t(M['ingestion.searchFailed'])}</p>{/if}
 {#if candidates}<ul>{#each candidates.items as candidate (candidate.key)}<li>{candidate.label} <Button disabled={!field} onclick={() => choose(candidate.id)}>{t(M['ingestion.choose'])}</Button></li>{/each}</ul>{#if candidates.truncated}<p>{t(M['ingestion.truncated'])}</p>{/if}{/if}
 {/if}

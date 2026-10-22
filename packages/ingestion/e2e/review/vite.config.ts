@@ -256,7 +256,7 @@ export default defineConfig({
             let result: unknown;
             switch (operation) {
               case 'preview':
-                result = await app.preview(scope, input);
+                result = await app.previewForReview(scope, input);
                 break;
               case 'decide':
                 result = await app.decide(scope, input);
