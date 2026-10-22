@@ -10,7 +10,10 @@ import type {
   ReviewerInstructionView,
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
-import { reviewerInstructionView } from './reviewer-instruction.js';
+import {
+  ReviewerInstructionStaleError,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
 import type { IngestionService } from './server.js';
 
 /** Trusted application adapters, bound to the same authenticated session as service. */
@@ -101,9 +104,11 @@ export function createIntakeReviewHost(
           applied,
           stale: !!analysis && !!current && current.id !== applied?.id,
           ...(state.failure ? { failure: state.failure } : {}),
+          ...(state.reinterpreting ? { reinterpreting: true } : {}),
           // Without a displayable generation the reviewer can still retry or
           // change the instruction against the latest completed generation.
-          ...(!analysis && state.generationAttemptId
+          ...(analysis?.configuration.stage !== 'interpret' &&
+          state.generationAttemptId
             ? {
                 binding: {
                   attemptId: state.generationAttemptId,
@@ -240,7 +245,14 @@ export function createIntakeReviewHost(
     },
     async instruct(input) {
       // Durable first; the reinterpretation runs through the normal dispatch path.
-      const result = await service.recordReviewerInstruction(input);
+      let result: Awaited<ReturnType<typeof service.recordReviewerInstruction>>;
+      try {
+        result = await service.recordReviewerInstruction(input);
+      } catch (error) {
+        if (error instanceof ReviewerInstructionStaleError)
+          return { stale: true as const };
+        throw error;
+      }
       await options.onInstruct?.(input.itemId, result.revision);
     },
     ...(options.enableFeedback

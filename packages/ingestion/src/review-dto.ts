@@ -110,8 +110,10 @@ export interface ReviewerInstructionView {
   applied: ReviewerInstruction | null;
   /** Displayed suggestions predate the current instruction. */
   stale: boolean;
-  /** Safe failure category of the latest attempt when the reinterpretation did not complete. */
-  failure?: IntakeFailure;
+  /** Safe failure category, or `not_started` when interpretation was never appended in time. */
+  failure?: IntakeFailure | 'not_started';
+  /** Server-side "in flight", including the gap between extraction and interpretation. */
+  reinterpreting?: boolean;
   /** Record/retry binding when no current generation is displayable: the latest completed generation attempt and the item's current revision. */
   binding?: { attemptId: string; expectedRevision: number };
 }
@@ -155,8 +157,14 @@ export interface IntakeReviewHost {
     requestId: string;
   }): Promise<void>;
   split(input: LogicalSplitInput): Promise<void>;
-  /** Record reviewer guidance and request a background reinterpretation; never approval. */
-  instruct?: (input: ReviewerInstructionInput) => Promise<void>;
+  /**
+   * Record reviewer guidance and request a background reinterpretation; never
+   * approval. Resolves `{ stale: true }` when the anchor is superseded or work
+   * is still in flight, a refresh-and-retry signal rather than a denial.
+   */
+  instruct?: (
+    input: ReviewerInstructionInput,
+  ) => Promise<void | { stale: true }>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,

@@ -32,6 +32,7 @@ import {
   createSourceDeliveryHandler,
   extractAnalysis,
   IngestionService,
+  ReviewerInstructionStaleError,
   reviewerInstructionView,
 } from '../src/server.js';
 import {
@@ -587,7 +588,9 @@ export class ReferenceReviewHost {
         ...(reinterpretation.failure
           ? { failure: reinterpretation.failure }
           : {}),
-        ...(!analysis && reinterpretation.generationAttemptId
+        ...(reinterpretation.reinterpreting ? { reinterpreting: true } : {}),
+        ...(analysis?.configuration.stage !== 'interpret' &&
+        reinterpretation.generationAttemptId
           ? {
               binding: {
                 attemptId: reinterpretation.generationAttemptId,
@@ -707,7 +710,14 @@ export class ReferenceReviewHost {
   /** Durable record first; the fixture then reinterprets in the background like a job worker. */
   async instruct(scope: ReviewSession, input: ReviewerInstructionInput) {
     const { service } = await this.service(scope);
-    const result = await service.recordReviewerInstruction(input);
+    let result: Awaited<ReturnType<typeof service.recordReviewerInstruction>>;
+    try {
+      result = await service.recordReviewerInstruction(input);
+    } catch (error) {
+      if (error instanceof ReviewerInstructionStaleError)
+        return { stale: true as const };
+      throw error;
+    }
     const pending = this.process(scope, input.itemId, result.revision).catch(
       () => undefined,
     );

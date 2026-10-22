@@ -23,6 +23,7 @@ let view = $state<ItemReviewView>(),
   splits = $state<Record<string, string>>({}),
   instruction = $state(''),
   refreshFailed = $state(false),
+  instructionBusy = $state(false),
   invalid = $state(false);
 /** Consecutive thrown poll ticks tolerated before failing closed. */
 const MAX_POLL_FAILURES = 3;
@@ -41,8 +42,21 @@ function inFlight(current: ItemReviewView | undefined) {
   return (
     current?.availability === 'available' &&
     (current.entry.state === 'processing' ||
-      ['queued', 'running'].includes(current.entry.item.processingState))
+      ['queued', 'running'].includes(current.entry.item.processingState) ||
+      // The server's own predicate, which also covers the gap between a
+      // completed extraction and its not-yet-appended interpretation.
+      !!current.instruction?.reinterpreting)
   );
+}
+/** Prefer the server's retry binding; otherwise the displayed generation. */
+function instructionBinding(current: ItemReviewView | undefined) {
+  if (current?.instruction?.binding) return current.instruction.binding;
+  return current?.generation && current.analysis
+    ? {
+        attemptId: current.analysis.attemptId,
+        expectedRevision: current.analysis.revision,
+      }
+    : undefined;
 }
 // Background stages (reinterpretation after an instruction) finish without a
 // push channel; the authenticated load is repeated and patched in place so
@@ -252,21 +266,25 @@ function split(evidenceId: string) {
   void run(() => host.split(input));
 }
 function instruct() {
-  const analysis = view?.analysis;
-  const binding = analysis
-    ? { attemptId: analysis.attemptId, expectedRevision: analysis.revision }
-    : view?.instruction?.binding;
+  const binding = instructionBinding(view);
   const text = instruction.trim();
   const operation = host.instruct;
-  if (!binding || !text || !operation) return;
+  if (!binding || !text || !operation || inFlight(view)) return;
+  instructionBusy = false;
   const input = {
     itemId,
     ...binding,
     text,
     requestId: crypto.randomUUID(),
   };
+  // A stale result is a refresh-and-retry signal: run() reloads the view and
+  // the draft is kept; it is never treated as a denial.
   void run(async () => {
-    await operation(input);
+    const result = await operation(input);
+    if (result && result.stale === true) {
+      instructionBusy = true;
+      return;
+    }
     instruction = '';
   });
 }
@@ -330,11 +348,12 @@ onMount(() => {
 {#if view.instruction}
 {@const applied = view.instruction.applied}{@const current = view.instruction.current}
 {#if inFlight(view) && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
-{#if view.instruction.failure}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretFailed'])} ({view.instruction.failure})</p>{/if}
+{#if view.instruction.failure === 'not_started'}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretNotStarted'])}</p>{:else if view.instruction.failure}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretFailed'])} ({view.instruction.failure})</p>{/if}
 {#if applied}<p data-testid="applied-instruction">{t(M['ingestion.appliedInstruction'])}: <q>{applied.text}</q></p>{#if view.instruction.stale}<p role="status" data-testid="instruction-stale">{t(M['ingestion.instructionStale'])}</p>{/if}{/if}
 {#if current && current.id !== applied?.id}<p data-testid="pending-instruction">{t(M['ingestion.pendingInstruction'])}: <q>{current.text}</q></p>{/if}
 {/if}
-{#if host.instruct && (view.analysis || view.instruction?.binding)}
+{#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{/if}
+{#if host.instruct && instructionBinding(view)}
 <div><Textarea aria-label={t(M['ingestion.instructions'])} bind:value={instruction} /><Button disabled={!instruction.trim() || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
 {/if}
 {#if extracted.length}
