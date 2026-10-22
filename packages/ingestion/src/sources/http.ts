@@ -137,6 +137,9 @@ export function createSourceDeliveryHandler(
           } else {
             if (name !== 'file' || parts.length)
               throw new SourceInputError('invalid');
+            // Keep the original name for labels; it never becomes identity.
+            const original =
+              typeof value.name === 'string' ? value.name.trim() : '';
             parts.push({
               partId: 'file',
               parentPartId: 'capture',
@@ -145,6 +148,9 @@ export function createSourceDeliveryHandler(
                 value.stream(),
                 binding.limits.maxBytes,
               ),
+              ...(original && original !== 'blob' && original.length <= 512
+                ? { filename: original }
+                : {}),
             });
           }
         }

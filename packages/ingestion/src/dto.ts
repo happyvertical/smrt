@@ -37,6 +37,10 @@ export interface IntakeEvidenceDTO {
   mediaType: string;
   contentHash: string;
   byteLength: number;
+  /** Original name supplied by the source (upload, attachment, folder); untrusted text. */
+  filename?: string;
+  /** Upstream identity recorded at receipt; never a storage location. */
+  sourceReference?: { owner: string; id: string; version: string };
 }
 
 /** Explicit resource limits captured with each receipt. */

@@ -60,6 +60,8 @@ export interface IntakePart {
   bytes: Uint8Array;
   expectedHash?: string;
   sourceReference?: { owner: string; id: string; version: string };
+  /** Original name as the source presented it; presentation only, never identity. */
+  filename?: string;
 }
 /** Host-resolved delivery and retention policy, never untrusted content labels. */
 export interface ReceiveInput {
@@ -199,6 +201,17 @@ function bytesHash(value: Uint8Array): string {
 function nonempty(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512)
     throw new Error('Invalid intake identifier');
+}
+/** A source-supplied display name: bounded text with no control characters. */
+function filename(value: unknown): asserts value is string {
+  if (
+    typeof value !== 'string' ||
+    !value.trim() ||
+    value.length > 512 ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting them is the point
+    /[\u0000-\u001f\u007f]/.test(value)
+  )
+    throw new Error('Invalid intake filename');
 }
 function integer(value: unknown, max = 2_147_483_647): asserts value is number {
   if (
@@ -499,6 +512,7 @@ export class IngestionService {
         const hash = bytesHash(part.bytes);
         if (part.expectedHash && part.expectedHash !== hash)
           throw new Error('Invalid hash');
+        if (part.filename !== undefined) filename(part.filename);
         return { ...part, bytes: Buffer.from(part.bytes), hash };
       });
       if (total > input.limits.maxBytes)
@@ -616,7 +630,12 @@ export class IngestionService {
             byte_length: part.bytes.byteLength,
             media_type: part.mediaType,
             source_uri: '',
-            data: canonical({ sourceReference: part.sourceReference ?? null }),
+            data: canonical({
+              sourceReference: part.sourceReference ?? null,
+              ...(part.filename === undefined
+                ? {}
+                : { filename: part.filename }),
+            }),
           });
       }
       return { kind: 'reserved' as const, item, created: !!inserted.length };
@@ -1218,6 +1237,8 @@ export class IngestionService {
     return result;
   }
   private evidenceDTO(e: Row): IntakeEvidenceDTO {
+    const data = object(e.data);
+    const reference = data.sourceReference;
     return {
       id: String(e.id),
       partId: String(e.part_id),
@@ -1227,6 +1248,20 @@ export class IngestionService {
       mediaType: String(e.media_type),
       contentHash: String(e.content_hash),
       byteLength: Number(e.byte_length),
+      ...(typeof data.filename === 'string' && data.filename
+        ? { filename: data.filename }
+        : {}),
+      ...(reference &&
+      typeof reference === 'object' &&
+      !Array.isArray(reference)
+        ? {
+            sourceReference: {
+              owner: String((reference as Row).owner),
+              id: String((reference as Row).id),
+              version: String((reference as Row).version),
+            },
+          }
+        : {}),
     };
   }
   /** One read authorization per distinct captured ceiling for a page of rows. */
