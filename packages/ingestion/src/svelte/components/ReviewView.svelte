@@ -28,11 +28,8 @@ let view = $state<ItemReviewView>(),
 // The busy note after a stale click stays only while the item is still in
 // flight; any reload (including the one answering the click) that shows it
 // settled clears it.
-let busyJustSet = false;
 function settleBusy() {
-  if (!instructionBusy) return;
-  busyJustSet = false;
-  if (!inFlight(view)) instructionBusy = false;
+  if (instructionBusy && !inFlight(view)) instructionBusy = false;
 }
 /** Consecutive thrown poll ticks tolerated before failing closed. */
 const MAX_POLL_FAILURES = 3;
@@ -282,7 +279,6 @@ function instruct() {
   const operation = host.instruct;
   if (!binding || !text || !operation || inFlight(view)) return;
   instructionBusy = false;
-  busyJustSet = false;
   const input = {
     itemId,
     ...binding,
@@ -295,7 +291,6 @@ function instruct() {
     const result = await operation(input);
     if (result && result.stale === true) {
       instructionBusy = true;
-      busyJustSet = true;
       return;
     }
     instruction = '';
