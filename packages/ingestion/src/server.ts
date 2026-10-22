@@ -1548,16 +1548,35 @@ export class IngestionService {
     await (await this.proposalReader())[generationSnapshotRead](
       frozen.itemId,
       (work) => this.tx(work),
+      // The anchor may be historical: after a failed reinterpretation the
+      // reviewer retries against the latest completed generation.
       (db) =>
         this.completedAnalysisSnapshot(
           db,
           frozen.itemId,
           frozen.attemptId,
-          true,
+          false,
         ),
       async (db, current) => {
-        if (current.revision !== frozen.expectedRevision)
+        const item = await this.item(frozen.itemId, 'process', db);
+        if (Number(item.analysis_revision) !== frozen.expectedRevision)
           throw new Error('Stale reviewer instruction');
+        if (current.revision !== frozen.expectedRevision) {
+          const later = await this.rows(
+            db,
+            'intake_analyses',
+            'item_id=? AND revision>?',
+            [frozen.itemId, current.revision],
+          );
+          if (
+            later.some((row) =>
+              ['completed', 'partial', 'queued', 'running'].includes(
+                String(row.state),
+              ),
+            )
+          )
+            throw new Error('Stale reviewer instruction');
+        }
         const pin = object(object(current.configuration.proposals).source);
         const source = await this.completedAnalysisSnapshot(
           db,
@@ -1574,9 +1593,9 @@ export class IngestionService {
         ] as const)
           if (pin[key] !== source[key])
             throw new Error('Instruction source changed');
-        const previous = source.configuration.reviewerInstruction
-          ? reviewerInstructionView(source.configuration.reviewerInstruction)
-          : null;
+        // Supersede the latest recorded instruction, even one whose
+        // reinterpretation never completed; the ledger, not the anchor, is history.
+        const [previous] = await this.recordedInstructions(db, frozen.itemId);
         const body = {
           ...intent,
           id: randomUUID(),
@@ -1599,14 +1618,67 @@ export class IngestionService {
     if (!result) throw new Error('Reviewer instruction unavailable');
     return result;
   }
+  /** Pollable reinterpretation state: current revision, safe failure and the retry anchor. */
+  async getReinterpretationState(itemId: string): Promise<{
+    revision: number;
+    processingState: string;
+    failure: IntakeFailure | null;
+    /** Latest completed generation attempt; absent when none has completed. */
+    generationAttemptId: string | null;
+  }> {
+    const item = await this.item(itemId, 'read');
+    const analyses = (
+      await this.rows(this.db, 'intake_analyses', 'item_id=?', [itemId])
+    ).sort((a, b) => Number(b.revision) - Number(a.revision));
+    let failure: IntakeFailure | null = null;
+    const latest = analyses[0];
+    if (
+      latest &&
+      String(latest.state) === 'needs_attention' &&
+      latest.current_attempt_id
+    ) {
+      const [attempt] = await this.rows(
+        this.db,
+        'intake_analysis_attempts',
+        'id=? AND item_id=?',
+        [latest.current_attempt_id, itemId],
+      );
+      if (attempt?.safe_error && failures.has(String(attempt.safe_error)))
+        failure = String(attempt.safe_error) as IntakeFailure;
+    }
+    let generationAttemptId: string | null = null;
+    for (const row of analyses) {
+      if (
+        !['completed', 'partial'].includes(String(row.state)) ||
+        !row.current_attempt_id ||
+        object(object(row.data).configuration).stage !== 'interpret'
+      )
+        continue;
+      generationAttemptId = String(row.current_attempt_id);
+      break;
+    }
+    await this.item(itemId, 'read');
+    return {
+      revision: Number(item.analysis_revision),
+      processingState: String(item.processing_state),
+      failure,
+      generationAttemptId,
+    };
+  }
   /** Immutable instruction history, newest first. History is never deleted. */
   async listReviewerInstructions(
     itemId: string,
   ): Promise<ReviewerInstruction[]> {
     await this.item(itemId, 'read');
-    const rows = await this.rows(this.db, 'intake_analyses', 'item_id=?', [
-      itemId,
-    ]);
+    const history = await this.recordedInstructions(this.db, itemId);
+    await this.item(itemId, 'read');
+    return history;
+  }
+  private async recordedInstructions(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<ReviewerInstruction[]> {
+    const rows = await this.rows(db, 'intake_analyses', 'item_id=?', [itemId]);
     const seen = new Set<string>();
     const history: ReviewerInstruction[] = [];
     for (const row of rows.sort(
@@ -1627,7 +1699,6 @@ export class IngestionService {
       seen.add(instruction.id);
       history.push(instruction);
     }
-    await this.item(itemId, 'read');
     return history;
   }
   /** Allocate a fenced attempt; active leases cannot be stolen before expiry. */

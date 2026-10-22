@@ -1,5 +1,5 @@
 /** Browser-only view contracts. Every value must come from an authenticated host. */
-import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
+import type { IntakeEvidenceDTO, IntakeFailure, IntakeItemDTO } from './dto.js';
 import type {
   ActionResult,
   IntakeValues,
@@ -110,6 +110,10 @@ export interface ReviewerInstructionView {
   applied: ReviewerInstruction | null;
   /** Displayed suggestions predate the current instruction. */
   stale: boolean;
+  /** Safe failure category of the latest attempt when the reinterpretation did not complete. */
+  failure?: IntakeFailure;
+  /** Record/retry binding when no current generation is displayable: the latest completed generation attempt and the item's current revision. */
+  binding?: { attemptId: string; expectedRevision: number };
 }
 export interface LogicalSplitInput {
   itemId: string;

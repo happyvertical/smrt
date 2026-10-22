@@ -572,17 +572,31 @@ export class ReferenceReviewHost {
       assignment: await this.assignment(scope, itemId),
     };
     const [current] = await service.listReviewerInstructions(itemId);
-    const applied = analysis?.configuration.reviewerInstruction
-      ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
-      : null;
-    const instruction: ReviewerInstructionView | undefined =
-      current || applied
-        ? {
-            current: current ?? null,
-            applied,
-            stale: !!analysis && !!current && current.id !== applied?.id,
-          }
-        : undefined;
+    const applied =
+      analysis?.configuration.stage === 'interpret' &&
+      analysis.configuration.reviewerInstruction
+        ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
+        : null;
+    let instruction: ReviewerInstructionView | undefined;
+    if (current || applied) {
+      const reinterpretation = await service.getReinterpretationState(itemId);
+      instruction = {
+        current: current ?? null,
+        applied,
+        stale: !!analysis && !!current && current.id !== applied?.id,
+        ...(reinterpretation.failure
+          ? { failure: reinterpretation.failure }
+          : {}),
+        ...(!analysis && reinterpretation.generationAttemptId
+          ? {
+              binding: {
+                attemptId: reinterpretation.generationAttemptId,
+                expectedRevision: reinterpretation.revision,
+              },
+            }
+          : {}),
+      };
+    }
     return {
       entry,
       evidence: views,

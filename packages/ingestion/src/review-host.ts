@@ -86,17 +86,33 @@ export function createIntakeReviewHost(
       }
       const assignment = await options.assignment(itemId);
       const [current] = await service.listReviewerInstructions(itemId);
-      const applied = analysis?.configuration.reviewerInstruction
-        ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
-        : null;
-      const instruction: ReviewerInstructionView | undefined =
-        current || applied
-          ? {
-              current: current ?? null,
-              applied,
-              stale: !!analysis && !!current && current.id !== applied?.id,
-            }
-          : undefined;
+      // Only a generation "applies" an instruction; a completed extraction
+      // carries the same record but has produced no suggestions yet.
+      const applied =
+        analysis?.configuration.stage === 'interpret' &&
+        analysis.configuration.reviewerInstruction
+          ? reviewerInstructionView(analysis.configuration.reviewerInstruction)
+          : null;
+      let instruction: ReviewerInstructionView | undefined;
+      if (current || applied) {
+        const state = await service.getReinterpretationState(itemId);
+        instruction = {
+          current: current ?? null,
+          applied,
+          stale: !!analysis && !!current && current.id !== applied?.id,
+          ...(state.failure ? { failure: state.failure } : {}),
+          // Without a displayable generation the reviewer can still retry or
+          // change the instruction against the latest completed generation.
+          ...(!analysis && state.generationAttemptId
+            ? {
+                binding: {
+                  attemptId: state.generationAttemptId,
+                  expectedRevision: state.revision,
+                },
+              }
+            : {}),
+        };
+      }
       await service.getItem(itemId);
       return {
         entry: { item, label: label(item), state: summary.state, assignment },
