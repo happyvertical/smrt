@@ -3686,8 +3686,10 @@ export class IngestionService {
           this.scope.confidentialScopeId,
           itemId,
         );
+        // The owner and submitter links are payload provenance, not replay
+        // identity: deletion severs them together with every other payload.
         await db.query(
-          "UPDATE intake_items SET data=?,trace_id='' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+          "UPDATE intake_items SET data=?,trace_id='',submitter_id='',owner_key='' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
           canonical({
             capturedCeiling: object(item.data).capturedCeiling ?? {},
           }),

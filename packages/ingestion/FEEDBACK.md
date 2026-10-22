@@ -30,6 +30,13 @@ an authorized existing event; it cannot supply a correctness label or fabricate
 an execution result. An initial denial does not mutate retention. Once authorized,
 a narrowed privacy ceiling survives business rollback and later revocation.
 
+Observed `action_decision` events carry the decision's `decisionMode`
+(`review` or `review_own`) and `selfDecision` flag from the durable decision
+record. A submitter confirming their own proposal (#4085) is observed as a
+decision by that actor, never as reviewer correctness evidence; consumers that
+derive reviewer agreement must exclude `selfDecision: true` events, and nothing
+in this package turns them into automation eligibility.
+
 ## Retrieval and provider boundaries
 
 `retrieveFeedback({ itemId, query })` derives the current offered catalog,

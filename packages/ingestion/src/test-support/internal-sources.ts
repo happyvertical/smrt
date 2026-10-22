@@ -91,7 +91,10 @@ export function internalSourceSuite(
     let submitterGrant: boolean;
     let submitterPolicy: boolean | undefined;
     let policyReviewers: string[];
+    let deniedExecutionItems: Set<string>;
     let generate: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
+    const scopes = ['private', 'shared'];
+    const actors = ['sender', 'reviewer', 'other'];
     beforeEach(async () => {
       root = await mkdtemp(join(tmpdir(), 'internal-'));
       clock = new Date('2026-10-20T00:00:00Z');
@@ -99,6 +102,7 @@ export function internalSourceSuite(
       submitterGrant = true;
       submitterPolicy = undefined;
       policyReviewers = ['reviewer'];
+      deniedExecutionItems = new Set();
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
         if (!base) throw new Error('PostgreSQL required');
@@ -130,12 +134,13 @@ export function internalSourceSuite(
       };
       const execution: IntakeExecutionOptions = {
         handlers,
-        authorize: async ({ scope }) => ({
+        authorize: async ({ scope, itemId }) => ({
           allowed:
             allowed &&
+            !deniedExecutionItems.has(itemId) &&
             scope.tenantId === tenant &&
             scope.confidentialScopeId === 'private' &&
-            ['sender', 'reviewer', 'other'].includes(scope.actorId),
+            actors.includes(scope.actorId),
           reviewer: scope.actorId === 'reviewer',
           submitter: submitterGrant,
           principalId: principal,
@@ -212,8 +217,8 @@ export function internalSourceSuite(
         authorize: async ({ scope }) =>
           allowed &&
           scope.tenantId === tenant &&
-          scope.confidentialScopeId === 'private' &&
-          ['sender', 'reviewer', 'other'].includes(scope.actorId),
+          scopes.includes(scope.confidentialScopeId) &&
+          actors.includes(scope.actorId),
         jobTarget: { objectType: workerType, method: 'process' },
         purgeDerived: async () => {},
         now: () => clock,
@@ -240,6 +245,30 @@ export function internalSourceSuite(
         ...options,
         scope: { ...options.scope, actorId },
       });
+    }
+    function within(scope: Partial<IngestionOptions['scope']>) {
+      return new IngestionService({
+        ...options,
+        scope: { ...options.scope, ...scope },
+      });
+    }
+    function enableFeedback() {
+      options.feedback = {
+        version: 'feedback1',
+        maxExamples: 10,
+        maxScan: 100,
+        maxBytes: 60000,
+        minimumSimilarity: 0.2,
+        authorize: async ({ scope }) =>
+          allowed &&
+          scope.tenantId === tenant &&
+          scope.confidentialScopeId === 'private',
+      };
+      service = new IngestionService(options);
+    }
+    async function rowsFor(table: string, itemId: string) {
+      return (await db.query(`SELECT * FROM ${table} WHERE item_id=?`, itemId))
+        .rows;
     }
     function message(
       id: string,
@@ -621,7 +650,7 @@ export function internalSourceSuite(
       })();
       const own = await service.listOwnProposals();
       expect(own.items.map((entry) => entry.item.id)).toEqual([mine.itemId]);
-      expect(own.items[0].reviews.actions[0].review).toMatchObject({
+      expect(own.items[0].reviews?.actions[0].review).toMatchObject({
         actionId: review.actionId,
         state: 'waiting_review',
       });
@@ -681,7 +710,7 @@ export function internalSourceSuite(
         tenant_id: tenant,
       });
       expect(
-        (await service.listOwnProposals()).items[0].reviews.actions[0].review
+        (await service.listOwnProposals()).items[0].reviews?.actions[0].review
           .state,
       ).toBe('succeeded');
     });
@@ -728,6 +757,233 @@ export function internalSourceSuite(
       expect(
         (await service.listOwnProposals()).items.map((e) => e.item.id),
       ).not.toContain(mine.itemId);
+    });
+
+    it('redacts every ledger table and severs the owner and submitter links after owner deletion', async () => {
+      const mine = await interpreted();
+      const review = await previewFirst(mine.itemId, mine.generation.attemptId);
+      await service.submitOwnDecision(decision(review, 'before-delete'));
+      const tables = [
+        'intake_evidence',
+        'intake_analyses',
+        'intake_analysis_attempts',
+        'intake_dispatches',
+        'intake_actions',
+        'intake_proposals',
+        'intake_review_decisions',
+      ];
+      for (const table of tables)
+        expect((await rowsFor(table, mine.itemId)).length).toBeGreaterThan(0);
+      expect(await service.expireOwned({ kind: 'message', id: mine.id })).toBe(
+        1,
+      );
+      for (const table of tables)
+        for (const row of await rowsFor(table, mine.itemId))
+          expect(json(row.data), table).toEqual({});
+      const [item] = (
+        await db.query('SELECT * FROM intake_items WHERE id=?', mine.itemId)
+      ).rows;
+      expect(item).toMatchObject({
+        visibility: 'expired',
+        submitter_id: '',
+        owner_key: '',
+        trace_id: '',
+      });
+      expect(Object.keys(json(item.data) as object)).toEqual([
+        'capturedCeiling',
+      ]);
+      // Severed links: neither the owner hook nor the own list can find it again.
+      expect(await service.expireOwned({ kind: 'message', id: mine.id })).toBe(
+        0,
+      );
+      expect(
+        (await service.listOwnProposals()).items.map((e) => e.item.id),
+      ).toEqual([]);
+      await expect(service.listReviews(mine.itemId)).resolves.toMatchObject({
+        actions: [{ review: { state: 'expired', display: {} } }],
+      });
+    });
+
+    it('fails closed on a tampered referenced snapshot and holds the inline lease like a job until expiry', async () => {
+      const id = randomUUID();
+      const itemId = await accepted(message(id));
+      const [evidence] = await service.getEvidence(itemId);
+      const [row] = await rowsFor('intake_evidence', itemId);
+      const data = json(row.data) as Record<string, unknown>;
+      // Same length, different bytes: only the hash can catch it.
+      const sameLength = 'Please order two pallets of bricks for site C.';
+      expect(Buffer.byteLength(sameLength)).toBe(evidence.byteLength);
+      await db.query(
+        'UPDATE intake_evidence SET data=? WHERE id=?',
+        JSON.stringify({ ...data, snapshot: sameLength }),
+        row.id,
+      );
+      await expect(service.readEvidence(itemId, evidence.id)).rejects.toThrow(
+        'Intake integrity',
+      );
+      await db.query(
+        'UPDATE intake_evidence SET data=? WHERE id=?',
+        JSON.stringify({ ...data, snapshot: 'short' }),
+        row.id,
+      );
+      await expect(service.readEvidence(itemId, evidence.id)).rejects.toThrow(
+        'Intake integrity',
+      );
+      await db.query(
+        'UPDATE intake_evidence SET data=? WHERE id=?',
+        JSON.stringify({ sourceReference: data.sourceReference }),
+        row.id,
+      );
+      await expect(service.readEvidence(itemId, evidence.id)).rejects.toThrow(
+        'Intake unavailable',
+      );
+      await db.query(
+        'UPDATE intake_evidence SET data=? WHERE id=?',
+        JSON.stringify({ ...data, snapshot: 'short' }),
+        row.id,
+      );
+      // An uncategorized failure inside the stage propagates, exactly as a
+      // job worker would crash: the attempt stays running under its lease.
+      const requestId = `interpret:${id}`;
+      await expect(
+        service.interpretInline(itemId, { requestId, extraction }),
+      ).rejects.toThrow('Intake integrity');
+      expect(generate).not.toHaveBeenCalled();
+      let attempts = await rowsFor('intake_analysis_attempts', itemId);
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0].state).toBe('running');
+      expect(await service.getItem(itemId)).toMatchObject({
+        processingState: 'running',
+        analysisRevision: 1,
+      });
+      await expect(
+        service.interpretInline(itemId, { requestId, extraction }),
+      ).rejects.toThrow('Inline interpretation busy');
+      expect(await count('SELECT COUNT(*) AS n FROM _smrt_jobs')).toBe(0);
+      // After the lease expires the same request claims a fresh fenced attempt.
+      clock = new Date(clock.getTime() + 10001);
+      await expect(
+        service.interpretInline(itemId, { requestId, extraction }),
+      ).rejects.toThrow('Intake integrity');
+      attempts = await rowsFor('intake_analysis_attempts', itemId);
+      expect(attempts.map((a) => a.state).sort()).toEqual([
+        'running',
+        'superseded',
+      ]);
+      expect(await count('SELECT COUNT(*) AS n FROM _smrt_jobs')).toBe(0);
+    });
+
+    it('scopes own listings and owner expiry to the authenticated tenant and confidential scope', async () => {
+      const mine = await interpreted();
+      const shared = within({ confidentialScopeId: 'shared' });
+      const sharedReceipt = await shared.receive(
+        message(mine.id, undefined, { deliveryKey: `shared:${mine.id}` }),
+      );
+      if (!('itemId' in sharedReceipt)) throw new Error('Receipt failed');
+      const foreignTenant = within({
+        tenantId: '22222222-2222-4222-8222-222222222222',
+      });
+      expect((await foreignTenant.listOwnProposals()).items).toEqual([]);
+      expect(
+        (await shared.listOwnProposals()).items.map((e) => e.item.id),
+      ).toEqual([sharedReceipt.itemId]);
+      expect(
+        (await service.listOwnProposals()).items.map((e) => e.item.id),
+      ).toEqual([mine.itemId]);
+      expect(
+        await foreignTenant.expireOwned({ kind: 'message', id: mine.id }),
+      ).toBe(0);
+      // Each confidential scope's service releases its own receipts.
+      expect(await service.expireOwned({ kind: 'message', id: mine.id })).toBe(
+        1,
+      );
+      expect(await shared.getItem(sharedReceipt.itemId)).toMatchObject({
+        receiptState: 'ready',
+      });
+      expect(await shared.expireOwned({ kind: 'message', id: mine.id })).toBe(
+        1,
+      );
+      await expect(shared.getItem(sharedReceipt.itemId)).rejects.toThrow(
+        'Intake unavailable',
+      );
+    });
+
+    it('marks an unreadable submission unavailable without hiding the others and labels self-decisions', async () => {
+      enableFeedback();
+      const first = await interpreted();
+      const second = await interpreted();
+      const firstReview = await previewFirst(
+        first.itemId,
+        first.generation.attemptId,
+      );
+      const secondReview = await previewFirst(
+        second.itemId,
+        second.generation.attemptId,
+      );
+      deniedExecutionItems.add(second.itemId);
+      const page = await service.listOwnProposals();
+      const entries = new Map(page.items.map((e) => [e.item.id, e]));
+      expect([...entries.keys()].sort()).toEqual(
+        [first.itemId, second.itemId].sort(),
+      );
+      expect(
+        entries.get(first.itemId)?.reviews?.actions[0].review,
+      ).toMatchObject({
+        actionId: firstReview.actionId,
+        state: 'waiting_review',
+      });
+      expect(entries.get(second.itemId)).toMatchObject({
+        reviews: null,
+        unavailable: true,
+      });
+      expect(JSON.stringify(entries.get(second.itemId))).not.toContain(CREATE);
+      expect(JSON.stringify(entries.get(second.itemId))).not.toContain(
+        secondReview.actionId,
+      );
+      deniedExecutionItems.delete(second.itemId);
+      await service.submitOwnDecision(decision(firstReview, 'self'));
+      await as('reviewer').submitDecision(decision(secondReview, 'inbox'));
+      const decisions = (
+        await db.query(
+          'SELECT action_id, data FROM intake_review_decisions ORDER BY created_at',
+        )
+      ).rows.map((row) => ({
+        actionId: row.action_id,
+        ...(json(row.data) as Record<string, unknown>),
+      }));
+      expect(decisions).toEqual([
+        expect.objectContaining({
+          actionId: firstReview.actionId,
+          kind: 'human',
+          reviewer: 'sender',
+          mode: 'review_own',
+          selfDecision: true,
+        }),
+        expect.objectContaining({
+          actionId: secondReview.actionId,
+          kind: 'human',
+          reviewer: 'reviewer',
+          mode: 'review',
+          selfDecision: false,
+        }),
+      ]);
+      const feedback = (
+        await db.query(
+          "SELECT data FROM intake_feedback WHERE kind='action_decision' ORDER BY created_at",
+        )
+      ).rows.map((row) => json(row.data) as Record<string, unknown>);
+      expect(feedback).toEqual([
+        expect.objectContaining({
+          reviewer: 'sender',
+          decisionMode: 'review_own',
+          selfDecision: true,
+        }),
+        expect.objectContaining({
+          reviewer: 'reviewer',
+          decisionMode: 'review',
+          selfDecision: false,
+        }),
+      ]);
     });
   });
 }
