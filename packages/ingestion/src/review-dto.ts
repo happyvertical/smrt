@@ -6,13 +6,16 @@ import type {
   PreviewPlanInput,
   PreviewProposalInput,
   ProposalReview,
+  ResolveItemInput,
   ResultReference,
   ReviewInput,
+  StartActionInput,
 } from './execution-dto.js';
 import type {
   CandidatePage,
   CompletedAnalysisSnapshot,
   GenerationOutput,
+  ProposalCatalogEntry,
 } from './proposal-dto.js';
 
 export type InboxState =
@@ -22,7 +25,8 @@ export type InboxState =
   | 'failed'
   | 'deferred'
   | 'partially_completed'
-  | 'completed';
+  | 'completed'
+  | 'resolved';
 export interface ReviewAction {
   review: ProposalReview;
   /** Absent on state-only stale/expired/unavailable entries. */
@@ -30,6 +34,8 @@ export interface ReviewAction {
   handlerId?: string;
   handlerVersion?: string;
   attemptId?: string;
+  /** `reviewer-selected` marks a human-started action; never automation-eligible. */
+  origin?: string;
   dependencies?: Record<string, ResultReference>;
   result?: ActionResult;
   /** Authorized identity/CAS only; hosts must collect fresh explicit args. */
@@ -79,6 +85,8 @@ export interface ItemReviewView {
   evidence: EvidenceView[];
   analysis?: CompletedAnalysisSnapshot;
   generation?: GenerationOutput;
+  /** Handlers the item's catalog currently offers a reviewer; presentation only. */
+  catalog?: ProposalCatalogEntry[];
   reviews: ReviewPage;
   /** Host-projected safe state, never raw server exception text. */
   availability: 'available' | 'stale' | 'revoked' | 'expired' | 'unavailable';
@@ -124,6 +132,10 @@ export interface IntakeReviewHost {
     requestId: string;
   }): Promise<void>;
   split(input: LogicalSplitInput): Promise<void>;
+  /** Start a reviewer-chosen handler; the server previews and requires normal approval. */
+  startAction?: (input: StartActionInput) => Promise<void>;
+  /** Close the item as handled without an action; terminal and distinct from reject. */
+  resolve?: (input: ResolveItemInput) => Promise<void>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,

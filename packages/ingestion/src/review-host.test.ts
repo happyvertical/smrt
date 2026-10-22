@@ -5,6 +5,7 @@ import { createIntakeReviewHost } from './review-host.js';
 import {
   GenerationSnapshotStaleError,
   type IngestionService,
+  ProposalsNotConfiguredError,
 } from './server.js';
 
 function fixture() {
@@ -22,6 +23,9 @@ function fixture() {
       result: { output: { proposals: { suggestions: [] } } },
     })),
     getEvidence: vi.fn(async () => []),
+    listHandlers: vi.fn(async () => [{ id: 'host:draft', version: '1' }]),
+    startReviewerAction: vi.fn(async () => ({})),
+    resolveItem: vi.fn(async () => ({})),
   };
   const host = createIntakeReviewHost(service as unknown as IngestionService, {
     upload: async () => ({ itemId: item.id }),
@@ -79,6 +83,49 @@ describe('published review host projection', () => {
       state: 'succeeded',
     });
     expect(f.service.listReviews).toHaveBeenCalledTimes(3);
+  });
+  it('exposes the offered catalog and forwards reviewer-chosen actions and dispositions unchanged', async () => {
+    const f = fixture();
+    const view = await f.host.load('item');
+    expect(view.catalog).toEqual([{ id: 'host:draft', version: '1' }]);
+    const start = {
+      itemId: 'item',
+      handlerId: 'host:draft',
+      handlerVersion: '1',
+      args: { title: 'Customer PO' },
+      requestId: 'start',
+      reason: 'Customer PO',
+    };
+    await f.host.startAction?.(start);
+    expect(f.service.startReviewerAction).toHaveBeenCalledWith(start);
+    const close = {
+      itemId: 'item',
+      disposition: 'resolve_no_action' as const,
+      requestId: 'close',
+    };
+    await f.host.resolve?.(close);
+    expect(f.service.resolveItem).toHaveBeenCalledWith(close);
+    f.service.listHandlers.mockRejectedValueOnce(
+      new ProposalsNotConfiguredError(),
+    );
+    expect((await f.host.load('item')).catalog).toBeUndefined();
+    f.service.listHandlers.mockRejectedValueOnce(new Error('Denied'));
+    await expect(f.host.load('item')).rejects.toThrow('Denied');
+  });
+  it('projects a reviewer disposition as the terminal resolved inbox state', async () => {
+    const f = fixture();
+    f.service.getItem.mockResolvedValue({
+      id: 'item',
+      processingState: 'completed',
+      disposition: {
+        kind: 'resolved_no_action',
+        reviewer: 'owner',
+        reason: '',
+        decidedAt: '2026-10-22T00:00:00.000Z',
+      },
+    } as IntakeItemDTO);
+    expect((await f.host.list({})).items[0].state).toBe('resolved');
+    expect((await f.host.list({ state: 'waiting' })).items).toEqual([]);
   });
   it('propagates denial rather than returning prior saved reviews', async () => {
     const f = fixture();

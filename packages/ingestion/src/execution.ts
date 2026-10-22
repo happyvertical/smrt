@@ -11,6 +11,7 @@ import type { JobExecutionContext } from '@happyvertical/smrt-jobs';
 import { resolvePlaybook } from '@happyvertical/smrt-playbooks';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
+import type { ItemDisposition } from './dto.js';
 import type {
   ActionResult,
   ExecutionAccessInput,
@@ -24,8 +25,10 @@ import type {
   PreviewPlanInput,
   PreviewProposalInput,
   ProposalReview,
+  ResolveItemInput,
   ResultReference,
   ReviewInput,
+  StartActionInput,
 } from './execution-contracts.js';
 import {
   type DiscoveryGate,
@@ -1052,12 +1055,14 @@ export class IntakeExecutionService {
               recoveryAttemptId = String(attempt.id);
           }
         }
+        const origin = object(action.data).origin;
         const entry: ReviewAction = {
           review: this.review(bound),
           args: structuredClone(bound.binding.args),
           handlerId: bound.handler.id,
           handlerVersion: bound.handler.version,
           attemptId: String(proposal.analysis_attempt_id),
+          ...(typeof origin === 'string' && origin ? { origin } : {}),
           dependencies: structuredClone(bound.binding.dependencies),
         };
         if (action.state === 'succeeded')
@@ -1571,6 +1576,12 @@ export class IntakeExecutionService {
       )
         throw new Error('Stale review');
       await this.verifyEvidence(db, bound);
+      // A resolved item is terminal: later approval would contradict the disposition.
+      if (
+        frozen.decision === 'approve' &&
+        (await this.disposition(db, String(bound.item.id)))
+      )
+        throw new Error('Item resolved');
       const expiresAt = new Date(
         Math.min(
           time(bound.item.expires_at),
@@ -2490,7 +2501,10 @@ export class IntakeExecutionService {
         bound.action.state !== 'waiting_review' ||
         !policy.automaticHandlers.includes(bound.handler.id) ||
         (consequential && !policy.consequentialAutomation) ||
-        !this.config.evaluateAutomatic
+        !this.config.evaluateAutomatic ||
+        // Human routing choices are never machine authority, and a resolved item is terminal.
+        object(bound.action.data).origin === 'reviewer-selected' ||
+        (await this.disposition(db, String(bound.item.id)))
       )
         throw new Error('Automatic execution unavailable');
       await this.feedbackLineage(db, bound);
@@ -2547,6 +2561,327 @@ export class IntakeExecutionService {
         this.scope.confidentialScopeId,
       );
       return { ...this.review(bound), state: 'authorized' };
+    });
+  }
+  /** Current terminal reviewer disposition, if any. */
+  private async disposition(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<Row | undefined> {
+    const [row] = await this.rows(
+      db,
+      'intake_dispositions',
+      'item_id=? ORDER BY id LIMIT 1',
+      [itemId],
+    );
+    return row;
+  }
+  private dispositionDTO(row: Row): ItemDisposition {
+    const data = object(row.data);
+    return {
+      kind: 'resolved_no_action',
+      reviewer: typeof data.reviewer === 'string' ? data.reviewer : '',
+      reason: typeof data.reason === 'string' ? data.reason : '',
+      decidedAt: typeof data.decidedAt === 'string' ? data.decidedAt : '',
+    };
+  }
+  /** The current revision's completed/partial attempt; failed revisions need reprocessing. */
+  private async currentAttempt(db: DatabaseInterface, item: Row): Promise<Row> {
+    const [analysis] = await this.rows(
+      db,
+      'intake_analyses',
+      'item_id=? AND revision=?',
+      [item.id, item.analysis_revision],
+    );
+    if (!analysis?.current_attempt_id) throw new Error('Analysis unavailable');
+    const [attempt] = await this.rows(
+      db,
+      'intake_analysis_attempts',
+      'id=? AND item_id=?',
+      [analysis.current_attempt_id, item.id],
+    );
+    if (
+      !attempt ||
+      !['completed', 'partial'].includes(String(attempt.state)) ||
+      !attempt.output_digest
+    )
+      throw new Error('Analysis unavailable');
+    return attempt;
+  }
+  /** Reviewer authority under a handler this item's captured ceiling offers; no new grant. */
+  private async reviewerAccess(db: DatabaseInterface, item: Row) {
+    const handlers = [...this.config.handlers].sort((a, b) =>
+      `${a.id}@${a.version}`.localeCompare(`${b.id}@${b.version}`),
+    );
+    for (const handler of handlers) {
+      try {
+        return await this.access(db, item, handler, 'review');
+      } catch (error) {
+        if (error instanceof RetentionExpired) throw error;
+      }
+    }
+    throw new Error('Intake unavailable');
+  }
+  /** Extracted text for routing examples: the attempt's own results or its pinned extraction. */
+  private async extractedQuery(
+    db: DatabaseInterface,
+    item: Row,
+    attempt: Row,
+  ): Promise<string> {
+    let source = attempt;
+    const output = object(object(attempt.data).output);
+    if (output.proposals) {
+      const pin = object(object(output.proposals).source);
+      const [row] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND item_id=?',
+        [pin.attemptId, item.id],
+      );
+      if (!row || row.output_digest !== pin.outputDigest)
+        throw new Error('Feedback source unavailable');
+      source = row;
+    }
+    const results = object(object(source.data).output).results;
+    if (!Array.isArray(results)) return '';
+    return results
+      .flatMap((entry) => {
+        const segments = object(entry).segments;
+        return Array.isArray(segments)
+          ? segments.map((segment) => String(object(segment).text ?? ''))
+          : [];
+      })
+      .join('\n')
+      .slice(0, 4096);
+  }
+  /** Optional explicit routing projection; the reviewer's action or disposition stays authoritative. */
+  private async routingFeedback(
+    db: DatabaseInterface,
+    item: Row,
+    attempt: Row,
+    choice: {
+      requestId: string;
+      reason: string;
+      handler?: {
+        handlerId: string;
+        handlerVersion: string;
+        args: IntakeValues;
+        review: ProposalReview;
+      };
+    },
+  ): Promise<void> {
+    if (!this.options.feedback || !this.retained(item)) return;
+    if (
+      !(await this.options.feedback.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(item.id),
+        operation: 'capture',
+      }))
+    )
+      return;
+    const key = `routing:${choice.requestId}`;
+    const [replay] = await this.rows(
+      db,
+      'intake_feedback',
+      'item_id=? AND request_key=?',
+      [item.id, key],
+    );
+    if (replay) return;
+    const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+      attempt.analysis_id,
+    ]);
+    const inputs = object(analysis.data).inputs;
+    if (!Array.isArray(inputs)) throw new Error('Invalid evidence');
+    const body = {
+      version: 1,
+      choice: choice.handler ? 'handler' : 'none',
+      handlerId: choice.handler?.handlerId ?? null,
+      handlerVersion: choice.handler?.handlerVersion ?? null,
+      args: choice.handler?.args ?? null,
+      actionId: choice.handler?.review.actionId ?? null,
+      proposalId: choice.handler?.review.proposalId ?? null,
+      revision: choice.handler?.review.revision ?? null,
+      bindingHash: choice.handler?.review.bindingHash ?? null,
+      attemptId: String(attempt.id),
+      attemptDigest: String(attempt.output_digest),
+      analysisRevision: Number(analysis.revision),
+      evidence: inputs,
+      query: await this.extractedQuery(db, item, attempt),
+      reviewer: this.scope.actorId,
+      reason: choice.reason,
+      requestId: choice.requestId,
+      decidedAt: this.now().toISOString(),
+    };
+    const data = { ...body, digest: intakeBindingDigest(body) };
+    if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
+      return;
+    await this.insert(db, 'intake_feedback', {
+      item_id: item.id,
+      request_key: key,
+      supersedes_id: null,
+      kind: 'reviewer_routing',
+      data: canonical(data),
+    });
+  }
+  /** Human-chosen handler for any item. Same preview/approval path; never automation-eligible. */
+  async startAction(input: StartActionInput): Promise<ProposalReview> {
+    const frozen = JSON.parse(
+      canonical(JSON.parse(JSON.stringify(input))),
+    ) as StartActionInput;
+    id(frozen.requestId);
+    if (
+      (frozen.reason !== undefined &&
+        (typeof frozen.reason !== 'string' || frozen.reason.length > 2048)) ||
+      !frozen.args ||
+      typeof frozen.args !== 'object' ||
+      Array.isArray(frozen.args)
+    )
+      throw new Error('Invalid reviewer action');
+    return this.tx(async (db) => {
+      const item = await this.item(db, frozen.itemId, true);
+      const handler = this.handler(frozen.handlerId, frozen.handlerVersion);
+      if (!('execution' in handler)) throw new Error('Handler unavailable');
+      // Reviewer authority is checked before any handler callback runs.
+      await this.access(db, item, handler, 'review');
+      const evidence = await this.rows(
+        db,
+        'intake_evidence',
+        "item_id=? AND state='durable'",
+        [item.id],
+      );
+      if (
+        !handler.discovery?.mediaTypes.some((type) =>
+          evidence.some((entry) => entry.media_type === type),
+        )
+      )
+        throw new Error('Handler unavailable');
+      if (await this.disposition(db, String(item.id)))
+        throw new Error('Item resolved');
+      const attempt = await this.currentAttempt(db, item);
+      const actionKey = `reviewer:${frozen.requestId}`;
+      const provenance = canonical({
+        origin: 'reviewer-selected',
+        intentionKey: actionKey,
+        reviewer: this.scope.actorId,
+        reason: frozen.reason ?? '',
+      });
+      let [action] = await this.rows(
+        db,
+        'intake_actions',
+        'item_id=? AND action_key=?',
+        [item.id, actionKey],
+      );
+      if (action && canonical(object(action.data)) !== provenance)
+        throw new Error('Action identity conflict');
+      action ??= await this.insert(db, 'intake_actions', {
+        item_id: item.id,
+        action_key: actionKey,
+        state: 'proposed',
+        proposal_revision: 0,
+        review_version: 0,
+        execution_attempt: 0,
+        fence: 0,
+        result_digest: '',
+        data: provenance,
+      });
+      // A replayed request re-previews against its original revision so the
+      // publication ledger can compare the identical request hash.
+      const replayed = (
+        await this.rows(db, 'intake_proposals', 'action_id=?', [action.id])
+      ).find((row) => object(row.data).requestId === frozen.requestId);
+      const preview: PreviewProposalInput = {
+        itemId: String(item.id),
+        actionId: String(action.id),
+        attemptId: String(attempt.id),
+        expectedRevision: replayed
+          ? Number(replayed.revision) - 1
+          : Number(action.proposal_revision),
+        requestId: frozen.requestId,
+        handlerId: handler.id,
+        handlerVersion: handler.version,
+        args: frozen.args,
+      };
+      const binding = await this.buildBinding(db, item, preview);
+      const review = await this.publish(db, item, preview, binding);
+      await this.routingFeedback(db, item, attempt, {
+        requestId: frozen.requestId,
+        reason: frozen.reason ?? '',
+        handler: {
+          handlerId: handler.id,
+          handlerVersion: handler.version,
+          args: frozen.args,
+          review,
+        },
+      });
+      return review;
+    });
+  }
+  /** Close an item as handled without an action. Terminal; replay returns the same disposition. */
+  async resolveItem(input: ResolveItemInput): Promise<ItemDisposition> {
+    const frozen = JSON.parse(
+      canonical(JSON.parse(JSON.stringify(input))),
+    ) as ResolveItemInput;
+    id(frozen.requestId);
+    if (
+      frozen.disposition !== 'resolve_no_action' ||
+      (frozen.reason !== undefined &&
+        (typeof frozen.reason !== 'string' || frozen.reason.length > 2048))
+    )
+      throw new Error('Invalid disposition');
+    return this.tx(async (db) => {
+      const item = await this.item(db, frozen.itemId, true);
+      const { policy } = await this.reviewerAccess(db, item);
+      const requestHash = intakeBindingDigest(frozen);
+      const key = `disposition:${frozen.requestId}`;
+      const existing = await this.disposition(db, String(item.id));
+      if (existing) {
+        const data = object(existing.data);
+        if (
+          existing.request_key === key &&
+          data.requestHash === requestHash &&
+          data.reviewer === this.scope.actorId
+        )
+          return this.dispositionDTO(existing);
+        throw new Error('Item resolved');
+      }
+      const pending = await this.rows(
+        db,
+        'intake_actions',
+        "item_id=? AND state IN ('authorized','executing','outcome_unknown','succeeded')",
+        [item.id],
+      );
+      if (pending.length)
+        throw new Error('Item has pending or applied actions');
+      if (!this.retained(item))
+        throw new RetentionExpired(String(item.id), time(item.expires_at));
+      let attempt: Row | undefined;
+      try {
+        attempt = await this.currentAttempt(db, item);
+      } catch {
+        attempt = undefined;
+      }
+      const row = await this.insert(db, 'intake_dispositions', {
+        item_id: item.id,
+        request_key: key,
+        disposition: 'resolved_no_action',
+        data: canonical({
+          reviewer: this.scope.actorId,
+          reason: frozen.reason ?? '',
+          requestId: frozen.requestId,
+          requestHash,
+          decidedAt: this.now().toISOString(),
+          attemptId: attempt ? String(attempt.id) : null,
+          attemptDigest: attempt ? String(attempt.output_digest) : null,
+          policyVersions: policy.versions,
+        }),
+      });
+      if (attempt)
+        await this.routingFeedback(db, item, attempt, {
+          requestId: frozen.requestId,
+          reason: frozen.reason ?? '',
+        });
+      return this.dispositionDTO(row);
     });
   }
   async previewPlan(input: PreviewPlanInput): Promise<PlanReview> {

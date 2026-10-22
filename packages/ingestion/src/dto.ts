@@ -27,6 +27,16 @@ export interface IntakeItemDTO {
   analysisRevision: number;
   cancelled: boolean;
   traceId: string;
+  /** Present once a reviewer closed the item without an action; terminal. */
+  disposition?: ItemDisposition;
+}
+
+/** Reviewer-owned terminal disposition; redaction keeps only the kind. */
+export interface ItemDisposition {
+  kind: 'resolved_no_action';
+  reviewer: string;
+  reason: string;
+  decidedAt: string;
 }
 
 /** Authorized evidence metadata; bytes are served by the service separately. */

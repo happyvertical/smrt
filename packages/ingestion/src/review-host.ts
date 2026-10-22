@@ -1,12 +1,14 @@
 /** Server-side implementation of the transport-neutral review callback contract. */
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
 import type { GenerationAnalysisOutput } from './proposal-dto.js';
+import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { loadReviewAnalysis } from './review-analysis.js';
 import type {
   Assignment,
   EvidenceView,
   InboxEntry,
   IntakeReviewHost,
+  ItemReviewView,
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
 import type { IngestionService } from './server.js';
@@ -81,11 +83,19 @@ export function createIntakeReviewHost(
         evidence.push({ ...(await options.evidence(part)), evidence: part });
       }
       const assignment = await options.assignment(itemId);
+      // The offered catalog lets a reviewer start any handler; it grants nothing.
+      let catalog: ItemReviewView['catalog'];
+      try {
+        catalog = await service.listHandlers(itemId);
+      } catch (error) {
+        if (!(error instanceof ProposalsNotConfiguredError)) throw error;
+      }
       await service.getItem(itemId);
       return {
         entry: { item, label: label(item), state: summary.state, assignment },
         evidence,
         analysis,
+        ...(catalog ? { catalog } : {}),
         reviews,
         availability: 'available',
         ...(analysis?.configuration.stage === 'interpret'
@@ -204,6 +214,12 @@ export function createIntakeReviewHost(
     async split(input) {
       const result = await service.reviseLogicalSplit(input);
       await options.onSplit?.(input.itemId, result.revision);
+    },
+    async startAction(input) {
+      await service.startReviewerAction(input);
+    },
+    async resolve(input) {
+      await service.resolveItem(input);
     },
     ...(options.enableFeedback
       ? {

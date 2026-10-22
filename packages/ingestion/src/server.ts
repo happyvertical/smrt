@@ -18,13 +18,16 @@ import type {
   ReceiptResult,
 } from './dto.js';
 import { generationSnapshotRead } from './execution-internal.js';
+import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import './models.js';
 import type {
   IntakeExecutionOptions,
   PreviewPlanInput,
   PreviewProposalInput,
+  ResolveItemInput,
   ReviewInput,
+  StartActionInput,
 } from './execution-contracts.js';
 import type { FeedbackConfiguration } from './feedback-contracts.js';
 import type {
@@ -151,6 +154,7 @@ const TABLES = [
   'intake_review_decisions',
   'intake_executions',
   'intake_feedback',
+  'intake_dispositions',
   'intake_dispatches',
   'intake_deletions',
 ] as const;
@@ -288,6 +292,14 @@ export class IngestionService {
   async authorizeAutomatic(actionId: string) {
     return (await this.execution()).authorizeAutomatic(actionId);
   }
+  /** Reviewer-chosen handler for any item; same preview/approval path, never automatic. */
+  async startReviewerAction(input: StartActionInput) {
+    return (await this.execution()).startAction(input);
+  }
+  /** Terminal "handled, no action" disposition; distinct from rejecting a proposal. */
+  async resolveItem(input: ResolveItemInput) {
+    return (await this.execution()).resolveItem(input);
+  }
   async previewPlan(input: PreviewPlanInput) {
     return (await this.execution()).previewPlan(input);
   }
@@ -295,8 +307,7 @@ export class IngestionService {
     return (await this.execution()).applyPlan(planId);
   }
   private async proposals() {
-    if (!this.options.proposals)
-      throw new Error('Intake proposals are not configured');
+    if (!this.options.proposals) throw new ProposalsNotConfiguredError();
     const { IngestionProposalService } = await import('./proposals.js');
     return new IngestionProposalService(
       this,
@@ -306,12 +317,13 @@ export class IngestionService {
   }
   private async proposalReader() {
     const config = this.options.proposals ?? this.options.proposalRead;
-    if (!config) throw new Error('Intake proposals are not configured');
+    if (!config) throw new ProposalsNotConfiguredError();
     const { IngestionProposalService } = await import('./proposals.js');
     return new IngestionProposalService(this, this.options, config);
   }
+  /** Currently offered reviewer catalog; needs no generation credentials. */
   async listHandlers(itemId: string) {
-    return (await this.proposals()).listHandlers(itemId);
+    return (await this.proposalReader()).listHandlers(itemId);
   }
   async findCandidates(input: {
     itemId: string;
@@ -1148,14 +1160,21 @@ export class IngestionService {
     for (const row of rows) {
       try {
         await this.authorize('read', object(row.data));
-        result.push(this.itemDTO(row));
+        result.push(await this.itemDTO(row));
       } catch {
         /* no existence disclosure */
       }
     }
     return result;
   }
-  private itemDTO(row: Row): IntakeItemDTO {
+  private async itemDTO(row: Row): Promise<IntakeItemDTO> {
+    const [disposition] = await this.rows(
+      this.db,
+      'intake_dispositions',
+      'item_id=? ORDER BY id LIMIT 1',
+      [row.id],
+    );
+    const data = disposition ? object(disposition.data) : undefined;
     return {
       id: String(row.id),
       receiptState: String(row.receipt_state),
@@ -1163,6 +1182,17 @@ export class IngestionService {
       analysisRevision: Number(row.analysis_revision),
       cancelled: !!row.cancelled,
       traceId: String(row.trace_id),
+      ...(disposition
+        ? {
+            disposition: {
+              kind: 'resolved_no_action' as const,
+              reviewer: typeof data?.reviewer === 'string' ? data.reviewer : '',
+              reason: typeof data?.reason === 'string' ? data.reason : '',
+              decidedAt:
+                typeof data?.decidedAt === 'string' ? data.decidedAt : '',
+            },
+          }
+        : {}),
     };
   }
   async getItem(id: string): Promise<IntakeItemDTO> {
@@ -2385,7 +2415,10 @@ export class IngestionService {
 
 export * from './extraction.js';
 export type * from './feedback-contracts.js';
-export { GenerationSnapshotStaleError } from './proposal-errors.js';
+export {
+  GenerationSnapshotStaleError,
+  ProposalsNotConfiguredError,
+} from './proposal-errors.js';
 export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
