@@ -66,12 +66,15 @@ human routing is never machine authority.
 (`disposition = 'resolved_no_action'`, reason/reviewer in redactable `data`)
 under the item lock. Reviewer authority is taken from the first handler the
 captured ceiling and policy offer; no new grant exists. It refuses while any
-action is `authorized`, `executing`, `outcome_unknown` or `succeeded`; afterwards
-`submitDecision` refuses `approve` for the item. `intake_dispositions` is a new
-model: deploy its manifest migration (`pnpm ... db:migrate`) before upgrading
-hosts; `assertReady` checks it and privacy deletion redacts it with the other
-item-owned tables. Both operations capture an optional `reviewer_routing` feedback
-projection inside the same transaction (FEEDBACK.md).
+action is `authorized`, `failed`, `executing`, `outcome_unknown` or `succeeded`;
+afterwards `submitDecision` refuses `approve` and the apply gate (`approved`)
+refuses any execution for the item. `intake_dispositions` is a new model: deploy
+its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
+`assertReady` checks it, and both privacy deletion and retention expiry
+(`redactExecution`) redact its payload with the other item-owned tables.
+`resolveItem` captures an optional `reviewer_routing` feedback projection in the
+same transaction; a reviewer-selected action is captured when its approval is
+recorded (FEEDBACK.md).
 
 ## Durable review and effects
 

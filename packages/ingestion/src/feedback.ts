@@ -722,8 +722,14 @@ export class IntakeFeedbackService {
           String(data.actionId),
           false,
           async (ctx) => {
+            // Only an approved (or applied) reviewer choice is a routing example;
+            // a later correction changes the revision and retires it until the
+            // new revision is approved and captured again.
             if (
               ctx.itemId !== itemId ||
+              !['authorized', 'executing', 'succeeded'].includes(
+                ctx.review.state,
+              ) ||
               data.revision !== ctx.review.revision ||
               data.bindingHash !== ctx.review.bindingHash ||
               data.attemptId !== ctx.attemptId ||
@@ -1008,6 +1014,10 @@ export class IntakeFeedbackService {
           if (
             digest(body) !== stored ||
             !generationMatch ||
+            (routing &&
+              !['authorized', 'executing', 'succeeded'].includes(
+                source.review.state,
+              )) ||
             data.revision !== source.review.revision ||
             data.bindingHash !== source.review.bindingHash ||
             data.attemptId !== source.attemptId ||

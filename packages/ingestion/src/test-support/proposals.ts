@@ -5836,6 +5836,42 @@ export function proposalSuite(
       await expect(
         service.resolveItem({ ...input, itemId: other.itemId }),
       ).rejects.toThrow('pending or applied');
+      // A failed (retryable) action also blocks closing without action.
+      const create = handlers.find((handler) => handler.id === CREATE) as
+        | OperationHandler
+        | undefined;
+      if (!create || create.execution.kind !== 'database')
+        throw new Error('Database handler expected');
+      const apply = create.execution.apply;
+      create.execution = {
+        kind: 'database',
+        apply: async () => {
+          throw new Error('Domain failure');
+        },
+      };
+      expect((await service.applyAction(prepared.review.actionId)).state).toBe(
+        'failed',
+      );
+      create.execution = { kind: 'database', apply };
+      await expect(
+        service.resolveItem({ ...input, itemId: other.itemId }),
+      ).rejects.toThrow('pending or applied');
+      // Defence in depth: even an authorized state reached after resolution cannot apply.
+      await db.query(
+        "UPDATE intake_actions SET state='authorized' WHERE id=?",
+        waiting.review.actionId,
+      );
+      await expect(
+        service.applyAction(waiting.review.actionId),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_executions WHERE action_id=?',
+            waiting.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(0);
       // Extraction-only items close the same way.
       const extraction = await source();
       expect(
@@ -5848,6 +5884,27 @@ export function proposalSuite(
         ).reason,
       ).toBe('');
       expect((await host.load(extraction.itemId)).entry.state).toBe('resolved');
+      // Retention expiry redacts the reviewer and reason under the owning lock.
+      const retained = await service.resolveItem({
+        ...input,
+        itemId: (await source()).itemId,
+        requestId: 'resolve-retained',
+      });
+      expect(retained.reviewer).toBe('owner');
+      clock = new Date(clock.getTime() + 1_500_000);
+      await service.listReviews(extraction.itemId);
+      expect(
+        (
+          await db.query(
+            'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
+            extraction.itemId,
+          )
+        ).rows.map((row) => ({
+          disposition: row.disposition,
+          data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        })),
+      ).toEqual([{ disposition: 'resolved_no_action', data: {} }]);
+      clock = new Date(clock.getTime() - 1_500_000);
       // Privacy deletion redacts the reason and keeps only the terminal kind.
       await service.expire(extraction.itemId);
       expect(
@@ -5886,11 +5943,61 @@ export function proposalSuite(
           requestId,
           reason,
         });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
       const first = await source(
         100000,
         false,
         'Customer purchase order 17 from Acme for widgets',
       );
+      // Starting alone records nothing; rejected or deferred starts never do.
+      const startedOnly = await start(first.itemId, 'route-first');
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing'",
+          )
+        ).rows,
+      ).toHaveLength(0);
+      const rejected = await source(
+        100000,
+        false,
+        'Customer purchase order 18 from Acme for widgets',
+      );
+      await decide(
+        await start(rejected.itemId, 'route-rejected'),
+        'reject',
+        'reject-rejected',
+      );
+      const deferred = await source(
+        100000,
+        false,
+        'Customer purchase order 19 from Acme for widgets',
+      );
+      await decide(
+        await start(deferred.itemId, 'route-deferred'),
+        'defer',
+        'defer-deferred',
+      );
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing'",
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await decide(startedOnly, 'approve', 'approve-first');
       const second = await source(
         100000,
         false,
@@ -5901,8 +6008,8 @@ export function proposalSuite(
         false,
         'Paid invoice 9 from Initech, nothing to do',
       );
-      await start(first.itemId, 'route-first');
-      await start(second.itemId, 'route-second');
+      const secondReview = await start(second.itemId, 'route-second');
+      await decide(secondReview, 'approve', 'approve-second');
       await service.resolveItem({
         itemId: closed.itemId,
         disposition: 'resolve_no_action',
@@ -5916,7 +6023,7 @@ export function proposalSuite(
         data: Record<string, unknown>;
       }> = (
         await db.query(
-          'SELECT id,item_id,kind,data FROM intake_feedback ORDER BY id',
+          "SELECT id,item_id,kind,data FROM intake_feedback WHERE kind='reviewer_routing' ORDER BY id",
         )
       ).rows.map((row) => ({
         id: String(row.id),
@@ -6025,7 +6132,31 @@ export function proposalSuite(
         false,
         'Customer purchase order 7 from Hooli for widgets',
       );
-      const review = await start(third.itemId, 'route-third');
+      const started = await start(third.itemId, 'route-third');
+      // A correction before approval retires nothing (nothing was recorded) and
+      // the approved new revision is what gets captured.
+      const corrected = await service.submitDecision({
+        actionId: started.actionId,
+        expectedRevision: started.revision,
+        expectedReviewVersion: started.reviewVersion,
+        bindingHash: started.bindingHash,
+        requestId: 'correct-before-approve',
+        decision: 'correct',
+        correctedArgs: args,
+      });
+      expect(corrected.revision).toBe(2);
+      await decide(corrected, 'approve', 'approve-third');
+      const review = await service.getAction(started.actionId);
+      expect(
+        (
+          await db.query(
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            third.itemId,
+          )
+        ).rows.map((row) =>
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ),
+      ).toMatchObject([{ choice: 'handler', revision: 2, args }]);
       const binding = {
         itemId: third.itemId,
         actionId: review.actionId,
@@ -6071,21 +6202,57 @@ export function proposalSuite(
       await expect(
         automationService(() => true).authorizeAutomatic(review.actionId),
       ).rejects.toThrow('Automatic execution unavailable');
-      // A corrected reviewer-selected action retires its routing example.
-      await service.submitDecision({
-        ...binding,
-        requestId: 'correct-third',
-        decision: 'correct',
-        correctedArgs: { title: 'Customer PO (corrected)', body: args.body },
-      });
-      expect(
+      // Rejected and deferred reviewer-started actions are never examples.
+      const retrievedItems = async () =>
         (
           await service.retrieveFeedback({
             itemId: receiver.itemId,
             query: 'Customer purchase order 99 from Umbrella for widgets',
           })
-        ).examples.map((example) => example.itemId),
-      ).not.toContain(third.itemId);
+        ).examples.map((example) => example.itemId);
+      expect(await retrievedItems()).toEqual(
+        expect.arrayContaining([first.itemId, second.itemId, third.itemId]),
+      );
+      expect(await retrievedItems()).not.toEqual(
+        expect.arrayContaining([rejected.itemId]),
+      );
+      expect(await retrievedItems()).not.toEqual(
+        expect.arrayContaining([deferred.itemId]),
+      );
+      // Applying the approved action keeps the example; a later correction retires
+      // it until the new revision is approved and captured again.
+      expect((await service.applyAction(secondReview.actionId)).state).toBe(
+        'succeeded',
+      );
+      expect(await retrievedItems()).toEqual(
+        expect.arrayContaining([second.itemId]),
+      );
+      const revised = await service.previewProposal({
+        itemId: third.itemId,
+        actionId: review.actionId,
+        attemptId: third.attemptId,
+        expectedRevision: review.revision,
+        requestId: 'revise-third',
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { title: 'Customer PO (revised)', body: args.body },
+      });
+      expect(revised.state).toBe('waiting_review');
+      expect(await retrievedItems()).not.toContain(third.itemId);
+      await decide(revised, 'approve', 'approve-third-again');
+      expect(await retrievedItems()).toContain(third.itemId);
+      expect(
+        (
+          await db.query(
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=? ORDER BY id",
+            third.itemId,
+          )
+        ).rows.map(
+          (row) =>
+            (typeof row.data === 'string' ? JSON.parse(row.data) : row.data)
+              .revision,
+        ),
+      ).toEqual([2, 3]);
     });
     it('reloads only the current completed analysis without requiring a remembered attempt ID', async () => {
       chooseCreate();

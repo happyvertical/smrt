@@ -626,7 +626,9 @@ test('switching intake context discards chooser retry state and fences a late re
   ).toBeDisabled();
 });
 
-test('reviewer starts a chosen handler and closes another item without action; both are captured as routing feedback', async ({
+// Routing-feedback capture for both paths is asserted at the service level in
+// src/test-support/proposals.ts; this scenario proves the browser journeys.
+test('reviewer starts a chosen handler through preview and approval, and closes another item without action', async ({
   page,
 }) => {
   await signIn(page);
@@ -723,32 +725,39 @@ test('reviewer starts a chosen handler and closes another item without action; b
   expect(
     resolvedList.items.map((entry: { item: { id: string } }) => entry.item.id),
   ).toEqual([paidId]);
-  expect(
-    (
-      await page.request.post('/api/resolve', {
-        headers: { 'x-review-csrf': await csrf(page) },
-        data: {
-          itemId: paidId,
-          disposition: 'resolve_no_action',
-          requestId: randomUUID(),
-        },
-      })
-    ).status(),
-  ).toBe(409);
-  expect(
-    (
-      await page.request.post('/api/startAction', {
-        headers: { 'x-review-csrf': await csrf(page) },
-        data: {
-          itemId: paidId,
-          handlerId: '@happyvertical/smrt-ingestion-reference:create-draft',
-          handlerVersion: '1',
-          args: { title: 'Late', body: 'Late' },
-          requestId: randomUUID(),
-        },
-      })
-    ).status(),
-  ).toBe(409);
+  // The fixture maps every refused mutation to one safe 409 body; no raw error text.
+  const refused = { error: 'Review unavailable; refresh current state' };
+  const resolveAgain = await page.request.post('/api/resolve', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId: paidId,
+      disposition: 'resolve_no_action',
+      requestId: randomUUID(),
+    },
+  });
+  expect(resolveAgain.status()).toBe(409);
+  expect(await resolveAgain.json()).toEqual(refused);
+  const startAfterResolve = await page.request.post('/api/startAction', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId: paidId,
+      handlerId: '@happyvertical/smrt-ingestion-reference:create-draft',
+      handlerVersion: '1',
+      args: { title: 'Late', body: 'Late' },
+      requestId: randomUUID(),
+    },
+  });
+  expect(startAfterResolve.status()).toBe(409);
+  expect(await startAfterResolve.json()).toEqual(refused);
+  const reloaded = await (
+    await page.request.get(`/api/load?itemId=${paidId}`)
+  ).json();
+  expect(reloaded.entry.item.disposition).toMatchObject({
+    kind: 'resolved_no_action',
+    reviewer: 'owner',
+    reason: 'Already paid',
+  });
+  expect(reloaded.reviews.actions).toHaveLength(0);
   // No CSRF token: neither reviewer operation is accepted.
   expect(
     (

@@ -129,18 +129,28 @@ exposes the provenance so `ActionReview` can label human-started actions.
 The optional `resolve` callback forwards `ResolveItemInput`
 (`disposition: 'resolve_no_action'`, `requestId`, optional `reason`) to
 `resolveItem`. It needs reviewer authority under any handler the item's captured
-ceiling offers and refuses while an action is `authorized`, `executing`,
-`outcome_unknown` or `succeeded`; waiting, deferred and rejected actions may
-remain and can still be rejected, but can no longer be approved or automated.
+ceiling offers and refuses while an action is `authorized`, `failed` (still
+retryable), `executing`, `outcome_unknown` or `succeeded`; waiting, deferred and
+rejected actions may remain and can still be rejected, but can no longer be
+approved, applied or automated (`applyAction` rechecks the disposition before any
+effect).
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and
 `startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects the
 record, and `loadReviewSummary` reports inbox state `resolved` unless an action
-actually succeeded. Privacy deletion and retention redact the reason and keep
-only the kind. The disposition is distinct from `reject`, which still means the
-proposal was wrong. Both choices are captured as `reviewer_routing` feedback when
-feedback is configured and capture is authorized (see FEEDBACK.md); capture is an
-optional projection that never vetoes the action or disposition. The maintained
+actually succeeded. Privacy deletion and retention expiry redact the reason and
+reviewer (`intake_dispositions.data`) and keep only the kind. The disposition is
+distinct from `reject`, which still means the proposal was wrong. Closing an item
+records `reviewer_routing` feedback immediately; a started action records it only
+when the reviewer approves it (see FEEDBACK.md). Capture is an optional projection
+that never vetoes the decision or disposition.
+
+`startReviewerAction` applies the handler's discovery media types and the live
+reviewer grant/policy for that handler. It intentionally does not apply the
+proposal catalog's provider-policy filter or `maxHandlers` slice: those bound what
+a model may be offered, and a human choosing a handler sends nothing to a
+provider. The UI picker shows the offered catalog, so a handler hidden from it is
+only reachable by a reviewer who already holds `review` authority for it. The maintained
 browser fixture serves both operations behind CSRF and the same session scope.
 
 ## Maintained browser proof

@@ -219,6 +219,7 @@ export class IntakeExecutionService {
       'intake_executions',
       'intake_plans',
       'intake_feedback',
+      'intake_dispositions',
     ])
       await db.query(
         `UPDATE ${table} SET data='{}' WHERE item_id=? AND tenant_id=? AND confidential_scope_id=?`,
@@ -1645,6 +1646,32 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
+      // An approved reviewer-selected action is a real routing judgment; rejected
+      // or deferred ones never become examples. Keyed by the decision request.
+      const provenance = object(bound.action.data);
+      if (
+        frozen.decision === 'approve' &&
+        provenance.origin === 'reviewer-selected'
+      ) {
+        const [attempt] = await this.rows(
+          db,
+          'intake_analysis_attempts',
+          'id=? AND item_id=?',
+          [bound.proposal.analysis_attempt_id, bound.item.id],
+        );
+        if (attempt)
+          await this.routingFeedback(db, bound.item, attempt, {
+            requestId: frozen.requestId,
+            reason:
+              typeof provenance.reason === 'string' ? provenance.reason : '',
+            handler: {
+              handlerId: bound.handler.id,
+              handlerVersion: bound.handler.version,
+              args: structuredClone(bound.binding.args),
+              review: this.review(bound),
+            },
+          });
+      }
       return { ...this.review(bound), state };
     });
   }
@@ -1695,6 +1722,9 @@ export class IntakeExecutionService {
   private async approved(db: DatabaseInterface, bound: Bound): Promise<number> {
     await this.feedbackLineage(db, bound);
     await this.verifyEvidence(db, bound);
+    // A resolved item is terminal: no prior approval (or failed retry) may apply.
+    if (await this.disposition(db, String(bound.item.id)))
+      throw new Error('Item resolved');
     if (bound.binding.plan) {
       const plans = await this.rows(
         db,
@@ -2803,18 +2833,8 @@ export class IntakeExecutionService {
         args: frozen.args,
       };
       const binding = await this.buildBinding(db, item, preview);
-      const review = await this.publish(db, item, preview, binding);
-      await this.routingFeedback(db, item, attempt, {
-        requestId: frozen.requestId,
-        reason: frozen.reason ?? '',
-        handler: {
-          handlerId: handler.id,
-          handlerVersion: handler.version,
-          args: frozen.args,
-          review,
-        },
-      });
-      return review;
+      // The routing choice becomes feedback only once the reviewer approves it.
+      return this.publish(db, item, preview, binding);
     });
   }
   /** Close an item as handled without an action. Terminal; replay returns the same disposition. */
@@ -2848,7 +2868,7 @@ export class IntakeExecutionService {
       const pending = await this.rows(
         db,
         'intake_actions',
-        "item_id=? AND state IN ('authorized','executing','outcome_unknown','succeeded')",
+        "item_id=? AND state IN ('authorized','failed','executing','outcome_unknown','succeeded')",
         [item.id],
       );
       if (pending.length)
