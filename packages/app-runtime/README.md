@@ -127,9 +127,11 @@ VFS.
 
 Owner onboarding binds to `127.0.0.1` by default and accepts only loopback IP
 literals (`127.0.0.0/8` or `::1`), avoiding hostname-resolution ambiguity.
-The first valid claim creates a real global `Person`, `User`, default `Tenant`,
-owner `Role` / `Membership`, and server-side `Session` atomically. Startup and
-setup are idempotent; replayed, expired, or concurrent claims fail closed.
+The first valid claim creates a tenant-bound `Person`, `User`, default `Tenant`,
+owner `Role` / `Membership`, and server-side `Session` atomically. The owner
+Person belongs to the actual created or adopted tenant; its shared profile type
+remains global. Startup and setup are idempotent; replayed, expired, or
+concurrent claims fail closed.
 `ownerTenant: { slug, name, adoptExisting }` (also accepted by the SvelteKit
 runtime) selects the bootstrap tenant; the default is a new tenant with slug
 `default`. Because `Tenant` upserts on its slug, the claim checks first and

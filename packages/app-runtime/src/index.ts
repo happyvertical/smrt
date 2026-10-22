@@ -1042,6 +1042,11 @@ async function createLocalOwnerRecords(
     ));
   }
 
+  // Bind the owner's profile to the actual created or adopted tenant before
+  // committing the claim; the shared Person profile type remains global.
+  person.tenantId = requireId(tenant.id, 'Tenant');
+  await person.save();
+
   const sessions = await SessionCollection.create({ db });
   const session = await sessions.createSession({
     userId,
