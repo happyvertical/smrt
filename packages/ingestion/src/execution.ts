@@ -44,6 +44,7 @@ import {
 } from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
 import { HandlerArgumentsInvalidError } from './proposal-errors.js';
+import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
 
@@ -2129,6 +2130,7 @@ export class IntakeExecutionService {
       this.scope.tenantId,
       this.scope.confidentialScopeId,
     );
+    await this.releaseRedactedPrincipal(db, String(bound.item.id));
     await this.feedbackEvent(
       db,
       bound,
@@ -2532,6 +2534,7 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
+      await this.releaseRedactedPrincipal(db, String(item.id));
       await this.feedbackEvent(
         db,
         { ...bound, item },
@@ -3027,6 +3030,34 @@ export class IntakeExecutionService {
         ? { nextCursor: items[items.length - 1].item.id }
         : {}),
     };
+  }
+  /** Once a privacy-redacted item has no external action left to reconcile,
+   * drop the principal that redaction had to retain for it. Caller holds the
+   * item lock. */
+  private async releaseRedactedPrincipal(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<void> {
+    const [item] = await this.rows(db, 'intake_items', 'id=?', [itemId]);
+    if (!item || item.visibility === 'active') return;
+    const unfinished = await this.rows(
+      db,
+      'intake_actions',
+      `item_id=? AND state IN (${UNFINISHED_ACTION_STATES.map(() => '?').join(',')})`,
+      [itemId, ...UNFINISHED_ACTION_STATES],
+    );
+    if (unfinished.length) return;
+    const data = object(item.data);
+    const ceiling = object(data.capturedCeiling ?? {});
+    const released = redactedCeiling(ceiling, false);
+    if (canonical(released) === canonical(ceiling)) return;
+    await db.query(
+      'UPDATE intake_items SET data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
+      canonical({ ...data, capturedCeiling: released }),
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      itemId,
+    );
   }
   /** Only an explicit denial hides a row; a failing grant store propagates
    * instead of silently shrinking the list. */
