@@ -90,7 +90,14 @@ export interface ExecutionAccessInput {
   scope: Readonly<IngestionScope>;
   itemId: string;
   capturedCeiling: Readonly<ExecutionCeiling>;
-  operation: 'preview' | 'review' | 'execute' | 'read' | 'reconcile';
+  /** `review_own`: the recorded submitter decides their own proposal. */
+  operation:
+    | 'preview'
+    | 'review'
+    | 'review_own'
+    | 'execute'
+    | 'read'
+    | 'reconcile';
   handlerId: string;
 }
 /** Every callback is server configuration. It must never be deserialized from input. */
@@ -100,6 +107,8 @@ export interface IntakeExecutionOptions {
   authorize(input: ExecutionAccessInput): Promise<{
     allowed: boolean;
     reviewer: boolean;
+    /** Live grant for `review_own`; absent or false denies submitter decisions. */
+    submitter?: boolean;
     principalId: string;
     permissions: string[];
     policy: [
