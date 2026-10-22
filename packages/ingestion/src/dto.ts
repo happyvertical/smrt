@@ -119,7 +119,10 @@ export interface OwnProposalsInput {
 export interface OwnProposalsPage {
   items: Array<{
     item: IntakeItemDTO;
-    reviews: import('./review-dto.js').ReviewPage;
+    /** Null when the submission's reviews cannot currently be read. */
+    reviews: import('./review-dto.js').ReviewPage | null;
+    /** Set without a reason: nothing about the denied target is disclosed. */
+    unavailable?: true;
   }>;
   nextCursor?: string;
 }
