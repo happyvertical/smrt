@@ -103,6 +103,26 @@ Denied refresh clears prior originals, candidates, arguments and results.
 Missing confidence is unavailable; page/time links exist only for observed
 locations. Provider errors and unresolved/partial results remain review states.
 
+## Submitter-scoped decisions
+
+For trusted internal sources the person who submitted an item may confirm or
+decline their own proposal without the reviewer inbox. `listOwnProposals`
+returns only items whose server-recorded `submitter_id` equals the current
+authenticated actor, each with its bounded saved review page reloaded under
+current item, handler and target authority; a denied item fails the whole page.
+`submitOwnDecision` takes the same `ReviewInput` CAS fields and request ID as
+`submitDecision` and accepts `approve`, `reject` and `defer` only; `correct`
+belongs to the reviewer surface. It runs under the `review_own` execution
+operation: the host's `authorize` must return `submitter: true`, the resolved
+policy must have `submitterReview` enabled, and the recorded submitter must be
+the current actor. Policy enablement, handler/operation allowlists, captured
+ceiling, confidential access, retention and the first-valid-decision lock are
+unchanged, and the decision is recorded as an ordinary human decision by that
+actor. `applyAction` then runs once under the approver's live grants exactly as
+for reviewer decisions. Hosts render this surface from their own authenticated
+session; presentation state confers no authority, and a source payload cannot
+nominate a submitter.
+
 ## Assignment and logical splits
 
 Assignment is explicitly host-owned, durable and versioned. `assign` receives

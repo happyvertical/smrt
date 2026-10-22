@@ -248,6 +248,64 @@ and `maxSuggestions` are each capped at 20; `timeoutMs` is capped at 2147483647.
 Invalid limits are rejected when constructing `IngestionService`, before receipt
 or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.
 
+## Trusted internal sources
+
+A host with a trusted internal source, such as chat messages recorded in
+smrt-messages, can receive **by reference**, interpret **inline**, and let the
+**submitter** confirm their own proposal (#4085). None of these modes changes
+copied receipts: their identity, validation, queueing and retention are
+untouched, and a replay that switches mode conflicts.
+
+**Receive by reference.** A part may be `{ partId, reference: { owner, id,
+version? }, snapshot: { text } | { structured } }` instead of bytes. The
+service derives UTF-8 bytes once (`text/plain` or canonical `application/json`),
+hashes them into the receipt identity, and stores only that snapshot in the
+durable evidence row; no AssetStore object or asset record is created, and
+`readEvidence` serves the snapshot after the same hash/length check. The
+reference is identity and provenance, never authority. Such parts must be
+text or structured; files still arrive as copied bytes.
+
+**Owner-bound retention.** `retention: { kind: 'owner', owner: { kind, id },
+version, expiresAt, replayUntil, acceptAfter }` binds the receipt to its
+owner's lifecycle. The time deadlines remain required and validated exactly as
+before: they are the hard privacy ceiling, and `sweepRetention` and execution's
+policy ceiling still apply. When the owner is deleted the host calls
+`expireOwned({ kind, id })` from its deletion path; every active receipt bound
+to that owner is revoked and removed through the existing `expire` /
+`repairDeletions` protocol, which redacts the snapshot together with every
+other payload, and the deleted delivery is never re-admitted. The owner key is
+recorded in the indexed `owner_key` column (`<kind>:<id>`, so `kind` cannot
+contain `:`).
+
+**Inline mode.** `receive({ ..., dispatch: 'inline' })` requires text/structured
+parts only, records the route provenance but **no deliverable dispatch intent**
+for any revision (every intent is retained as `completed`, so no worker or
+`repairDispatches` ever picks it up), and does not enqueue. The host then calls
+`interpretInline(itemId, { requestId, extraction: { configurationRevision,
+limits } })`, which runs in-process exactly what the job path runs: an
+immutable `stage: 'extract'` revision claimed under a fenced lease and
+extracted with the built-in UTF-8 extractor, then `prepareGeneration` and the
+`stage: 'interpret'` revision with the same analysis lease, catalog-live
+checks, provenance and failure categories as `generateProposals`. A retry with
+the same `requestId` replays the immutable revisions. The result reports each
+stage's attempt and safe error and, when generation completed, the authorized
+`getCompletedAnalysis` snapshot. Inline is for send-triggered suggestions that
+must not depend on the scheduler; it is not a bypass of review or execution.
+
+**Submitter-scoped approval.** The service records `submitter_id` as the
+authenticated `scope.actorId` of the receiving service, server-side; payload
+and source metadata never supply it. `listOwnProposals({ cursor?, limit? })`
+lists only this actor's own active submissions with their saved review pages,
+reloaded under current item/handler/target authority, without the reviewer
+inbox. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
+`correct`) under the `review_own` authority: the host's execution `authorize`
+must return `submitter: true` for that actor, the application policy must opt
+in with `submitterReview: true` (narrower layers may only disable it), and the
+item's recorded submitter must equal the current actor. Every other check is
+the ordinary one, and `applyAction` remains the single once-only effect path
+under the approver's live grants. See [REVIEW.md](REVIEW.md) and
+[execution integration](agents/execution.md).
+
 ## Dispatch route ownership and legacy recovery
 
 A receipt retains a versioned, server-owned `jobTarget` snapshot, and every

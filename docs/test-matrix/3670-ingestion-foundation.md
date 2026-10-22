@@ -198,6 +198,19 @@ supersession. No schema or migration changes:
 the record lives in the existing append-only analysis ledger beside the split
 correction.
 
+### #4085 trusted internal sources
+
+`internal-sources.test.ts` and `internal-sources.postgres.test.ts` share
+`src/test-support/internal-sources.ts` on both databases:
+
+| Behavior/invariant | Positive | Negative/failure | Evidence |
+|---|---|---|---|
+| Receive by reference | text and structured snapshots become durable evidence with no asset record or stored object; `readEvidence` serves the snapshot after hash/length checks; copied sibling parts still preserve an asset | malformed reference/snapshot/owner and non-text inline parts reject `invalid` without reserving a row; a replay switching retention mode conflicts | U,P |
+| Owner-bound retention | `expireOwned` revokes and redacts every receipt of that owner through the existing deletion ledger, removes copied assets, leaves other owners untouched and returns zero on repeat | the deleted delivery is never re-admitted; the own listing drops it immediately | U,P |
+| Inline mode | receive-to-proposals in-process: fenced extraction and interpretation revisions, catalog digest and provenance, no job row, every dispatch intent retained `completed`, `repairDispatches` enqueues nothing; identical `requestId` replays the same attempts | a job receipt cannot use the inline path; provider failure keeps the `unavailable` category without exception text; revoked process access denies before any stage | U,P |
+| Submitter-scoped approval | own listing shows only the actor's own items; `submitOwnDecision` approve/defer records a human decision by that actor; identical replay returns the review; `applyAction` succeeds once and replays its digest | non-reviewer submitter denied at `submitDecision`; other actors and reviewers denied as submitter; `correct` refused; missing live `submitter` grant or policy opt-out denied with no decision row; conflicting replay rejected; page limits validated | U,P |
+| Migrations/types | the existing manifest parity case covers the added `submitter_id`/`owner_key` columns and indexes on both engines | | U,P,K |
+
 ### #4116 retained dispatch routing
 
 `foundation.test.ts` and `foundation.postgres.test.ts` share the `dispatch route
