@@ -269,10 +269,37 @@ function actionCount(where = ''): string {
  */
 const INBOX_STATE_SQL = `CASE WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
 /** The exact text the service stores for a receipt time; the only cursor form. */
-function receiptTime(value: unknown): string {
-  const text = persistedDate(value).toISOString();
-  if (text !== new Date(text).toISOString()) throw new Error('Invalid time');
-  return text;
+/** The only receipt-time text the service writes, and the only cursor form. */
+const RECEIPT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/**
+ * The canonical receipt time of a scanned row, or undefined when the stored
+ * value is not one the service writes: on SQLite the raw text must already be
+ * the millisecond ISO form (no offset, no space separator, exactly three
+ * fractional digits); on PostgreSQL the stored value must have no
+ * sub-millisecond part, which the page query reports as `receipt_ms`.
+ */
+function receiptTime(row: Row): string | undefined {
+  const value = row.created_at;
+  if (typeof value === 'string')
+    return RECEIPT_TIME.test(value) &&
+      Number.isFinite(Date.parse(value)) &&
+      new Date(value).toISOString() === value
+      ? value
+      : undefined;
+  if (
+    value instanceof Date &&
+    Number.isFinite(value.getTime()) &&
+    (row.receipt_ms === true || Number(row.receipt_ms) === 1)
+  )
+    return value.toISOString();
+  return undefined;
+}
+/** Raised only when a page call scanned rows but none had a canonical receipt time. */
+export class IntakeReceiptTimeError extends Error {
+  constructor() {
+    super('Corrupt intake receipt time');
+    this.name = 'IntakeReceiptTimeError';
+  }
 }
 /** Opaque (received-at, id) continuation; never a bare id, which is not ordered. */
 function encodeItemCursor(receivedAt: string, id: string): string {
@@ -1305,11 +1332,18 @@ export class IngestionService {
         scanCeiling - examined,
         Math.max(wanted, Math.min(ITEM_PAGE_CEILING, examined)),
       );
+      // The exact stored receipt value (for the scan anchor) and, on
+      // PostgreSQL, whether it has a sub-millisecond part the cursor cannot
+      // carry.
+      const receipt =
+        this.engine === 'sqlite'
+          ? 'i.created_at AS receipt_raw, 1 AS receipt_ms'
+          : "i.created_at::text AS receipt_raw, (i.created_at = date_trunc('milliseconds', i.created_at)) AS receipt_ms";
       // The state expression is evaluated once per scanned row in the derived
       // table and reused by both the filter and the projection.
       const rows = (
         await this.db.query(
-          `SELECT * FROM (SELECT i.*, ${INBOX_STATE_SQL} AS inbox_state, ${actionCount()} AS action_count FROM intake_items i WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where}) s${filter} ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
+          `SELECT * FROM (SELECT i.*, ${INBOX_STATE_SQL} AS inbox_state, ${actionCount()} AS action_count, ${receipt} FROM intake_items i WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where}) s${filter} ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
           ...params,
           batch + 1,
         )
@@ -1337,16 +1371,14 @@ export class IngestionService {
       for (const row of candidates) {
         consumed++;
         examined++;
-        let receivedAt: string | undefined;
-        try {
-          receivedAt = receiptTime(row.created_at);
-        } catch {
-          /* receipt time the service did not write: skipped and counted */
-        }
+        // A receipt time the service did not write is not listed; the scan
+        // anchor moves past it by its exact stored value so it is neither
+        // re-read nor allowed to shift the order of its neighbours.
+        const receivedAt = receiptTime(row);
         if (receivedAt !== undefined)
           scanFrom = { key: receivedAt, id: String(row.id) };
-        else if (typeof row.created_at === 'string')
-          scanFrom = { key: row.created_at, id: String(row.id) };
+        else if (typeof row.receipt_raw === 'string')
+          scanFrom = { key: row.receipt_raw, id: String(row.id) };
         if (receivedAt === undefined) continue;
         resume = { receivedAt, id: String(row.id) };
         progressed = true;
@@ -1366,8 +1398,7 @@ export class IngestionService {
         // A call that read only rows without a service-written receipt time
         // has no position to hand back. The message names no row: the row may
         // be one the actor may not read.
-        if (!progressed || !resume)
-          throw new Error('Corrupt intake receipt time');
+        if (!progressed || !resume) throw new IntakeReceiptTimeError();
         return {
           items,
           scanned: examined,
@@ -1379,8 +1410,11 @@ export class IngestionService {
   /**
    * Every authorized active item, newest receipt first.
    * @deprecated Use `listItemsPage`. Kept so callers of the array-returning
-   * API keep working; it walks pages to exhaustion, so its cost grows with the
-   * scope. Items are gated exactly as on a page.
+   * API keep working. It walks every page, so its cost grows with the scope,
+   * including one execution authorization per (item, handler) across the
+   * whole scope, and it throws `IntakeReceiptTimeError` on a run of rows
+   * without a canonical receipt time longer than the page scan limit. Items
+   * are gated exactly as on a page.
    */
   async listItems(): Promise<IntakeItemDTO[]> {
     const all: IntakeItemDTO[] = [];

@@ -6,6 +6,7 @@ import {
   GenerationSnapshotStaleError,
   type IngestionService,
   type IntakeItemPage,
+  IntakeReceiptTimeError,
   type ListItemsInput,
 } from './server.js';
 
@@ -156,6 +157,43 @@ describe('published review host projection', () => {
     );
     expect(assignments).toHaveBeenCalledTimes(1);
     expect(assignments).toHaveBeenCalledWith(mine);
+  });
+  it('keeps collected items when a later service call fails without progress', async () => {
+    const f = fixture();
+    const rows = Array.from({ length: 300 }, (_, index) => ({
+      id: String(index).padStart(4, '0'),
+    }));
+    let calls = 0;
+    f.service.listItemsPage.mockImplementation(async (input = {}) => {
+      calls++;
+      if (calls === 2) throw new IntakeReceiptTimeError();
+      const page = await pageSource(rows)(input);
+      return { ...page, scanned: 999 };
+    });
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'x' }),
+        assignment: async (itemId) => ({
+          assigneeId: itemId === '0003' ? 'me' : null,
+          version: 0,
+        }),
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+      },
+    );
+    // The first call scans 999 rows and yields one match; the second, with a
+    // one-row budget, fails without progress. The host returns the match and
+    // the position the first call reached.
+    const page = await host.list({ assigneeId: 'me', limit: 20 });
+    expect(page.items.map((entry) => entry.item.id)).toEqual(['0003']);
+    expect(page.nextCursor).toBe('0019');
+    expect(calls).toBe(2);
+    // Failing on the very first call has no position to hand back.
+    calls = 1;
+    await expect(host.list({ assigneeId: 'me', limit: 20 })).rejects.toThrow(
+      'Corrupt intake receipt time',
+    );
   });
   it('returns a short service page with its cursor instead of scanning past the service ceiling', async () => {
     const f = fixture();

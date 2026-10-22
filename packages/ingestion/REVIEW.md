@@ -187,18 +187,24 @@ not bound. The host `list` passes its remaining budget as `scanLimit`, so the
 rows scanned across the service calls of one host call never exceed 1000: a
 short service page with a cursor, or an exhausted budget while filtering by
 assignee, ends the host call with the same cursor and the caller continues.
-Only rows the service wrote are supported: cursors carry the normalised ISO
-receipt time the service stores. A row whose stored receipt time is not that
-text is skipped and counted like a denied row; within a call the scan moves
-past it by its raw stored text, and a returned cursor names the last good row
-before it. A call that reads nothing but such rows (a run at least as long as
-its scan limit, at most 1000) fails with `Corrupt intake receipt time`,
-naming no row, because the row may be one the actor may not read.
+Only rows the service wrote are supported: cursors carry the canonical
+millisecond ISO receipt time the service stores. A row whose stored receipt
+time is not that form (on SQLite anything but `YYYY-MM-DDTHH:MM:SS.mmmZ`,
+including a parseable value without milliseconds or with an offset; on
+PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
+actor's access, and counts toward the scan. Within a call the scan moves past
+it by its exact stored value, and a returned cursor names the last canonical
+row before it. A call that reads nothing but such rows (a run at least as long
+as its scan limit, at most 1000) fails with `IntakeReceiptTimeError`
+(`Corrupt intake receipt time`), naming no row, because the row may be one the
+actor may not read. The host `list` returns what earlier service calls
+collected, with their cursor, when a later call fails that way.
 
-`listItems()` remains as a deprecated wrapper returning every authorized
-active item as `IntakeItemDTO[]`: it walks `listItemsPage` to exhaustion, so
-items are newest-first and gated exactly as on a page, and its cost grows with
-the scope.
+`listItems()` is deprecated and kept only for callers of the array-returning
+API. It walks every page, so its cost grows with the scope, including one
+execution authorization per (item, handler) across the whole scope, and it may
+throw `IntakeReceiptTimeError` on a run of non-canonical rows longer than the
+page scan limit. Items are newest-first and gated exactly as on a page.
 
 The page's inbox state is the durable projection of the saved action journal
 and processing state, computed once per scanned row inside the page query;

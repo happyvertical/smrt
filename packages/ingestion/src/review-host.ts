@@ -11,6 +11,7 @@ import type {
 import { loadReviewSummary } from './review-summary.js';
 import {
   type IngestionService,
+  IntakeReceiptTimeError,
   ITEM_ID_FILTER_CEILING,
   ITEM_SCAN_CEILING,
   isIntakeId,
@@ -92,15 +93,29 @@ export function createIntakeReviewHost(
       // service page with a cursor (the service hit its own ceiling) or the
       // host's own count ends the call with that cursor for the caller.
       for (;;) {
-        const page = await service.listItemsPage({
-          limit,
-          cursor,
-          state: input.state,
-          itemIds,
-          // The remaining budget: the service never scans past it, so the
-          // host's total stays within ITEM_SCAN_CEILING across calls.
-          scanLimit: ITEM_SCAN_CEILING - examined,
-        });
+        let page: Awaited<ReturnType<IngestionService['listItemsPage']>>;
+        try {
+          page = await service.listItemsPage({
+            limit,
+            cursor,
+            state: input.state,
+            itemIds,
+            // The remaining budget: the service never scans past it, so the
+            // host's total stays within ITEM_SCAN_CEILING across calls.
+            scanLimit: ITEM_SCAN_CEILING - examined,
+          });
+        } catch (error) {
+          // A later call that made no progress (a small remaining budget
+          // landing on rows without a canonical receipt time) must not
+          // discard what earlier calls collected: hand back the position
+          // reached so far and let the caller continue.
+          if (
+            error instanceof IntakeReceiptTimeError &&
+            cursor !== input.cursor
+          )
+            return { items, ...(cursor ? { nextCursor: cursor } : {}) };
+          throw error;
+        }
         examined += page.scanned;
         const read = await assignments(page.items.map(({ item }) => item.id));
         for (const [

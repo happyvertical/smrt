@@ -1673,6 +1673,42 @@ export function foundationSuite(
           await setTime(row.id, row.receivedAt);
         expect(ids(await paged.listItemsPage())).toEqual(ids(first));
       }
+      // A parseable but non-canonical receipt time between two canonical
+      // neighbours (no milliseconds on SQLite, a sub-millisecond part on
+      // PostgreSQL) is not listed either, and paging across it neither skips
+      // nor repeats its neighbours.
+      {
+        const odd = visible[7];
+        if (dialect === 'sqlite')
+          await db.query(
+            'UPDATE intake_items SET created_at=? WHERE id=?',
+            odd.receivedAt.replace('.000Z', 'Z'),
+            odd.id,
+          );
+        else
+          await db.query(
+            "UPDATE intake_items SET created_at = created_at + interval '500 microseconds' WHERE id=?",
+            odd.id,
+          );
+        const rest = visible.filter((row) => row.id !== odd.id);
+        const whole = await paged.listItemsPage();
+        expect(ids(whole)).toEqual(rest.slice(0, 20).map((row) => row.id));
+        expect(whole.scanned).toBe(21);
+        const stepped: string[] = [];
+        let step: string | undefined;
+        for (let index = 0; index < 5; index++) {
+          const page = await paged.listItemsPage({ limit: 3, cursor: step });
+          stepped.push(...ids(page));
+          step = page.nextCursor;
+        }
+        expect(stepped).toEqual(rest.slice(0, 15).map((row) => row.id));
+        await db.query(
+          'UPDATE intake_items SET created_at=? WHERE id=?',
+          odd.receivedAt,
+          odd.id,
+        );
+        expect(ids(await paged.listItemsPage())).toEqual(ids(first));
+      }
       // A caller's remaining budget bounds the scan below the ceiling.
       for (const input of [{ scanLimit: 0 }, { scanLimit: 1001 }])
         await expect(paged.listItemsPage(input)).rejects.toThrow(
