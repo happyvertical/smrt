@@ -52,6 +52,9 @@ time-entry Svelte components are re-exported from smrt-timesheets too. See
 | **Issue** | `repositoryId` (optional FK), `projectId` (optional FK), `number`, `title`, `body`, `state`, `labels[]` | `incorporateFeedback()`, `rollback()`, `suggestLabels()` |
 | **PullRequest** | extends Issue + `headRef`, `baseRef`, `merged`, `draft` | STI on Issue table. `summarize()`, `merge()` |
 | **Project** | `projectId`, `title`, `statuses[]`, `statusFieldId` | GitHub Projects V2. `addItem()`, `moveItem()`, `analyzeHealth()` |
+| **ProjectQuestion** | polymorphic project target, `prompt`, `answer`, owner, `status`, `revision` | Owner question lifecycle; mutate through `ProjectGovernanceService`. |
+| **ProjectDecision** | polymorphic project target, options, `outcome`, `rationale`, owner, `status`, `revision` | Project choice lifecycle; mutate through `ProjectGovernanceService`. |
+| **ProjectGovernanceEvent** | question/decision target, actor, action, status, revision | Immutable lifecycle history. |
 | **Comment** | `issueId` (FK), `body`, `authorLogin` | AI analysis support |
 | **Label** | `repositoryId` (optional FK), `projectId` (optional FK), `name`, `color` | Scope: repository, project, or neither |
 
