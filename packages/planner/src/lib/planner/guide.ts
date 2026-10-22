@@ -3,7 +3,13 @@ import { highlightControl } from '@happyvertical/smrt-ui/forms';
 import { tick } from 'svelte';
 import type { BatchResult, PlanSnapshot } from './commands/index.ts';
 
-export type PlannerGuideControl = 'build' | 'export' | 'chef' | 'edit';
+export type PlannerGuideControl =
+  | 'build'
+  | 'export'
+  | 'chef'
+  | 'edit'
+  | 'specs'
+  | 'styles';
 export const PLANNER_GUIDE_CONTROLS = {
   build: {
     targetId: 'item:planner-host-action',
@@ -22,6 +28,17 @@ export const PLANNER_GUIDE_CONTROLS = {
     label: 'Plan the app',
     description:
       'The chef hat opens Cookbooks, Recipes, Theme and Settings to plan your app.',
+  },
+  specs: {
+    targetId: 'item:planner-specs',
+    label: 'Specs',
+    description:
+      'Specs holds anything your app must also do beyond its features.',
+  },
+  styles: {
+    targetId: 'item:planner-styles',
+    label: 'Styles',
+    description: 'Styles changes how your app looks: theme and settings.',
   },
   edit: {
     targetId: 'item:layout-edit',
@@ -44,9 +61,14 @@ export interface PlannerGuideResult {
 export interface PlannerGuideHandle {
   highlight(
     input:
-      | { kind: 'arrival' }
-      | { kind: 'control'; control: PlannerGuideControl }
-      | { kind: 'addition'; before: PlanSnapshot; result: BatchResult },
+      | { kind: 'arrival'; holdMs?: number }
+      | { kind: 'control'; control: PlannerGuideControl; holdMs?: number }
+      | {
+          kind: 'addition';
+          before: PlanSnapshot;
+          result: BatchResult;
+          holdMs?: number;
+        },
   ): Promise<PlannerGuideResult>;
   dismiss(): void;
 }
@@ -63,6 +85,13 @@ export function additionGuideTarget(before: PlanSnapshot, result: BatchResult) {
     );
     if (item) return { section, item };
   }
+}
+/** Default spotlight lifetime, and the bounds a host may hold one for. */
+export const GUIDE_HOLD_MS = { default: 6000, min: 1000, max: 30000 } as const;
+export function guideHold(holdMs: unknown): number {
+  return typeof holdMs === 'number' && Number.isFinite(holdMs)
+    ? Math.min(GUIDE_HOLD_MS.max, Math.max(GUIDE_HOLD_MS.min, holdMs))
+    : GUIDE_HOLD_MS.default;
 }
 export function createPlannerGuide(options: {
   targets?: ShellTargets;
@@ -97,6 +126,8 @@ export function createPlannerGuide(options: {
   return {
     dismiss,
     async highlight(input) {
+      // A host narrating the guide may hold it for as long as it speaks.
+      const hold = guideHold(input.holdMs);
       if (input.kind === 'arrival' && arrivalShown)
         return { ok: false, reason: 'Arrival guidance was already shown.' };
       const request = ++ticket;
@@ -125,7 +156,7 @@ export function createPlannerGuide(options: {
         };
       clear();
       active = node;
-      clearHighlight = highlightControl(node, 6000, {
+      clearHighlight = highlightControl(node, hold, {
         presentation: 'spotlight',
         dismissLabel: 'Dismiss guidance',
         onDismiss: dismiss,
@@ -135,7 +166,7 @@ export function createPlannerGuide(options: {
       if (input.kind === 'arrival') arrivalShown = true;
       node.addEventListener('click', dismiss, { once: true });
       document.addEventListener('keydown', onKey);
-      timer = setTimeout(clear, 6000);
+      timer = setTimeout(clear, hold);
       return {
         ok: true,
         targetId: node.dataset.smrtTarget ?? targetId,

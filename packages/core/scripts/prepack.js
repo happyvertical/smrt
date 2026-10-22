@@ -14,6 +14,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { verifyProductionManifest } from './verify-production-manifest.js';
 
 function run(script) {
   execFileSync('npm', ['run', script], {
@@ -47,3 +48,6 @@ if (runningInCi && hasReusableBuildArtifacts()) {
   }
   run('build:fresh');
 }
+
+// Validate both newly generated and reused CI artifacts before packaging.
+verifyProductionManifest(resolve('dist/manifest.json'));

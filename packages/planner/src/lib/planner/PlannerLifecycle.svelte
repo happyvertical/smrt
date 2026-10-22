@@ -16,6 +16,7 @@ import { createPlannerAssistant } from './assistant.ts';
 import { createPlannerGuide } from './guide.ts';
 import { plannerController, plannerRuntime } from './instance.ts';
 import type { PlannerProps } from './types.ts';
+import { resetWorkspace } from './workspace.svelte.ts';
 import { workspaceStorage } from './workspace-storage.ts';
 
 let {
@@ -29,6 +30,7 @@ let {
   conversationalAction,
   nativeAssistant = false,
   links = 'path',
+  onreset,
 }: Pick<
   PlannerProps,
   | 'controller'
@@ -39,6 +41,7 @@ let {
   | 'initialConversation'
   | 'cookbookOffers'
   | 'conversationalAction'
+  | 'onreset'
 > & {
   nativeAssistant?: boolean;
   /** `'hash'` in the complete `Planner`, whose pages are fragment routes. */
@@ -106,6 +109,13 @@ onMount(() => {
     controller,
     ...(guide ? { guide } : {}),
     workspaceStorage: workspaceStorage(),
+    reset: (options = {}) =>
+      resetWorkspace({
+        controller,
+        dataSource,
+        nativeAssistant: privateNative,
+        ...(options.silent ? {} : { onreset }),
+      }),
     ...(assistant ? { assistant } : {}),
     ...(native
       ? {

@@ -24,6 +24,15 @@
  * `console.warn`. Tests and consumers that observe that warning should
  * upgrade their adapter.
  *
+ * **Lots**: pass `lotId` in the options of any mutation and the same deltas
+ * are applied to {@link LotStockLevel} rows keyed by
+ * `(lotId, locationId, state)`, with the same non-negative rule, and the
+ * lot is stamped on every movement written. SKU-level balances behave
+ * exactly as without a lot. Create lots with {@link LotService}; compose
+ * both through a shared transaction (`stock.withTransaction`, then
+ * `createLotService({ db: tx.db })`) to receive a lot and its stock
+ * atomically.
+ *
  * Callers should never reach into the level or movement collections
  * directly to mutate balances — doing so silently desyncs the audit
  * ledger and breaks cycle counts.
@@ -44,11 +53,15 @@ import { createLogger } from '@happyvertical/logger';
 import { type DatabaseConfig, resolveDatabase } from '@happyvertical/smrt-core';
 import {
   InventoryLocationCollection,
+  LotCollection,
+  LotStockLevelCollection,
   StockLevelCollection,
   StockMovementCollection,
 } from '../collections/index.js';
+import type { Lot } from '../models/Lot.js';
 import type { StockLevel } from '../models/StockLevel.js';
 import type { StockMovementReason, StockState } from '../types.js';
+import { LotMismatchError, LotNotFoundError } from './lot-errors.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -68,10 +81,12 @@ export class InsufficientStockError extends Error {
     public readonly state: StockState,
     public readonly requested: number,
     public readonly available: number,
+    /** Set when the shortfall is in a lot's balance rather than the SKU's. */
+    public readonly lotId?: string,
   ) {
     super(
       `Insufficient stock: sku=${skuId} location=${locationId} state=${state} ` +
-        `requested=${requested} available=${available}`,
+        `${lotId ? `lot=${lotId} ` : ''}requested=${requested} available=${available}`,
     );
   }
 }
@@ -82,6 +97,11 @@ export class InsufficientStockError extends Error {
  * pattern in {@link StockMovement.sourceType} / {@link StockMovement.sourceId}.
  */
 export interface StockMutationOptions {
+  /**
+   * Track this mutation against a {@link Lot}. The lot must exist and, when
+   * it names a SKU, that SKU must match (else {@link LotMismatchError}).
+   */
+  lotId?: string | null;
   /** Cross-package tag, e.g. `'Contract'`, `'Fulfillment'`, `'CycleCount'`. */
   sourceType?: string;
   /** Cross-package id of the row that caused this mutation. */
@@ -113,6 +133,13 @@ export interface StockServiceOptions {
   db: DatabaseConfig;
 }
 
+interface TxCollections {
+  levels: StockLevelCollection;
+  movements: StockMovementCollection;
+  lotLevels: LotStockLevelCollection;
+  lots: LotCollection;
+}
+
 interface AdjustLevelOptions {
   skuId: string;
   locationId: string;
@@ -123,6 +150,7 @@ interface AdjustLevelOptions {
 
 interface WriteMovementOptions {
   skuId: string;
+  lotId?: string | null;
   locationId: string;
   fromState: StockState | null;
   toState: StockState | null;
@@ -172,6 +200,10 @@ export class StockService {
     public readonly levels: StockLevelCollection,
     public readonly movements: StockMovementCollection,
     public readonly locations: InventoryLocationCollection,
+    /** Per-lot balances, mutated only by this service. */
+    public readonly lotLevels: LotStockLevelCollection,
+    /** Lookup of lots for validation; created through {@link LotService}. */
+    public readonly lots: LotCollection,
     /**
      * Marks a service instance handed to a {@link withTransaction}
      * callback. Public mutation methods on a tx-bound instance skip
@@ -203,11 +235,15 @@ export class StockService {
     const locations = await InventoryLocationCollection.create({
       db: resolved,
     });
+    const lotLevels = await LotStockLevelCollection.create({ db: resolved });
+    const lots = await LotCollection.create({ db: resolved });
     return new StockService(
       resolved as unknown as DatabaseConfig,
       levels,
       movements,
       locations,
+      lotLevels,
+      lots,
     );
   }
 
@@ -256,6 +292,10 @@ export class StockService {
       const locations = await InventoryLocationCollection.create({
         db: txDb as DatabaseConfig,
       });
+      const lotLevels = await LotStockLevelCollection.create({
+        db: txDb as DatabaseConfig,
+      });
+      const lots = await LotCollection.create({ db: txDb as DatabaseConfig });
       // Expose the tx-scoped db (not `this.db`) as the tx instance's
       // public `db` field. Callers compose this through `tx.db` when
       // spinning up adjacent services that should also write in the same
@@ -270,6 +310,8 @@ export class StockService {
         levels,
         movements,
         locations,
+        lotLevels,
+        lots,
         /* inTransaction */ true,
       );
       return work(tx);
@@ -282,17 +324,19 @@ export class StockService {
    * callback), reuse it; otherwise open a fresh one.
    */
   private async runAtomically<T>(
-    work: (tx: {
-      levels: StockLevelCollection;
-      movements: StockMovementCollection;
-    }) => Promise<T>,
+    work: (tx: TxCollections) => Promise<T>,
   ): Promise<T> {
-    if (this.inTransaction) {
-      return work({ levels: this.levels, movements: this.movements });
-    }
-    return this.withTransaction(async (tx) =>
-      work({ levels: tx.levels, movements: tx.movements }),
-    );
+    if (this.inTransaction) return work(this.txCollections());
+    return this.withTransaction(async (tx) => work(tx.txCollections()));
+  }
+
+  private txCollections(): TxCollections {
+    return {
+      levels: this.levels,
+      movements: this.movements,
+      lotLevels: this.lotLevels,
+      lots: this.lots,
+    };
   }
 
   /**
@@ -308,14 +352,17 @@ export class StockService {
   ): Promise<void> {
     assertPositiveQty(qty, 'receive');
     await this.runAtomically(async (tx) => {
+      const lotId = await requireLot(tx, skuId, options.lotId);
       await adjustLevel(tx.levels, {
         skuId,
         locationId,
         state: 'available',
         delta: qty,
       });
+      await adjustLotLevel(tx, lotId, skuId, locationId, 'available', qty);
       await writeMovement(tx.movements, {
         skuId,
+        lotId,
         locationId,
         fromState: null,
         toState: 'available',
@@ -344,6 +391,7 @@ export class StockService {
     await this.runAtomically(async (tx) => {
       await transitionState(tx, {
         skuId,
+        lotId: options.lotId,
         locationId,
         fromState: 'available',
         toState: 'allocated',
@@ -372,6 +420,7 @@ export class StockService {
     await this.runAtomically(async (tx) => {
       await transitionState(tx, {
         skuId,
+        lotId: options.lotId,
         locationId,
         fromState: 'allocated',
         toState: 'available',
@@ -398,7 +447,9 @@ export class StockService {
   ): Promise<void> {
     assertPositiveQty(qty, 'fulfill');
     await this.runAtomically(async (tx) => {
+      const lotId = await requireLot(tx, skuId, options.lotId);
       await assertAvailable(tx.levels, skuId, locationId, 'allocated', qty);
+      await assertLotAvailable(tx, lotId, skuId, locationId, 'allocated', qty);
       await adjustLevel(tx.levels, {
         skuId,
         locationId,
@@ -408,8 +459,10 @@ export class StockService {
         // avoids a needless extra DB round-trip in the hot path.
         enforceNonNegative: false,
       });
+      await adjustLotLevel(tx, lotId, skuId, locationId, 'allocated', -qty);
       await writeMovement(tx.movements, {
         skuId,
+        lotId,
         locationId,
         fromState: 'allocated',
         toState: null,
@@ -449,7 +502,16 @@ export class StockService {
       );
     }
     await this.runAtomically(async (tx) => {
+      const lotId = await requireLot(tx, skuId, options.lotId);
       await assertAvailable(tx.levels, skuId, fromLocationId, 'available', qty);
+      await assertLotAvailable(
+        tx,
+        lotId,
+        skuId,
+        fromLocationId,
+        'available',
+        qty,
+      );
 
       // Source leg: decrement available at origin.
       await adjustLevel(tx.levels, {
@@ -459,8 +521,10 @@ export class StockService {
         delta: -qty,
         enforceNonNegative: false,
       });
+      await adjustLotLevel(tx, lotId, skuId, fromLocationId, 'available', -qty);
       await writeMovement(tx.movements, {
         skuId,
+        lotId,
         locationId: fromLocationId,
         fromState: 'available',
         toState: null,
@@ -479,8 +543,10 @@ export class StockService {
         state: 'available',
         delta: qty,
       });
+      await adjustLotLevel(tx, lotId, skuId, toLocationId, 'available', qty);
       await writeMovement(tx.movements, {
         skuId,
+        lotId,
         locationId: toLocationId,
         fromState: null,
         toState: 'available',
@@ -556,8 +622,10 @@ export class StockService {
     }
     const state = options.state ?? 'available';
     await this.runAtomically(async (tx) => {
+      const lotId = await requireLot(tx, skuId, options.lotId);
       if (delta < 0) {
         await assertAvailable(tx.levels, skuId, locationId, state, -delta);
+        await assertLotAvailable(tx, lotId, skuId, locationId, state, -delta);
       }
       await adjustLevel(tx.levels, {
         skuId,
@@ -566,8 +634,10 @@ export class StockService {
         delta,
         enforceNonNegative: false,
       });
+      await adjustLotLevel(tx, lotId, skuId, locationId, state, delta);
       await writeMovement(tx.movements, {
         skuId,
+        lotId,
         locationId,
         fromState: delta < 0 ? state : null,
         toState: delta > 0 ? state : null,
@@ -618,13 +688,99 @@ async function assertAvailable(
 }
 
 /**
+ * Resolve the `lotId` option: null when absent, otherwise the id of a lot
+ * that exists and, if it names a SKU, belongs to `skuId`.
+ */
+async function requireLot(
+  tx: TxCollections,
+  skuId: string,
+  lotId: string | null | undefined,
+): Promise<string | null> {
+  if (!lotId) return null;
+  const lot: Lot | null = await tx.lots.get(lotId);
+  if (!lot) throw new LotNotFoundError(lotId);
+  if (lot.skuId && lot.skuId !== skuId) {
+    throw new LotMismatchError(lotId, lot.skuId, skuId);
+  }
+  return lotId;
+}
+
+/** Lot-level counterpart of {@link assertAvailable}. */
+async function assertLotAvailable(
+  tx: TxCollections,
+  lotId: string | null,
+  skuId: string,
+  locationId: string,
+  state: StockState,
+  requested: number,
+): Promise<void> {
+  if (!lotId) return;
+  const level = await tx.lotLevels.getLevel(lotId, locationId, state);
+  const available = level ? Number(level.qty ?? 0) : 0;
+  if (available < requested) {
+    throw new InsufficientStockError(
+      skuId,
+      locationId,
+      state,
+      requested,
+      available,
+      lotId,
+    );
+  }
+}
+
+/**
+ * Lot-level counterpart of {@link adjustLevel}: read-modify-write of the
+ * `(lotId, locationId, state)` row, refusing a negative result. A no-op
+ * when the mutation is not tracked by lot.
+ */
+async function adjustLotLevel(
+  tx: TxCollections,
+  lotId: string | null,
+  skuId: string,
+  locationId: string,
+  state: StockState,
+  delta: number,
+): Promise<void> {
+  if (!lotId) return;
+  const existing = await tx.lotLevels.getLevel(lotId, locationId, state);
+  const previous = existing ? Number(existing.qty ?? 0) : 0;
+  const next = previous + delta;
+  if (next < 0) {
+    throw new InsufficientStockError(
+      skuId,
+      locationId,
+      state,
+      Math.abs(delta),
+      previous,
+      lotId,
+    );
+  }
+  if (existing) {
+    existing.qty = next;
+    await existing.save();
+    return;
+  }
+  // Insert-only for the same reason as the SKU-level row (#3204).
+  await tx.lotLevels.create({
+    lotId,
+    skuId,
+    locationId,
+    state,
+    qty: next,
+    _insertOnly: true,
+  });
+}
+
+/**
  * Atomically transition `qty` from one state to another at a single
  * location. Used by `reserve` and `release`.
  */
 async function transitionState(
-  tx: { levels: StockLevelCollection; movements: StockMovementCollection },
+  tx: TxCollections,
   args: {
     skuId: string;
+    lotId?: string | null;
     locationId: string;
     fromState: StockState;
     toState: StockState;
@@ -636,8 +792,17 @@ async function transitionState(
     note?: string;
   },
 ): Promise<void> {
+  const lotId = await requireLot(tx, args.skuId, args.lotId);
   await assertAvailable(
     tx.levels,
+    args.skuId,
+    args.locationId,
+    args.fromState,
+    args.qty,
+  );
+  await assertLotAvailable(
+    tx,
+    lotId,
     args.skuId,
     args.locationId,
     args.fromState,
@@ -656,8 +821,25 @@ async function transitionState(
     state: args.toState,
     delta: args.qty,
   });
+  await adjustLotLevel(
+    tx,
+    lotId,
+    args.skuId,
+    args.locationId,
+    args.fromState,
+    -args.qty,
+  );
+  await adjustLotLevel(
+    tx,
+    lotId,
+    args.skuId,
+    args.locationId,
+    args.toState,
+    args.qty,
+  );
   await writeMovement(tx.movements, {
     skuId: args.skuId,
+    lotId,
     locationId: args.locationId,
     fromState: args.fromState,
     toState: args.toState,
@@ -736,6 +918,7 @@ async function writeMovement(
   // movement table is append-only, so there's nothing to re-save.
   await movements.create({
     skuId: options.skuId,
+    lotId: options.lotId ?? null,
     locationId: options.locationId,
     fromState: options.fromState,
     toState: options.toState,

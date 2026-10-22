@@ -1050,6 +1050,51 @@ describe('JSON Schemas', () => {
   });
 });
 
+describe('specs', () => {
+  const run = (e: ReturnType<typeof engine>, specs: string | null) =>
+    ok(e.run({ name: 'set_name', input: { specs } }));
+
+  it('sets, clears and ignores an unchanged value', () => {
+    const e = engine();
+    expect(e.snapshot().app.specs).toBeNull();
+    const set = run(e, '  Invoices export to PDF.  ');
+    expect(set.receipt.summary).toBe('Updated the app specs.');
+    expect(e.snapshot().app.specs).toBe('Invoices export to PDF.');
+    expect(e.cookbook().specs).toBe('Invoices export to PDF.');
+    const again = run(e, 'Invoices export to PDF.');
+    expect(again.receipt.changed).toBe(false);
+    run(e, null);
+    expect(e.snapshot().app.specs).toBeNull();
+    expect(e.cookbook()).not.toHaveProperty('specs');
+  });
+
+  it('keeps internal newlines and survives export and import', () => {
+    const e = engine();
+    run(e, '- one\n\n- two\n  nested');
+    expect(e.snapshot().app.specs).toBe('- one\n\n- two\n  nested');
+    const again = engine(e.cookbook());
+    expect(again.snapshot().app.specs).toBe('- one\n\n- two\n  nested');
+  });
+
+  it('names the app as before when a name is given too', () => {
+    const e = engine();
+    const r = ok(
+      e.run({ name: 'set_name', input: { name: 'Shop', specs: 'Ship fast.' } }),
+    );
+    expect(r.receipt.summary).toBe('Named the app Shop.');
+  });
+
+  it('validates specs as a bounded string', () => {
+    const base = { version: 1, recipes: [], policies: [] };
+    const good = validateCookbook({ ...base, specs: 'a\nb' });
+    expect(good.ok && good.cookbook.specs).toBe('a\nb');
+    expect(validateCookbook({ ...base, specs: 4 }).ok).toBe(false);
+    expect(validateCookbook({ ...base, specs: 'x'.repeat(20001) }).ok).toBe(
+      false,
+    );
+  });
+});
+
 describe('snapshots', () => {
   it('are compact and plain JSON', () => {
     const e = engine();
@@ -1059,7 +1104,7 @@ describe('snapshots', () => {
     expect(JSON.parse(text)).toEqual(e.snapshot());
     expect(e.snapshot()).toMatchObject({
       version: 1,
-      app: { name: 'Bakery', cookbook: 'bakery' },
+      app: { name: 'Bakery', specs: null, cookbook: 'bakery' },
     });
   });
 });

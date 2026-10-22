@@ -66,3 +66,17 @@ export type StockMovementReason =
   | 'production_consume'
   | 'production_produce'
   | (string & {});
+
+/** `lot` tracks a quantity of material; `serial` tracks one unit. */
+export type LotKind = 'lot' | 'serial';
+
+/** Whether a {@link LotUsage} still counts, or was unlinked by a correction. */
+export type LotUsageStatus = 'active' | 'unlinked';
+
+/** What a {@link LotCorrection} changed. */
+export type LotCorrectionKind =
+  | 'lot_number'
+  | 'attribute'
+  | 'status'
+  | 'unlink'
+  | 'document_detach';

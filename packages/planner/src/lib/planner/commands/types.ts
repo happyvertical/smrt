@@ -22,6 +22,7 @@ export type { ExportData, RecipeChanges, RunOptions };
 
 /** The planner's tabs, in order. Navigation only; never part of the cookbook. */
 export const PLANNER_TAB_IDS = [
+  'specs',
   'cookbooks',
   'recipes',
   'features',

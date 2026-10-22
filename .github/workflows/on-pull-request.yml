@@ -79,7 +79,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
 
       - name: Validate commit messages
         env:
@@ -261,7 +261,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
 
       - name: Install trusted standards validator dependencies
         run: |
@@ -408,7 +408,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -516,7 +516,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.10.0'
+          node-version: '26.12.1'
           setup-playwright: 'false'
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build playground dependencies
@@ -597,7 +597,7 @@ jobs:
         id: setup-environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
           setup-playwright: 'true'
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Playwright system dependencies after a browser cache hit

@@ -48,7 +48,19 @@ import { sectionIdFromSlug } from '../sections/path.ts';
 import { DEFAULT_PRESET } from '../theme/theme.ts';
 import { appHref, setBasePath } from './app.svelte.ts';
 import { PLANNER_TAB_IDS } from './commands/index.ts';
-import { CHEF_HAT_ICON, EXPORT_ICON } from './header-icons.ts';
+import {
+  CHEF_HAT_ICON,
+  EXPORT_ICON,
+  FEATURES_ICON,
+  SPECS_ICON,
+  STYLES_ICON,
+} from './header-icons.ts';
+import {
+  NAV_GROUP_HREF,
+  type NavGroup,
+  navEntryTab,
+  navGroupOf,
+} from './header-nav.ts';
 import { plannerRuntime } from './instance.ts';
 import PlannerControls from './PlannerControls.svelte';
 import PlannerHostAction from './PlannerHostAction.svelte';
@@ -73,6 +85,8 @@ let {
   onready,
   entryMode = 'browse',
   exportAction,
+  exportLabel,
+  headerNav = 'icons',
   headerAction,
   initialConversation,
   cookbookOffers,
@@ -80,6 +94,11 @@ let {
   onreset,
   resetDisabledReason,
 }: PlannerProps = $props();
+
+const nativeExportLabel = $derived(exportLabel?.trim() || 'Export the app');
+const showExportLabel = $derived(Boolean(exportLabel?.trim()));
+const labelledNav = $derived(headerNav === 'labelled');
+const buildLabel = $derived(exportLabel?.trim() || 'Build');
 
 /** The mount's links: its pages are fragment routes, so no host router. */
 const hashHref = (path: string) => `#${path}`;
@@ -370,18 +389,47 @@ const slotItems = $derived<ShellSlotItem[]>([
         },
       ]
     : []),
-  {
-    id: 'planner-customize',
-    label: 'Plan the app',
-    slot: 'header.end' as const,
-    render: customize,
-  },
-  {
-    id: 'planner-export',
-    label: 'Export the app',
-    slot: 'header.end' as const,
-    render: exportLink,
-  },
+  ...(labelledNav
+    ? [
+        {
+          id: 'planner-specs',
+          label: 'Specs',
+          slot: 'header.end' as const,
+          render: specsNav,
+        },
+        {
+          id: 'planner-customize',
+          label: 'Features',
+          slot: 'header.end' as const,
+          render: featuresNav,
+        },
+        {
+          id: 'planner-styles',
+          label: 'Styles',
+          slot: 'header.end' as const,
+          render: stylesNav,
+        },
+        {
+          id: 'planner-export',
+          label: buildLabel,
+          slot: 'header.end' as const,
+          render: buildNav,
+        },
+      ]
+    : [
+        {
+          id: 'planner-customize',
+          label: 'Plan the app',
+          slot: 'header.end' as const,
+          render: customize,
+        },
+        {
+          id: 'planner-export',
+          label: nativeExportLabel,
+          slot: 'header.end' as const,
+          render: exportLink,
+        },
+      ]),
 ]);
 // The shell's own `dock:assistant` button (header end, the dock tab on phones)
 // opens the assistant dock; until the assistant can answer it is a link to the
@@ -425,6 +473,28 @@ const dockToggles = $derived(
   />
 {/snippet}
 
+<!-- Labelled header navigation (`headerNav: 'labelled'`): one button per tab
+     group. The route selects the tab; the click also does, for when the hash
+     is already there. -->
+{#snippet nav(group: NavGroup, label: string, transitionName: string, icon: { path?: string; name?: string })}
+  <HeaderIconLink
+    href={NAV_GROUP_HREF[group]}
+    {label}
+    path={icon.path}
+    icon={icon.name}
+    tone={group}
+    current={configuring && navGroupOf(plannerTab.active) === group}
+    {transitionName}
+    onclick={() => {
+      plannerTab.active = navEntryTab(group, plannerTab.active);
+    }}
+  />
+{/snippet}
+{#snippet specsNav()}{@render nav('specs', 'Specs', 'planner-specs', { path: SPECS_ICON })}{/snippet}
+{#snippet featuresNav()}{@render nav('features', 'Features', 'planner-customize', { path: FEATURES_ICON })}{/snippet}
+{#snippet stylesNav()}{@render nav('styles', 'Styles', 'planner-styles', { path: STYLES_ICON })}{/snippet}
+{#snippet buildNav()}{@render nav('build', buildLabel, 'planner-export', { name: EXPORT_ICON })}{/snippet}
+
 <!-- The chef's hat: the planner's own pages (Cookbooks, Recipes, Theme,
      Settings, Export), apart from the shell's pencil, which edits the layout. -->
 {#snippet customize()}
@@ -444,7 +514,8 @@ const dockToggles = $derived(
 {#snippet exportLink()}
   <HeaderIconLink
     href="#/configure/export/"
-    label="Export the app"
+    label={nativeExportLabel}
+    showLabel={showExportLabel}
     icon={EXPORT_ICON}
     current={exporting}
     transitionName="planner-export"
@@ -487,7 +558,7 @@ const dockToggles = $derived(
   {...plannerShellProps()}
 >
   <ThemeBridge deferInitial={persistence === 'host'} presetOverride={applyCookbookTheme(shell.theme)} />
-  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" />
+  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" onreset={resetProject} />
   <main class="content">
     {#if sectionSlug}
       {#if cookbookStore.loaded}
@@ -523,7 +594,7 @@ const dockToggles = $derived(
     {:else if entryMode === 'planning' && recipeState.ids.length === 0 && recipeState.features.length === 0 && (!route || /^\/configure\/?$/.test(route))}
       <section aria-label="App planning" role="status"><h1>Your app starts here</h1><p>The planner will show your app here as we plan it.</p><a href="#/configure/cookbooks/">Browse cookbooks</a></section>
     {:else}
-      <PlannerControls onreset={resetProject} {resetDisabledReason} {exportAction} {projectPersistence} nativeAssistant={assistant ? aiState.session.transport : undefined} {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
+      <PlannerControls onreset={resetProject} {resetDisabledReason} {exportAction} {projectPersistence} nativeAssistant={assistant ? aiState.session.transport : undefined} {controller} {basePath} {inference} {persistence} {themeControls} {tabs} {headerNav} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
     {/if}
   </main>
 </CookbookApp>

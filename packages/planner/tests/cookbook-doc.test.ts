@@ -287,6 +287,29 @@ describe('CookbookStore', () => {
     expect(store.snapshot().layout).toBeUndefined();
   });
 
+  it('keeps multiline specs through export, import and save, and omits empty ones', () => {
+    const storage = fakeStorage();
+    store.hydrate('', storage);
+    expect(store.snapshot()).not.toHaveProperty('specs');
+    store.setSpecs('- Export invoices to PDF\n\n- Admins approve refunds  \n');
+    const specs = '- Export invoices to PDF\n\n- Admins approve refunds';
+    expect(store.specs).toBe(specs);
+    const text = JSON.stringify(store.snapshot());
+    expect(JSON.parse(text).specs).toBe(specs);
+
+    store.reset();
+    expect(store.snapshot()).not.toHaveProperty('specs');
+    expect(store.importText(text).ok).toBe(true);
+    expect(store.snapshot().specs).toBe(specs);
+
+    store.setSpecs('  \n ');
+    expect(store.specs).toBeUndefined();
+    expect(store.snapshot()).not.toHaveProperty('specs');
+    const parsed = parseCookbook({ ...valid, specs: 'a\nb' });
+    expect(parsed.ok && parsed.cookbook.specs).toBe('a\nb');
+    expect(parseCookbook({ ...valid, specs: 3 }).ok).toBe(false);
+  });
+
   it('export then import reproduces the same cookbook; bad import changes nothing', () => {
     store.hydrate('', fakeStorage());
     recipeState.add('commerce.sales');

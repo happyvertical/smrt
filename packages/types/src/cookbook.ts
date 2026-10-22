@@ -126,6 +126,8 @@ export interface Cookbook {
   /** Optional human name (e.g. for the project `apply` creates). */
   name?: string;
   description?: string;
+  /** Product requirements beyond recipes and features (`set_name`); agents treat it as requirements to build. */
+  specs?: string;
   /** Recipe ids; requirements already included, sorted. */
   recipes: string[];
   /** Extra models (qualified names) no recipe covers. Absent reads as `[]`. */

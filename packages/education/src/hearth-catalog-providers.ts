@@ -386,7 +386,7 @@ export function createPublicIllustrativeMathematicsK5Adapter(
             url,
           ),
           complete: false,
-          exclusions: [
+          policyExclusions: [
             {
               code: 'partial_provider_coverage',
               message:
@@ -459,7 +459,7 @@ export function createOerCommonsRssAdapter(
           ...(config.terminalSnapshot === true
             ? {}
             : {
-                exclusions: [
+                policyExclusions: [
                   {
                     code: 'partial_provider_coverage',
                     message:

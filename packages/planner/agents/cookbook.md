@@ -6,7 +6,10 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   was called a blueprint): one `Cookbook`
   (`{ $schema, version: 1, recipes, features, policies, exposure?, layout?, theme?, overviews? }`, schema
   `https://s-m-r-t.dev/schemas/cookbook/v1.json`; import also accepts the old `.../blueprint/v1.json`)
-  holding recipes, options, layout and theme. `store.svelte.ts` is the single
+  holding recipes, options, layout and theme. Optional `name`, `description` and `specs` (free-text
+  product requirements beyond the recipes and features, up to 20,000 characters; `store.setSpecs`,
+  the `set_name` command and the Specs tab write it, and the agent prompt adds a step telling the
+  agent to build them). `store.svelte.ts` is the single
   source of truth (hydrate, debounced save, import/reset), `storage.ts` the
   try/catch document wrapper, using `planner/workspace-storage.ts` for tab-scoped session storage by default and explicit Remember opt-in local storage (key `smrt-planner:cookbook-doc:v1`; a value under the old
   `smrt-planner:blueprint:v1` is read once, written to the new key and kept as a backup until the

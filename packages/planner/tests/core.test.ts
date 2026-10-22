@@ -21,7 +21,7 @@ import { plannerReportSources } from '../src/lib/reports/sources.ts';
 const snapshot: PlanSnapshot = {
   version: 1,
   revision: 3,
-  app: { name: 'my-app', description: null, cookbook: null },
+  app: { name: 'my-app', description: null, specs: null, cookbook: null },
   recipes: [{ id: 'commerce.invoicing', label: 'Invoicing' }],
   features: [],
   unavailable: [],

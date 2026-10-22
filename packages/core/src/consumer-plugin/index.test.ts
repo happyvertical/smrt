@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import {
@@ -11,7 +12,9 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { OxcScanner } from '@happyvertical/smrt-scanner';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { Plugin } from 'vite';
+import { build } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import {
@@ -150,8 +153,41 @@ describe('smrtConsumer registration generation', () => {
     }
   });
 
-  it('leaves optional native provider binaries to the Node runtime', async () => {
-    const plugin = smrtConsumer({ projectRoot: tmpDir });
+  it('keeps consumer providers and their SMRT runtime closure external during SSR', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    const tenancyDir = join(
+      tmpDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-tenancy',
+    );
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(tenancyDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        dependencies: { '@happyvertical/smrt-core': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        dependencies: { '@happyvertical/smrt-tenancy': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(tenancyDir, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-tenancy' }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
     const configHook = plugin.config;
     const config = await (typeof configHook === 'function'
       ? configHook.call({} as any, {} as any, {
@@ -166,6 +202,788 @@ describe('smrtConsumer registration generation', () => {
     expect(external).toHaveLength(1);
     expect(external[0].test('/tmp/provider/native-addon.node')).toBe(true);
     expect(external[0].test('/tmp/provider/index.js')).toBe(false);
+    expect((config as any).ssr.external).toEqual([
+      '@happyvertical/smrt-core',
+      '@happyvertical/smrt-tenancy',
+      '@test/pkg',
+    ]);
+  });
+
+  it('resolves hoisted providers and their SMRT runtime closure from the project context', async () => {
+    const appRoot = join(tmpDir, 'apps', 'consumer');
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    const tenancyDir = join(
+      tmpDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-tenancy',
+    );
+    mkdirSync(appRoot, { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(tenancyDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        exports: { '.': './dist/index.js' },
+        dependencies: { '@happyvertical/smrt-core': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        dependencies: { '@happyvertical/smrt-tenancy': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(tenancyDir, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-tenancy' }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      projectRoot: appRoot,
+      disableScanning: true,
+      generateTypes: false,
+    });
+    const configHook = plugin.config;
+    const config = await (typeof configHook === 'function'
+      ? configHook.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        })
+      : configHook?.handler.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        }));
+
+    expect((config as any).ssr.external).toEqual([
+      '@happyvertical/smrt-core',
+      '@happyvertical/smrt-tenancy',
+      '@test/pkg',
+    ]);
+    await buildStart(plugin, {} as any);
+    expect(readFileSync(join(appRoot, '.smrt/register.js'), 'utf8')).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg';",
+    );
+  });
+
+  it('resolves pnpm-linked dependencies from the provider physical context', async () => {
+    const providerLink = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const virtualProviderModules = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@test+pkg@1.2.3',
+      'node_modules',
+    );
+    const physicalProvider = join(virtualProviderModules, '@test', 'pkg');
+    const physicalModel = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@happyvertical+smrt-model@2.0.0',
+      'node_modules',
+      '@happyvertical',
+      'smrt-model',
+    );
+    const physicalCore = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@happyvertical+smrt-core@2.0.0',
+      'node_modules',
+      '@happyvertical',
+      'smrt-core',
+    );
+    const physicalTenancy = join(
+      tmpDir,
+      'node_modules',
+      '.pnpm',
+      '@happyvertical+smrt-tenancy@2.0.0',
+      'node_modules',
+      '@happyvertical',
+      'smrt-tenancy',
+    );
+    rmSync(providerLink, { recursive: true, force: true });
+    for (const directory of [
+      physicalProvider,
+      physicalModel,
+      physicalCore,
+      physicalTenancy,
+    ]) {
+      mkdirSync(directory, { recursive: true });
+    }
+    mkdirSync(join(physicalProvider, 'dist'), { recursive: true });
+    mkdirSync(join(virtualProviderModules, '@happyvertical'), {
+      recursive: true,
+    });
+    symlinkSync(physicalProvider, providerLink, 'dir');
+    symlinkSync(
+      physicalModel,
+      join(virtualProviderModules, '@happyvertical', 'smrt-model'),
+      'dir',
+    );
+    symlinkSync(
+      physicalCore,
+      join(virtualProviderModules, '@happyvertical', 'smrt-core'),
+      'dir',
+    );
+    mkdirSync(join(physicalCore, 'node_modules', '@happyvertical'), {
+      recursive: true,
+    });
+    symlinkSync(
+      physicalTenancy,
+      join(physicalCore, 'node_modules', '@happyvertical', 'smrt-tenancy'),
+      'dir',
+    );
+
+    writeFileSync(
+      join(physicalProvider, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        dependencies: {
+          '@happyvertical/smrt-model': '2.0.0',
+          '@happyvertical/smrt-core': '2.0.0',
+        },
+      }),
+    );
+    writeFileSync(
+      join(physicalProvider, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@happyvertical/smrt-model:NestedModel': {
+            className: 'NestedModel',
+            packageName: '@happyvertical/smrt-model',
+            importPath: '@happyvertical/smrt-model',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(physicalModel, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-model', version: '2.0.0' }),
+    );
+    writeFileSync(
+      join(physicalCore, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        version: '2.0.0',
+        dependencies: { '@happyvertical/smrt-tenancy': '2.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(physicalTenancy, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-tenancy', version: '2.0.0' }),
+    );
+    for (const [packageName, version] of [
+      ['smrt-model', '1.0.0'],
+      ['smrt-core', '1.0.0'],
+      ['smrt-tenancy', '1.0.0'],
+    ]) {
+      const packageDir = join(
+        tmpDir,
+        'node_modules',
+        '@happyvertical',
+        packageName,
+      );
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(
+        join(packageDir, 'package.json'),
+        JSON.stringify({ name: `@happyvertical/${packageName}`, version }),
+      );
+    }
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      projectRoot: tmpDir,
+      disableScanning: true,
+      generateTypes: false,
+    });
+    const configHook = plugin.config;
+    const config = await (typeof configHook === 'function'
+      ? configHook.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        })
+      : configHook?.handler.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        }));
+    expect((config as any).ssr.external).toEqual(['@test/pkg']);
+
+    await buildStart(plugin, {} as any);
+    const registration = readFileSync(
+      join(tmpDir, '.smrt/register.js'),
+      'utf8',
+    );
+    expect(registration).toContain(
+      'await importSmrtDependency("@happyvertical/smrt-model", "@test/pkg")',
+    );
+    expect(registration).not.toContain("from '@happyvertical/smrt-model'");
+  });
+
+  it('follows nested-only SMRT dependencies from each owning package context', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const bridgeDir = join(
+      providerDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-bridge',
+    );
+    const contextDir = join(
+      bridgeDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-context',
+    );
+    mkdirSync(contextDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        dependencies: { '@happyvertical/smrt-bridge': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(bridgeDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-bridge',
+        dependencies: {
+          '@happyvertical/smrt-context': '1.0.0',
+          '@happyvertical/smrt-app-runtime': '1.0.0',
+        },
+      }),
+    );
+    writeFileSync(
+      join(contextDir, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-context' }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    const configHook = plugin.config;
+    const config = await (typeof configHook === 'function'
+      ? configHook.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        })
+      : configHook?.handler.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        }));
+
+    expect(
+      existsSync(join(tmpDir, 'node_modules', '@happyvertical', 'smrt-bridge')),
+    ).toBe(false);
+    expect(
+      existsSync(
+        join(tmpDir, 'node_modules', '@happyvertical', 'smrt-context'),
+      ),
+    ).toBe(false);
+    expect((config as any).ssr.external).toEqual(['@test/pkg']);
+  });
+
+  it('runs a native-backed provider from its pnpm package context without splitting core or tenancy', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    const tenancyDir = join(
+      tmpDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-tenancy',
+    );
+    const nativeDir = join(providerDir, 'node_modules', 'native-image-payload');
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(tenancyDir, { recursive: true });
+    mkdirSync(nativeDir, { recursive: true });
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        type: 'module',
+        exports: './index.js',
+        dependencies: { '@happyvertical/smrt-core': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'index.js'),
+      [
+        "import { createRequire } from 'node:module';",
+        "import { registry } from '@happyvertical/smrt-core';",
+        "import { tenantContext } from '@happyvertical/smrt-tenancy';",
+        'const require = createRequire(import.meta.url);',
+        "export const imagePayload = require('native-image-payload');",
+        'export const providerRegistry = registry;',
+        'export const providerTenantContext = tenantContext;',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        type: 'module',
+        exports: './index.js',
+        dependencies: { '@happyvertical/smrt-tenancy': '1.0.0' },
+      }),
+    );
+    writeFileSync(join(coreDir, 'index.js'), 'export const registry = {};\n');
+    writeFileSync(
+      join(tenancyDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-tenancy',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(tenancyDir, 'index.js'),
+      "import { AsyncLocalStorage } from 'node:async_hooks';\nexport const tenantContext = new AsyncLocalStorage();\n",
+    );
+    writeFileSync(
+      join(nativeDir, 'package.json'),
+      JSON.stringify({ name: 'native-image-payload', main: './index.cjs' }),
+    );
+    writeFileSync(
+      join(nativeDir, 'index.cjs'),
+      "module.exports = 'tiny-image';\n",
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'entry.ts'),
+      [
+        "import { registry } from '@happyvertical/smrt-core';",
+        "import { tenantContext } from '@happyvertical/smrt-tenancy';",
+        "import { imagePayload, providerRegistry, providerTenantContext } from '@test/pkg';",
+        'console.log(JSON.stringify({',
+        '  imagePayload,',
+        '  registry: registry === providerRegistry,',
+        '  tenancy: tenantContext === providerTenantContext,',
+        '}));',
+      ].join('\n'),
+    );
+
+    await build({
+      root: tmpDir,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        smrtConsumer({
+          packages: ['@test/pkg'],
+          projectRoot: tmpDir,
+          disableScanning: true,
+          generateTypes: false,
+        }),
+      ],
+      ssr: { noExternal: true },
+      build: {
+        ssr: join(tmpDir, 'src', 'entry.ts'),
+        outDir: join(tmpDir, 'server'),
+        emptyOutDir: true,
+        rollupOptions: { output: { entryFileNames: 'entry.mjs' } },
+      },
+    });
+
+    const entry = join(tmpDir, 'server', 'entry.mjs');
+    const output = spawnSync(process.execPath, [entry], {
+      encoding: 'utf8',
+    });
+    expect(output.status, output.stderr).toBe(0);
+    expect(output.stderr).toBe('');
+    expect(JSON.parse(output.stdout)).toEqual({
+      imagePayload: 'tiny-image',
+      registry: true,
+      tenancy: true,
+    });
+    expect(readFileSync(entry, 'utf8')).toMatch(/from ["']@test\/pkg["']/);
+  });
+
+  it('splits mixed native server and Svelte exports at the SSR boundary', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const typesDir = join(
+      providerDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-types',
+    );
+    const modelDir = join(
+      providerDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-model',
+    );
+    const appModelDir = join(
+      tmpDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-model',
+    );
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    const nativeDir = join(providerDir, 'node_modules', 'native-image-payload');
+    mkdirSync(typesDir, { recursive: true });
+    mkdirSync(modelDir, { recursive: true });
+    mkdirSync(appModelDir, { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(nativeDir, { recursive: true });
+    mkdirSync(join(providerDir, 'themes'), { recursive: true });
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        type: 'module',
+        exports: {
+          '.': { import: './server.js' },
+          './server': { import: './server.js' },
+          './themes': {
+            svelte: './themes/index.js',
+            import: './themes/index.js',
+            default: './themes/index.js',
+          },
+        },
+        dependencies: {
+          '@happyvertical/smrt-core': '1.0.0',
+          '@happyvertical/smrt-model': '1.0.0',
+          '@happyvertical/smrt-types': '1.0.0',
+          'native-image-payload': '1.0.0',
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'server.js'),
+      [
+        "import { createRequire } from 'node:module';",
+        'const require = createRequire(import.meta.url);',
+        "export const imagePayload = require('native-image-payload');",
+        'export const loadModelConstructors = async () => {',
+        "  const model = await import('@happyvertical/smrt-model');",
+        '  return [model.NestedModel, model.NestedModelCollection];',
+        '};',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          NestedModel: {
+            className: 'NestedModel',
+            packageName: '@happyvertical/smrt-model',
+            importPath: '@happyvertical/smrt-model',
+            hasCollection: true,
+            collectionExportName: 'NestedModelCollection',
+            collection: 'nested_models',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'Component.svelte'),
+      [
+        '<script>',
+        "  import { marker } from '@happyvertical/smrt-types';",
+        "  export let label = 'missing';",
+        '</script>',
+        '<p>{label}:{marker}</p>',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'themes', 'index.js'),
+      "export { default } from '../Component.svelte';\n",
+    );
+    writeFileSync(
+      join(typesDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-types',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(typesDir, 'index.js'),
+      "export const marker = 'types';\n",
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'index.js'),
+      [
+        'const classes = globalThis.__fixtureSmrtClasses ??= new Map();',
+        'const collections = globalThis.__fixtureSmrtCollections ??= new Map();',
+        'export const ObjectRegistry = {',
+        "  register(ctor, config) { const qualifiedName = config.packageName + ':' + config.name; classes.set(qualifiedName, { constructor: ctor, name: config.name, qualifiedName }); },",
+        "  getClassInPackage(packageName, name) { return classes.get(packageName + ':' + name); },",
+        '  registerCollection(name, ctor) { const entry = classes.get(name) ?? [...classes.values()].find((candidate) => candidate.name === name); if (entry) entry.collectionConstructor = ctor; collections.set(name, ctor); },',
+        '  async getCollection(name) { const entry = classes.get(name) ?? [...classes.values()].find((candidate) => candidate.name === name); const ctor = entry?.collectionConstructor ?? collections.get(name) ?? class DefaultCollection {}; return new ctor(); },',
+        '};',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(modelDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-model',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(modelDir, 'index.js'),
+      [
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'export class NestedModel {}',
+        'export class NestedModelCollection {}',
+        'NestedModelCollection._itemClass = NestedModel;',
+        "ObjectRegistry.register(NestedModel, { name: 'NestedModel', packageName: '@happyvertical/smrt-model' });",
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(appModelDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-model',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(appModelDir, 'index.js'),
+      [
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'export class NestedModel {}',
+        'export class NestedModelCollection {}',
+        'NestedModelCollection._itemClass = NestedModel;',
+        "ObjectRegistry.register(NestedModel, { name: 'NestedModel', packageName: '@happyvertical/smrt-model' });",
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(nativeDir, 'package.json'),
+      JSON.stringify({ name: 'native-image-payload', main: './index.cjs' }),
+    );
+    writeFileSync(
+      join(nativeDir, 'index.cjs'),
+      "module.exports = 'native-server';\n",
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'svelte-entry.ts'),
+      [
+        "import '../.smrt/register.js';",
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        "import { imagePayload, loadModelConstructors } from '@test/pkg/server';",
+        "import Widget from '@test/pkg/themes';",
+        "import { render } from 'svelte/server';",
+        "const registeredModel = ObjectRegistry.getClassInPackage('@happyvertical/smrt-model', 'NestedModel')?.constructor;",
+        "const registeredCollection = (await ObjectRegistry.getCollection('@happyvertical/smrt-model:NestedModel')).constructor;",
+        'const [providerModel, providerCollection] = await loadModelConstructors();',
+        "console.log(JSON.stringify({ imagePayload, modelIdentity: registeredModel === providerModel, collectionIdentity: registeredCollection === providerCollection, html: render(Widget, { props: { label: 'compiled' } }).body }));",
+      ].join('\n'),
+    );
+
+    await build({
+      root: tmpDir,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        svelte(),
+        smrtConsumer({
+          packages: ['@test/pkg'],
+          projectRoot: tmpDir,
+          disableScanning: true,
+          generateTypes: false,
+        }),
+      ],
+      ssr: { noExternal: true },
+      build: {
+        ssr: join(tmpDir, 'src', 'svelte-entry.ts'),
+        outDir: join(tmpDir, 'svelte-server'),
+        emptyOutDir: true,
+        rollupOptions: { output: { entryFileNames: 'entry.mjs' } },
+      },
+    });
+
+    const entry = join(tmpDir, 'svelte-server', 'entry.mjs');
+    const content = readFileSync(entry, 'utf8');
+    const relocated = join(tmpDir, 'relocated');
+    mkdirSync(relocated);
+    fs.cpSync(join(tmpDir, 'svelte-server'), join(relocated, 'server'), {
+      recursive: true,
+    });
+    fs.cpSync(join(tmpDir, 'node_modules'), join(relocated, 'node_modules'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(relocated, 'package.json'),
+      JSON.stringify({ type: 'module' }),
+    );
+    const output = spawnSync(
+      process.execPath,
+      [join(relocated, 'server', 'entry.mjs')],
+      { encoding: 'utf8', cwd: relocated },
+    );
+    expect(output.status, output.stderr).toBe(0);
+    expect(JSON.parse(output.stdout)).toMatchObject({
+      imagePayload: 'native-server',
+      modelIdentity: true,
+      collectionIdentity: true,
+    });
+    expect(JSON.parse(output.stdout).html).toContain('<p>compiled:types</p>');
+    expect(content).toMatch(/from ["']@test\/pkg\/server["']/);
+    expect(content).not.toMatch(/from ["']@test\/pkg\/themes["']/);
+    expect(content).not.toMatch(/from ["']@happyvertical\/smrt-model["']/);
+    expect(content).not.toMatch(/from ["']@happyvertical\/smrt-types["']/);
+  });
+
+  it('rejects one qualified object contributed by distinct provider graphs', async () => {
+    const appModelDir = join(tmpDir, 'node_modules', '@nested', 'model');
+    mkdirSync(appModelDir, { recursive: true });
+    writeFileSync(
+      join(appModelDir, 'package.json'),
+      JSON.stringify({ name: '@nested/model', version: 'app' }),
+    );
+
+    for (const provider of ['a', 'b']) {
+      const providerLink = join(tmpDir, 'node_modules', '@test', provider);
+      const virtualProviderModules = join(
+        tmpDir,
+        'node_modules',
+        '.pnpm',
+        `@test+${provider}@1.0.0`,
+        'node_modules',
+      );
+      const providerDir = join(virtualProviderModules, '@test', provider);
+      const modelDir = join(
+        tmpDir,
+        'node_modules',
+        '.pnpm',
+        `@nested+model@${provider}`,
+        'node_modules',
+        '@nested',
+        'model',
+      );
+      mkdirSync(join(providerDir, 'dist'), { recursive: true });
+      mkdirSync(modelDir, { recursive: true });
+      mkdirSync(join(virtualProviderModules, '@nested'), { recursive: true });
+      symlinkSync(providerDir, providerLink, 'dir');
+      symlinkSync(
+        modelDir,
+        join(virtualProviderModules, '@nested', 'model'),
+        'dir',
+      );
+      writeFileSync(
+        join(providerDir, 'package.json'),
+        JSON.stringify({
+          name: `@test/${provider}`,
+          type: 'module',
+          dependencies: { '@nested/model': provider },
+        }),
+      );
+      writeFileSync(
+        join(modelDir, 'package.json'),
+        JSON.stringify({
+          name: '@nested/model',
+          version: provider,
+          type: 'module',
+        }),
+      );
+      writeFileSync(
+        join(providerDir, 'dist', 'manifest.json'),
+        JSON.stringify({
+          packageName: `@test/${provider}`,
+          objects: {
+            '@nested/model:Shared': {
+              className: 'Shared',
+              packageName: '@nested/model',
+              importPath: '@nested/model',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+            },
+          },
+        }),
+      );
+    }
+
+    const plugin = smrtConsumer({
+      packages: ['@test/a', '@test/b'],
+      projectRoot: tmpDir,
+      disableScanning: true,
+      generateTypes: false,
+    });
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
+      'contributed by multiple installed provider graphs',
+    );
+  });
+
+  it('still bundles providers in browser and component-library builds', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'index.js'),
+      "export const marker = 'browser-provider-marker';\n",
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'component.ts'),
+      "export { marker } from '@test/pkg';\n",
+    );
+
+    await build({
+      root: tmpDir,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        smrtConsumer({
+          packages: ['@test/pkg'],
+          projectRoot: tmpDir,
+          disableScanning: true,
+          generateTypes: false,
+        }),
+      ],
+      build: {
+        lib: {
+          entry: join(tmpDir, 'src', 'component.ts'),
+          formats: ['es'],
+          fileName: 'component',
+        },
+        outDir: join(tmpDir, 'client'),
+        emptyOutDir: true,
+      },
+    });
+
+    const [outputFile] = readdirSync(join(tmpDir, 'client'));
+    expect(outputFile).toBeDefined();
+    const output = readFileSync(
+      join(tmpDir, 'client', outputFile as string),
+      'utf8',
+    );
+    expect(output).toContain('browser-provider-marker');
+    expect(output).not.toMatch(/from ["']@test\/pkg["']/);
   });
 
   it('should write explicit package names into .smrt/register.js', async () => {

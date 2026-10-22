@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   CatalogSourceRecord,
   CatalogSyncCheckpoint,
-  CatalogSyncStore,
 } from '../catalog-contracts.js';
-import { CatalogSyncService } from '../catalog-sync-service.js';
+import {
+  CatalogSyncService,
+  type CatalogSyncStore,
+} from '../catalog-sync-service.js';
 
 const record = (stableId: string): CatalogSourceRecord => ({
   providerId: 'im',
@@ -33,6 +35,42 @@ function store(seed?: CatalogSyncCheckpoint): CatalogSyncStore & {
 }
 
 describe('CatalogSyncService', () => {
+  it('resumes a normal invocation budget without retaining a synthetic failure', async () => {
+    let current: CatalogSyncCheckpoint | undefined;
+    const state = store();
+    state.getCheckpoint = async () => current;
+    state.saveCheckpoint = async (value) => {
+      current = value;
+    };
+    const first = await new CatalogSyncService(state, 0, 1).sync('im', {
+      enumerate: async () => ({
+        records: [record('one')],
+        complete: false,
+        nextCursor: 'two',
+      }),
+    });
+    expect(first).toMatchObject({
+      paused: false,
+      complete: false,
+      cursor: 'two',
+      failures: [],
+    });
+    const runId = first.runId;
+    const terminal = await new CatalogSyncService(state, 0, 1).sync('im', {
+      enumerate: async ({ cursor, checkpoint }) => {
+        expect(cursor).toBe('two');
+        expect(checkpoint.runId).toBe(runId);
+        return { records: [record('two')], complete: true };
+      },
+    });
+    expect(terminal).toMatchObject({
+      complete: true,
+      failures: [],
+      importedCount: 2,
+    });
+    expect(state.withdrawUnseen).toHaveBeenCalledOnce();
+  });
+
   it('persists cursor checkpoints and only withdraws after a terminal page', async () => {
     const state = store();
     const adapter = {

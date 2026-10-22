@@ -1969,6 +1969,15 @@ async function generateRegistrationFile(
   const configPath = options.configPath || 'src/lib/server';
   const configDir = join(projectRoot, configPath);
   const registrationFilePath = join(configDir, 'smrt-register.ts');
+  const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
+    (dependency) => dependency !== '@happyvertical/smrt-core',
+  );
+  const consumerRegistrationPaths =
+    options.consumerRegistrationPaths ??
+    (externalRuntimeDependencies.length > 0
+      ? [join(projectRoot, '.smrt', 'register.js')]
+      : []);
+  const consumerOwnsExternalRegistration = consumerRegistrationPaths.length > 0;
 
   // Group objects by package for efficient imports
   const localObjects: Array<[string, (typeof manifest.objects)[string]]> = [];
@@ -1989,6 +1998,7 @@ async function generateRegistrationFile(
       // Local object (source in project, not node_modules) - use $lib path
       localObjects.push([className, objectDef]);
     } else if (objectDef.packageName) {
+      if (consumerOwnsExternalRegistration) continue;
       // External packages may publish canonical object exports from a subpath
       // under an aliased export name. Registry identity stays keyed by the
       // manifest's qualified class name; only the emitted module binding uses
@@ -2105,22 +2115,30 @@ async function generateRegistrationFile(
     .join('\n');
 
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
-  const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
-    (dependency) => dependency !== '@happyvertical/smrt-core',
-  );
-  const consumerRegistrationPaths =
-    options.consumerRegistrationPaths ??
-    (externalRuntimeDependencies.length > 0
-      ? [join(projectRoot, '.smrt', 'register.js')]
-      : []);
   let consumerRegistrationImport = '';
   if (consumerRegistrationPaths.length > 0) {
     consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]
       .sort()
       .map((registerPath) => {
+        const lexicalRegistrationPath = relative(projectRoot, registerPath);
+        const registerPathFromProjectRoot =
+          lexicalRegistrationPath === '..' ||
+          lexicalRegistrationPath.startsWith(`..${sep}`) ||
+          isAbsolute(lexicalRegistrationPath)
+            ? relative(
+                canonicalSvelteKitPath(projectRoot),
+                canonicalSvelteKitPath(registerPath),
+              )
+            : lexicalRegistrationPath;
+        const registrationTarget =
+          registerPathFromProjectRoot === '..' ||
+          registerPathFromProjectRoot.startsWith(`..${sep}`) ||
+          isAbsolute(registerPathFromProjectRoot)
+            ? registerPath
+            : resolve(projectRoot, registerPathFromProjectRoot);
         const consumerRegistrationPath = relative(
           configDir,
-          registerPath,
+          registrationTarget,
         ).replace(/\\/g, '/');
         return `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
       })
@@ -2195,6 +2213,7 @@ async function generateRegistrationFile(
     Object.entries(manifest.objects).flatMap(([className, objectDef]) => {
       if (isCollectionManifestClass(manifest, objectDef)) return [];
       const localObject = isLocalObject(projectRoot, objectDef);
+      if (!localObject && consumerOwnsExternalRegistration) return [];
       const packageName = getRegistrationPackageName(
         manifest,
         objectDef,
@@ -2231,6 +2250,7 @@ async function generateRegistrationFile(
       const bindingName =
         registrationBindings.get(className) || simpleClassName;
       const localObject = isLocalObject(projectRoot, objectDef);
+      if (!localObject && consumerOwnsExternalRegistration) return null;
       const packageName = getRegistrationPackageName(
         manifest,
         objectDef,
@@ -2262,7 +2282,12 @@ async function generateRegistrationFile(
     .join('\n');
 
   const collectionRegistrations = Object.entries(manifest.objects)
-    .filter(([, objectDef]) => isCollectionActionResource(manifest, objectDef))
+    .filter(
+      ([, objectDef]) =>
+        isCollectionActionResource(manifest, objectDef) &&
+        (!consumerOwnsExternalRegistration ||
+          isLocalObject(projectRoot, objectDef)),
+    )
     .map(([className, objectDef]) => {
       const packageName = getRegistrationPackageName(
         manifest,

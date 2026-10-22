@@ -15,6 +15,7 @@ are not prerequisites for unrelated user-package work.
 | `src/services/TerminalAuthService.ts`, `src/services/LoginAttemptLimiter.ts`, `src/collections/LoginAttemptCollection.ts` | terminal approval concurrency, shared login budget and lockout (#3273), retry-safe database fixtures | [agents/terminal-auth-testing.md](agents/terminal-auth-testing.md) |
 | `src/services/DeviceCredentialService.ts` | per-person PIN layered on a device session (#3276), verifier seam for other credential kinds | this file, "Security boundaries" |
 | `src/services/PasswordCredentialService.ts`, `src/sveltekit/password-handlers.ts` | email + password sign-in and password lifecycle (#3274); shared scrypt in `credential-hash.ts` | this file, "Security boundaries"; README "Password sign-in" |
+| `src/services/PasskeyCredentialService.ts`, `src/sveltekit/passkey-handlers.ts`, `src/svelte/passkey.ts` | passkey (WebAuthn) sign-in and passkey lifecycle (#3275); library does all verification | this file, "Security boundaries"; README "Passkey sign-in" |
 | `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
 ## Models and authority
@@ -122,6 +123,26 @@ are not prerequisites for unrelated user-package work.
   session row (owner, first-class, no ceiling, listed non-password/pin
   `authMethod`, fresh `outOfBandProofAt` stamp) and ends every session,
   its own included. Never set that stamp from client input.
+- `UsersPasskeyCredential` (many per person) and `UsersPasskeyChallenge` (consumed
+  challenge ledger) are sensitive with no generated surface;
+  `PasskeyCredentialService` and its handlers are the only paths. Verification is
+  `@simplewebauthn/server`, loaded on first use (its `reflect-metadata` polyfill is process-wide) and external in the build; never hand-roll COSE/CBOR. Sign-in reserves on
+  the submitted credential id before any work, requires user verification, checks
+  user handle and a strictly advancing counter (`reason: 'counter'`), mints, then
+  re-checks with a guarded counter UPDATE; a ceremony is an HMAC-signed
+  `ceremonyId` consumed into the unique ledger (replay = refuse; set
+  `challengeSecret` for multi-process). Unique arbiters are
+  `INSERT … ON CONFLICT DO NOTHING`, never a caught constraint error. Register and
+  self-remove need a session authenticated within `freshSessionSeconds`, decided
+  on the stored row (`Session.getAuthenticatedAt()`: server-set
+  `data.authenticatedAt`, which tenant-switch rotation carries forward, else
+  `created_at`; malformed fails closed; `setSessionData` refuses the key),
+  first-class, no ceiling, and its STORED `authMethod` in `freshAuthMethods` (default password/passkey/oidc/magic-link; never `terminal`, whose approval mints a fresh session for any holder of a stale one, nor `pin`); self list/rename also refuse a ceiling; `users.passkey.manage` follows the PIN's
+  single-tenant rule, and `removeAllPasskeys` is admin-only, never self. Sessions
+  end before and after every removal; `SESSION_DATA_KEYS.passkeyCredentialId` is
+  server-set (`setSessionData` refuses it). State-changing handlers require
+  `application/json` (415). Challenge rows are reaped only 10 minutes past expiry
+  (clock skew).
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.

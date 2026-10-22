@@ -1,6 +1,7 @@
 import { TAB_PARAM } from './query.ts';
 
 export const PLANNER_TABS = [
+  'specs',
   'cookbooks',
   'recipes',
   'features',

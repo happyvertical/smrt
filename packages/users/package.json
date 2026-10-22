@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-users",
-  "version": "0.57.17",
+  "version": "0.57.19",
   "smrtJsdoc": "strict",
   "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
   "type": "module",
@@ -49,7 +49,7 @@
     "dev": "npm run build:watch",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/operator-provisioning-postgres.test.ts src/__tests__/member-register-postgres.test.ts src/__tests__/permission-action-alias-postgres.test.ts src/__tests__/permission-postgres-rls.test.ts src/__tests__/principal-permission-context-postgres.test.ts src/__tests__/oidc-provisioning-postgres.test.ts src/__tests__/legacy-user-profile-backfill-postgres.test.ts src/__tests__/terminal-auth-postgres.test.ts src/__tests__/device-credential-postgres.test.ts src/__tests__/password-credential-postgres.test.ts src/__tests__/username-identity.test.ts src/__tests__/resource-grant-postgres.test.ts src/__tests__/issue-3036-hierarchy-resolution-postgres.test.ts src/__tests__/issue-3047-permission-resolution-cost-postgres.test.ts src/__tests__/issue-3048-authorization-list-bounds-postgres.test.ts src/__tests__/issue-3329-concurrent-seeding-postgres.test.ts src/__tests__/issue-3329-grant-dedup.test.ts src/__tests__/issue-3375-authority-pair-dedup.test.ts src/__tests__/issue-3375-authority-pair-identity.test.ts src/__tests__/oauth-authorization.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/operator-provisioning-postgres.test.ts src/__tests__/member-register-postgres.test.ts src/__tests__/permission-action-alias-postgres.test.ts src/__tests__/permission-postgres-rls.test.ts src/__tests__/principal-permission-context-postgres.test.ts src/__tests__/oidc-provisioning-postgres.test.ts src/__tests__/legacy-user-profile-backfill-postgres.test.ts src/__tests__/terminal-auth-postgres.test.ts src/__tests__/device-credential-postgres.test.ts src/__tests__/password-credential-postgres.test.ts src/__tests__/passkey-credential-postgres.test.ts src/__tests__/username-identity.test.ts src/__tests__/resource-grant-postgres.test.ts src/__tests__/issue-3036-hierarchy-resolution-postgres.test.ts src/__tests__/issue-3047-permission-resolution-cost-postgres.test.ts src/__tests__/issue-3048-authorization-list-bounds-postgres.test.ts src/__tests__/issue-3329-concurrent-seeding-postgres.test.ts src/__tests__/issue-3329-grant-dedup.test.ts src/__tests__/issue-3375-authority-pair-dedup.test.ts src/__tests__/issue-3375-authority-pair-identity.test.ts src/__tests__/oauth-authorization.test.ts",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
@@ -73,6 +73,8 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/sql": "catalog:",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
     "jose": "^6.2.12"
   },
   "devDependencies": {

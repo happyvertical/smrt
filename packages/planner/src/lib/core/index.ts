@@ -20,6 +20,11 @@
  */
 
 export {
+  type AgentPrompt,
+  type AgentPromptOptions,
+  buildAgentPrompt,
+} from '../cookbook/prompt.ts';
+export {
   parseSampleContext,
   type SampleContext,
   sampleContextSchema,
