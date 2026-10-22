@@ -1509,10 +1509,12 @@ export function foundationSuite(
       });
       expect(ids(failedPage)).toEqual(failed.slice(0, 20).map((row) => row.id));
       expect(failedPage.nextCursor).toBeTruthy();
-      // The state filter runs on fetched batches (20, 20, 40, 80, 100 rows),
-      // so a rare state is bounded by the scan limit like any other filter.
+      // The state filter runs on fetched batches (20, 20, 40, 80, 100 rows)
+      // after authorization, with one binding read per batch holding action
+      // rows, so a rare state is bounded by the scan limit like any other
+      // filter.
       const failedQueries = queries;
-      expect(failedQueries).toBeLessThanOrEqual(8);
+      expect(failedQueries).toBeLessThanOrEqual(10);
       const failedRest = await paged.listItemsPage({
         state: 'failed',
         limit: 20,
@@ -1571,6 +1573,48 @@ export function foundationSuite(
         ids(await paged.listItemsPage({ state: 'failed', limit: 20 })),
       ).toEqual(ids(failedPage));
       expect(queries).toBe(failedQueries);
+
+      // Rows are authorized before the state filter, so a readable row whose
+      // state does not match anchors the cursor: with an actor who can read
+      // every row, every state filter pages to the end without failing,
+      // including states with no match among the newest thousand rows.
+      const full = new IngestionService({ ...options, db: counted });
+      const actual = (row: Seeded) =>
+        row.expected === 'hidden' ? 'processing' : row.expected;
+      for (const state of [
+        'processing',
+        'unresolved',
+        'waiting',
+        'failed',
+        'deferred',
+        'partially_completed',
+        'completed',
+      ] as const) {
+        const found: string[] = [];
+        let at: string | undefined;
+        let calls = 0;
+        do {
+          const page = await full.listItemsPage({
+            state,
+            limit: 20,
+            cursor: at,
+          });
+          found.push(...ids(page));
+          at = page.nextCursor;
+          calls++;
+          expect(calls).toBeLessThan(200);
+        } while (at);
+        expect(found).toEqual(
+          ordered.filter((row) => actual(row) === state).map((row) => row.id),
+        );
+      }
+      // The filter is applied to fetched batches, not inside the query: a
+      // state with no match scans the full limit and hands back a cursor at
+      // a readable row, where an in-query filter would walk every row.
+      const none = await full.listItemsPage({ state: 'waiting', limit: 20 });
+      expect(none.items).toEqual([]);
+      expect(none.scanned).toBe(1000);
+      expect(none.nextCursor).toBeTruthy();
 
       // Plan evidence: the unfiltered page walks intake_items_received_idx
       // backwards and stops at the page boundary; no sort, no table scan.
@@ -1686,6 +1730,53 @@ export function foundationSuite(
         for (const row of [...run, visible[5]])
           await setTime(row.id, row.receivedAt);
         expect(ids(await paged.listItemsPage())).toEqual(ids(first));
+        // An integer receipt value sorts after every text value on SQLite and
+        // always satisfies `created_at < ?`; such rows are excluded from the
+        // page query, so neither a keyed nor an unkeyed walk can stall.
+        const ints = ordered.slice(200, 350);
+        for (const row of ints)
+          await db.query(
+            'UPDATE intake_items SET created_at=? WHERE id=?',
+            1,
+            row.id,
+          );
+        expect(
+          (
+            await db.query(
+              'SELECT typeof(created_at) AS kind FROM intake_items WHERE id=?',
+              ints[0].id,
+            )
+          ).rows[0].kind,
+        ).toBe('integer');
+        const inInts = new Set(ints.map((row) => row.id));
+        const expectedAll = ordered
+          .filter((row) => !inInts.has(row.id))
+          .map((row) => row.id);
+        for (const walker of [
+          full,
+          new IngestionService({
+            ...options,
+            db: counted,
+            cursorKey: 'k'.repeat(32),
+          }),
+        ]) {
+          const walked: string[] = [];
+          let at: string | undefined;
+          let calls = 0;
+          do {
+            const page = await walker.listItemsPage({ limit: 100, cursor: at });
+            walked.push(...ids(page));
+            expect(page.nextCursor).not.toBe(at);
+            at = page.nextCursor;
+            calls++;
+            expect(calls).toBeLessThan(40);
+          } while (at);
+          expect(walked).toEqual(expectedAll);
+          expect((await walker.listItems()).map((item) => item.id)).toEqual(
+            expectedAll,
+          );
+        }
+        for (const row of ints) await setTime(row.id, row.receivedAt);
       }
       // A parseable but non-canonical receipt time between two canonical
       // neighbours (no milliseconds on SQLite, a sub-millisecond part on
@@ -1716,6 +1807,36 @@ export function foundationSuite(
           step = page.nextCursor;
         }
         expect(stepped).toEqual(rest.slice(0, 15).map((row) => row.id));
+        // A sealed cursor that stops on the non-canonical row has the same
+        // length as one that stops on a canonical row, and two seals of the
+        // same position differ (a fresh nonce per seal).
+        const sealedOdd = new IngestionService({
+          ...options,
+          db: counted,
+          cursorKey: 'k'.repeat(32),
+          authorize: async (input) =>
+            isSecret(input.capturedCeiling) ? false : options.authorize(input),
+        });
+        const oddStop = await sealedOdd.listItemsPage({
+          limit: 20,
+          scanLimit: 8,
+        });
+        expect(ids(oddStop)).toEqual(rest.slice(0, 7).map((row) => row.id));
+        const canonicalStop = (await sealedOdd.listItemsPage({ limit: 1 }))
+          .nextCursor;
+        const again = (await sealedOdd.listItemsPage({ limit: 1 })).nextCursor;
+        expect(String(oddStop.nextCursor).length).toBe(
+          String(canonicalStop).length,
+        );
+        expect(again).not.toBe(canonicalStop);
+        expect(
+          ids(
+            await sealedOdd.listItemsPage({
+              limit: 1,
+              cursor: oddStop.nextCursor,
+            }),
+          ),
+        ).toEqual([rest[7].id]);
         await db.query(
           'UPDATE intake_items SET created_at=? WHERE id=?',
           odd.receivedAt,
@@ -1863,10 +1984,16 @@ export function foundationSuite(
         await expect(
           new IngestionService(nobodyOptions).listItemsPage(),
         ).rejects.toThrow(/^Intake scan limit$/);
+        // The deprecated array API follows the internal scan position, so an
+        // actor who can read nothing gets an empty list, as on main.
+        expect(await new IngestionService(nobodyOptions).listItems()).toEqual(
+          [],
+        );
         const nobody = new IngestionService({
           ...nobodyOptions,
           cursorKey: key,
         });
+        expect(await nobody.listItems()).toEqual([]);
         const firstScan = await nobody.listItemsPage();
         expect(firstScan.items).toEqual([]);
         expect(firstScan.scanned).toBe(1000);
@@ -1914,7 +2041,9 @@ export function foundationSuite(
       expect(short).toBe(true);
       expect(calls).toBeGreaterThanOrEqual(2);
       expect(found).toEqual(hidden.map((row) => row.id));
-    });
+      // 1500 seeded rows, every state filter walked to the end and both
+      // cursor modes: well past the 30 s default on a loaded runner.
+    }, 300_000);
     it('denies cross-tenant, cross-confidential and revoked access at reads and mutations', async () => {
       const id = await accepted();
       const evidence = (await service.getEvidence(id))[0];

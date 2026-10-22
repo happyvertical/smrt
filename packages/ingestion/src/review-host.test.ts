@@ -165,6 +165,7 @@ describe('published review host projection', () => {
       [0, 1],
       [2.7, 2],
       [Number.NaN, 20],
+      [Number.POSITIVE_INFINITY, 100],
     ] as const) {
       f.service.listItemsPage.mockClear();
       await f.host.list({ limit: requested });

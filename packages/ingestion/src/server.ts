@@ -325,6 +325,18 @@ interface ItemPosition {
   key: string;
   id: string;
 }
+/** Sealed cursor plaintext size; every sealed cursor has the same length. */
+const SEALED_CURSOR_BYTES = 256;
+function samePosition(a: ItemPosition, b: ItemPosition): boolean {
+  return a.key === b.key && a.id === b.id;
+}
+/** Whether a scan position fits the fixed sealed-cursor plaintext. */
+function sealable(position: ItemPosition): boolean {
+  return (
+    Buffer.byteLength(JSON.stringify([position.key, position.id])) <=
+    SEALED_CURSOR_BYTES
+  );
+}
 /** Opaque (received-at, id) continuation; never a bare id, which is not ordered. */
 function encodeItemCursor(receivedAt: string, id: string): string {
   return Buffer.from(JSON.stringify([receivedAt, id])).toString('base64url');
@@ -1295,16 +1307,15 @@ export class IngestionService {
   /**
    * One authorized inbox page, newest receipt first with the id as tiebreak.
    * Tenant, confidential scope, retention and the id restriction run in the
-   * query; the `state` filter is applied to fetched batches, so every filter
-   * is bounded by the scan limit (default ITEM_SCAN_CEILING). Authority is
-   * rechecked at two levels: the host `authorize('read')` once per distinct
-   * captured ceiling, and the execution read gate once per distinct
-   * (item, handler) bound by a scanned row that passed the first. Rows
-   * failing either are skipped without disclosure and the page refills.
-   * Without a `cursorKey` every cursor names a returned row; with one, all
-   * cursors are sealed and a budget-stopped page may resume past unreadable
-   * rows. `scanned` is for trusted host accounting and must not be sent to
-   * clients.
+   * query; rows are authorized before the `state` filter is applied to the
+   * fetched batch, so every filter is bounded by the scan limit (default
+   * ITEM_SCAN_CEILING). Authority is rechecked at two levels: the host
+   * `authorize('read')` once per distinct captured ceiling, and the execution
+   * read gate once per distinct (item, handler) bound by a scanned row that
+   * passed the first. Without a `cursorKey` every cursor names a row the
+   * actor can read; with one, all cursors are sealed and a budget-stopped
+   * page may resume past rows the actor cannot read. `scanned` is for trusted
+   * host accounting and must not be sent to clients.
    */
   async listItemsPage(input: ListItemsInput = {}): Promise<IntakeItemPage> {
     const limit = input.limit ?? ITEM_PAGE_DEFAULT;
@@ -1323,42 +1334,98 @@ export class IngestionService {
           input.scanLimit > ITEM_SCAN_CEILING))
     )
       throw new Error('Invalid item page');
-    const scanCeiling = input.scanLimit ?? ITEM_SCAN_CEILING;
     if (input.itemIds && !input.itemIds.length)
       return { items: [], scanned: 0 };
-    // `scanFrom` is the exact scan position inside this call, including rows
-    // the actor may not read and rows whose stored receipt time is not the
-    // canonical form; it leaves the service only sealed. `lastReturned` is
-    // the only position an unsealed cursor may name.
-    let scanFrom: ItemPosition | undefined = input.cursor
-      ? this.decodeCursor(input.cursor)
-      : undefined;
-    let lastReturned: ItemPosition | undefined;
+    const start = input.cursor ? this.decodeCursor(input.cursor) : undefined;
+    const scan = await this.scanItems(
+      input,
+      limit,
+      input.scanLimit ?? ITEM_SCAN_CEILING,
+      start,
+    );
+    const items = scan.items.map(({ item, state, position }) => ({
+      item,
+      state,
+      cursor: this.encodeCursor(position),
+    }));
+    if (scan.done) return { items, scanned: scan.scanned };
+    const last = scan.items.at(-1)?.position;
+    if (scan.full && last)
+      return {
+        items,
+        scanned: scan.scanned,
+        nextCursor: this.encodeCursor(last),
+      };
+    // The budget ran out before the page filled. A sealed cursor may resume
+    // past rows the actor cannot read; an unsealed one may only name a row
+    // the actor can read. With no such position, or none past the input, the
+    // call fails closed rather than return a cursor that cannot progress.
+    const position = this.cursorKey ? scan.scanFrom : scan.lastReadable;
+    if (!position || (start && samePosition(position, start)))
+      throw new IntakeScanLimitError();
+    return {
+      items,
+      scanned: scan.scanned,
+      nextCursor: this.encodeCursor(position),
+    };
+  }
+  /**
+   * The bounded page scan behind `listItemsPage` and `listItems`. It returns
+   * the rows to list with their positions, the exact scan position reached
+   * (`scanFrom`, which may be a row the actor cannot read and must never
+   * leave the service unsealed), and the last row the actor can read
+   * (`lastReadable`, which may not match the `state` filter).
+   */
+  private async scanItems(
+    input: Pick<ListItemsInput, 'state' | 'itemIds'>,
+    limit: number,
+    scanCeiling: number,
+    start: ItemPosition | undefined,
+  ): Promise<{
+    items: Array<{
+      item: IntakeItemDTO;
+      state: InboxState;
+      position: ItemPosition;
+    }>;
+    scanned: number;
+    done: boolean;
+    full: boolean;
+    scanFrom?: ItemPosition;
+    lastReadable?: ItemPosition;
+  }> {
+    let scanFrom = start;
+    let lastReadable: ItemPosition | undefined;
     const now = this.now().toISOString();
     const allowed = this.ceilingGate();
     const handlers = this.handlerGate();
-    const items: IntakeItemPage['items'] = [];
+    const items: Array<{
+      item: IntakeItemDTO;
+      state: InboxState;
+      position: ItemPosition;
+    }> = [];
     let examined = 0;
     // SQLite without planner statistics prefers the expiry index plus a sort,
     // which reads the whole scope per page; pin the ordering index. An id
     // restriction is left to the planner, which then looks ids up directly.
+    // A non-text receipt value (an integer, say) sorts after every text value
+    // on SQLite and always satisfies `created_at < ?`, so the scan could
+    // never move past it; such rows are service-foreign and excluded.
+    const sqlite = this.engine === 'sqlite';
     const pinned =
-      this.engine === 'sqlite' && !input.itemIds
-        ? ' INDEXED BY intake_items_received_idx'
-        : '';
+      sqlite && !input.itemIds ? ' INDEXED BY intake_items_received_idx' : '';
+    const textOnly = sqlite ? " AND typeof(i.created_at) = 'text'" : '';
     // The exact stored receipt value (for the scan anchor) and, on
     // PostgreSQL, whether it has a sub-millisecond part a cursor cannot carry.
-    const receipt =
-      this.engine === 'sqlite'
-        ? 'i.created_at AS receipt_raw, 1 AS receipt_ms'
-        : "i.created_at::text AS receipt_raw, (i.created_at = date_trunc('milliseconds', i.created_at)) AS receipt_ms";
+    const receipt = sqlite
+      ? 'i.created_at AS receipt_raw, 1 AS receipt_ms'
+      : "i.created_at::text AS receipt_raw, (i.created_at = date_trunc('milliseconds', i.created_at)) AS receipt_ms";
     for (;;) {
       const params: unknown[] = [
         this.scope.tenantId,
         this.scope.confidentialScopeId,
         now,
       ];
-      let where = '';
+      let where = textOnly;
       if (scanFrom) {
         where += ' AND (i.created_at < ? OR (i.created_at = ? AND i.id < ?))';
         params.push(scanFrom.key, scanFrom.key, scanFrom.id);
@@ -1385,14 +1452,12 @@ export class IngestionService {
       ).rows as Row[];
       const more = rows.length > batch;
       const candidates = rows.slice(0, batch);
-      const wantedState = (row: Row) =>
-        !input.state || row.inbox_state === input.state;
-      // Item-level authority first, once per distinct ceiling, only for rows
-      // in the requested state. A row whose payload cannot be read is
-      // skipped, never fatal.
+      // Authority first, for every fetched row, so that a readable row the
+      // state filter excludes may still anchor the cursor. Item-level
+      // authority runs once per distinct ceiling; a row whose payload cannot
+      // be read is skipped, never fatal.
       const passed = new Set<Row>();
       for (const row of candidates) {
-        if (!wantedState(row)) continue;
         try {
           if (await allowed(object(row.data))) passed.add(row);
         } catch {
@@ -1416,39 +1481,34 @@ export class IngestionService {
         const receivedAt = receiptTime(row);
         if (receivedAt !== undefined)
           scanFrom = { key: receivedAt, id: String(row.id) };
-        else if (typeof row.receipt_raw === 'string')
-          scanFrom = { key: row.receipt_raw, id: String(row.id) };
+        else if (typeof row.receipt_raw === 'string') {
+          const raw = { key: row.receipt_raw, id: String(row.id) };
+          if (sealable(raw)) scanFrom = raw;
+        }
         if (receivedAt === undefined || !passed.has(row)) continue;
         if (Number(row.action_count) > 0 && !(await handlers.readable(row)))
           continue;
-        lastReturned = { key: receivedAt, id: String(row.id) };
+        const position = { key: receivedAt, id: String(row.id) };
+        lastReadable = position;
+        if (input.state && row.inbox_state !== input.state) continue;
         items.push({
           item: this.itemDTO(row),
           state: String(row.inbox_state) as InboxState,
-          cursor: this.encodeCursor(lastReturned),
+          position,
         });
         if (items.length === limit) break;
       }
       const remaining = more || consumed < candidates.length;
-      if (!remaining) return { items, scanned: examined };
-      if (items.length === limit && lastReturned)
+      const full = items.length === limit;
+      if (!remaining || full || examined >= scanCeiling)
         return {
           items,
           scanned: examined,
-          nextCursor: this.encodeCursor(lastReturned),
+          done: !remaining,
+          full,
+          scanFrom,
+          lastReadable,
         };
-      if (examined >= scanCeiling) {
-        // The budget ran out before the page filled. A sealed cursor may
-        // resume past what was skipped; an unsealed one may only name a row
-        // this call returned, and with none it fails closed.
-        const position = this.cursorKey ? scanFrom : lastReturned;
-        if (!position) throw new IntakeScanLimitError();
-        return {
-          items,
-          scanned: examined,
-          nextCursor: this.encodeCursor(position),
-        };
-      }
     }
   }
   /** Associated data that binds a sealed cursor to this authenticated scope. */
@@ -1463,13 +1523,17 @@ export class IngestionService {
   }
   private encodeCursor(position: ItemPosition): string {
     if (!this.cursorKey) return encodeItemCursor(position.key, position.id);
+    // A fixed-size plaintext, so a sealed cursor's length says nothing about
+    // whether it stopped on a canonical or a service-foreign row.
+    const body = Buffer.alloc(SEALED_CURSOR_BYTES, 0x20);
+    const json = Buffer.from(JSON.stringify([position.key, position.id]));
+    if (json.length > SEALED_CURSOR_BYTES)
+      throw new Error('Cursor position too long');
+    json.copy(body);
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.cursorKey, iv);
     cipher.setAAD(this.cursorScope());
-    const sealed = Buffer.concat([
-      cipher.update(JSON.stringify([position.key, position.id]), 'utf8'),
-      cipher.final(),
-    ]);
+    const sealed = Buffer.concat([cipher.update(body), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), sealed]).toString(
       'base64url',
     );
@@ -1481,7 +1545,7 @@ export class IngestionService {
     }
     try {
       const bytes = Buffer.from(cursor, 'base64url');
-      if (bytes.length < 29) throw new Error('short');
+      if (bytes.length !== 28 + SEALED_CURSOR_BYTES) throw new Error('size');
       const decipher = createDecipheriv(
         'aes-256-gcm',
         this.cursorKey,
@@ -1500,7 +1564,6 @@ export class IngestionService {
         parsed.length !== 2 ||
         typeof parsed[0] !== 'string' ||
         !parsed[0] ||
-        parsed[0].length > 64 ||
         !isIntakeId(parsed[1])
       )
         throw new Error('shape');
@@ -1514,22 +1577,26 @@ export class IngestionService {
    * @deprecated Use `listItemsPage`. Kept so callers of the array-returning
    * API keep working. It walks every page, so its cost grows with the scope,
    * including one execution authorization per (item, handler) across the
-   * whole scope, and without a `cursorKey` it throws `IntakeScanLimitError`
-   * on a run of unreadable or non-canonical rows longer than the page scan
-   * limit. Items are gated exactly as on a page.
+   * whole scope. It follows the internal scan position, which never leaves
+   * the service, so runs of rows the actor cannot read never stop it. Items
+   * are gated exactly as on a page.
    */
   async listItems(): Promise<IntakeItemDTO[]> {
     const all: IntakeItemDTO[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await this.listItemsPage({
-        limit: ITEM_PAGE_CEILING,
-        cursor,
-      });
-      all.push(...page.items.map(({ item }) => item));
-      cursor = page.nextCursor;
-    } while (cursor);
-    return all;
+    let from: ItemPosition | undefined;
+    for (;;) {
+      const scan = await this.scanItems(
+        {},
+        ITEM_PAGE_CEILING,
+        ITEM_SCAN_CEILING,
+        from,
+      );
+      all.push(...scan.items.map(({ item }) => item));
+      if (scan.done) return all;
+      if (!scan.scanFrom || (from && samePosition(scan.scanFrom, from)))
+        throw new Error('Intake list made no progress');
+      from = scan.scanFrom;
+    }
   }
   /** One read authorization per distinct captured ceiling for a page of rows. */
   private ceilingGate(): (data: Row) => Promise<boolean> {

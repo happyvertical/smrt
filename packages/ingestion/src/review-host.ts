@@ -73,9 +73,9 @@ export function createIntakeReviewHost(
     async list(input) {
       // The contract caps `limit` at the service maximum rather than failing.
       const requested = input.limit ?? 20;
-      const limit = Number.isFinite(requested)
-        ? Math.min(ITEM_PAGE_CEILING, Math.max(1, Math.floor(requested)))
-        : 20;
+      const limit = Number.isNaN(requested)
+        ? 20
+        : Math.min(ITEM_PAGE_CEILING, Math.max(1, Math.floor(requested)));
       let itemIds: string[] | undefined;
       if (input.assigneeId && options.assignedItemIds) {
         // Junk ids from the host narrow nothing and must not fail the list.

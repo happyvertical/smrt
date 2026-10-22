@@ -181,10 +181,13 @@ size to 100 rows per query, so a fully denied scope costs about a dozen page
 reads and as many binding reads per call. One service call examines at most
 `ITEM_SCAN_CEILING` (1000) rows, or the caller's smaller `scanLimit`, and
 reports the count as `scanned`; when a mostly-denied scope reaches the ceiling
-the page comes back short with a `nextCursor`. The `state` filter is applied
-to fetched batches, so it is bounded by the same scan limit: a rare state
-yields short pages with a cursor rather than an unbounded walk inside one
-query. The host `list` passes its remaining budget as `scanLimit`, so the
+the page comes back short with a `nextCursor`. Rows are authorized first and
+the `state` filter is then applied to the fetched batch, so it is bounded by
+the same scan limit: a rare state yields short pages with a cursor rather than
+an unbounded walk inside one query. A row the actor can read whose state does
+not match discloses nothing and may anchor the cursor, so a filter with no
+match among the next 1000 rows returns an empty page with a cursor and still
+pages to the end. The host `list` passes its remaining budget as `scanLimit`, so the
 rows scanned across the service calls of one host call never exceed 1000: a
 short service page with a cursor, or an exhausted budget while filtering by
 assignee, ends the host call with the same cursor and the caller continues.
@@ -193,19 +196,22 @@ millisecond ISO receipt time the service stores. A row whose stored receipt
 time is not that form (on SQLite anything but `YYYY-MM-DDTHH:MM:SS.mmmZ`,
 including a parseable value without milliseconds or with an offset; on
 PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
-actor's access, and counts toward the scan. Within a call the scan moves past
+actor's access, and counts toward the scan. On SQLite a non-text stored value
+(an integer, say) is excluded by the page query itself, because it sorts after
+every text value and the scan could never move past it. Within a call the scan moves past
 it by its exact stored value, and a returned cursor names the last canonical
-row before it. A call that reads nothing but such rows (a run at least as long
-as its scan limit, at most 1000) and returns nothing fails closed with
-`IntakeScanLimitError` unless a `cursorKey` is configured, as above. The host
+row before it. A call that finds no readable row within its scan limit (at
+most 1000) fails closed with `IntakeScanLimitError` unless a `cursorKey` is
+configured, as below. The host
 `list` returns what earlier service calls collected, with their cursor, when
 a later call fails that way.
 
 `listItems()` is deprecated and kept only for callers of the array-returning
 API. It walks every page, so its cost grows with the scope, including one
-execution authorization per (item, handler) across the whole scope, and it may
-throw `IntakeScanLimitError` on a run of unreadable or non-canonical rows
-longer than the page scan limit when no `cursorKey` is configured. Items are newest-first and gated exactly as on a page.
+execution authorization per (item, handler) across the whole scope. It follows
+the internal scan position, which never leaves the service, so runs of rows
+the actor cannot read never stop it and it returns `[]` where nothing is
+readable. Items are newest-first and gated exactly as on a page.
 
 The page's inbox state is the durable projection of the saved action journal
 and processing state, computed once per scanned row inside the page query;
@@ -220,14 +226,18 @@ Listing does not load original bytes.
 
 Cursors never disclose an unreadable row. Without a `cursorKey` in the
 service options, every cursor (each row's and `nextCursor`) names a row the
-call returned; a page that spends its scan limit before filling hands back the
-last returned row, and one that returned nothing fails closed with
-`IntakeScanLimitError` (`Intake scan limit`, no id or time). A run of
-unreadable rows at least as long as the scan limit therefore stops an unkeyed
-walk there. With a `cursorKey` (a server secret of at least 32 bytes), every
+actor can read; a page that spends its scan limit before filling hands back
+the last such row, and one that found none fails closed with
+`IntakeScanLimitError` (`Intake scan limit`, no id or time). A run of rows the
+actor cannot read (refused by the captured ceiling or the execution gate, or
+stored with a non-canonical receipt time) at least as long as the scan limit
+therefore stops an unkeyed walk there; readable rows that the `state` filter
+excludes never count toward such a run. With a `cursorKey` (a server secret of at least 32 bytes), every
 cursor is sealed with AES-256-GCM, bound to the tenant, confidential scope and
 actor, and a budget-stopped page returns a sealed position past what it
-skipped, so the walk always progresses. `scanned` is for trusted host
+skipped, so the walk always progresses. Sealed cursors have a fixed length
+(the plaintext is padded to 256 bytes) and a fresh nonce per seal, so neither
+their length nor their bytes reveal anything about the stop row. `scanned` is for trusted host
 accounting and must not be sent to clients; a short page with a cursor tells
 a caller only that unlisted rows exist, never which.
 
