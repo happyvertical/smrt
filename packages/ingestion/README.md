@@ -295,7 +295,12 @@ immutable `stage: 'extract'` revision claimed under a fenced lease and
 extracted with the built-in UTF-8 extractor, then `prepareGeneration` and the
 `stage: 'interpret'` revision with the same analysis lease, catalog-live
 checks, provenance and failure categories as `generateProposals`. A retry with
-the same `requestId` replays the immutable revisions. The result reports each
+the same `requestId` replays the immutable revisions, including when two
+identical calls race. The interpretation is appended under the item lock only
+while its pinned extraction is still the latest revision; if another request
+reprocessed the item meanwhile it fails with `GenerationSourceStaleError` (the
+general latest-extraction check every interpretation append runs, #4228) or,
+for a pin whose extraction attempt was replaced, `Generation source changed`. The result reports each
 stage's attempt and safe error and, when generation completed, the authorized
 `getCompletedAnalysis` snapshot. Inline is for send-triggered suggestions that
 must not depend on the scheduler; it is not a bypass of review or execution.
