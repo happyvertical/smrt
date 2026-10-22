@@ -149,7 +149,9 @@ the host projects them as `instruction.failure` and `instruction.binding`, and
 **interpretation** completed and nothing is queued or running, so the reviewer
 can retry or change the instruction after either stage fails. A completed
 extraction whose own interpretation failed belongs to the failed attempt, not a
-newer result. A retry from an older anchor carries forward the newest human
+newer result; a completed extraction whose interpretation has **not been
+appended yet** is in flight (the host is between stages) and is refused with
+`Stale reviewer instruction`, so a second reviewer cannot pre-empt it. A retry from an older anchor carries forward the newest human
 split recorded after it (corrections chain through each extraction
 configuration), so a split followed by a failed stage is never silently
 dropped. All of this runs under the item lock in the same transaction as the
@@ -173,6 +175,11 @@ superseded one as stale. An explicit host denial on a poll tick fails closed at
 once; a thrown tick is treated as transient (view and drafts kept, a
 "Couldn't refresh; retrying." note, backoff continues), but because hosts may
 also throw for revoked access, three consecutive thrown ticks fail closed.
+**Hosts must signal revocation by returning `availability: 'revoked'`** (or
+another non-`available` state) from `load`, not by throwing: a returned denial
+clears the view on that tick, while a host that throws on revocation leaves the
+already-displayed content visible until the third thrown tick (about 10 s at the
+default interval and backoff) before the view fails closed.
 Split drafts survive a refresh only when the reviewer edited them. A failed stage shows its safe category with the form
 still available. There is no
 streaming channel; status is read through the existing item/analysis APIs. The

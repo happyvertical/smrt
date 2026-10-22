@@ -59,7 +59,14 @@ text never counts against the judgment's write budget (`feedback.maxBytes` /
 `policy.maxBytes`) and cannot make `recordFeedback` fail with `Feedback
 limit`. `retrieve` re-verifies the source record and joins the text, returning
 `{id, digest, text}`; a stored reference that no longer matches the source's
-record excludes the example. It is returned as part of the example so comparable later items see the guidance
+record excludes the example. Because one long instruction joined at read time
+could otherwise push every selection that ranks it over budget and deny
+generation scope-wide, `recordFeedback` also builds that single joined example
+exactly as `retrieve` would and refuses with `Feedback instruction exceeds
+retrieval budget` (nothing is written) when it alone exceeds
+`min(feedback.maxBytes, handler policy.maxBytes)`. An example that fits exactly
+records and retrieves; a receiving item with a narrower budget still fails
+closed as below. It is returned as part of the example so comparable later items see the guidance
 that produced the judged suggestion. It is example content only: it does not
 transfer to the receiving generation's configuration or prompt section, and it
 expands no catalog, candidate, permission or automation eligibility. **Read-side budget

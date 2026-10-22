@@ -3933,6 +3933,202 @@ export function proposalSuite(
         text: 'Two documents; file both.',
       });
     });
+    it('refuses an instruction retry while the later reinterpretation is queued, running, between stages or interpreting', async () => {
+      chooseCreate();
+      const input = await generate();
+      const recorded = await service.recordReviewerInstruction({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        text: 'First instruction.',
+        requestId: 'in-flight-first',
+      });
+      const retry = (requestId: string, expectedRevision: number) =>
+        service.recordReviewerInstruction({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision,
+          text: 'Competing retry.',
+          requestId,
+        });
+      // Queued extraction.
+      await expect(retry('while-queued', recorded.revision)).rejects.toThrow(
+        'Stale reviewer instruction',
+      );
+      // Running extraction.
+      const extracting = await service.claimAnalysis(
+        input.itemId,
+        recorded.revision,
+        'extractor',
+      );
+      if (!extracting) throw new Error('lease required');
+      await expect(retry('while-running', recorded.revision)).rejects.toThrow(
+        'Stale reviewer instruction',
+      );
+      // Extraction completed, interpretation not yet appended: still in flight.
+      await extractAnalysis(
+        service,
+        extracting,
+        { extract: (request) => extractWithProviders(request, {}) },
+        { configurationRevision: '1', limits: extractionLimits },
+      );
+      expect((await service.getItem(input.itemId)).processingState).toBe(
+        'completed',
+      );
+      await expect(retry('between-stages', recorded.revision)).rejects.toThrow(
+        'Stale reviewer instruction',
+      );
+      // Interpretation appended and running.
+      const interpreting = await generation({
+        itemId: input.itemId,
+        attemptId: extracting.attemptId,
+        lease: extracting,
+      });
+      await expect(
+        retry('while-interpreting', interpreting.lease.revision),
+      ).rejects.toThrow('Stale reviewer instruction');
+      expect(await service.listReviewerInstructions(input.itemId)).toEqual([
+        recorded.instruction,
+      ]);
+      // Only once that interpretation has failed is the retry accepted.
+      await service.failAnalysis(interpreting.lease, 'unavailable');
+      const accepted = await retry(
+        'after-failure',
+        interpreting.lease.revision,
+      );
+      expect(accepted.revision).toBe(interpreting.lease.revision + 1);
+      expect(accepted.instruction.supersedesId).toBe(recorded.instruction.id);
+    });
+    it('refuses at write time a judgment whose joined instruction cannot fit the read budget and excludes mismatched stored references', async () => {
+      enableFeedback();
+      const phrase = 'Please draft meeting minutes with retained evidence';
+      // Train without feedback so changing the byte limit tests accounting,
+      // not inherited selection compatibility.
+      const feedbackConfiguration = options.feedback;
+      delete options.feedback;
+      const training = await generate(await source(100000, false, phrase));
+      const recorded = await service.recordReviewerInstruction({
+        itemId: training.itemId,
+        attemptId: training.lease.attemptId,
+        expectedRevision: training.lease.revision,
+        text: `File as minutes. ${'Never raise an invoice. '.repeat(160)}`,
+        requestId: 'write-budget-instruction',
+      });
+      const guided = await reextract(training.itemId, recorded.revision);
+      await service.generateProposals(guided.lease);
+      const [preview] = await service.previewGeneratedProposals({
+        itemId: training.itemId,
+        attemptId: guided.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'feedback-intention',
+            expectedRevision: 0,
+            requestId: 'write-budget-preview',
+          },
+        ],
+      });
+      if (preview.kind !== 'operation') throw new Error('operation required');
+      const binding = {
+        itemId: training.itemId,
+        actionId: preview.review.actionId,
+        expectedRevision: preview.review.revision,
+        expectedReviewVersion: preview.review.reviewVersion,
+        bindingHash: preview.review.bindingHash,
+      };
+      options.feedback = feedbackConfiguration;
+      // The stored row fits (it holds only the reference), but the joined
+      // example (~3.9 KB of instruction text alone) does not.
+      options.feedback!.maxBytes = 3500;
+      await expect(
+        service.recordFeedback({
+          ...binding,
+          judgment: 'correct',
+          requestId: 'too-large',
+        }),
+      ).rejects.toThrow('Feedback instruction exceeds retrieval budget');
+      expect(
+        (await db.query('SELECT id FROM intake_feedback')).rows,
+      ).toHaveLength(0);
+      options.feedback!.maxBytes = 60000;
+      const first = await service.recordFeedback({
+        ...binding,
+        judgment: 'correct',
+        requestId: 'measure',
+      });
+      const receiver = await source(100000, false, phrase),
+        query = { itemId: receiver.itemId, query: phrase };
+      const measured = await service.retrieveFeedback(query);
+      expect(measured.examples).toHaveLength(1);
+      expect(measured.examples[0].instruction?.text.length).toBeGreaterThan(
+        3800,
+      );
+      const size = Buffer.byteLength(JSON.stringify(measured));
+      const [stored] = (
+        await db.query('SELECT data FROM intake_feedback WHERE id=?', first.id)
+      ).rows;
+      const rowBytes = Buffer.byteLength(
+        typeof stored.data === 'string'
+          ? stored.data
+          : JSON.stringify(stored.data),
+      );
+      // The refusal below is the instruction guard, not the row-size check.
+      expect(rowBytes).toBeLessThan(3500);
+      expect(size).toBeGreaterThan(3500);
+      // Exactly fitting: a same-size successor records and retrieves at size.
+      options.feedback!.maxBytes = size;
+      const fitting = await service.recordFeedback({
+        ...binding,
+        judgment: 'correct',
+        supersedesId: first.id,
+        requestId: 'fits',
+      });
+      const exact = await service.retrieveFeedback(query);
+      expect(exact.examples.map((example) => example.feedbackId)).toEqual([
+        fitting.id,
+      ]);
+      expect(Buffer.byteLength(JSON.stringify(exact))).toBe(size);
+      // One byte short is refused at write time, before it can poison reads.
+      options.feedback!.maxBytes = size - 1;
+      await expect(
+        service.recordFeedback({
+          ...binding,
+          judgment: 'correct',
+          supersedesId: fitting.id,
+          requestId: 'one-short',
+        }),
+      ).rejects.toThrow('Feedback instruction exceeds retrieval budget');
+      options.feedback!.maxBytes = 60000;
+      // A stored reference that no longer names the source record is excluded,
+      // even when its own integrity digest is recomputed.
+      const [row] = (
+        await db.query(
+          'SELECT data FROM intake_feedback WHERE id=?',
+          fitting.id,
+        )
+      ).rows;
+      const original =
+        typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      const rewrite = async (instruction: unknown) => {
+        const { digest: _digest, ...body } = structuredClone(original);
+        body.instruction = instruction;
+        await db.query(
+          'UPDATE intake_feedback SET data=? WHERE id=?',
+          JSON.stringify({ ...body, digest: intakeBindingDigest(body) }),
+          fitting.id,
+        );
+      };
+      await rewrite({ ...original.instruction, digest: 'f'.repeat(64) });
+      expect((await service.retrieveFeedback(query)).examples).toEqual([]);
+      await rewrite({ ...original.instruction, id: randomUUID() });
+      expect((await service.retrieveFeedback(query)).examples).toEqual([]);
+      await rewrite(original.instruction);
+      expect(
+        (await service.retrieveFeedback(query)).examples.map(
+          (example) => example.feedbackId,
+        ),
+      ).toEqual([fitting.id]);
+    });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();
       const forged = {

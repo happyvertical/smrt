@@ -145,8 +145,13 @@ before provider disclosure; replay of a superseded request ID, a concurrent
 double record (exactly one wins) and retry against the latest completed
 generation after a failed re-extraction, after a failed **interpretation**
 (old anchor rejected once a newer interpretation completes), and with a split
-recorded after the anchor carried into the retry; judgments storing only the
-instruction reference with retrieval joining the text; and carried instruction text being
+recorded after the anchor carried into the retry; retries refused while the
+later work is queued, running, between extraction and interpretation, or
+interpreting, then accepted once interpretation fails; judgments storing only the
+instruction reference with retrieval joining the text, a write-time refusal when
+the joined example alone exceeds the read budget (nothing written), an exactly
+fitting judgment recording and retrieving at its exact size, one byte short
+refused, and re-signed stored references with a wrong digest or id excluded; and carried instruction text being
 counted in the exact feedback byte budget, with one byte short still failing
 closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
 covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
