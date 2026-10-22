@@ -12,6 +12,11 @@ import { resolvePlaybook } from '@happyvertical/smrt-playbooks';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
 import type {
+  IntakeItemDTO,
+  OwnProposalsInput,
+  OwnProposalsPage,
+} from './dto.js';
+import type {
   ActionResult,
   ExecutionAccessInput,
   ExecutionCeiling,
@@ -439,6 +444,15 @@ export class IntakeExecutionService {
     if (
       operation === 'review' &&
       (!current.reviewer || !policy.reviewers.includes(this.scope.actorId))
+    )
+      throw new Error('Intake unavailable');
+    // Submitter decisions need the server-recorded receipt actor, a live host
+    // grant and the application policy opt-in; source metadata supplies none.
+    if (
+      operation === 'review_own' &&
+      (current.submitter !== true ||
+        !policy.submitterReview ||
+        item.submitter_id !== this.scope.actorId)
     )
       throw new Error('Intake unavailable');
     const deadline = Math.min(
@@ -1627,7 +1641,10 @@ export class IntakeExecutionService {
       data: canonical(data),
     });
   }
-  async submitDecision(input: ReviewInput): Promise<ProposalReview> {
+  async submitDecision(
+    input: ReviewInput,
+    mode: 'review' | 'review_own' = 'review',
+  ): Promise<ProposalReview> {
     const frozen = JSON.parse(canonical(input)) as ReviewInput;
     id(frozen.requestId);
     if (
@@ -1635,14 +1652,13 @@ export class IntakeExecutionService {
       (frozen.reason?.length ?? 0) > 2048
     )
       throw new Error('Invalid decision');
+    // A submitter confirms or declines the exact previewed effect; corrections
+    // publish new arguments and stay with the reviewer surface.
+    if (mode === 'review_own' && frozen.decision === 'correct')
+      throw new Error('Invalid decision');
     return this.tx(async (db) => {
       const bound = await this.bound(db, frozen.actionId, true);
-      const { policy } = await this.access(
-        db,
-        bound.item,
-        bound.handler,
-        'review',
-      );
+      const { policy } = await this.access(db, bound.item, bound.handler, mode);
       await this.feedbackLineage(db, bound);
       const decisions = await this.rows(
         db,
@@ -2965,6 +2981,58 @@ export class IntakeExecutionService {
         break;
     }
     return results;
+  }
+  /** The recorded submitter decides their own proposal under `review_own`
+   * authority. Apply remains the ordinary once-only path under live grants. */
+  async submitOwnDecision(input: ReviewInput): Promise<ProposalReview> {
+    return this.submitDecision(input, 'review_own');
+  }
+  /** Bounded listing of this actor's own active submissions with their saved
+   * reviews. The submitter column is the authenticated receipt actor recorded by
+   * the server; every page reloads current item/handler/target authority. */
+  async listOwnProposals(
+    input: OwnProposalsInput = {},
+  ): Promise<OwnProposalsPage> {
+    const limit = input.limit ?? 20;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 50 ||
+      (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
+    )
+      throw new Error('Invalid review page');
+    const rows = (
+      await this.db.query(
+        `SELECT * FROM intake_items WHERE tenant_id=? AND confidential_scope_id=? AND submitter_id=? AND visibility='active' AND expires_at>?${input.cursor ? ' AND id>?' : ''} ORDER BY id LIMIT ?`,
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        this.scope.actorId,
+        this.now().toISOString(),
+        ...(input.cursor ? [input.cursor] : []),
+        limit + 1,
+      )
+    ).rows as Row[];
+    const items: OwnProposalsPage['items'] = [];
+    for (const row of rows.slice(0, limit)) {
+      const item: IntakeItemDTO = {
+        id: String(row.id),
+        receiptState: String(row.receipt_state),
+        processingState: String(row.processing_state),
+        analysisRevision: Number(row.analysis_revision),
+        cancelled: !!row.cancelled,
+        traceId: String(row.trace_id),
+      };
+      items.push({
+        item,
+        reviews: await this.listReviews(item.id, { limit: 50 }),
+      });
+    }
+    return {
+      items,
+      ...(rows.length > limit
+        ? { nextCursor: String(rows[limit - 1].id) }
+        : {}),
+    };
   }
 }
 
