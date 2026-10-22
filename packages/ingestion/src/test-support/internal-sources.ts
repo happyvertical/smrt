@@ -93,6 +93,8 @@ export function internalSourceSuite(
     let policyReviewers: string[];
     let deniedExecutionItems: Set<string>;
     let revokedReads: Set<string>;
+    let failingExecutionItems: Set<string>;
+    let onCapture: (() => void) | undefined;
     let generate: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     const scopes = ['private', 'shared'];
     const actors = ['sender', 'reviewer', 'other'];
@@ -105,6 +107,8 @@ export function internalSourceSuite(
       policyReviewers = ['reviewer'];
       deniedExecutionItems = new Set();
       revokedReads = new Set();
+      failingExecutionItems = new Set();
+      onCapture = undefined;
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
         if (!base) throw new Error('PostgreSQL required');
@@ -136,44 +140,48 @@ export function internalSourceSuite(
       };
       const execution: IntakeExecutionOptions = {
         handlers,
-        authorize: async ({ scope, itemId }) => ({
-          allowed:
-            allowed &&
-            !deniedExecutionItems.has(itemId) &&
-            scope.tenantId === tenant &&
-            scope.confidentialScopeId === 'private' &&
-            actors.includes(scope.actorId),
-          reviewer: scope.actorId === 'reviewer',
-          submitter: submitterGrant,
-          principalId: principal,
-          permissions: ['contents.create', 'contents.addAsset'],
-          mutationBoundary: 'serialized',
-          policy: [
-            {
-              version: 'app1',
-              handlers: handlers.map((handler) => handler.id),
-              operations: handlers.map((handler) =>
-                'model' in handler.operation
-                  ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
-                  : handler.operation.playbookKey,
-              ),
-              providers: ['fixture'],
-              reviewers: policyReviewers,
-              access: ['private'],
-              requireReview: true,
-              submitterReview: true,
-              maxBytes: 100000,
-              leaseMs: 1000,
-            },
-            {
-              version: 'tenant1',
-              ...(submitterPolicy === undefined
-                ? {}
-                : { submitterReview: submitterPolicy }),
-            },
-            { version: 'source1' },
-          ],
-        }),
+        authorize: async ({ scope, itemId }) => {
+          if (failingExecutionItems.has(itemId))
+            throw new Error('grant store offline');
+          return {
+            allowed:
+              allowed &&
+              !deniedExecutionItems.has(itemId) &&
+              scope.tenantId === tenant &&
+              scope.confidentialScopeId === 'private' &&
+              actors.includes(scope.actorId),
+            reviewer: scope.actorId === 'reviewer',
+            submitter: submitterGrant,
+            principalId: principal,
+            permissions: ['contents.create', 'contents.addAsset'],
+            mutationBoundary: 'serialized',
+            policy: [
+              {
+                version: 'app1',
+                handlers: handlers.map((handler) => handler.id),
+                operations: handlers.map((handler) =>
+                  'model' in handler.operation
+                    ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
+                    : handler.operation.playbookKey,
+                ),
+                providers: ['fixture'],
+                reviewers: policyReviewers,
+                access: ['private'],
+                requireReview: true,
+                submitterReview: true,
+                maxBytes: 100000,
+                leaseMs: 1000,
+              },
+              {
+                version: 'tenant1',
+                ...(submitterPolicy === undefined
+                  ? {}
+                  : { submitterReview: submitterPolicy }),
+              },
+              { version: 'source1' },
+            ],
+          };
+        },
         assertTarget: assertReferenceTarget,
       };
       generate = vi.fn(async (input) => ({
@@ -265,10 +273,14 @@ export function internalSourceSuite(
         maxScan: 100,
         maxBytes: 60000,
         minimumSimilarity: 0.2,
-        authorize: async ({ scope }) =>
-          allowed &&
-          scope.tenantId === tenant &&
-          scope.confidentialScopeId === 'private',
+        authorize: async ({ scope, operation }) => {
+          if (operation === 'capture') onCapture?.();
+          return (
+            allowed &&
+            scope.tenantId === tenant &&
+            scope.confidentialScopeId === 'private'
+          );
+        },
       };
       service = new IngestionService(options);
     }
@@ -535,6 +547,35 @@ export function internalSourceSuite(
             },
           ],
         },
+        ...[
+          { owner: 'mess\u0000age', id: 'x' },
+          { owner: 'message', id: 'x\ud800' },
+          { owner: 'message', id: 'x\u0000' },
+          { owner: 'message', id: 'x', version: 'v\u0000' },
+          { owner: 'message', id: 'x', version: 'v\udfff' },
+        ].map((reference) => ({
+          parts: [
+            {
+              partId: 'body',
+              reference,
+              snapshot: { text: 'hello' },
+            },
+          ],
+        })),
+        ...[
+          { kind: 'mess\ud800', id: 'x' },
+          { kind: 'message', id: 'x\u0000' },
+          { kind: 'message', id: 'x\udbff' },
+        ].map((owner) => ({
+          retention: {
+            kind: 'owner' as const,
+            owner,
+            version: 'chat-1',
+            expiresAt: new Date(clock.getTime() + 1000000),
+            replayUntil: new Date(clock.getTime() + 2000000),
+            acceptAfter: new Date(clock.getTime() - 1000),
+          },
+        })),
       ];
       for (const overrides of invalid)
         expect(
@@ -542,6 +583,21 @@ export function internalSourceSuite(
         ).toMatchObject({ kind: 'rejected', category: 'invalid' });
       expect(await count('SELECT COUNT(*) AS n FROM intake_items')).toBe(0);
       expect(await count('SELECT COUNT(*) AS n FROM intake_evidence')).toBe(0);
+      // Distinct malformed owners would collapse onto one PostgreSQL key; the
+      // owner hook refuses them instead of releasing the wrong receipts.
+      for (const id of ['x\ud800', 'x\udbff', 'x\u0000'])
+        await expect(
+          service.expireOwned({ kind: 'message', id }),
+        ).rejects.toThrow('Invalid intake owner');
+      await expect(
+        service.expireOwned({ kind: 'mess\udc00', id: 'x' }),
+      ).rejects.toThrow('Invalid intake owner');
+      const itemId = await accepted(message(randomUUID()));
+      for (const requestId of ['inline\u0000', 'inline\ud800'])
+        await expect(
+          service.interpretInline(itemId, { requestId, extraction }),
+        ).rejects.toThrow('Invalid intake identifier');
+      expect(await count('SELECT COUNT(*) AS n FROM intake_analyses')).toBe(0);
     });
 
     it('accepts a structured snapshot alongside a copied part and keeps the copy as a durable asset', async () => {
@@ -940,6 +996,97 @@ export function internalSourceSuite(
       await expect(shared.getItem(sharedReceipt.itemId)).rejects.toThrow(
         'Intake unavailable',
       );
+    });
+
+    it('fills own pages from readable items only and never names a hidden item in the cursor', async () => {
+      const created: Array<{ itemId: string; tag: string }> = [];
+      for (const tag of ['t1', 't2', 't3']) {
+        const input = message(randomUUID());
+        input.capturedCeiling = { ...input.capturedCeiling, tag };
+        created.push({ itemId: await accepted(input), tag });
+      }
+      const [a, b, c] = created.sort((x, y) => (x.itemId < y.itemId ? -1 : 1));
+      revokedReads.add(b.tag);
+      const ids = (page: { items: Array<{ item: { id: string } }> }) =>
+        page.items.map((entry) => entry.item.id);
+      const both = await service.listOwnProposals({ limit: 2 });
+      expect(ids(both)).toEqual([a.itemId, c.itemId]);
+      expect(both.nextCursor).toBeUndefined();
+      expect(JSON.stringify(both)).not.toContain(b.itemId);
+      const first = await service.listOwnProposals({ limit: 1 });
+      expect(ids(first)).toEqual([a.itemId]);
+      expect(first.nextCursor).toBe(a.itemId);
+      const second = await service.listOwnProposals({
+        limit: 1,
+        cursor: first.nextCursor,
+      });
+      expect(ids(second)).toEqual([c.itemId]);
+      expect(second.nextCursor).toBeUndefined();
+      expect(JSON.stringify([first, second])).not.toContain(b.itemId);
+      // A cursor is only offered when a further readable item exists.
+      revokedReads.add(c.tag);
+      const tail = await service.listOwnProposals({ limit: 1 });
+      expect(ids(tail)).toEqual([a.itemId]);
+      expect(tail.nextCursor).toBeUndefined();
+      // An all-unreadable page is empty and offers no cursor.
+      revokedReads.add(a.tag);
+      for (const limit of [1, 2, 50]) {
+        const none = await service.listOwnProposals({ limit });
+        expect(none).toEqual({ items: [] });
+      }
+    });
+
+    it('refuses a feedback write across which submitter review authority widens', async () => {
+      enableFeedback();
+      const mine = await interpreted();
+      const review = await previewFirst(mine.itemId, mine.generation.attemptId);
+      const binding = {
+        itemId: mine.itemId,
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+      };
+      const reviewer = as('reviewer');
+      submitterPolicy = false;
+      onCapture = () => {
+        submitterPolicy = undefined;
+      };
+      await expect(
+        reviewer.recordFeedback({
+          ...binding,
+          judgment: 'correct',
+          requestId: 'widen',
+        }),
+      ).rejects.toThrow('Feedback cannot widen policy');
+      expect(
+        await count(
+          "SELECT COUNT(*) AS n FROM intake_feedback WHERE request_key='judgment:widen'",
+        ),
+      ).toBe(0);
+      // A stable policy records normally.
+      onCapture = undefined;
+      await expect(
+        reviewer.recordFeedback({
+          ...binding,
+          judgment: 'correct',
+          requestId: 'steady',
+        }),
+      ).resolves.toMatchObject({ id: expect.any(String) });
+    });
+
+    it('propagates non-denial failures from a readable submission instead of marking it unavailable', async () => {
+      const mine = await interpreted();
+      await previewFirst(mine.itemId, mine.generation.attemptId);
+      failingExecutionItems.add(mine.itemId);
+      await expect(service.listOwnProposals()).rejects.toThrow(
+        'grant store offline',
+      );
+      failingExecutionItems.clear();
+      deniedExecutionItems.add(mine.itemId);
+      expect((await service.listOwnProposals()).items).toEqual([
+        expect.objectContaining({ reviews: null, unavailable: true }),
+      ]);
     });
 
     it('omits a submission whose item-level read is revoked without disclosing its identity', async () => {
