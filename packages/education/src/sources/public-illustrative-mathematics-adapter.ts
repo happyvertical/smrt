@@ -1,6 +1,7 @@
 import {
   CATALOG_REPRESENTATION_MEDIA_TYPES,
   catalogRepresentationFormat,
+  catalogRepresentationMediaType,
   normalizeCatalogRepresentation,
 } from '../catalog-capability.js';
 import type {
@@ -89,9 +90,13 @@ function observedMetadata(response: Response) {
   const lengthText = response.headers.get('content-length') ?? '';
   const length = Number(lengthText);
   const modified = response.headers.get('last-modified') ?? '';
-  const format = catalogRepresentationFormat(
-    response.headers.get('content-type') ?? '',
-  );
+  const header = response.headers.get('content-type');
+  const mediaType =
+    header === null ? null : catalogRepresentationMediaType(header);
+  const format =
+    mediaType === null
+      ? 'unknown'
+      : (catalogRepresentationFormat(mediaType) ?? 'unknown');
   if (
     response.headers.has('content-encoding') &&
     response.headers.get('content-encoding') !== 'identity'
@@ -103,19 +108,18 @@ function observedMetadata(response: Response) {
     !Number.isSafeInteger(length) ||
     !modified ||
     !Number.isFinite(Date.parse(modified)) ||
-    modified.length > 100 ||
-    !format
+    modified.length > 100
   )
     throw new Error(
-      'Metadata requires a strong ETag, positive safe length, Last-Modified, and recognized PDF, ZIP or DOCX content type.',
+      'Metadata requires a strong ETag, positive safe length, and valid Last-Modified metadata.',
     );
-  return { etag, length, modified, format } as const;
+  return { etag, length, modified, format, mediaType } as const;
 }
 function validators(
   response: Response,
   cap: number,
 ): Omit<Revision, 'v' | 'page'> {
-  const { format, ...metadata } = observedMetadata(response);
+  const { format, mediaType, ...metadata } = observedMetadata(response);
   if (format !== 'pdf' || metadata.length > cap)
     throw new Error(
       'Selected representation requires PDF content type and bounded length.',
@@ -359,25 +363,34 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                 `${IM_ASSET_ORIGIN}/${asset.id}`,
                 'HEAD',
               );
-              const { format, ...metadata } = observedMetadata(response);
+              const { format, mediaType, ...metadata } =
+                observedMetadata(response);
               const representation = normalizeCatalogRepresentation({
                 format,
-                mediaType: CATALOG_REPRESENTATION_MEDIA_TYPES[format],
+                mediaType,
                 byteLength: metadata.length,
                 validators: {
                   etag: metadata.etag,
                   lastModified: metadata.modified,
                 },
                 acquisition:
-                  format !== 'pdf'
-                    ? { status: 'unsupported-format' }
-                    : {
-                        status:
-                          metadata.length <= pdfCap
-                            ? 'supported'
-                            : 'size-limit',
-                        maxBytes: pdfCap,
-                      },
+                  format === 'unknown'
+                    ? {
+                        status: 'unknown-format',
+                        reason:
+                          mediaType === null
+                            ? 'missing-content-type'
+                            : 'unrecognized-content-type',
+                      }
+                    : format !== 'pdf'
+                      ? { status: 'unsupported-format' }
+                      : {
+                          status:
+                            metadata.length <= pdfCap
+                              ? 'supported'
+                              : 'size-limit',
+                          maxBytes: pdfCap,
+                        },
               });
               // Retain the published PDF revision encoding; capability limits are not content identity.
               const pinned =
@@ -387,7 +400,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                       v: 2,
                       page: revision,
                       ...metadata,
-                      mediaType: CATALOG_REPRESENTATION_MEDIA_TYPES[format],
+                      mediaType,
                     };
               const grade = page.band.startsWith('k5')
                 ? page.course === 'kindergarten'
@@ -411,7 +424,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                 language: page.band.toLowerCase().endsWith('_es') ? 'es' : 'en',
                 resourceType: 'student-material',
                 parentStableId: imStableId(path),
-                availableFormats: [format],
+                availableFormats: format === 'unknown' ? [] : [format],
                 representation,
                 visibility: 'catalog',
                 licenseEvidence: {
@@ -452,7 +465,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             policyExclusions.push({
               code: 'declared_scope',
               message:
-                'Public first-edition official CMS artifact links with observed PDF/ZIP/DOCX representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, external-host artifacts, teacher/login and unknown-role material are excluded; unknown MIME/validators pause enumeration; AccessIM/v.360 is excluded.',
+                'Public first-edition official CMS artifact links with observed PDF/ZIP/DOCX representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, external-host artifacts, teacher/login and unknown-role material are excluded; unknown MIME is retained with acquisition denied; malformed MIME or invalid validators pause enumeration; AccessIM/v.360 is excluded.',
             });
           return {
             records: records.sort((a, b) =>

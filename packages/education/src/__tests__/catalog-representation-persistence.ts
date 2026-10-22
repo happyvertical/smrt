@@ -4,10 +4,13 @@ import {
   SchemaComparer,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
+import { CatalogAcquisitionService } from '../catalog-acquisition-service.js';
+import { evaluateCatalogAcquisitionCapability } from '../catalog-capability.js';
 import { CatalogResourceCollection } from '../catalog-collections.js';
 import type { CatalogResourceRepresentation } from '../catalog-contracts.js';
 import { CatalogDatabaseSyncStore } from '../catalog-database-sync-store.js';
+import { CatalogReadService } from '../catalog-read-service.js';
 
 /** Exercise the ordinary additive manifest migration against a populated pre-column table. */
 export async function assertRepresentationMigration(
@@ -74,7 +77,97 @@ export async function assertRepresentationMigration(
   );
   const current = await rows.get(String(legacy.id));
   expect(current?.getRepresentation()).toEqual(representation);
-  const before = current?.representation;
+  for (const mediaType of [null, 'application/octet-stream']) {
+    const unknown: CatalogResourceRepresentation = {
+      ...representation,
+      format: 'unknown',
+      mediaType,
+      acquisition: {
+        status: 'unknown-format',
+        reason:
+          mediaType === null
+            ? 'missing-content-type'
+            : 'unrecognized-content-type',
+      },
+    };
+    await store.upsert(
+      {
+        providerId: 'migration',
+        stableId: 'legacy',
+        revision: 'v2',
+        title: 'Unknown representation',
+        canonicalUrl: 'https://example.test',
+        availableFormats: [],
+        representation: unknown,
+        visibility: 'catalog',
+        licenseEvidence: {
+          state: 'verified',
+          permittedOperations: ['print', 'download'],
+        },
+      },
+      'unknown-run',
+    );
+    const persisted = await rows.get(String(legacy.id));
+    expect(persisted?.getRepresentation()).toEqual(unknown);
+    expect(persisted?.availableFormats).toBe('[]');
+    const resource = {
+      id: String(legacy.id),
+      providerId: 'migration',
+      stableId: 'legacy',
+      revision: 'v2',
+      title: 'Unknown representation',
+      canonicalUrl: 'https://example.test',
+      availableFormats: JSON.parse(persisted?.availableFormats ?? '[]'),
+      representation:
+        persisted?.representation as unknown as CatalogResourceRepresentation,
+      visibility: 'catalog' as const,
+      licenseEvidence: JSON.parse(persisted?.licenseEvidence ?? '{}'),
+    };
+    expect(resource.licenseEvidence).toEqual({
+      state: 'verified',
+      permittedOperations: ['print', 'download'],
+    });
+    const actor = {
+      tenantId: 'tenant',
+      actorUserId: 'guardian',
+      roles: ['guardian'],
+    };
+    const views = await new CatalogReadService({
+      search: async () => [resource],
+    }).search(actor);
+    expect(views[0].representation).toEqual(unknown);
+    expect(evaluateCatalogAcquisitionCapability(resource, 'pdf')).toMatchObject(
+      { allowed: false, reason: 'unknown-format' },
+    );
+    const createAcquisition = vi.fn();
+    const acquire = vi.fn();
+    await expect(
+      new CatalogAcquisitionService(
+        {
+          getResource: async () => ({ ...resource, withdrawnAt: null }),
+          getSelection: async () => ({
+            id: 'selection',
+            tenantId: 'tenant',
+            resourceId: resource.id,
+            selectedRevision: 'v2',
+          }),
+          findAcquisition: async () => undefined,
+          createAcquisition,
+        },
+        { acquire },
+      ).acquire({
+        ...actor,
+        resourceId: resource.id,
+        selectionId: 'selection',
+        revision: 'v2',
+        format: 'pdf',
+        operation: 'print',
+      }),
+    ).rejects.toThrow('format is unavailable');
+    expect(acquire).not.toHaveBeenCalled();
+    expect(createAcquisition).not.toHaveBeenCalled();
+  }
+  const before = (await rows.get(String(legacy.id)))?.representation;
   await expect(
     store.upsert(
       {

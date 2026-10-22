@@ -474,12 +474,26 @@ describe('catalog observed representation metadata', () => {
     'application/octet-stream',
     'text/html',
     'application/x-zip-compressed',
-  ])('pauses unknown MIME %s without advancing or emitting sibling rows', async (type) => {
+  ])('retains unknown MIME %s and advances with sibling rows', async (type) => {
     const f = setup(type);
     const page = await enumerate(f);
-    expect(page).toMatchObject({ paused: true, complete: false, records: [] });
+    expect(page.paused).not.toBe(true);
+    expect(
+      page.records.filter((r) => r.representation?.format === 'unknown'),
+    ).toHaveLength(1);
+    expect(page.records.some((r) => r.representation?.format === 'pdf')).toBe(
+      true,
+    );
+    expect(
+      page.records
+        .filter((r) => r.representation?.format === 'unknown')
+        .every(
+          (r) =>
+            r.representation?.mediaType === type &&
+            r.availableFormats?.length === 0,
+        ),
+    ).toBe(true);
     expect(JSON.parse(page.nextCursor ?? '{}').todo).toEqual([
-      path,
       '/HS/index.html',
     ]);
     expect(

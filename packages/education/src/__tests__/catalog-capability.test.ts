@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   CatalogRepresentationError,
+  catalogRepresentationMediaType,
   evaluateCatalogAcquisitionCapability as evaluate,
   normalizeCatalogRepresentation as normalize,
 } from '../catalog-capability.js';
@@ -45,6 +46,99 @@ describe('catalog acquisition capability boundary', () => {
     expect(
       evaluate({ ...row, representation: value as undefined }, 'pdf'),
     ).toEqual({ allowed: true, verification: 'legacy' });
+  });
+  it.each([
+    null,
+    'application/octet-stream',
+  ])('retains serialized unknown %s and denies before selection with empty formats', async (mediaType) => {
+    const unknown: CatalogResourceRepresentation = {
+      ...pdf,
+      format: 'unknown',
+      mediaType,
+      acquisition: {
+        status: 'unknown-format',
+        reason:
+          mediaType === null
+            ? 'missing-content-type'
+            : 'unrecognized-content-type',
+      },
+    };
+    expect(normalize(JSON.stringify(unknown))).toEqual(unknown);
+    expect(
+      evaluate({ availableFormats: [], representation: unknown }, 'unknown'),
+    ).toEqual({ allowed: false, reason: 'unknown-format', byteLength: 20 });
+    const model = new CatalogResource();
+    model.setRepresentation(unknown);
+    expect(model.getRepresentation()).toEqual(unknown);
+    const service = new CatalogReadService({
+      search: async () => [
+        {
+          ...row,
+          availableFormats: [],
+          representation: JSON.stringify(
+            unknown,
+          ) as unknown as CatalogResourceRepresentation,
+        },
+      ],
+    });
+    const results = await service.search({
+      tenantId: 'tenant',
+      actorUserId: 'guardian',
+      roles: ['guardian'],
+    });
+    expect(results[0]).toMatchObject({
+      availableFormats: [],
+      representation: unknown,
+    });
+  });
+  it('validates complete MIME syntax before retaining the observed token', () => {
+    expect(
+      catalogRepresentationMediaType('Application/PDF; charset="utf-8"'),
+    ).toBe('application/pdf');
+    for (const mediaType of [
+      '',
+      'not a mime',
+      'application/pdf; broken',
+      'application/pdf, application/zip',
+      `application/${'a'.repeat(513)}`,
+    ])
+      expect(() => catalogRepresentationMediaType(mediaType)).toThrow(
+        CatalogRepresentationError,
+      );
+  });
+  it.each([
+    { mediaType: null, reason: 'unrecognized-content-type' },
+    { mediaType: 'application/octet-stream', reason: 'missing-content-type' },
+    { mediaType: 'application/pdf', reason: 'unrecognized-content-type' },
+    { mediaType: 'garbage', reason: 'unrecognized-content-type' },
+    { mediaType: '', reason: 'unrecognized-content-type' },
+    {
+      mediaType: 'application/octet-stream; foo=bar',
+      reason: 'unrecognized-content-type',
+    },
+    { mediaType: undefined, reason: 'missing-content-type' },
+  ])('rejects inconsistent unknown metadata %j', ({ mediaType, reason }) => {
+    const unknown = {
+      ...pdf,
+      format: 'unknown',
+      mediaType,
+      acquisition: { status: 'unknown-format', reason },
+    };
+    expect(() => normalize(JSON.stringify(unknown))).toThrow(
+      CatalogRepresentationError,
+    );
+    expect(
+      evaluate(
+        {
+          availableFormats: [],
+          representation: unknown as CatalogResourceRepresentation,
+        },
+        'pdf',
+      ),
+    ).toMatchObject({
+      allowed: false,
+      reason: 'invalid-representation-metadata',
+    });
   });
   it('normalizes actual DOCX and denies new acquisition independently of legal permission', () => {
     const docx = {

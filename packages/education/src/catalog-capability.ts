@@ -10,13 +10,24 @@ export const CATALOG_REPRESENTATION_MEDIA_TYPES = {
   zip: 'application/zip',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 } as const;
+/** Bound and validate a complete Content-Type before retaining its canonical token. */
+export function catalogRepresentationMediaType(value: string): string {
+  const token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+  const quoted = '"(?:[\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\x20-\\x7e])*"';
+  const syntax = new RegExp(
+    `^${token}/${token}(?:[ \t]*;[ \t]*${token}=(?:${token}|${quoted}))*[ \t]*$`,
+  );
+  if (value.length > 512 || !syntax.test(value))
+    throw new CatalogRepresentationError();
+  return value.split(';', 1)[0].trim().toLowerCase();
+}
 export function catalogRepresentationFormat(
   mediaType: string,
-): CatalogResourceRepresentation['format'] | undefined {
-  const token = mediaType.split(';', 1)[0].trim().toLowerCase();
+): keyof typeof CATALOG_REPRESENTATION_MEDIA_TYPES | undefined {
+  const token = catalogRepresentationMediaType(mediaType);
   return Object.entries(CATALOG_REPRESENTATION_MEDIA_TYPES).find(
     ([, mime]) => mime === token,
-  )?.[0] as CatalogResourceRepresentation['format'] | undefined;
+  )?.[0] as keyof typeof CATALOG_REPRESENTATION_MEDIA_TYPES | undefined;
 }
 
 export class CatalogRepresentationError extends Error {
@@ -64,13 +75,21 @@ export function normalizeCatalogRepresentation(
     'validators',
     'acquisition',
   ]);
-  if (
+  if (!positive(record.byteLength)) throw new CatalogRepresentationError();
+  if (record.format === 'unknown') {
+    if (
+      record.mediaType !== null &&
+      (typeof record.mediaType !== 'string' ||
+        catalogRepresentationMediaType(record.mediaType) !== record.mediaType ||
+        catalogRepresentationFormat(record.mediaType) !== undefined)
+    )
+      throw new CatalogRepresentationError();
+  } else if (
     typeof record.format !== 'string' ||
     !Object.hasOwn(CATALOG_REPRESENTATION_MEDIA_TYPES, record.format) ||
     CATALOG_REPRESENTATION_MEDIA_TYPES[
-      record.format as CatalogResourceRepresentation['format']
-    ] !== record.mediaType ||
-    !positive(record.byteLength)
+      record.format as keyof typeof CATALOG_REPRESENTATION_MEDIA_TYPES
+    ] !== record.mediaType
   )
     throw new CatalogRepresentationError();
   const validators = object(record.validators);
@@ -85,9 +104,20 @@ export function normalizeCatalogRepresentation(
   )
     throw new CatalogRepresentationError();
   const capability = object(record.acquisition);
-  keys(capability, ['status', 'maxBytes']);
+  keys(
+    capability,
+    record.format === 'unknown' ? ['status', 'reason'] : ['status', 'maxBytes'],
+  );
   let acquisition: CatalogResourceRepresentation['acquisition'];
-  if (record.format !== 'pdf') {
+  if (record.format === 'unknown') {
+    const reason =
+      record.mediaType === null
+        ? 'missing-content-type'
+        : 'unrecognized-content-type';
+    if (capability.status !== 'unknown-format' || capability.reason !== reason)
+      throw new CatalogRepresentationError();
+    acquisition = { status: 'unknown-format', reason };
+  } else if (record.format !== 'pdf') {
     if (
       capability.status !== 'unsupported-format' ||
       capability.maxBytes !== undefined
@@ -117,7 +147,7 @@ export function normalizeCatalogRepresentation(
       lastModified: validators.lastModified,
     },
     acquisition,
-  };
+  } as CatalogResourceRepresentation;
 }
 
 /** Read-only preselection guard for NEW downloads. It does not authorize legal use or pinned-byte printing. */
@@ -134,6 +164,12 @@ export function evaluateCatalogAcquisitionCapability(
   } catch {
     return { allowed: false, reason: 'invalid-representation-metadata' };
   }
+  if (representation?.format === 'unknown')
+    return {
+      allowed: false,
+      reason: 'unknown-format',
+      byteLength: representation.byteLength,
+    };
   if (
     !Array.isArray(resource.availableFormats) ||
     !resource.availableFormats.includes(format)

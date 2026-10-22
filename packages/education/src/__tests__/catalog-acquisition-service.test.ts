@@ -140,6 +140,37 @@ describe('CatalogAcquisitionService', () => {
     expect(state.createAcquisition).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { availableFormats: [] },
+    { availableFormats: ['pdf'] },
+  ])('denies unknown metadata before provider GET or writes with formats %j', async ({
+    availableFormats,
+  }) => {
+    const state = store();
+    state.getResource = vi.fn(async () => ({
+      ...resource,
+      availableFormats,
+      representation: {
+        ...limited,
+        format: 'unknown' as const,
+        mediaType: null,
+        acquisition: {
+          status: 'unknown-format' as const,
+          reason: 'missing-content-type' as const,
+        },
+      },
+    }));
+    const adapter = { acquire: vi.fn() };
+    await expect(
+      new CatalogAcquisitionService(state, adapter).acquire(request),
+    ).rejects.toThrow(
+      availableFormats.length ? 'unknown-format' : 'format is unavailable',
+    );
+    if (!availableFormats.length)
+      expect(state.findAcquisition).not.toHaveBeenCalled();
+    expect(adapter.acquire).not.toHaveBeenCalled();
+    expect(state.createAcquisition).not.toHaveBeenCalled();
+  });
   it('denies a legally permitted observed DOCX before provider and private acquisition writes', async () => {
     const state = store();
     state.getResource = vi.fn(async () => ({

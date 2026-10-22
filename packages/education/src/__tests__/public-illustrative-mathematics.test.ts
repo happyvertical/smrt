@@ -261,6 +261,103 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       f.fetch.mock.calls.every(([, init]) => init?.redirect === 'error'),
     ).toBe(true);
   });
+  it.each([
+    null,
+    'application/octet-stream',
+    'text/html',
+  ])('retains unknown MIME %s with sibling PDF and advances metadata without asset GET', async (mediaType) => {
+    const sibling = `${id}x`;
+    let observedMediaType = mediaType;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      const address = String(url);
+      if (address.startsWith(IM_ORIGIN))
+        return response(
+          address,
+          page(row('Learning Targets', id) + row('Student Handouts', sibling)),
+          { 'content-type': 'text/html' },
+        );
+      const headers = new Headers(metadata);
+      if (address.endsWith(id)) {
+        headers.set('content-length', '52671');
+        if (observedMediaType === null) headers.delete('content-type');
+        else headers.set('content-type', observedMediaType);
+      }
+      return response(address, null, Object.fromEntries(headers));
+    });
+    const adapter = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch,
+    });
+    const result = await adapter.enumerate({ cursor: start(), checkpoint });
+    expect(result.complete).toBe(true);
+    expect(result.paused).not.toBe(true);
+    const unknown = result.records.find((r) => r.stableId.endsWith(`#${id}`));
+    expect(unknown).toMatchObject({
+      availableFormats: [],
+      representation: {
+        format: 'unknown',
+        mediaType,
+        byteLength: 52671,
+        validators: {
+          etag: metadata.etag,
+          lastModified: metadata['last-modified'],
+        },
+        acquisition: {
+          status: 'unknown-format',
+          reason:
+            mediaType === null
+              ? 'missing-content-type'
+              : 'unrecognized-content-type',
+        },
+      },
+      licenseEvidence: {
+        state: 'verified',
+        permittedOperations: expect.arrayContaining(['print', 'download']),
+      },
+    });
+    expect(
+      result.records.find((r) => r.stableId.endsWith(`#${sibling}`))
+        ?.representation?.format,
+    ).toBe('pdf');
+    expect(
+      fetch.mock.calls.filter(
+        ([url, init]) =>
+          String(url).startsWith(IM_ASSET_ORIGIN) && init?.method !== 'HEAD',
+      ),
+    ).toHaveLength(0);
+    expect(JSON.parse(unknown?.revision ?? '{}').mediaType).toBe(mediaType);
+    if (!unknown) throw new Error('Missing retained unknown representation');
+    await expect(adapter.acquire(acquireInput(unknown))).rejects.toThrow(
+      'revision',
+    );
+    expect(fetch).toHaveBeenCalledTimes(3);
+    observedMediaType = 'application/pdf';
+    const refreshed = await adapter.enumerate({ cursor: start(), checkpoint });
+    const known = refreshed.records.find(
+      (r) => r.stableId === unknown.stableId,
+    );
+    expect(known?.representation?.format).toBe('pdf');
+    expect(known?.revision).not.toBe(unknown.revision);
+    expect(JSON.parse(known?.revision ?? '{}').v).toBe(1);
+  });
+  it.each([
+    '',
+    'bad mime',
+    'application/pdf; broken',
+    `application/${'a'.repeat(513)}`,
+  ])('pauses on malformed present MIME %s without legacy fallback', async (mediaType) => {
+    const f = fixture({ head: { 'content-type': mediaType } });
+    const result = await f.adapter.enumerate({ cursor: start(), checkpoint });
+    expect(result).toMatchObject({
+      complete: false,
+      paused: true,
+      records: [],
+      nextCursor: start(),
+    });
+    expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+      'GET',
+      'HEAD',
+    ]);
+  });
   it('discovers no-icon DOCX links across bounded chunks and a reconstructed adapter', async () => {
     const rows = Array.from({ length: 6 }, (_, i) =>
       row('Student Handouts', `${id}${i}`)
@@ -484,7 +581,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     { head: { etag: 'W/"weak"' } },
     { head: { 'content-length': '-1' } },
     { head: { 'last-modified': '' } },
-    { head: { 'content-type': 'text/html' } },
+    { head: { 'content-type': 'bad mime' } },
     { status: 429 },
   ])('does not advance after unavailable/malformed HEAD %j', async (options) => {
     const result = await fixture(options).adapter.enumerate({

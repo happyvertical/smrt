@@ -27,19 +27,33 @@ export interface CatalogLicenseEvidence {
 }
 
 /** Observed bytes and NEW acquisition support; independent of legal permissions. */
-export interface CatalogResourceRepresentation {
-  format: 'pdf' | 'zip' | 'docx';
-  mediaType:
-    | 'application/pdf'
-    | 'application/zip'
-    | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+interface CatalogRepresentationMetadata {
   byteLength: number;
   validators: { etag: string; lastModified: string };
-  acquisition:
-    | { status: 'supported'; maxBytes: number }
-    | { status: 'unsupported-format' }
-    | { status: 'size-limit'; maxBytes: number };
 }
+export type CatalogResourceRepresentation = CatalogRepresentationMetadata &
+  (
+    | {
+        format: 'pdf' | 'zip' | 'docx';
+        mediaType:
+          | 'application/pdf'
+          | 'application/zip'
+          | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        acquisition:
+          | { status: 'supported'; maxBytes: number }
+          | { status: 'unsupported-format' }
+          | { status: 'size-limit'; maxBytes: number };
+      }
+    | {
+        format: 'unknown';
+        /** Null records an absent header; otherwise the observed canonical MIME token. */
+        mediaType: string | null;
+        acquisition: {
+          status: 'unknown-format';
+          reason: 'missing-content-type' | 'unrecognized-content-type';
+        };
+      }
+  );
 export type CatalogAcquisitionCapabilityDecision =
   | { allowed: true; verification: 'observed' | 'legacy' }
   | {
@@ -47,6 +61,7 @@ export type CatalogAcquisitionCapabilityDecision =
       reason:
         | 'format-unavailable'
         | 'unsupported-format'
+        | 'unknown-format'
         | 'size-limit'
         | 'invalid-representation-metadata';
       maxBytes?: number;

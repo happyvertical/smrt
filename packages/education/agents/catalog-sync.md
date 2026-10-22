@@ -74,7 +74,17 @@ unavailable merely because future acquisition limits tightened.
 
 The public IM adapter enumerates strictly hosted artifact links independent of
 icons; only actual PDF/ZIP/DOCX MIME is recognized and only PDF is acquirable.
-Unknown MIME/validators pause without advancing. Role/local ownership/malformed
+An eligible public HEAD with valid size and strong validators retains an explicit
+`format: 'unknown'` representation when Content-Type is absent (`mediaType: null`,
+`missing-content-type`) or syntactically valid but unrecognized (the bounded
+canonical MIME token, `unrecognized-content-type`). Its acquisition status is
+`unknown-format`, `availableFormats` is empty, and the public evaluator denies
+before new selections, files or asset GETs. Legal evidence, size and validators
+remain intact and metadata enumeration advances. Unknown MIME does not establish
+technical support or change legal permission. Malformed present MIME and invalid
+validators still pause without advancing. Unknown revisions encode MIME absence
+or the observed token, so later recognition changes identity; ordinary PDF v1
+revision encoding remains stable. Role/local ownership/malformed
 markup checks apply to every format; external hosts remain outside coverage.
 Expanded parsed inventory changes page fingerprints once: old offset cursors
 must pause, never be reinterpreted against a different artifact list.
