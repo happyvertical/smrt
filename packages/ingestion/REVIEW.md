@@ -103,6 +103,46 @@ choice and execution success. No learning, feedback storage or rule promotion is
 implemented by these components; #3676 owns those services. Do not pass feedback
 or a feedback callback to readers without the relevant host grant.
 
+## Reviewer-chosen actions and "handled, no action"
+
+A reviewer is not limited to model suggestions. `ItemReviewView.catalog` carries
+the handlers the item's catalog currently offers (`listHandlers`, discovery media
+types and live preview authority; it is presentation, never a grant). The optional
+`startAction` callback forwards `StartActionInput` (`itemId`, `handlerId@version`,
+explicit `args`, `requestId`, optional `reason`) to `startReviewerAction`, which
+requires the current reviewer grant under that handler, a completed or partial
+attempt on the current analysis revision, and an operation handler the item's
+evidence media types offer. Plan handlers go through `previewPlan`. The server
+creates an action keyed `reviewer:<requestId>` with origin `reviewer-selected`,
+runs the handler's normal `validate`/`preview`, publishes a `waiting_review`
+revision and requires the same explicit approval and apply as a generated
+proposal. Replays with the same request return the same review; changed arguments
+or reason conflict. Such actions are never automation-eligible: `authorizeAutomatic`
+refuses them regardless of policy opt-ins. The UI pre-fills arguments only from a
+same-handler suggestion (for example a `needs_review` one) and a single original's
+evidence references, lists the required fields still missing, and submits exactly
+what the reviewer typed. An item whose current attempt failed outright must be
+reprocessed first; an interpretation that completed with `provider_error`,
+`unknown` or no suggestions can be acted on directly. `ReviewAction.origin`
+exposes the provenance so `ActionReview` can label human-started actions.
+
+The optional `resolve` callback forwards `ResolveItemInput`
+(`disposition: 'resolve_no_action'`, `requestId`, optional `reason`) to
+`resolveItem`. It needs reviewer authority under any handler the item's captured
+ceiling offers and refuses while an action is `authorized`, `executing`,
+`outcome_unknown` or `succeeded`; waiting, deferred and rejected actions may
+remain and can still be rejected, but can no longer be approved or automated.
+The append-only `intake_dispositions` record is terminal: replaying the same
+request returns the same disposition, any other request conflicts, and
+`startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects the
+record, and `loadReviewSummary` reports inbox state `resolved` unless an action
+actually succeeded. Privacy deletion and retention redact the reason and keep
+only the kind. The disposition is distinct from `reject`, which still means the
+proposal was wrong. Both choices are captured as `reviewer_routing` feedback when
+feedback is configured and capture is authorized (see FEEDBACK.md); capture is an
+optional projection that never vetoes the action or disposition. The maintained
+browser fixture serves both operations behind CSRF and the same session scope.
+
 ## Maintained browser proof
 
 `pnpm test:components` runs real Svelte component tests; `pnpm test:e2e` runs the
@@ -143,8 +183,11 @@ Import `createIntakeReviewHost` and `IntakeReviewHostOptions` from
 options)` with a service constructed from the current authenticated session.
 The returned `IntakeReviewHost` implements inbox state projection across saved
 review pages, current generation loading, stable `ui:<index>` intention keys,
-action/plan preview CAS lookup, decisions, apply, corrections, candidates, split
-and feedback. Repeated preparation of an unchanged authorized suggestion retains
+action/plan preview CAS lookup, decisions, apply, corrections, candidates, split,
+feedback, the offered `catalog`, `startAction` and `resolve`. When neither
+`proposals` nor `proposalRead` is configured the catalog is omitted
+(`ProposalsNotConfiguredError`); other catalog denials propagate. Repeated
+preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.
 Lists scan 20 items per page; filtered pages may be empty with a `nextCursor`.

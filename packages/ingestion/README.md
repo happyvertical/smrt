@@ -162,6 +162,13 @@ Optional explicit feedback and scoped example retrieval are documented in
 [FEEDBACK.md](FEEDBACK.md). Approval and execution outcomes remain separate from
 interpretation correctness; routing policy adoption is explicit and versioned.
 
+Reviewers can start any offered handler for an item (`startReviewerAction`) or
+close it as handled without action (`resolveItem`); the published host adapter
+wires both as `startAction`/`resolve` and exposes the offered `catalog`. Hosts
+with their own transport add the two POST operations behind the same session,
+CSRF and reviewer checks as `decide`. The `intake_dispositions` table requires
+a manifest migration before upgrading.
+
 ## Recipe preview
 
 `ingestion.inbox` and `ingestion.review` declare the user-facing inbox and

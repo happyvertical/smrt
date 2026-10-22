@@ -47,6 +47,32 @@ row lock before public `Contents` reads. A current `PrincipalRun` intersects liv
 permissions with the captured ceiling and checks the exact registered collection
 operation at every effect. No `runOnce` atomicity is assumed.
 
+## Reviewer-chosen actions and dispositions
+
+`startAction(StartActionInput)` lets an authenticated reviewer begin any
+operation handler the item's evidence media types offer, without a model
+suggestion. It checks `review` access under that handler before any callback,
+refuses plan handlers and resolved items, binds the current analysis revision's
+completed/partial attempt, inserts an action keyed `reviewer:<requestId>` with
+`data.origin = 'reviewer-selected'`, and reuses `buildBinding`/`publish`: schema
+validation, `validate`, `preview`, exact normalized arguments, target locks,
+evidence pins and the request ledger behave exactly as for `previewProposal`.
+Replays re-preview against the original revision and return the same review.
+Approval, apply, retention, redaction and reconciliation are unchanged.
+`authorizeAutomatic` refuses `reviewer-selected` actions and resolved items;
+human routing is never machine authority.
+
+`resolveItem(ResolveItemInput)` appends one terminal `intake_dispositions` row
+(`disposition = 'resolved_no_action'`, reason/reviewer in redactable `data`)
+under the item lock. Reviewer authority is taken from the first handler the
+captured ceiling and policy offer; no new grant exists. It refuses while any
+action is `authorized`, `executing`, `outcome_unknown` or `succeeded`; afterwards
+`submitDecision` refuses `approve` for the item. `intake_dispositions` is a new
+model: deploy its manifest migration (`pnpm ... db:migrate`) before upgrading
+hosts; `assertReady` checks it and privacy deletion redacts it with the other
+item-owned tables. Both operations capture an optional `reviewer_routing` feedback
+projection inside the same transaction (FEEDBACK.md).
+
 ## Durable review and effects
 
 Preview appends a proposal bound to exact analysis attempt/evidence, handler,

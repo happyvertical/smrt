@@ -30,6 +30,44 @@ an authorized existing event; it cannot supply a correctness label or fabricate
 an execution result. An initial denial does not mutate retention. Once authorized,
 a narrowed privacy ceiling survives business rollback and later revocation.
 
+## Reviewer routing choices
+
+`startReviewerAction` and `resolveItem` (REVIEW.md) append a `reviewer_routing`
+record keyed `routing:<requestId>` inside their owning transaction when feedback
+is configured and `capture` is authorized. It needs no model suggestion: the
+record binds the current completed/partial attempt (`attemptId`, output digest,
+analysis revision, frozen evidence hashes and the extracted text as `query`),
+the reviewer, the reason, and either the chosen `handlerId@version` with its exact
+arguments and the published action binding (`choice: 'handler'`) or
+`choice: 'none'` for an item closed without action. Denied or oversized capture
+skips the projection and leaves the authoritative action or disposition intact;
+database failures still roll everything back. There is no second successor rule
+because the record is never superseded by a later judgment: a corrected
+reviewer-selected action simply retires the old binding.
+
+Retrieval scans `interpretation` and `reviewer_routing` records together under
+the same bounds and lexical matcher. A routing example is returned only when its
+digest verifies, its attempt and evidence hashes are unchanged, the source item
+is still readable in the same tenant and confidential scope, every generation
+recipient is allowed by the source's live provider policy, and (for a chosen
+handler) the action binding is still the current revision and the handler with
+its candidate references is currently offered to the receiver. A `none` choice is
+revalidated under the first currently offered receiving handler the source item
+authorizes. Routing examples carry `kind: 'reviewer_routing'`,
+`judgment: 'correct'`, `routing: { choice, reason }`, `handlerId: 'none'` with an
+empty action for closed items, and no model/prompt/configuration versions, since
+no suggestion was judged. They are included in provider input and selection
+provenance exactly like interpretation examples and are rechecked by the same
+lineage gates.
+
+`suggestRoutingRule` accepts `reviewer_routing` support only for `choice: 'handler'`
+records whose handler, version and full arguments match the receiving binding and
+each other, from distinct source items, under the live routing projection; `none`
+records never support a rule. Suggestions and adoptions keep every existing #3676
+rule: no catalog, candidate, permission or automation expansion, and
+`automaticActionEligible: false`. Reviewer-selected actions themselves are refused
+by `authorizeAutomatic`.
+
 ## Retrieval and provider boundaries
 
 `retrieveFeedback({ itemId, query })` derives the current offered catalog,
