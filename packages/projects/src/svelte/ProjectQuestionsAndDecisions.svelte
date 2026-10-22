@@ -1,6 +1,8 @@
 <script lang="ts">
 import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { M } from './i18n.js';
 import type {
   ProjectDecisionResolveInput,
   ProjectDecisionView,
@@ -28,6 +30,8 @@ let {
   onanswer,
   ondecide,
 }: Props = $props();
+
+const { t } = useI18n();
 
 function submitAnswer(event: SubmitEvent, question: ProjectQuestionView) {
   event.preventDefault();
@@ -58,14 +62,14 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
 <section class="governance" data-smrt-component="ProjectQuestionsAndDecisions">
   <div class="section-heading">
     <div>
-      <h2>Questions</h2>
-      <p>Facts the project still needs from its owners.</p>
+      <h2>{t(M['projects.governance.questions'])}</h2>
+      <p>{t(M['projects.governance.questions_description'])}</p>
     </div>
-    <span>{questions.filter((item) => item.status === 'open').length} open</span>
+    <span>{t(M['projects.governance.open_count'], { count: questions.filter((item) => item.status === 'open').length })}</span>
   </div>
 
   {#if questions.length === 0}
-    <p class="empty">No project questions are waiting.</p>
+    <p class="empty">{t(M['projects.governance.questions_empty'])}</p>
   {:else}
     <div class="items">
       {#each questions as question (question.id)}
@@ -73,13 +77,13 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           <header>
             <div>
               <h3>{question.prompt}</h3>
-              {#if question.ownerLabel}<small>Owner: {question.ownerLabel}</small>{/if}
+              {#if question.ownerLabel}<small>{t(M['projects.governance.owner'])} {question.ownerLabel}</small>{/if}
             </div>
             <span class="status">{question.status}</span>
           </header>
           {#if question.answer}<p class="response">{question.answer}</p>{/if}
           {#if question.contextReferences?.length}
-            <ul class="references" aria-label="Question context">
+            <ul class="references" aria-label={t(M['projects.governance.question_context'])}>
               {#each question.contextReferences as reference (`${reference.kind}:${reference.ref}`)}
                 <li>{reference.label ?? reference.ref} <small>{reference.kind}</small></li>
               {/each}
@@ -87,9 +91,9 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           {/if}
           {#if question.status === 'open' && question.canResolve}
             <Form onsubmit={(event) => submitAnswer(event, question)}>
-              <label for={`answer-${question.id}`}>Answer</label>
+              <label for={`answer-${question.id}`}>{t(M['projects.governance.answer'])}</label>
               <Textarea id={`answer-${question.id}`} name="answer" required></Textarea>
-              <Button type="submit" disabled={busy}>Save answer</Button>
+              <Button type="submit" disabled={busy}>{t(M['projects.governance.save_answer'])}</Button>
             </Form>
           {/if}
         </article>
@@ -99,14 +103,14 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
 
   <div class="section-heading decisions-heading">
     <div>
-      <h2>Decisions</h2>
-      <p>Choices that need an owner and a recorded outcome.</p>
+      <h2>{t(M['projects.governance.decisions'])}</h2>
+      <p>{t(M['projects.governance.decisions_description'])}</p>
     </div>
-    <span>{decisions.filter((item) => item.status === 'open').length} open</span>
+    <span>{t(M['projects.governance.open_count'], { count: decisions.filter((item) => item.status === 'open').length })}</span>
   </div>
 
   {#if decisions.length === 0}
-    <p class="empty">No project decisions are waiting.</p>
+    <p class="empty">{t(M['projects.governance.decisions_empty'])}</p>
   {:else}
     <div class="items">
       {#each decisions as decision (decision.id)}
@@ -114,7 +118,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           <header>
             <div>
               <h3>{decision.question}</h3>
-              {#if decision.ownerLabel}<small>Owner: {decision.ownerLabel}</small>{/if}
+              {#if decision.ownerLabel}<small>{t(M['projects.governance.owner'])} {decision.ownerLabel}</small>{/if}
             </div>
             <span class="status">{decision.status}</span>
           </header>
@@ -125,7 +129,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             </p>
           {/if}
           {#if decision.contextReferences?.length}
-            <ul class="references" aria-label="Decision context">
+            <ul class="references" aria-label={t(M['projects.governance.decision_context'])}>
               {#each decision.contextReferences as reference (`${reference.kind}:${reference.ref}`)}
                 <li>{reference.label ?? reference.ref} <small>{reference.kind}</small></li>
               {/each}
@@ -134,20 +138,20 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           {#if decision.status === 'open' && decision.canResolve}
             <Form onsubmit={(event) => submitDecision(event, decision)}>
               {#if decision.options?.length}
-                <label for={`outcome-${decision.id}`}>Outcome</label>
+                <label for={`outcome-${decision.id}`}>{t(M['projects.governance.outcome'])}</label>
                 <Select id={`outcome-${decision.id}`} name="outcome" required>
-                  <option value="">Select an option</option>
+                  <option value="">{t(M['projects.governance.choose_option'])}</option>
                   {#each decision.options as option (option.id)}
                     <option value={option.id}>{option.label}</option>
                   {/each}
                 </Select>
               {:else}
-                <label for={`outcome-${decision.id}`}>Outcome</label>
+                <label for={`outcome-${decision.id}`}>{t(M['projects.governance.outcome'])}</label>
                 <Input id={`outcome-${decision.id}`} name="outcome" required />
               {/if}
-              <label for={`rationale-${decision.id}`}>Rationale</label>
+              <label for={`rationale-${decision.id}`}>{t(M['projects.governance.rationale'])}</label>
               <Textarea id={`rationale-${decision.id}`} name="rationale"></Textarea>
-              <Button type="submit" disabled={busy}>Record decision</Button>
+              <Button type="submit" disabled={busy}>{t(M['projects.governance.record_decision'])}</Button>
             </Form>
           {/if}
         </article>
