@@ -15,9 +15,12 @@
  * - `Zl`/`Zp` line and paragraph separators (U+2028, U+2029);
  * - `Default_Ignorable_Code_Point` (U+034F, Hangul fillers, variation
  *   selectors, U+180E, U+2060-U+206F, ...): characters that render as
- *   nothing. A consequence: emoji ZWJ sequences and emoji presentation
- *   selectors are flattened (a family emoji shows as its members), which is
- *   acceptable for a filename label.
+ *   nothing. Consequences, all display-only (nothing uses the name as
+ *   identity): emoji ZWJ sequences and emoji presentation selectors are
+ *   flattened (a family emoji shows as its members); ZWNJ/ZWJ (U+200C,
+ *   U+200D) are removed from Persian and Indic text, which can change how
+ *   letters join; and ideographic variation selectors are removed, so a CJK
+ *   glyph variant shows its base form.
  *
  * Bidi controls let `invoice` + U+202E + `fdp.exe` display as
  * `invoiceexe.pdf`; invisible characters make two different names look
