@@ -266,9 +266,12 @@ ceiling survive, so a redacted row no longer links an owner to an actor and a
 repeated `expireOwned` finds nothing. Redaction also overwrites every
 identity- or content-derived digest (`payload_digest`, `scope_digest`, analysis
 `input_digest`, attempt `output_digest`, plan `digest` and proposal, decision
-and execution `binding_hash`) with the fixed marker `redacted`, and drops
-`execution.principalId` from the retained ceiling; successful result digests
-remain as the replay tombstone. `delivery_key` stays in plaintext because it is
+and execution `binding_hash`) with the fixed marker `redacted`; successful
+result digests remain as the replay tombstone. The captured ceiling, including
+`execution.principalId`, is retained: reconciling an external action that was
+still in flight when the item was redacted authorizes under that principal,
+and later delete sweeps pass the ceiling to the host. Hosts that need the
+principal unlinkable should capture an opaque principal identifier. `delivery_key` stays in plaintext because it is
 the unique receipt identity and the package holds no secret to key it: hosts
 must use an opaque value (for example a random UUID recorded with the message)
 and must not encode owner ids, sender ids or content in `deliveryKey`.
