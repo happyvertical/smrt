@@ -1058,6 +1058,235 @@ describe('intake review host boundary', () => {
     expect(callbacks.decide).not.toHaveBeenCalled();
     expect(callbacks.apply).not.toHaveBeenCalled();
   });
+  function catalogView(): ItemReviewView {
+    const view = page();
+    view.analysis = currentAnalysis();
+    view.reviews.actions = [];
+    view.catalog = [
+      {
+        id: 'host:draft',
+        version: '1',
+        description: 'Create a draft document',
+        kind: 'operation',
+        capability: null,
+        argsSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'body'],
+          properties: { title: { type: 'string' }, body: { type: 'string' } },
+        },
+        references: {},
+        operation: { model: 'Document', action: 'create', version: '1' },
+      },
+      {
+        id: 'host:attach',
+        version: '1',
+        description: 'Attach the original',
+        kind: 'operation',
+        capability: null,
+        argsSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['contentId', 'evidenceId'],
+          properties: {
+            contentId: { type: 'string' },
+            evidenceId: { type: 'string' },
+          },
+        },
+        references: { evidenceId: { kind: 'evidence' } },
+        operation: { model: 'Document', action: 'addAsset', version: '1' },
+      },
+      {
+        id: 'host:plan',
+        version: '1',
+        description: 'Plans go through previewPlan',
+        kind: 'plan',
+        capability: null,
+        argsSchema: {},
+        references: {},
+        operation: { playbookKey: 'plan', definitionHash: 'hash' },
+      },
+    ];
+    return view;
+  }
+  it('starts a reviewer-chosen handler with pre-filled arguments and surfaces missing fields, never approving', async () => {
+    const view = catalogView();
+    view.generation = {
+      version: 1,
+      outcome: 'needs_review',
+      suggestions: [
+        {
+          handlerId: 'host:draft',
+          handlerVersion: '1',
+          args: { title: 'Customer PO 17' },
+          evidence: [],
+          alternatives: [],
+          missingFields: ['body'],
+          explanation: 'Body unknown',
+          disposition: 'needs_review',
+        },
+      ],
+      splits: [],
+      warnings: [],
+      omittedSuggestions: 0,
+      source: {
+        attemptId: 'attempt',
+        revision: 2,
+        inputDigest: 'in',
+        outputDigest: 'out',
+        evidenceDigest: 'evidence',
+      },
+      offered: [],
+      provenance: {
+        configurationVersion: '1',
+        promptVersion: '1',
+        catalogDigest: 'catalog',
+        policyVersions: [],
+        generative: { provider: 'fixture', model: 'fixture', version: '1' },
+        decision: { configured: false },
+        usage: {},
+      },
+      automaticActionEligible: false,
+    };
+    const callbacks = host(view);
+    callbacks.startAction = vi.fn(async () => {});
+    callbacks.resolve = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const picker = await screen.findByRole('combobox', { name: 'Handler' });
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Handler', 'host:draft', 'host:attach']);
+    await fireEvent.change(picker, { target: { value: 'host:attach@1' } });
+    const args = (await screen.findByRole('textbox', {
+      name: 'Initial arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    expect(JSON.parse(args.value)).toEqual({ evidenceId: 'original' });
+    const start = screen.getByRole('group', { name: 'Start action as…' });
+    expect(within(start).getByText('Missing information')).toBeTruthy();
+    expect(within(start).getByText('contentId')).toBeTruthy();
+    await fireEvent.change(picker, { target: { value: 'host:draft@1' } });
+    await waitFor(() =>
+      expect(
+        JSON.parse(
+          (
+            screen.getByRole('textbox', {
+              name: 'Initial arguments (JSON)',
+            }) as HTMLTextAreaElement
+          ).value,
+        ),
+      ).toEqual({ title: 'Customer PO 17' }),
+    );
+    expect(within(start).getByText('body')).toBeTruthy();
+    const editor = screen.getByRole('textbox', {
+      name: 'Initial arguments (JSON)',
+    });
+    await fireEvent.input(editor, { target: { value: '{bad json' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Start action' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(callbacks.startAction).not.toHaveBeenCalled();
+    await fireEvent.input(editor, {
+      target: {
+        value: JSON.stringify({ title: 'Customer PO 17', body: 'Acme' }),
+      },
+    });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Reason' }), {
+      target: { value: 'Customer PO, not a bill' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Start action' }));
+    await waitFor(() =>
+      expect(callbacks.startAction).toHaveBeenCalledWith({
+        itemId: 'item',
+        handlerId: 'host:draft',
+        handlerVersion: '1',
+        args: { title: 'Customer PO 17', body: 'Acme' },
+        requestId: expect.any(String),
+        reason: 'Customer PO, not a bill',
+      }),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+    expect(callbacks.resolve).not.toHaveBeenCalled();
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+  });
+  it('closes an item as handled without action from review and inbox with an optional reason', async () => {
+    const view = catalogView();
+    const callbacks = host(view);
+    callbacks.resolve = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const reason = await screen.findByRole('textbox', {
+      name: 'Reason for no action',
+    });
+    await fireEvent.input(reason, { target: { value: 'Already paid' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Handled, no action' }),
+    );
+    await waitFor(() =>
+      expect(callbacks.resolve).toHaveBeenCalledWith({
+        itemId: 'item',
+        disposition: 'resolve_no_action',
+        requestId: expect.any(String),
+        reason: 'Already paid',
+      }),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    cleanup();
+    const inbox = host(view);
+    inbox.resolve = vi.fn(async () => {});
+    render(IntakeInbox, { host: inbox });
+    await screen.findByText('Private invoice');
+    expect(
+      within(screen.getByRole('combobox', { name: 'State' }))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toContain('Handled, no action');
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Handled, no action' }),
+    );
+    await waitFor(() =>
+      expect(inbox.resolve).toHaveBeenCalledWith({
+        itemId: 'item',
+        disposition: 'resolve_no_action',
+        requestId: expect.any(String),
+      }),
+    );
+  });
+  it('shows the disposition instead of start controls and labels reviewer-started actions', async () => {
+    const view = catalogView();
+    view.entry.state = 'resolved';
+    view.entry.item.disposition = {
+      kind: 'resolved_no_action',
+      reviewer: 'owner',
+      reason: 'Already paid',
+      decidedAt: '2026-10-22T00:00:00.000Z',
+    };
+    view.reviews.actions = [
+      { ...page().reviews.actions[0], origin: 'reviewer-selected' },
+    ];
+    const callbacks = host(view);
+    callbacks.startAction = vi.fn(async () => {});
+    callbacks.resolve = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    expect((await screen.findByTestId('disposition')).textContent).toContain(
+      'Closed without action by owner: Already paid',
+    );
+    expect(screen.queryByRole('combobox', { name: 'Handler' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Handled, no action' }),
+    ).toBeNull();
+    expect(screen.getByText('Started by a reviewer')).toBeTruthy();
+    cleanup();
+    const bare = host(catalogView());
+    delete bare.startAction;
+    delete bare.resolve;
+    render(IntakeReview, { host: bare, itemId: 'item' });
+    await screen.findByText('No saved reviews.');
+    expect(screen.queryByRole('combobox', { name: 'Handler' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Handled, no action' }),
+    ).toBeNull();
+  });
   it('filters and assigns using the host assignment version', async () => {
     const callbacks = host();
     render(IntakeInbox, { host: callbacks });

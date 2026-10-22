@@ -187,6 +187,7 @@ function choose(id: string) {
 </script>
 <article data-testid={`action-${action.review.actionId}`}>
 <h3>{action.handlerId ?? action.review.actionId}</h3>
+{#if action.origin === 'reviewer-selected'}<p>{t(M['ingestion.reviewerSelected'])}</p>{/if}
 <p>{t(M['ingestion.state'])}: {action.review.state}</p>
 {#if action.args !== undefined}
 <h4>{t(M['ingestion.effects'])}</h4><pre>{JSON.stringify(action.review.display,null,2)}</pre>

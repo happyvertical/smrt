@@ -23,11 +23,13 @@ const states: InboxState[] = [
   'deferred',
   'partially_completed',
   'completed',
+  'resolved',
 ];
 let items = $state<InboxEntry[]>([]),
   selectedState = $state(''),
   assignee = $state(''),
   assignments = $state<Record<string, string>>({}),
+  reasons = $state<Record<string, string>>({}),
   files = $state<File[]>([]),
   cursor = $state<string>(),
   pending = $state(false),
@@ -49,6 +51,7 @@ async function load(more = false) {
   const next = more ? cursor : undefined;
   items = [];
   assignments = {};
+  reasons = {};
   try {
     const page = await host.list({
       state: selectedState ? (selectedState as InboxState) : undefined,
@@ -61,6 +64,7 @@ async function load(more = false) {
     assignments = Object.fromEntries(
       items.map((entry) => [entry.item.id, entry.assignment.assigneeId ?? '']),
     );
+    reasons = Object.fromEntries(items.map((entry) => [entry.item.id, '']));
   } catch {
     if (alive && ticket === epoch) {
       items = [];
@@ -124,6 +128,10 @@ onMount(() => {
 <Button onclick={() => onselect?.(entry.item.id)} disabled={pending}>{t(M['ingestion.open'])}</Button>
 <Input aria-label={`${t(M['ingestion.assignee'])}: ${entry.label}`} bind:value={assignments[entry.item.id]} disabled={pending} />
 <Button disabled={pending} onclick={() => mutate(() => host.assign({itemId:entry.item.id,expectedVersion:entry.assignment.version,assigneeId:assignments[entry.item.id] || null,requestId:crypto.randomUUID()}))}>{t(M['ingestion.assign'])}</Button>
+{#if host.resolve && !entry.item.disposition}
+<Input aria-label={`${t(M['ingestion.resolveReason'])}: ${entry.label}`} bind:value={reasons[entry.item.id]} disabled={pending} />
+<Button disabled={pending} onclick={() => { const close = host.resolve; const reason = reasons[entry.item.id]; if (close) void mutate(() => close({itemId:entry.item.id,disposition:'resolve_no_action',requestId:crypto.randomUUID(),...(reason ? { reason } : {})})); }}>{t(M['ingestion.resolveNoAction'])}</Button>
+{/if}
 </li>{/each}</ul>
 {#if cursor}<Button disabled={pending} onclick={() => load(true)}>{t(M['ingestion.more'])}</Button>{/if}
 </section>
