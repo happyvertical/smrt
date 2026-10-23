@@ -11,7 +11,7 @@ vi.mock('vite', () => ({
 
 const unsafe = () => /new\s+URL.+import\.meta\.url/s;
 function fixture(code: unknown = unsafe()) {
-  const handler = vi.fn(() => null);
+  const handler = vi.fn((_code: string, _id: string) => null);
   const id = { exclude: [/excluded/] };
   const filter = { id, code };
   const asset = {
@@ -22,7 +22,7 @@ function fixture(code: unknown = unsafe()) {
 }
 function apply(plugin: Plugin, plugins: unknown[]) {
   const hook = plugin.configResolved as (config: ResolvedConfig) => void;
-  hook({ plugins } as ResolvedConfig);
+  hook({ plugins } as unknown as ResolvedConfig);
 }
 function configure(plugin: Plugin, config: UserConfig) {
   return (plugin.config as (config: UserConfig) => UserConfig | undefined)(
@@ -107,7 +107,7 @@ describe('smrtAssetUrlCompatibility', () => {
     const factory = vi.fn(async () => [existing]);
     const config = configure(smrtAssetUrlCompatibility(), {
       worker: { plugins: factory },
-    });
+    } as unknown as UserConfig);
     const workerFactory = config?.worker?.plugins;
     expect(workerFactory).toBeTypeOf('function');
     const chain = ['entry.js'];
