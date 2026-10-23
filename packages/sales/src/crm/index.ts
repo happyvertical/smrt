@@ -17,6 +17,8 @@ export { OpportunityConversionCollection } from './collections/OpportunityConver
 export { PipelineDefinitionCollection } from './collections/PipelineDefinitionCollection.js';
 export { PipelineStageCollection } from './collections/PipelineStageCollection.js';
 export { SalesActivityCollection } from './collections/SalesActivityCollection.js';
+export { SalesGovernanceEventCollection } from './collections/SalesGovernanceEventCollection.js';
+export { SalesGovernanceStateCollection } from './collections/SalesGovernanceStateCollection.js';
 export { SalesRepresentativeCollection } from './collections/SalesRepresentativeCollection.js';
 // Models
 export { Lead } from './models/Lead.js';
@@ -25,6 +27,8 @@ export { OpportunityConversion } from './models/OpportunityConversion.js';
 export { PipelineDefinition } from './models/PipelineDefinition.js';
 export { PipelineStage } from './models/PipelineStage.js';
 export { SalesActivity } from './models/SalesActivity.js';
+export { SalesGovernanceEvent } from './models/SalesGovernanceEvent.js';
+export { SalesGovernanceState } from './models/SalesGovernanceState.js';
 export { SalesRepresentative } from './models/SalesRepresentative.js';
 export { SalesPipelineRecipe } from './recipes.js';
 export type {
@@ -76,5 +80,10 @@ export type {
   LeadInboxSort,
   LeadInboxStatusCounts,
 } from './services/lead-inbox.js';
+export {
+  SalesGovernanceError,
+  SalesGovernanceService,
+} from './services/SalesGovernanceService.js';
+export type * from './services/sales-governance-types.js';
 // Types, status unions, and operation contracts
 export * from './types.js';

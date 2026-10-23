@@ -59,6 +59,45 @@ describe('AgreementExecutionService', () => {
     if (db && typeof db.close === 'function') await db.close();
   });
 
+  it('requires governed quote signing guard before source storage or provider I/O', async () => {
+    const input = {
+      ...createInput(),
+      sourceKind: 'sales-quote',
+      signingActorProfileId: 'seller-profile',
+    };
+    await expect(
+      withTenant({ tenantId: TENANT }, () => service.createExecution(input)),
+    ).rejects.toThrow('authorization guard');
+    expect(provider.createRequest).not.toHaveBeenCalled();
+    expect(assets.storeSourceAsset).not.toHaveBeenCalled();
+  });
+
+  it('rechecks signing guard on existing execution replay and immediately before provider I/O', async () => {
+    const guard = vi.fn(async () => {});
+    service = new AgreementExecutionService({
+      provider,
+      assets,
+      executions,
+      events,
+      executedAgreements,
+      authorizeSigning: guard,
+    });
+    const input = {
+      ...createInput(),
+      sourceKind: 'sales-quote',
+      signingActorProfileId: 'seller-profile',
+    };
+    await withTenant({ tenantId: TENANT }, () =>
+      service.createExecution(input),
+    );
+    expect(guard).toHaveBeenCalledTimes(2);
+    guard.mockRejectedValue(new Error('seller revoked'));
+    await expect(
+      withTenant({ tenantId: TENANT }, () => service.createExecution(input)),
+    ).rejects.toThrow('seller revoked');
+    expect(provider.createRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('persists an absent supersedes reference as null', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       const execution = await executions.create({

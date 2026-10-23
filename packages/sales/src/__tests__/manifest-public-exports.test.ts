@@ -57,6 +57,8 @@ describe('sales manifest runtime exports', () => {
     for (const qualifiedName of [
       '@happyvertical/smrt-sales:CommissionAdjustmentOperation',
       '@happyvertical/smrt-sales:ReferralClickOperation',
+      '@happyvertical/smrt-sales:SalesGovernanceState',
+      '@happyvertical/smrt-sales:SalesGovernanceEvent',
     ]) {
       expect(manifest.objects[qualifiedName]?.decoratorConfig).toMatchObject({
         api: false,

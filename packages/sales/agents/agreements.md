@@ -25,3 +25,19 @@ gap remains a gap. Imported overlapping governing history is refused; disjoint
 later versions remain unchanged. Tenant scope, revision checks, cancellation,
 and optional predecessor restoration share one transaction. Missing, draft,
 terminal, already-effective, repeated, and conflicting withdrawals fail closed.
+
+## Governed sales signing
+
+`sourceKind: 'sales-quote'` requires `signingActorProfileId` and an injected
+`authorizeSigning(CreateAgreementExecutionInput)` guard. Bind the exact tenant,
+sourceId (quoteId), sourceVersion (revision) and actor to
+`SalesGovernanceService.assertCanSign`, and validate the source document against
+the frozen quote terms. The guard runs before source storage/existing-execution
+replay and immediately before provider request creation. Actor identity is part
+of immutable retry intent. Other agreement kinds may use the same optional guard.
+
+Local authority commits before external provider I/O; provider work cannot join
+a SQL transaction. Seller or finance revocation denies fresh/retried signing but
+does not cancel already-dispatched provider requests. Hosts must explicitly cancel
+outstanding requests when their policy requires it. See the governed sales
+integration and supported PostgreSQL-only boundary in [crm.md](crm.md).
