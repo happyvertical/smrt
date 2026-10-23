@@ -328,10 +328,13 @@ interface ItemPosition {
 }
 /**
  * Sealed cursor plaintext size; every sealed cursor has the same length. The
- * page query admits only receipt values and ids of at most 64 characters, so
- * any scan position fits even when every character is JSON-escaped.
+ * page query admits only receipt values and ids of at most 64 characters
+ * (SQLite counts code points). The JSON-encoded UTF-8 position is largest
+ * when every character is a control character escaped as `\u00XX` (6 bytes):
+ * 2 × 64 × 6 bytes plus 7 bytes of array syntax, which 1024 bytes holds; a
+ * 4-byte UTF-8 character such as an emoji costs less.
  */
-const SEALED_CURSOR_BYTES = 512;
+const SEALED_CURSOR_BYTES = 1024;
 /** The longest stored receipt value or id the page query admits on SQLite. */
 const SCAN_KEY_CHARS = 64;
 function samePosition(a: ItemPosition, b: ItemPosition): boolean {
@@ -1410,13 +1413,16 @@ export class IngestionService {
     // A non-text receipt value (an integer, say) sorts after every text value
     // on SQLite and always satisfies `created_at < ?`, so the scan could
     // never move past it; an over-long receipt value or id could not be
-    // carried by any cursor. Such rows are service-foreign and excluded.
+    // carried by any cursor; and an embedded NUL makes SQLite's `length()`
+    // stop early and the driver return truncated text, so such a row would
+    // look canonical and sort above a legitimate row at the truncated value.
+    // Such rows are service-foreign and excluded.
     // PostgreSQL types both columns, so neither case arises there.
     const sqlite = this.engine === 'sqlite';
     const pinned =
       sqlite && !input.itemIds ? ' INDEXED BY intake_items_received_idx' : '';
     const textOnly = sqlite
-      ? ` AND typeof(i.created_at) = 'text' AND length(i.created_at) <= ${SCAN_KEY_CHARS} AND length(i.id) <= ${SCAN_KEY_CHARS}`
+      ? ` AND typeof(i.created_at) = 'text' AND length(i.created_at) <= ${SCAN_KEY_CHARS} AND length(i.id) <= ${SCAN_KEY_CHARS} AND instr(i.created_at, char(0)) = 0 AND instr(i.id, char(0)) = 0`
       : '';
     // The exact stored receipt value (for the scan anchor) and, on
     // PostgreSQL, whether it has a sub-millisecond part a cursor cannot carry.

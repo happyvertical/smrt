@@ -203,9 +203,11 @@ including a parseable value without milliseconds or with an offset; on
 PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
 actor's access, and counts toward the scan, as does a row whose id is not a
 UUID. On SQLite a non-text stored value (an integer, say) and a receipt value
-or id longer than 64 characters are excluded by the page query itself: the
-first sorts after every text value so the scan could never move past it, and
-the second could not be carried by any cursor. Within a call the scan moves
+or id longer than 64 characters or containing a NUL character are excluded by
+the page query itself: the first sorts after every text value so the scan
+could never move past it, the second could not be carried by any cursor, and
+the third is returned truncated at the NUL, so it would look canonical and
+sort above a legitimate row at the truncated value. Within a call the scan moves
 past a service-foreign row by its exact stored value, and an unsealed cursor
 names the last row before it that the actor can read. A call that finds no readable row within its scan limit (at
 most 1000) fails closed with `IntakeScanLimitError` unless a `cursorKey` is
@@ -243,7 +245,7 @@ excludes never count toward such a run. With a `cursorKey` (a server secret of a
 cursor is sealed with AES-256-GCM, bound to the tenant, confidential scope and
 actor, and a budget-stopped page returns a sealed position past what it
 skipped, so the walk always progresses. Sealed cursors have a fixed length
-(the plaintext is padded to 256 bytes) and a fresh nonce per seal, so neither
+(the plaintext is padded to 1024 bytes) and a fresh nonce per seal, so neither
 their length nor their bytes reveal anything about the stop row. `scanned` is for trusted host
 accounting and must not be sent to clients; a short page with a cursor tells
 a caller only that unlisted rows exist, never which.

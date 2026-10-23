@@ -1878,6 +1878,101 @@ export function foundationSuite(
           `DELETE FROM intake_items WHERE id IN (${legacy.map(() => '?').join(',')})`,
           ...legacy,
         );
+        const insertRaw = async (id: string, createdAt: string, n: number) => {
+          const row: Record<string, unknown> = {
+            ...template,
+            id,
+            slug: `raw-${n}`,
+            delivery_key: `raw-${n}`,
+            created_at: createdAt,
+            updated_at: createdAt,
+          };
+          await db.query(
+            `INSERT INTO intake_items (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
+            ...columns.map((column) => row[column]),
+          );
+        };
+        // Multi-byte and control characters within the 64-character limit:
+        // SQLite counts code points, so the sealed plaintext must hold the
+        // JSON-escaped UTF-8 position. A 64-emoji row sorts above every ISO
+        // value, so a keyed one-row scan from the start stops on it; a
+        // 64-control-character row sorts below every ISO value, so a keyed
+        // one-row scan from the last canonical row stops on it.
+        const emoji = '\u{1F600}'.repeat(64);
+        const control = '\u0001'.repeat(64);
+        // A shorter control-character row sorts below it, so the one-row scan
+        // stops on the 64-character row with more rows after it and must seal
+        // that position.
+        const tail = '\u0002'.repeat(63);
+        await insertRaw(emoji, emoji, 0);
+        await insertRaw(control, control, 1);
+        await insertRaw(tail, '\u0001'.repeat(63), 3);
+        const keyedWide = new IngestionService({
+          ...options,
+          db: counted,
+          cursorKey: 'k'.repeat(32),
+        });
+        const onEmoji = await keyedWide.listItemsPage({
+          limit: 20,
+          scanLimit: 1,
+        });
+        expect(onEmoji.items).toEqual([]);
+        expect(onEmoji.nextCursor).toBeTruthy();
+        expect(
+          ids(
+            await keyedWide.listItemsPage({
+              limit: 1,
+              cursor: onEmoji.nextCursor,
+            }),
+          ),
+        ).toEqual([ordered[0].id]);
+        let lastCursor: string | undefined;
+        let walkAt: string | undefined;
+        let walkCalls = 0;
+        do {
+          const page = await keyedWide.listItemsPage({
+            limit: 100,
+            cursor: walkAt,
+          });
+          lastCursor = page.items.at(-1)?.cursor ?? lastCursor;
+          walkAt = page.nextCursor;
+          walkCalls++;
+          expect(walkCalls).toBeLessThan(40);
+        } while (walkAt);
+        const onControl = await keyedWide.listItemsPage({
+          limit: 20,
+          scanLimit: 1,
+          cursor: lastCursor,
+        });
+        expect(onControl.items).toEqual([]);
+        expect(onControl.nextCursor).toBeTruthy();
+        expect(
+          await keyedWide.listItemsPage({ cursor: onControl.nextCursor }),
+        ).toMatchObject({ items: [] });
+        await db.query(
+          'DELETE FROM intake_items WHERE id IN (?, ?, ?)',
+          emoji,
+          control,
+          tail,
+        );
+        // An embedded NUL: the row `K\0xxx` would come back truncated to `K`,
+        // look canonical and sort above the legitimate row at exactly `K`; a
+        // smaller id would then make paging skip that row. Excluded, the walk
+        // lists the legitimate row and never the NUL one.
+        const at = visible[12];
+        const nulId = '00000000-0000-4000-8000-000000000000';
+        await insertRaw(nulId, `${at.receivedAt}\u0000xxx`, 2);
+        const stepped: string[] = [];
+        let step: string | undefined;
+        for (let n = 0; n < 15; n++) {
+          const page = await full.listItemsPage({ limit: 1, cursor: step });
+          stepped.push(...ids(page));
+          step = page.nextCursor;
+        }
+        expect(stepped).toEqual(ordered.slice(0, 15).map((row) => row.id));
+        expect(stepped).toContain(at.id);
+        expect(stepped).not.toContain(nulId);
+        await db.query('DELETE FROM intake_items WHERE id=?', nulId);
       }
       // A parseable but non-canonical receipt time between two canonical
       // neighbours (no milliseconds on SQLite, a sub-millisecond part on
