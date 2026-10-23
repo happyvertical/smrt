@@ -12,9 +12,6 @@ catalogs:
     '@sentry/node':
       specifier: ^10.75.0
       version: 10.75.0
-    jimp:
-      specifier: ^1.6.1
-      version: 1.6.1
     sharp:
       specifier: ^0.35.5
       version: 0.35.5
@@ -151,7 +148,7 @@ importers:
         version: 0.10.3
       playwright-core:
         specifier: ^1.63.0
-        version: 1.63.0
+        version: 1.64.1
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
@@ -228,7 +225,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -473,7 +470,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -773,13 +770,13 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/animation':
         specifier: 0.5.0
         version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
         specifier: ^0.106.0
-        version: 0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
+        version: 0.106.0(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -879,7 +876,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -1114,10 +1111,10 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/documents':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -1126,16 +1123,16 @@ importers:
         version: 0.106.0(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/images':
         specifier: ^0.106.0
-        version: 0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
+        version: 0.106.0(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/logger':
         specifier: ^0.106.0
         version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/ocr':
         specifier: ^0.62.1
-        version: 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/pdf':
         specifier: ^0.65.9
-        version: 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -1241,7 +1238,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -1390,7 +1387,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -1515,7 +1512,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -1659,7 +1656,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -1742,13 +1739,13 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/animation':
         specifier: 0.5.0
         version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
         specifier: ^0.106.0
-        version: 0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
+        version: 0.106.0(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1770,9 +1767,6 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.106.0
         version: 0.106.0
-      jimp:
-        specifier: 'catalog:'
-        version: 1.6.1(supports-color@10.2.2)
       sharp:
         specifier: 'catalog:'
         version: 0.35.5(@types/node@24.13.2)
@@ -1821,13 +1815,13 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/ocr':
         specifier: ^0.62.1
-        version: 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/pdf':
         specifier: ^0.65.9
-        version: 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -2025,7 +2019,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/logger':
         specifier: ^0.106.0
         version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -2465,7 +2459,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/cache':
         specifier: ^0.106.0
         version: 0.106.0(@opentelemetry/api@1.9.1)
@@ -2517,7 +2511,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2805,7 +2799,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -2890,7 +2884,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -2948,7 +2942,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/logger':
         specifier: ^0.106.0
         version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -3978,7 +3972,7 @@ importers:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/files':
         specifier: ^0.106.0
         version: 0.106.0(supports-color@10.2.2)
@@ -5958,118 +5952,6 @@ packages:
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
 
-  '@jimp/core@1.6.1':
-    resolution: {integrity: sha512-+BoKC5G6hkrSy501zcJ2EpfnllP+avPevcBfRcZe/CW+EwEfY6X1EZ8QWyT7NpDIvEEJb1fdJnMMfUnFkxmw9A==}
-    engines: {node: '>=18'}
-
-  '@jimp/diff@1.6.1':
-    resolution: {integrity: sha512-YkKDPdHjLgo1Api3+Bhc0GLAygldlpt97NfOKoNg1U6IUNXA6X2MgosCjPfSBiSvJvrrz1fsIR+/4cfYXBI/HQ==}
-    engines: {node: '>=18'}
-
-  '@jimp/file-ops@1.6.1':
-    resolution: {integrity: sha512-T+gX6osHjprbDRad0/B71Evyre7ZdVY1z/gFGEG9Z8KOtZPKboWvPeP2UjbZYWQLy9UKCPQX1FNAnDiOPkJL7w==}
-    engines: {node: '>=18'}
-
-  '@jimp/js-bmp@1.6.1':
-    resolution: {integrity: sha512-xzWzNT4/u5zGrTT3Tme9sGU7YzIKxi13+BCQwLqACbt5DXf9SAfdzRkopZQnmDko+6In5nqaT89Gjs43/WdnYQ==}
-    engines: {node: '>=18'}
-
-  '@jimp/js-gif@1.6.1':
-    resolution: {integrity: sha512-YjY2W26rQa05XhanYhRZ7dingCiNN+T2Ymb1JiigIbABY0B28wHE3v3Cf1/HZPWGu0hOg36ylaKgV5KxF2M58w==}
-    engines: {node: '>=18'}
-
-  '@jimp/js-jpeg@1.6.1':
-    resolution: {integrity: sha512-HT9H3yOmlOFzYmdI15IYdfy6ggQhSRIaHeA+OTJSEORXBqEo97sUZu/DsgHIcX5NJ7TkJBTgZ9BZXsV6UbsyMg==}
-    engines: {node: '>=18'}
-
-  '@jimp/js-png@1.6.1':
-    resolution: {integrity: sha512-SZ/KVhI5UjcSzzlXsXdIi/LhJ7UShf2NkMOtVrbZQcGzsqNtynAelrOXeoTxcanfVqmNhAoVHg8yR2cYoqrYjA==}
-    engines: {node: '>=18'}
-
-  '@jimp/js-tiff@1.6.1':
-    resolution: {integrity: sha512-jDG/eJquID1M4MBlKMmDRBmz2TpXMv7TUyu2nIRUxhlUc2ogC82T+VQUkca9GJH1BBJ9dx5sSE5dGkWNjIbZxw==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-blit@1.6.1':
-    resolution: {integrity: sha512-MwnI7C7K81uWddY9FLw1fCOIy6SsPIUftUz36Spt7jisCn8/40DhQMlSxpxTNelnZb/2SnloFimQfRZAmHLOqQ==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-blur@1.6.1':
-    resolution: {integrity: sha512-lIo7Tzp5jQu30EFFSK/phXANK3citKVEjepDjQ6ljHoIFtuMRrnybnmI2Md24ulvWlDaz+hh3n6qrMb8ydwhZQ==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-circle@1.6.1':
-    resolution: {integrity: sha512-kK1PavY6cKHNNKce37vdV4Tmpc1/zDKngGoeOV3j+EMatoHFZUinV3s6F9aWryPs3A0xhCLZgdJ6Zeea1d5LCQ==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-color@1.6.1':
-    resolution: {integrity: sha512-LtUN1vAP+LRlZAtTNVhDRSiXx+26Kbz3zJaG6a5k59gQ95jgT5mknnF8lxkHcqJthM4MEk3/tPxkdJpEybyF/A==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-contain@1.6.1':
-    resolution: {integrity: sha512-m0qhrfA8jkTqretGv4w+T/ADFR4GwBpE0sCOC2uJ0dzr44/ddOMsIdrpi89kabqYiPYIrxkgdCVCLm3zn1Vkkg==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-cover@1.6.1':
-    resolution: {integrity: sha512-hZytnsth0zoll6cPf434BrT+p/v569Wr5tyO6Dp0dH1IDPhzhB5F38sZGMLDo7bzQiN9JFVB3fxkcJ/WYCJ3Mg==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-crop@1.6.1':
-    resolution: {integrity: sha512-EerRSLlclXyKDnYc/H9w/1amZW7b7v3OGi/VlerPd2M/pAu5X8TkyYWtfqYCXnNp1Ixtd8oCo9zGfY9zoXT4rg==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-displace@1.6.1':
-    resolution: {integrity: sha512-K07QVl7xQwIfD6KfxRV/c3E9e7ZBXxUXdWuvoTWcKHL2qV48MOF5Nqbz/aJW4ThnQARIsxvYlZjPFiqkCjlU+g==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-dither@1.6.1':
-    resolution: {integrity: sha512-+2V+GCV2WycMoX1/z977TkZ8Zq/4MVSKElHYatgUqtwXMi2fDK2gKYU2g9V39IqFvTJsTIsK0+58VFz/ROBVew==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-fisheye@1.6.1':
-    resolution: {integrity: sha512-XtS5ZyoZ0vxZxJ6gkqI63SivhtI58vX95foMPM+cyzYkRsJXMOYCr8DScxF5bp4Xr003NjYm/P+7+08tibwzHA==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-flip@1.6.1':
-    resolution: {integrity: sha512-ws38W/sGj7LobNRayQ83garxiktOyWxM5vO/y4a/2cy9v65SLEUzVkrj+oeAaUSSObdz4HcCEla7XtGlnAGAaA==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-hash@1.6.1':
-    resolution: {integrity: sha512-sZt6ZcMX6i8vFWb4GYnw0pR/o9++ef0dTVcboTB5B/g7nrxCODIB4wfEkJ/YqZM5wUvol77K1qeS0/rVO6z21A==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-mask@1.6.1':
-    resolution: {integrity: sha512-SIG0/FcmEj3tkwFxc7fAGLO8o4uNzMpSOdQOhbCgxefQKq5wOVMk9BQx/sdMPBwtMLr9WLq0GzLA/rk6t2v20A==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-print@1.6.1':
-    resolution: {integrity: sha512-BYVz/X3Xzv8XYilVeDy11NOp0h7BTDjlOtu0BekIFHP1yHVd24AXNzbOy52XlzYZWQ0Dl36HOHEpl/nSNrzc6w==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-quantize@1.6.1':
-    resolution: {integrity: sha512-J2En9PLURfP+vwYDtuZ9T8yBW6BWYZBScydAjRiPBmJfEhTcNQqiiQODrZf7EqbbX/Sy5H6dAeRiqkgoV9N6Ww==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-resize@1.6.1':
-    resolution: {integrity: sha512-CLkrtJoIz2HdWnpYiN6p8KYcPc00rCH/SUu6o+lfZL05Q4uhecJlnvXuj9x+U6mDn3ldPmJj6aZqMHuUJzdVqg==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-rotate@1.6.1':
-    resolution: {integrity: sha512-nOjVjbbj705B02ksysKnh0POAwEBXZtJ9zQ5qC+X7Tavl3JNn+P3BzQovbBxLPSbUSld6XID9z5ijin4PtOAUg==}
-    engines: {node: '>=18'}
-
-  '@jimp/plugin-threshold@1.6.1':
-    resolution: {integrity: sha512-JOKv9F8s6tnVLf4sB/2fF0F339EFnHvgEdFYugO6VhowKLsap0pEZmLyE/DlRnYtIj2RddHZVxVMp/eKJ04l2Q==}
-    engines: {node: '>=18'}
-
-  '@jimp/types@1.6.1':
-    resolution: {integrity: sha512-leI7YbveTNi565m910XgIOwXyuu074H5qazAD1357HImJSv2hqxnWXpwxQbadGWZ7goZRYBDZy5lpqud0p7q5w==}
-    engines: {node: '>=18'}
-
-  '@jimp/utils@1.6.1':
-    resolution: {integrity: sha512-veFPRd93FCnS7AgmCkPgARVGoDRrJ9cm1ujuNyA+UfQ5VKbED2002sm5XfFLFwTsKC8j04heTrwe+tU1dluXOw==}
-    engines: {node: '>=18'}
-
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -7073,8 +6955,8 @@ packages:
     resolution: {integrity: sha512-4EDEmvxWtgsCnnVeBvtFIFZtUhPPt1+bA9JrSwU4Sa//6oKtzCSlGGXYJr44OD9aGISymbieJ4mCKHUygUDU+g==}
     engines: {node: '>=18'}
 
-  '@puppeteer/browsers@3.0.6':
-    resolution: {integrity: sha512-B/gKoqlFkzhvzsI6jo9K1cZz9o5ypviVv/xu8CwA4grZzyVwN+XfkT+tu8T1zrauuEXv6VhS2oGX+6NL95WcKA==}
+  '@puppeteer/browsers@3.2.6':
+    resolution: {integrity: sha512-MJP29gVoHznmqmwhH1tlZqzfeQ3aylTpSSa6WKZXtkwYUH02i9imBmWGTyZrbnAou5paX78SE4jMAUqnEPf8ug==}
     engines: {node: '>=22.12.0'}
     hasBin: true
     peerDependencies:
@@ -8379,9 +8261,6 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  any-base@1.1.0:
-    resolution: {integrity: sha512-uMgjozySS8adZZYePpaWs8cxB9/kdzmpX6SgJZ+wbz1K5eYk5QMYDVJaZKhxyIHUdnnJkfR7SVgStgH7LkGUyg==}
-
   anynum@1.0.1:
     resolution: {integrity: sha512-N6//FLET/tXYNM/F6ABca1oH6fWB+KlTt909Le28WMDBk8oaT4vY17DCrwg2MvmuqUKt3Ni4N5dGJ/EoBgcO6A==}
 
@@ -8424,10 +8303,6 @@ packages:
   atomic-sleep@1.0.0:
     resolution: {integrity: sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ==}
     engines: {node: '>=8.0.0'}
-
-  await-to-js@3.0.0:
-    resolution: {integrity: sha512-zJAaP9zxTcvTHRlejau3ZOY4V7SRpiByf3/dxx2uyKxxor19tpmpV2QRsTKikckwhaPmr2dVpxxMr7jOCYVp5g==}
-    engines: {node: '>=6.0.0'}
 
   axe-core@4.13.0:
     resolution: {integrity: sha512-UzGt8zg7Ny8djbYMhxl2zuEevVa7r2gJjYY5Lwr1xM7+XU2nd6CkIWFTVcCIbAP63vSz71NaVyyuSk9lHKcy0A==}
@@ -8605,8 +8480,8 @@ packages:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
     engines: {node: '>=18'}
 
-  chromium-bidi@17.0.2:
-    resolution: {integrity: sha512-5v9GQFhTktFvotn/OFNJBmKLKRAb6n9r0bVCwf7sHgWc3/JryK0bj1nn93L3pHFrfgcsu6Be6EWsDi+1XHTGDg==}
+  chromium-bidi@157.0.8090-0:
+    resolution: {integrity: sha512-KJw7IQgqXwxpJgJlEIPg5mr2ZoqA+jkTRtc5EABI7sUJ3bu3cpI7NuEBoj4Gn1AsF78CaT9So5WQWspK3/wYag==}
     engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0'}
     peerDependencies:
       devtools-protocol: '*'
@@ -8938,6 +8813,9 @@ packages:
   devtools-protocol@0.0.1653615:
     resolution: {integrity: sha512-pGVkY3T/qXxAp2nFPodwYqOevk6ncNMSmvL8QfRCx5ZWGd6Vor7AFNmyaA8Zs6uJyP1QAfjuLandCgvSix1BNA==}
 
+  devtools-protocol@0.0.1704951:
+    resolution: {integrity: sha512-GQhQOs9u/Mvm1zMtJIH872JS4AskuZdUSsPNPk4ChahtWAUqgz6atEtIsMt+nO7MqF1Ic4HxII/k8Cu36JivNg==}
+
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
@@ -9147,9 +9025,6 @@ packages:
   eventsource@3.0.7:
     resolution: {integrity: sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==}
     engines: {node: '>=18.0.0'}
-
-  exif-parser@0.1.12:
-    resolution: {integrity: sha512-c2bQfLNbMzLPmzQuOr8fy0csy84WmwnER81W88DzTp9CYNPJ6yzOj2EZAh9pywYpqHnshVLHQJ8WzldAyfY+Iw==}
 
   expect-type@1.3.0:
     resolution: {integrity: sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==}
@@ -9382,9 +9257,6 @@ packages:
     resolution: {integrity: sha512-kVCxPF3vQM/N0B1PmoqVUqgHP+EeVjmZSQn+1oCRPxd2P21P2F19lIgbR3HBosbB1PUhOAoctJnfEn2GbN2eZA==}
     engines: {node: '>=18'}
 
-  gifwrap@0.10.1:
-    resolution: {integrity: sha512-2760b1vpJHNmLzZ/ubTtNnEx5WApN/PYWJvXvgS+tL1egTTthayFYIQQNi136FLEDcN/IyEY2EcGpIITD6eYUw==}
-
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
@@ -9604,9 +9476,6 @@ packages:
     resolution: {integrity: sha512-brTTsvFRt5C1gGHtPst/281UjPD5t9fBqbgoMPlVWy11ZLTPfu7HxK4ZYqO9H7o/yC9rSTCI85EaQ4OoY12qYw==}
     engines: {node: '>= 4'}
 
-  image-q@4.0.0:
-    resolution: {integrity: sha512-PfJGVgIfKQJuq3s0tTDOKtztksibuUEbJQIYT3by6wctQo+Rdlh7ef4evJ5NCdxY4CfMbvFkocEwbl4BF8RlJw==}
-
   imapflow@1.4.0:
     resolution: {integrity: sha512-bpNWv3AwzZryMMYoKiqPebcxmldCQwWxqhBQ5b/nTlJYAgexCzDIpN0LdhVJpJp6H25lAmwvShX+Fu/9AU5Spg==}
 
@@ -9781,10 +9650,6 @@ packages:
   jackspeak@3.4.3:
     resolution: {integrity: sha512-OGlZQpz2yfahA/Rd1Y8Cd9SIEsqvXkLVoSw/cgwhnhFMDbsQFeZYoJJ7bIZBS9BcamUW96asq/npPWugM+RQBw==}
 
-  jimp@1.6.1:
-    resolution: {integrity: sha512-hNQh6rZtWfSVWSNVmvq87N5BPJsNH7k7I7qyrXf9DOma9xATQk3fsyHazCQe51nCjdkoWdTmh0vD7bjVSLoxxw==}
-    engines: {node: '>=18'}
-
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
@@ -9794,9 +9659,6 @@ packages:
 
   jose@6.2.12:
     resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
-
-  jpeg-js@0.4.4:
-    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
 
   jquery@3.7.1:
     resolution: {integrity: sha512-m4avr8yL8kmFN8psrbFFFmB/If14iN5o9nw/NgnnM+kybDJpRsAynV2BsfpTYrTRysYUdADVD7CkUUizgkpLfg==}
@@ -10225,11 +10087,6 @@ packages:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
 
-  mime@3.0.0:
-    resolution: {integrity: sha512-jSCU7/VB1loIWBZe14aEYHU/+1UMEHoaO7qxCOVJOw9GgH72VAWppxNcjU+x9a2k3GSIBXNKxXQFqRvvZ7vr3A==}
-    engines: {node: '>=10.0.0'}
-    hasBin: true
-
   mimic-fn@2.1.0:
     resolution: {integrity: sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg==}
     engines: {node: '>=6'}
@@ -10279,8 +10136,8 @@ packages:
   ml-matrix@6.12.2:
     resolution: {integrity: sha512-GC+BnW+pBh8Auap8goAxY0senAmF0IEoc3HNVSfnfbvGw0buuDIYb9kAKMS1l+GiwJ1rfK2bzJ8IHhwjzATSFA==}
 
-  modern-tar@0.7.6:
-    resolution: {integrity: sha512-sweCIVXzx1aIGTCdzcMlSZt1h8k5Tmk08VNAuRk3IU28XamGiOH5ypi11g6De2CH7PhYqSSnGy2A/EFhbWnVKg==}
+  modern-tar@0.8.6:
+    resolution: {integrity: sha512-LYSks0tNVqbtez/9OB0YFP6qLRSqkdAxJWOQpVaR67lNTbj2zNLyYpowkRMia5lXLCZKzxwoxkxH2MbbBR2aEg==}
     engines: {node: '>=18.0.0'}
 
   module-details-from-path@1.0.4:
@@ -10405,9 +10262,6 @@ packages:
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
-
-  omggif@1.0.10:
-    resolution: {integrity: sha512-LMJTtvgc/nugXj0Vcrrs68Mn2D1r0zf630VNtqtpI1FEO7e+O9FP4gqs9AcnBaSEeoHIPm28u6qgPR0oyEpGSw==}
 
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
@@ -10555,15 +10409,6 @@ packages:
     resolution: {integrity: sha512-2MXDNZC4aXdkkap+rBBMv0lUsfJqvX5/2FiYYnfCnorZt3Pk06/IOR5KeaoghgS2w07MLWgjbsnyaq6PdHn2LQ==}
     engines: {node: '>= 0.4.0'}
 
-  parse-bmfont-ascii@1.0.6:
-    resolution: {integrity: sha512-U4RrVsUFCleIOBsIGYOMKjn9PavsGOXxbvYGtMOEfnId0SVNsgehXh1DxUdVPLoxd5mvcEtvmKs2Mmf0Mpa1ZA==}
-
-  parse-bmfont-binary@1.0.6:
-    resolution: {integrity: sha512-GxmsRea0wdGdYthjuUeWTMWPqm2+FAd4GI8vCvhgJsFnoGhTrLhXDDupwTo7rXVAgaLIGoVHDZS9p/5XbSqeWA==}
-
-  parse-bmfont-xml@1.1.6:
-    resolution: {integrity: sha512-0cEliVMZEhrFDwMh4SxIyVJpqYoOWDJ9P895tFuS+XuNzI5UBmBk5U5O4KuJdTnZpSBI4LFA2+ZiJaiwfSwlMA==}
-
   parse-css-color@0.2.1:
     resolution: {integrity: sha512-bwS/GGIFV3b6KS4uwpzCFj4w297Yl3uqnSgIPsoQkx7GMLROXfMnWvxfNkL0oh8HVhZA4hvJoEoEIqonfJ3BWg==}
 
@@ -10690,10 +10535,6 @@ packages:
     resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
     hasBin: true
 
-  pixelmatch@5.3.0:
-    resolution: {integrity: sha512-o8mkY4E/+LNUf6LzX96ht6k6CEDi65k9G2rjMtBe9Oo+VPKSvl+0GKHuH/AlG+GA5LPG/i5hrekkxUc3s2HU+Q==}
-    hasBin: true
-
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
@@ -10733,14 +10574,6 @@ packages:
   pluralize@8.0.0:
     resolution: {integrity: sha512-Nc3IT5yHzflTfbjgqWcCPpo7DaKy4FnpB0l/zCAW0Tc7jxAiuqSxHasntB3D7887LSrA93kDJ9IXovxJYxyLCA==}
     engines: {node: '>=4'}
-
-  pngjs@6.0.0:
-    resolution: {integrity: sha512-TRzzuFRRmEoSW/p1KVAmiOgPco2Irlah+bGFCeNfJXxxYGwSw7YwAOAcd7X28K/m5bjBWKsC29KyoMfHbypayg==}
-    engines: {node: '>=12.13.0'}
-
-  pngjs@7.0.0:
-    resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
-    engines: {node: '>=14.19.0'}
 
   postcss-value-parser@4.2.0:
     resolution: {integrity: sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==}
@@ -10819,8 +10652,8 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
-  puppeteer-core@25.4.0:
-    resolution: {integrity: sha512-K1plkLOdeoUnGeT1OvdqF3qxl33v+Ra/uH5VyPEhXdMcpvGiEskHzxxEU3fgpccJpJLIipB/rPUsvkZRWeKqOA==}
+  puppeteer-core@25.16.0:
+    resolution: {integrity: sha512-VA5Pf54N8shfopNkZZXCdiiwfnnY8ZJYAMqFQRhlH5mGUhfwf53Ar770GPtdpTDLUqvQeYpIBtC9/G2Jij2IJw==}
     engines: {node: '>=22.12.0'}
 
   pvtsutils@1.3.6:
@@ -11146,10 +10979,6 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
-  simple-xml-to-json@1.2.7:
-    resolution: {integrity: sha512-mz9VXphOxQWX3eQ/uXCtm6upltoN0DLx8Zb5T4TFC4FHB7S9FDPGre8CfLWqPWQQH/GrQYd2AXhhVM5LDpYx6Q==}
-    engines: {node: '>=20.12.2'}
-
   sirv@3.0.2:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
@@ -11323,12 +11152,6 @@ packages:
       svelte: 5.56.4
       typescript: ^5.0.0 || ^6.0.0
 
-  svelte2tsx@0.7.57:
-    resolution: {integrity: sha512-nQo0xEfUpSVjfkxan2UmC6Wl9UZVe9+/pglUiyBNMJ7KDQ9DDooucmXdToBOvzSfgYjj/kMYwf6CTTDz/z048w==}
-    peerDependencies:
-      svelte: 5.56.4
-      typescript: ^4.9.4 || ^5.0.0 || ^6.0.0
-
   svelte2tsx@0.7.61:
     resolution: {integrity: sha512-EpQ/+UHITBULeUojx/LLD3uTYasZXcX1BrqlrzfLUnT9vdUhaOWK59a3ryWcFU8L0sY1SP+gRhJ2Beiis98+qw==}
     peerDependencies:
@@ -11385,9 +11208,6 @@ packages:
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
-
-  tinycolor2@1.6.0:
-    resolution: {integrity: sha512-XPaBkWQJdsf3pLKJV9p4qN/S+fm2Oj8AIPo1BTUhg5oxkvm9+SVEGFdhyOz7tTdUTfvxMiAs4sp6/eZO2Ew+pw==}
 
   tinyexec@1.3.1:
     resolution: {integrity: sha512-GCvB3aoys96IuDFBMcTB46JOR6mdMtAToqwiW8JlWhsoh1mhHi/xn9ss/Dg7N555GiJyEt2qzoG/NHCwM6h1EA==}
@@ -11522,8 +11342,8 @@ packages:
     resolution: {integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==}
     engines: {node: '>= 18'}
 
-  typed-query-selector@2.12.2:
-    resolution: {integrity: sha512-EOPFbyIub4ngnEdqi2yOcNeDLaX/0jcE1JoAXQDDMIthap7FoN795lc/SHfIq2d416VufXpM8z/lD+WRm2gfOQ==}
+  typed-query-selector@2.12.3:
+    resolution: {integrity: sha512-/dtuMZyutHLlrxWhhC1uib00ELUr2dZ8C9B8YzZYsJmeE3V56OxRblrSM2UaF142pcMtak7ehZ6+poWGeehNIg==}
 
   typescript@6.0.3:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
@@ -11585,9 +11405,6 @@ packages:
 
   url-template@2.0.8:
     resolution: {integrity: sha512-XdVKMF4SJ0nP/O7XIPB0JwAEuT9lDIYnNsK8yGVe43y0AWoKeJNdv3ZNWh7ksJ6KqQFjOO6ox/VEitLnaVNufw==}
-
-  utif2@4.1.0:
-    resolution: {integrity: sha512-+oknB9FHrJ7oW7A2WZYajOcv4FcDR4CfoGB0dPNfxbi4GO05RRnFmt5oa23+9w32EanrYcSJWspUiJkLMs+37w==}
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
@@ -11768,8 +11585,8 @@ packages:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
 
-  webdriver-bidi-protocol@0.4.2:
-    resolution: {integrity: sha512-VSV+fzfChirL3e7jay2yUC7B4HQCGtEWEg/MSSQbK+qWbqeGlRLlXTzPpYr3XGUvbpDHumWZBJxgesg4N7dbtA==}
+  webdriver-bidi-protocol@1.0.1:
+    resolution: {integrity: sha512-WXWs/aXF2a6Al1Z2/V/7Gp2oPZOAAmHjJOTmv4KCXRJ122IMj3tSSMc6a4q3K4QOmhQbse/Ahr+oTVJOU2dUiw==}
 
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
@@ -11876,6 +11693,18 @@ packages:
       utf-8-validate:
         optional: true
 
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -11887,17 +11716,6 @@ packages:
   xml-naming@0.3.0:
     resolution: {integrity: sha512-ghig2TBE/H11aOVgmahA3MhimvkBr6JIYknH/Dhdk10nXwdbIqBJsbfMxpvFPG8bAw77gN29aQWvKpmVoPlvPQ==}
     engines: {node: '>=16.0.0'}
-
-  xml-parse-from-string@1.0.1:
-    resolution: {integrity: sha512-ErcKwJTF54uRzzNMXq2X5sMIy88zJvfN2DmdoQvy7PAFJ+tPRU6ydWuOKNMyfmOjdyBQTFREi60s0Y0SyI0G0g==}
-
-  xml2js@0.5.0:
-    resolution: {integrity: sha512-drPFnkQJik/O+uPKpqSgr22mpuFHqKdbS835iAQrUC73L2F5WkboIRd63ai/2Yg6I1jzifPFKH2NTK+cfglkIA==}
-    engines: {node: '>=4.0.0'}
-
-  xmlbuilder@11.0.1:
-    resolution: {integrity: sha512-fDlsI/kFEx7gLvbecc0/ohLG50fugQp8ryHzMTuW9vSa1GJ0XYWKnhsUx7oie3G98+r56aTQIUB4kht42R3JvA==}
-    engines: {node: '>=4.0'}
 
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
@@ -11964,21 +11782,18 @@ packages:
     peerDependencies:
       zod: ^3.25 || ^4
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
-
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@anthropic-ai/sdk@0.90.0(zod@4.3.6)':
+  '@anthropic-ai/sdk@0.90.0(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
-      zod: 4.3.6
+      zod: 4.6.7
 
   '@apify/consts@2.53.3': {}
 
@@ -13429,14 +13244,14 @@ snapshots:
       - supports-color
     optional: true
 
-  '@google/genai@1.50.1(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)':
+  '@google/genai@1.50.1(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)':
     dependencies:
       google-auth-library: 10.7.0(supports-color@10.2.2)
       p-retry: 4.6.2
       protobufjs: 7.6.5
       ws: 8.21.0
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6)
+      '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -13487,13 +13302,13 @@ snapshots:
       - debug
       - supports-color
 
-  '@happyvertical/ai@0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/ai@0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 0.90.0(zod@4.3.6)
+      '@anthropic-ai/sdk': 0.90.0(zod@4.6.7)
       '@aws-sdk/client-bedrock-runtime': 3.1034.0
-      '@google/genai': 1.50.1(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)
+      '@google/genai': 1.50.1(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)
       '@happyvertical/utils': 0.106.0
-      openai: 6.34.0(ws@8.21.0)(zod@4.3.6)
+      openai: 6.34.0(ws@8.21.0)(zod@4.6.7)
     optionalDependencies:
       '@mlc-ai/web-llm': 0.2.85
     transitivePeerDependencies:
@@ -13528,11 +13343,11 @@ snapshots:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
 
-  '@happyvertical/documents@0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/documents@0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@happyvertical/files': 0.106.0(supports-color@10.2.2)
-      '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/pdf': 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@happyvertical/pdf': 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/spider': 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)
       '@happyvertical/utils': 0.106.0
     transitivePeerDependencies:
@@ -13609,13 +13424,12 @@ snapshots:
     dependencies:
       ical.js: 2.2.1
 
-  '@happyvertical/images@0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))':
+  '@happyvertical/images@0.106.0(sharp@0.35.5(@types/node@24.13.2))':
     dependencies:
       '@mediapipe/tasks-vision': 1.1.0
       '@resvg/resvg-js': 2.6.2
       satori: 0.26.0
     optionalDependencies:
-      jimp: 1.6.1(supports-color@10.2.2)
       sharp: 0.35.5(@types/node@24.13.2)
 
   '@happyvertical/jobs@0.106.0(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))':
@@ -13655,11 +13469,11 @@ snapshots:
       - debug
       - supports-color
 
-  '@happyvertical/ocr@0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/ocr@0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@gutenye/ocr-common': 1.4.8
       '@gutenye/ocr-models': 1.4.2
-      '@happyvertical/ai': 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/ai': 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/utils': 0.106.0
       bmp-ts: 1.0.9
       onnxruntime-common: 1.30.0
@@ -13683,15 +13497,15 @@ snapshots:
       '@noble/hashes': 2.0.1
       '@scure/bip32': 2.0.1
 
-  '@happyvertical/pdf@0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/pdf@0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/utils': 0.106.0
       '@napi-rs/canvas': 0.1.100
       marked: 18.0.7
       pdf-lib: 1.17.1
       pdfjs-dist: 6.2.108
-      puppeteer-core: 25.4.0
+      puppeteer-core: 25.16.0
       unpdf: 1.6.2(@napi-rs/canvas@0.1.100)
     optionalDependencies:
       '@kreuzberg/node': 4.10.2
@@ -13942,229 +13756,6 @@ snapshots:
     dependencies:
       minipass: 7.1.3
 
-  '@jimp/core@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/file-ops': 1.6.1
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      await-to-js: 3.0.0
-      exif-parser: 0.1.12
-      file-type: 21.3.4(supports-color@10.2.2)
-      mime: 3.0.0
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/diff@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/plugin-resize': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      pixelmatch: 5.3.0
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/file-ops@1.6.1': {}
-
-  '@jimp/js-bmp@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      bmp-ts: 1.0.9
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/js-gif@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      gifwrap: 0.10.1
-      omggif: 1.0.10
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/js-jpeg@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      jpeg-js: 0.4.4
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/js-png@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      pngjs: 7.0.0
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/js-tiff@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      utif2: 4.1.0
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-blit@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-
-  '@jimp/plugin-blur@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/utils': 1.6.1
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-circle@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      zod: 3.25.76
-
-  '@jimp/plugin-color@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      tinycolor2: 1.6.0
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-contain@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-blit': 1.6.1
-      '@jimp/plugin-resize': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-cover@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-crop': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-resize': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-crop@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-displace@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-
-  '@jimp/plugin-dither@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-
-  '@jimp/plugin-fisheye@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-
-  '@jimp/plugin-flip@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      zod: 3.25.76
-
-  '@jimp/plugin-hash@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-bmp': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-jpeg': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-png': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-tiff': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-color': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-resize': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      any-base: 1.1.0
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-mask@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      zod: 3.25.76
-
-  '@jimp/plugin-print@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-jpeg': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-png': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-blit': 1.6.1
-      '@jimp/types': 1.6.1
-      parse-bmfont-ascii: 1.0.6
-      parse-bmfont-binary: 1.0.6
-      parse-bmfont-xml: 1.1.6
-      simple-xml-to-json: 1.2.7
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-quantize@1.6.1':
-    dependencies:
-      image-q: 4.0.0
-      zod: 3.25.76
-
-  '@jimp/plugin-resize@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-rotate@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-crop': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-resize': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/plugin-threshold@1.6.1(supports-color@10.2.2)':
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-color': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-hash': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - supports-color
-
-  '@jimp/types@1.6.1':
-    dependencies:
-      zod: 3.25.76
-
-  '@jimp/utils@1.6.1':
-    dependencies:
-      '@jimp/types': 1.6.1
-      tinycolor2: 1.6.0
-
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
@@ -14328,11 +13919,11 @@ snapshots:
       eventsource-parser: 3.1.0
       jose: 6.2.12
       pkce-challenge: 5.0.1
-      zod: 4.3.6
+      zod: 4.6.7
 
   '@modelcontextprotocol/conformance@0.2.0-alpha.11(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6)
+      '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
       '@octokit/rest': 22.0.1
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
@@ -14342,18 +13933,18 @@ snapshots:
       jose: 6.2.12
       undici: 7.29.1
       yaml: 2.9.1
-      zod: 4.3.6
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - supports-color
 
   '@modelcontextprotocol/core@2.2.0':
     dependencies:
-      zod: 4.3.6
+      zod: 4.6.7
 
   '@modelcontextprotocol/core@2.3.1':
     dependencies:
-      zod: 4.3.6
+      zod: 4.6.7
 
   '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.3.1)(hono@4.12.27)':
     dependencies:
@@ -14362,7 +13953,7 @@ snapshots:
     optionalDependencies:
       hono: 4.12.27
 
-  '@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6)':
+  '@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.27)
       ajv: 8.20.0
@@ -14379,8 +13970,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.3.6
-      zod-to-json-schema: 3.25.1(zod@4.3.6)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.1(zod@4.6.7)
     optionalDependencies:
       '@cfworker/json-schema': 4.1.1
     transitivePeerDependencies:
@@ -14389,7 +13980,7 @@ snapshots:
   '@modelcontextprotocol/server@2.3.1':
     dependencies:
       '@modelcontextprotocol/core': 2.3.1
-      zod: 4.3.6
+      zod: 4.6.7
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     optional: true
@@ -15022,9 +14613,9 @@ snapshots:
     dependencies:
       tinyexec: 1.3.1
 
-  '@puppeteer/browsers@3.0.6':
+  '@puppeteer/browsers@3.2.6':
     dependencies:
-      modern-tar: 0.7.6
+      modern-tar: 0.8.6
       yargs: 18.1.0
 
   '@redis/bloom@5.12.1(@redis/client@5.12.1(@opentelemetry/api@1.9.1))':
@@ -15852,7 +15443,7 @@ snapshots:
       sade: 1.8.1
       semver: 7.8.5
       svelte: 5.57.1
-      svelte2tsx: 0.7.57(svelte@5.57.1)(typescript@6.0.3)
+      svelte2tsx: 0.7.61(svelte@5.57.1)(typescript@6.0.3)
     transitivePeerDependencies:
       - typescript
 
@@ -16246,8 +15837,6 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  any-base@1.1.0: {}
-
   anynum@1.0.1: {}
 
   argparse@2.0.1: {}
@@ -16281,8 +15870,6 @@ snapshots:
   atob@2.1.2: {}
 
   atomic-sleep@1.0.0: {}
-
-  await-to-js@3.0.0: {}
 
   axe-core@4.13.0: {}
 
@@ -16496,11 +16083,11 @@ snapshots:
 
   chownr@3.0.0: {}
 
-  chromium-bidi@17.0.2(devtools-protocol@0.0.1653615):
+  chromium-bidi@157.0.8090-0(devtools-protocol@0.0.1704951):
     dependencies:
-      devtools-protocol: 0.0.1653615
+      devtools-protocol: 0.0.1704951
       mitt: 3.0.1
-      zod: 3.25.76
+      zod: 4.6.7
 
   chrono-node@2.10.1: {}
 
@@ -16820,6 +16407,8 @@ snapshots:
 
   devtools-protocol@0.0.1653615: {}
 
+  devtools-protocol@0.0.1704951: {}
+
   dom-accessibility-api@0.5.16: {}
 
   dom-accessibility-api@0.6.3: {}
@@ -17057,8 +16646,6 @@ snapshots:
   eventsource@3.0.7:
     dependencies:
       eventsource-parser: 3.1.0
-
-  exif-parser@0.1.12: {}
 
   expect-type@1.3.0: {}
 
@@ -17347,11 +16934,6 @@ snapshots:
     dependencies:
       '@sec-ant/readable-stream': 0.4.1
       is-stream: 4.0.1
-
-  gifwrap@0.10.1:
-    dependencies:
-      image-q: 4.0.0
-      omggif: 1.0.10
 
   glob-parent@5.1.2:
     dependencies:
@@ -17689,10 +17271,6 @@ snapshots:
 
   ignore@7.0.9: {}
 
-  image-q@4.0.0:
-    dependencies:
-      '@types/node': 24.13.2
-
   imapflow@1.4.0:
     dependencies:
       '@zone-eu/mailsplit': 5.4.12
@@ -17899,45 +17477,11 @@ snapshots:
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
 
-  jimp@1.6.1(supports-color@10.2.2):
-    dependencies:
-      '@jimp/core': 1.6.1(supports-color@10.2.2)
-      '@jimp/diff': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-bmp': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-gif': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-jpeg': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-png': 1.6.1(supports-color@10.2.2)
-      '@jimp/js-tiff': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-blit': 1.6.1
-      '@jimp/plugin-blur': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-circle': 1.6.1
-      '@jimp/plugin-color': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-contain': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-cover': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-crop': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-displace': 1.6.1
-      '@jimp/plugin-dither': 1.6.1
-      '@jimp/plugin-fisheye': 1.6.1
-      '@jimp/plugin-flip': 1.6.1
-      '@jimp/plugin-hash': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-mask': 1.6.1
-      '@jimp/plugin-print': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-quantize': 1.6.1
-      '@jimp/plugin-resize': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-rotate': 1.6.1(supports-color@10.2.2)
-      '@jimp/plugin-threshold': 1.6.1(supports-color@10.2.2)
-      '@jimp/types': 1.6.1
-      '@jimp/utils': 1.6.1
-    transitivePeerDependencies:
-      - supports-color
-
   jiti@2.7.0: {}
 
   jju@1.4.0: {}
 
   jose@6.2.12: {}
-
-  jpeg-js@0.4.4: {}
 
   jquery@3.7.1: {}
 
@@ -18394,8 +17938,6 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  mime@3.0.0: {}
-
   mimic-fn@2.1.0: {}
 
   mimic-response@4.0.0: {}
@@ -18443,7 +17985,7 @@ snapshots:
       is-any-array: 3.0.0
       ml-array-rescale: 2.0.0
 
-  modern-tar@0.7.6: {}
+  modern-tar@0.8.6: {}
 
   module-details-from-path@1.0.4: {}
 
@@ -18544,8 +18086,6 @@ snapshots:
 
   obug@2.1.1: {}
 
-  omggif@1.0.10: {}
-
   on-exit-leak-free@2.1.2: {}
 
   on-finished@2.4.1:
@@ -18603,10 +18143,10 @@ snapshots:
       platform: 1.3.6
       protobufjs: 7.6.5
 
-  openai@6.34.0(ws@8.21.0)(zod@4.3.6):
+  openai@6.34.0(ws@8.21.0)(zod@4.6.7):
     optionalDependencies:
       ws: 8.21.0
-      zod: 4.3.6
+      zod: 4.6.7
 
   opencollective-postinstall@2.0.3: {}
 
@@ -18756,15 +18296,6 @@ snapshots:
 
   parent-require@1.0.0: {}
 
-  parse-bmfont-ascii@1.0.6: {}
-
-  parse-bmfont-binary@1.0.6: {}
-
-  parse-bmfont-xml@1.1.6:
-    dependencies:
-      xml-parse-from-string: 1.0.1
-      xml2js: 0.5.0
-
   parse-css-color@0.2.1:
     dependencies:
       color-name: 1.1.4
@@ -18900,10 +18431,6 @@ snapshots:
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
 
-  pixelmatch@5.3.0:
-    dependencies:
-      pngjs: 6.0.0
-
   pkce-challenge@5.0.1: {}
 
   pkg-dir@4.2.0:
@@ -18929,10 +18456,6 @@ snapshots:
       playwright-core: 1.63.0
 
   pluralize@8.0.0: {}
-
-  pngjs@6.0.0: {}
-
-  pngjs@7.0.0: {}
 
   postcss-value-parser@4.2.0: {}
 
@@ -19024,14 +18547,14 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  puppeteer-core@25.4.0:
+  puppeteer-core@25.16.0:
     dependencies:
-      '@puppeteer/browsers': 3.0.6
-      chromium-bidi: 17.0.2(devtools-protocol@0.0.1653615)
-      devtools-protocol: 0.0.1653615
-      typed-query-selector: 2.12.2
-      webdriver-bidi-protocol: 0.4.2
-      ws: 8.21.1
+      '@puppeteer/browsers': 3.2.6
+      chromium-bidi: 157.0.8090-0(devtools-protocol@0.0.1704951)
+      devtools-protocol: 0.0.1704951
+      typed-query-selector: 2.12.3
+      webdriver-bidi-protocol: 1.0.1
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - proxy-agent
@@ -19455,8 +18978,6 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  simple-xml-to-json@1.2.7: {}
-
   sirv@3.0.2:
     dependencies:
       '@polka/url': 1.0.0-next.29
@@ -19625,13 +19146,6 @@ snapshots:
     transitivePeerDependencies:
       - picomatch
 
-  svelte2tsx@0.7.57(svelte@5.57.1)(typescript@6.0.3):
-    dependencies:
-      dedent-js: 1.0.1
-      scule: 1.3.0
-      svelte: 5.57.1
-      typescript: 6.0.3
-
   svelte2tsx@0.7.61(svelte@5.57.1)(typescript@6.0.3):
     dependencies:
       dedent-js: 1.0.1
@@ -19733,8 +19247,6 @@ snapshots:
   tiny-typed-emitter@2.1.0: {}
 
   tinybench@2.9.0: {}
-
-  tinycolor2@1.6.0: {}
 
   tinyexec@1.3.1: {}
 
@@ -19853,7 +19365,7 @@ snapshots:
       media-typer: 1.1.0
       mime-types: 3.0.2
 
-  typed-query-selector@2.12.2: {}
+  typed-query-selector@2.12.3: {}
 
   typescript@6.0.3: {}
 
@@ -19895,10 +19407,6 @@ snapshots:
       picocolors: 1.1.1
 
   url-template@2.0.8: {}
-
-  utif2@4.1.0:
-    dependencies:
-      pako: 1.0.11
 
   util-deprecate@1.0.2: {}
 
@@ -20058,7 +19566,7 @@ snapshots:
 
   web-streams-polyfill@3.3.3: {}
 
-  webdriver-bidi-protocol@0.4.2: {}
+  webdriver-bidi-protocol@1.0.1: {}
 
   webidl-conversions@3.0.1: {}
 
@@ -20167,20 +19675,13 @@ snapshots:
 
   ws@8.21.1: {}
 
+  ws@8.22.0: {}
+
   xml-name-validator@5.0.0: {}
 
   xml-naming@0.1.0: {}
 
   xml-naming@0.3.0: {}
-
-  xml-parse-from-string@1.0.1: {}
-
-  xml2js@0.5.0:
-    dependencies:
-      sax: 1.6.0
-      xmlbuilder: 11.0.1
-
-  xmlbuilder@11.0.1: {}
 
   xmlchars@2.2.0: {}
 
@@ -20240,10 +19741,8 @@ snapshots:
 
   zlibjs@0.3.1: {}
 
-  zod-to-json-schema@3.25.1(zod@4.3.6):
+  zod-to-json-schema@3.25.1(zod@4.6.7):
     dependencies:
-      zod: 4.3.6
+      zod: 4.6.7
 
-  zod@3.25.76: {}
-
-  zod@4.3.6: {}
+  zod@4.6.7: {}
