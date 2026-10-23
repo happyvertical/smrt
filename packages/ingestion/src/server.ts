@@ -319,6 +319,7 @@ function receivedPart(part: IntakePart | IntakeReferencePart): ReceivedPart {
     const hash = bytesHash(bytes);
     if (part.expectedHash && part.expectedHash !== hash)
       throw new Error('Invalid hash');
+    // #4243: a copied part's presented filename is validated, never identity.
     if (part.filename !== undefined) filename(part.filename);
     return { ...part, bytes, hash, retain: 'copy' };
   }
@@ -797,12 +798,12 @@ export class IngestionService {
             source_uri: '',
             data: canonical({
               sourceReference: part.sourceReference ?? null,
-              ...(part.retain === 'reference'
-                ? { retain: 'reference', snapshot: part.snapshot }
-                : {}),
               ...(part.filename === undefined
                 ? {}
                 : { filename: part.filename }),
+              ...(part.retain === 'reference'
+                ? { retain: 'reference', snapshot: part.snapshot }
+                : {}),
             }),
           });
       }

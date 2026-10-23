@@ -100,6 +100,7 @@ export function foundationSuite(
     let allowed: boolean;
     let faults: Set<string>;
     let purges: number;
+    // Copied-byte receipts only, so parts stay `IntakePart` for the fixtures.
     function receive(key = 'delivery'): ReceiveInput & { parts: IntakePart[] } {
       return {
         sourceId: 'account',
