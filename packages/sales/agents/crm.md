@@ -60,3 +60,18 @@ required and nonnegative.
 status, `unassigned`, and `overdue`; counts retain owner/search scope but ignore
 the selected status/unassigned/overdue tab. Overdue means the earliest open task
 is due strictly before injected `now` (default current time).
+
+`LeadConversionService.create({ db: tx, transaction: 'caller' })` records pending
+conversions before an Opportunity is won, using immutable `lead_conversion`
+SalesActivity receipts (no new table). Hosts authorize inputs and serialize the
+lead conversion scope, create downstream records, and record the receipt within
+one caller-owned transaction. `getForLead({ tenantId, leadId, targetKind })` and
+`recordForLead({ ...scope, targetId, actorProfileId, metadata? })` require matching
+ambient tenancy and a same-tenant Lead. A tenant/lead/targetKind has one target;
+exact target/metadata replay returns the original receipt and actor, conflicting
+intent is refused. The service never changes Lead/Opportunity state, invites
+users, or starts a transaction. Only use returned plain receipts after commit.
+
+`findForTarget({ tenantId, targetKind, targetId })` reads canonical originating
+Lead receipts for a downstream target in the active tenant, without requiring
+hosts to parse SalesActivity metadata.

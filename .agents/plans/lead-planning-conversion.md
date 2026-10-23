@@ -1,0 +1,36 @@
+# Lead approval planning integration
+
+Session train: `happyvertical/smrt`, release line `0.57`, branch
+`codex/lead-planning-conversion`, based on `04f0ccfc9f` (0.57.20).
+One commit per item with `Refs #N`; one integrated PR when publication is
+explicitly resumed, closing every item. No release, push, or full suite during
+this local development phase. HappyVertical Work consumes the sibling build
+through an ignored native pnpm hook and isolated lock; committed family pins
+remain unchanged under the user's explicit local-development override.
+
+Ordered items:
+
+1. #4245: LeadConversionService records pending downstream targets without won
+   status, exact replay preserves provenance, changed intent and foreign tenant
+   access fail closed. Reverse target lookup and pure read mode are public.
+2. #4246: TenantInvitationService prepares pending identity/membership, issues
+   membership-bound signed single-use proof, and accepts only that exact scope.
+   No outbound email or session minting. Named high risk: bearer proof grants
+   active identity and membership; root must include an auth/security review.
+3. #4249: LeadWorkflowService corrects contact fields under the existing tenant
+   transaction/row lock and appends one audit; exact retry is a no-op and audit
+   failure rolls the correction back. Identity/acquisition provenance survives.
+
+Focused evidence: sales `lead-conversion.test.ts` and `lead-workflow.test.ts`
+(22 tests); users `tenant-invitation.test.ts` (9 tests); package typecheck,
+build, and packed-export verification. SQLite tests cover ownership/context,
+wrong child/user/role, expiry/replay, suspended identity and caller rollback.
+Logs: `/tmp/smrt4245-*`, `/tmp/smrt4246-*`, `/tmp/smrt4249-*`.
+Native consumer graph: 46 active SMRT names at 0.57.20, one core and Svelte
+instance; existing Work Vite dedupe resolves both smrt-svelte peer variants to
+one UI runtime. Real Work adapter tests consume these packages directly.
+
+At integration end: run the documented full validation and PostgreSQL-sensitive
+users checks once on the integrated source, then one high-risk review-cycle.
+All remaining review, validation, release, adoption and publication decisions
+stay with the coordinating root session. Never merge without authorization.
