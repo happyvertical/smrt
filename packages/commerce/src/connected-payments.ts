@@ -612,6 +612,10 @@ export interface CreateConnectedCheckoutInput extends TenantPaymentAccountKey {
    * pass `0` for no fee. Never derive it from a float.
    */
   applicationFeeAmount: number;
+  /** Immutable agreement/fee-policy version used to calculate this fee.
+   * Freeze at pricing; never change offeringRef to encode a new version.
+   * Omit only when the host has no versioned policy (stored as empty). */
+  feePolicyRef?: string;
   /** Checkout expiry; Stripe accepts 30 minutes to 24 hours. Default 60 minutes. */
   expiresAt?: Date;
   successUrl?: string;
@@ -667,6 +671,16 @@ export async function createConnectedCheckout(
   input: CreateConnectedCheckoutInput,
 ): Promise<ConnectedCheckout> {
   const key = resolveKey(input);
+  if (
+    input.feePolicyRef !== undefined &&
+    (typeof input.feePolicyRef !== 'string' ||
+      !input.feePolicyRef.trim() ||
+      input.feePolicyRef !== input.feePolicyRef.trim())
+  )
+    throw invalid(
+      'feePolicyRef must be a non-empty version reference without surrounding whitespace',
+    );
+  const feePolicyRef = input.feePolicyRef ?? '';
   const amount = assertMinorUnits(input.amount, 'amount', 1);
   const fee = assertMinorUnits(
     input.applicationFeeAmount,
@@ -720,6 +734,7 @@ export async function createConnectedCheckout(
         intent.applicationFeeCents !== fee ||
         intent.connectedAmount !== amount ||
         intent.connectedCurrency !== currency ||
+        intent.connectedFeePolicyRef !== feePolicyRef ||
         (prior &&
           (prior.nativeAmount !== amount || prior.currency !== currency))
       )
@@ -802,6 +817,7 @@ export async function createConnectedCheckout(
         connectedEnvironment: key.environment,
         connectedAmount: amount,
         connectedCurrency: currency,
+        connectedFeePolicyRef: feePolicyRef,
         applicationFeeCents: fee,
         paymentOptions: [],
       });
@@ -1230,6 +1246,7 @@ async function settleIntent(args: {
       backendId: args.backendId,
       backendTxRef: args.transactionId,
       connectedAccountId: intent.connectedAccountId,
+      connectedFeePolicyRef: intent.connectedFeePolicyRef,
       applicationFeeCents: intent.applicationFeeCents,
     });
   } else if (
@@ -1420,6 +1437,7 @@ export async function refundConnectedPayment(
         reference: `connected-refund:${payment.id}`,
         backendId: key.backendId,
         connectedAccountId: payment.connectedAccountId,
+        connectedFeePolicyRef: payment.connectedFeePolicyRef,
         refundOfPaymentId: payment.id!,
         connectedRefundState: 'requested',
         applicationFeeRefunded: input.refundApplicationFee,

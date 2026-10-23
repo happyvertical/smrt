@@ -15,6 +15,7 @@ import {
   LegalMemberStatusHistoryCollection,
   type MemberClass,
   MemberClassCollection,
+  type MemberEligibilitySnapshot,
   MemberEligibilitySnapshotCollection,
   type MemberOfficerAppointment,
   MemberOfficerAppointmentCollection,
@@ -88,6 +89,11 @@ export interface EligibilityPolicy {
   statuses?: readonly LegalMemberStatus[];
   requireAuthoritativeKinds?: readonly MemberReferenceKind[];
 }
+/** Exactly one explicit legal member or login identity within the actor tenant. */
+export type MemberEligibilityIdentity =
+  | { memberId: string; userId?: never }
+  | { userId: string; memberId?: never };
+
 export interface EligibilityRow {
   memberId: string;
   displayName: string;
@@ -96,6 +102,45 @@ export interface EligibilityRow {
   eligible: boolean;
   reason: string;
   evidence: Record<string, unknown>;
+}
+
+function normalizeEligibilityPolicy(
+  policy: EligibilityPolicy,
+): EligibilityPolicy {
+  if (
+    !policy ||
+    typeof policy !== 'object' ||
+    [
+      policy.memberClassKeys,
+      policy.statuses,
+      policy.requireAuthoritativeKinds,
+    ].some((values) => values !== undefined && !Array.isArray(values))
+  )
+    throw new MemberRegisterError(
+      'MEMBER_REGISTER_INVALID',
+      'Eligibility policy values must be arrays.',
+    );
+  // Copy caller arrays before the first asynchronous read.
+  const memberClassKeys =
+    policy.memberClassKeys === undefined ? null : [...policy.memberClassKeys];
+  const statuses = [...(policy.statuses ?? ['active'])];
+  const requiredAuthoritativeKinds = [
+    ...(policy.requireAuthoritativeKinds ?? []),
+  ];
+  if (
+    memberClassKeys?.some((key) => typeof key !== 'string' || !key.trim()) ||
+    statuses.some((status) => !MEMBER_STATUSES.includes(status)) ||
+    requiredAuthoritativeKinds.some((kind) => !REFERENCE_KINDS.includes(kind))
+  )
+    throw new MemberRegisterError(
+      'MEMBER_REGISTER_INVALID',
+      'Unknown or malformed eligibility policy.',
+    );
+  return {
+    ...(memberClassKeys === null ? {} : { memberClassKeys }),
+    statuses,
+    requireAuthoritativeKinds: requiredAuthoritativeKinds,
+  };
 }
 
 /** Trusted, tenant-scoped register writer. Hosts authorize the actor before construction. */
@@ -110,20 +155,32 @@ export class MemberRegisterService {
   ) {
     text(actor?.tenantId, 'tenantId');
   }
-  private transaction<T>(
-    operation: (service: MemberRegisterService) => Promise<T>,
+  /** Atomically accept a host command and its evidence on the same executor.
+   * The callback service and executor must not escape the callback.
+   */
+  withTransaction<T>(
+    operation: (
+      service: MemberRegisterService,
+      db: DatabaseInterface,
+    ) => Promise<T>,
   ): Promise<T> {
+    if (this.transactionBound === MemberRegisterService.transactionToken)
+      return this.scope(() => operation(this, this.db));
     if (!this.db.transaction)
       throw new MemberRegisterError(
         'MEMBER_REGISTER_INVALID',
         'Member register writes require transaction support.',
       );
-    return this.db.transaction((db) =>
-      operation(
-        new MemberRegisterService(
+    const transaction = this.db.transaction.bind(this.db);
+    return this.scope(() =>
+      transaction((db) =>
+        operation(
+          new MemberRegisterService(
+            db,
+            this.actor,
+            MemberRegisterService.transactionToken,
+          ),
           db,
-          this.actor,
-          MemberRegisterService.transactionToken,
         ),
       ),
     );
@@ -185,7 +242,9 @@ export class MemberRegisterService {
     externalPartyRef?: string | null;
   }): Promise<LegalMember> {
     if (this.transactionBound !== MemberRegisterService.transactionToken) {
-      const member = await this.transaction((service) => service.enroll(input));
+      const member = await this.withTransaction((service) =>
+        service.enroll(input),
+      );
       return this.scope(() => this.member(member.id as string));
     }
     return this.scope(async () => {
@@ -256,7 +315,7 @@ export class MemberRegisterService {
     input: { status: LegalMemberStatus; effectiveOn: IsoDate; reason?: string },
   ): Promise<LegalMember> {
     if (this.transactionBound !== MemberRegisterService.transactionToken) {
-      const member = await this.transaction((service) =>
+      const member = await this.withTransaction((service) =>
         service.setStatus(memberId, input),
       );
       return this.scope(() => this.member(member.id as string));
@@ -409,29 +468,164 @@ export class MemberRegisterService {
       return row;
     });
   }
+  /** Read one member without snapshots, register enumeration or a transaction. */
+  async eligibilityFor(
+    identity: MemberEligibilityIdentity,
+    recordDate: IsoDate,
+    policy: EligibilityPolicy = {},
+  ): Promise<EligibilityRow> {
+    return this.scope(async () => {
+      const capturedPolicy = normalizeEligibilityPolicy(policy);
+      if (
+        !identity ||
+        (identity.memberId !== undefined) === (identity.userId !== undefined)
+      )
+        throw new MemberRegisterError(
+          'MEMBER_REGISTER_INVALID',
+          'Supply exactly one memberId or userId.',
+        );
+      const members = await LegalMemberCollection.create({ db: this.db });
+      let member: LegalMember;
+      if (identity.memberId !== undefined)
+        member = await this.member(identity.memberId);
+      else {
+        const matches = await members.list({
+          where: {
+            tenantId: this.actor.tenantId,
+            userId: text(identity.userId, 'userId'),
+          },
+          limit: 2,
+        });
+        if (matches.length !== 1)
+          throw new MemberRegisterError(
+            'MEMBER_REGISTER_NOT_FOUND',
+            'Member identity not uniquely found in this tenant.',
+          );
+        member = matches[0];
+      }
+      return this.evaluateMember(member, recordDate, capturedPolicy);
+    });
+  }
+
+  /** Explicit immutable evidence write; call inside withTransaction for accepted commands. */
+  async captureEligibility(
+    identity: MemberEligibilityIdentity,
+    recordDate: IsoDate,
+    policy: EligibilityPolicy = {},
+  ): Promise<MemberEligibilitySnapshot> {
+    return this.withTransaction(async (service) => {
+      const row = await service.eligibilityFor(identity, recordDate, policy);
+      const snapshots = await MemberEligibilitySnapshotCollection.create({
+        db: service.db,
+      });
+      return service.scope(() =>
+        snapshots.create({
+          tenantId: service.actor.tenantId,
+          memberId: row.memberId,
+          recordDate: row.recordDate,
+          eligible: row.eligible,
+          reason: row.reason,
+          evidence: row.evidence,
+        }),
+      );
+    });
+  }
+
+  private async evaluateMember(
+    member: LegalMember,
+    recordDate: IsoDate,
+    policy: EligibilityPolicy,
+  ): Promise<EligibilityRow> {
+    const on = date(recordDate, 'recordDate');
+    const memberClassKeys = policy.memberClassKeys ?? null;
+    const statuses = policy.statuses ?? ['active'];
+    const requiredAuthoritativeKinds = policy.requireAuthoritativeKinds ?? [];
+    const classes = await MemberClassCollection.create({ db: this.db });
+    const histories = await LegalMemberStatusHistoryCollection.create({
+      db: this.db,
+    });
+    const refs = await LegalMemberReferenceCollection.create({ db: this.db });
+    const klass = await classes.get({
+      id: member.memberClassId,
+      tenantId: this.actor.tenantId,
+    });
+    const history = (
+      await histories.list({
+        where: { tenantId: this.actor.tenantId, memberId: member.id },
+      })
+    )
+      .filter((entry) => entry.effectiveOn <= on)
+      .sort(compareHistory);
+    const status = history.at(-1)?.status;
+    const allRefs = await refs.list({
+      where: { tenantId: this.actor.tenantId, memberId: member.id },
+    });
+    const revoked = new Set(
+      allRefs
+        .filter(
+          (reference) => reference.revokesId && reference.effectiveFrom <= on,
+        )
+        .map((reference) => reference.revokesId),
+    );
+    const memberRefs = allRefs.filter(
+      (reference) =>
+        !reference.revokesId &&
+        !revoked.has(reference.id as string) &&
+        reference.effectiveFrom <= on &&
+        (reference.effectiveTo === null || reference.effectiveTo >= on),
+    );
+    const missing = requiredAuthoritativeKinds.filter(
+      (kind) =>
+        !memberRefs.some(
+          (reference) => reference.kind === kind && reference.authoritative,
+        ),
+    );
+    const classOK =
+      memberClassKeys === null ||
+      (!!klass && memberClassKeys.includes(klass.key));
+    const statusOK = !!status && statuses.includes(status);
+    const eligible =
+      member.joinedOn <= on && classOK && statusOK && missing.length === 0;
+    const reason = missing.length
+      ? `authoritative evidence unavailable: ${missing.join(', ')}`
+      : !classOK
+        ? 'member class excluded by policy'
+        : !statusOK
+          ? `status ${status ?? 'unrecorded'} excluded by policy`
+          : member.joinedOn > on
+            ? 'joined after record date'
+            : 'eligible';
+    const evidence = {
+      status,
+      memberClassKeys,
+      statuses,
+      requiredAuthoritativeKinds,
+      missingAuthoritativeKinds: missing,
+      referenceCount: memberRefs.length,
+    };
+    return {
+      memberId: member.id as string,
+      displayName: member.displayName,
+      memberClassKey: klass?.key ?? '',
+      recordDate: on,
+      eligible,
+      reason,
+      evidence,
+    };
+  }
+
   async asOf(
     recordDate: IsoDate,
     policy: EligibilityPolicy = {},
   ): Promise<EligibilityRow[]> {
     if (this.transactionBound !== MemberRegisterService.transactionToken)
-      return this.transaction((service) => service.asOf(recordDate, policy));
+      return this.withTransaction((service) =>
+        service.asOf(recordDate, policy),
+      );
     return this.scope(async () => {
       const on = date(recordDate, 'recordDate');
-      // Capture one policy for the whole batch; null records unrestricted classes.
-      const memberClassKeys =
-        policy.memberClassKeys === undefined
-          ? null
-          : [...policy.memberClassKeys];
-      const statuses = [...(policy.statuses ?? ['active'])];
-      const requiredAuthoritativeKinds = [
-        ...(policy.requireAuthoritativeKinds ?? []),
-      ];
+      const capturedPolicy = normalizeEligibilityPolicy(policy);
       const members = await LegalMemberCollection.create({ db: this.db });
-      const classes = await MemberClassCollection.create({ db: this.db });
-      const histories = await LegalMemberStatusHistoryCollection.create({
-        db: this.db,
-      });
-      const refs = await LegalMemberReferenceCollection.create({ db: this.db });
       const snapshots = await MemberEligibilitySnapshotCollection.create({
         db: this.db,
       });
@@ -439,81 +633,14 @@ export class MemberRegisterService {
       for (const member of await members.list({
         where: { tenantId: this.actor.tenantId },
       })) {
-        const klass = await classes.get({
-          id: member.memberClassId,
-          tenantId: this.actor.tenantId,
-        });
-        const history = (
-          await histories.list({
-            where: { tenantId: this.actor.tenantId, memberId: member.id },
-          })
-        )
-          .filter((entry) => entry.effectiveOn <= on)
-          .sort(compareHistory);
-        const status = history.at(-1)?.status;
-        const allRefs = await refs.list({
-          where: { tenantId: this.actor.tenantId, memberId: member.id },
-        });
-        const revoked = new Set(
-          allRefs
-            .filter(
-              (reference) =>
-                reference.revokesId && reference.effectiveFrom <= on,
-            )
-            .map((reference) => reference.revokesId),
-        );
-        const memberRefs = allRefs.filter(
-          (reference) =>
-            !reference.revokesId &&
-            !revoked.has(reference.id as string) &&
-            reference.effectiveFrom <= on &&
-            (reference.effectiveTo === null || reference.effectiveTo >= on),
-        );
-        const missing = requiredAuthoritativeKinds.filter(
-          (kind) =>
-            !memberRefs.some(
-              (reference) => reference.kind === kind && reference.authoritative,
-            ),
-        );
-        const classOK =
-          memberClassKeys === null ||
-          (!!klass && memberClassKeys.includes(klass.key));
-        const statusOK = !!status && statuses.includes(status);
-        const eligible =
-          member.joinedOn <= on && classOK && statusOK && missing.length === 0;
-        const reason = missing.length
-          ? `authoritative evidence unavailable: ${missing.join(', ')}`
-          : !classOK
-            ? 'member class excluded by policy'
-            : !statusOK
-              ? `status ${status ?? 'unrecorded'} excluded by policy`
-              : member.joinedOn > on
-                ? 'joined after record date'
-                : 'eligible';
-        const evidence = {
-          status,
-          memberClassKeys,
-          statuses,
-          requiredAuthoritativeKinds,
-          missingAuthoritativeKinds: missing,
-          referenceCount: memberRefs.length,
-        };
-        const row: EligibilityRow = {
-          memberId: member.id as string,
-          displayName: member.displayName,
-          memberClassKey: klass?.key ?? '',
-          recordDate: on,
-          eligible,
-          reason,
-          evidence,
-        };
+        const row = await this.evaluateMember(member, on, capturedPolicy);
         const snapshot = await snapshots.create({
           tenantId: this.actor.tenantId,
           memberId: row.memberId,
           recordDate: on,
-          eligible,
-          reason,
-          evidence,
+          eligible: row.eligible,
+          reason: row.reason,
+          evidence: row.evidence,
         });
         rows.push(row);
       }

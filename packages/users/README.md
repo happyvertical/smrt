@@ -1563,6 +1563,57 @@ exports. A policy that requires shares or dues evidence fails closed unless the
 register has an explicitly authoritative reference for every required kind; the
 snapshot names that missing evidence rather than inferring payment status.
 
+For GET-style capabilities, use the member-scoped read API instead:
+
+```typescript
+const register = new MemberRegisterService(db, { tenantId });
+const decision = await register.eligibilityFor(
+  { userId: signedInUser.id }, // or { memberId: legalMemberId }
+  '2026-06-01',
+  { memberClassKeys: ['worker'], requireAuthoritativeKinds: ['dues'] },
+);
+```
+
+`eligibilityFor(identity, recordDate, policy)` performs only reads on the supplied
+executor. It opens no transaction, persists no snapshot and never lists the
+register. Its query count is independent of unrelated members; history and
+references are loaded only for the selected member. Exactly one nonempty selector
+is required. A user identity must resolve to exactly one member in this tenant;
+missing, foreign and ambiguous identities throw `MEMBER_REGISTER_NOT_FOUND`.
+Malformed dates/selectors/policy values throw `MEMBER_REGISTER_INVALID`; an active
+foreign tenant context throws `MEMBER_REGISTER_TENANT_MISMATCH`. Database failures
+propagate. Hosts map these failures to denied capabilities and must derive tenant
+and identity from an authorized session, never trust submitted identity fields.
+This is legal-register eligibility: host-level suspension/bans and operation
+permissions still require their own checks. Individual reads do not promise a
+transactionally stable multi-query snapshot; an accepted command re-evaluates on
+its own transaction.
+
+Persist immutable evidence explicitly when accepting a command:
+
+```typescript
+await register.withTransaction(async (bound, executor) => {
+  const snapshot = await bound.captureEligibility(
+    { memberId: legalMemberId }, '2026-06-01', policy,
+  );
+  if (!snapshot.eligible) throw new Error('Participation denied');
+  // Persist the accepted command with executor, referencing snapshot.id.
+  // Throwing rolls back both command and evidence.
+});
+```
+
+`withTransaction` supplies a bound service and the exact database executor used
+by its reads and writes; callbacks must use that executor for their command and
+must not retain either value after completion. Nested calls through the bound
+service reuse the transaction. `captureEligibility` re-evaluates authoritative
+records and creates one immutable `MemberEligibilitySnapshot`, including the
+policy inputs. Called alone, it opens its own transaction. It does not accept a
+caller-authored decision or grant host authorization. Each successful call is a
+new evidence event; hosts implement command idempotency in the same transaction,
+and skip capture for an already accepted command. A refused or failed transaction
+leaves no snapshot. The existing `asOf` remains the explicit whole-register
+snapshot/export operation and is unsuitable for ordinary capability GETs.
+
 An omitted `memberClassKeys` policy allows every class; an explicit empty list
 allows none. `statuses` defaults to `['active']`, and an empty status list also
 allows none. Snapshots preserve normalized class keys (`null` means unrestricted),
@@ -1579,7 +1630,8 @@ all of their writes together. History and references are append-only, and
 snapshots reject updates and deletes. Same-day history corrections use persisted
 sequence order. Eligibility uses effective history; `LegalMember.status` and
 `leftOn` are display caches refreshed by `setStatus`, so scheduled changes may
-make those caches stale until another write. Use `asOf` for record-date decisions.
+make those caches stale until another write. Use `eligibilityFor` for read-only
+record-date decisions, or `captureEligibility` for accepted-command evidence.
 
 Use `revokeReference(referenceId, { effectiveOn })` when previously authoritative
 evidence is withdrawn. It appends a dated record targeting the original reference;

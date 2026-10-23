@@ -272,8 +272,9 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     return activated;
   }
 
-  /** Withdraw a scheduled successor before it has ever governed.
-   * Restores only its persisted predecessor boundary, in the same transaction.
+  /** Withdraw a scheduled active version before it has ever governed.
+   * Restores its persisted predecessor boundary when activation closed one.
+   * Initial versions and amendments following a gap restore nothing.
    * Repeated/concurrent withdrawal refuses rather than applying recovery twice.
    */
   async withdrawAmendment(id: string): Promise<Agreement> {
@@ -291,34 +292,38 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
           !successor ||
           successor.status !== 'active' ||
           !successor.effectiveFrom ||
-          successor.effectiveFrom <= now ||
-          !successor.amendmentPredecessorId
+          successor.effectiveFrom <= now
         )
-          throw new Error(
-            'Only a scheduled active amendment with predecessor provenance can be withdrawn',
-          );
-        const predecessor = await agreements.get({
-          id: successor.amendmentPredecessorId,
-        });
+          throw new Error('Only a scheduled active agreement can be withdrawn');
+        const predecessor = successor.amendmentPredecessorId
+          ? await agreements.get({ id: successor.amendmentPredecessorId })
+          : null;
         if (
-          !predecessor ||
-          predecessor.tenantId !== successor.tenantId ||
-          predecessor.kind !== successor.kind ||
-          predecessor.partyA !== successor.partyA ||
-          predecessor.partyB !== successor.partyB ||
-          predecessor.version >= successor.version ||
-          predecessor.status !== 'superseded' ||
-          predecessor.effectiveTo?.getTime() !==
-            successor.effectiveFrom.getTime()
+          successor.amendmentPredecessorId &&
+          (!predecessor ||
+            predecessor.tenantId !== successor.tenantId ||
+            predecessor.kind !== successor.kind ||
+            predecessor.partyA !== successor.partyA ||
+            predecessor.partyB !== successor.partyB ||
+            predecessor.version >= successor.version ||
+            predecessor.status !== 'superseded' ||
+            predecessor.effectiveTo?.getTime() !==
+              successor.effectiveFrom.getTime())
         )
           throw new Error(
             'Agreement withdrawal predecessor no longer matches activation provenance',
           );
         const restoredEnd = successor.amendmentPredecessorEnd;
-        if (restoredEnd && restoredEnd <= successor.effectiveFrom)
+        if (
+          restoredEnd &&
+          (!predecessor || restoredEnd <= successor.effectiveFrom)
+        )
           throw new Error(
             'Agreement withdrawal has invalid predecessor boundary provenance',
           );
+        // With no restoration, validate only the interval being removed. A
+        // disjoint later version does not prevent cancellation of this one.
+        const checkedEnd = predecessor ? restoredEnd : successor.effectiveTo;
         const versions = await agreements.findGoverningCandidates(
           successor.kind,
           successor.partyA,
@@ -330,12 +335,12 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
           versions.some(
             (row) =>
               row.id !== successor.id &&
-              row.id !== predecessor.id &&
+              row.id !== predecessor?.id &&
               row.status !== 'draft' &&
               row.status !== 'cancelled' &&
-              (!restoredEnd ||
+              (!checkedEnd ||
                 !row.effectiveFrom ||
-                row.effectiveFrom < restoredEnd) &&
+                row.effectiveFrom < checkedEnd) &&
               (!row.effectiveTo || row.effectiveTo > successor.effectiveFrom!),
           )
         )
@@ -354,19 +359,21 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
           throw new Error(
             'Agreement withdrawal lost its scheduled active transition',
           );
-        await claimLifecycleRevision(predecessor);
-        const restored = await tx.query(
-          `UPDATE ${agreements.tableName} SET status = 'active', effective_to = $1 WHERE id = $2 AND status = 'superseded' AND effective_to = $3 RETURNING id`,
-          restoredEnd?.toISOString() ?? null,
-          predecessor.id,
-          successor.effectiveFrom.toISOString(),
-        );
-        if (returnedRows(restored).length !== 1)
-          throw new Error(
-            'Agreement withdrawal predecessor changed concurrently',
+        if (predecessor) {
+          await claimLifecycleRevision(predecessor);
+          const restored = await tx.query(
+            `UPDATE ${agreements.tableName} SET status = 'active', effective_to = $1 WHERE id = $2 AND status = 'superseded' AND effective_to = $3 RETURNING id`,
+            restoredEnd?.toISOString() ?? null,
+            predecessor.id,
+            successor.effectiveFrom.toISOString(),
           );
+          if (returnedRows(restored).length !== 1)
+            throw new Error(
+              'Agreement withdrawal predecessor changed concurrently',
+            );
+        }
         await successor.refreshAfterLifecycleTransition();
-        await predecessor.refreshAfterLifecycleTransition();
+        if (predecessor) await predecessor.refreshAfterLifecycleTransition();
       },
     );
     invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
