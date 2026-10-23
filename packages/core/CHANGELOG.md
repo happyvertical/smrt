@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.57.23
+
+### Patch Changes
+
+- ### Features
+  
+  - add co-op eligibility, provenance and governed participation (#4273)
+  
+  ### Bug Fixes
+  
+  - support Vite 7 asset filters for large workers (#4272) (core)
+  - portable proposal schemas and safe provider diagnostics (#4270) (ingestion)
+- @happyvertical/smrt-config@0.57.23
+  - @happyvertical/smrt-scanner@0.57.23
+  - @happyvertical/smrt-types@0.57.23
+
 ## 0.57.22
 
 ### Patch Changes
