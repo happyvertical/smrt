@@ -43,6 +43,8 @@ const WATCH_LIMIT = 5;
  * following and its row returns to the entry its page listed.
  */
 const WATCH_CAP = 20;
+/** Most page appends one automatic advance makes while looking for an open row. */
+const ADVANCE_PAGES = 5;
 /** Consecutive thrown watch reads tolerated before a row stops following. */
 const MAX_WATCH_FAILURES = 3;
 let selected = $state<string | undefined>(untrack(() => itemId)),
@@ -72,7 +74,9 @@ let alive = true,
   // Bumped on every selection change; a navigation that awaited a page
   // append gives up if the reviewer chose something meanwhile.
   navigation = 0,
+  // Followed items in read-rotation order, and in the order they started.
   watched: string[] = [],
+  started: string[] = [],
   watchTimer: ReturnType<typeof setTimeout> | undefined,
   watchTicks = 0,
   // Only one watch tick runs at a time.
@@ -226,9 +230,11 @@ function schedule() {
 function watch(id: string) {
   if (!displayed(id) || watched.includes(id)) return;
   watched = [...watched, id];
-  // Beyond the cap the longest-followed item stops and falls back.
-  while (watched.length > WATCH_CAP) {
-    const dropped = watched[0];
+  started = [...started, id];
+  // Beyond the cap the longest-followed item (the earliest started, whatever
+  // the read rotation) stops and falls back.
+  while (started.length > WATCH_CAP) {
+    const dropped = started[0];
     unwatch(dropped);
     fallback(dropped);
   }
@@ -238,6 +244,7 @@ function watch(id: string) {
 }
 function unwatch(id: string) {
   watched = watched.filter((entry) => entry !== id);
+  started = started.filter((entry) => entry !== id);
   failures.delete(id);
   staged.delete(id);
 }
@@ -390,12 +397,26 @@ async function advance() {
     row.item.id !== current && !triageTerminal(statusOf(row));
   let next = list.slice(start).find(open);
   let unknown = false;
-  if (!next && more && inbox) {
+  // Pages of finished rows are skipped, up to ADVANCE_PAGES appends; past
+  // that bound, or when an append fails or cannot start, whether anything
+  // follows is unknown and the queue is never reported empty.
+  for (let pages = 0; !next && more && inbox; pages++) {
+    if (pages === ADVANCE_PAGES) {
+      unknown = true;
+      break;
+    }
     const page = await inbox.more();
     if (ticket !== navigation) return;
+    // Input typed while the page loaded is not discarded either.
+    if (paneDirty) {
+      held = 'unsent';
+      return;
+    }
     list = page.items;
-    // Whether anything follows is unknown: never report an empty queue.
-    unknown = page.result === 'failed' || page.result === 'pending';
+    if (page.result === 'failed' || page.result === 'pending') {
+      unknown = true;
+      break;
+    }
     next = list.slice(start).find(open);
   }
   next ??= list.slice(0, start).find(open);

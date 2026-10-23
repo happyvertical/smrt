@@ -65,8 +65,7 @@ let items = $state<InboxEntry[]>([]),
   files = $state<File[]>([]),
   cursor = $state<string>(),
   pending = $state(false),
-  error = $state(false),
-  moreFailed = $state(false);
+  error = $state(false);
 let alive = true,
   epoch = 0;
 let uploadRequestId: string | undefined;
@@ -77,8 +76,9 @@ function publish(page?: { entries: InboxEntry[]; appended: boolean }) {
   onitems?.($state.snapshot(items) as InboxEntry[], !!cursor, page);
 }
 /**
- * Replace one displayed row with a fresher entry for the same item (item,
- * state, assignment), keeping its listed label and preview: `load` entries
+ * Replace one displayed row with a fresher entry for the same item (item and
+ * state; the assignment only when its version is newer), keeping its listed
+ * label and preview: `load` entries
  * carry no preview and a host may label them differently. Unless `keep` is
  * set, a row that no longer matches the listed filter leaves the list. Rows
  * that are not displayed are never added. Returns the displayed rows.
@@ -86,43 +86,50 @@ function publish(page?: { entries: InboxEntry[]; appended: boolean }) {
 export function patch(entry: InboxEntry, keep = false): InboxEntry[] {
   const index = items.findIndex((row) => row.item.id === entry.item.id);
   if (index < 0) return $state.snapshot(items) as InboxEntry[];
+  const previous = items[index];
+  // Assignment is versioned (the host's compare-and-set): an entry carrying
+  // an older or equal version never replaces the row's, so a view loaded
+  // before an assignment cannot roll the row (and the next expected version)
+  // back.
+  const newer = entry.assignment.version > previous.assignment.version;
+  const assignment = newer ? entry.assignment : previous.assignment;
   const matches =
     (!listed.state || entry.state === listed.state) &&
-    (!listed.assigneeId || entry.assignment.assigneeId === listed.assigneeId);
+    (!listed.assigneeId || assignment.assigneeId === listed.assigneeId);
   if (keep || matches) {
-    const previous = items[index];
     const evidence = previous.evidence;
     items[index] = {
       item: entry.item,
       label: previous.label,
       state: entry.state,
-      assignment: entry.assignment,
+      assignment: $state.snapshot(assignment),
       ...(evidence ? { evidence } : {}),
     };
     // An unsaved assignee the reviewer typed survives unless the durable
     // assignment itself changed.
-    if (entry.assignment.version !== previous.assignment.version)
-      assignments[entry.item.id] = entry.assignment.assigneeId ?? '';
+    if (newer) assignments[entry.item.id] = assignment.assigneeId ?? '';
   } else items = items.filter((row) => row.item.id !== entry.item.id);
   return $state.snapshot(items) as InboxEntry[];
 }
 /**
  * Append the next page, if any. Resolves with the displayed rows and what
  * happened: `appended` (or `none` when there is no further page), `pending`
- * when another read is in flight (nothing was appended), or `failed` when the
- * page read failed (the displayed rows are kept).
+ * when another read was in flight or superseded this one (nothing was
+ * appended), or `failed` when the page read failed (the list failed closed
+ * and its rows were cleared).
  */
 export async function more(): Promise<{
   items: InboxEntry[];
   result: 'appended' | 'none' | 'pending' | 'failed';
 }> {
-  const result = pending
-    ? 'pending'
-    : !cursor
-      ? 'none'
-      : (await load(true))
-        ? 'appended'
-        : 'failed';
+  let result: 'appended' | 'none' | 'pending' | 'failed';
+  if (pending) result = 'pending';
+  else if (!cursor) result = 'none';
+  else {
+    const read = await load(true);
+    result =
+      read === 'shown' ? 'appended' : read === 'failed' ? 'failed' : 'pending';
+  }
   return { items: $state.snapshot(items) as InboxEntry[], result };
 }
 onDestroy(() => {
@@ -131,12 +138,15 @@ onDestroy(() => {
   files = [];
   uploadRequestId = undefined;
 });
-/** Resolves true when this read's page was displayed. */
-async function load(more = false): Promise<boolean> {
+/**
+ * Resolves `shown` when this read's page was displayed, `failed` when it
+ * failed (the rows were cleared), `superseded` when a newer read or the
+ * component's end fenced it.
+ */
+async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
   const ticket = ++epoch;
   pending = true;
   error = false;
-  moreFailed = false;
   let page: { entries: InboxEntry[]; appended: boolean } | undefined;
   const next = more ? cursor : undefined;
   // The displayed rows stay (controls disabled while pending) until the new
@@ -150,7 +160,7 @@ async function load(more = false): Promise<boolean> {
       };
   try {
     const read = await host.list({ ...filter, cursor: next });
-    if (!alive || ticket !== epoch) return false;
+    if (!alive || ticket !== epoch) return 'superseded';
     listed = filter;
     // An appended page builds on the rows as displayed now (patches made
     // while it loaded included); a row already shown is not repeated.
@@ -173,18 +183,14 @@ async function load(more = false): Promise<boolean> {
       items.map((entry) => [entry.item.id, kept?.reasons[entry.item.id] ?? '']),
     );
   } catch {
+    // Any failed read, Load more included, fails closed: the host cannot say
+    // whether it was transient or a revoked grant.
     if (alive && ticket === epoch) {
-      if (more) {
-        // The rows already displayed were listed under this filter and stay;
-        // the cursor stays too, so Load more can be retried.
-        moreFailed = true;
-      } else {
-        items = [];
-        assignments = {};
-        reasons = {};
-        cursor = undefined;
-        error = true;
-      }
+      items = [];
+      assignments = {};
+      reasons = {};
+      cursor = undefined;
+      error = true;
     }
   } finally {
     if (alive && ticket === epoch) {
@@ -192,7 +198,7 @@ async function load(more = false): Promise<boolean> {
       publish(page);
     }
   }
-  return !!page;
+  return page ? 'shown' : alive && ticket === epoch ? 'failed' : 'superseded';
 }
 async function mutate(operation: () => Promise<unknown>, selected = false) {
   if (pending) return;
@@ -241,7 +247,6 @@ onMount(() => {
 <FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
 <Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
-{#if moreFailed}<p role="alert" data-testid="more-failed">{t(M['ingestion.moreFailed'])}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
 <ul>{#each items as entry (entry.item.id)}<li data-item-id={entry.item.id} aria-current={entry.item.id === selectedId ? 'true' : undefined} class:selected={entry.item.id === selectedId}>
