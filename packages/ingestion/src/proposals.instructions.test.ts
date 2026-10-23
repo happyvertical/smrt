@@ -8,6 +8,10 @@ describe('proposal instructions', () => {
     expect(proposalInstructions).toContain('Always include splits');
     expect(proposalInstructions).toContain('must never contain segments');
     expect(proposalInstructions).toContain('exact offered key');
+    // Uniqueness is no longer in the provider grammar (#4260); say it instead.
+    expect(proposalInstructions).toContain(
+      'alternatives and missingFields must each contain distinct entries',
+    );
     expect(proposalInstructions).toContain('explicitly eligible page evidence');
     expect(proposalInstructions).not.toContain('"groups":[[1],[2]]');
     expect(proposalInstructions).not.toContain('Splits are optional');
