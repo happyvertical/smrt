@@ -1,5 +1,30 @@
 # @happyvertical/smrt-core
 
+## 0.57.21
+
+### Patch Changes
+
+- ### Features
+  
+  - trusted reviewer instructions for reinterpretation (#4228) (ingestion)
+  - NumericKeypad and DocumentViewer for touch tablets (#3463) (#4224) (smrt-ui)
+  - keep original filenames and label inbox rows by them (#4243) (ingestion)
+  - opt-in inbox row previews and original links (#4242) (ingestion)
+  
+  ### Bug Fixes
+  
+  - validator reasons, needs_review review path, configurable decision gate (#4226) (ingestion)
+  - keep the generated register loadable under plain Node (#4223) (core)
+  
+  ### Other Changes
+  
+  - perf: page the review list newest-first with query-side filters (#4225) (ingestion)
+  - test: drop owned PostgreSQL databases without force (#4253) (expenses)
+  - docs: clarify authorization for filename labels (#4250) (ingestion)
+- @happyvertical/smrt-config@0.57.21
+  - @happyvertical/smrt-scanner@0.57.21
+  - @happyvertical/smrt-types@0.57.21
+
 ## 0.57.20
 
 ### Patch Changes

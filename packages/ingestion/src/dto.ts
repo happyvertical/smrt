@@ -27,6 +27,27 @@ export interface IntakeItemDTO {
   analysisRevision: number;
   cancelled: boolean;
   traceId: string;
+  /**
+   * Present once a reviewer closed the item without an action; terminal. Item
+   * readers see only the state and time; the reviewer and reason are returned
+   * by review surfaces (`getItemDisposition`, `ItemReviewView.disposition`).
+   */
+  disposition?: ItemDispositionState;
+}
+
+/** Item-level projection of a terminal disposition; carries no reviewer content. */
+export interface ItemDispositionState {
+  state: 'resolved';
+  /** When the disposition was recorded (ISO 8601). */
+  at: string;
+}
+
+/** Reviewer-owned terminal disposition; redaction keeps only the kind. */
+export interface ItemDisposition {
+  kind: 'resolved_no_action';
+  reviewer: string;
+  reason: string;
+  decidedAt: string;
 }
 
 /** Authorized evidence metadata; bytes are served by the service separately. */

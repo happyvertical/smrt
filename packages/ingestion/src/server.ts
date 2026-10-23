@@ -29,6 +29,8 @@ import type {
 import { generationSnapshotRead, listReadGate } from './execution-internal.js';
 import { extractAnalysis } from './extraction.js';
 import { extractWithProviders } from './extraction-providers.js';
+
+import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
 import './models.js';
@@ -37,7 +39,9 @@ import type {
   IntakeExecutionOptions,
   PreviewPlanInput,
   PreviewProposalInput,
+  ResolveItemInput,
   ReviewInput,
+  StartActionInput,
 } from './execution-contracts.js';
 import type { FeedbackConfiguration } from './feedback-contracts.js';
 import type {
@@ -243,6 +247,7 @@ const TABLES = [
   'intake_review_decisions',
   'intake_executions',
   'intake_feedback',
+  'intake_dispositions',
   'intake_dispatches',
   'intake_deletions',
 ] as const;
@@ -323,6 +328,7 @@ export function isIntakeId(value: unknown): value is string {
   return typeof value === 'string' && uuid.test(value);
 }
 const INBOX_STATES: readonly InboxState[] = [
+  'resolved',
   'processing',
   'unresolved',
   'waiting',
@@ -340,7 +346,9 @@ function actionCount(where = ''): string {
  * state. It mirrors the host's page-traversal classifier without live handler
  * or target gates, so it filters and labels a list; `load` stays authoritative.
  */
-const INBOX_STATE_SQL = `CASE WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
+const dispositionWhere =
+  'd.tenant_id=i.tenant_id AND d.confidential_scope_id=i.confidential_scope_id AND d.item_id=i.id';
+const INBOX_STATE_SQL = `CASE WHEN EXISTS (SELECT 1 FROM intake_dispositions d WHERE ${dispositionWhere}) AND ${actionCount("a.state = 'succeeded'")} = 0 THEN 'resolved' WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
 /** The only receipt-time text the service writes, and the only cursor form. */
 const RECEIPT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /**
@@ -624,6 +632,18 @@ export class IngestionService {
   async authorizeAutomatic(actionId: string) {
     return (await this.execution()).authorizeAutomatic(actionId);
   }
+  /** Reviewer-chosen handler for any item; same preview/approval path, never automatic. */
+  async startReviewerAction(input: StartActionInput) {
+    return (await this.execution()).startAction(input);
+  }
+  /** Terminal "handled, no action" disposition; distinct from rejecting a proposal. */
+  async resolveItem(input: ResolveItemInput) {
+    return (await this.execution()).resolveItem(input);
+  }
+  /** Reviewer and reason of a resolved item; requires reviewer authority. */
+  async getItemDisposition(itemId: string) {
+    return (await this.execution()).getItemDisposition(itemId);
+  }
   async previewPlan(input: PreviewPlanInput) {
     return (await this.execution()).previewPlan(input);
   }
@@ -631,8 +651,7 @@ export class IngestionService {
     return (await this.execution()).applyPlan(planId);
   }
   private async proposals() {
-    if (!this.options.proposals)
-      throw new Error('Intake proposals are not configured');
+    if (!this.options.proposals) throw new ProposalsNotConfiguredError();
     const { IngestionProposalService } = await import('./proposals.js');
     return new IngestionProposalService(
       this,
@@ -642,12 +661,13 @@ export class IngestionService {
   }
   private async proposalReader() {
     const config = this.options.proposals ?? this.options.proposalRead;
-    if (!config) throw new Error('Intake proposals are not configured');
+    if (!config) throw new ProposalsNotConfiguredError();
     const { IngestionProposalService } = await import('./proposals.js');
     return new IngestionProposalService(this, this.options, config);
   }
+  /** Currently offered reviewer catalog; needs no generation credentials. */
   async listHandlers(itemId: string) {
-    return (await this.proposals()).listHandlers(itemId);
+    return (await this.proposalReader()).listHandlers(itemId);
   }
   async findCandidates(input: {
     itemId: string;
@@ -755,6 +775,16 @@ export class IngestionService {
         await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt));
       }
     }
+  }
+  /** Refuse under the caller's item lock when a terminal disposition exists. */
+  private async assertUnresolved(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<void> {
+    if (
+      (await this.rows(db, 'intake_dispositions', 'item_id=?', [itemId])).length
+    )
+      throw new Error('Item resolved');
   }
   private async lock(db: DatabaseInterface, itemId: string): Promise<void> {
     const result = await db.query(
@@ -1669,9 +1699,11 @@ export class IngestionService {
         Math.max(wanted, Math.min(ITEM_PAGE_CEILING, examined)),
       );
       // The state expression is evaluated once per fetched row.
+      // MIN over canonical UUID text preserves getItem's first-id choice
+      // without a per-item sort; both probes use the scoped item index.
       const rows = (
         await this.db.query(
-          `SELECT i.*, ${INBOX_STATE_SQL} AS inbox_state, ${actionCount()} AS action_count, ${receipt} FROM intake_items i${pinned} WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where} ORDER BY i.created_at DESC, i.id DESC LIMIT ?`,
+          `SELECT i.*, (SELECT first_d.created_at FROM intake_dispositions first_d WHERE first_d.tenant_id=i.tenant_id AND first_d.confidential_scope_id=i.confidential_scope_id AND first_d.item_id=i.id AND CAST(first_d.id AS TEXT)=(SELECT MIN(CAST(d.id AS TEXT)) FROM intake_dispositions d WHERE ${dispositionWhere})) AS disposition_at, ${INBOX_STATE_SQL} AS inbox_state, ${actionCount()} AS action_count, ${receipt} FROM intake_items i${pinned} WHERE i.tenant_id = ? AND i.confidential_scope_id = ? AND i.visibility = 'active' AND i.expires_at > ?${where} ORDER BY i.created_at DESC, i.id DESC LIMIT ?`,
           ...params,
           batch + 1,
         )
@@ -1724,7 +1756,7 @@ export class IngestionService {
         lastReadable = position;
         if (input.state && row.inbox_state !== input.state) continue;
         items.push({
-          item: this.itemDTO(row),
+          item: this.itemDTO(row, row.disposition_at),
           state: String(row.inbox_state) as InboxState,
           position,
         });
@@ -1937,7 +1969,8 @@ export class IngestionService {
       },
     };
   }
-  private itemDTO(row: Row): IntakeItemDTO {
+  /** Only the disposition state and time; reviewer and reason need review authority. */
+  private itemDTO(row: Row, dispositionAt?: unknown): IntakeItemDTO {
     return {
       id: String(row.id),
       receiptState: String(row.receipt_state),
@@ -1945,10 +1978,25 @@ export class IngestionService {
       analysisRevision: Number(row.analysis_revision),
       cancelled: !!row.cancelled,
       traceId: String(row.trace_id),
+      ...(dispositionAt !== undefined && dispositionAt !== null
+        ? {
+            disposition: {
+              state: 'resolved' as const,
+              at: persistedDate(dispositionAt).toISOString(),
+            },
+          }
+        : {}),
     };
   }
   async getItem(id: string): Promise<IntakeItemDTO> {
-    return this.itemDTO(await this.item(id, 'read'));
+    const item = await this.item(id, 'read');
+    const [disposition] = await this.rows(
+      this.db,
+      'intake_dispositions',
+      'item_id=? ORDER BY id LIMIT 1',
+      [item.id],
+    );
+    return this.itemDTO(item, disposition?.created_at);
   }
   async getEvidence(itemId: string): Promise<IntakeEvidenceDTO[]> {
     await this.item(itemId, 'read');
@@ -2098,6 +2146,8 @@ export class IngestionService {
     const configDigest = digest(configuration);
     await this.lock(db, itemId);
     const item = await this.item(itemId, 'process', db);
+    // A resolved item is terminal: no reanalysis or split re-extraction.
+    await this.assertUnresolved(db, itemId);
     if (!(await this.matchesDispatchRoute(db, item)))
       throw new Error('Intake dispatch route unavailable');
     await this.bindDispatchRoute(db, item);
@@ -2413,6 +2463,7 @@ export class IngestionService {
     const replay = await this.tx(async (db) => {
       await this.lock(db, frozen.itemId);
       await this.item(frozen.itemId, 'process', db);
+      await this.assertUnresolved(db, frozen.itemId);
       const found = (
         await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
       ).find((row) => object(row.data).requestKey === requestKey);
@@ -2916,7 +2967,10 @@ export class IngestionService {
       if (
         item.cancelled ||
         item.receipt_state !== 'ready' ||
-        Number(item.analysis_revision) !== revision
+        Number(item.analysis_revision) !== revision ||
+        // A resolved item is terminal; its provider is never called again.
+        (await this.rows(db, 'intake_dispositions', 'item_id=?', [itemId]))
+          .length
       )
         return null;
       const [analysis] = await this.rows(
@@ -3513,11 +3567,19 @@ export class IngestionService {
     provenance: Record<string, unknown>,
   ): Promise<string> {
     nonempty(actionKey);
+    // Reviewer-selected actions are minted only by `startReviewerAction` under
+    // reviewer authority; process authority must not forge routing provenance.
+    if (
+      actionKey.startsWith('reviewer:') ||
+      (provenance as { origin?: unknown }).origin === 'reviewer-selected'
+    )
+      throw new Error('Reserved action provenance');
     const payload = canonical(provenance);
     return this.tx(async (db) => {
       await this.lock(db, itemId);
       const item = await this.item(itemId, 'process', db);
       if (item.cancelled) throw new Error('Intake cancelled');
+      await this.assertUnresolved(db, itemId);
       const [existing] = await this.rows(
         db,
         'intake_actions',
@@ -3556,12 +3618,17 @@ export class IngestionService {
       await this.lock(db, input.itemId);
       const item = await this.item(input.itemId, 'process', db);
       if (item.cancelled) throw new Error('Intake cancelled');
+      await this.assertUnresolved(db, input.itemId);
       const [action] = await this.rows(
         db,
         'intake_actions',
         'item_id=? AND id=?',
         [input.itemId, input.actionId],
       );
+      // A reviewer-selected action is revised only through the reviewer path
+      // (`previewProposal`/`submitDecision`); process authority cannot rewrite it.
+      if (action && object(action.data).origin === 'reviewer-selected')
+        throw new Error('Reviewer-selected action requires review');
       const [attempt] = await this.rows(
         db,
         'intake_analysis_attempts',
@@ -3904,6 +3971,7 @@ export {
   GenerationSnapshotStaleError,
   GenerationSourceStaleError,
   HandlerArgumentsInvalidError,
+  ProposalsNotConfiguredError,
 } from './proposal-errors.js';
 export {
   createIntakeReviewHost,

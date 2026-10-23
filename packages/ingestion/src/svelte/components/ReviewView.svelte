@@ -1,16 +1,21 @@
 <script lang="ts">
-import { Textarea } from '@happyvertical/smrt-ui/forms';
+import { Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy, onMount } from 'svelte';
 import type { EvidenceLocation } from '../../extraction-types.js';
-import type { GeneratedSuggestion } from '../../proposal-dto.js';
+import type {
+  GeneratedSuggestion,
+  ProposalCatalogEntry,
+} from '../../proposal-dto.js';
 import type { IntakeReviewHost, ItemReviewView } from '../../review-dto.js';
 import { M } from '../i18n.js';
 import {
   argumentsObject,
+  draftArguments,
   evidenceUrl,
   extractedContent,
+  missingArguments,
   missingRequired,
   pageGroups,
 } from '../view-utils.js';
@@ -74,6 +79,7 @@ onDestroy(() => {
 function inFlight(current: ItemReviewView | undefined) {
   return (
     current?.availability === 'available' &&
+    !current.entry.item.disposition &&
     (current.entry.state === 'processing' ||
       ['queued', 'running'].includes(current.entry.item.processingState) ||
       // The server's own predicate, which also covers the gap between a
@@ -312,6 +318,7 @@ function offeredHandler(suggestion: GeneratedSuggestion) {
 // Presentation only: the host rechecks stage, outcome, handler and authority.
 function previewable(suggestion: GeneratedSuggestion) {
   return (
+    !view?.entry.item.disposition &&
     !!view?.analysis &&
     view.generation?.outcome !== 'provider_error' &&
     ['ready_for_review', 'needs_review'].includes(suggestion.disposition)
@@ -437,6 +444,85 @@ function split(evidenceId: string) {
   };
   void run(() => host.split(input));
 }
+// Reviewer-chosen action and no-action disposition. Presentation only; the
+// server previews, checks reviewer authority and requires separate approval.
+let startHandler = $state(''),
+  startArgs = $state(''),
+  startReason = $state(''),
+  startInvalid = $state(false),
+  resolveReason = $state('');
+const startEntry = $derived.by((): ProposalCatalogEntry | undefined =>
+  view?.catalog?.find(
+    (entry) =>
+      entry.kind === 'operation' &&
+      `${entry.id}@${entry.version}` === startHandler,
+  ),
+);
+const startMissing = $derived.by((): string[] => {
+  if (!startEntry) return [];
+  try {
+    return missingArguments(startEntry, argumentsObject(startArgs));
+  } catch {
+    return [];
+  }
+});
+function draftStart() {
+  startInvalid = false;
+  const entry = view?.catalog?.find(
+    (candidate) => `${candidate.id}@${candidate.version}` === startHandler,
+  );
+  startArgs = entry
+    ? JSON.stringify(
+        draftArguments(
+          entry,
+          view?.generation?.suggestions ?? [],
+          view?.evidence.map((part) => part.evidence.id) ?? [],
+        ),
+        null,
+        2,
+      )
+    : '';
+}
+function startAction() {
+  const entry = startEntry;
+  if (!entry || !view?.analysis || !host.startAction) return;
+  let args: Record<string, unknown>;
+  try {
+    args = argumentsObject(startArgs);
+  } catch {
+    startInvalid = true;
+    return;
+  }
+  const input = {
+    itemId,
+    handlerId: entry.id,
+    handlerVersion: entry.version,
+    args,
+    requestId: crypto.randomUUID(),
+    ...(startReason ? { reason: startReason } : {}),
+  };
+  const start = host.startAction;
+  void run(async () => {
+    await start(input);
+    startHandler = '';
+    startArgs = '';
+    startReason = '';
+  });
+}
+function resolve() {
+  if (!host.resolve) return;
+  const input = {
+    itemId,
+    disposition: 'resolve_no_action' as const,
+    requestId: crypto.randomUUID(),
+    ...(resolveReason ? { reason: resolveReason } : {}),
+  };
+  const close = host.resolve;
+  void run(async () => {
+    await close(input);
+    resolveReason = '';
+  });
+}
 function instruct() {
   const binding = instructionBinding(view);
   const text = instruction.trim();
@@ -533,7 +619,7 @@ onMount(() => {
 {#if view.instruction.dropped}<p role="status" data-testid="dropped-instruction">{t(M['ingestion.droppedInstruction'])}: <q>{view.instruction.dropped.text}</q></p>{/if}
 {/if}
 {#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{:else if unrecordedDraft !== undefined && unrecordedDraft === instruction}<p role="status" data-testid="instruction-not-recorded">{t(M['ingestion.instructionNotRecorded'])}</p>{/if}
-{#if host.instruct && instructionBinding(view)}
+{#if host.instruct && !view.entry.item.disposition && instructionBinding(view)}
 <div><Textarea aria-label={t(M['ingestion.instructions'])} aria-describedby="instruction-length" maxlength={INSTRUCTION_MAX_LENGTH} bind:value={instruction} /><p id="instruction-length" data-testid="instruction-length">{t(M['ingestion.instructionLength'], { count: instruction.length, max: INSTRUCTION_MAX_LENGTH })}</p>{#if invalidDraft !== undefined && invalidDraft === instruction}<p role="alert" data-testid="instruction-invalid">{t(M['ingestion.instructionInvalid'], { max: INSTRUCTION_MAX_LENGTH })}</p>{/if}<Button disabled={!instructionValid || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
 {/if}
 {#if extracted.length}
@@ -555,6 +641,7 @@ onMount(() => {
 {#if suggestion.alternatives.length}<h4>{t(M['ingestion.alternatives'])}</h4><ul>{#each suggestion.alternatives as alternative}<li>{alternative}</li>{/each}</ul>{/if}
 {#if suggestion.missingFields.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each suggestion.missingFields as missing}<li>{missing}</li>{/each}</ul>{/if}
 <ul>{#each suggestion.evidence as reference}{@const url = locationUrl(reference.evidenceId,reference.location)}<li>{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(reference.location)}</Button>{:else}{locationLabel(reference.location)}{/if}</li>{/each}</ul>
+{#if !view.entry.item.disposition}
 {#if suggestion.disposition === 'needs_review' && previewable(suggestion)}
 {@const handler = offeredHandler(suggestion)}
 {@const key = draftKey(index)}
@@ -566,14 +653,43 @@ onMount(() => {
 {/if}
 {#if previewRejected === index}<p role="alert">{t(M['ingestion.previewRejected'])}</p>{/if}
 <Button disabled={!canPreview(index)} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
+{/if}
 </article>
 {/each}
-{#each generation.splits as proposed (proposed.evidenceId)}<div><Textarea aria-label={`${t(M['ingestion.split'])}: ${proposed.evidenceId}`} bind:value={splits[proposed.evidenceId]} /><Button disabled={!view.analysis} onclick={() => split(proposed.evidenceId)}>{t(M['ingestion.saveSplit'])}</Button></div>{/each}
+{#if !view.entry.item.disposition}{#each generation.splits as proposed (proposed.evidenceId)}<div><Textarea aria-label={`${t(M['ingestion.split'])}: ${proposed.evidenceId}`} bind:value={splits[proposed.evidenceId]} /><Button disabled={!view.analysis} onclick={() => split(proposed.evidenceId)}>{t(M['ingestion.saveSplit'])}</Button></div>{/each}{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
+{/if}
+{#if view.entry.item.disposition}
+{#if view.disposition?.reviewer}
+<p data-testid="disposition">{t(M['ingestion.resolvedBy'], { reviewer: view.disposition.reviewer })}{#if view.disposition.reason}: {view.disposition.reason}{/if}</p>
+{:else}
+<p data-testid="disposition">{t(M['ingestion.resolved'])}</p>
+{/if}
+{:else}
+{#if host.startAction && view.catalog?.some((entry) => entry.kind === 'operation')}
+<fieldset class="start"><legend>{t(M['ingestion.startAs'])}</legend>
+<Select aria-label={t(M['ingestion.startHandler'])} bind:value={startHandler} onchange={draftStart} disabled={pending}><option value="">{t(M['ingestion.startHandler'])}</option>{#each view.catalog as entry (`${entry.id}@${entry.version}`)}{#if entry.kind === 'operation'}<option value={`${entry.id}@${entry.version}`}>{entry.id}</option>{/if}{/each}</Select>
+{#if startEntry}
+<p>{startEntry.description}</p>
+<Textarea aria-label={t(M['ingestion.startArgs'])} bind:value={startArgs} rows={8} />
+{#if startMissing.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each startMissing as missing}<li>{missing}</li>{/each}</ul>{/if}
+<Input aria-label={t(M['ingestion.reason'])} bind:value={startReason} />
+<p>{t(M['ingestion.startHelp'])}</p>
+{#if startInvalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
+<Button disabled={pending || !view.analysis} onclick={startAction}>{t(M['ingestion.start'])}</Button>
+{/if}
+</fieldset>
+{/if}
+{#if host.resolve}
+<fieldset class="resolve"><legend>{t(M['ingestion.resolveNoAction'])}</legend>
+<Input aria-label={t(M['ingestion.resolveReason'])} bind:value={resolveReason} disabled={pending} />
+<Button disabled={pending} onclick={resolve}>{t(M['ingestion.resolveNoAction'])}</Button>
+</fieldset>
+{/if}
 {/if}
 {#if !view.reviews.actions.length}<p>{t(M['ingestion.noReviews'])}</p>{/if}
 {#each view.reviews.actions as action (`${action.review.actionId}:${action.review.revision}:${action.review.reviewVersion}`)}
-<ActionReview {host} {itemId} {action} {run} {deny} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
+<ActionReview {host} {itemId} {action} {run} {deny} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
 {/each}
 {#if view.reviews.nextCursor}<Button onclick={() => load(loadedPages + 1)}>{t(M['ingestion.more'])}</Button>{/if}
 </div></div>
@@ -582,6 +698,6 @@ onMount(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
+section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}fieldset{margin-block:1rem;min-width:0;display:grid;gap:.5rem}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
 }
 </style>

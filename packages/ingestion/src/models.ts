@@ -691,6 +691,50 @@ export class IntakeDispatch extends SmrtObject {
   }
 }
 
+/** Durable reviewer disposition for an item closed without an action; append-only. */
+@smrt({
+  tableName: 'intake_dispositions',
+  conflictColumns: ['tenant_id', 'item_id', 'request_key'],
+  api: false,
+  cli: false,
+  mcp: false,
+  indexes: [
+    {
+      name: 'intake_dispositions_scope_idx',
+      columns: ['tenantId', 'confidentialScopeId'],
+    },
+    { name: 'intake_dispositions_item_idx', columns: ['tenantId', 'itemId'] },
+  ],
+})
+@TenantScoped({ mode: 'required' })
+export class IntakeDisposition extends SmrtObject {
+  @tenantId()
+  tenantId: string = '';
+  @field({ type: 'text', required: true })
+  confidentialScopeId: string = '';
+
+  @foreignKey('IntakeItem', { required: true })
+  itemId: string = '';
+
+  @field({ type: 'text', required: true })
+  requestKey: string = '';
+
+  @field({ type: 'text', required: true })
+  disposition: string = '';
+
+  @field({ type: 'json', required: true })
+  data: string = '{}';
+
+  /** Parse a bounded object payload; malformed persisted data fails closed. */
+  getData(): Record<string, unknown> {
+    const value: unknown =
+      typeof this.data === 'string' ? JSON.parse(this.data) : this.data;
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('Invalid intake payload');
+    return value as Record<string, unknown>;
+  }
+}
+
 /** Durable IntakeDeletion record; mutations belong to the server service. */
 @smrt({
   tableName: 'intake_deletions',

@@ -548,6 +548,7 @@ export class ReferenceReviewHost {
     scope: ReviewSession,
     itemId: string,
     cursor?: string,
+    full = true,
   ): Promise<ItemReviewView> {
     const { service } = await this.service(scope);
     const item = await service.getItem(itemId);
@@ -559,7 +560,8 @@ export class ReferenceReviewHost {
       cursor,
     );
     const { reviews, state } = await loadReviewSummary(service, item, cursor);
-    const evidence = await service.getEvidence(itemId);
+    // The inbox projection needs neither original bytes nor the offered catalog.
+    const evidence = full ? await service.getEvidence(itemId) : [];
     const views = [];
     for (const part of evidence) {
       const bytes = await service.readEvidence(itemId, part.id);
@@ -573,6 +575,22 @@ export class ReferenceReviewHost {
           : {}),
       });
     }
+    // The offered catalog grants nothing; a catalog failure (not configured,
+    // bound exceeded, denied) only hides the start-action picker.
+    let catalog: ItemReviewView['catalog'];
+    if (full)
+      try {
+        catalog = await service.listHandlers(itemId);
+      } catch {
+        catalog = undefined;
+      }
+    let disposition: ItemReviewView['disposition'];
+    if (full && item.disposition)
+      try {
+        disposition = await service.getItemDisposition(itemId);
+      } catch {
+        disposition = undefined;
+      }
     await service.getItem(itemId);
     const entry: InboxEntry = {
       item,
@@ -585,6 +603,8 @@ export class ReferenceReviewHost {
       entry,
       evidence: views,
       analysis,
+      ...(catalog ? { catalog } : {}),
+      ...(disposition ? { disposition } : {}),
       ...(instruction ? { instruction } : {}),
       ...(analysis?.configuration.stage === 'interpret'
         ? {

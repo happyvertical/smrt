@@ -34,24 +34,24 @@ export async function loadReviewSummary(
   } while (cursor);
   const current = await service.getItem(item.id);
   if (!requested) throw new Error('Review page unavailable');
-  // A queued/running stage (reprocess, split or instruction) supersedes earlier
-  // actions, which are now stale; it must read as processing regardless of them.
-  const state: InboxState = ['queued', 'running'].includes(
-    current.processingState,
-  )
-    ? 'processing'
-    : total
-      ? succeeded === total
-        ? 'completed'
-        : succeeded
-          ? 'partially_completed'
-          : deferred
-            ? 'deferred'
-            : failed
-              ? 'failed'
-              : 'waiting'
-      : current.processingState === 'needs_attention'
-        ? 'failed'
-        : 'unresolved';
+  // Terminal no-action disposition wins; otherwise new processing supersedes old actions.
+  const state: InboxState =
+    current.disposition && !succeeded
+      ? 'resolved'
+      : ['queued', 'running'].includes(current.processingState)
+        ? 'processing'
+        : total
+          ? succeeded === total
+            ? 'completed'
+            : succeeded
+              ? 'partially_completed'
+              : deferred
+                ? 'deferred'
+                : failed
+                  ? 'failed'
+                  : 'waiting'
+          : current.processingState === 'needs_attention'
+            ? 'failed'
+            : 'unresolved';
   return { reviews: requested, state };
 }

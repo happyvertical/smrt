@@ -326,6 +326,80 @@ choice and execution success. No learning, feedback storage or rule promotion is
 implemented by these components; #3676 owns those services. Do not pass feedback
 or a feedback callback to readers without the relevant host grant.
 
+## Reviewer-chosen actions and "handled, no action"
+
+A reviewer is not limited to model suggestions. `ItemReviewView.catalog` carries
+the handlers the item's catalog currently offers (`listHandlers`, discovery media
+types and live preview authority; it is presentation, never a grant). The optional
+`startAction` callback forwards `StartActionInput` (`itemId`, `handlerId@version`,
+explicit `args`, `requestId`, optional `reason`) to `startReviewerAction`, which
+requires the current reviewer grant under that handler, a completed or partial
+attempt on the current analysis revision, and an operation handler the item's
+evidence media types offer. Plan handlers go through `previewPlan`. The server
+creates an action keyed `reviewer:<requestId>` with origin `reviewer-selected`
+(`createAction` refuses that key prefix and origin, so process authority cannot
+mint reviewer provenance; re-previewing such an action with `previewProposal`
+needs the reviewer grant and keeps its handler fixed, so only its arguments can
+be corrected),
+runs the handler's normal `validate`/`preview`, publishes a `waiting_review`
+revision and requires the same explicit approval and apply as a generated
+proposal. Replays with the same request return the same review; changed arguments
+or reason conflict. Such actions are never automation-eligible: `authorizeAutomatic`
+refuses them regardless of policy opt-ins. The UI pre-fills arguments only from a
+same-handler suggestion (for example a `needs_review` one) and a single original's
+evidence references, lists the required fields still missing, and submits exactly
+what the reviewer typed. An item whose current attempt failed outright must be
+reprocessed first; an interpretation that completed with `provider_error`,
+`unknown` or no suggestions can be acted on directly. `ReviewAction.origin`
+exposes the provenance so `ActionReview` can label human-started actions.
+
+The optional `resolve` callback forwards `ResolveItemInput`
+(`disposition: 'resolve_no_action'`, `requestId`, optional `reason`) to
+`resolveItem`. It needs reviewer authority under any handler the item's captured
+ceiling offers and refuses while an action is `authorized` with a live approval,
+`executing`, `outcome_unknown` or `succeeded`; waiting, deferred, rejected and
+failed actions, and authorized ones whose approval expired, may remain (neither
+an exhausted failed action nor a lapsed approval can be rejected, so they must
+not keep the queue open). Afterwards only reject remains: those actions can no
+longer be approved, corrected, deferred, re-previewed, retried, applied or
+automated. `submitDecision` refuses every decision but `reject`, no new revision
+is published for the item, `applyAction` rechecks the disposition before any
+effect, and `analyze`, `reviseLogicalSplit` and `createAction` refuse the item
+under its lock before any write, so it is never reanalysed, re-split or given a
+new action. `resolveItem` supersedes any queued or running analysis under the
+same lock and `claimAnalysis` refuses a resolved item, so no provider is called
+after a human closed it; the item's `processingState` keeps its last value (it
+describes analysis, not review), and the inbox state `resolved` is authoritative.
+`publishProposal` (process authority) refuses a resolved item and any
+reviewer-selected action. The UI hides Approve, Defer, Apply, every edit control, suggestion
+preview and split controls on a resolved item.
+Resolved items hide the instruction editor and stop reinterpretation polling, even if an older processing projection is still queued. Recording an instruction cannot append a new revision after resolution.
+
+Paged lists project the resolved state and disposition time in the same bounded, scope-filtered query, so state filters and row controls agree with a full item reload.
+
+The append-only `intake_dispositions` record is terminal: replaying the same
+request returns the same disposition, any other request conflicts, and
+`startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects only
+`{ state: 'resolved', at }` to any item reader (`listItems` reads it in the same
+statement as the page); the reviewer and reason are returned only by
+`getItemDisposition`, which requires reviewer authority, and the review hosts put
+them on `ItemReviewView.disposition` (omitted when that read is denied, so the
+view shows only "Handled, no action"). `loadReviewSummary` reports inbox state `resolved` unless an action
+actually succeeded. Privacy deletion and retention expiry redact the reason and
+reviewer (`intake_dispositions.data`) and keep only the kind. The disposition is
+distinct from `reject`, which still means the proposal was wrong. Closing an item
+records `reviewer_routing` feedback immediately; a started action records it only
+when the reviewer approves it (see FEEDBACK.md). Capture is an optional projection
+that never vetoes the decision or disposition.
+
+`startReviewerAction` applies the handler's discovery media types and the live
+reviewer grant/policy for that handler. It intentionally does not apply the
+proposal catalog's provider-policy filter or `maxHandlers` slice: those bound what
+a model may be offered, and a human choosing a handler sends nothing to a
+provider. The UI picker shows the offered catalog, so a handler hidden from it is
+only reachable by a reviewer who already holds `review` authority for it. The maintained
+browser fixture serves both operations behind CSRF and the same session scope.
+
 ## Maintained browser proof
 
 `pnpm test:components` runs real Svelte component tests; `pnpm test:e2e` runs the
@@ -366,8 +440,13 @@ Import `createIntakeReviewHost` and `IntakeReviewHostOptions` from
 options)` with a service constructed from the current authenticated session.
 The returned `IntakeReviewHost` implements inbox state projection across saved
 review pages, current generation loading, stable `ui:<index>` intention keys,
-action/plan preview CAS lookup, decisions, apply, corrections, candidates, split
-and feedback. Repeated preparation of an unchanged authorized suggestion retains
+action/plan preview CAS lookup, decisions, apply, corrections, candidates, split,
+feedback, the offered `catalog`, `startAction` and `resolve`. Any catalog
+failure (not configured, bound exceeded, denied) omits `catalog`, so the picker
+disappears while existing reviews stay reviewable; item, review and evidence
+denials still propagate as before; the reference host (`reference/review-host.ts`)
+degrades the same way. Repeated
+preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.
 `list({ state?, assigneeId?, cursor?, limit? })` returns one page newest receipt

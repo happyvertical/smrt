@@ -270,12 +270,16 @@ export class IntakeFeedbackService {
       kind: row.kind as FeedbackReceipt['kind'],
     };
   }
+  /** Source text, pin and (when a model suggestion exists) generation versions. */
   private async provenance(ctx: FeedbackActionContext) {
-    const output = object(ctx.result.output),
-      generation = object(output.proposals),
-      pin = object(generation.source),
-      provenance = object(generation.provenance);
-    if (provenance.feedback) {
+    const output = object(ctx.result.output);
+    // A reviewer-selected action on an extraction-only item carries no generation.
+    const generation = output.proposals ? object(output.proposals) : undefined;
+    const pin = generation
+      ? object(generation.source)
+      : { attemptId: ctx.attemptId, outputDigest: digest(ctx.result) };
+    const provenance = generation ? object(generation.provenance) : undefined;
+    if (generation && provenance?.feedback) {
       const inherited = object(provenance.feedback);
       const key = ctx.attemptId;
       if (this.lineage.has(key) || this.lineage.size >= 8)
@@ -331,6 +335,14 @@ export class IntakeFeedbackService {
       })
       .join('\n')
       .slice(0, 4096);
+    if (!provenance)
+      return {
+        generation: false as const,
+        query,
+        attemptId: ctx.attemptId,
+        evidence: object(ctx.analysis).inputs,
+        source: pin,
+      };
     const model = object(provenance.generative);
     for (const field of ['provider', 'model', 'version']) text(model[field]);
     text(provenance.promptVersion);
@@ -340,6 +352,7 @@ export class IntakeFeedbackService {
     // so instruction text never counts against the write budget.
     const instruction = this.instructionFor(ctx);
     return {
+      generation: true as const,
       query,
       ...(instruction
         ? { instruction: { id: instruction.id, digest: instruction.digest } }
@@ -465,8 +478,13 @@ export class IntakeFeedbackService {
           )
             throw new Error('Feedback supersession conflict');
         }
-        const provenance = await this.provenance(ctx),
+        const { generation, ...provenance } = await this.provenance(ctx),
           routing = this.routing(ctx);
+        // Interpretation judgments label a model suggestion; reviewer-selected
+        // actions are captured as routing choices by their owning operation,
+        // even when the item also carries a (different) model generation.
+        if (!generation || ctx.origin === 'reviewer-selected')
+          throw new Error('Feedback requires a model suggestion');
         const body = {
           version: 1,
           requestHash,
@@ -630,6 +648,9 @@ export class IntakeFeedbackService {
           const { digest: stored, ...body } = data;
           if (digest(body) !== stored) throw new Error('Feedback integrity');
           if (
+            // A reviewer-selected action never labels a model suggestion. A
+            // disposition says nothing about whether the suggestion was right.
+            ctx.origin === 'reviewer-selected' ||
             data.revision !== ctx.review.revision ||
             data.bindingHash !== ctx.review.bindingHash ||
             data.attemptId !== ctx.attemptId ||
@@ -681,6 +702,183 @@ export class IntakeFeedbackService {
         executor,
         input.providers ?? [input.model.provider],
       );
+    } catch {
+      return undefined;
+    }
+  }
+  /** Reviewer routing choice, reusable without a model suggestion; fails closed like `example`. */
+  private async routingExample(
+    row: Row,
+    input: RetrieveFeedbackInput,
+    executor?: DatabaseInterface,
+    /** Re-checking an earlier selection: only integrity and revocation count. */
+    lineage = false,
+  ): Promise<FeedbackExample | undefined> {
+    if (++this.exampleChecks > this.config.maxScan) return undefined;
+    try {
+      const data = object(row.data);
+      const { digest: stored, ...body } = data;
+      const itemId = String(row.item_id);
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      // Redacted tombstones carry no digest; reject before any UUID query.
+      if (typeof stored !== 'string' || digest(body) !== stored)
+        return undefined;
+      const chosen = data.choice === 'handler';
+      if (
+        chosen &&
+        (typeof data.actionId !== 'string' || !uuid.test(data.actionId))
+      )
+        return undefined;
+      const offered = chosen
+        ? input.offered.find(
+            (entry) =>
+              entry.handler.id === data.handlerId &&
+              entry.handler.version === data.handlerVersion,
+          )
+        : undefined;
+      if (chosen && !offered) return undefined;
+      const args = chosen ? object(data.args) : {};
+      if (offered)
+        for (const [field, reference] of Object.entries(
+          offered.handler.references,
+        ))
+          if (
+            reference.kind === 'candidate' &&
+            Object.hasOwn(args, field) &&
+            !offered.candidates.some(
+              (candidate) =>
+                candidate.id === args[field] &&
+                candidate.model === reference.model,
+            )
+          )
+            return undefined;
+      const providers = input.providers ?? [input.model.provider];
+      const scope = this.scope();
+      const current = async (db: DatabaseInterface) => {
+        if (
+          !(await this.config.authorize({
+            db,
+            scope,
+            itemId,
+            operation: 'retrieve',
+          }))
+        )
+          throw new Error('Feedback unavailable');
+        const [attempt] = (
+          await db.query(
+            'SELECT output_digest FROM intake_analysis_attempts WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND id=?',
+            scope.tenantId,
+            scope.confidentialScopeId,
+            itemId,
+            data.attemptId,
+          )
+        ).rows;
+        if (!attempt || attempt.output_digest !== data.attemptDigest)
+          throw new Error('Feedback source unavailable');
+        const evidence = data.evidence;
+        if (!Array.isArray(evidence) || !evidence.length)
+          throw new Error('Feedback source unavailable');
+        for (const frozen of evidence) {
+          const pinned = object(frozen);
+          const [row] = (
+            await db.query(
+              "SELECT content_hash FROM intake_evidence WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND id=? AND state='durable'",
+              scope.tenantId,
+              scope.confidentialScopeId,
+              itemId,
+              pinned.id,
+            )
+          ).rows;
+          if (!row || row.content_hash !== pinned.hash)
+            throw new Error('Feedback source unavailable');
+        }
+        if ((await this.rows(db, 'supersedes_id=?', [row.id])).length)
+          throw new Error('Feedback superseded');
+      };
+      const example: FeedbackExample = {
+        feedbackId: String(row.id),
+        digest: stored,
+        itemId,
+        actionId: chosen ? String(data.actionId) : '',
+        revision: chosen ? Number(data.revision) : 0,
+        handlerId: chosen ? String(data.handlerId) : 'none',
+        handlerVersion: chosen ? String(data.handlerVersion) : '',
+        judgment: 'correct',
+        query: String(data.query),
+        args,
+        kind: 'reviewer_routing',
+        routing: {
+          choice: chosen ? 'handler' : 'none',
+          reason: typeof data.reason === 'string' ? data.reason : '',
+        },
+      };
+      if (chosen)
+        // The action binding, handler access, targets, providers and retention
+        // are rechecked by the owning execution boundary.
+        return await this.execution[feedbackActionTransaction](
+          String(data.actionId),
+          false,
+          async (ctx) => {
+            // Only an approved (or applied) reviewer choice is a routing example;
+            // a later correction changes the revision and retires it until the
+            // new revision is approved and captured again.
+            if (
+              ctx.itemId !== itemId ||
+              ctx.origin !== 'reviewer-selected' ||
+              // Settledness gates selection only; a later resolution, lapse or
+              // outcome change must not revoke an example already used.
+              (!lineage && !ctx.settled) ||
+              data.revision !== ctx.review.revision ||
+              data.bindingHash !== ctx.review.bindingHash ||
+              data.attemptId !== ctx.attemptId ||
+              data.handlerId !== ctx.handlerId ||
+              data.handlerVersion !== ctx.handlerVersion ||
+              digest(args) !== digest(ctx.args)
+            )
+              return undefined;
+            await current(ctx.db);
+            return example;
+          },
+          executor,
+          providers,
+          undefined,
+          !lineage,
+        );
+      // No handler was chosen: the source item must still be readable under a
+      // currently offered handler, with the generation recipients allowed.
+      for (const entry of input.offered) {
+        try {
+          return await this.execution[feedbackDiscoveryContext](
+            executor,
+            itemId,
+            entry.handler.id,
+            entry.handler.version,
+            async (context) => {
+              if (
+                providers.some(
+                  (provider) => !context.policy.providers.includes(provider),
+                )
+              )
+                throw new Error('Feedback source provider unavailable');
+              await current(context.db);
+              return example;
+            },
+            async (context) => {
+              if (
+                providers.some(
+                  (provider) => !context.policy.providers.includes(provider),
+                )
+              )
+                throw new Error('Feedback source provider unavailable');
+              await current(context.db);
+            },
+          );
+        } catch {
+          /* try the next currently offered handler; none means excluded */
+        }
+      }
+      return undefined;
     } catch {
       return undefined;
     }
@@ -764,7 +962,7 @@ export class IntakeFeedbackService {
       const scope = this.scope();
       const rows = (
         await context.db.query(
-          "SELECT * FROM intake_feedback WHERE tenant_id=? AND confidential_scope_id=? AND kind='interpretation' ORDER BY id LIMIT ?",
+          "SELECT * FROM intake_feedback WHERE tenant_id=? AND confidential_scope_id=? AND kind IN ('interpretation','reviewer_routing') ORDER BY id LIMIT ?",
           scope.tenantId,
           scope.confidentialScopeId,
           this.config.maxScan,
@@ -772,7 +970,10 @@ export class IntakeFeedbackService {
       ).rows;
       const ranked: Array<{ example: FeedbackExample; score: number }> = [];
       for (const row of rows) {
-        const example = await this.example(row, input, context.db);
+        const example =
+          row.kind === 'reviewer_routing'
+            ? await this.routingExample(row, input, context.db)
+            : await this.example(row, input, context.db);
         if (!example) continue;
         const score = feedbackSimilarity(input.query, example.query);
         if (score >= this.config.minimumSimilarity)
@@ -830,13 +1031,16 @@ export class IntakeFeedbackService {
         throw new Error('Feedback unavailable');
       const examples: FeedbackExample[] = [];
       for (const expected of selection.examples) {
-        const [row] = await this.rows(context.db, 'id=? AND kind=?', [
-          expected.feedbackId,
-          'interpretation',
-        ]);
-        const current = row
-          ? await this.example(row, input, context.db)
-          : undefined;
+        const [row] = await this.rows(
+          context.db,
+          "id=? AND kind IN ('interpretation','reviewer_routing')",
+          [expected.feedbackId],
+        );
+        const current = !row
+          ? undefined
+          : row.kind === 'reviewer_routing'
+            ? await this.routingExample(row, input, context.db, true)
+            : await this.example(row, input, context.db);
         if (
           !current ||
           current.digest !== expected.digest ||
@@ -862,6 +1066,8 @@ export class IntakeFeedbackService {
   private async support(
     ctx: FeedbackActionContext,
     ids: string[],
+    /** Re-checking stored support (read/adopt): only integrity and revocation count. */
+    lineage = false,
   ): Promise<Array<{ id: string; digest: string; query: string }>> {
     if (
       !Array.isArray(ids) ||
@@ -875,12 +1081,20 @@ export class IntakeFeedbackService {
       result: Array<{ id: string; digest: string; query: string }> = [];
     for (const id of [...ids].sort()) {
       text(id);
-      const [row] = await this.rows(ctx.db, 'id=? AND kind=?', [
-        id,
-        'interpretation',
-      ]);
+      const [row] = await this.rows(
+        ctx.db,
+        "id=? AND kind IN ('interpretation','reviewer_routing')",
+        [id],
+      );
       if (!row) throw new Error('Rule evidence unavailable');
       const data = object(row.data);
+      // A reviewer routing choice supports a rule only when it chose this handler.
+      const routing = row.kind === 'reviewer_routing';
+      if (
+        routing &&
+        (data.choice !== 'handler' || typeof data.actionId !== 'string')
+      )
+        throw new Error('Rule evidence unavailable');
       await this.execution[feedbackActionTransaction](
         String(data.actionId),
         false,
@@ -891,9 +1105,20 @@ export class IntakeFeedbackService {
             throw new Error('Independent rule evidence required');
           origins.add(source.itemId);
           const { digest: stored, ...body } = data;
+          const generationMatch = routing
+            ? source.origin === 'reviewer-selected' &&
+              (lineage || source.settled)
+            : source.origin !== 'reviewer-selected' &&
+              provenance.generation &&
+              data.judgment === 'correct' &&
+              data.promptVersion === provenance.promptVersion &&
+              data.configurationVersion === provenance.configurationVersion &&
+              digest(data.model) === digest(provenance.model) &&
+              digest(data.routing ?? { args: data.args }) ===
+                digest(this.routing(source));
           if (
             digest(body) !== stored ||
-            data.judgment !== 'correct' ||
+            !generationMatch ||
             data.revision !== source.review.revision ||
             data.bindingHash !== source.review.bindingHash ||
             data.attemptId !== source.attemptId ||
@@ -902,12 +1127,7 @@ export class IntakeFeedbackService {
             data.handlerId !== ctx.handlerId ||
             data.handlerVersion !== ctx.handlerVersion ||
             digest(data.args) !== digest(source.args) ||
-            digest(data.routing ?? { args: data.args }) !==
-              digest(this.routing(source)) ||
             digest(this.routing(source)) !== digest(this.routing(ctx)) ||
-            data.promptVersion !== provenance.promptVersion ||
-            data.configurationVersion !== provenance.configurationVersion ||
-            digest(data.model) !== digest(provenance.model) ||
             (await this.rows(ctx.db, 'supersedes_id=?', [id])).length
           )
             throw new Error('Rule evidence unavailable');
@@ -918,6 +1138,9 @@ export class IntakeFeedbackService {
           });
         },
         ctx.db,
+        undefined,
+        undefined,
+        !(lineage && routing),
       );
     }
     return result;
@@ -932,6 +1155,20 @@ export class IntakeFeedbackService {
       async (ctx) => {
         this.checkBinding(input, ctx);
         await this.authorize(ctx, 'suggest');
+        const key = `rule:${input.requestId}`;
+        // A replay returns the stored suggestion; its support is re-checked
+        // as lineage (integrity and revocation), never re-selected.
+        const [stored] = await this.rows(
+          ctx.db,
+          'item_id=? AND request_key=?',
+          [ctx.itemId, key],
+        );
+        if (stored) {
+          if (object(stored.data).requestHash !== digest(input))
+            throw new Error('Rule request conflict');
+          await this.rule(ctx, String(stored.id));
+          return this.ruleDTO(stored);
+        }
         const support = await this.support(ctx, input.supportingFeedbackIds);
         const terms = feedbackTerms(support[0].query).filter((term) =>
           support.every((example) =>
@@ -964,19 +1201,10 @@ export class IntakeFeedbackService {
           reviewer: this.scope().actorId,
           requestHash: digest(input),
         };
-        const key = `rule:${input.requestId}`;
-        let [row] = await this.rows(ctx.db, 'item_id=? AND request_key=?', [
-          ctx.itemId,
-          key,
-        ]);
-        if (row) {
-          if (object(row.data).requestHash !== body.requestHash)
-            throw new Error('Rule request conflict');
-        } else
-          row = await this.insert(ctx, key, 'rule_suggestion', {
-            ...body,
-            digest: digest(body),
-          });
+        const row = await this.insert(ctx, key, 'rule_suggestion', {
+          ...body,
+          digest: digest(body),
+        });
         await this.authorize(ctx, 'suggest');
         await this.rule(ctx, String(row.id));
         return this.ruleDTO(row);
@@ -1030,6 +1258,7 @@ export class IntakeFeedbackService {
     const current = await this.support(
       ctx,
       support.map((entry) => entry.id),
+      true,
     );
     if (
       digest(current.map(({ id, digest }) => ({ id, digest }))) !==

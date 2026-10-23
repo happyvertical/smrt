@@ -26,4 +26,42 @@ describe('reference review host provisioning', () => {
 
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it('degrades a catalog failure to a hidden picker like the published adapter', async () => {
+    const item = { id: 'item-reference', processingState: 'completed' };
+    const service = {
+      getItem: vi.fn(async () => item),
+      listReviews: vi.fn(async () => ({ actions: [] })),
+      getCompletedAnalysis: vi.fn(async () => ({
+        configuration: { stage: 'interpret' },
+        result: { output: { proposals: { suggestions: [] } } },
+      })),
+      getEvidence: vi.fn(async () => []),
+      listReviewerInstructions: vi.fn(async () => []),
+      listHandlers: vi.fn(async () => [{ id: 'host:draft', version: '1' }]),
+    };
+    const host = Object.assign(Object.create(ReferenceReviewHost.prototype), {
+      service: async () => ({ service }),
+      assignment: async () => ({ assigneeId: null, version: 0 }),
+    }) as ReferenceReviewHost;
+    const scope = {
+      tenantId: 'tenant',
+      confidentialScopeId: 'private',
+      actorId: 'reviewer',
+    } as Parameters<ReferenceReviewHost['load']>[0];
+
+    expect((await host.load(scope, item.id)).catalog).toEqual([
+      { id: 'host:draft', version: '1' },
+    ]);
+    service.listHandlers.mockRejectedValueOnce(
+      new Error('Authorized catalog exceeds configured bound'),
+    );
+    const degraded = await host.load(scope, item.id);
+    expect(degraded.catalog).toBeUndefined();
+    expect(degraded.availability).toBe('available');
+    // The inbox projection never reads the catalog.
+    service.listHandlers.mockClear();
+    await host.load(scope, item.id, undefined, false);
+    expect(service.listHandlers).not.toHaveBeenCalled();
+  });
 });

@@ -38,6 +38,98 @@ decision by that actor, never as reviewer correctness evidence; consumers that
 derive reviewer agreement must exclude `selfDecision: true` events, and nothing
 in this package turns them into automation eligibility.
 
+## Reviewer routing choices
+
+A `reviewer_routing` record is appended inside the owning transaction when
+feedback is configured and `capture` is authorized, at the moment the choice is
+final: `resolveItem` (REVIEW.md) records `choice: 'none'` keyed
+`routing:<requestId>`, and `submitDecision` records `choice: 'handler'` keyed
+`routing:<decision requestId>` when a reviewer **approves** a reviewer-selected
+action. Starting an action records nothing; rejecting or deferring it never
+produces an example. The record needs no model suggestion: it binds the current
+completed/partial attempt (`attemptId`, output digest, analysis revision, frozen
+evidence hashes and the extracted text as `query`), the acting reviewer
+(`reviewer`, also `approvedBy` for a handler choice), the actor who started the
+action (`startedBy`), the start reason, and for a handler choice the
+`handlerId@version`, exact approved arguments and the approved action binding
+(revision and binding hash). Denied or oversized capture, an unavailable source
+pin or malformed evidence skip the projection and leave the authoritative
+decision or disposition intact; database write failures still roll everything
+back. There is no
+supersession: a correction after approval (`previewProposal` on the current
+revision) changes the revision, which retires the old record from retrieval and
+support until the new revision is approved and captured again; a correction
+before approval records nothing until that revision is approved.
+
+Settledness is a selection-time condition. Once a generation used an example,
+or a rule suggestion stored its support, the lineage re-checks (reading the
+generation, reviewing or deciding its actions, reading or adopting the rule,
+and replaying `suggestRoutingRule`, which returns the stored suggestion) verify:
+
+- every record: its digest, that it is not superseded, retention (no
+  redaction or deletion), the unchanged source attempt digest and frozen
+  evidence hashes, and live `retrieve` authority in the same tenant and
+  confidential scope with every generation recipient allowed by the source's
+  provider policy;
+- an `interpretation` record (unchanged from #3676): its action's current
+  revision, binding hash, attempt, handler@version and arguments; the action's
+  target preconditions at their recorded revisions unless the action
+  `succeeded`; the prompt, configuration and model versions; and that the action
+  is not reviewer-selected;
+- a `reviewer_routing` record with `choice: 'handler'`: its action's current
+  revision, binding hash, attempt, handler@version and arguments, that the
+  action is still reviewer-selected, and that its targets are still accessible
+  (not their revisions: the record means the handler choice, not target state);
+- a `reviewer_routing` record with `choice: 'none'`: it has no action, so the
+  source item is re-checked under the first currently offered receiving handler
+  that still authorizes it.
+
+Rule support (`suggestRoutingRule`, and on read, adoption and replay of a stored
+suggestion) additionally requires: at least two records from distinct source
+items; `judgment: 'correct'` with matching prompt/configuration/model versions
+for an interpretation record; `choice: 'handler'` for a routing record; each
+record's handler@version equal to the receiving binding's; and each source's
+live routing projection (or full arguments when no projection is configured)
+equal to the receiving action's. Settledness of a routing source is checked only
+when the support is first selected.
+
+A later disposition, approval lapse, outcome change or target write of a routing
+source never revokes it.
+
+Retrieval scans `interpretation` and `reviewer_routing` records together under
+the same bounds and lexical matcher. A routing example is returned only when its
+digest verifies, its attempt and evidence hashes are unchanged, the source item
+is still readable in the same tenant and confidential scope, every generation
+recipient is allowed by the source's live provider policy, and (for a chosen
+handler) the action is still reviewer-selected and settled — applied
+(`executing`, `succeeded`) or `authorized` with an unexpired approval, on an item
+without a disposition — its binding is still the current revision, and the handler with its candidate
+references is currently offered to the receiver. A `none` choice is
+revalidated under the first currently offered receiving handler the source item
+authorizes. Routing examples carry `kind: 'reviewer_routing'`,
+`judgment: 'correct'`, `routing: { choice, reason }`, `handlerId: 'none'` with an
+empty action for closed items, and no model/prompt/configuration versions, since
+no suggestion was judged. They are included in provider input and selection
+provenance exactly like interpretation examples and are rechecked by the same
+lineage gates.
+
+`suggestRoutingRule` accepts `reviewer_routing` support only for `choice: 'handler'`
+records whose action is settled in the same sense when the support is chosen
+(a lapsed, unapplied approval or a disposition excludes it) and whose handler, version and
+full arguments match the receiving binding and each other, from distinct source
+items, under the live routing projection; `none`, rejected, deferred and
+re-corrected records never support a rule. Suggestions and adoptions keep every existing #3676
+rule: no catalog, candidate, permission or automation expansion, and
+`automaticActionEligible: false`. Reviewer-selected actions themselves are refused
+by `authorizeAutomatic`. They are routing choices, never labels for a model
+suggestion: `recordFeedback` refuses an interpretation judgment on one (even
+when the item also carries a generation, and whatever its decision), retrieval
+and rule support ignore interpretation records bound to one, and `ActionReview`
+hides the correctness buttons for them. A disposition says nothing about
+whether a suggestion was right, so interpretation judgments on a resolved item
+still count. Only
+`startReviewerAction` mints that origin; `createAction` refuses it.
+
 ## Retrieval and provider boundaries
 
 `retrieveFeedback({ itemId, query })` derives the current offered catalog,

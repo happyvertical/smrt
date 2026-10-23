@@ -233,3 +233,21 @@ idempotent under identical concurrent retry and conflicting under differing
 concurrent decisions, without enqueue or original-authority replacement.
 Historical route-less rows are constructed only in the owned test fixture;
 worker failures use the real public runner lifecycle, not edited job statuses.
+
+### #4210 reviewer-chosen actions, handled-no-action disposition, routing feedback
+
+New model `IntakeDisposition` (`intake_dispositions`) joins the manifest
+migration/parity case automatically (`Object.keys(models)`), `assertReady` and
+privacy redaction. Behavior cases live in `src/test-support/proposals.ts` and run
+on both databases (U, P):
+
+| Behavior/invariant | Positive | Negative/failure | Executor/transaction | Level |
+|---|---|---|---|---|
+| Start a reviewer-chosen handler | extraction-only, `provider_error` interpretation and wrong-suggestion items publish a `waiting_review` review with origin `reviewer-selected`; approve and apply create the real domain record; replay returns the same review | non-reviewer, foreign actor, unknown handler/version, unoffered media type, invalid arguments (no action row survives rollback), changed replay payload conflict | one locked item transaction through `buildBinding`/`publish` | U, P, components, E |
+| Never automatic | a generated proposal under the same layered opt-in is machine-authorizable | the reviewer-selected action is refused by `authorizeAutomatic` | execution transaction | U, P |
+| Handled, no action | disposition recorded once, projected on `IntakeItemDTO` as state and time only (reviewer/reason via `getItemDisposition` under reviewer authority, hidden from a denied reader), inbox state `resolved` and filterable; extraction-only items close too | non-reviewer/foreign tenant, invalid disposition, second request conflicts, authorized (live approval)/applied actions block while an exhausted failed action or a lapsed approval does not, executing/outcome_unknown/succeeded block too, later approve/correct/defer/re-preview/start/apply/retry/analyze/split/createAction refused while reject still works; createAction refuses reserved reviewer provenance; re-preview of a reviewer-selected action needs review authority and a fixed handler; resolve supersedes queued analysis and claimAnalysis refuses; privacy deletion and retention expiry keep only the kind for dispositions and routing feedback | append-only `intake_dispositions` under the item lock | U, P, components, E |
+| Routing feedback | `reviewer_routing` rows for approved handler choices and `none` dispositions; retrieved for comparable items with `kind`, `routing` and no model versions; included in generation input; two independent handler choices support a rule suggestion with `automaticActionEligible: false` | tenant/confidential scope and per-item capture/retrieve denial exclude; `none`, duplicate, rejected and deferred support rejected; a correction retires the example until re-approval; starting alone records nothing; a lapsed unapplied approval or a disposition excludes the example and its support at selection while lineage re-checks of used examples ignore later resolution, lapse, outcome changes and target writes; a replayed suggestion returns the stored row; stored routing support survives a target write while interpretation support keeps the target check; tampered routing origin excluded from retrieval and support; interpretation judgments on reviewer-selected actions (even rejected, on a generated item) refused and never retrieved, while judgments on resolved items still count; no rows without feedback configuration | owning transactions; live source revalidation per example | U, P |
+| UI | handler picker with suggestion/evidence pre-fill and missing fields, exact start payload, review and inbox no-action controls with reason, disposition replaces controls, origin label | malformed JSON rejected locally; absent callbacks render nothing; no implicit approve/apply/feedback | N/A | components, E |
+
+Commands: package `pnpm test`, `pnpm test:postgres`, `pnpm test:components`,
+`pnpm test:e2e`, `pnpm typecheck`, `pnpm build`; root lint/format/knowledge/audit.
