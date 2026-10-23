@@ -2546,6 +2546,54 @@ describe('triage workspace read freshness (review round 7)', () => {
     // The new follow stops only after three throws of its own.
     expect(follows - 1).toBe(3);
   });
+
+  it('drops a newer-than-the-row answer from an earlier follow when the item was left again before its pane answered', async () => {
+    const authorized = () =>
+      view(entry('b', 'waiting'), {
+        reviews: { actions: [action('b', 'authorized')] },
+      });
+    const host = backend(['b', 'c'], { b: [authorized()], c: [ready('c')] });
+    host.apply = vi.fn(() => new Promise<never>(() => {}));
+    const stale = deferred();
+    let calls = 0;
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      calls++;
+      // 1: the pane's first view. 2: the first follow's read, held, then
+      // answering "completed" (newer than anything the row holds).
+      // 3: the reopened pane's first view, which never answers.
+      if (calls === 2) {
+        await stale.promise;
+        return view(entry('b', 'completed'), {
+          reviews: { actions: [action('b', 'succeeded')] },
+        });
+      }
+      if (calls === 3) return new Promise<never>(() => {});
+      return authorized();
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 20 });
+    // Leave mid-Apply: b is followed for its unanswered operation.
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    await waitFor(() => expect(calls).toBe(2));
+    // Reopen, and leave again before the pane's first view answers: the
+    // operation's debt keeps b followed, under a new generation.
+    await fireEvent.keyDown(document.body, { key: 'k' });
+    await waitFor(() => expect(current()).toBe('b'));
+    await waitFor(() => expect(calls).toBe(3));
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    stale.resolve(undefined);
+    await sleep(15);
+    // The earlier follow's answer is dropped, however new it is.
+    expect(statusText('b')).not.toBe('Completed');
+    // Still its listed state: the reopen dropped the old status and no
+    // current-generation read has answered yet.
+    expect(statusText('b')).toBe('Waiting');
+  });
 });
 
 describe('inbox paging', () => {
