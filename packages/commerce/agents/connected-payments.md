@@ -133,3 +133,24 @@ Relinking strands open checkouts on the old account and refuses refunds of
 its payments (`ACCOUNT_NOT_OWNED`). Concurrent refunds with different keys are
 capped by the provider, not locally. Payments confirmed after an intent
 expired or was cancelled are reported `ignored` for an operator.
+
+## Frozen fee-policy provenance (#4263)
+
+At the authoritative price calculation, pass `feePolicyRef` to
+`createConnectedCheckout`: an opaque immutable version reference (for example
+`bakery-membership:version:1`). It is host-attested evidence, not a lookup or an
+authorization grant; the host must resolve and authorize the policy within the
+explicit tenant before calling. This command validates account ownership and
+never reads another tenant's policy. Nonempty references cannot contain leading
+or trailing whitespace. Omission stores the empty string for unversioned hosts.
+
+The intent's server-managed `connectedFeePolicyRef` freezes **before** the
+provider request, alongside price and fee, including when that request fails.
+Every retry must repeat the original reference, even when a new agreement
+version yields the same cents. A mismatch is refused before any provider call.
+Keep `offeringRef` and `idempotencyKey` tied to the purchase; changing them to
+encode an amendment would create another charge. Amendments to the account's
+live `feePolicyRef` cannot rewrite a checkout. The reference follows settlement
+to `Payment` and any command-created refunds and cannot be edited there.
+Existing checkouts with no reference accept only an omitted reference on retry;
+they are never retrospectively attributed to the current account policy.

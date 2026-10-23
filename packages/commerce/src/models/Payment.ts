@@ -366,6 +366,9 @@ export class Payment extends SmrtObject {
    */
   connectedAccountId: string = '';
 
+  /** Immutable host-supplied agreement/fee-policy version at checkout pricing. */
+  connectedFeePolicyRef: string = '';
+
   /**
    * Platform application fee the provider withheld from this direct charge,
    * in integer minor units of {@link currency} (#3831). Settled at source, so
@@ -429,6 +432,8 @@ export class Payment extends SmrtObject {
       this.usdAtConfirmation = options.usdAtConfirmation;
     if (options.connectedAccountId !== undefined)
       this.connectedAccountId = options.connectedAccountId;
+    if (options.connectedFeePolicyRef !== undefined)
+      this.connectedFeePolicyRef = options.connectedFeePolicyRef;
     if (options.applicationFeeCents !== undefined)
       this.applicationFeeCents = options.applicationFeeCents;
     if (options.refundOfPaymentId !== undefined)
@@ -630,6 +635,11 @@ export class Payment extends SmrtObject {
   ): void {
     const frozen: Array<[string, unknown, unknown]> = [
       ['kind', String(priorRow.kind ?? 'payment'), this.kind],
+      [
+        'connectedFeePolicyRef',
+        String(priorRow.connected_fee_policy_ref ?? ''),
+        this.connectedFeePolicyRef,
+      ],
       ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
       ['currency', String(priorRow.currency ?? ''), this.currency],
       ['backendId', String(priorRow.backend_id ?? ''), this.backendId],
@@ -751,6 +761,11 @@ export class Payment extends SmrtObject {
         this.paidAt == null ? '' : new Date(this.paidAt).getTime(),
       ],
       ['kind', String(priorRow.kind ?? 'payment'), this.kind],
+      [
+        'connectedFeePolicyRef',
+        String(priorRow.connected_fee_policy_ref ?? ''),
+        this.connectedFeePolicyRef,
+      ],
       ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
       [
         'currency',

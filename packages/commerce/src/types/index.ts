@@ -769,6 +769,7 @@ export interface PaymentOptions extends SmrtObjectOptions {
   usdAtQuote?: number;
   usdAtConfirmation?: number;
   connectedAccountId?: string;
+  connectedFeePolicyRef?: string;
   applicationFeeCents?: number;
   refundOfPaymentId?: string;
   connectedRefundState?: '' | 'requested' | 'pending' | 'succeeded' | 'failed';
@@ -830,6 +831,7 @@ export interface PaymentIntentOptions extends SmrtObjectOptions {
   retiredAt?: Date | number | string | null;
   notes?: string;
   connectedAccountId?: string;
+  connectedFeePolicyRef?: string;
   applicationFeeCents?: number;
   connectedEnvironment?: string;
   connectedAmount?: number;
