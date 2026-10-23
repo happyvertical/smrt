@@ -89,6 +89,12 @@ export {
   type MagicLinkVerifyResult,
 } from './MagicLinkService.js';
 export {
+  type AuthenticatedMailbox,
+  type MailboxAuthenticationDelivery,
+  MailboxAuthenticationService,
+  type MailboxAuthenticationServiceOptions,
+} from './MailboxAuthenticationService.js';
+export {
   MobileAuthError,
   type MobileAuthErrorCode,
   MobileAuthService,
@@ -265,6 +271,15 @@ export {
   type SessionServiceOptions,
   type SwitchTenantResult,
 } from './SessionService.js';
+export {
+  type AcceptedTenantInvitation,
+  type IssuedTenantInvitation,
+  type PreparedTenantInvitation,
+  type PrepareTenantInvitationInput,
+  TenantInvitationError,
+  TenantInvitationService,
+  type TenantInvitationServiceOptions,
+} from './TenantInvitationService.js';
 export {
   type EnsureTenantResult,
   TenantService,

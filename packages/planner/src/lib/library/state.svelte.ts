@@ -7,6 +7,12 @@ export const COOKBOOK_KEY = 'smrt-planner:cookbook';
 export const APPLIED_WORK_KEY = 'smrt-planner:cookbook-applied';
 
 class CookbookState {
+  private appliedListeners = new Set<() => void>();
+  /** Observe successful explicit applications, never hydration or failed commands. */
+  onApplied(listener: () => void): () => void {
+    this.appliedListeners.add(listener);
+    return () => this.appliedListeners.delete(listener);
+  }
   active = $state<string | null>(null);
   /** What applying `active` set up, to tell later edits from none. */
   appliedWork = $state<string | null>(null);
@@ -31,6 +37,7 @@ class CookbookState {
   ): void {
     this.active = id;
     this.appliedWork = work;
+    for (const listener of this.appliedListeners) listener();
     try {
       storage?.setItem(COOKBOOK_KEY, id);
       if (work === null) storage?.removeItem(APPLIED_WORK_KEY);

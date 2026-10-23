@@ -28,6 +28,12 @@ export { SalesActivity } from './models/SalesActivity.js';
 export { SalesRepresentative } from './models/SalesRepresentative.js';
 export { SalesPipelineRecipe } from './recipes.js';
 export type {
+  GetLeadConversionInput,
+  LeadConversionReceipt,
+  RecordLeadConversionInput,
+} from './services/LeadConversionService.js';
+export { LeadConversionService } from './services/LeadConversionService.js';
+export type {
   AssignLeadInput,
   AssignLeadResult,
   CloseOpportunityInput,
@@ -53,6 +59,7 @@ export type {
   RecordLeadActivityInput,
   ScheduleLeadNextActionInput,
   StartWorkingInput,
+  UpdateLeadContactInput,
 } from './services/LeadWorkflowService.js';
 // Services
 export {

@@ -1,4 +1,8 @@
 <script lang="ts">
+import {
+  createAnalyticsTransitions,
+  getAnalyticsContext,
+} from '@happyvertical/smrt-ui/analytics';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { PreviewApprovalView } from './delivery-types.js';
@@ -15,6 +19,14 @@ export interface Props {
 
 let { preview, busy = false, ondecide }: Props = $props();
 const { t } = useI18n();
+const analytics = getAnalyticsContext();
+const observe = createAnalyticsTransitions(analytics);
+$effect(() =>
+  observe([preview], 'pending', {
+    approved: 'project_preview_approved',
+    rejected: 'project_preview_rejected',
+  }),
+);
 </script>
 
 <section class="preview" data-smrt-component="PreviewApprovalPanel">
@@ -23,7 +35,7 @@ const { t } = useI18n();
     <strong>{preview.status}</strong>
   </div>
   {#if preview.previewUrl}
-    <a href={preview.previewUrl} target="_blank" rel="noopener noreferrer">
+    <a onclick={() => analytics("project_preview_opened")} href={preview.previewUrl} target="_blank" rel="noopener noreferrer">
       {t(M['projects.preview.open'])}
     </a>
   {/if}

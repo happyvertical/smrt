@@ -142,6 +142,11 @@
     "./charts/format": {
       "types": "./dist/charts/format.d.ts",
       "import": "./dist/charts/format.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics/index.d.ts",
+      "import": "./dist/analytics/index.js",
+      "default": "./dist/analytics/index.js"
     }
   },
   "files": [

@@ -3,6 +3,7 @@ import {
   tryUseAdminShell,
   tryUseShellTargets,
 } from '@happyvertical/smrt-svelte/workspace';
+import { getAnalyticsContext } from '@happyvertical/smrt-ui/analytics';
 import { onMount, tick } from 'svelte';
 import { aiState } from '../ai/instance.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
@@ -48,6 +49,7 @@ let {
   links?: LinkMode;
 } = $props();
 
+const analytics = getAnalyticsContext();
 const shell = tryUseAdminShell();
 const targets = tryUseShellTargets();
 const dataSource =
@@ -61,6 +63,12 @@ $effect.pre(() => {
 
 onMount(() => {
   let mounted = true;
+  queueMicrotask(() => {
+    if (mounted) analytics('planner_opened');
+  });
+  const stopAnalytics = libraryState.onApplied(() =>
+    analytics('planner_cookbook_applied'),
+  );
   const guide = nativeAssistant
     ? createPlannerGuide({
         targets,
@@ -133,6 +141,7 @@ onMount(() => {
   });
   return () => {
     mounted = false;
+    stopAnalytics();
     guide?.dismiss();
     stopGuideReset?.();
     plannerRuntime.onReplaced = previous;

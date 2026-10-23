@@ -191,6 +191,15 @@ export class UserCollection extends SmrtCollection<User> {
     return results.length > 0 ? results[0] : null;
   }
 
+  /** Indexed identity lookup with readiness and ambiguity guards. */
+  async findCanonicalByEmail(email: string): Promise<User | null> {
+    const matches = await this.findUsersByNormalizedEmail(
+      normalizeIdentityEmail(email),
+    );
+    if (matches.length > 1) throw new Error('Ambiguous User email identity');
+    return matches[0] ?? null;
+  }
+
   /**
    * Find user by profile ID
    */
