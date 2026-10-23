@@ -21,7 +21,7 @@ export interface Props {
   rowAside?: Snippet<[InboxEntry]>;
   /** The row a workspace has open; marked `aria-current`. */
   selectedId?: string;
-  /** The displayed rows after every load, page append or patch, and whether more pages exist. */
+  /** The displayed rows after every settled load or page append (not after `patch`, which returns them), and whether more pages exist. */
   onitems?: (items: InboxEntry[], more: boolean) => void;
   /** A row's status text; the listed inbox state is shown when omitted or undefined. */
   status?: (entry: InboxEntry) => string | undefined;
@@ -94,7 +94,6 @@ export function patch(entry: InboxEntry, keep = false): InboxEntry[] {
     if (entry.assignment.version !== previous.assignment.version)
       assignments[entry.item.id] = entry.assignment.assigneeId ?? '';
   } else items = items.filter((row) => row.item.id !== entry.item.id);
-  publish();
   return $state.snapshot(items) as InboxEntry[];
 }
 /** Append the next page, if any; resolves with the displayed rows. */
@@ -112,11 +111,10 @@ async function load(more = false) {
   const ticket = ++epoch;
   pending = true;
   error = false;
-  const prior = more ? items : [];
   const next = more ? cursor : undefined;
-  items = [];
-  assignments = {};
-  reasons = {};
+  // The displayed rows stay (controls disabled while pending) until the new
+  // page arrives, so a workspace can keep patching and navigating them; a
+  // failed read still clears them.
   const filter = more
     ? listed
     : {
@@ -127,15 +125,27 @@ async function load(more = false) {
     const page = await host.list({ ...filter, cursor: next });
     if (!alive || ticket !== epoch) return;
     listed = filter;
-    items = [...prior, ...page.items];
+    // An appended page builds on the rows as displayed now (patches made
+    // while it loaded included); a row already shown is not repeated.
+    const shown = new Set(more ? items.map((entry) => entry.item.id) : []);
+    const added = page.items.filter((entry) => !shown.has(entry.item.id));
+    const kept = more ? { assignments, reasons } : undefined;
+    items = more ? [...items, ...added] : page.items;
     cursor = page.nextCursor;
     assignments = Object.fromEntries(
-      items.map((entry) => [entry.item.id, entry.assignment.assigneeId ?? '']),
+      items.map((entry) => [
+        entry.item.id,
+        kept?.assignments[entry.item.id] ?? entry.assignment.assigneeId ?? '',
+      ]),
     );
-    reasons = Object.fromEntries(items.map((entry) => [entry.item.id, '']));
+    reasons = Object.fromEntries(
+      items.map((entry) => [entry.item.id, kept?.reasons[entry.item.id] ?? '']),
+    );
   } catch {
     if (alive && ticket === epoch) {
       items = [];
+      assignments = {};
+      reasons = {};
       cursor = undefined;
       error = true;
     }

@@ -378,12 +378,20 @@ model only, exactly as in `IntakeReview`.
   page groups; `pages` prop) gets previous/next page, which reloads the frame
   at the same-origin URL plus `#page=n`; only `evidenceUrl`-approved URLs ever
   reach a frame. `IntakeReview` gets the same page navigation over its
-  unchanged stacked list of parts.
+  unchanged stacked list of parts. The chosen part and page belong to the item
+  view (bindable `chosen`/`page`), so they survive in-place reloads, Prepare
+  review, Approve and Apply.
 - **Keyboard.** J/K and Alt+Down/Alt+Up move to the next/previous row (loading
   the next page at the end), ignored while focus is in a text field, select or
   editable region; "Previous item"/"Next item" buttons carry
   `aria-keyshortcuts`. The selected row is `aria-current`, and every selection
-  moves focus to the item pane region, named by the row's label.
+  moves focus to the item pane region, named by the row's label. A navigation
+  that waited for the next page is dropped if the reviewer chose another item
+  meanwhile. When the pane holds unsent input (instruction text, an edited
+  suggestion draft or split, start-action or no-action fields, an action
+  editor's arguments, reason or comment), a reviewer-initiated move asks
+  inline first ("Stay on this item" takes focus; "Discard and open the other
+  item" proceeds); an automatic advance after a finished item does not ask.
 - **Live state.** A row's status follows the item: "Interpreting…", "Ready to
   review", "Needs review" with missing argument names or the generation
   outcome, "Awaiting approval", "Approved, not yet applied", "Failed" with a
@@ -396,12 +404,22 @@ model only, exactly as in `IntakeReview`.
   form never disagree and the list is **not** re-listed per tick. An item the
   reviewer leaves while its stage is in flight, or before the pane showed the
   result of its last operation (an instruction just recorded), keeps
-  following: the workspace re-reads it with the same `load` (first review page)
-  on the pane's backoff, at most **5** items per tick, one after another, until
-  it settles, its view is denied (its cached status is dropped) or three reads
-  in a row throw. A settled stage that was seen running is announced in a
-  polite status region ("badger-po.pdf: Ready to review"). Other rows update on
-  Refresh, a filter change or when opened; there is no streaming.
+  following: the workspace re-reads followed items with the same `load` (first
+  review page) on the pane's backoff, at most **5** reads per tick, one after
+  another, least recently read first (so every followed row is reached and none
+  is dropped), with only one tick running at a time. An item stops being
+  followed when it settles, its view is denied, three reads in a row throw, or
+  it leaves the displayed list; a denial or the failure stop drops its cached
+  status and restores the entry its page listed. A denial in the open pane (a
+  failed action or the pane's own fail-closed poll) does the same and the item
+  is not followed when left. A settled stage that was seen running is announced
+  in a polite status region ("badger-po.pdf: Ready to review"). Other rows
+  update on Refresh, a filter change or when opened; there is no streaming.
+  While a refresh or "Load more" is pending, the displayed rows stay (controls
+  disabled) and keep taking patches; when the page arrives the open row is
+  patched again from the pane's latest view, so an older page never regresses
+  it. "Load more" continues the filter the rows were listed under, not filter
+  inputs edited since, and does not repeat a row already shown.
 - **Approve and advance.** After an approve, apply or "Handled, no action" whose
   reload left nothing for the reviewer (closed without action, or an action
   succeeded and none is waiting for approval, waiting to be applied, executing,

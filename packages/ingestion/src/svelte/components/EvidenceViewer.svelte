@@ -13,18 +13,26 @@ export interface Props {
   pages?: Record<string, number>;
   /** `stack` lists every part; `pager` shows one part at a time with navigation. */
   layout?: 'stack' | 'pager';
+  /** Bindable: the part the pager shows, by evidence id. */
+  chosen?: string;
+  /** Bindable: page per evidence id; absent until the reviewer navigates. */
+  page?: Record<string, number>;
 }
-let { evidence, pages = {}, layout = 'stack' }: Props = $props();
+let {
+  evidence,
+  pages = {},
+  layout = 'stack',
+  // Bindable so a parent can keep them while this viewer remounts on reload.
+  chosen = $bindable(),
+  page = $bindable({}),
+}: Props = $props();
 const { t } = useI18n();
-// Page per evidence id; absent until the reviewer navigates.
-let page = $state<Record<string, number>>({});
 const inline = (view: EvidenceView) =>
   view.evidence.mediaType.startsWith('image/') ||
   view.evidence.mediaType === 'application/pdf' ||
   view.evidence.mediaType.startsWith('audio/');
 // The pager opens on the first part that renders inline (the uploaded file,
 // not its capture record); the reviewer can step to every other part.
-let chosen = $state<string>();
 const shown = $derived.by(() => {
   if (layout !== 'pager') return evidence;
   const current =
@@ -44,7 +52,10 @@ function pageUrl(url: string, id: string) {
 }
 function turn(id: string, offset: number) {
   const count = pages[id] ?? 1;
-  page[id] = Math.min(count, Math.max(1, (page[id] ?? 1) + offset));
+  page = {
+    ...page,
+    [id]: Math.min(count, Math.max(1, (page[id] ?? 1) + offset)),
+  };
 }
 </script>
 <section data-testid="evidence-viewer" aria-label={t(M['ingestion.evidence'])} data-smrt-component="EvidenceViewer">

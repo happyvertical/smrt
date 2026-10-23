@@ -15,7 +15,7 @@ import type {
   ItemReviewView,
   ReviewAction,
 } from '../../review-dto.js';
-import { EvidenceViewer, IntakeWorkspace } from '../index.js';
+import { EvidenceViewer, IntakeInbox, IntakeWorkspace } from '../index.js';
 import { triageSettled, viewStatus } from '../view-utils.js';
 
 afterEach(cleanup);
@@ -580,6 +580,475 @@ describe('intake triage workspace', () => {
     expect(triageSettled(mixed)).toBe(false);
     mixed.reviews.actions[1].review.state = 'stale';
     expect(triageSettled(mixed)).toBe(true);
+  });
+});
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+const statusText = (id: string) =>
+  within(row(id)).getByTestId('row-status').textContent;
+function pdf(listed: InboxEntry, extra: Partial<ItemReviewView> = {}) {
+  const id = listed.item.id;
+  return view(listed, {
+    analysis: analysis(id, {
+      results: [
+        {
+          evidence: { id: `${id}-pdf` },
+          segments: [{ text: 'last', location: { kind: 'page', page: 3 } }],
+        },
+      ],
+    }),
+    evidence: [
+      {
+        evidence: {
+          id: `${id}-pdf`,
+          partId: 'file',
+          parentEvidenceId: null,
+          mediaType: 'application/pdf',
+          contentHash: 'h',
+          byteLength: 1,
+        },
+        label: `${id}.pdf`,
+        viewUrl: `/original/${id}`,
+      },
+    ],
+    ...extra,
+  });
+}
+/** Select each listed id in turn with J, leaving every one mid-stage. */
+async function leaveInFlight(ids: string[]) {
+  for (const id of ids) {
+    await waitFor(() =>
+      expect(row(id).getAttribute('aria-current')).toBe('true'),
+    );
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+  }
+}
+
+describe('intake triage workspace edge cases', () => {
+  it('keeps rows while a refresh is pending, so an in-place poll still lands and survives the older page', async () => {
+    let settled = false;
+    let hold: ReturnType<typeof deferred> | undefined;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.load = vi.fn(async (id: string) =>
+      structuredClone(
+        id === 'b'
+          ? settled
+            ? ready('b', 'waiting')
+            : inFlight('b')
+          : ready(id),
+      ),
+    );
+    host.list = vi.fn(async () => {
+      if (hold) await hold.promise;
+      // A page read before the background stage finished.
+      return { items: [inFlight('b').entry, ready('c').entry] };
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await waitFor(() => expect(statusText('b')).toBe('Interpreting…'));
+    hold = deferred();
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    expect(row('b')).not.toBeNull();
+    settled = true;
+    await waitFor(() => expect(statusText('b')).toBe('Ready to review'));
+    hold.resolve();
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await screen.findByText('Item C');
+    await sleep(20);
+    // The open row keeps following its form, not the older page.
+    expect(statusText('b')).toBe('Ready to review');
+  });
+
+  it('advances from the displayed rows when an apply finishes during a refresh', async () => {
+    let hold: ReturnType<typeof deferred> | undefined;
+    const host = backend(['a', 'b'], {
+      a: [
+        view(entry('a', 'waiting'), {
+          reviews: { actions: [action('a', 'authorized')] },
+        }),
+        view(entry('a', 'completed'), {
+          reviews: { actions: [action('a', 'succeeded')] },
+        }),
+      ],
+      b: [ready('b', 'waiting')],
+    });
+    const list = host.list;
+    host.list = vi.fn(async (input) => {
+      if (hold) await hold.promise;
+      return list(input);
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const apply = await screen.findByRole('button', {
+      name: 'Apply approved action',
+    });
+    hold = deferred();
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    await fireEvent.click(apply);
+    await waitFor(() =>
+      expect(row('b').getAttribute('aria-current')).toBe('true'),
+    );
+    expect(screen.queryByTestId('queue-done')).toBeNull();
+    hold.resolve();
+  });
+
+  it('drops a navigation that awaited the next page when the reviewer chose another item meanwhile', async () => {
+    const page2 = deferred<{ items: InboxEntry[] }>();
+    const host = backend(['a', 'b'], {
+      a: [ready('a')],
+      b: [ready('b')],
+      c: [ready('c')],
+    });
+    host.list = vi.fn(async ({ cursor }) =>
+      cursor
+        ? page2.promise
+        : {
+            items: [ready('a').entry, ready('b').entry],
+            nextCursor: 'page-2',
+          },
+    );
+    render(IntakeWorkspace, { host, itemId: 'b' });
+    await screen.findByText('Item A');
+    await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(host.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'page-2' }),
+      ),
+    );
+    await fireEvent.keyDown(document.body, { key: 'k' });
+    await waitFor(() =>
+      expect(row('a').getAttribute('aria-current')).toBe('true'),
+    );
+    page2.resolve({ items: [ready('c').entry] });
+    await screen.findByText('Item C');
+    await sleep(20);
+    expect(row('a').getAttribute('aria-current')).toBe('true');
+    expect(vi.mocked(host.load).mock.calls.map(([id]) => id)).not.toContain(
+      'c',
+    );
+  });
+
+  it('a denial clears the row status the pane produced and the item is not followed', async () => {
+    const failing = view(entry('b', 'waiting'), {
+      reviews: { actions: [action('b', 'waiting_review')] },
+      instruction: {
+        current: null,
+        applied: null,
+        stale: false,
+        failure: 'timeout',
+      },
+    });
+    const host = backend(['b', 'c'], { b: [failing], c: [ready('c')] });
+    host.decide = vi.fn(async () => {
+      throw new Error('Denied');
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await waitFor(() => expect(statusText('b')).toBe('Failed: timeout'));
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Approve' }),
+    );
+    await screen.findByRole('alert');
+    await waitFor(() => expect(statusText('b')).toBe('Waiting'));
+    const reads = vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(row('c').getAttribute('aria-current')).toBe('true'),
+    );
+    await sleep(60);
+    expect(
+      vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b'),
+    ).toHaveLength(reads.length);
+  });
+
+  it('follows any number of left items, at most five reads per tick, in rotation', async () => {
+    const ids = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7'];
+    const views: Record<string, ItemReviewView[]> = { z: [ready('z')] };
+    for (const id of ids) views[id] = [inFlight(id)];
+    const host = backend([...ids, 'z'], views);
+    const load = host.load;
+    const log: Array<{ id: string; at: number }> = [];
+    let recording = false;
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      if (recording) log.push({ id, at: performance.now() });
+      return load(id, cursor);
+    });
+    render(IntakeWorkspace, { host, itemId: 'i1', pollMs: 40 });
+    await leaveInFlight(ids);
+    await waitFor(() =>
+      expect(row('z').getAttribute('aria-current')).toBe('true'),
+    );
+    recording = true;
+    await sleep(450);
+    const ticks: string[][] = [];
+    let last = -Infinity;
+    for (const { id, at } of log) {
+      if (at - last > 20) ticks.push([]);
+      ticks.at(-1)!.push(id);
+      last = at;
+    }
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    for (const tick of ticks) expect(tick.length).toBeLessThanOrEqual(5);
+    expect(new Set(ticks.slice(0, 2).flat())).toEqual(new Set(ids));
+  });
+
+  it('stops following after three thrown reads in a row and falls back to the listed state', async () => {
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const load = host.load;
+    let left = false;
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      if (left && id === 'b') throw new Error('Unavailable');
+      return load(id, cursor);
+    });
+    const list = host.list;
+    host.list = vi.fn(async (input) => {
+      const page = await list(input);
+      page.items[0] = entry('b', 'unresolved');
+      return page;
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    left = true;
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(statusText('b')).toBe('Unresolved'));
+    const failed = vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b');
+    await sleep(80);
+    expect(
+      vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b'),
+    ).toHaveLength(failed.length);
+    // Pane read plus exactly three failed follow reads.
+    expect(failed.length).toBe(4);
+  });
+
+  it('stops every timer on unmount and on a host change', async () => {
+    const first = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const view1 = render(IntakeWorkspace, {
+      host: first,
+      itemId: 'b',
+      pollMs: 5,
+    });
+    await leaveInFlight(['b']);
+    await waitFor(() =>
+      expect(
+        vi.mocked(first.load).mock.calls.filter(([id]) => id === 'b').length,
+      ).toBeGreaterThan(1),
+    );
+    const second = backend(['d'], { d: [ready('d')] });
+    await view1.rerender({ host: second, itemId: 'd' });
+    await screen.findByText('Item D');
+    const reads = vi.mocked(first.load).mock.calls.length;
+    await sleep(60);
+    expect(vi.mocked(first.load).mock.calls.length).toBe(reads);
+    const third = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    cleanup();
+    const view3 = render(IntakeWorkspace, {
+      host: third,
+      itemId: 'b',
+      pollMs: 5,
+    });
+    await leaveInFlight(['b']);
+    view3.unmount();
+    const after = vi.mocked(third.load).mock.calls.length;
+    await sleep(60);
+    expect(vi.mocked(third.load).mock.calls.length).toBe(after);
+  });
+
+  it('ignores a late poll answer from the item the reviewer already left', async () => {
+    const late = deferred<ItemReviewView>();
+    let reads = 0;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const load = host.load;
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      // The pane's first poll tick hangs until after the reviewer moved on.
+      if (id === 'b' && ++reads === 2) return late.promise;
+      return load(id, cursor);
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await waitFor(() => expect(reads).toBe(2));
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(row('c').getAttribute('aria-current')).toBe('true'),
+    );
+    late.resolve(
+      view(entry('b', 'unresolved', { analysisRevision: 4 }), {
+        analysis: analysis('b'),
+        generation: generation([suggestion('needs_review', ['vendor'])]),
+      }),
+    );
+    await sleep(30);
+    expect(statusText('b')).toBe('Interpreting…');
+    expect(pane().getAttribute('aria-label')).toBe('Item C');
+  });
+
+  it('handles an empty list without selecting or loading anything', async () => {
+    const host = backend([], {});
+    render(IntakeWorkspace, { host });
+    await screen.findByText('No intake items.');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    expect(
+      (screen.getByRole('button', { name: 'Next item' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Previous item',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(screen.getByText(/Choose an item/)).toBeTruthy();
+    expect(host.load).not.toHaveBeenCalled();
+  });
+
+  it('skips a next row someone else already closed', async () => {
+    const closed = (id: string) =>
+      view(
+        entry(id, 'resolved', {
+          disposition: { state: 'resolved', at: '2026-10-23T00:00:00.000Z' },
+        }),
+      );
+    const host = backend(['a', 'b', 'c'], {
+      a: [ready('a'), closed('a')],
+      b: [closed('b')],
+      c: [ready('c')],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      within(
+        await waitFor(() => {
+          const node = screen.getByRole('group', {
+            name: 'Handled, no action',
+          });
+          return node;
+        }),
+      ).getByRole('button', { name: 'Handled, no action' }),
+    );
+    await waitFor(() =>
+      expect(row('c').getAttribute('aria-current')).toBe('true'),
+    );
+    expect(vi.mocked(host.load).mock.calls.map(([id]) => id)).not.toContain(
+      'b',
+    );
+  });
+
+  it('asks before J/K would discard unsent input, and keeps it on "Stay"', async () => {
+    const host = backend(['b', 'c'], { b: [ready('b')], c: [ready('c')] });
+    render(IntakeWorkspace, { host, itemId: 'b' });
+    const box = await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'Half a thought' } });
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    const confirm = await screen.findByTestId('unsaved-leave');
+    expect(row('b').getAttribute('aria-current')).toBe('true');
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(confirm).getByRole('button', { name: 'Stay on this item' }),
+      ),
+    );
+    await fireEvent.click(
+      within(confirm).getByRole('button', { name: 'Stay on this item' }),
+    );
+    expect(screen.queryByTestId('unsaved-leave')).toBeNull();
+    expect((box as HTMLTextAreaElement).value).toBe('Half a thought');
+    await fireEvent.click(screen.getByRole('button', { name: 'Next item' }));
+    await fireEvent.click(
+      within(await screen.findByTestId('unsaved-leave')).getByRole('button', {
+        name: 'Discard and open the other item',
+      }),
+    );
+    await waitFor(() =>
+      expect(row('c').getAttribute('aria-current')).toBe('true'),
+    );
+    // Clean panes move without asking, including an edited action editor
+    // that was reverted.
+    await fireEvent.keyDown(document.body, { key: 'k' });
+    await waitFor(() =>
+      expect(row('b').getAttribute('aria-current')).toBe('true'),
+    );
+  });
+
+  it('asks before leaving edited action arguments', async () => {
+    const host = backend(['a', 'b'], {
+      a: [
+        view(entry('a', 'waiting'), {
+          reviews: { actions: [action('a', 'waiting_review')] },
+        }),
+      ],
+      b: [ready('b')],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const args = await screen.findByRole('textbox', {
+      name: 'Exact arguments (JSON)',
+    });
+    await fireEvent.input(args, { target: { value: '{"title":"Edited"}' } });
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await screen.findByTestId('unsaved-leave');
+    expect(row('a').getAttribute('aria-current')).toBe('true');
+  });
+
+  it('keeps the original page across an approve', async () => {
+    const host = backend(['a'], {
+      a: [
+        pdf(entry('a', 'waiting'), {
+          reviews: { actions: [action('a', 'waiting_review')] },
+        }),
+        pdf(entry('a', 'waiting'), {
+          reviews: { actions: [action('a', 'authorized')] },
+        }),
+      ],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Next page' }),
+    );
+    expect(screen.getByText('Page 2 of 3')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await screen.findByRole('button', { name: 'Apply approved action' });
+    expect(screen.getByText('Page 2 of 3')).toBeTruthy();
+    expect(pane().querySelector('iframe')?.getAttribute('src')).toMatch(
+      /#page=2$/,
+    );
+  });
+});
+
+describe('inbox paging', () => {
+  it('"Load more" continues the filter the rows were listed under, not edited inputs', async () => {
+    const host = backend(['a'], { a: [ready('a')] });
+    host.list = vi.fn(async ({ cursor }) => ({
+      items: cursor ? [ready('b').entry] : [ready('a').entry],
+      ...(cursor ? {} : { nextCursor: 'page-2' }),
+    }));
+    render(IntakeInbox, { host });
+    await screen.findByText('Item A');
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Assignee ID' }),
+      { target: { value: 'someone-else' } },
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await screen.findByText('Item B');
+    expect(host.list).toHaveBeenLastCalledWith({
+      state: undefined,
+      assigneeId: undefined,
+      cursor: 'page-2',
+    });
+    expect(screen.getByText('Item A')).toBeTruthy();
   });
 });
 
