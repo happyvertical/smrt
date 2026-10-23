@@ -164,10 +164,12 @@ export interface PreviewRejection {
 }
 /** Transport-neutral callbacks. Implement on an authenticated host; props confer no permission. */
 export interface IntakeReviewHost {
+  /** Newest receipt first; `limit` defaults to 20 and is clamped to 1..100. */
   list(input: {
     state?: InboxState;
     assigneeId?: string;
     cursor?: string;
+    limit?: number;
   }): Promise<{ items: InboxEntry[]; nextCursor?: string }>;
   load(itemId: string, cursor?: string): Promise<ItemReviewView>;
   upload(files: File[], requestId: string): Promise<{ itemId: string }>;

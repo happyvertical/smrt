@@ -6,6 +6,8 @@ export const discoveryTransaction = Symbol('ingestion.discoveryTransaction');
 export const generationSnapshotRead = Symbol(
   'ingestion.generationSnapshotRead',
 );
+/** The read-only list gate the service applies per (item, handler); not public. */
+export const listReadGate = Symbol('ingestion.listReadGate');
 export type TransactionRunner<T> = (
   work: (db: DatabaseInterface) => Promise<T>,
 ) => Promise<T>;
