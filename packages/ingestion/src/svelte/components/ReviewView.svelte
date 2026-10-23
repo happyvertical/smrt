@@ -38,7 +38,13 @@ export interface Props {
    * because a callback failed (the view fails closed), not for a reload.
    * Presentation only.
    */
-  onview?: (view: ItemReviewView | undefined, denied: boolean) => void;
+  onview?: (
+    view: ItemReviewView | undefined,
+    denied: boolean,
+    issued: number,
+  ) => void;
+  /** Numbers each load when its request starts; reported as `issued` with the view. */
+  stamp?: () => number;
   /** Whether the reviewer has unsent input on this item. */
   ondirty?: (dirty: boolean) => void;
   /** After an approve, apply or resolve and the reload that follows it succeeded. */
@@ -50,6 +56,7 @@ let {
   pollMs = 2000,
   layout = 'split',
   onview,
+  stamp,
   ondirty,
   onoutcome,
 }: Props = $props();
@@ -107,6 +114,8 @@ const inFlight = reviewInFlight;
 // untracked so the callback's own reads never re-run this effect. Undefined
 // means a displayed view was cleared for a reload or an operation.
 let shown = false;
+// The read sequence number of the load that produced the displayed view.
+let viewIssued = 0;
 $effect(() => {
   const current = view;
   // Read too, so a denial after an operation cleared the view still reports.
@@ -114,7 +123,7 @@ $effect(() => {
   // A first load that failed reports its denial too.
   if (!current && !shown && !denied) return;
   shown = true;
-  untrack(() => onview?.(current, denied));
+  untrack(() => onview?.(current, denied, viewIssued));
 });
 // Unsent reviewer input on this item (instruction, drafts, split edits,
 // start/resolve fields, action editors); a workspace confirms before leaving.
@@ -215,7 +224,10 @@ function deny() {
 async function fetchView(
   ticket: number,
   pageCount: number,
-): Promise<{ result: ItemReviewView; pages: number } | undefined> {
+): Promise<
+  { result: ItemReviewView; pages: number; issued: number } | undefined
+> {
+  const issued = stamp?.() ?? 0;
   let cursor: string | undefined;
   let result: ItemReviewView | undefined;
   const actions: ItemReviewView['reviews']['actions'] = [];
@@ -265,6 +277,7 @@ async function fetchView(
             availability: result.availability,
           },
     pages: refreshedPages,
+    issued,
   };
 }
 /** Keep only drafts the reviewer edited; untouched ones follow the new generation. */
@@ -336,6 +349,7 @@ async function load(pageCount = loadedPages) {
     if (!fetched) return;
     if (fetched.result.availability === 'available')
       loadedPages = fetched.pages;
+    viewIssued = fetched.issued;
     view = fetched.result;
     syncSuggestionDrafts(view);
     splits = splitDrafts(view, {});
@@ -358,6 +372,7 @@ async function refresh(ticket: number) {
     refreshFailed = false;
     // An explicit host denial fails closed at once.
     if (fetched.result.availability !== 'available') {
+      viewIssued = fetched.issued;
       view = fetched.result;
       syncSuggestionDrafts(view);
       splits = {};
@@ -366,8 +381,14 @@ async function refresh(ticket: number) {
     if (JSON.stringify(fetched.result) !== JSON.stringify(view)) {
       loadedPages = fetched.pages;
       splits = splitDrafts(fetched.result, splits, view);
+      viewIssued = fetched.issued;
       view = fetched.result;
       syncSuggestionDrafts(view);
+    } else if (view) {
+      // Unchanged, but read again: the displayed view is this fresh.
+      viewIssued = fetched.issued;
+      const current = view;
+      untrack(() => onview?.(current, false, viewIssued));
     }
     settleBusy();
   } catch {

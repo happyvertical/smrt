@@ -1661,6 +1661,12 @@ describe('triage workspace following bounds', () => {
       ),
     );
     await screen.findByTestId('reinterpreting');
+    // A pane read newer than that page (it still says "processing").
+    const seen = vi.mocked(host.load).mock.calls.length;
+    await waitFor(() =>
+      expect(vi.mocked(host.load).mock.calls.length).toBeGreaterThan(seen),
+    );
+    await sleep(5);
     await fireEvent.keyDown(document.body, { key: 'j' });
     await waitFor(() =>
       expect(row('c').getAttribute('aria-current')).toBe('true'),
@@ -1975,7 +1981,7 @@ describe('triage workspace lifecycle (review round 5)', () => {
     await waitFor(() => expect(statusText('a')).toBe('Completed'));
   });
 
-  it('a settled entry is re-applied over one later page only', async () => {
+  it('a page read after a settled follow read shows what it lists', async () => {
     let page = 0;
     const host = backend(['b', 'c'], {
       b: [inFlight('b'), ready('b', 'waiting')],
@@ -2000,13 +2006,13 @@ describe('triage workspace lifecycle (review round 5)', () => {
           name: 'Refresh',
         }),
       );
-    // The first later page may predate the settled read and is overlaid.
+    // The page started after the follow read, so it is newer and wins.
     await refresh();
     await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
-    // A second page is not: the row shows what it lists.
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
     await refresh();
     await waitFor(() => expect(host.list).toHaveBeenCalledTimes(3));
-    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+    expect(statusText('b')).toBe('Completed');
   });
 
   it('stops following an item a refreshed page no longer lists', async () => {
@@ -2085,6 +2091,235 @@ describe('triage workspace lifecycle (review round 5)', () => {
     await waitFor(() => expect(row('b')).toBeNull(), { timeout: 3000 });
     await sleep(30);
     expect(screen.getByTestId('background-update').textContent).toBe('');
+  });
+});
+
+describe('triage workspace read freshness (review round 6)', () => {
+  const current = () =>
+    document
+      .querySelector('li[aria-current="true"]')
+      ?.getAttribute('data-item-id');
+  const reads = (host: IntakeReviewHost, id: string) =>
+    vi.mocked(host.load).mock.calls.filter(([item]) => item === id).length;
+  const refresh = () =>
+    fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+
+  it('drops a follow read from before a reopen that answers after the item is followed again (N1)', async () => {
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const gate = deferred();
+    let n = 0;
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      n++;
+      // The first follow read is slow, and answers "settled".
+      if (n === 2) {
+        await gate.promise;
+        return ready('b');
+      }
+      return inFlight('b');
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 30 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    await waitFor(() => expect(n).toBe(2));
+    await fireEvent.click(
+      within(row('b')).getByRole('button', { name: 'Review' }),
+    );
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    const before = reads(host, 'b');
+    gate.resolve(undefined);
+    await sleep(300);
+    expect(statusText('b')).toBe('Interpreting…');
+    expect(screen.getByTestId('background-update').textContent).toBe('');
+    // Still followed: the host still reports the stage in flight.
+    expect(reads(host, 'b')).toBeGreaterThan(before);
+  });
+
+  it('a page read after an item was left shows what it lists (N8)', async () => {
+    let done = false;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.list = vi.fn(async () => ({
+      items: [
+        done ? entry('b', 'completed') : inFlight('b').entry,
+        entry('c', 'unresolved'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 3000 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    done = true;
+    await refresh();
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+  });
+
+  it('a follow read that started before a page cannot regress the row the page showed', async () => {
+    let done = false;
+    let hold: { promise: Promise<void> } | undefined;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      if (hold) {
+        // Started before the page: it answers what was true then.
+        const gate = hold;
+        hold = undefined;
+        await gate.promise;
+        return inFlight('b');
+      }
+      return done ? view(entry('b', 'completed')) : inFlight('b');
+    });
+    host.list = vi.fn(async () => ({
+      items: [
+        done ? entry('b', 'completed') : inFlight('b').entry,
+        entry('c', 'unresolved'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 200 });
+    await screen.findByTestId('reinterpreting');
+    const gate = deferred();
+    hold = gate;
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    // The follow read has started and is held; a page then lists b completed.
+    await waitFor(() => expect(hold).toBeUndefined());
+    done = true;
+    await refresh();
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+    gate.resolve(undefined);
+    // Well before the next follow tick (300 ms later).
+    await sleep(40);
+    expect(statusText('b')).toBe('Completed');
+  });
+
+  it('owed operation reads survive reopening and leaving again (N10)', async () => {
+    const host = backend(['a', 'b'], {
+      a: [
+        view(entry('a', 'waiting'), {
+          reviews: { actions: [action('a', 'authorized')] },
+        }),
+      ],
+      b: [ready('b')],
+    });
+    const gate = deferred();
+    let applied = false;
+    host.apply = vi.fn(async (actionId: string) => {
+      await gate.promise;
+      applied = true;
+      return { actionId, state: 'succeeded' as const };
+    });
+    const load = host.load;
+    host.load = vi.fn(async (id: string, cursor?: string) =>
+      id === 'a' && applied
+        ? view(entry('a', 'completed'), {
+            reviews: { actions: [action('a', 'succeeded')] },
+          })
+        : load(id, cursor),
+    );
+    render(IntakeWorkspace, { host, itemId: 'a', pollMs: 20 });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('b'));
+    await fireEvent.keyDown(document.body, { key: 'k' });
+    await waitFor(() => expect(current()).toBe('a'));
+    await screen.findByRole('button', { name: 'Apply approved action' });
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('b'));
+    gate.resolve(undefined);
+    await waitFor(() => expect(statusText('a')).toBe('Completed'));
+  });
+
+  it('owed operation reads are bounded when the operation never answers', async () => {
+    const host = backend(['a', 'b'], {
+      a: [
+        view(entry('a', 'waiting'), {
+          reviews: { actions: [action('a', 'authorized')] },
+        }),
+      ],
+      b: [ready('b')],
+    });
+    host.apply = vi.fn(() => new Promise<never>(() => {}));
+    render(IntakeWorkspace, { host, itemId: 'a', pollMs: 5 });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('b'));
+    const leftAt = reads(host, 'a');
+    await sleep(300);
+    // At most the owed reads (three) plus the read that found them spent.
+    expect(reads(host, 'a') - leftAt).toBeLessThanOrEqual(4);
+    const settled = reads(host, 'a');
+    await sleep(100);
+    expect(reads(host, 'a')).toBe(settled);
+  });
+
+  async function announced() {
+    const host = backend(['b', 'c'], {
+      b: [inFlight('b'), inFlight('b'), ready('b', 'waiting')],
+      c: [ready('c')],
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(screen.getByTestId('background-update').textContent).toMatch(
+        /Item B/,
+      ),
+    );
+    return host;
+  }
+  it('a refreshed page clears the background announcement', async () => {
+    const host = await announced();
+    await refresh();
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('background-update').textContent).toBe('');
+  });
+
+  it('a list that fails closed clears the background announcement (no label remains)', async () => {
+    const host = await announced();
+    host.list = vi.fn(async () => {
+      throw new Error('Revoked');
+    });
+    await refresh();
+    await waitFor(() => expect(row('b')).toBeNull());
+    expect(screen.getByTestId('background-update').textContent).toBe('');
+  });
+
+  it('opening an item shows its listed state, not an earlier view, until the pane loads', async () => {
+    const needs = view(entry('a', 'unresolved'), {
+      analysis: analysis('a'),
+      generation: generation([suggestion('needs_review', ['vendor'])]),
+    });
+    const host = backend(['a', 'b'], { a: [needs], b: [ready('b')] });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await waitFor(() => expect(statusText('a')).toMatch(/vendor/));
+    await fireEvent.click(
+      within(row('b')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() => expect(current()).toBe('b'));
+    const hold = deferred();
+    const load = host.load;
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      if (id === 'a') await hold.promise;
+      return load(id, cursor);
+    });
+    await fireEvent.click(
+      within(row('a')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() => expect(current()).toBe('a'));
+    expect(statusText('a')).toBe('Unresolved');
+    hold.resolve(undefined);
+    await waitFor(() => expect(statusText('a')).toMatch(/vendor/));
   });
 });
 

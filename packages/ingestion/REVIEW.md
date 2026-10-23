@@ -416,7 +416,8 @@ model only, exactly as in `IntakeReview`.
   (`InboxView.patch`, keeping the listed label and preview, and the row's
   assignment unless the patch carries a newer assignment version, so a view
   read before an assignment never rolls the row or the next expected version
-  back), so the row and the form never disagree and the list is **not** re-listed per tick. An item the
+  back), so the row follows each newer read of the form and the list is
+  **not** re-listed per tick. An item the
   reviewer leaves while its stage is in flight, or before the pane showed the
   result of its last operation (an instruction just recorded), keeps
   following: the workspace re-reads followed items with the same `load` (first
@@ -426,7 +427,11 @@ model only, exactly as in `IntakeReview`.
   that the longest-followed one (the earliest started, whatever the read
   rotation) stops. An item left while its pane was mid-operation (an Apply not
   yet answered) keeps following while a read still shows an action authorized
-  or executing, for at most **3** more reads. An item stops being followed
+  or executing, for at most **3** more reads; that debt belongs to the
+  operation, so it survives reopening and leaving the item again until a view
+  shows the operation answered or the reads run out. Each follow has a
+  generation: an answer from an earlier follow of the same item (one asked
+  before the reviewer reopened or left it again) is dropped. An item stops being followed
   when it settles, its view is denied, three reads in a row throw, its row
   leaves the displayed list (a filter or a refreshed page removed it), the
   list fails closed, or the cap drops it; a denial, the failure stop or the
@@ -440,9 +445,11 @@ model only, exactly as in `IntakeReview`.
   is displayed; a refreshed page or a failed list clears it.
   Other rows update on Refresh, a filter change or when opened; there is no
   streaming. While a refresh or "Load more" is pending, the displayed rows stay
-  (controls disabled) and keep taking patches; when the page arrives the open
-  row and followed (or just settled) rows are patched again from their latest
-  views, so an older page never regresses them. "Load more" continues the
+  (controls disabled) and keep taking patches. Every read (a page, a pane
+  view, including an unchanged poll, and a follow read) is numbered when its
+  request starts, and each row shows the entry of its newest read, whatever
+  the source: a page read before a pane or follow read never regresses the
+  row, and a page read after them replaces what they showed. "Load more" continues the
   filter the rows were listed under, not filter inputs edited since, and does
   not repeat a row already shown. A failed "Load more" fails closed like any
   failed read (the host cannot tell a transient failure from a revoked
