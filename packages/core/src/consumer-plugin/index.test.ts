@@ -22,7 +22,11 @@ import {
   publishArtifactFiles,
   publishAtomicArtifact,
 } from './artifact-publication.js';
-import { smrtConsumer } from './index';
+import {
+  isComponentBearingRoot,
+  resolveProviderContextImport,
+  smrtConsumer,
+} from './index';
 
 function buildStart(plugin: Plugin, context: unknown): Promise<void> {
   const hook = plugin.buildStart;
@@ -1032,6 +1036,353 @@ describe('smrtConsumer registration generation', () => {
         },
       },
     });
+  });
+
+  it('keeps the register loadable under plain Node when a provider root re-exports Svelte (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: '@fixture/consumer-app',
+        version: '1.0.0',
+        type: 'module',
+      }),
+    );
+    // A model package whose root also publishes components, like
+    // @happyvertical/smrt-products: `.` carries a `svelte` condition and its
+    // JS re-exports a `.svelte` file, while `./models` is the server entry.
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+          './models': { default: './dist/models.js' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'index.js'),
+      [
+        "export * from './models.js';",
+        "export { default as Widget } from './Widget.svelte';",
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'Widget.svelte'),
+      '<p>needs a Svelte-aware loader</p>\n',
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'models.js'),
+      [
+        'export class ExternalThing {}',
+        'export class ExternalThingCollection {}',
+        'ExternalThingCollection._itemClass = ExternalThing;',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          ExternalThing: {
+            className: 'ExternalThing',
+            importPath: '@test/pkg/models',
+            hasCollection: true,
+            collectionExportName: 'ExternalThingCollection',
+            collection: 'externalthings',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'index.js'),
+      [
+        'const classes = new Map();',
+        'const collections = new Map();',
+        'export const ObjectRegistry = {',
+        "  register(ctor, config) { classes.set(config.packageName + ':' + config.name, ctor); },",
+        '  registerCollection(name, ctor) { collections.set(name, ctor); },',
+        '  snapshot() { return { classes: [...classes.keys()], collections: [...collections.keys()] }; },',
+        '};',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'worker.mjs'),
+      [
+        "import '../.smrt/register.js';",
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'console.log(JSON.stringify(ObjectRegistry.snapshot()));',
+      ].join('\n'),
+    );
+
+    // The fixture reproduces the trap: plain Node cannot evaluate the root.
+    const rootLoad = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', "import '@test/pkg';"],
+      { cwd: tmpDir, encoding: 'utf8' },
+    );
+    expect(rootLoad.status).not.toBe(0);
+    expect(rootLoad.stderr).toContain('Unknown file extension ".svelte"');
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg/models';",
+    );
+    expect(content).not.toMatch(/from ['"]@test\/pkg['"]/);
+
+    // The same file a task/schedule worker or `smrt db:migrate` loads, under
+    // plain Node with no Vite in the process.
+    const worker = spawnSync(
+      process.execPath,
+      [join(tmpDir, 'src', 'worker.mjs')],
+      {
+        cwd: tmpDir,
+        encoding: 'utf8',
+      },
+    );
+    expect(worker.status, worker.stderr).toBe(0);
+    expect(
+      JSON.parse(worker.stdout.trim().split('\n').pop() as string),
+    ).toEqual({
+      classes: ['@test/pkg:ExternalThing'],
+      collections: ['@test/pkg:ExternalThing', 'externalthings'],
+    });
+  });
+
+  it('warns when a Svelte-root provider exports its objects only from that root (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+          './themes': { svelte: './dist/themes.js' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          RootOnlyThing: {
+            className: 'RootOnlyThing',
+            collection: 'rootonlythings',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          OtherRootThing: {
+            className: 'OtherRootThing',
+            collection: 'otherrootthings',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    const warnings: string[] = [];
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      });
+    try {
+      const plugin = smrtConsumer({
+        packages: ['@test/pkg'],
+        generateTypes: false,
+        projectRoot: tmpDir,
+        disableScanning: true,
+      });
+      await buildStart(plugin, {} as any);
+    } finally {
+      warn.mockRestore();
+    }
+
+    // The root is the only module that exports the constructor, so it is
+    // still imported (Vite SSR keeps working) and the build says why plain
+    // Node will not load the register — once per package.
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg';",
+    );
+    const svelteRootWarnings = warnings.filter((message) =>
+      message.includes('declares a Svelte root entry'),
+    );
+    expect(svelteRootWarnings).toHaveLength(1);
+    expect(svelteRootWarnings[0]).toContain('@test/pkg');
+    expect(svelteRootWarnings[0]).toContain(
+      'exports OtherRootThing, RootOnlyThing only from that root',
+    );
+    expect(svelteRootWarnings[0]).toContain('keeps the root import');
+    expect(svelteRootWarnings[0]).toContain('./models or ./objects');
+  });
+
+  it('warns about a Svelte-root object module reached transitively through its provider (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const nestedModelDir = join(
+      providerDir,
+      'node_modules',
+      '@nested',
+      'model',
+    );
+    mkdirSync(nestedModelDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: { '.': './dist/index.js' },
+        dependencies: { '@nested/model': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(nestedModelDir, 'package.json'),
+      JSON.stringify({
+        name: '@nested/model',
+        version: '1.0.0',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@nested/model:Shared': {
+            className: 'Shared',
+            packageName: '@nested/model',
+            importPath: '@nested/model',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    const warnings: string[] = [];
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      });
+    try {
+      const plugin = smrtConsumer({
+        packages: ['@test/pkg'],
+        generateTypes: false,
+        projectRoot: tmpDir,
+        disableScanning: true,
+      });
+      await buildStart(plugin, {} as any);
+    } finally {
+      warn.mockRestore();
+    }
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      'await importSmrtDependency("@nested/model", "@test/pkg")',
+    );
+    const svelteRootWarnings = warnings.filter((message) =>
+      message.includes('declares a Svelte root entry'),
+    );
+    expect(svelteRootWarnings).toHaveLength(1);
+    expect(svelteRootWarnings[0]).toContain('@nested/model');
+    expect(svelteRootWarnings[0]).toContain('loaded through @test/pkg');
+  });
+
+  it('imports nothing for a component-bearing provider that contributes only nested objects (#4219)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const nestedModelDir = join(
+      providerDir,
+      'node_modules',
+      '@nested',
+      'model',
+    );
+    mkdirSync(nestedModelDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+          './objects': { default: './dist/objects.js' },
+        },
+        dependencies: { '@nested/model': '1.0.0' },
+      }),
+    );
+    writeFileSync(
+      join(nestedModelDir, 'package.json'),
+      JSON.stringify({ name: '@nested/model', version: '1.0.0' }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@nested/model:Shared': {
+            className: 'Shared',
+            packageName: '@nested/model',
+            importPath: '@nested/model',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    // Neither the Svelte root nor a substitute subpath (the fixture declares
+    // `./objects`) is imported: the nested object is loaded through the
+    // provider's context, which needs only `import.meta.resolve(provider)`.
+    expect(content).not.toMatch(/from ['"]@test\/pkg(\/[^'"]*)?['"]/);
+    expect(content).not.toContain('__smrt_provider_0');
+    expect(content).toContain(
+      'await importSmrtDependency("@nested/model", "@test/pkg")',
+    );
   });
 
   it('aliases same-name exports and isolates their registration manifests', async () => {
@@ -2188,5 +2539,101 @@ describe('smrtConsumer manifest resolution through package exports', () => {
           warning.includes('@test/smrt-discovered'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('isComponentBearingRoot / resolveProviderContextImport (#4219)', () => {
+  it('reads a top-level svelte field as a Svelte root', () => {
+    expect(
+      isComponentBearingRoot({ name: '@test/pkg', svelte: './dist/index.js' }),
+    ).toBe(true);
+  });
+
+  it('reads a string exports target by its extension', () => {
+    expect(
+      isComponentBearingRoot({ name: '@test/pkg', exports: './dist/index.js' }),
+    ).toBe(false);
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: './dist/Widget.svelte',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores Svelte published only under subpaths when "." is absent', () => {
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: { './themes': { svelte: './dist/themes.js' } },
+      }),
+    ).toBe(false);
+  });
+
+  it('finds a svelte condition nested under another condition', () => {
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: {
+          '.': {
+            import: { svelte: './dist/index.js', default: './dist/index.js' },
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('treats a svelte condition with a plain .js target as a Svelte root', () => {
+    // svelte-package and Vite library builds emit exactly this for a root that
+    // re-exports components; the .svelte files sit one import deeper.
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: {
+          '.': { svelte: './dist/index.js', default: './dist/index.js' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the root for a missing package.json or a conditions-only map', () => {
+    expect(isComponentBearingRoot(undefined)).toBe(false);
+    expect(isComponentBearingRoot({ name: '@test/pkg' })).toBe(false);
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: { import: './dist/index.js', default: './dist/index.js' },
+      }),
+    ).toBe(false);
+    expect(
+      isComponentBearingRoot({
+        name: '@test/pkg',
+        exports: { svelte: './dist/index.js', default: './dist/index.js' },
+      }),
+    ).toBe(true);
+  });
+
+  it('picks the root, or nothing for a declared Svelte root', () => {
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: { '.': './dist/index.js' },
+      }),
+    ).toBe('@test/pkg');
+    expect(resolveProviderContextImport('@test/pkg', undefined)).toBe(
+      '@test/pkg',
+    );
+    // A server-safe-looking subpath is never substituted for a Svelte root:
+    // one that reaches `.svelte` would re-create the failure (#4219).
+    expect(
+      resolveProviderContextImport('@test/pkg', {
+        name: '@test/pkg',
+        exports: {
+          '.': { svelte: './dist/index.js' },
+          './models': { default: './dist/models.js' },
+          './objects': './dist/objects.js',
+        },
+      }),
+    ).toBeUndefined();
   });
 });

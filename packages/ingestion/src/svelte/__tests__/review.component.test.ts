@@ -7,7 +7,7 @@ import {
   within,
 } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { tick } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   EvidenceView,
@@ -1314,6 +1314,74 @@ describe('intake review host boundary', () => {
     expect(
       screen.queryByRole('button', { name: 'Handled, no action' }),
     ).toBeNull();
+  });
+  it('renders the host original link and preview on a row from page data, never from load', async () => {
+    const view = page();
+    view.entry.evidence = {
+      evidence: view.evidence[0].evidence,
+      label: 'Email original',
+      viewUrl: '/original',
+      thumbnailUrl: '/thumbnail.png',
+    };
+    const callbacks = host(view);
+    const { container } = render(IntakeInbox, { host: callbacks });
+    await screen.findByText('Private invoice');
+    // Each row's link names the item it opens, so a list of them is usable.
+    const link = screen.getByRole('link', {
+      name: 'Open original: Private invoice',
+    });
+    expect(link.textContent).toBe('Open original');
+    expect(link.getAttribute('href')).toBe(`${location.origin}/original`);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    // Not a landmark per row.
+    expect(container.querySelector('aside')).toBeNull();
+    const image = container.querySelector(
+      'li .row-aside img',
+    ) as HTMLImageElement;
+    expect(image.getAttribute('src')).toBe(`${location.origin}/thumbnail.png`);
+    expect(image.getAttribute('alt')).toBe('Email original');
+    expect(callbacks.load).not.toHaveBeenCalled();
+  });
+  it('refuses off-origin row evidence URLs and renders nothing without evidence', async () => {
+    const view = page();
+    view.entry.evidence = {
+      evidence: view.evidence[0].evidence,
+      label: 'Foreign',
+      viewUrl: 'https://evil.example/original',
+      thumbnailUrl: 'javascript:alert(1)',
+    };
+    const { container, unmount } = render(IntakeInbox, { host: host(view) });
+    await screen.findByText('Private invoice');
+    expect(screen.queryByRole('link', { name: /^Open original/ })).toBeNull();
+    // With both URLs refused there is nothing to show, so no empty wrapper.
+    expect(container.querySelector('li .row-aside')).toBeNull();
+    unmount();
+    const bare = page();
+    const second = render(IntakeInbox, { host: host(bare) });
+    await screen.findByText('Private invoice');
+    expect(second.container.querySelector('li .row-aside')).toBeNull();
+  });
+  it('renders a host rowAside snippet with the page entry instead of the default aside', async () => {
+    const view = page();
+    view.entry.evidence = {
+      evidence: view.evidence[0].evidence,
+      label: 'Email original',
+      viewUrl: '/original',
+    };
+    const rowAside = createRawSnippet((entry: () => typeof view.entry) => ({
+      render: () =>
+        `<span data-testid="row-aside">${entry().item.id}:${entry().evidence?.evidence.id ?? ''}</span>`,
+    }));
+    const { container } = render(IntakeInbox, {
+      host: host(view),
+      rowAside,
+    });
+    await screen.findByText('Private invoice');
+    expect(screen.getByTestId('row-aside').textContent).toBe('item:original');
+    expect(screen.queryByRole('link', { name: /^Open original/ })).toBeNull();
+    expect(container.querySelectorAll('li .row-aside')).toHaveLength(1);
+    expect(container.querySelector('aside')).toBeNull();
   });
   it('filters and assigns using the host assignment version', async () => {
     const callbacks = host();

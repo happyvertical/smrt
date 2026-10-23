@@ -6,11 +6,20 @@ import type {
   Assignment,
   EvidenceView,
   InboxEntry,
+  InboxEvidence,
   IntakeReviewHost,
   ItemReviewView,
 } from './review-dto.js';
 import { loadReviewSummary } from './review-summary.js';
 import type { IngestionService } from './server.js';
+
+/** One listed row's primary original, as passed to `rowEvidence`. */
+export interface RowEvidenceRequest {
+  itemId: string;
+  evidence: IntakeEvidenceDTO;
+}
+/** A host's preview for one row: label and same-origin URLs, never text. */
+export type RowEvidenceView = Omit<InboxEvidence, 'evidence'>;
 
 /** Trusted application adapters, bound to the same authenticated session as service. */
 export interface IntakeReviewHostOptions {
@@ -24,11 +33,53 @@ export interface IntakeReviewHostOptions {
   evidence(
     evidence: IntakeEvidenceDTO,
   ): Promise<Omit<EvidenceView, 'evidence'>>;
+  /**
+   * Optional, opt-in row previews for the inbox (#4213). Called at most once
+   * per `list` page with each listed row's primary durable part (metadata
+   * only, read in one batched query); return item id -> `{ label, viewUrl?,
+   * thumbnailUrl? }` built from metadata, without reading bytes. Rows missing
+   * from the map get no preview. When omitted, `list` reads no evidence and
+   * rows show no original link; if it throws, the page still lists without
+   * previews. `load` never calls it.
+   */
+  rowEvidence?(
+    rows: readonly RowEvidenceRequest[],
+  ): Promise<ReadonlyMap<string, RowEvidenceView>>;
   label?(item: IntakeItemDTO): string;
   /** Expose the optional feedback UI only when the service has feedback configured. */
   enableFeedback?: boolean;
   /** Optional wakeup after a durable logical split has queued extraction. */
   onSplit?(itemId: string, revision: number): Promise<void>;
+}
+
+/**
+ * The original a row should preview, chosen by role rather than media type:
+ * when any part has a parent, the record parts (an upload's capture record,
+ * an email's message) are skipped and the shallowest child wins (the uploaded
+ * file, the first attachment), even when that child is itself JSON. When no
+ * part has a parent (a watched-folder file, an email without attachments),
+ * the first root part is the original. Ties sort by part id, numerically.
+ */
+export function primaryEvidence(
+  parts: readonly IntakeEvidenceDTO[],
+): IntakeEvidenceDTO | undefined {
+  const depth = (part: IntakeEvidenceDTO): number => {
+    let level = 0;
+    let parent = part.parentEvidenceId;
+    const seen = new Set<string>();
+    while (parent && !seen.has(parent)) {
+      seen.add(parent);
+      level++;
+      parent = parts.find((p) => p.id === parent)?.parentEvidenceId ?? null;
+    }
+    return level;
+  };
+  const ordered = [...parts].sort(
+    (a, b) =>
+      depth(a) - depth(b) ||
+      a.partId.localeCompare(b.partId, 'en', { numeric: true }),
+  );
+  return ordered.find((part) => depth(part) > 0) ?? ordered[0];
 }
 
 /**
@@ -41,6 +92,55 @@ export function createIntakeReviewHost(
 ): IntakeReviewHost {
   const label =
     options.label ?? ((item: IntakeItemDTO) => `Intake ${item.id.slice(0, 8)}`);
+  /**
+   * Opt-in row previews for a finished page. `list` applies this once to its
+   * final entries just before returning, so every return path decorates the
+   * same way. Without `rowEvidence` it makes no read and returns the entries
+   * unchanged. Fields are picked explicitly so a host value can never put
+   * text on a row.
+   */
+  const withRowEvidence = async (
+    entries: InboxEntry[],
+  ): Promise<InboxEntry[]> => {
+    if (!options.rowEvidence || !entries.length) return entries;
+    const parts = await service.listEvidence(
+      entries.map((entry) => entry.item.id),
+    );
+    const rows: RowEvidenceRequest[] = [];
+    for (const entry of entries) {
+      const primary = primaryEvidence(parts.get(entry.item.id) ?? []);
+      if (primary) rows.push({ itemId: entry.item.id, evidence: primary });
+    }
+    if (!rows.length) return entries;
+    const primaries = new Map(rows.map((row) => [row.itemId, row.evidence]));
+    // Everything that touches the host's answer is isolated: a throw, or a
+    // malformed answer (not a map, a non-text label), lists without previews
+    // rather than rejecting the page.
+    try {
+      const views = await options.rowEvidence(rows);
+      return entries.map((entry) => {
+        const primary = primaries.get(entry.item.id);
+        // Only rows with a durable primary part can carry a preview, even if
+        // the host answers for another row.
+        if (!primary) return entry;
+        const view = views.get(entry.item.id);
+        if (!view) return entry;
+        if (typeof view.label !== 'string')
+          throw new Error('Invalid row evidence');
+        const evidence: InboxEvidence = {
+          evidence: primary,
+          label: view.label,
+        };
+        if (typeof view.viewUrl === 'string') evidence.viewUrl = view.viewUrl;
+        if (typeof view.thumbnailUrl === 'string')
+          evidence.thumbnailUrl = view.thumbnailUrl;
+        return { ...entry, evidence };
+      });
+    } catch {
+      // A preview failure must not block triage: list without previews.
+      return entries;
+    }
+  };
   const entry = async (item: IntakeItemDTO): Promise<InboxEntry> => {
     const { state } = await loadReviewSummary(service, item);
     const assignment = await options.assignment(item.id);
@@ -64,7 +164,7 @@ export function createIntakeReviewHost(
           projected.push(current);
       }
       return {
-        items: projected,
+        items: await withRowEvidence(projected),
         ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
       };
     },
