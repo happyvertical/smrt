@@ -1292,7 +1292,7 @@ export class CommissionPayoutService {
     if (ids.length === 0) return counts;
     const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
     const res = await db.query(
-      `SELECT payout_id, COUNT(*) AS row_count FROM ${table} WHERE payout_id IN (${placeholders}) GROUP BY payout_id`,
+      `SELECT CAST(payout_id AS VARCHAR) AS payout_id, COUNT(*) AS row_count FROM ${table} WHERE payout_id IN (${placeholders}) GROUP BY payout_id`,
       ...ids,
     );
     const rows = Array.isArray(res)
