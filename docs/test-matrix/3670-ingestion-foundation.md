@@ -291,3 +291,5 @@ Ajv schema remains authoritative after decoding. No provider-mode retry is added
 Provider fixtures use local HTTP only and make no claim about live recognition
 quality. Full ingestion tests, PostgreSQL, providers, evaluation, types/build and
 root gates are required for the integrated revision.
+
+Round1 reference regression (#4260): provider schemas compile and accept original-valid inputs when references target relocated oneOf branches, deleted not subtrees, nested $id resources, and anchors. Provider reference constraints are omitted conservatively; original validator still rejects invalid inputs, and $ref property/const data is preserved.

@@ -52,7 +52,8 @@ const string = { type: 'string', minLength: 1, maxLength: 512 };
  * `anyOf`/`allOf` (`oneOf` is weakened below), `items`/`prefixItems`,
  * `minItems`/`maxItems`,
  * `minLength`/`maxLength`, `pattern`, numeric ranges, `required`,
- * `additionalProperties`, `$ref`/`$defs`. OpenAI's own non-strict mode
+ * `additionalProperties`, `$defs`. Reference constraints are dropped below.
+ * OpenAI's own non-strict mode
  * (`strict: false` below) accepts any of them.
  *
  * Dropping a keyword only loosens the grammar: the Ajv validator
@@ -123,6 +124,13 @@ export function portableResponseSchema<T>(schema: T): T {
   for (const [key, value] of Object.entries(
     schema as Record<string, unknown>,
   )) {
+    // Rewriting/removing subschemas can invalidate JSON Pointer and anchor
+    // targets, including targets under nested $id resources. Dropping the
+    // provider-only reference constraint avoids dangling or misbound targets
+    // without dereferencing untrusted schemas. The original Ajv schema remains
+    // authoritative, including recursive and dynamically scoped references.
+    if (key === '$ref' || key === '$dynamicRef' || key === '$recursiveRef')
+      continue;
     if (UNPORTABLE_SCHEMA_KEYWORDS.has(key)) continue;
     if (
       SCHEMA_MAP_KEYWORDS.has(key) &&

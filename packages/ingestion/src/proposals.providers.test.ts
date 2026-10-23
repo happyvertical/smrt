@@ -432,6 +432,68 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       properties: { a: { type: 'string' } },
     });
   });
+  it('keeps references into rewritten or removed schema locations portable (#4260 review)', () => {
+    const schemas = [
+      {
+        $id: 'https://example.test/moved',
+        type: 'object',
+        $defs: {
+          pick: {
+            oneOf: [{ type: 'integer', multipleOf: 2 }, { type: 'string' }],
+          },
+        },
+        properties: { n: { $ref: '#/$defs/pick/oneOf/0' } },
+        required: ['n'],
+        additionalProperties: false,
+      },
+      {
+        $id: 'https://example.test/removed',
+        type: 'object',
+        $defs: { pick: { not: { type: 'integer' } } },
+        properties: { n: { $ref: '#/$defs/pick/not' } },
+        required: ['n'],
+        additionalProperties: false,
+      },
+      {
+        $id: 'https://example.test/outer',
+        type: 'object',
+        $defs: {
+          nested: {
+            $id: 'https://example.test/nested',
+            $defs: {
+              pick: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+            },
+          },
+        },
+        properties: {
+          n: { $ref: 'https://example.test/nested#/$defs/pick/oneOf/0' },
+        },
+        required: ['n'],
+        additionalProperties: false,
+      },
+      {
+        $id: 'https://example.test/anchor',
+        type: 'object',
+        $defs: { pick: { not: { $anchor: 'number', type: 'integer' } } },
+        properties: { n: { $ref: '#number' } },
+        required: ['n'],
+        additionalProperties: false,
+      },
+    ];
+    for (const schema of schemas) {
+      const original = new Ajv2020({ strict: false }).compile(schema);
+      expect(original({ n: 2 })).toBe(true);
+      const portable = new Ajv2020({ strict: false }).compile(
+        portableResponseSchema(schema),
+      );
+      expect(portable({ n: 2 })).toBe(true);
+      // The provider's weaker copy never replaces original validation.
+      expect(original({ n: false })).toBe(false);
+    }
+    const data = { properties: { $ref: { const: { $ref: '#/oneOf/0' } } } };
+    expect(portableResponseSchema(data)).toEqual(data);
+  });
+
   it('strips unportable keywords at schema positions only (#4260)', () => {
     const portable = portableResponseSchema({
       type: 'object',

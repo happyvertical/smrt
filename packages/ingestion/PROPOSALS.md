@@ -206,6 +206,14 @@ places where removal would narrow are rewritten:
   original accepted;
 - an object that loses `patternProperties` also loses `additionalProperties`.
 
+Provider-only `$ref`, `$dynamicRef`, and `$recursiveRef` constraints are also
+removed. Rewriting or deleting a subschema can invalidate pointer or anchor
+targets, including targets inside nested `$id` resources. Dropping references
+conservatively widens the grammar without resolving untrusted schema resources;
+property names and enum/const data named `$ref` remain unchanged. Referenced
+constraints, recursion, and dynamic scope remain enforced by the original
+validator, so provider guidance for reference-based arguments is less precise.
+
 The validator still checks the original, including `oneOf` exclusivity. A
 property-style regression checks original-valid ⇒ portable-valid across the
 removed keywords. Handler argument schemas may still carry `allOf` through
