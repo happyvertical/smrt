@@ -59,6 +59,7 @@ export type {
   RecordLeadActivityInput,
   ScheduleLeadNextActionInput,
   StartWorkingInput,
+  UpdateLeadContactInput,
 } from './services/LeadWorkflowService.js';
 // Services
 export {

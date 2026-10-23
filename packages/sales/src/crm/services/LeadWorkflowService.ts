@@ -215,6 +215,16 @@ export interface AssignLeadResult {
   changed: boolean;
 }
 
+/** Operator-authorized correction; identity and acquisition provenance stay intact. */
+export interface UpdateLeadContactInput {
+  leadId: string;
+  actorProfileId: string;
+  name: string;
+  contactName: string;
+  email: string;
+  now?: Date;
+}
+
 export interface StartWorkingInput {
   leadId: string;
   actorProfileId: string;
@@ -879,6 +889,66 @@ export class LeadWorkflowService {
         },
       });
       return { lead, changed: true };
+    });
+  }
+
+  /** Correct editable contact fields with one actor-attributed audit and row lock. */
+  async updateLeadContact(input: UpdateLeadContactInput): Promise<Lead> {
+    const actorProfileId = this.requireIdentifier(
+      input.actorProfileId,
+      'actorProfileId',
+    );
+    const name = typeof input.name === 'string' ? input.name.trim() : '';
+    const contactName =
+      typeof input.contactName === 'string' ? input.contactName.trim() : '';
+    const email =
+      typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+    if (!name) throw this.refusal('name_required', 'Lead name is required');
+    if (
+      [name, contactName, email].some(
+        (value) => value.length > MAX_LEAD_WORKFLOW_TEXT_LENGTH,
+      )
+    )
+      throw this.refusal('invalid_metadata', 'Lead contact text is too long');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email))
+      throw this.refusal('invalid_email', 'Lead email is invalid');
+    return await this.runMutation(async (deps, tenantId) => {
+      const lead = await this.lockLead(deps, input.leadId, tenantId);
+      if (lead.status === 'merged')
+        throw this.refusal(
+          'lead_not_actionable',
+          'Merged Lead contact cannot be corrected',
+        );
+      if (!email && !lead.phone.trim())
+        throw this.refusal(
+          'contact_required',
+          'Lead requires at least one of email or phone',
+        );
+      const before = {
+        name: lead.name,
+        contactName: lead.contactName,
+        email: lead.email,
+      };
+      const after = { name, contactName, email };
+      if (
+        before.name === name &&
+        before.contactName === contactName &&
+        before.email === email
+      )
+        return lead;
+      Object.assign(lead, after);
+      await lead.save();
+      await this.appendAudit(deps.activities, lead, {
+        actorProfileId,
+        activityKind: 'contact_update',
+        summary: 'Corrected lead contact',
+        metadata: {
+          before,
+          after,
+          occurredAt: this.now(input.now).toISOString(),
+        },
+      });
+      return lead;
     });
   }
 

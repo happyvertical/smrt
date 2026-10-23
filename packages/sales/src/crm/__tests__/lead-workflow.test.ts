@@ -66,6 +66,106 @@ describe('LeadWorkflowService', () => {
     return await withTenant({ tenantId }, fn);
   }
 
+  it('audits contact correction once, normalizes retry and preserves identity/acquisition', async () => {
+    const profileId = randomUUID();
+    const lead = await workflow(() =>
+      leads.create({
+        name: 'Original',
+        contactName: 'Original contact',
+        email: 'old@example.com',
+        profileId,
+        sourceKind: 'form',
+        sourceId: 'source-1',
+        acquisitionContext: '{"original":true}',
+      }),
+    );
+    const input = {
+      leadId: lead.id as string,
+      actorProfileId,
+      name: ' Corrected ',
+      contactName: ' Contact ',
+      email: ' NEW@Example.com ',
+    };
+    await workflow(() => service.updateLeadContact(input));
+    await workflow(() => service.updateLeadContact(input));
+    expect(
+      await workflow(() => leads.get({ id: lead.id }, { cache: false })),
+    ).toMatchObject({
+      name: 'Corrected',
+      contactName: 'Contact',
+      email: 'new@example.com',
+      profileId,
+      sourceKind: 'form',
+      sourceId: 'source-1',
+      acquisitionContext: '{"original":true}',
+    });
+    const audit = await workflow(() =>
+      activities.list({
+        where: { subjectId: lead.id, activityKind: 'contact_update' },
+      }),
+    );
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ actorProfileId });
+    expect(audit[0].getMetadata()).toMatchObject({
+      before: { name: 'Original', email: 'old@example.com' },
+      after: { name: 'Corrected', email: 'new@example.com' },
+    });
+  });
+
+  it('denies inaccessible/merged Leads and malformed contact correction', async () => {
+    const lead = await createLead();
+    const input = {
+      leadId: lead.id as string,
+      actorProfileId,
+      name: 'Corrected',
+      contactName: '',
+      email: 'new@example.com',
+    };
+    await expect(service.updateLeadContact(input)).rejects.toMatchObject({
+      reason: 'tenant_context_required',
+    });
+    await expect(
+      withTenant({ tenantId: randomUUID() }, () =>
+        service.updateLeadContact(input),
+      ),
+    ).rejects.toMatchObject({ reason: 'lead_unavailable' });
+    await expect(
+      workflow(() => service.updateLeadContact({ ...input, name: '' })),
+    ).rejects.toMatchObject({ reason: 'name_required' });
+    await expect(
+      workflow(() => service.updateLeadContact({ ...input, email: 'invalid' })),
+    ).rejects.toMatchObject({ reason: 'invalid_email' });
+    await expect(
+      workflow(() => service.updateLeadContact({ ...input, email: '' })),
+    ).rejects.toMatchObject({ reason: 'contact_required' });
+    lead.status = 'merged';
+    await workflow(() => lead.save());
+    await expect(
+      workflow(() => service.updateLeadContact(input)),
+    ).rejects.toMatchObject({ reason: 'lead_not_actionable' });
+  });
+
+  it('rolls back corrected contact when its audit fails', async () => {
+    const lead = await createLead('Original');
+    await db.query(
+      `CREATE TRIGGER fail_contact_audit BEFORE INSERT ON sales_activities WHEN NEW.activity_kind = 'contact_update' BEGIN SELECT RAISE(ABORT, 'injected contact audit failure'); END`,
+    );
+    await expect(
+      workflow(() =>
+        service.updateLeadContact({
+          leadId: lead.id as string,
+          actorProfileId,
+          name: 'Changed',
+          contactName: '',
+          email: 'changed@example.com',
+        }),
+      ),
+    ).rejects.toThrow('injected contact audit failure');
+    expect(
+      await workflow(() => leads.get({ id: lead.id }, { cache: false })),
+    ).toMatchObject({ name: 'Original', email: '' });
+  });
+
   it('assigns/reassigns an active same-tenant representative atomically and audits only effective changes', async () => {
     const lead = await createLead();
     const first = await createRepresentative();

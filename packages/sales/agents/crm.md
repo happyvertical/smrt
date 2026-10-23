@@ -75,3 +75,11 @@ users, or starts a transaction. Only use returned plain receipts after commit.
 `findForTarget({ tenantId, targetKind, targetId })` reads canonical originating
 Lead receipts for a downstream target in the active tenant, without requiring
 hosts to parse SalesActivity metadata.
+
+`LeadWorkflowService.updateLeadContact({ leadId, actorProfileId, name,
+contactName, email, now? })` locks a same-tenant, non-merged Lead and corrects
+editable contact fields in its own transaction. Name is required, email is
+normalized/validated, and at least email or existing phone is required. Exact
+retries are no-ops. Effective changes append one `contact_update` activity with
+before/after values and actor; audit failure rolls back the correction. Profile
+identity, acquisition context/source, CRM status and downstream records stay intact.
