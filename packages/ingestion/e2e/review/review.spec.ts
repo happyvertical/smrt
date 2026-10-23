@@ -1025,3 +1025,143 @@ test('reviewer starts a chosen handler through preview and approval, and closes 
     ).status(),
   ).toBe(403);
 });
+
+test('single-page triage: inline original, background re-read, approve and advance, then resolve and advance without navigation (#4215)', async ({
+  page,
+}) => {
+  // Two real re-extractions plus background interpretation under Chromium.
+  test.setTimeout(150000);
+  await page.goto('/e2e/review/index.html?layout=workspace');
+  await page.getByRole('button', { name: 'Sign in to review fixture' }).click();
+  await expect(page.getByTestId('intake-workspace')).toBeVisible();
+  const noteId = await upload(
+    page,
+    'paid-note.txt',
+    'text/plain',
+    Buffer.from('Paid invoice 12 from Initech, nothing to do'),
+  );
+  const original = twoPagePDF();
+  const poId = await upload(page, 'badger-po.pdf', 'application/pdf', original);
+  // No page load happens from here on: this marker would not survive one.
+  await page.evaluate(() => {
+    (window as unknown as { triageMarker: number }).triageMarker = 4215;
+  });
+  const marker = () =>
+    page.evaluate(
+      () => (window as unknown as { triageMarker?: number }).triageMarker,
+    );
+  const workspace = page.getByTestId('intake-workspace');
+  const item = page.getByTestId('workspace-item');
+  const row = (id: string) => workspace.locator(`li[data-item-id="${id}"]`);
+  // Newest first (the fixture database is shared by the suite, so earlier
+  // tests' items follow); the upload opened the PDF beside the list.
+  const rows = workspace.locator('li[data-item-id]');
+  await expect(rows.nth(0)).toHaveAttribute('data-item-id', poId);
+  await expect(rows.nth(1)).toHaveAttribute('data-item-id', noteId);
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(item).toHaveAttribute('aria-label', 'badger-po.pdf');
+  // The original renders inline with page navigation over its observed pages.
+  const frame = item.getByTestId('evidence-viewer').locator('iframe');
+  await expect(frame).toBeVisible();
+  await expect(item.getByText('Page 1 of 2')).toBeVisible();
+  await item.getByRole('button', { name: 'Next page', exact: true }).click();
+  await expect(item.getByText('Page 2 of 2')).toBeVisible();
+  await expect(frame).toHaveAttribute('src', /#page=2$/);
+  // Keyboard next/previous outside text fields.
+  await item.focus();
+  await page.keyboard.press('j');
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  await expect(item).toHaveAttribute('aria-label', 'paid-note.txt');
+  await page.keyboard.press('k');
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByTestId('intake-review')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  // Message the model, then keep working while it re-reads in the background.
+  const text = 'Customer PO from Badger, just file it.';
+  await item
+    .getByRole('textbox', { name: 'Instructions for the assistant' })
+    .fill(text);
+  const recorded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/instruct') &&
+      response.request().method() === 'POST',
+  );
+  await item
+    .getByRole('button', { name: 'Re-read with these instructions' })
+    .click();
+  expect((await recorded).status()).toBe(200);
+  await page.keyboard.press('j');
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  // The left item's row follows its stage until the new suggestions land,
+  // and the settled stage is announced.
+  await expect(page.getByTestId('background-update')).toHaveText(
+    'badger-po.pdf: Ready to review',
+    { timeout: 30000 },
+  );
+  await expect(row(poId).getByTestId('row-status')).toHaveText(
+    'Ready to review',
+  );
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  await page.keyboard.press('k');
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(item.getByTestId('applied-instruction')).toContainText(text);
+  // Review and approve in place.
+  await item
+    .getByRole('button', { name: 'Prepare review', exact: true })
+    .click();
+  await item.getByRole('button', { name: 'Approve', exact: true }).click();
+  const apply = item.getByRole('button', {
+    name: 'Apply approved action',
+    exact: true,
+  });
+  await expect(apply).toBeVisible();
+  // Approval leaves the apply step here: the item has not advanced.
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(row(poId).getByTestId('row-status')).toHaveText(
+    'Approved, not yet applied',
+  );
+  await apply.click();
+  // Applied: the next item opens, focused, and the list stays in step.
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  await expect(item).toHaveAttribute('aria-label', 'paid-note.txt');
+  await expect(item).toBeFocused();
+  await expect(row(poId).getByTestId('row-status')).toHaveText('Completed');
+  // "Handled, no action" closes the item and advances again: to an older
+  // open item left by an earlier test, or, run alone, to the empty queue.
+  await item
+    .getByRole('textbox', { name: 'Reason for no action' })
+    .fill('Already paid');
+  await item.getByRole('button', { name: 'Handled, no action' }).click();
+  await expect(row(noteId).getByTestId('row-status')).toHaveText(
+    'Handled, no action',
+  );
+  await expect(row(noteId)).not.toHaveAttribute('aria-current', 'true');
+  const selected = workspace.locator('li[aria-current="true"]');
+  await expect(selected.or(page.getByTestId('queue-done'))).toBeVisible();
+  if (await selected.count()) {
+    await expect(item).toBeFocused();
+    await expect(selected.getByTestId('row-status')).not.toHaveText(
+      /Handled, no action|Completed/,
+    );
+  }
+  expect(await marker()).toBe(4215);
+  expect(new URL(page.url()).pathname).toBe('/e2e/review/index.html');
+  const po = await (await page.request.get(`/api/load?itemId=${poId}`)).json();
+  expect(po.instruction.applied.text).toBe(text);
+  expect(po.reviews.actions[0].review.state).toBe('succeeded');
+  const pdf = po.evidence.find(
+    (entry: { evidence: { mediaType: string } }) =>
+      entry.evidence.mediaType === 'application/pdf',
+  );
+  expect(await (await page.request.get(pdf.viewUrl)).body()).toEqual(original);
+  const note = await (
+    await page.request.get(`/api/load?itemId=${noteId}`)
+  ).json();
+  expect(note.disposition).toMatchObject({
+    kind: 'resolved_no_action',
+    reviewer: 'owner',
+    reason: 'Already paid',
+  });
+});

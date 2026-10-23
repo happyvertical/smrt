@@ -1,7 +1,7 @@
 # Authenticated review surfaces
 
-`@happyvertical/smrt-ingestion/svelte` exports `IntakeInbox`, `IntakeReview` and
-`EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
+`@happyvertical/smrt-ingestion/svelte` exports `IntakeInbox`, `IntakeReview`,
+`IntakeWorkspace` and `EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
 callback contract. Import styling/theme configuration from smrt-ui in the host.
 Components use smrt-ui primitives and the `ingestion.*` i18n catalog.
 
@@ -399,6 +399,68 @@ a model may be offered, and a human choosing a handler sends nothing to a
 provider. The UI picker shows the offered catalog, so a handler hidden from it is
 only reachable by a reviewer who already holds `review` authority for it. The maintained
 browser fixture serves both operations behind CSRF and the same session scope.
+
+## Single-page triage workspace
+
+`IntakeWorkspace` (#4215) composes the existing pieces so a reviewer works the
+whole queue on one page: the paged inbox as a list pane, the review view of the
+selected item beside it (the original above its action form), and the
+reviewer-instruction message box of the item pane. Props: `host`, `contextKey`
+(replace on session change, as for the other components), optional initial
+`itemId`, `pollMs`, `rowAside` and `onselect(itemId | undefined)`, which only
+reports the selection (to keep a URL in step) and never navigates. It adds **no
+host callback and no server authority**: every read is the host's `list` and
+`load`, every action still goes through the handler preview and an explicit
+approval and apply under the approver's live grants, and the message steers the
+model only, exactly as in `IntakeReview`.
+
+- **Inline original.** In the item pane `EvidenceViewer` shows one part at a
+  time (`layout="pager"`), opening on the first part that renders inline (the
+  uploaded file rather than its capture record), with previous/next original.
+  A PDF with more than one *observed* page (extraction locations or proposed
+  page groups; `pages` prop) gets previous/next page, which reloads the frame
+  at the same-origin URL plus `#page=n`; only `evidenceUrl`-approved URLs ever
+  reach a frame. `IntakeReview` gets the same page navigation over its
+  unchanged stacked list of parts.
+- **Keyboard.** J/K and Alt+Down/Alt+Up move to the next/previous row (loading
+  the next page at the end), ignored while focus is in a text field, select or
+  editable region; "Previous item"/"Next item" buttons carry
+  `aria-keyshortcuts`. The selected row is `aria-current`, and every selection
+  moves focus to the item pane region, named by the row's label.
+- **Live state.** A row's status follows the item: "Interpreting…", "Ready to
+  review", "Needs review" with missing argument names or the generation
+  outcome, "Awaiting approval", "Approved, not yet applied", "Failed" with a
+  safe category, "Handled, no action", or the listed inbox state. Rows the
+  reviewer has not opened show the listed state only; reasons come from a
+  loaded view, never from server exception text. The open item's own polling
+  (`ReviewView`, unchanged backoff and three-failure fail-closed) reports each
+  displayed view and the workspace patches that row in place
+  (`InboxView.patch`, keeping the listed label and preview), so the row and the
+  form never disagree and the list is **not** re-listed per tick. An item the
+  reviewer leaves while its stage is in flight, or before the pane showed the
+  result of its last operation (an instruction just recorded), keeps
+  following: the workspace re-reads it with the same `load` (first review page)
+  on the pane's backoff, at most **5** items per tick, one after another, until
+  it settles, its view is denied (its cached status is dropped) or three reads
+  in a row throw. A settled stage that was seen running is announced in a
+  polite status region ("badger-po.pdf: Ready to review"). Other rows update on
+  Refresh, a filter change or when opened; there is no streaming.
+- **Approve and advance.** After an approve, apply or "Handled, no action" whose
+  reload left nothing for the reviewer (closed without action, or an action
+  succeeded and none is waiting for approval, waiting to be applied, executing,
+  unknown or failed; stale, rejected and deferred actions do not hold it), the
+  item's row is patched and leaves the list when it no longer matches the
+  listed state/assignee filter, and the next row that is not closed or
+  completed opens and takes focus, with no navigation and no re-listing. An
+  approval that leaves an apply step keeps the item open with Apply in place.
+  Unloaded saved-review pages and an active background stage also prevent
+  settlement. Advancing skips completed inbox pages until a reviewable row
+  appears; a page that makes no progress stops the walk.
+  The open item stays listed while the reviewer works on it even if its state
+  stops matching the filter; it leaves once they move on. When nothing is left
+  the pane says so. The per-row "Handled, no action" control is hidden in the
+  workspace (`resolveInRow={false}`) so closing always goes through the item
+  pane and advances.
 
 ## Maintained browser proof
 

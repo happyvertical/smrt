@@ -2,7 +2,7 @@
 import { Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { onDestroy, onMount } from 'svelte';
+import { onDestroy, onMount, untrack } from 'svelte';
 import type { EvidenceLocation } from '../../extraction-types.js';
 import type {
   GeneratedSuggestion,
@@ -17,9 +17,11 @@ import {
   extractedContent,
   missingArguments,
   missingRequired,
+  observedPages,
   pageGroups,
+  reviewInFlight,
 } from '../view-utils.js';
-import ActionReview from './ActionReview.svelte';
+import ActionReview, { type ReviewOutcome } from './ActionReview.svelte';
 import CandidatePicker from './CandidatePicker.svelte';
 import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
@@ -27,8 +29,25 @@ export interface Props {
   itemId: string;
   /** Reload interval while the host reports the item as processing. */
   pollMs?: number;
+  /** `split` puts the original beside the form; `stacked` puts it above, one part at a time. */
+  layout?: 'split' | 'stacked';
+  /**
+   * Every displayed view (load, in-place poll patch, denial projection), and
+   * `undefined` when a displayed view is cleared for a reload or an operation
+   * whose result has not been shown yet. Presentation only.
+   */
+  onview?: (view: ItemReviewView | undefined) => void;
+  /** After an approve, apply or resolve and the reload that follows it succeeded. */
+  onoutcome?: (outcome: ReviewOutcome, view: ItemReviewView) => void;
 }
-let { host, itemId, pollMs = 2000 }: Props = $props();
+let {
+  host,
+  itemId,
+  pollMs = 2000,
+  layout = 'split',
+  onview,
+  onoutcome,
+}: Props = $props();
 const { t } = useI18n();
 let view = $state<ItemReviewView>(),
   pending = $state(false),
@@ -76,17 +95,19 @@ onDestroy(() => {
   epoch++;
   clearTimeout(poll);
 });
-function inFlight(current: ItemReviewView | undefined) {
-  return (
-    current?.availability === 'available' &&
-    !current.entry.item.disposition &&
-    (current.entry.state === 'processing' ||
-      ['queued', 'running'].includes(current.entry.item.processingState) ||
-      // The server's own predicate, which also covers the gap between a
-      // completed extraction and its not-yet-appended interpretation.
-      !!current.instruction?.reinterpreting)
-  );
-}
+// Includes the server's own predicate, which also covers the gap between a
+// completed extraction and its not-yet-appended interpretation.
+const inFlight = reviewInFlight;
+// Parents follow the displayed view (a workspace keeps its list row in step);
+// untracked so the callback's own reads never re-run this effect. Undefined
+// means a displayed view was cleared for a reload or an operation.
+let shown = false;
+$effect(() => {
+  const current = view;
+  if (!current && !shown) return;
+  shown = true;
+  untrack(() => onview?.(current));
+});
 /** Prefer the server's retry binding; otherwise the displayed generation. */
 function instructionBinding(current: ItemReviewView | undefined) {
   if (current?.instruction?.binding) return current.instruction.binding;
@@ -293,7 +314,7 @@ async function refresh(ticket: number) {
     if (alive && ticket === epoch && !pending) schedulePoll(ticket);
   }
 }
-async function run(operation: () => Promise<unknown>) {
+async function run(operation: () => Promise<unknown>, outcome?: ReviewOutcome) {
   if (pending) return;
   const ticket = ++epoch;
   clearTimeout(poll);
@@ -303,7 +324,18 @@ async function run(operation: () => Promise<unknown>) {
   splits = {};
   try {
     await operation();
-    if (alive && ticket === epoch) await load();
+    if (!alive || ticket !== epoch) return;
+    await load();
+    // Only the reload that answered this operation reports its outcome.
+    // `load` reassigned the view; TypeScript still narrows it to undefined.
+    const settled = view as ItemReviewView | undefined;
+    if (
+      outcome &&
+      alive &&
+      ticket + 1 === epoch &&
+      settled?.availability === 'available'
+    )
+      onoutcome?.(outcome, settled);
   } catch {
     if (alive && ticket === epoch) deny();
   }
@@ -521,7 +553,7 @@ function resolve() {
   void run(async () => {
     await close(input);
     resolveReason = '';
-  });
+  }, 'resolve');
 }
 function instruct() {
   const binding = instructionBinding(view);
@@ -609,7 +641,7 @@ onMount(() => {
 {:else}
 {@const extracted = view.analysis ? extractedContent(view.analysis.result.output) : []}
 <h2>{view.entry.label}</h2><p>{t(M[`ingestion.${view.entry.state}`])}</p>
-<div class="review-grid"><EvidenceViewer evidence={view.evidence} /><div class="details">
+<div class="review-grid" class:stacked={layout === 'stacked'}><EvidenceViewer evidence={view.evidence} pages={observedPages(view)} layout={layout === 'stacked' ? 'pager' : 'stack'} /><div class="details">
 {#if view.instruction}
 {@const applied = view.instruction.applied}{@const current = view.instruction.current}
 {#if inFlight(view) && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
@@ -698,6 +730,6 @@ onMount(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}fieldset{margin-block:1rem;min-width:0;display:grid;gap:.5rem}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
+section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.review-grid.stacked{grid-template-columns:minmax(0,1fr)}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}fieldset{margin-block:1rem;min-width:0;display:grid;gap:.5rem}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
 }
 </style>

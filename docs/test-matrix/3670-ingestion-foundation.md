@@ -251,3 +251,19 @@ on both databases (U, P):
 
 Commands: package `pnpm test`, `pnpm test:postgres`, `pnpm test:components`,
 `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`; root lint/format/knowledge/audit.
+
+### #4215 single-page triage workspace
+
+UI composition only: no host callback, model, migration or server authority
+changes. Cases live in `src/svelte/__tests__/workspace.component.test.ts`
+(components) and the `single-page triage` scenario of `e2e/review/review.spec.ts`
+(E, real fixture host).
+
+| Behavior/invariant | Positive | Negative/failure | Level |
+|---|---|---|---|
+| Split view and inline original | row selection marks `aria-current`, focuses the named item pane; pager opens on the uploaded file, steps between parts; observed-page PDF navigation reloads the frame at `#page=n` | foreign-origin URL never reaches a frame and gets no page navigation; no navigation or page load (window marker, path) | components, E |
+| Keyboard | J/K and Alt+Down/Up move through rows; Next disabled at the end | keys typed in a text field never move the selection | components, E |
+| Live state | open item's in-place poll updates its row (Interpreting… → Ready to review) without re-listing; an item left mid-stage, or before its post-instruction reload answered, keeps following by `load` until settled and announces once | settled rows stop following; a stage never seen running is not announced | components, E |
+| Approve and advance | apply that settles the item advances to the next open row with focus; under a state filter the finished row leaves the list; "Handled, no action" advances and reports an empty queue | approval leaving an apply step does not advance; a failed sibling action blocks settlement; per-row resolve hidden in the workspace | components, E |
+
+| Workspace pagination regressions | advance skips a completed inbox page to reach the next reviewable row; Load more keeps the applied assignee filter | an unloaded saved-review cursor prevents premature advance; an unapplied assignee edit cannot change a continuation | components; baseline failure and corrected-source success |
