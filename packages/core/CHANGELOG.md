@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.57.22
+
+### Patch Changes
+
+- ### Features
+  
+  - add lead conversion, client mailbox authentication and analytics (#4255)
+  - add single-page triage workspace (#4259) (ingestion)
+  - receive by reference, inline proposals, submitter-scoped approval (#4229) (ingestion)
+  - reviewer-chosen actions and no-action feedback (#4227) (ingestion)
+  
+  ### Bug Fixes
+  
+  - preserve budget bounds for schema-aware evaluation (#4258) (ingestion)
+- @happyvertical/smrt-config@0.57.22
+  - @happyvertical/smrt-scanner@0.57.22
+  - @happyvertical/smrt-types@0.57.22
+
 ## 0.57.21
 
 ### Patch Changes
