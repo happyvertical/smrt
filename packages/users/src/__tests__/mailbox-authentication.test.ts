@@ -167,6 +167,51 @@ describe('independently delivered mailbox authentication', () => {
     )?.status;
   }
 
+  it.each([
+    'returning',
+    'invitation',
+  ] as const)('%s request without an independent limiter refuses before writes or delivery', async (flow) => {
+    await active();
+    const invitationToken = await grant();
+    const deliver = vi.fn(async (_mail: Mail) => {});
+    const beforeTokens = (
+      await db.query('SELECT nonce FROM users_magic_link_tokens')
+    ).rows;
+    await expect(
+      db.transaction(async (executor) => {
+        const options = {
+          db: executor,
+          transaction: 'caller' as const,
+          secret,
+        };
+        if (flow === 'returning') {
+          return (await MailboxAuthenticationService.create(options)).request({
+            email: 'client@example.com',
+            sourceKey,
+            deliver,
+          });
+        }
+        return (
+          await TenantInvitationService.create(options)
+        ).requestMailboxAuthentication({
+          membershipId: first.membershipId,
+          token: invitationToken,
+          sourceKey,
+          deliver,
+        });
+      }),
+    ).rejects.toThrow('independently supplied root-executor login limiter');
+    expect(deliver).not.toHaveBeenCalled();
+    expect(
+      (await db.query('SELECT nonce FROM users_magic_link_tokens')).rows,
+    ).toEqual(beforeTokens);
+    expect(
+      (await db.query('SELECT limiter_key FROM users_login_attempts')).rows,
+    ).toHaveLength(0);
+    const { mail } = await request(invitationToken);
+    await complete(invitationToken, mail.token);
+  });
+
   it('delivers only to canonical mailbox, returns no proof, and copied operator grant cannot authenticate', async () => {
     const invitationToken = await grant();
     const { mail, response } = await request(invitationToken);

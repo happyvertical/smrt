@@ -260,7 +260,10 @@ mail. No session/authentication is valid without committed proof claims. The hos
 must set a bounded transport timeout and never return transport payloads/secrets.
 No generic outbox/provider is required; compose the existing SDK email transport.
 
-Use a root-executor canonical `LoginAttemptLimiter` passed as `loginLimiter` so
+Both mail request operations REQUIRE a root-executor canonical
+`LoginAttemptLimiter` passed as `loginLimiter`; missing limiters fail before
+nonce/budget writes or delivery. Completion-only operations may omit it. Supply
+the limiter independently from the caller transaction so
 caller rollbacks cannot release send budgets (SQLite single-connection fixtures
 cannot prove that production-pool separation). `sourceKey` is a trusted server
 client-address key, never request-controlled forwarded headers; limiter hashes

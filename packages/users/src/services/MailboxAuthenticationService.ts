@@ -17,7 +17,7 @@ import { UserCollection } from '../collections/UserCollection.js';
 import { isValidEmail } from '../models/User.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
 import {
-  LoginAttemptLimiter,
+  type LoginAttemptLimiter,
   LoginRateLimitError,
 } from './LoginAttemptLimiter.js';
 import { MagicLinkError, MagicLinkService } from './MagicLinkService.js';
@@ -32,7 +32,7 @@ export type MailboxAuthenticationDelivery = (mail: {
 export interface MailboxAuthenticationServiceOptions extends SmrtClassOptions {
   transaction: 'caller';
   secret: string;
-  /** Prefer a root-executor limiter so refused/failed caller transactions cannot roll back budgets. */
+  /** Required for request(): supply a root-executor limiter independent of the caller transaction. Completion-only use may omit it. */
   loginLimiter?: LoginAttemptLimiter;
 }
 export interface AuthenticatedMailbox {
@@ -42,21 +42,18 @@ export interface AuthenticatedMailbox {
 }
 
 /** Canonical shared request budget; keys are hashed/peppered by LoginAttemptLimiter. */
-export async function reserveMailboxRequest(
-  options: SmrtClassOptions,
-  input: {
-    subject: string;
-    sourceKey: string;
-    secret: string;
-    limiter?: LoginAttemptLimiter;
-  },
-) {
+export async function reserveMailboxRequest(input: {
+  subject: string;
+  sourceKey: string;
+  limiter?: LoginAttemptLimiter;
+}) {
+  if (!input.limiter)
+    throw new Error(
+      'Mailbox authentication requests require an independently supplied root-executor login limiter',
+    );
   if (!input.sourceKey?.trim())
     throw new Error('Mailbox authentication source key is required');
-  const limiter =
-    input.limiter ??
-    (await LoginAttemptLimiter.create({ ...options, keyPepper: input.secret }));
-  const lease = await limiter.reserve({
+  const lease = await input.limiter.reserve({
     kind: 'mailbox-request',
     subject: `mailbox:${input.subject}`,
     source: `mailbox:${input.sourceKey}`,
@@ -143,10 +140,9 @@ export class MailboxAuthenticationService {
       throw new Error('Mailbox authentication delivery is required');
     const started = performance.now();
     try {
-      await reserveMailboxRequest(this.options, {
+      await reserveMailboxRequest({
         subject: normalizeIdentityEmail(input.email),
         sourceKey: input.sourceKey,
-        secret: this.auth.secret,
         limiter: this.auth.loginLimiter,
       });
       return await withSystemContext(async () => {

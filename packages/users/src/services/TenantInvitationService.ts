@@ -62,7 +62,7 @@ export interface TenantInvitationServiceOptions extends SmrtClassOptions {
   transaction: 'caller';
   secret?: string;
   tokenExpiry?: number;
-  /** Prefer a root-executor limiter to preserve budgets across caller rollbacks. */
+  /** Required for requestMailboxAuthentication(): supply a root-executor limiter independent of the caller transaction. Other operations may omit it. */
   loginLimiter?: LoginAttemptLimiter;
 }
 /** Copyable tenant grant, never identity proof; the host must not log it. */
@@ -146,10 +146,9 @@ export class TenantInvitationService {
       throw new TenantInvitationError(
         'Mailbox authentication delivery is required',
       );
-    await reserveMailboxRequest(this.options, {
+    await reserveMailboxRequest({
       subject: `invitation:${input.membershipId}`,
       sourceKey: input.sourceKey,
-      secret: this.signing.secret ?? '',
       limiter: this.signing.loginLimiter,
     });
     return await withSystemContext(async () => {
