@@ -34,22 +34,22 @@ export async function loadReviewSummary(
   } while (cursor);
   const current = await service.getItem(item.id);
   if (!requested) throw new Error('Review page unavailable');
-  // A reviewer disposition is terminal unless an action actually applied.
+  // Terminal no-action disposition wins; otherwise new processing supersedes old actions.
   const state: InboxState =
     current.disposition && !succeeded
       ? 'resolved'
-      : total
-        ? succeeded === total
-          ? 'completed'
-          : succeeded
-            ? 'partially_completed'
-            : deferred
-              ? 'deferred'
-              : failed
-                ? 'failed'
-                : 'waiting'
-        : ['queued', 'running'].includes(current.processingState)
-          ? 'processing'
+      : ['queued', 'running'].includes(current.processingState)
+        ? 'processing'
+        : total
+          ? succeeded === total
+            ? 'completed'
+            : succeeded
+              ? 'partially_completed'
+              : deferred
+                ? 'deferred'
+                : failed
+                  ? 'failed'
+                  : 'waiting'
           : current.processingState === 'needs_attention'
             ? 'failed'
             : 'unresolved';

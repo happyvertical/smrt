@@ -25,13 +25,23 @@ import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
   host: IntakeReviewHost;
   itemId: string;
+  /** Reload interval while the host reports the item as processing. */
+  pollMs?: number;
 }
-let { host, itemId }: Props = $props();
+let { host, itemId, pollMs = 2000 }: Props = $props();
 const { t } = useI18n();
 let view = $state<ItemReviewView>(),
   pending = $state(false),
   error = $state(false),
   splits = $state<Record<string, string>>({}),
+  instruction = $state(''),
+  refreshFailed = $state(false),
+  instructionBusy = $state(false),
+  // The draft the server refused as invalid; the note stays until it changes.
+  invalidDraft = $state<string>(),
+  // The draft a stale result left unrecorded; the note stays until the
+  // reviewer edits or resubmits it.
+  unrecordedDraft = $state<string>(),
   // Human drafts for `needs_review` suggestions, keyed by `attemptId:index`.
   // They survive refresh, failures and actions on other cards and are cleared
   // only by a successful preview of their own card.
@@ -42,15 +52,69 @@ let view = $state<ItemReviewView>(),
   // Suggestion whose last preview the host rejected; its draft is kept.
   previewRejected = $state<number>(),
   invalid = $state(false);
+/** Same ceiling the server enforces (REVIEWER_INSTRUCTION_MAX_LENGTH). */
+const INSTRUCTION_MAX_LENGTH = 4000;
+const instructionValid = $derived(
+  !!instruction.trim() && instruction.length <= INSTRUCTION_MAX_LENGTH,
+);
+// The busy note after a stale click stays only while the item is still in
+// flight; any reload (including the one answering the click) that shows it
+// settled clears it.
+function settleBusy() {
+  if (instructionBusy && !inFlight(view)) instructionBusy = false;
+}
+/** Consecutive thrown poll ticks tolerated before failing closed. */
+const MAX_POLL_FAILURES = 3;
 let alive = true,
   epoch = 0,
-  loadedPages = 1;
+  loadedPages = 1,
+  poll: ReturnType<typeof setTimeout> | undefined,
+  pollTicks = 0,
+  pollFailures = 0;
 onDestroy(() => {
   alive = false;
   epoch++;
+  clearTimeout(poll);
 });
+function inFlight(current: ItemReviewView | undefined) {
+  return (
+    current?.availability === 'available' &&
+    !current.entry.item.disposition &&
+    (current.entry.state === 'processing' ||
+      ['queued', 'running'].includes(current.entry.item.processingState) ||
+      // The server's own predicate, which also covers the gap between a
+      // completed extraction and its not-yet-appended interpretation.
+      !!current.instruction?.reinterpreting)
+  );
+}
+/** Prefer the server's retry binding; otherwise the displayed generation. */
+function instructionBinding(current: ItemReviewView | undefined) {
+  if (current?.instruction?.binding) return current.instruction.binding;
+  return current?.generation && current.analysis
+    ? {
+        attemptId: current.analysis.attemptId,
+        expectedRevision: current.analysis.revision,
+      }
+    : undefined;
+}
+// Background stages (reinterpretation after an instruction) finish without a
+// push channel; the authenticated load is repeated and patched in place so
+// drafts, focus and the evidence viewer survive. The delay backs off to 5x.
+function schedulePoll(ticket: number) {
+  clearTimeout(poll);
+  if (!inFlight(view)) {
+    pollTicks = 0;
+    return;
+  }
+  const delay = Math.min(pollMs * 1.5 ** pollTicks, pollMs * 5);
+  pollTicks++;
+  poll = setTimeout(() => {
+    if (alive && ticket === epoch && !pending) void refresh(ticket);
+  }, delay);
+}
 function deny() {
   epoch++;
+  clearTimeout(poll);
   view = undefined;
   splits = {};
   // Drafts are the reviewer's own typed text, never host data: they are kept
@@ -59,56 +123,51 @@ function deny() {
   error = true;
   pending = false;
 }
-async function load(pageCount = loadedPages) {
-  const ticket = ++epoch;
-  view = undefined;
-  splits = {};
-  previewRejected = undefined;
-  pending = true;
-  error = false;
-  invalid = false;
-  try {
-    let cursor: string | undefined;
-    let result: ItemReviewView | undefined;
-    const actions: ItemReviewView['reviews']['actions'] = [];
-    const actionIds = new Set<string>();
-    const cursors = new Set<string>();
-    let refreshedPages = 0;
-    for (let index = 0; index < pageCount; index++) {
-      const page = await host.load(itemId, cursor);
-      if (!alive || ticket !== epoch) return;
-      if (page.availability !== 'available') {
-        result = page;
-        break;
-      }
-      if (
-        result &&
-        page.entry.item.analysisRevision !== result.entry.item.analysisRevision
-      )
-        throw new Error('Review changed during pagination');
-      result ??= page;
-      for (const action of page.reviews.actions) {
-        if (!actionIds.has(action.review.actionId)) {
-          actionIds.add(action.review.actionId);
-          actions.push(action);
-        }
-      }
-      refreshedPages++;
-      cursor = page.reviews.nextCursor;
-      if (!cursor) break;
-      if (cursors.has(cursor)) throw new Error('Repeated review cursor');
-      cursors.add(cursor);
+/** Aggregate the displayed pages with fresh cursors; returns undefined when fenced. */
+async function fetchView(
+  ticket: number,
+  pageCount: number,
+): Promise<{ result: ItemReviewView; pages: number } | undefined> {
+  let cursor: string | undefined;
+  let result: ItemReviewView | undefined;
+  const actions: ItemReviewView['reviews']['actions'] = [];
+  const actionIds = new Set<string>();
+  const cursors = new Set<string>();
+  let refreshedPages = 0;
+  for (let index = 0; index < pageCount; index++) {
+    const page = await host.load(itemId, cursor);
+    if (!alive || ticket !== epoch) return undefined;
+    if (page.availability !== 'available') {
+      result = page;
+      break;
     }
-    if (!result) throw new Error('Missing review page');
-    if (result.availability === 'available') {
-      result = {
-        ...result,
-        reviews: { ...result.reviews, actions, nextCursor: cursor },
-      };
-      loadedPages = refreshedPages;
+    if (
+      result &&
+      page.entry.item.analysisRevision !== result.entry.item.analysisRevision
+    )
+      throw new Error('Review changed during pagination');
+    result ??= page;
+    for (const action of page.reviews.actions) {
+      if (!actionIds.has(action.review.actionId)) {
+        actionIds.add(action.review.actionId);
+        actions.push(action);
+      }
     }
-    // A host denial must not leave any original, candidate, or argument in the DOM.
-    view =
+    refreshedPages++;
+    cursor = page.reviews.nextCursor;
+    if (!cursor) break;
+    if (cursors.has(cursor)) throw new Error('Repeated review cursor');
+    cursors.add(cursor);
+  }
+  if (!result) throw new Error('Missing review page');
+  if (result.availability === 'available')
+    result = {
+      ...result,
+      reviews: { ...result.reviews, actions, nextCursor: cursor },
+    };
+  // A host denial must not leave any original, candidate, or argument in the DOM.
+  return {
+    result:
       result.availability === 'available'
         ? result
         : {
@@ -116,44 +175,128 @@ async function load(pageCount = loadedPages) {
             evidence: [],
             reviews: { actions: [] },
             availability: result.availability,
-          };
-    splits = Object.fromEntries(
-      (view.generation?.splits ?? []).map((split) => [
-        split.evidenceId,
-        JSON.stringify(split.groups),
-      ]),
-    );
-    // Drafts follow availability: revoked or expired access discards them;
-    // a transient `unavailable` or `stale` result keeps them (nothing renders
-    // meanwhile) so the reviewer's typing survives until the view returns;
-    // an available view prunes drafts of attempts or cards no longer offered.
-    if (view.availability === 'revoked' || view.availability === 'expired') {
-      drafts = {};
-      invalidDrafts = {};
-    } else if (view.availability === 'available') {
-      const attemptId = view.analysis?.attemptId;
-      const current = new Set<string>();
-      (view.generation?.suggestions ?? []).forEach((suggestion, index) => {
-        if (!attemptId || suggestion.disposition !== 'needs_review') return;
-        const key = `${attemptId}:${index}`;
-        current.add(key);
-        drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
-      });
-      for (const key of Object.keys(drafts))
-        if (!current.has(key)) {
-          delete drafts[key];
-          delete invalidDrafts[key];
-        }
-    }
+          },
+    pages: refreshedPages,
+  };
+}
+/** Keep only drafts the reviewer edited; untouched ones follow the new generation. */
+function splitDrafts(
+  next: ItemReviewView,
+  keep: Record<string, string>,
+  previous?: ItemReviewView,
+) {
+  const generated = new Map(
+    (previous?.generation?.splits ?? []).map((split) => [
+      split.evidenceId,
+      JSON.stringify(split.groups),
+    ]),
+  );
+  return Object.fromEntries(
+    (next.generation?.splits ?? []).map((split) => {
+      const draft = keep[split.evidenceId];
+      const edited =
+        draft !== undefined && draft !== generated.get(split.evidenceId);
+      return [split.evidenceId, edited ? draft : JSON.stringify(split.groups)];
+    }),
+  );
+}
+function syncSuggestionDrafts(current: ItemReviewView) {
+  // Drafts follow availability: revoked or expired access discards them;
+  // a transient `unavailable` or `stale` result keeps them (nothing renders
+  // meanwhile) so the reviewer's typing survives until the view returns;
+  // an available view prunes drafts of attempts or cards no longer offered.
+  if (
+    current.availability === 'revoked' ||
+    current.availability === 'expired'
+  ) {
+    drafts = {};
+    invalidDrafts = {};
+  } else if (current.availability === 'available') {
+    const attemptId = current.analysis?.attemptId;
+    const keys = new Set<string>();
+    (current.generation?.suggestions ?? []).forEach((suggestion, index) => {
+      if (!attemptId || suggestion.disposition !== 'needs_review') return;
+      const key = `${attemptId}:${index}`;
+      keys.add(key);
+      drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
+    });
+    for (const key of Object.keys(drafts))
+      if (!keys.has(key)) {
+        delete drafts[key];
+        delete invalidDrafts[key];
+      }
+  }
+}
+async function load(pageCount = loadedPages) {
+  const ticket = ++epoch;
+  clearTimeout(poll);
+  pollTicks = 0;
+  pollFailures = 0;
+  refreshFailed = false;
+  view = undefined;
+  splits = {};
+  previewRejected = undefined;
+  pending = true;
+  error = false;
+  invalid = false;
+  try {
+    const fetched = await fetchView(ticket, pageCount);
+    if (!fetched) return;
+    if (fetched.result.availability === 'available')
+      loadedPages = fetched.pages;
+    view = fetched.result;
+    syncSuggestionDrafts(view);
+    splits = splitDrafts(view, {});
+    settleBusy();
   } catch {
     if (alive && ticket === epoch) deny();
   } finally {
-    if (alive && ticket === epoch) pending = false;
+    if (alive && ticket === epoch) {
+      pending = false;
+      schedulePoll(ticket);
+    }
+  }
+}
+/** Poll tick: patch the view in place without blanking it or resetting drafts. */
+async function refresh(ticket: number) {
+  try {
+    const fetched = await fetchView(ticket, loadedPages);
+    if (!fetched || !alive || ticket !== epoch) return;
+    pollFailures = 0;
+    refreshFailed = false;
+    // An explicit host denial fails closed at once.
+    if (fetched.result.availability !== 'available') {
+      view = fetched.result;
+      syncSuggestionDrafts(view);
+      splits = {};
+      return;
+    }
+    if (JSON.stringify(fetched.result) !== JSON.stringify(view)) {
+      loadedPages = fetched.pages;
+      splits = splitDrafts(fetched.result, splits, view);
+      view = fetched.result;
+      syncSuggestionDrafts(view);
+    }
+    settleBusy();
+  } catch {
+    if (!alive || ticket !== epoch) return;
+    // A thrown tick may be transient: keep the view and keep backing off, but
+    // a host may also throw for revoked access, so fail closed after a bound.
+    pollFailures++;
+    if (pollFailures >= MAX_POLL_FAILURES) {
+      refreshFailed = false;
+      deny();
+      return;
+    }
+    refreshFailed = true;
+  } finally {
+    if (alive && ticket === epoch && !pending) schedulePoll(ticket);
   }
 }
 async function run(operation: () => Promise<unknown>) {
   if (pending) return;
   const ticket = ++epoch;
+  clearTimeout(poll);
   pending = true;
   error = false;
   view = undefined;
@@ -380,6 +523,36 @@ function resolve() {
     resolveReason = '';
   });
 }
+function instruct() {
+  const binding = instructionBinding(view);
+  const text = instruction.trim();
+  const operation = host.instruct;
+  if (!binding || !instructionValid || !operation || inFlight(view)) return;
+  instructionBusy = false;
+  invalidDraft = undefined;
+  unrecordedDraft = undefined;
+  const input = {
+    itemId,
+    ...binding,
+    text,
+    requestId: crypto.randomUUID(),
+  };
+  // A stale result is a refresh-and-retry signal: run() reloads the view and
+  // the draft is kept; it is never treated as a denial.
+  void run(async () => {
+    const result = await operation(input);
+    if (result && 'stale' in result && result.stale === true) {
+      instructionBusy = true;
+      unrecordedDraft = instruction;
+      return;
+    }
+    if (result && 'invalid' in result && result.invalid === true) {
+      invalidDraft = instruction;
+      return;
+    }
+    instruction = '';
+  });
+}
 function locationLabel(location: EvidenceLocation) {
   switch (location.kind) {
     case 'page':
@@ -430,12 +603,25 @@ onMount(() => {
 <header><h1>{t(M['ingestion.review'])}</h1><Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button></header>
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
+{#if refreshFailed}<p role="status" data-testid="refresh-retrying">{t(M['ingestion.refreshRetrying'])}</p>{/if}
 {#if view}
 {#if view.availability !== 'available'}<p role="alert">{t(M[`ingestion.${view.availability}`])}</p>
 {:else}
 {@const extracted = view.analysis ? extractedContent(view.analysis.result.output) : []}
 <h2>{view.entry.label}</h2><p>{t(M[`ingestion.${view.entry.state}`])}</p>
 <div class="review-grid"><EvidenceViewer evidence={view.evidence} /><div class="details">
+{#if view.instruction}
+{@const applied = view.instruction.applied}{@const current = view.instruction.current}
+{#if inFlight(view) && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
+{#if view.instruction.failure === 'not_started'}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretNotStarted'])}</p>{:else if view.instruction.failure}<p role="alert" data-testid="instruction-failure">{t(M['ingestion.reinterpretFailed'])} ({view.instruction.failure})</p>{/if}
+{#if applied}<p data-testid="applied-instruction">{t(M['ingestion.appliedInstruction'])}: <q>{applied.text}</q></p>{#if view.instruction.stale}<p role="status" data-testid="instruction-stale">{t(M['ingestion.instructionStale'])}</p>{/if}{/if}
+{#if current && current.id !== applied?.id}<p data-testid="pending-instruction">{t(M['ingestion.pendingInstruction'])}: <q>{current.text}</q></p>{/if}
+{#if view.instruction.dropped}<p role="status" data-testid="dropped-instruction">{t(M['ingestion.droppedInstruction'])}: <q>{view.instruction.dropped.text}</q></p>{/if}
+{/if}
+{#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{:else if unrecordedDraft !== undefined && unrecordedDraft === instruction}<p role="status" data-testid="instruction-not-recorded">{t(M['ingestion.instructionNotRecorded'])}</p>{/if}
+{#if host.instruct && !view.entry.item.disposition && instructionBinding(view)}
+<div><Textarea aria-label={t(M['ingestion.instructions'])} aria-describedby="instruction-length" maxlength={INSTRUCTION_MAX_LENGTH} bind:value={instruction} /><p id="instruction-length" data-testid="instruction-length">{t(M['ingestion.instructionLength'], { count: instruction.length, max: INSTRUCTION_MAX_LENGTH })}</p>{#if invalidDraft !== undefined && invalidDraft === instruction}<p role="alert" data-testid="instruction-invalid">{t(M['ingestion.instructionInvalid'], { max: INSTRUCTION_MAX_LENGTH })}</p>{/if}<Button disabled={!instructionValid || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
+{/if}
 {#if extracted.length}
 <h2>{t(M['ingestion.extracted'])}</h2>
 {#each extracted as segment}

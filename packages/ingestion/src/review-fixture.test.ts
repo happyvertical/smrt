@@ -14,8 +14,11 @@ vi.mock('node:fs/promises', async (importOriginal) => ({
 import { createReviewFixture } from '../e2e/review/fixture.js';
 import type { ReferenceReviewHost } from '../reference/review-host.js';
 
-function host(close: () => Promise<void>): ReferenceReviewHost {
-  return { db: { close } } as unknown as ReferenceReviewHost;
+function host(
+  close: () => Promise<void>,
+  settle: () => Promise<void> = async () => {},
+): ReferenceReviewHost {
+  return { db: { close }, settle } as unknown as ReferenceReviewHost;
 }
 
 describe('authenticated review fixture ownership', () => {
@@ -25,19 +28,22 @@ describe('authenticated review fixture ownership', () => {
     filesystem.rm.mockReset();
   });
 
-  it('closes its database before removing its owned root', async () => {
+  it('settles background stages, then closes its database before removing its owned root', async () => {
     const events: string[] = [];
     filesystem.mkdtemp.mockResolvedValue('/temporary/review-success');
     filesystem.rm.mockImplementation(async () => {
       events.push('remove');
     });
     const fixture = await createReviewFixture(async () =>
-      host(async () => void events.push('close')),
+      host(
+        async () => void events.push('close'),
+        async () => void events.push('settle'),
+      ),
     );
 
     await fixture.close();
 
-    expect(events).toEqual(['close', 'remove']);
+    expect(events).toEqual(['settle', 'close', 'remove']);
   });
 
   it('removes its owned root when provisioning fails', async () => {

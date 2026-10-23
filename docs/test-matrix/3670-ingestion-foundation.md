@@ -122,6 +122,81 @@ typecheck and affected repository gates run. Ingestion U/P, core PostgreSQL and
 full root runtime evidence carry forward because only test expectations and
 this matrix change; no numeric, UUID, conflict, timestamp or migration path changes.
 
+### #4212 reviewer instructions as trusted guidance
+
+`proposals.test.ts` and `proposals.postgres.test.ts` share three cases. The
+record case covers reviewer-grant and actor denial, empty/oversized text, stale
+revision, replay identity and changed-text conflict, immediate suggestion
+staleness, the extraction-configuration record (`kind`, id, digest, actor), the
+digest-verified interpretation copy, the separate trusted-guidance prompt section
+after the untrusted-evidence instruction, unchanged `offered`/`catalogDigest`,
+`provenance.reviewerInstruction`, `automaticActionEligible: false` with
+`authorizeAutomatic` refusal, supersession (`supersedesId`, newest-first history)
+and a guided reply naming an unoffered handler failing as `provider_error` with
+no domain effect. The injection case shows `analyze` refusing an extraction-stage
+instruction and a forged interpretation copy failing before provider disclosure
+while history stays empty. The feedback case shows the judgment carrying
+`{id, digest, text}`, `retrieveFeedback` returning it with the example, and the
+receiving generation seeing it only as example content. Further shared cases cover `processing` state with earlier (stale) actions and
+`getReinterpretationState`; an instruction retained beside a later split
+correction with `human_split_not_respected` still enforced; a tampered stored
+extraction record and a well-formed forged interpretation copy both failing
+before provider disclosure; replay of a superseded request ID, a concurrent
+double record (exactly one wins) and retry against the latest completed
+generation after a failed re-extraction, after a failed **interpretation**
+(old anchor rejected once a newer interpretation completes), and with a split
+recorded after the anchor carried into the retry; retries refused while the
+later work is queued, running, between extraction and interpretation, or
+interpreting, then accepted once interpretation fails; judgments storing only the
+instruction reference with retrieval joining the text, a write-time refusal when
+the joined example alone exceeds the read budget (nothing written), an exactly
+fitting judgment recording and retrieving at its exact size, one byte short
+refused, the handler `policy.maxBytes` side of the write-time `min()` refusing
+on its own, and re-signed stored references with a wrong digest or id excluded;
+a wedged gap (extraction completed, interpretation never appended) staying in
+flight up to exactly the item lease and then reporting `not_started` and
+accepting the retry, which recovers; a slow host's late interpretation append
+after that retry refused with `GenerationSourceStaleError` (nothing appended, the
+retry still queued, then completing under the retried instruction); missing
+completion timing treated as expired immediately; the existing superseded
+preparation case now refused at append time; genuinely interleaved concurrency
+(on PostgreSQL a second real connection; on SQLite the shared write queue): two
+reviewers at one revision (one wins, one refused, no fork), an instruction and a
+split racing in both orders (the loser refused, both earlier corrections kept),
+and a double-clicked instruction and split replaying a duplicate committed after
+the unlocked replay check. Mutation evidence on PostgreSQL: the double-click
+case fails (`ReviewerInstructionStaleError`) with the replay-under-lock removed;
+the two race cases fail (the second writer is no longer blocked; the split race
+hangs) only when *every* item-row lock is removed, because the guards were
+already serialized twice before this change (the snapshot read's lock and the
+execution authorization's `item(db, id, true)` row lock, both in the same
+transaction before the guard step); the decision stage receiving the guidance
+exactly once under `reviewerGuidance` and never under `evidence` (all decision
+cases on both engines); the shared instruction-view projection used by both the
+published and reference hosts (`review-instruction-view.test.ts`: an instruction
+recorded between the history and state reads re-reads history instead of
+reporting a drop, `dropped` only when nothing is in effect); missing-attempt and non-finite `leaseMs` gap timing expiring
+immediately; and carried instruction text being
+counted in the exact feedback byte budget, with one byte short still failing
+closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
+covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
+projection; the component suite covers the textarea/button binding, disabled
+empty text, polling through `processing` until the in-place update (also with an
+earlier action present, with drafts and the textarea element preserved and no
+loading placeholder), the failure/retry binding path, the 5× backoff cap under fake timers, a
+transient thrown tick keeping the view then recovering, three thrown ticks
+failing closed and stopping, edited-versus-untouched split drafts, polling with
+Re-read disabled through the between-stages gap, a `{ stale: true }` result
+reloading with a note and keeping the draft instead of denying, the note
+cleared once a later poll shows the item settled (and at once when the reload
+answering the click is already settled), the
+`not_started` retry against the server binding, and stale display; the Chromium suite records a real instruction, observes the background
+"Reinterpreting…" state, the in-place update, provenance, unchanged original
+bytes, whitespace-only instruction text refused by server-side validation, and
+supersession. No schema or migration changes:
+the record lives in the existing append-only analysis ledger beside the split
+correction.
+
 ### #4116 retained dispatch routing
 
 `foundation.test.ts` and `foundation.postgres.test.ts` share the `dispatch route

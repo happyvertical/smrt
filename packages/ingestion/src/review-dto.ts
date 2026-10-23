@@ -1,6 +1,7 @@
 /** Browser-only view contracts. Every value must come from an authenticated host. */
 import type {
   IntakeEvidenceDTO,
+  IntakeFailure,
   IntakeItemDTO,
   ItemDisposition,
 } from './dto.js';
@@ -114,9 +115,52 @@ export interface ItemReviewView {
   /** Reviewer and reason of a resolved item, loaded under review authority. */
   disposition?: ItemDisposition;
   reviews: ReviewPage;
+  /** Present when an instruction was recorded or carried by the displayed generation. */
+  instruction?: ReviewerInstructionView;
   /** Host-projected safe state, never raw server exception text. */
   availability: 'available' | 'stale' | 'revoked' | 'expired' | 'unavailable';
   message?: string;
+}
+/** Immutable authenticated reviewer guidance for one item; it steers the model only. */
+export interface ReviewerInstruction {
+  id: string;
+  text: string;
+  actorId: string;
+  recordedAt: string;
+  /** The instruction this one replaced for future interpretations, if any. */
+  supersedesId: string | null;
+  digest: string;
+}
+export interface ReviewerInstructionInput {
+  itemId: string;
+  attemptId: string;
+  expectedRevision: number;
+  text: string;
+  requestId: string;
+}
+export interface ReviewerInstructionView {
+  /**
+   * Latest recorded instruction that is still in effect: the item's newest
+   * extraction carries it, so its interpretations do. Null when none was
+   * recorded or a host reprocess dropped it (see `dropped`).
+   */
+  current: ReviewerInstruction | null;
+  /**
+   * Latest recorded instruction that a host reprocess dropped (a reprocess
+   * builds its own configuration and cannot carry human corrections). It no
+   * longer applies; the reviewer can re-record it.
+   */
+  dropped?: ReviewerInstruction;
+  /** The instruction the displayed generation was produced under. */
+  applied: ReviewerInstruction | null;
+  /** Displayed suggestions predate the current instruction. */
+  stale: boolean;
+  /** Safe failure category, or `not_started` when interpretation was never appended in time. */
+  failure?: IntakeFailure | 'not_started';
+  /** Server-side "in flight", including the gap between extraction and interpretation. */
+  reinterpreting?: boolean;
+  /** Record/retry binding when no current generation is displayable: the latest completed generation attempt and the item's current revision. */
+  binding?: { attemptId: string; expectedRevision: number };
 }
 export interface LogicalSplitInput {
   itemId: string;
@@ -180,6 +224,16 @@ export interface IntakeReviewHost {
   startAction?: (input: StartActionInput) => Promise<void>;
   /** Close the item as handled without an action; terminal and distinct from reject. */
   resolve?: (input: ResolveItemInput) => Promise<void>;
+  /**
+   * Record reviewer guidance and request a background reinterpretation; never
+   * approval. Resolves `{ stale: true }` when the anchor is superseded or work
+   * is still in flight, a refresh-and-retry signal rather than a denial, and
+   * `{ invalid: true }` when the text fails validation (empty, whitespace-only
+   * or longer than 4,000 characters), shown inline rather than as a denial.
+   */
+  instruct?: (
+    input: ReviewerInstructionInput,
+  ) => Promise<void | { stale: true } | { invalid: true }>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,

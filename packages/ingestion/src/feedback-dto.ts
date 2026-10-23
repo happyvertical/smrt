@@ -36,6 +36,8 @@ export interface FeedbackExample {
   kind?: 'reviewer_routing';
   /** Reviewer routing only: `none` closed the item without an action (handlerId `none`). */
   routing?: { choice: 'handler' | 'none'; reason: string };
+  /** Reviewer guidance the judged suggestion was produced under; an example, never authority. */
+  instruction?: { id: string; digest: string; text: string };
 }
 export interface FeedbackReceipt {
   id: string;

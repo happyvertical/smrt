@@ -143,6 +143,39 @@ examples. A receiving item's provider grant cannot substitute for a source grant
 Superseded, revoked, deleted or incompatible sources are excluded. Current explicit human corrections
 take precedence: a generation carrying one does not retrieve learned examples.
 
+A judgment recorded on an action whose generation ran under a reviewer
+instruction (REVIEW.md) stores only a reference, `instruction: {id, digest}`,
+after verifying the generation's provenance against the authenticated
+extraction record. **Write side:** the reference is ~100 bytes, so instruction
+text never counts against the judgment's write budget (`feedback.maxBytes` /
+`policy.maxBytes`) and cannot make `recordFeedback` fail with `Feedback
+limit`. `retrieve` re-verifies the source record and joins the text, returning
+`{id, digest, text}`; a stored reference that no longer matches the source's
+record excludes the example. Because one long instruction joined at read time
+could otherwise push every selection that ranks it over budget and deny
+generation scope-wide, `recordFeedback` also builds that single joined example
+exactly as `retrieve` would and refuses with `Feedback instruction exceeds
+retrieval budget` (nothing is written) when it alone exceeds
+`min(feedback.maxBytes, handler policy.maxBytes)`. An example that fits exactly
+records and retrieves. **This guard covers only the single-example case** on the
+judged handler's own budget: retrieval still sums up to `maxExamples` examples
+and takes the minimum across *every* offered handler of the receiving item, so a
+multi-example selection, or a receiving item with a narrower handler budget, can
+still exceed the budget and fails closed as below. It is returned as part of the example so comparable later items see the guidance
+that produced the judged suggestion. It is example content only: it does not
+transfer to the receiving generation's configuration or prompt section, and it
+expands no catalog, candidate, permission or automation eligibility. **Read-side budget
+impact:** joined instruction text (up to 4,000 characters, more bytes for
+non-ASCII) counts toward the exact serialized selection budget — the narrowest
+of `feedback.maxBytes` and each offered handler's `policy.maxBytes` — like any
+other example field. The existing fail-closed rule is unchanged: an over-budget
+selection rejects with `Feedback limit` and generation records
+`provider_error` without provider I/O; examples are not silently trimmed. Hosts
+that enable reviewer instructions together with feedback should size
+`feedback.maxBytes` (and the policy ceilings) for at least
+`maxExamples × (4,000 characters of instruction + the example's own fields)`,
+or lower `maxExamples`.
+
 Full examples exist only in the authorized provider request. The SDK proposal
 adapter includes that typed selection in its serialized user message when
 present; disabled feedback leaves the original request shape unchanged. Saved generation

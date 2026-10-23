@@ -34,6 +34,7 @@ import {
   feedbackDiscoveryContext,
 } from './feedback-internal.js';
 import type { GenerationOutput } from './proposal-dto.js';
+import { reviewerInstructionView } from './reviewer-instruction.js';
 import type { IngestionOptions } from './server.js';
 
 type Row = Record<string, unknown>;
@@ -346,9 +347,16 @@ export class IntakeFeedbackService {
     for (const field of ['provider', 'model', 'version']) text(model[field]);
     text(provenance.promptVersion);
     text(provenance.configurationVersion);
+    // A judgment made under reviewer guidance references that guidance by id
+    // and digest only; retrieval joins the text from the source's own record,
+    // so instruction text never counts against the write budget.
+    const instruction = this.instructionFor(ctx);
     return {
       generation: true as const,
       query,
+      ...(instruction
+        ? { instruction: { id: instruction.id, digest: instruction.digest } }
+        : {}),
       model: {
         provider: String(model.provider),
         model: String(model.model),
@@ -360,6 +368,53 @@ export class IntakeFeedbackService {
       evidence: object(ctx.analysis).inputs,
       source: pin,
     };
+  }
+  /** The example exactly as retrieval returns it; shared by the write-time size check. */
+  private exampleOf(
+    id: string,
+    stored: string,
+    data: Row,
+    ctx: FeedbackActionContext,
+    guidance?: { id: string; digest: string; text: string },
+  ): FeedbackExample {
+    return {
+      feedbackId: id,
+      digest: stored,
+      itemId: ctx.itemId,
+      actionId: ctx.review.actionId,
+      revision: ctx.review.revision,
+      handlerId: ctx.handlerId,
+      handlerVersion: ctx.handlerVersion,
+      judgment: data.judgment as 'correct' | 'incorrect',
+      query: String(data.query),
+      args: object(data.args),
+      model: data.model as FeedbackExample['model'],
+      promptVersion: String(data.promptVersion),
+      configurationVersion: String(data.configurationVersion),
+      ...(guidance ? { instruction: guidance } : {}),
+    };
+  }
+  /**
+   * The verified reviewer instruction the action's generation ran under: the
+   * authenticated extraction record must match the generation's provenance.
+   */
+  private instructionFor(
+    ctx: FeedbackActionContext,
+  ): { id: string; digest: string; text: string } | undefined {
+    const provenance = object(
+      object(object(ctx.result.output).proposals).provenance,
+    );
+    const instructionRecord = object(
+      object(ctx.analysis).configuration,
+    ).reviewerInstruction;
+    const recorded = provenance.reviewerInstruction
+      ? object(provenance.reviewerInstruction)
+      : undefined;
+    if (!instructionRecord && !recorded) return undefined;
+    const view = reviewerInstructionView(instructionRecord);
+    if (!recorded || recorded.id !== view.id || recorded.digest !== view.digest)
+      throw new Error('Feedback instruction integrity');
+    return { id: view.id, digest: view.digest, text: view.text };
   }
   /** Internal saved-action gate; the execution owner supplies its transaction. */
   async assertActionLineage(
@@ -453,6 +508,32 @@ export class IntakeFeedbackService {
           { ...body, digest: digest(body) },
           frozen.supersedesId ?? null,
         );
+        // The judgment stores only the instruction reference, but retrieval
+        // joins its text. Refuse here, inside the transaction, if that single
+        // joined example could never fit the handler's read budget; otherwise
+        // every later retrieval ranking it would fail closed scope-wide.
+        const guidance = this.instructionFor(ctx);
+        if (guidance) {
+          const data = object(row.data);
+          const selection = {
+            version: this.config.version,
+            configurationDigest: this.configurationDigest(),
+            examples: [
+              this.exampleOf(
+                String(row.id),
+                String(data.digest),
+                data,
+                ctx,
+                guidance,
+              ),
+            ],
+          };
+          if (
+            Buffer.byteLength(JSON.stringify(selection)) >
+            Math.min(this.config.maxBytes, ctx.context.policy.maxBytes)
+          )
+            throw new Error('Feedback instruction exceeds retrieval budget');
+        }
         await this.authorize(ctx, 'capture');
         if (digest(routing) !== digest(this.routing(ctx)))
           throw new Error('Routing projection changed');
@@ -549,6 +630,7 @@ export class IntakeFeedbackService {
         async (ctx) => {
           await this.authorize(ctx, 'retrieve');
           await this.provenance(ctx);
+          const guidance = this.instructionFor(ctx);
           const [current] = await this.rows(
             ctx.db,
             'id=? AND kind=? AND NOT EXISTS (SELECT 1 FROM intake_feedback successor WHERE successor.tenant_id=intake_feedback.tenant_id AND successor.confidential_scope_id=intake_feedback.confidential_scope_id AND successor.supersedes_id=intake_feedback.id)',
@@ -568,6 +650,17 @@ export class IntakeFeedbackService {
             data.promptVersion !== input.promptVersion ||
             data.configurationVersion !== input.configurationVersion ||
             digest(data.model) !== digest(input.model)
+          )
+            return undefined;
+          // The stored reference must still name the source's verified record.
+          const reference = data.instruction
+            ? object(data.instruction)
+            : undefined;
+          if (
+            !!reference !== !!guidance ||
+            (reference &&
+              (reference.id !== guidance?.id ||
+                reference.digest !== guidance?.digest))
           )
             return undefined;
           const offered = input.offered.find(
@@ -591,21 +684,13 @@ export class IntakeFeedbackService {
             )
               return undefined;
           }
-          return {
-            feedbackId: String(current.id),
-            digest: String(stored),
-            itemId: ctx.itemId,
-            actionId: ctx.review.actionId,
-            revision: ctx.review.revision,
-            handlerId: ctx.handlerId,
-            handlerVersion: ctx.handlerVersion,
-            judgment: data.judgment as 'correct' | 'incorrect',
-            query: String(data.query),
-            args,
-            model: data.model as FeedbackExample['model'],
-            promptVersion: String(data.promptVersion),
-            configurationVersion: String(data.configurationVersion),
-          };
+          return this.exampleOf(
+            String(current.id),
+            String(stored),
+            data,
+            ctx,
+            guidance,
+          );
         },
         executor,
         input.providers ?? [input.model.provider],

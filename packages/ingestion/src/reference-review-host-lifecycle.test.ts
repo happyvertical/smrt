@@ -37,6 +37,7 @@ describe('reference review host provisioning', () => {
         result: { output: { proposals: { suggestions: [] } } },
       })),
       getEvidence: vi.fn(async () => []),
+      listReviewerInstructions: vi.fn(async () => []),
       listHandlers: vi.fn(async () => [{ id: 'host:draft', version: '1' }]),
     };
     const host = Object.assign(Object.create(ReferenceReviewHost.prototype), {
