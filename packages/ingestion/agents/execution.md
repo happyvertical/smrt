@@ -37,6 +37,34 @@ requires human review; machine authorization requires explicit evaluated opt-ins
 at all three authority layers and remains separate provenance from human review.
 The reference handlers always require review; no evaluation claim is made here.
 
+`operation: 'review_own'` is the submitter-scoped decision gate (#4085). The
+service accepts it only when the host's `authorize` result carries
+`submitter: true`, the resolved policy's `submitterReview` is enabled (the
+application layer opts in; tenant/source layers may only set it `false`), and
+the item's server-recorded `submitter_id` (the receiving service's authenticated
+`scope.actorId`) equals the current actor and the captured
+`execution.principalId`; apply rechecks that a `review_own` decision's reviewer
+is that submitter and principal. All other `review` checks apply
+unchanged; `correct` is refused. The decision row records `mode` and
+`selfDecision` (decider is the submitter, in either mode), and `feedbackEvent` copies them as `decisionMode`/`selfDecision`;
+`authorizeAutomatic` never reads human decisions, so a self-decision cannot
+become automation evidence. `listOwnProposals` reads with the ordinary `read`
+operation per handler after an item-level `read` check. Unreadable items are
+skipped before projection (1000 hidden rows per call, then `Own proposal scan
+limit`) and the cursor names only emitted items with a confirmed readable
+successor. On this surface every host `assertTarget` throw is mapped to the
+exported `IntakeAccessDeniedError` (message `Intake unavailable`, the type of
+every execution denial), so the item becomes an `unavailable` entry and host
+error text is not returned; hosts need no change. Other errors propagate,
+including a throwing grant store in `authorize`. The feedback anti-widening
+check also refuses a re-evaluation that turns `submitterReview` on.
+Deletion redaction blanks `submitter_id` and `owner_key` with the payloads and
+drops `execution.principalId` unless an external action is still `executing`
+or `outcome_unknown`; `finish` and the reconcile state update release it once
+none is left, and later deletion sweeps do the same.
+Hosts whose `authorize` switches exhaustively on the operation fail closed for
+the new value until they opt in.
+
 `mutationBoundary: 'serialized'` is an explicit host guarantee, not an inferred
 property of a permissions array: grant revocation must serialize with the supplied
 transaction, or the owning mutation must revalidate under its own lock. The host

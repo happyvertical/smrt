@@ -255,6 +255,121 @@ and `maxSuggestions` are each capped at 20; `timeoutMs` is capped at 2147483647.
 Invalid limits are rejected when constructing `IngestionService`, before receipt
 or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.
 
+## Trusted internal sources
+
+A host with a trusted internal source, such as chat messages recorded in
+smrt-messages, can receive **by reference**, interpret **inline**, and let the
+**submitter** confirm their own proposal (#4085). None of these modes changes
+copied receipts: their identity, validation, queueing and retention are
+untouched, and a replay that switches mode conflicts.
+
+**Receive by reference.** A part may be `{ partId, reference: { owner, id,
+version? }, snapshot: { text } | { structured } }` instead of bytes. The
+service derives UTF-8 bytes once (`text/plain` or canonical `application/json`;
+text, reference fields and owner identity containing NUL or unpaired
+surrogates are rejected `invalid` on every engine, and `expireOwned` refuses
+them, so distinct owners can never collapse onto one stored key),
+hashes them into the receipt identity, and stores only that snapshot in the
+durable evidence row; no AssetStore object or asset record is created, and
+`readEvidence` serves the snapshot after the same hash/length check. The
+reference is identity and provenance, never authority. Such parts must be
+text or structured; files still arrive as copied bytes.
+
+**Owner-bound retention.** `retention: { kind: 'owner', owner: { kind, id },
+version, expiresAt, replayUntil, acceptAfter }` binds the receipt to its
+owner's lifecycle. The time deadlines remain required and validated exactly as
+before: they are the hard privacy ceiling, and `sweepRetention` and execution's
+policy ceiling still apply. When the owner is deleted the host calls
+`expireOwned({ kind, id })` from its deletion path; every active receipt bound
+to that owner is revoked and removed through the existing `expire` /
+`repairDeletions` protocol, which redacts the snapshot together with every
+other payload, and the deleted delivery is never re-admitted. The owner key is
+recorded in the indexed `owner_key` column (`<kind>:<id>`, so `kind` cannot
+contain `:`). Deletion redaction blanks `owner_key` and `submitter_id` together
+with every payload: only the receipt identity (`delivery_key`) and the captured
+ceiling survive, and the ceiling loses `execution.principalId` unless an
+external action is still `executing` or `outcome_unknown`. So once nothing is
+left to reconcile, a redacted row no longer links an owner to an actor, and a
+repeated `expireOwned` finds nothing. Redaction also overwrites every
+identity- or content-derived digest (`payload_digest`, `scope_digest`, analysis
+`input_digest`, attempt `output_digest`, plan `digest` and proposal, decision
+and execution `binding_hash`) with the fixed marker `redacted`; successful
+result digests remain as the replay tombstone. The principal is retained only
+for an external action that was still in flight when the item was redacted,
+because reconciling it authorizes under that principal; it is dropped when that
+reconciliation reaches a final state, or by the next `repairDeletions` /
+`sweepRetention` pass. For a self-approvable receipt the principal is the
+submitter, so until then it identifies the sender. Later deletion sweeps pass
+this redacted ceiling to the host's `authorize({ operation: 'delete' })`, so
+delete authorization must not depend on `execution.principalId`: a host that
+requires it would refuse, and the sweep would stop with later deletion intents
+still pending. A successful result digest
+is a plain SHA-256 of the canonical result, so it can confirm a guessed result:
+keep handler results to record ids or opaque references, never content.
+
+A replay of a deleted delivery is rejected and never becomes fresh work. While
+deletion is still pending it returns `rejected/expired`; once redaction has
+completed the identity digests are gone, so it returns `rejected/conflict`.
+Sources treat both as terminal and must not retry. `delivery_key` stays in plaintext because it is
+the unique receipt identity and the package holds no secret to key it: hosts
+must use an opaque value (for example a random UUID recorded with the message)
+and must not encode owner ids, sender ids or content in `deliveryKey`.
+
+Host ordering for owner deletion: first stop issuing receipts for the owner,
+then call `expireOwned`, and call it again once in-flight receipts settle (or
+from a periodic sweep). A receipt still in flight when its owner is expired
+returns `{ kind: 'rejected', category: 'expired' }` rather than `accepted`, but
+one that reserved its row after the first `expireOwned` is only found by the
+later call; until then the time ceiling bounds it. Services are confidential-scope bound, so
+a host whose owner has receipts in several confidential scopes calls
+`expireOwned` from each scope's service; a foreign tenant or scope sees zero.
+
+**Inline mode.** `receive({ ..., dispatch: 'inline' })` requires text/structured
+parts only, records the route provenance but **no deliverable dispatch intent**
+for any revision (every intent is retained as `completed`, so no worker or
+`repairDispatches` ever picks it up), and does not enqueue. The host then calls
+`interpretInline(itemId, { requestId, extraction: { configurationRevision,
+limits } })`, which runs in-process exactly what the job path runs: an
+immutable `stage: 'extract'` revision claimed under a fenced lease and
+extracted with the built-in UTF-8 extractor, then `prepareGeneration` and the
+`stage: 'interpret'` revision with the same analysis lease, catalog-live
+checks, provenance and failure categories as `generateProposals`. A retry with
+the same `requestId` replays the immutable revisions, including when two
+identical calls race. The interpretation is appended under the item lock only
+while its pinned extraction is still the latest revision; if another request
+reprocessed the item meanwhile it fails with `GenerationSourceStaleError` (the
+general latest-extraction check every interpretation append runs, #4228) or,
+for a pin whose extraction attempt was replaced, `Generation source changed`. The result reports each
+stage's attempt and safe error and, when generation completed, the authorized
+`getCompletedAnalysis` snapshot. Inline is for send-triggered suggestions that
+must not depend on the scheduler; it is not a bypass of review or execution.
+
+**Submitter-scoped approval.** The service records `submitter_id` as the
+authenticated `scope.actorId` of the receiving service, server-side; payload
+and source metadata never supply it. `listOwnProposals({ cursor?, limit? })`
+lists only this actor's own active submissions with their saved review pages,
+reloaded under current item/handler/target authority, without the reviewer
+inbox. A submission the actor can no longer read is skipped before projection
+and never named by the cursor; a readable one whose reviews are denied by
+ingestion authority is returned as `{ item, reviews: null, unavailable: true }`
+with no reason, so one revoked grant never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
+`correct`) under the `review_own` authority: the host's execution `authorize`
+must return `submitter: true` for that actor, the application policy must opt
+in with `submitterReview: true` (narrower layers may only disable it), and the
+item's recorded submitter must equal the current actor. Every other check is
+the ordinary one, and `applyAction` remains the single once-only effect path
+under the approver's live grants. Because the effect runs as the receipt's
+captured `capturedCeiling.execution.principalId`, `review_own` additionally
+requires that principal to be the submitter itself (`submitter_id ===
+scope.actorId === principalId`), checked under the item lock at decision time
+and again at apply; a receipt captured for a bot or service principal can only
+be approved by a reviewer. The decision is recorded with `mode` (`review` or
+`review_own`) and `selfDecision`, which is true whenever the deciding actor is
+the item's submitter, in either mode (mirrored as `decisionMode` /
+`selfDecision` on feedback events), so a self-confirmation is never mistaken
+for independent review and never contributes to automation eligibility. See
+[REVIEW.md](REVIEW.md) and [execution integration](agents/execution.md).
+
 ## Dispatch route ownership and legacy recovery
 
 A receipt retains a versioned, server-owned `jobTarget` snapshot, and every

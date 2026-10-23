@@ -1339,6 +1339,8 @@ export function executionSuite(
       ['succeeded', 'sweep'],
       ['unknown', 'sweep'],
       ['not_applied', 'sweep'],
+      // The action is still `executing` (submission in flight) at redaction.
+      ['submission', 'sweep'],
       ['succeeded', 'deadline'],
       ['unknown', 'deadline'],
       ['not_applied', 'deadline'],
@@ -1424,10 +1426,24 @@ export function executionSuite(
             ? service.applyAction(actionId)
             : service.reconcileAction(actionId);
         await atProvider;
+        const principal = async () => {
+          const [row] = (
+            await db.query(
+              'SELECT data FROM intake_items WHERE id=?',
+              input.itemId,
+            )
+          ).rows;
+          const data =
+            typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+          return data.capturedCeiling?.execution?.principalId;
+        };
         if (expiry === 'sweep') {
           await new IngestionService({ ...options, db: peer }).expire(
             input.itemId,
           );
+          // Redaction keeps the principal the unfinished external action
+          // still needs for reconciliation (#4085).
+          expect(await principal()).toBeTruthy();
         } else {
           retentionMs = expiry === 'policy' ? 1000 : undefined;
           clock = new Date(
@@ -1464,6 +1480,24 @@ export function executionSuite(
           typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
         ).toEqual({});
         expect(JSON.stringify(result)).not.toContain('must disappear');
+        if (expiry === 'sweep') {
+          // Released once reconciliation is final; an unknown outcome keeps it.
+          if (outcome === 'unknown') expect(await principal()).toBeTruthy();
+          else expect(await principal()).toBeUndefined();
+          await service.repairDeletions();
+          if (outcome === 'unknown') expect(await principal()).toBeTruthy();
+          else expect(await principal()).toBeUndefined();
+          if (outcome === 'unknown') {
+            // Fixture-only: the outcome later became final outside this
+            // service; the next deletion sweep releases the principal.
+            await db.query(
+              "UPDATE intake_actions SET state='failed' WHERE id=?",
+              actionId,
+            );
+            await service.repairDeletions();
+            expect(await principal()).toBeUndefined();
+          }
+        }
       });
     it('honors optional request evaluator versions at authorization and apply', async () => {
       const authorize = config.authorize;

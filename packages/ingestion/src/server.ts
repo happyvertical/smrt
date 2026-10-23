@@ -17,15 +17,22 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   AnalysisOutput,
+  InlineInterpretation,
+  InlineInterpretationInput,
   IntakeEvidenceDTO,
   IntakeFailure,
   IntakeItemDTO,
   IntakeLimits,
+  OwnProposalsInput,
   ReceiptResult,
 } from './dto.js';
 import { generationSnapshotRead, listReadGate } from './execution-internal.js';
+import { extractAnalysis } from './extraction.js';
+import { extractWithProviders } from './extraction-providers.js';
+
 import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
+import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
 import './models.js';
 import type { IntakeExecutionService } from './execution.js';
 import type {
@@ -86,22 +93,54 @@ export interface IntakePart {
   /** Original name as the source presented it; presentation only, never identity. */
   filename?: string;
 }
+/** A snapshot received by reference: the lifecycle owner keeps the bytes; no
+ * blob copy is preserved. Only the text/structured snapshot a stage needs is
+ * retained, redacted by the ordinary deletion path. The reference is identity,
+ * never authority. */
+export interface IntakeReferencePart {
+  partId: string;
+  parentPartId?: string;
+  /** Host-typed owner record the snapshot was read from (for example `message`). */
+  reference: { owner: string; id: string; version?: string };
+  snapshot: { text: string } | { structured: Record<string, unknown> };
+}
+/** Lifecycle owner for owner-bound retention; `kind` is host-typed. */
+export interface IntakeOwner {
+  kind: string;
+  id: string;
+}
+/** Host-resolved retention. Deadlines are always required: in `owner` mode they
+ * are the hard privacy ceiling while `expireOwned` follows the owner's lifecycle. */
+export type IntakeRetention =
+  | {
+      kind?: 'time';
+      version: string;
+      expiresAt: Date;
+      replayUntil: Date;
+      acceptAfter: Date;
+    }
+  | {
+      kind: 'owner';
+      owner: IntakeOwner;
+      version: string;
+      expiresAt: Date;
+      replayUntil: Date;
+      acceptAfter: Date;
+    };
 /** Host-resolved delivery and retention policy, never untrusted content labels. */
 export interface ReceiveInput {
   sourceId: string;
   sourceVersion: string;
   deliveryKey: string;
   deliveredAt: Date;
-  parts: IntakePart[];
+  parts: Array<IntakePart | IntakeReferencePart>;
   capturedCeiling: Record<string, unknown>;
-  retention: {
-    version: string;
-    expiresAt: Date;
-    replayUntil: Date;
-    acceptAfter: Date;
-  };
+  retention: IntakeRetention;
   limits: IntakeLimits;
   traceId?: string;
+  /** `inline` records no queued work for any revision; the host runs
+   * `interpretInline` in-process. Requires text/structured parts only. */
+  dispatch?: 'job' | 'inline';
 }
 /** One inbox page request. Filters apply in the query, before the page is cut. */
 export interface ListItemsInput {
@@ -395,6 +434,106 @@ function decodeItemCursor(cursor: string): { receivedAt: string; id: string } {
 function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
 }
+const inlineMedia = new Set(['text/plain', 'application/json']);
+/** Fixed marker for digests overwritten by privacy redaction. */
+const REDACTED = 'redacted';
+/** Content- or identity-derived digests; successful result digests are kept as
+ * the documented replay tombstone. */
+const REDACTED_DIGESTS = [
+  ['intake_analyses', 'input_digest'],
+  ['intake_analysis_attempts', 'output_digest'],
+  ['intake_plans', 'digest'],
+  ['intake_proposals', 'binding_hash'],
+  ['intake_review_decisions', 'binding_hash'],
+  ['intake_executions', 'binding_hash'],
+] as const;
+
+function mediaKind(mediaType: string): string {
+  return mediaType.split(';')[0].trim().toLowerCase();
+}
+function ownerKey(owner: IntakeOwner): string {
+  nonempty(owner.kind);
+  nonempty(owner.id);
+  // Distinct owners must never collapse onto one stored key (PostgreSQL would
+  // replace unpaired surrogates and reject NUL), so both parts must be storable.
+  if (
+    owner.kind.includes(':') ||
+    !storableText(owner.kind) ||
+    !storableText(owner.id)
+  )
+    throw new Error('Invalid intake owner');
+  return `${owner.kind}:${owner.id}`;
+}
+/** PostgreSQL JSON cannot hold NUL or unpaired surrogates; SQLite can. Reject
+ * them at validation so both engines answer `invalid` rather than diverge. */
+function storableText(value: string): boolean {
+  if (value.includes('\u0000')) return false;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+type ReceivedPart = IntakePart & {
+  hash: string;
+  retain: 'copy' | 'reference';
+  snapshot?: string;
+};
+/** Normalize a copied or referenced part; referenced snapshots become bytes once. */
+function receivedPart(part: IntakePart | IntakeReferencePart): ReceivedPart {
+  nonempty(part.partId);
+  if (!('reference' in part)) {
+    nonempty(part.mediaType);
+    if (!(part.bytes instanceof Uint8Array)) throw new Error('Invalid part');
+    const bytes = Buffer.from(part.bytes);
+    const hash = bytesHash(bytes);
+    if (part.expectedHash && part.expectedHash !== hash)
+      throw new Error('Invalid hash');
+    // #4243: a copied part's presented filename is validated, never identity.
+    if (part.filename !== undefined) filename(part.filename);
+    return { ...part, bytes, hash, retain: 'copy' };
+  }
+  const reference = object(part.reference);
+  nonempty(reference.owner);
+  nonempty(reference.id);
+  if (reference.version !== undefined) nonempty(reference.version);
+  for (const value of [reference.owner, reference.id, reference.version])
+    if (typeof value === 'string' && !storableText(value))
+      throw new Error('Invalid reference');
+  const snapshot = object(part.snapshot);
+  let mediaType: string;
+  let value: string;
+  if ('text' in snapshot && !('structured' in snapshot)) {
+    if (typeof snapshot.text !== 'string' || !storableText(snapshot.text))
+      throw new Error('Invalid snapshot');
+    mediaType = 'text/plain';
+    value = snapshot.text;
+  } else if ('structured' in snapshot && !('text' in snapshot)) {
+    mediaType = 'application/json';
+    value = canonical(object(snapshot.structured));
+  } else throw new Error('Invalid snapshot');
+  const bytes = Buffer.from(value, 'utf8');
+  return {
+    partId: part.partId,
+    ...(part.parentPartId === undefined
+      ? {}
+      : { parentPartId: part.parentPartId }),
+    mediaType,
+    bytes,
+    hash: bytesHash(bytes),
+    sourceReference: {
+      owner: reference.owner,
+      id: reference.id,
+      version: reference.version ?? '',
+    },
+    retain: 'reference',
+    snapshot: value,
+  };
+}
 function date(value: Date): string {
   if (!(value instanceof Date) || !Number.isFinite(value.getTime()))
     throw new Error('Invalid intake date');
@@ -482,6 +621,13 @@ export class IngestionService {
   }
   async getAction(actionId: string) {
     return (await this.execution()).getAction(actionId);
+  }
+  /** Own-submission review surface; see execution for its authority gate. */
+  async listOwnProposals(input: OwnProposalsInput = {}) {
+    return (await this.execution()).listOwnProposals(input);
+  }
+  async submitOwnDecision(input: ReviewInput) {
+    return (await this.execution()).submitOwnDecision(input);
   }
   async authorizeAutomatic(actionId: string) {
     return (await this.execution()).authorizeAutomatic(actionId);
@@ -683,7 +829,9 @@ export class IngestionService {
   async receive(input: ReceiveInput): Promise<ReceiptResult> {
     await this.authorize('receive', { capturedCeiling: input.capturedCeiling });
     const now = this.now();
-    let parts: Array<IntakePart & { hash: string }>;
+    let parts: ReceivedPart[];
+    let owner: IntakeOwner | null = null;
+    const inline = input.dispatch === 'inline';
     try {
       for (const value of [
         input.sourceId,
@@ -692,6 +840,21 @@ export class IngestionService {
         input.retention.version,
       ])
         nonempty(value);
+      if (
+        input.dispatch !== undefined &&
+        !['job', 'inline'].includes(input.dispatch)
+      )
+        throw new Error('Invalid dispatch mode');
+      const retention = input.retention;
+      if (
+        retention.kind !== undefined &&
+        !['time', 'owner'].includes(retention.kind)
+      )
+        throw new Error('Invalid retention mode');
+      if (retention.kind === 'owner') {
+        ownerKey(retention.owner);
+        owner = { kind: retention.owner.kind, id: retention.owner.id };
+      }
       for (const value of Object.values(input.limits)) integer(value);
       date(input.deliveredAt);
       date(input.retention.expiresAt);
@@ -708,20 +871,17 @@ export class IngestionService {
       const ids = new Set<string>();
       let total = 0;
       parts = input.parts.map((part) => {
-        nonempty(part.partId);
-        nonempty(part.mediaType);
-        if (ids.has(part.partId) || !(part.bytes instanceof Uint8Array))
-          throw new Error('Invalid part');
-        ids.add(part.partId);
-        total += part.bytes.byteLength;
-        const hash = bytesHash(part.bytes);
-        if (part.expectedHash && part.expectedHash !== hash)
-          throw new Error('Invalid hash');
-        if (part.filename !== undefined) filename(part.filename);
-        return { ...part, bytes: Buffer.from(part.bytes), hash };
+        const received = receivedPart(part);
+        if (ids.has(received.partId)) throw new Error('Invalid part');
+        ids.add(received.partId);
+        total += received.bytes.byteLength;
+        return received;
       });
       if (total > input.limits.maxBytes)
         return { kind: 'rejected', category: 'limit' };
+      // Inline receipts never queue work, so every part must be stage-ready text.
+      if (inline && parts.some((p) => !inlineMedia.has(mediaKind(p.mediaType))))
+        throw new Error('Inline receipt requires text or structured parts');
       for (const part of parts)
         if (
           part.parentPartId &&
@@ -740,6 +900,7 @@ export class IngestionService {
     } catch {
       return { kind: 'rejected', category: 'invalid' };
     }
+    // Existing copied receipts keep their exact identity; new modes extend it.
     const identity = parts
       .map((p) => ({
         partId: p.partId,
@@ -748,6 +909,7 @@ export class IngestionService {
         hash: p.hash,
         length: p.bytes.byteLength,
         sourceReference: p.sourceReference ?? null,
+        ...(p.retain === 'reference' ? { retain: 'reference' } : {}),
       }))
       .sort((a, b) => a.partId.localeCompare(b.partId));
     const payloadDigest = digest(identity);
@@ -755,6 +917,8 @@ export class IngestionService {
       scope: this.scope,
       ceiling: input.capturedCeiling,
       sourceVersion: input.sourceVersion,
+      ...(inline ? { dispatch: 'inline' } : {}),
+      ...(owner ? { owner } : {}),
     });
     const reservation = await this.tx(async (db) => {
       await this.authorize(
@@ -783,12 +947,18 @@ export class IngestionService {
           replay_until: date(input.retention.replayUntil),
           cancelled: false,
           trace_id: input.traceId ?? randomUUID(),
+          // The submitter is the authenticated actor of this service, recorded
+          // server-side; payload or source metadata never supplies it.
+          submitter_id: this.scope.actorId,
+          owner_key: owner ? ownerKey(owner) : '',
           data: canonical({
             capturedCeiling: input.capturedCeiling,
             limits: input.limits,
             retentionVersion: input.retention.version,
             deliveredAt: date(input.deliveredAt),
             dispatchTarget: this.dispatchTarget,
+            ...(inline ? { dispatch: 'inline' } : {}),
+            ...(owner ? { retentionOwner: owner } : {}),
           }),
         },
         'tenant_id,source_id,delivery_key',
@@ -829,8 +999,10 @@ export class IngestionService {
             parent_evidence_id: part.parentPartId
               ? evidenceIds.get(part.parentPartId)
               : null,
-            asset_id: randomUUID(),
-            state: 'intent',
+            // A referenced snapshot owns no asset: it is durable in the ledger
+            // row itself and leaves with the row's ordinary redaction.
+            asset_id: part.retain === 'reference' ? null : randomUUID(),
+            state: part.retain === 'reference' ? 'durable' : 'intent',
             content_hash: part.hash,
             byte_length: part.bytes.byteLength,
             media_type: part.mediaType,
@@ -840,6 +1012,9 @@ export class IngestionService {
               ...(part.filename === undefined
                 ? {}
                 : { filename: part.filename }),
+              ...(part.retain === 'reference'
+                ? { retain: 'reference', snapshot: part.snapshot }
+                : {}),
             }),
           });
       }
@@ -851,8 +1026,10 @@ export class IngestionService {
     const itemId = String(item.id);
     await this.point('reserved');
     if (item.receipt_state === 'ready') {
+      if (await this.revokedBeforeAck(itemId))
+        return { kind: 'rejected', category: 'expired' };
       try {
-        await this.repairDispatches();
+        if (!inline) await this.repairDispatches();
       } catch {
         return { kind: 'retry', category: 'unavailable' };
       }
@@ -874,9 +1051,13 @@ export class IngestionService {
         now.toISOString(),
       ),
     );
-    if (!claimed.rows.length) return { kind: 'retry', category: 'busy' };
+    if (!claimed.rows.length)
+      return (await this.revokedBeforeAck(itemId))
+        ? { kind: 'rejected', category: 'expired' }
+        : { kind: 'retry', category: 'busy' };
     try {
-      for (const part of parts) await this.preserve(itemId, part, token);
+      for (const part of parts)
+        if (part.retain === 'copy') await this.preserve(itemId, part, token);
       await this.point('evidence');
       await this.tx(async (db) => {
         await this.lock(db, itemId);
@@ -898,6 +1079,7 @@ export class IngestionService {
           this.now().toISOString(),
         );
         if (!updated.rows.length) throw new Error('Lease lost');
+        // An inline receipt retains its route provenance but no deliverable intent.
         await this.insert(
           db,
           'intake_dispatches',
@@ -905,7 +1087,7 @@ export class IngestionService {
             item_id: itemId,
             stage: 'analyze',
             revision: 1,
-            state: 'pending',
+            state: inline ? 'completed' : 'pending',
             job_id: '',
             deliveries: 0,
             data: canonical({ dispatchTarget: this.dispatchTarget }),
@@ -914,8 +1096,10 @@ export class IngestionService {
         );
       });
       await this.point('ready');
-      await this.repairDispatches();
+      if (!inline) await this.repairDispatches();
       await this.point('ack');
+      if (await this.revokedBeforeAck(itemId))
+        return { kind: 'rejected', category: 'expired' };
       return {
         kind: reservation.created ? 'accepted' : 'duplicate',
         itemId,
@@ -931,8 +1115,15 @@ export class IngestionService {
           token,
         ),
       );
+      // An owner deletion that won the race is final, not a retryable fault.
+      if (await this.revokedBeforeAck(itemId))
+        return { kind: 'rejected', category: 'expired' };
       return { kind: 'retry', category: 'unavailable' };
     }
+  }
+  private async revokedBeforeAck(itemId: string): Promise<boolean> {
+    const [row] = await this.rows(this.db, 'intake_items', 'id=?', [itemId]);
+    return !row || row.visibility !== 'active';
   }
   private async preserve(
     itemId: string,
@@ -1888,6 +2079,27 @@ export class IngestionService {
       [itemId, evidenceId],
     );
     if (!e) throw new Error('Intake unavailable');
+    const bytes = await this.evidenceBytes(e);
+    if (
+      bytes.length !== Number(e.byte_length) ||
+      bytesHash(bytes) !== e.content_hash
+    )
+      throw new Error('Intake integrity');
+    await this.item(itemId, 'read');
+    return bytes;
+  }
+  private async evidenceBytes(e: Row): Promise<Uint8Array> {
+    const data = object(e.data);
+    if (data.retain === 'reference') {
+      // A referenced snapshot never owns an asset; one that does is corrupt.
+      if (e.asset_id) throw new Error('Intake integrity');
+      if (typeof data.snapshot !== 'string')
+        throw new Error('Intake unavailable');
+      return Buffer.from(data.snapshot, 'utf8');
+    }
+    // An asset-less row without its snapshot marker is corrupt; never look up
+    // a null asset identifier (PostgreSQL rejects it as an invalid UUID).
+    if (!e.asset_id) throw new Error('Intake unavailable');
     const asset = await withTenant({ tenantId: this.scope.tenantId }, () =>
       this.options.assets.collection.get({ id: String(e.asset_id) }),
     );
@@ -1897,14 +2109,7 @@ export class IngestionService {
       asset.sourceUri !== e.source_uri
     )
       throw new Error('Intake unavailable');
-    const bytes = await this.options.assets.store.read(asset);
-    if (
-      bytes.length !== Number(e.byte_length) ||
-      bytesHash(bytes) !== e.content_hash
-    )
-      throw new Error('Intake integrity');
-    await this.item(itemId, 'read');
-    return bytes;
+    return this.options.assets.store.read(asset);
   }
   /** Append an immutable input revision. Reprocessing never creates actions. */
   async analyze(
@@ -1934,6 +2139,8 @@ export class IngestionService {
     itemId: string,
     configuration: Record<string, unknown>,
     requestKey: string,
+    /** Inline only: the extraction attempt the interpretation pins. */
+    pinnedSourceAttemptId?: string,
   ): Promise<{ id: string; revision: number }> {
     nonempty(requestKey);
     const configDigest = digest(configuration);
@@ -1974,6 +2181,15 @@ export class IngestionService {
           Number.NEGATIVE_INFINITY,
         );
       if (pinned !== latestExtraction) throw new GenerationSourceStaleError();
+    }
+    // Inline only, after #4228's general check: the pinned extraction must
+    // also be the latest revision of any stage and its current attempt.
+    if (pinnedSourceAttemptId !== undefined) {
+      const latest = previous.find(
+        (a) => Number(a.revision) === Number(item.analysis_revision),
+      );
+      if (!latest || latest.current_attempt_id !== pinnedSourceAttemptId)
+        throw new Error('Generation source changed');
     }
     const evidence = await this.rows(
       db,
@@ -2028,7 +2244,8 @@ export class IngestionService {
         item_id: itemId,
         stage: 'analyze',
         revision,
-        state: 'pending',
+        state:
+          object(item.data).dispatch === 'inline' ? 'completed' : 'pending',
         job_id: '',
         deliveries: 0,
         data: canonical({ dispatchTarget: this.dispatchTarget }),
@@ -2036,6 +2253,182 @@ export class IngestionService {
       'tenant_id,item_id,stage,revision',
     );
     return { id: String(analysis.id), revision };
+  }
+  /** Run one fenced stage in-process and reload its terminal projection. */
+  private async inlineStage(
+    itemId: string,
+    revision: number,
+    work: (lease: AnalysisLease) => Promise<unknown>,
+  ): Promise<InlineInterpretation['extraction']> {
+    const lease = await this.claimAnalysis(itemId, revision, 'inline');
+    if (lease) await work(lease);
+    return this.tx(async (db) => {
+      await this.lock(db, itemId);
+      await this.item(itemId, 'process', db);
+      const [analysis] = await this.rows(
+        db,
+        'intake_analyses',
+        'item_id=? AND revision=?',
+        [itemId, revision],
+      );
+      if (!analysis) throw new Error('Analysis unavailable');
+      const [attempt] = analysis.current_attempt_id
+        ? await this.rows(
+            db,
+            'intake_analysis_attempts',
+            'id=? AND item_id=?',
+            [analysis.current_attempt_id, itemId],
+          )
+        : [];
+      if (
+        !attempt ||
+        !['completed', 'partial', 'needs_attention', 'failed'].includes(
+          String(attempt.state),
+        )
+      )
+        throw new Error('Inline interpretation busy');
+      return {
+        analysisId: String(analysis.id),
+        revision,
+        attemptId: String(attempt.id),
+        state: String(
+          attempt.state,
+        ) as InlineInterpretation['extraction']['state'],
+        error: attempt.safe_error
+          ? (String(attempt.safe_error) as IntakeFailure)
+          : null,
+      };
+    });
+  }
+  /** Documented in-process receive-to-proposals path for `dispatch: 'inline'`
+   * receipts. Extraction (UTF-8 text/structured only) and interpretation use the
+   * same immutable revisions, fenced leases, catalog-live checks, provenance and
+   * failure categories as the job path; no queue intent is created or delivered. */
+  async interpretInline(
+    itemId: string,
+    input: InlineInterpretationInput,
+  ): Promise<InlineInterpretation> {
+    nonempty(input.requestId);
+    if (!storableText(input.requestId))
+      throw new Error('Invalid intake identifier');
+    if (
+      typeof input.extraction?.configurationRevision !== 'string' ||
+      !input.extraction.configurationRevision ||
+      !storableText(input.extraction.configurationRevision)
+    )
+      throw new Error('Invalid extraction configuration');
+    const item = await this.item(itemId, 'process');
+    if (object(item.data).dispatch !== 'inline')
+      throw new Error('Inline interpretation requires an inline receipt');
+    const extraction = {
+      configurationRevision: input.extraction.configurationRevision,
+      limits: structuredClone(input.extraction.limits),
+    };
+    const requested = await this.analyze(
+      itemId,
+      { stage: 'extract', extraction },
+      `inline:extract:${input.requestId}`,
+    );
+    const extracted = await this.inlineStage(
+      itemId,
+      requested.revision,
+      (lease) =>
+        extractAnalysis(
+          this,
+          lease,
+          { extract: (request) => extractWithProviders(request, {}) },
+          extraction,
+        ),
+    );
+    if (!['completed', 'partial'].includes(extracted.state))
+      return { itemId, extraction: extracted };
+    const interpretKey = `inline:interpret:${input.requestId}`;
+    // A retried request replays its immutable interpretation revision instead
+    // of preparing against a source that is no longer the current revision.
+    const interpretation =
+      (await this.analysisByRequest(itemId, interpretKey)) ??
+      (await this.appendInterpretation(
+        itemId,
+        extracted.attemptId,
+        interpretKey,
+      ));
+    const generation = await this.inlineStage(
+      itemId,
+      interpretation.revision,
+      (lease) => this.generateProposals(lease),
+    );
+    if (!['completed', 'partial'].includes(generation.state))
+      return { itemId, extraction: extracted, generation };
+    return {
+      itemId,
+      extraction: extracted,
+      generation,
+      analysis: await this.getCompletedAnalysis(itemId, generation.attemptId),
+    };
+  }
+  /** Prepare outside the lock (it reads catalog and analysis), then append
+   * under it with the source pin rechecked. A concurrent identical request
+   * that appended first makes preparation fail; its revision is the replay. */
+  private async appendInterpretation(
+    itemId: string,
+    sourceAttemptId: string,
+    requestKey: string,
+  ): Promise<{ id: string; revision: number }> {
+    await this.point('inline:replay-miss');
+    let configuration: Record<string, unknown>;
+    try {
+      configuration = structuredClone(
+        await this.prepareGeneration(itemId, sourceAttemptId),
+      );
+    } catch (error) {
+      const replay = await this.analysisByRequest(itemId, requestKey);
+      if (replay) return replay;
+      throw error;
+    }
+    await this.point('inline:prepared');
+    return this.tx((db) =>
+      this.appendAnalysis(
+        db,
+        itemId,
+        configuration,
+        requestKey,
+        sourceAttemptId,
+      ),
+    );
+  }
+  private async analysisByRequest(
+    itemId: string,
+    requestKey: string,
+  ): Promise<{ id: string; revision: number } | null> {
+    const found = (
+      await this.rows(this.db, 'intake_analyses', 'item_id=?', [itemId])
+    ).find((row) => object(row.data).requestKey === requestKey);
+    return found
+      ? { id: String(found.id), revision: Number(found.revision) }
+      : null;
+  }
+  /** Owner-lifecycle hook: expire every active receipt bound to a deleted owner
+   * through the ordinary revoke-then-delete path. Returns the number scheduled. */
+  async expireOwned(owner: IntakeOwner): Promise<number> {
+    const key = ownerKey(owner);
+    const items = await this.rows(
+      this.db,
+      'intake_items',
+      "owner_key=? AND visibility='active'",
+      [key],
+    );
+    try {
+      for (const item of items) await this.scheduleExpiry(String(item.id));
+    } catch (error) {
+      try {
+        await this.repairDeletions();
+      } catch {
+        // Durable intents remain available to the next authorized repair.
+      }
+      throw error;
+    }
+    await this.repairDeletions();
+    return items.length;
   }
 
   /** Record an authenticated split correction and queue fresh extraction, never copy model output. */
@@ -3443,7 +3836,10 @@ export class IngestionService {
           // database record has already been pruned.
           await this.options.assets.store.removeFile(asset);
         }
-      if (intent.state === 'completed') continue;
+      if (intent.state === 'completed') {
+        await this.releaseRedactedPrincipal(itemId);
+        continue;
+      }
       await this.options.purgeDerived({
         tenantId: this.scope.tenantId,
         itemId,
@@ -3467,11 +3863,32 @@ export class IngestionService {
           this.scope.confidentialScopeId,
           itemId,
         );
+        // The owner and submitter links are payload provenance, not replay
+        // identity: deletion severs them together with every other payload.
+        // Digests over actor, owner, text or arguments would let a deleted
+        // receipt be linked to its sender or a guessed text be confirmed.
+        // Replay after redaction is already refused, so none are needed.
+        for (const [table, column] of REDACTED_DIGESTS)
+          await db.query(
+            `UPDATE ${table} SET ${column}=? WHERE tenant_id=? AND confidential_scope_id=? AND item_id=?`,
+            REDACTED,
+            this.scope.tenantId,
+            this.scope.confidentialScopeId,
+            itemId,
+          );
         await db.query(
-          "UPDATE intake_items SET data=?,trace_id='' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+          "UPDATE intake_items SET data=?,trace_id='',submitter_id='',owner_key='',payload_digest=?,scope_digest=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+          // The ceiling stays for later delete sweeps' host authorization;
+          // execution.principalId stays only while an external action may
+          // still be reconciled under it, and is released once it finishes.
           canonical({
-            capturedCeiling: object(item.data).capturedCeiling ?? {},
+            capturedCeiling: redactedCeiling(
+              object(object(item.data).capturedCeiling ?? {}),
+              await this.hasUnfinishedActions(db, itemId),
+            ),
           }),
+          REDACTED,
+          REDACTED,
           this.scope.tenantId,
           this.scope.confidentialScopeId,
           itemId,
@@ -3486,6 +3903,42 @@ export class IngestionService {
       completed++;
     }
     return completed;
+  }
+  private async hasUnfinishedActions(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<boolean> {
+    return (
+      (
+        await this.rows(
+          db,
+          'intake_actions',
+          `item_id=? AND state IN (${UNFINISHED_ACTION_STATES.map(() => '?').join(',')})`,
+          [itemId, ...UNFINISHED_ACTION_STATES],
+        )
+      ).length > 0
+    );
+  }
+  /** Later sweeps drop a principal retained for a reconciliation that has
+   * since reached a final state. */
+  private async releaseRedactedPrincipal(itemId: string): Promise<void> {
+    await this.tx(async (db) => {
+      await this.lock(db, itemId);
+      const [item] = await this.rows(db, 'intake_items', 'id=?', [itemId]);
+      if (!item || item.visibility === 'active') return;
+      if (await this.hasUnfinishedActions(db, itemId)) return;
+      const data = object(item.data);
+      const ceiling = object(data.capturedCeiling ?? {});
+      const released = redactedCeiling(ceiling, false);
+      if (canonical(released) === canonical(ceiling)) return;
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
+        canonical({ ...data, capturedCeiling: released }),
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        itemId,
+      );
+    });
   }
   /** Run host-configured expiry policy and retry interrupted deletion propagation. */
   async sweepRetention(): Promise<number> {

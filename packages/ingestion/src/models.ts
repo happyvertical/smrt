@@ -25,6 +25,11 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
       name: 'intake_items_receipt_idx',
       columns: ['tenantId', 'receiptState', 'leaseUntil'],
     },
+    {
+      name: 'intake_items_submitter_idx',
+      columns: ['tenantId', 'submitterId'],
+    },
+    { name: 'intake_items_owner_idx', columns: ['tenantId', 'ownerKey'] },
     // Newest-first inbox paging within one authenticated scope (#4211):
     // the page orders by (created_at DESC, id DESC), so the id is part of
     // the key and the scan terminates at the page boundary.
@@ -91,6 +96,14 @@ export class IntakeItem extends SmrtObject {
 
   @field({ type: 'text', required: true })
   traceId: string = '';
+
+  /** Authenticated actor recorded by the server at receipt; never source metadata. */
+  @field({ type: 'text', required: true, default: '' })
+  submitterId: string = '';
+
+  /** `<kind>:<id>` of the lifecycle owner for owner-bound retention; '' otherwise. */
+  @field({ type: 'text', required: true, default: '' })
+  ownerKey: string = '';
 
   @field({ type: 'json', required: true })
   data: string = '{}';

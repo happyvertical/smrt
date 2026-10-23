@@ -103,6 +103,49 @@ Denied refresh clears prior originals, candidates, arguments and results.
 Missing confidence is unavailable; page/time links exist only for observed
 locations. Provider errors and unresolved/partial results remain review states.
 
+## Submitter-scoped decisions
+
+For trusted internal sources the person who submitted an item may confirm or
+decline their own proposal without the reviewer inbox. `listOwnProposals`
+returns only items whose server-recorded `submitter_id` equals the current
+authenticated actor, each with its bounded saved review page reloaded under
+current item, handler and target authority. An item the actor can no longer
+read (the host `authorize` returns false or throws `IntakeAccessDeniedError`)
+is skipped before projection: the page is filled from readable items only, in
+50-row batches, and `nextCursor` names the last emitted item and is present
+only when a further readable item was actually found. Neither the entries, the
+page size nor the cursor reveal a hidden item. If one call has to skip 1000
+hidden submissions it fails with `Own proposal scan limit` rather than return a
+short page or a cursor that stops inside the hidden run; this error is the only
+signal, and it says only that such a run exists. Any other `authorize` error
+propagates instead of shrinking the list. An item that is still readable but
+whose reviews are denied is returned as `{ item, reviews: null, unavailable:
+true }`: that covers ingestion's own denials and any throw from the host
+`assertTarget` (deleted or revoked targets), whose text is never returned.
+Integrity, validation and database errors from ingestion itself propagate. The
+reviewer `listReviews` surface keeps propagating host target errors unchanged.
+`submitOwnDecision` takes the same `ReviewInput` CAS fields and request ID as
+`submitDecision` and accepts `approve`, `reject` and `defer` only; `correct`
+belongs to the reviewer surface. It runs under the `review_own` execution
+operation: the host's `authorize` must return `submitter: true`, the resolved
+policy must have `submitterReview` enabled, and the recorded submitter must be
+the current actor and also the receipt's captured execution principal (the
+identity the effect runs as), checked under the item lock and again at apply.
+A receipt captured for a bot or service principal is never self-approvable. Policy enablement, handler/operation allowlists, captured
+ceiling, confidential access, retention and the first-valid-decision lock are
+unchanged. The decision is a human decision by that actor, recorded with
+`mode: 'review_own'`; reviewer decisions carry `mode: 'review'`. In both modes
+`selfDecision` is true exactly when the deciding actor is the item's
+submitter, so a reviewer approving their own submission is never independent
+review. A self-decision is not a reviewer judgment: it never feeds
+automation eligibility (machine authorization remains the separate evaluated
+`kind: 'machine'` path) and its feedback events carry the same marker. The
+`unavailable` entry discloses nothing about the denied handler or target.
+`applyAction` then runs once under the approver's live grants exactly as
+for reviewer decisions. Hosts render this surface from their own authenticated
+session; presentation state confers no authority, and a source payload cannot
+nominate a submitter.
+
 ## Assignment and logical splits
 
 Assignment is explicitly host-owned, durable and versioned. `assign` receives

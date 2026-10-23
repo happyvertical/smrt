@@ -30,6 +30,14 @@ an authorized existing event; it cannot supply a correctness label or fabricate
 an execution result. An initial denial does not mutate retention. Once authorized,
 a narrowed privacy ceiling survives business rollback and later revocation.
 
+Observed `action_decision` events carry the decision's `decisionMode`
+(`review` or `review_own`) and `selfDecision` flag from the durable decision
+record; `selfDecision` is true whenever the decider submitted the item, in
+either mode. A submitter confirming their own proposal (#4085) is observed as a
+decision by that actor, never as reviewer correctness evidence; consumers that
+derive reviewer agreement must exclude `selfDecision: true` events, and nothing
+in this package turns them into automation eligibility.
+
 ## Reviewer routing choices
 
 A `reviewer_routing` record is appended inside the owning transaction when
@@ -37,8 +45,12 @@ feedback is configured and `capture` is authorized, at the moment the choice is
 final: `resolveItem` (REVIEW.md) records `choice: 'none'` keyed
 `routing:<requestId>`, and `submitDecision` records `choice: 'handler'` keyed
 `routing:<decision requestId>` when a reviewer **approves** a reviewer-selected
-action. Starting an action records nothing; rejecting or deferring it never
-produces an example. The record needs no model suggestion: it binds the current
+action. Handler-choice capture requires `mode: 'review'`: a `review_own`
+submitter approval authorizes normally but appends no reviewer-routing example or
+rule support. A reviewer using the reviewer path may still record an explicit
+routing choice for their own receipt; it does not judge any model suggestion.
+Starting an action records nothing; rejecting or deferring it never produces an
+example. The record needs no model suggestion: it binds the current
 completed/partial attempt (`attemptId`, output digest, analysis revision, frozen
 evidence hashes and the extracted text as `query`), the acting reviewer
 (`reviewer`, also `approvedBy` for a handler choice), the actor who started the

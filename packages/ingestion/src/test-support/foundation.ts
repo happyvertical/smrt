@@ -28,6 +28,7 @@ import * as models from '../models.js';
 import {
   type IngestionOptions,
   IngestionService,
+  type IntakePart,
   type ReceiveInput,
 } from '../server.js';
 import { dropExecutionDatabase } from './postgres-cleanup.js';
@@ -99,7 +100,8 @@ export function foundationSuite(
     let allowed: boolean;
     let faults: Set<string>;
     let purges: number;
-    function receive(key = 'delivery'): ReceiveInput {
+    // Copied-byte receipts only, so parts stay `IntakePart` for the fixtures.
+    function receive(key = 'delivery'): ReceiveInput & { parts: IntakePart[] } {
       return {
         sourceId: 'account',
         sourceVersion: '1',
@@ -1360,10 +1362,9 @@ export function foundationSuite(
                 dialect,
                 input: {
                   ...input,
-                  parts: input.parts.map((p) => ({
-                    ...p,
-                    bytes: [...p.bytes],
-                  })),
+                  parts: input.parts.map((p) =>
+                    'bytes' in p ? { ...p, bytes: [...p.bytes] } : p,
+                  ),
                 },
                 storage: join(root, 'assets'),
                 scope: options.scope,
