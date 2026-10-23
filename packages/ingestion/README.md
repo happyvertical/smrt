@@ -197,6 +197,10 @@ Mount the `/svelte` inbox and review components through an authenticated host us
 the browser-safe `IntakeReviewHost` DTO contract. See [REVIEW.md](REVIEW.md) for
 exact revision-bound callbacks, live evidence access, logical split corrections,
 assignment ownership, and the maintained upload-to-domain-result browser fixture.
+`IntakeWorkspace` puts the inbox, the selected item with its original inline,
+the message box and approve-and-advance on one page with keyboard next/previous;
+it uses the same callbacks and adds no authority (REVIEW.md, "Single-page triage
+workspace").
 
 Optional explicit feedback and scoped example retrieval are documented in
 [FEEDBACK.md](FEEDBACK.md). Approval and execution outcomes remain separate from
