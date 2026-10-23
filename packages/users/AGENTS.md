@@ -225,3 +225,60 @@ is an expected 400/403 refusal;
 `MagicLinkError` represents invalid, expired or replayed proof. Database failures
 remain distinct. Treat tokens as secrets, prefer URL fragments and POST bodies,
 and never log or persist a copy outside the canonical token ledger.
+
+
+## Independent emailed mailbox authentication
+
+`MailboxAuthenticationService.create({db:tx,transaction:'caller',secret,loginLimiter})`
+requests and verifies returning-client login without creating identities/sessions.
+`request({email,sourceKey,deliver})` returns only `{requested:true}` for known,
+unknown, malformed, pending, inactive or unauthorized accounts. The trusted server
+`deliver({email,token,expiresAt})` callback sends only to the eligible canonical
+active User's email; never expose a proof in HTTP responses/operator UI/logs,
+including development. Ten-minute one-use proofs bind immutable User/Profile ids.
+`authenticate({token,expectedUserId?,sessionId?})` rechecks canonical identity and
+active tenant membership before consuming proof; returns only verified
+`{userId,profileId,tenantId}` for the host's canonical magic-link session mint.
+Existing signed-in identity must match; supplied sessions cannot have a parent,
+permission ceiling, terminal/PIN/unknown method, or inactive principal.
+
+For pending invitation onboarding, `requestMailboxAuthentication({membershipId,
+token:projectGrant,sourceKey,deliver})` inspects but never consumes the signed
+project grant, then delivers a DIFFERENT mailbox proof to the fixed invitee.
+Only `{expiresAt}` is returned. `authenticateMailbox({membershipId,
+invitationToken:projectGrant,token:mailedProof,expectedUserId?,sessionId?})` claims
+BOTH proof nonces and activates pending canonical User/exact Membership in the
+same caller transaction. Mailbox proof issuer binds all invitation ids, role and
+SHA256 of the exact grant. A copied operator-visible grant cannot authenticate
+identity. Repeated email requests do not burn the grant; only the first completed
+authentication can claim it. Existing active-session/OIDC paths remain supported.
+
+All refusals/caller failures must roll back the whole caller transaction. Mail
+transport must reject on failure. Delivery is an external effect before commit:
+a successfully delivered but rolled-back proof is unusable; retry may send another
+mail. No session/authentication is valid without committed proof claims. The host
+must set a bounded transport timeout and never return transport payloads/secrets.
+No generic outbox/provider is required; compose the existing SDK email transport.
+
+Use a root-executor canonical `LoginAttemptLimiter` passed as `loginLimiter` so
+caller rollbacks cannot release send budgets (SQLite single-connection fixtures
+cannot prove that production-pool separation). `sourceKey` is a trusted server
+client-address key, never request-controlled forwarded headers; limiter hashes
+and peppers it, never stores raw addresses/email. Each request retains its budget
+through window expiry via `retainOnSuccess`, regardless of account eligibility.
+Handle `LoginRateLimitError` with the same generic request response plus retry
+policy. Returning request has a 250ms response floor; delivery latency remains
+transport-dependent, so do not claim constant timing. Malformed/expired/replayed
+proofs raise `MagicLinkError`; invitation binding/status refusals also use
+`TenantInvitationError`. Database/transport faults remain distinguishable server
+failures. Never swallow an error and commit a partially consumed transaction.
+
+`MagicLinkService.inspect()` validates signed live nonce without claiming it;
+it is preparation, never authentication. `verify()` remains the atomic claim.
+Optional generated signed `subject` binds immutable identity; legacy callers
+without a subject retain their existing result shape.
+
+Focused matrix: `mailbox-authentication.test.ts` runs in memory SQLite by default;
+`TEST_DB_ADAPTER=postgres` plus an explicit isolated `DATABASE_URL` creates a unique
+schema per scenario and also exercises concurrent invitation/login proof claims.
+It is registered in `test:postgres`; no shared local service fallback is used.

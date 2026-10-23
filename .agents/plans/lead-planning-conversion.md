@@ -36,3 +36,14 @@ At integration end: run the documented full validation and PostgreSQL-sensitive
 users checks once on the integrated source, then one high-risk review-cycle.
 All remaining review, validation, release, adoption and publication decisions
 stay with the coordinating root session. Never merge without authorization.
+
+
+Additional user-required auth item #4254: independent emailed mailbox proof for
+pending invitation onboarding and active returning-client login. Never expose
+proof to the project-grant issuer. Reuse canonical token nonces and login limiter,
+no schema/outbox/provider feature. Retried requests preserve grant; completion
+claims both nonces atomically. Existing session ceilings and identity remain.
+Focused users mailbox/invitation/magic-link/limiter tests plus package types/build/
+exports; adapter-aware mailbox suite registered in PostgreSQL checks, including
+concurrent completion winners. Coordinator owns final PostgreSQL/full validation
+and independent auth review before the now-authorized integrated release.

@@ -24,7 +24,13 @@ import {
 } from '../collections/UserCollection.js';
 import { isValidEmail } from '../models/User.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
+import type { LoginAttemptLimiter } from './LoginAttemptLimiter.js';
 import { MagicLinkService } from './MagicLinkService.js';
+import {
+  assertMailboxSessionCompatibility,
+  type MailboxAuthenticationDelivery,
+  reserveMailboxRequest,
+} from './MailboxAuthenticationService.js';
 import { SessionService } from './SessionService.js';
 
 /** Host-authorized invitation destination and least-privilege system role. */
@@ -56,6 +62,8 @@ export interface TenantInvitationServiceOptions extends SmrtClassOptions {
   transaction: 'caller';
   secret?: string;
   tokenExpiry?: number;
+  /** Prefer a root-executor limiter to preserve budgets across caller rollbacks. */
+  loginLimiter?: LoginAttemptLimiter;
 }
 /** Copyable tenant grant, never identity proof; the host must not log it. */
 export interface IssuedTenantInvitation {
@@ -82,7 +90,11 @@ export interface AcceptedTenantInvitation
 export class TenantInvitationService {
   private constructor(
     private readonly options: SmrtClassOptions,
-    private readonly signing: { secret?: string; tokenExpiry?: number },
+    private readonly signing: {
+      secret?: string;
+      tokenExpiry?: number;
+      loginLimiter?: LoginAttemptLimiter;
+    },
   ) {}
 
   /** Bind an already-initialized transaction executor; never nest transactions. */
@@ -97,7 +109,11 @@ export class TenantInvitationService {
         _reuseInitializedDb: true,
         _deferRuntimeInitialization: true,
       },
-      { secret: options.secret, tokenExpiry: options.tokenExpiry },
+      {
+        secret: options.secret,
+        tokenExpiry: options.tokenExpiry,
+        loginLimiter: options.loginLimiter,
+      },
     );
   }
 
@@ -110,6 +126,120 @@ export class TenantInvitationService {
       const links = await this.magicLinks(records.binding);
       const result = await links.generate(records.user.email);
       return { membershipId: input.membershipId, ...result };
+    });
+  }
+
+  /**
+   * Request independent mailbox authentication, delivering only to the canonical
+   * invitee. The trusted server callback must send auth mail, never expose the
+   * proof to a requester/operator, and reject on transport failure. No grant is
+   * consumed here, so failed delivery/retries do not burn invitation access.
+   * Delivery precedes caller commit: a rolled-back challenge cannot authenticate.
+   */
+  async requestMailboxAuthentication(input: {
+    membershipId: string;
+    token: string;
+    sourceKey: string;
+    deliver: MailboxAuthenticationDelivery;
+  }): Promise<{ expiresAt: Date }> {
+    if (typeof input.deliver !== 'function')
+      throw new TenantInvitationError(
+        'Mailbox authentication delivery is required',
+      );
+    await reserveMailboxRequest(this.options, {
+      subject: `invitation:${input.membershipId}`,
+      sourceKey: input.sourceKey,
+      secret: this.signing.secret ?? '',
+      limiter: this.signing.loginLimiter,
+    });
+    return await withSystemContext(async () => {
+      const records = await this.invitationRecords(input.membershipId);
+      const grant = await (await this.magicLinks(records.binding)).inspect(
+        input.token,
+      );
+      if (grant.email !== normalizeIdentityEmail(records.user.email))
+        throw new TenantInvitationError(
+          'Invitation identity does not match',
+          403,
+        );
+      const proof = await (
+        await this.mailboxLinks(records.binding, input.token)
+      ).generate(records.user.email);
+      await input.deliver({
+        email: normalizeIdentityEmail(records.user.email),
+        ...proof,
+      });
+      return { expiresAt: proof.expiresAt };
+    });
+  }
+
+  /**
+   * Authenticate ONLY independent proof delivered to the canonical mailbox plus
+   * the exact project grant. Claim both nonces and activate atomically in the
+   * caller transaction. The host may then establish a magic-link session from
+   * committed returned IDs; a copied project grant alone never proves identity.
+   */
+  async authenticateMailbox(input: {
+    membershipId: string;
+    invitationToken: string;
+    token: string;
+    expectedUserId?: string;
+    sessionId?: string;
+  }): Promise<AcceptedTenantInvitation> {
+    return await withSystemContext(async () => {
+      const records = await this.invitationRecords(input.membershipId);
+      if (
+        input.expectedUserId !== undefined &&
+        input.expectedUserId !== records.user.id
+      )
+        throw new TenantInvitationError(
+          'Invitation does not belong to the signed-in user',
+          403,
+        );
+      await assertMailboxSessionCompatibility(this.options, {
+        userId: requiredId(records.user.id),
+        expectedUserId: input.expectedUserId,
+        sessionId: input.sessionId,
+      });
+      const mailbox = await (
+        await this.mailboxLinks(records.binding, input.invitationToken)
+      ).verify(input.token);
+      if (mailbox.email !== normalizeIdentityEmail(records.user.email))
+        throw new TenantInvitationError(
+          'Mailbox authentication identity does not match',
+          403,
+        );
+      await this.verifyProof(
+        records.binding,
+        records.user.email,
+        input.invitationToken,
+      );
+      if (records.user.status === UserStatus.PENDING)
+        records.user.status = UserStatus.ACTIVE;
+      records.user.recordLogin();
+      await records.user.save();
+      await this.activateMembership(records.membership);
+      return {
+        userId: requiredId(records.user.id),
+        profileId: records.profileId,
+        membershipId: requiredId(records.membership.id),
+        tenantId: requiredId(records.membership.tenantId),
+        status: 'active',
+      };
+    });
+  }
+
+  private async mailboxLinks(
+    binding: string,
+    grant: string,
+  ): Promise<MagicLinkService> {
+    if (!this.signing.secret)
+      throw new Error('Invitation signing secret is required');
+    return await MagicLinkService.create({
+      ...this.options,
+      secret: this.signing.secret,
+      tokenExpiry: 600,
+      issuer: `smrt:tenant-mailbox:v1:${binding}:${createHash('sha256').update(grant).digest('hex')}`,
     });
   }
 

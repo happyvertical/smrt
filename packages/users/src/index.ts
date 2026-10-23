@@ -484,6 +484,12 @@ export {
   withSessionPermissionContext,
 } from './services/index.js';
 export {
+  type AuthenticatedMailbox,
+  type MailboxAuthenticationDelivery,
+  MailboxAuthenticationService,
+  type MailboxAuthenticationServiceOptions,
+} from './services/MailboxAuthenticationService.js';
+export {
   type AcceptedTenantInvitation,
   type IssuedTenantInvitation,
   type PreparedTenantInvitation,

@@ -89,6 +89,12 @@ export {
   type MagicLinkVerifyResult,
 } from './MagicLinkService.js';
 export {
+  type AuthenticatedMailbox,
+  type MailboxAuthenticationDelivery,
+  MailboxAuthenticationService,
+  type MailboxAuthenticationServiceOptions,
+} from './MailboxAuthenticationService.js';
+export {
   MobileAuthError,
   type MobileAuthErrorCode,
   MobileAuthService,

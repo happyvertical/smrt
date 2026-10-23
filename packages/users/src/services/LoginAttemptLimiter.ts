@@ -182,6 +182,8 @@ export interface ReserveLoginAttemptOptions {
    * must not pool with the others prefixes its own subject.
    */
   kind: string;
+  /** Keep a successful request reservation until window expiry (e.g. auth mail sends). */
+  retainOnSuccess?: boolean;
   /** Identifier the client submitted (email key, user id, tag hash). */
   subject?: string | null;
   /** Client IP, or device/station id. */
@@ -564,7 +566,7 @@ export class LoginAttemptLimiter {
       },
       succeed: async (metadata) => {
         settle();
-        await this.releaseAll(reserved, true);
+        if (!input.retainOnSuccess) await this.releaseAll(reserved, true);
         await audit('succeeded', {
           metadata: { ...input.metadata, ...metadata },
         });
