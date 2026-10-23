@@ -46,9 +46,10 @@ generation. The handler validates the human arguments again before a
 editing, and no authority or automation eligibility is added: a failed attempt,
 an unoffered handler or a foreign stage is still refused by the host.
 `preview` throws on every failure, as before. When the handler's argument
-schema or `validate` refused the arguments (operation or plan), the server
-throws `HandlerArgumentsInvalidError` (`name` set, messages unchanged); result
-schema checks keep a plain `Error`. The component shows an inline message and
+schema or `validate` refused the arguments being previewed (operation preview,
+which also carries corrections, or plan preview), the server throws
+`HandlerArgumentsInvalidError` (`name` set, messages unchanged). Apply-time and
+external-send revalidation and result-schema checks keep a plain `Error`. The component shows an inline message and
 keeps the view and draft when `preview` either rejects with an error whose
 `name` is `HandlerArgumentsInvalidError` or resolves `{ rejected: 'invalid' }`
 (`PreviewRejection`). A transport that crosses a process boundary preserves

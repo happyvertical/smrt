@@ -1021,7 +1021,7 @@ export function executionSuite(
         name: 'HandlerArgumentsInvalidError',
         message: 'Invalid handler arguments',
       });
-      // Correction path: corrected arguments are argument validation too.
+      // Corrections publish through the preview binding, so they are typed too.
       const okAction = await service.createAction(input.itemId, 'ok', {});
       const review = await service.previewProposal({
         ...input,
@@ -1043,6 +1043,37 @@ export function executionSuite(
           correctedArgs: { title: 'No body' },
         }),
       ).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+    });
+    it('keeps apply-time argument revalidation a plain error (#4208 review)', async () => {
+      const create = handlers[0] as OperationHandler;
+      let calls = 0;
+      // Accepts at preview, refuses when apply revalidates the bound arguments.
+      const lateRefusal: OperationHandler = {
+        ...create,
+        id: '@test/ingestion:late-refusal',
+        validate: async () => ({ ok: calls++ === 0 }),
+      };
+      handlers.push(lateRefusal);
+      const input = await ready();
+      const actionId = await service.createAction(input.itemId, 'late', {});
+      const review = await service.previewProposal({
+        ...input,
+        actionId,
+        expectedRevision: 0,
+        requestId: 'late',
+        handlerId: lateRefusal.id,
+        handlerVersion: '1',
+        args: { title: 'Later refused', body: 'Body' },
+      });
+      await approve(review);
+      const failure = await service.applyAction(actionId).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect((failure as Error).message).toBe('Invalid handler arguments');
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
     });
     it('throws HandlerArgumentsInvalidError for a plan validate refusal (#4208 review)', async () => {
       const key = `refused-plan-${randomUUID()}`;
