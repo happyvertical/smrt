@@ -470,11 +470,14 @@ model only, exactly as in `IntakeReview`.
   that the longest-followed one (the earliest started, whatever the read
   rotation) stops. An item left while its pane was mid-operation (an Apply not
   yet answered) keeps following while a read still shows an action authorized
-  or executing, for at most **3** more reads; that debt belongs to the
-  operation, so it survives reopening and leaving the item again until a view
-  shows the operation answered or the reads run out. Each follow has a
+  or executing: exactly **3** more reads when it never answers, the fourth
+  ending the follow. That debt belongs to the operation, so it survives
+  reopening and leaving the item again until a view shows the operation
+  answered or the reads run out; leaving mid-operation again starts a full
+  debt for the new operation. Each follow has a
   generation: an answer from an earlier follow of the same item (one asked
-  before the reviewer reopened or left it again) is dropped. An item stops being followed
+  before the reviewer reopened or left it again) is dropped, and its failure
+  does not count toward the new follow's three. An item stops being followed
   when it settles, its view is denied, three reads in a row throw, its row
   leaves the displayed list (a filter or a refreshed page removed it), the
   list fails closed, or the cap drops it; a denial, the failure stop or the
@@ -492,8 +495,11 @@ model only, exactly as in `IntakeReview`.
   view, including an unchanged poll, and a follow read) is numbered when its
   request starts, and each row shows the entry of its newest read, whatever
   the source: a page read before a pane or follow read never regresses the
-  row, and a page read after them replaces what they showed. Cached status reasons
-  follow the same ordering, even when two entries have identical fingerprints. "Load more" continues the
+  row, and a page read after them replaces what they showed. The same rule
+  governs a follow: a follow read older than the row's newest read changes
+  no status, does not stop the follow and announces nothing (a newer read
+  settles it), so the announcement never contradicts the row. Cached status reasons follow the same ordering, even when entries have identical
+  fingerprints. "Load more" continues the
   filter the rows were listed under, not filter inputs edited since, and does
   not repeat a row already shown. A failed "Load more" fails closed like any
   failed read (the host cannot tell a transient failure from a revoked
