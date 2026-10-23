@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-agents",
-  "version": "0.57.19",
+  "version": "0.57.20",
   "smrtJsdoc": "strict",
   "type": "module",
   "smrtRawPrimitives": "strict",

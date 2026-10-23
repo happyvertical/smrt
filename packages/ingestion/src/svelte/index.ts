@@ -2,6 +2,7 @@ export type {
   Assignment,
   EvidenceView,
   InboxEntry,
+  InboxEvidence,
   InboxState,
   IntakeReviewHost,
   ItemReviewView,
