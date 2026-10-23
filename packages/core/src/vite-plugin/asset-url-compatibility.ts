@@ -9,13 +9,15 @@ const unsafeAssetFilter = /new\s+URL.+import\.meta\.url/s;
  * Install once in root plugins; existing worker plugin factories are preserved.
  */
 export function smrtAssetUrlCompatibility(): Plugin {
+  let supportedVite = false;
   const createPlugin = (includeWorkers: boolean): Plugin => ({
     name: 'smrt-asset-url-compatibility',
     ...(includeWorkers
       ? ({
           async config(config) {
             const { version } = await import('vite');
-            if (!version.startsWith('7.')) return;
+            supportedVite = version.startsWith('7.');
+            if (!supportedVite) return;
             const existing = config.worker?.plugins;
             return {
               worker: {
@@ -28,9 +30,8 @@ export function smrtAssetUrlCompatibility(): Plugin {
           },
         } satisfies Partial<Plugin>)
       : {}),
-    async configResolved(config) {
-      const { version } = await import('vite');
-      if (!version.startsWith('7.')) return;
+    configResolved(config) {
+      if (!supportedVite) return;
       for (const plugin of config.plugins) {
         if (plugin.name !== 'vite:asset-import-meta-url') continue;
         const transform = plugin.transform;

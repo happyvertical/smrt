@@ -21,10 +21,9 @@ function fixture(code: unknown = unsafe()) {
   return { asset, filter, handler, id };
 }
 async function apply(plugin: Plugin, plugins: unknown[]) {
-  const hook = plugin.configResolved as (
-    config: ResolvedConfig,
-  ) => Promise<void>;
-  await hook({ plugins } as unknown as ResolvedConfig);
+  if (plugin.config) await configure(plugin, {});
+  const hook = plugin.configResolved as (config: ResolvedConfig) => void;
+  hook({ plugins } as unknown as ResolvedConfig);
 }
 async function configure(plugin: Plugin, config: UserConfig) {
   return (
@@ -33,6 +32,20 @@ async function configure(plugin: Plugin, config: UserConfig) {
 }
 
 describe('smrtAssetUrlCompatibility', () => {
+  it('mutates root and worker filters synchronously before the resolved hook returns', async () => {
+    runtime.version = '7.3.7';
+    const root = smrtAssetUrlCompatibility();
+    const config = await configure(root, {});
+    const worker = config?.worker?.plugins?.()[1] as Plugin;
+    for (const plugin of [root, worker]) {
+      const f = fixture();
+      const hook = plugin.configResolved as (config: ResolvedConfig) => unknown;
+      const result = hook({ plugins: [f.asset] } as unknown as ResolvedConfig);
+      expect(result).toBeUndefined();
+      expect(f.filter.code).toBe('import.meta.url');
+    }
+  });
+
   it('replaces only the exact Vite 7 prefilter and preserves handler/id identity', async () => {
     runtime.version = '7.3.7';
     const f = fixture();

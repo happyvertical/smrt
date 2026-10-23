@@ -50,8 +50,8 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
-    "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "catalog:",
+    "@happyvertical/animation": "0.5.0",
     "@happyvertical/images": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
@@ -60,7 +60,6 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/utils": "catalog:",
-    "jimp": "catalog:",
     "sharp": "catalog:"
   },
   "peerDependencies": {
