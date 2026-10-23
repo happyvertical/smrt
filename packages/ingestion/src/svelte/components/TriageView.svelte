@@ -394,6 +394,10 @@ async function advance() {
     const count = list.length;
     const page = await inbox.more();
     if (!alive || ticket !== navigation) return;
+    if (paneDirty) {
+      held = 'unsent';
+      return;
+    }
     list = page.items;
     // Whether anything follows is unknown: never report an empty queue.
     unknown = page.result === 'failed' || page.result === 'pending';
@@ -404,6 +408,10 @@ async function advance() {
   next ??= list.slice(0, start).find(open);
   if (!next && unknown) {
     held = 'retry';
+    return;
+  }
+  if (paneDirty) {
+    held = 'unsent';
     return;
   }
   await choose(next?.item.id, true);

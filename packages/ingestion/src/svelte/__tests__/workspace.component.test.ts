@@ -1430,6 +1430,54 @@ describe('triage workspace paging failures', () => {
       reviews: { actions: [action('a', 'succeeded')] },
     }),
   ];
+  it.each([
+    false,
+    true,
+  ])('keeps input typed during an automatic page walk (later page: %s)', async (later) => {
+    const hold = deferred<{ items: InboxEntry[] }>();
+    const initial = editable('a');
+    initial.reviews.actions = [action('a', 'authorized')];
+    const applied = editable('a', 'partially_completed');
+    applied.reviews.actions = [action('a', 'succeeded')];
+    const host = editableHost({ a: [initial, applied] });
+    host.list = vi.fn(async ({ cursor }) => {
+      if (!cursor)
+        return { items: [entry('a', 'waiting')], nextCursor: 'page-1' };
+      if (later && cursor === 'page-1')
+        return {
+          items: [entry('finished', 'completed')],
+          nextCursor: 'page-2',
+        };
+      return hold.promise;
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(later ? 3 : 2));
+    const draft = await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    });
+    await fireEvent.input(draft, {
+      target: { value: '{"vendor":"Typed while paging"}' },
+    });
+    hold.resolve({ items: [entry('b', 'waiting')] });
+    expect((await screen.findByTestId('advance-held')).textContent).toMatch(
+      /unsent input/,
+    );
+    expect(row('a').getAttribute('aria-current')).toBe('true');
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe('{"vendor":"Typed while paging"}');
+    await fireEvent.click(screen.getByRole('button', { name: 'Next item' }));
+    await screen.findByTestId('unsaved-leave');
+    expect(row('a').getAttribute('aria-current')).toBe('true');
+  });
+
   it('a failed page append during advance keeps the item and the rows, with a retry note', async () => {
     const host = backend(['a'], { a: applying() });
     lastPage(host, async () => {

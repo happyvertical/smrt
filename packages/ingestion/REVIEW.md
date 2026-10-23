@@ -488,8 +488,9 @@ model only, exactly as in `IntakeReview`.
   appears; a page that makes no progress stops the walk.
   It never advances over unsent input on the same item: the item stays open,
   the input stays, and a note says it is finished but has unsent input; the
-  reviewer moves on explicitly, through the confirmation. When the next items
-  must be loaded and that read fails or cannot start (a refresh is pending),
+  reviewer moves on explicitly, through the confirmation. Input typed while
+  automatic advance awaits another inbox page also holds the current item.
+  When the next items must be loaded and that read fails or cannot start (a refresh is pending),
   the item stays open with a note to try Next item again rather than reporting
   an empty queue. The open item stays listed while the reviewer works on it
   even if its state stops matching the filter; it leaves once they move on.
