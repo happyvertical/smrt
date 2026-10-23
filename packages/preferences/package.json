@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-preferences",
-  "version": "0.57.20",
+  "version": "0.57.21",
   "description": "Tenant defaults and per-user overrides for user-interface preferences (overview layouts, shell layout), validated per registered kind",
   "type": "module",
   "main": "./dist/index.js",
