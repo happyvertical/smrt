@@ -282,6 +282,192 @@ export function agreementHistoryCases(
   }
 
   it.each([
+    false,
+    true,
+  ])('withdraws a scheduled initial version without restoring terms (tenant=%s)', async (tenantOwned) => {
+    const run = async () => {
+      const initial = await create({
+        status: 'active',
+        effectiveFrom: scheduled,
+      });
+      const cached = await collection().list({ cache: { ttl: 60_000 } });
+      expect(cached.find((row) => row.id === initial.id)?.status).toBe(
+        'active',
+      );
+      const withdrawn = await collection().withdrawAmendment(
+        initial.id as string,
+      );
+      expect(withdrawn.status).toBe('cancelled');
+      expect(withdrawn.effectiveFrom).toEqual(scheduled);
+      expect(withdrawn.amendmentPredecessorId).toBeNull();
+      expect(
+        await collection().activeFor(kind, partyA, partyB, scheduled),
+      ).toBeNull();
+      expect(
+        (await collection().list({ cache: { ttl: 60_000 } })).find(
+          (row) => row.id === initial.id,
+        )?.status,
+      ).toBe('cancelled');
+      await expect(
+        collection().withdrawAmendment(initial.id as string),
+      ).rejects.toThrow(/scheduled active/);
+    };
+    if (!tenantOwned) return run();
+    enableTenancy();
+    try {
+      await withTenant({ tenantId: randomUUID() }, run);
+    } finally {
+      disableTenancy();
+    }
+  });
+
+  it.each([
+    'active',
+    'terminated',
+  ] as const)('withdraws a scheduled gap amendment without reopening the %s predecessor', async (status) => {
+    const first = await create({ status: 'active', effectiveTo: february });
+    if (status === 'terminated') {
+      first.terminate(february);
+      await first.save();
+    }
+    const second = await collection().createAmendment(kind, partyA, partyB, {
+      effectiveFrom: scheduled,
+      effectiveTo: null,
+    });
+    const active = await collection().activateAmendment(second.id as string);
+    expect(active.amendmentPredecessorId).toBeNull();
+    await collection().withdrawAmendment(second.id as string);
+    expect((await collection().get({ id: first.id }))?.status).toBe(status);
+    expect((await collection().get({ id: first.id }))?.effectiveTo).toEqual(
+      february,
+    );
+    expect(
+      (await collection().activeFor(kind, partyA, partyB, january))?.id,
+    ).toBe(first.id);
+    expect(
+      await collection().activeFor(kind, partyA, partyB, scheduled),
+    ).toBeNull();
+  });
+
+  it.each([
+    january,
+    null,
+  ])('refuses an already-effective or unbounded initial start %s', async (start) => {
+    const initial = await create({ status: 'active', effectiveFrom: start });
+    await expect(
+      collection().withdrawAmendment(initial.id as string),
+    ).rejects.toThrow(/scheduled active/);
+    expect((await collection().get({ id: initial.id }))?.status).toBe('active');
+  });
+
+  it('refuses initial withdrawal at its exact start', async () => {
+    const initial = await create({
+      status: 'active',
+      effectiveFrom: scheduled,
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(scheduled);
+    try {
+      await expect(
+        collection().withdrawAmendment(initial.id as string),
+      ).rejects.toThrow(/scheduled active/);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect((await collection().get({ id: initial.id }))?.status).toBe('active');
+  });
+
+  it('refuses predecessor-free withdrawal when imported governing history overlaps', async () => {
+    const initial = await create({
+      status: 'active',
+      effectiveFrom: scheduled,
+    });
+    await create({ version: 2, status: 'active', effectiveFrom: finiteEnd });
+    await expect(
+      collection().withdrawAmendment(initial.id as string),
+    ).rejects.toThrow(/overlap/);
+    expect((await collection().get({ id: initial.id }))?.status).toBe('active');
+  });
+
+  it('allows withdrawal before a disjoint later version without changing that history', async () => {
+    const initial = await create({
+      status: 'active',
+      effectiveFrom: scheduled,
+      effectiveTo: finiteEnd,
+    });
+    const later = await create({
+      version: 2,
+      status: 'active',
+      effectiveFrom: finiteEnd,
+    });
+    await collection().withdrawAmendment(initial.id as string);
+    expect(
+      await collection().activeFor(kind, partyA, partyB, scheduled),
+    ).toBeNull();
+    expect(
+      (await collection().activeFor(kind, partyA, partyB, finiteEnd))?.id,
+    ).toBe(later.id);
+    expect((await collection().get({ id: later.id }))?.status).toBe('active');
+  });
+
+  it('rolls predecessor-free cancellation back when lifecycle observation fails', async () => {
+    const initial = await create({
+      status: 'active',
+      effectiveFrom: scheduled,
+    });
+    const spy = vi
+      .spyOn(Agreement.prototype, 'refreshAfterLifecycleTransition')
+      .mockRejectedValue(new Error('lifecycle observation failed'));
+    try {
+      await expect(
+        collection().withdrawAmendment(initial.id as string),
+      ).rejects.toThrow(/lifecycle observation failed/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await collection().get({ id: initial.id }))?.status).toBe('active');
+    expect(
+      (await collection().activeFor(kind, partyA, partyB, scheduled))?.id,
+    ).toBe(initial.id);
+  });
+
+  it('denies withdrawal of a foreign tenant scheduled initial version', async () => {
+    const initial = await create({
+      tenantId: randomUUID(),
+      status: 'active',
+      effectiveFrom: scheduled,
+    });
+    enableTenancy();
+    try {
+      await expect(
+        withTenant({ tenantId: randomUUID() }, () =>
+          collection().withdrawAmendment(initial.id as string),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      disableTenancy();
+    }
+    expect((await collection().get({ id: initial.id }))?.status).toBe('active');
+  });
+
+  it('allows one concurrent predecessor-free withdrawal', async () => {
+    const initial = await create({
+      status: 'active',
+      effectiveFrom: scheduled,
+    });
+    const results = await Promise.allSettled([
+      collection().withdrawAmendment(initial.id as string),
+      collection().withdrawAmendment(initial.id as string),
+    ]);
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect((await collection().get({ id: initial.id }))?.status).toBe(
+      'cancelled',
+    );
+  });
+
+  it.each([
     null,
     finiteEnd,
   ])('withdraws a future amendment restoring the exact prior end %s', async (end) => {
@@ -305,6 +491,56 @@ export function agreementHistoryCases(
       expect(
         await collection().activeFor(kind, partyA, partyB, end),
       ).toBeNull();
+  });
+
+  it.each([
+    'draft',
+    'cancelled',
+    'terminated',
+    'superseded',
+  ] as const)('refuses withdrawal from %s even before its start', async (status) => {
+    const row = await create({
+      status,
+      effectiveFrom: scheduled,
+      effectiveTo: finiteEnd,
+    });
+    await expect(
+      collection().withdrawAmendment(row.id as string),
+    ).rejects.toThrow(/scheduled active/);
+    expect((await collection().get({ id: row.id }))?.status).toBe(status);
+  });
+
+  it('refuses withdrawal for a missing version', async () => {
+    await expect(collection().withdrawAmendment(randomUUID())).rejects.toThrow(
+      /scheduled active/,
+    );
+  });
+
+  it('refuses a predecessor whose persisted status no longer matches provenance', async () => {
+    const { first, second } = await schedule();
+    await collection().db.query(
+      `UPDATE ${collection().tableName} SET status = 'terminated' WHERE id = $1`,
+      first.id,
+    );
+    await expect(
+      collection().withdrawAmendment(second.id as string),
+    ).rejects.toThrow(/predecessor no longer matches/);
+    expect((await collection().get({ id: second.id }))?.status).toBe('active');
+    expect((await collection().get({ id: first.id }))?.effectiveTo).toEqual(
+      scheduled,
+    );
+  });
+
+  it('refuses restoration that overlaps other governing history', async () => {
+    const { first, second } = await schedule();
+    await create({ version: 3, status: 'active', effectiveFrom: finiteEnd });
+    await expect(
+      collection().withdrawAmendment(second.id as string),
+    ).rejects.toThrow(/overlap/);
+    expect((await collection().get({ id: second.id }))?.status).toBe('active');
+    expect((await collection().get({ id: first.id }))?.effectiveTo).toEqual(
+      scheduled,
+    );
   });
 
   it('allows only one concurrent withdrawal and preserves history', async () => {
