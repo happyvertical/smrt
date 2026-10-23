@@ -31,7 +31,12 @@ export interface Props {
 }
 let { host, itemId, pollMs = 2000, onselect, rowAside }: Props = $props();
 const { t } = useI18n();
-/** Items left mid-reinterpretation whose rows keep following their stage. */
+/**
+ * Most followed items read per watch tick. Followed items are read in
+ * rotation, so every followed row is reached and none is dropped; an item
+ * stops being followed only when it settles, is denied, fails three reads in
+ * a row, or leaves the displayed list.
+ */
 const WATCH_LIMIT = 5;
 /** Consecutive thrown watch reads tolerated before a row stops following. */
 const MAX_WATCH_FAILURES = 3;
@@ -40,6 +45,8 @@ let selected = $state<string | undefined>(untrack(() => itemId)),
   more = $state(false),
   done = $state(false),
   announcement = $state(''),
+  // A selection the reviewer asked for while the pane held unsent input.
+  leaving = $state<{ id: string }>(),
   // Richer status from a loaded view, valid while the row still shows the
   // same entry (revision, state, processing, disposition) it came from.
   statuses = $state<Record<string, { key: string; status: TriageStatus }>>({});
@@ -51,9 +58,17 @@ let alive = true,
   paneView: ItemReviewView | undefined,
   // The pane is between clearing a displayed view and showing the next one.
   paneBusy = false,
+  // The pane holds reviewer input that has not been sent.
+  paneDirty = false,
+  // Bumped on every selection change; a navigation that awaited a page
+  // append gives up if the reviewer chose something meanwhile.
+  navigation = 0,
   watched: string[] = [],
   watchTimer: ReturnType<typeof setTimeout> | undefined,
-  watchTicks = 0;
+  watchTicks = 0,
+  // Only one watch tick runs at a time.
+  following = false;
+let stay = $state<HTMLElement>();
 const failures = new Map<string, number>();
 // Followed items seen with a stage in flight; only those announce settling.
 const staged = new Set<string>();
@@ -102,18 +117,46 @@ const rowStatus = (entry: InboxEntry) => statusText(statusOf(entry));
 function record(view: ItemReviewView, keep: boolean) {
   const id = view.entry.item.id;
   if (view.availability !== 'available') {
-    delete statuses[id];
+    fallback(id);
     return;
   }
   statuses[id] = { key: fingerprint(view.entry), status: viewStatus(view) };
   if (inbox) rows = inbox.patch(view.entry, keep);
 }
+// Each row's entry as its page listed it, the state a row falls back to.
+let listedEntries = new Map<string, InboxEntry>();
+/**
+ * Forget what loaded views said about a row (a denial, a failed follow):
+ * drop its cached status and restore the entry its page listed.
+ */
+function fallback(id: string) {
+  delete statuses[id];
+  const entry = listedEntries.get(id);
+  if (entry && inbox) rows = inbox.patch(entry, true);
+}
 function listed(items: InboxEntry[], hasMore: boolean) {
+  listedEntries = new Map(items.map((row) => [row.item.id, row]));
   rows = items;
   more = hasMore;
+  // A page read before the pane's latest view must not regress the open
+  // row: the row keeps following the form.
+  const open = paneView;
+  if (open && inbox && items.some((row) => row.item.id === open.entry.item.id))
+    rows = inbox.patch(open.entry, true);
+  // Rows no longer displayed are not followed.
+  for (const id of watched)
+    if (!rows.some((row) => row.item.id === id)) unwatch(id);
 }
-function paneChanged(view: ItemReviewView | undefined) {
+function paneChanged(view: ItemReviewView | undefined, denied = false) {
   if (!view) {
+    if (denied) {
+      // A failed callback cleared the pane: it fails closed, so nothing it
+      // showed (status reasons included) stays on the row or is followed.
+      paneView = undefined;
+      paneBusy = false;
+      if (selected) fallback(selected);
+      return;
+    }
     // The pane cleared its view for a reload or an operation (an instruction,
     // say) whose result it has not shown yet.
     paneBusy = true;
@@ -138,15 +181,10 @@ function schedule() {
   watchTimer = setTimeout(() => void follow(), delay);
 }
 function watch(id: string) {
-  const next = [...watched.filter((entry) => entry !== id), id];
-  // Beyond the bound the oldest row stops following; its listed state remains.
-  for (const dropped of next.slice(0, -WATCH_LIMIT)) {
-    failures.delete(dropped);
-    staged.delete(dropped);
-  }
-  watched = next.slice(-WATCH_LIMIT);
+  if (!watched.includes(id)) watched = [...watched, id];
   watchTicks = 0;
-  schedule();
+  // A running tick reschedules when it ends.
+  if (!following) schedule();
 }
 function unwatch(id: string) {
   watched = watched.filter((entry) => entry !== id);
@@ -154,14 +192,27 @@ function unwatch(id: string) {
   staged.delete(id);
 }
 /**
- * One watch tick: re-read each followed item through the same authenticated
- * `load` the item pane uses (first review page only), one after another.
- * Bounded by WATCH_LIMIT items per tick with the pane's backoff; a row stops
- * following once its stage settles, its host view is denied, or three reads
- * in a row throw.
+ * One watch tick: re-read up to WATCH_LIMIT followed items through the same
+ * authenticated `load` the item pane uses (first review page only), one
+ * after another, least recently read first, on the pane's backoff. A row
+ * stops following once its stage settles, its host view is denied, three
+ * reads in a row throw, or it leaves the list.
  */
 async function follow() {
-  for (const id of [...watched]) {
+  if (following || !alive) return;
+  following = true;
+  try {
+    await followBatch();
+  } finally {
+    following = false;
+  }
+  schedule();
+}
+async function followBatch() {
+  const batch = watched.slice(0, WATCH_LIMIT);
+  // Rotate: the rest are read first next tick.
+  watched = [...watched.slice(WATCH_LIMIT), ...batch];
+  for (const id of batch) {
     if (!alive) return;
     if (!watched.includes(id)) continue;
     try {
@@ -171,7 +222,7 @@ async function follow() {
       failures.delete(id);
       if (view.availability !== 'available') {
         unwatch(id);
-        delete statuses[id];
+        fallback(id);
         continue;
       }
       const settled = !reviewInFlight(view);
@@ -193,11 +244,10 @@ async function follow() {
       failures.set(id, count);
       if (count >= MAX_WATCH_FAILURES) {
         unwatch(id);
-        delete statuses[id];
+        fallback(id);
       }
     }
   }
-  schedule();
 }
 /** Open an item in the pane; the previous one keeps following its stage if in flight. */
 async function choose(id: string | undefined, focus: boolean) {
@@ -216,6 +266,9 @@ async function choose(id: string | undefined, focus: boolean) {
     if (previous && previous.entry.item.id === left && inbox)
       rows = inbox.patch(previous.entry);
     selected = id;
+    navigation++;
+    paneDirty = false;
+    leaving = undefined;
     if (id) unwatch(id);
     onselect?.(id);
   }
@@ -225,22 +278,53 @@ async function choose(id: string | undefined, focus: boolean) {
     pane?.focus();
   }
 }
+/**
+ * A selection the reviewer asked for (row, keyboard, buttons). Unsent input
+ * in the pane would be lost with it, so that asks first, inline.
+ */
+async function request(id: string) {
+  if (id === selected) return;
+  if (paneDirty) {
+    leaving = { id };
+    await tick();
+    stay
+      ?.querySelector<HTMLElement>('[data-stay] button, button[data-stay]')
+      ?.focus();
+    return;
+  }
+  await choose(id, true);
+}
+async function discardAndLeave() {
+  const target = leaving?.id;
+  leaving = undefined;
+  if (target) await choose(target, true);
+}
+async function keepEditing() {
+  leaving = undefined;
+  await tick();
+  pane?.focus();
+}
 async function move(offset: 1 | -1) {
+  const ticket = navigation;
   let list = rows;
   const index = list.findIndex((row) => row.item.id === selected);
   let target =
     index < 0 ? (offset > 0 ? list[0] : list.at(-1)) : list[index + offset];
   if (!target && offset > 0 && more && inbox) {
     list = await inbox.more();
+    // The reviewer chose something else while the page loaded.
+    if (ticket !== navigation) return;
     target = list[(index < 0 ? -1 : index) + 1];
   }
-  if (target) await choose(target.item.id, true);
+  if (target) await request(target.item.id);
 }
 /** After an item is finished: drop it under the filter and open the next open item. */
 async function advance() {
+  const ticket = navigation;
   const current = selected;
   const before = rows.findIndex((row) => row.item.id === current);
   let list = paneView && inbox ? inbox.patch(paneView.entry) : rows;
+  rows = list;
   const start =
     before < 0 ? 0 : list[before]?.item.id === current ? before + 1 : before;
   const open = (row: InboxEntry) =>
@@ -249,9 +333,9 @@ async function advance() {
   while (!next && more && inbox) {
     const count = list.length;
     list = await inbox.more();
-    // No progress (for example a denied page) must not spin on a host callback.
-    if (!alive || selected !== current) return;
+    if (!alive || ticket !== navigation) return;
     next = list.slice(start).find(open);
+    // No progress (for example a denied page) must not spin on a host callback.
     if (list.length <= count) break;
   }
   next ??= list.slice(0, start).find(open);
@@ -292,7 +376,7 @@ function keydown(event: KeyboardEvent) {
 <svelte:window onkeydown={keydown} />
 <div class="workspace" bind:this={root} data-testid="intake-workspace">
 <div class="list-pane">
-<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => choose(id, true)} onitems={listed} status={rowStatus} resolveInRow={false} />
+<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} status={rowStatus} resolveInRow={false} />
 </div>
 <section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item">
 <div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>
@@ -302,8 +386,9 @@ function keydown(event: KeyboardEvent) {
 </div>
 <p class="hint">{t(M['ingestion.keyboardHelp'])}</p>
 <p role="status" data-testid="background-update">{announcement}</p>
+{#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note" role="alert">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
-{#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" onview={paneChanged} onoutcome={outcome} />{/key}
+{#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
 {:else if done}<p role="status" data-testid="queue-done">{t(M['ingestion.queueDone'])}</p>
 {:else}<p>{t(M['ingestion.selectItem'])}</p>{/if}
 </section>
@@ -311,6 +396,6 @@ function keydown(event: KeyboardEvent) {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-.workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;color:var(--smrt-color-on-surface)}.list-pane,.item-pane{min-width:0}.item-pane{outline-offset:.25rem}.queue-nav{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding-inline:1rem}.queue-nav p,.hint{margin:0}.hint{padding-inline:1rem;font-size:.875rem}[data-testid='background-update']{padding-inline:1rem;margin:0}@media(min-width:64rem){.workspace{grid-template-columns:minmax(18rem,26rem) minmax(0,1fr)}.list-pane{position:sticky;inset-block-start:0;align-self:start;max-block-size:100vh;overflow:auto}}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;color:var(--smrt-color-on-surface)}.list-pane,.item-pane{min-width:0}.item-pane{outline-offset:.25rem}.queue-nav{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding-inline:1rem}.queue-nav p,.hint{margin:0}.leave{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.75rem 1rem;border:var(--smrt-hairline)}.leave p{margin:0;flex-basis:100%}.hint{padding-inline:1rem;font-size:.875rem}[data-testid='background-update']{padding-inline:1rem;margin:0}@media(min-width:64rem){.workspace{grid-template-columns:minmax(18rem,26rem) minmax(0,1fr)}.list-pane{position:sticky;inset-block-start:0;align-self:start;max-block-size:100vh;overflow:auto}}
 }
 </style>

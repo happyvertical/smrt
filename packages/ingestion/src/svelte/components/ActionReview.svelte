@@ -27,6 +27,8 @@ export interface Props {
     outcome?: ReviewOutcome,
   ) => Promise<void>;
   deny: () => void;
+  /** Whether this editor holds unsent input (arguments, reason, comment). */
+  ondirty?: (dirty: boolean) => void;
 }
 let {
   host,
@@ -37,6 +39,7 @@ let {
   resolved = false,
   run,
   deny,
+  ondirty,
 }: Props = $props();
 const { t } = useI18n();
 // ReviewView keys this editor by action/revision/reviewVersion; edits are local to that binding.
@@ -50,11 +53,17 @@ let args = $state(untrack(() => JSON.stringify(action.args, null, 2) ?? '')),
 let alive = true;
 onDestroy(() => {
   alive = false;
+  // The editor's local input goes with it.
+  ondirty?.(false);
 });
 const dirty = $derived(
   args !== (JSON.stringify(action.args, null, 2) ?? '') ||
     planArgs !== (JSON.stringify(action.plan?.args, null, 2) ?? ''),
 );
+$effect(() => {
+  const edited = dirty || !!reason || !!comment;
+  untrack(() => ondirty?.(edited));
+});
 const waiting = $derived(
   action.args !== undefined && action.review.state === 'waiting_review',
 );

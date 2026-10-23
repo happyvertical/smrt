@@ -34,9 +34,13 @@ export interface Props {
   /**
    * Every displayed view (load, in-place poll patch, denial projection), and
    * `undefined` when a displayed view is cleared for a reload or an operation
-   * whose result has not been shown yet. Presentation only.
+   * whose result has not been shown yet. `denied` is true when it was cleared
+   * because a callback failed (the view fails closed), not for a reload.
+   * Presentation only.
    */
-  onview?: (view: ItemReviewView | undefined) => void;
+  onview?: (view: ItemReviewView | undefined, denied: boolean) => void;
+  /** Whether the reviewer has unsent input on this item. */
+  ondirty?: (dirty: boolean) => void;
   /** After an approve, apply or resolve and the reload that follows it succeeded. */
   onoutcome?: (outcome: ReviewOutcome, view: ItemReviewView) => void;
 }
@@ -46,6 +50,7 @@ let {
   pollMs = 2000,
   layout = 'split',
   onview,
+  ondirty,
   onoutcome,
 }: Props = $props();
 const { t } = useI18n();
@@ -104,10 +109,50 @@ const inFlight = reviewInFlight;
 let shown = false;
 $effect(() => {
   const current = view;
+  // Read too, so a denial after an operation cleared the view still reports.
+  const denied = !current && error;
   if (!current && !shown) return;
   shown = true;
-  untrack(() => onview?.(current));
+  untrack(() => onview?.(current, denied));
 });
+// Unsent reviewer input on this item (instruction, drafts, split edits,
+// start/resolve fields, action editors); a workspace confirms before leaving.
+let actionDirty = $state<Record<string, boolean>>({});
+const dirty = $derived(
+  !!instruction.trim() ||
+    editedFields() ||
+    Object.values(actionDirty).some(Boolean) ||
+    editedDrafts() ||
+    editedSplits(),
+);
+/** Start-action and resolve fields (declared with their controls below). */
+function editedFields() {
+  return !!resolveReason || !!startHandler || !!startReason;
+}
+function editedDrafts() {
+  const attemptId = view?.analysis?.attemptId;
+  return (view?.generation?.suggestions ?? []).some((suggestion, index) => {
+    const draft = drafts[`${attemptId ?? ''}:${index}`];
+    return (
+      draft !== undefined && draft !== JSON.stringify(suggestion.args, null, 2)
+    );
+  });
+}
+function editedSplits() {
+  return (view?.generation?.splits ?? []).some(
+    (split) =>
+      splits[split.evidenceId] !== undefined &&
+      splits[split.evidenceId] !== JSON.stringify(split.groups),
+  );
+}
+$effect(() => {
+  const current = dirty;
+  untrack(() => ondirty?.(current));
+});
+// The original's chosen part and pages outlive in-place reloads and
+// operations (the viewer itself unmounts while a reload is pending).
+let viewerPart = $state<string>(),
+  viewerPages = $state<Record<string, number>>({});
 /** Prefer the server's retry binding; otherwise the displayed generation. */
 function instructionBinding(current: ItemReviewView | undefined) {
   if (current?.instruction?.binding) return current.instruction.binding;
@@ -641,7 +686,7 @@ onMount(() => {
 {:else}
 {@const extracted = view.analysis ? extractedContent(view.analysis.result.output) : []}
 <h2>{view.entry.label}</h2><p>{t(M[`ingestion.${view.entry.state}`])}</p>
-<div class="review-grid" class:stacked={layout === 'stacked'}><EvidenceViewer evidence={view.evidence} pages={observedPages(view)} layout={layout === 'stacked' ? 'pager' : 'stack'} /><div class="details">
+<div class="review-grid" class:stacked={layout === 'stacked'}><EvidenceViewer evidence={view.evidence} pages={observedPages(view)} layout={layout === 'stacked' ? 'pager' : 'stack'} bind:chosen={viewerPart} bind:page={viewerPages} /><div class="details">
 {#if view.instruction}
 {@const applied = view.instruction.applied}{@const current = view.instruction.current}
 {#if inFlight(view) && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
@@ -721,7 +766,7 @@ onMount(() => {
 {/if}
 {#if !view.reviews.actions.length}<p>{t(M['ingestion.noReviews'])}</p>{/if}
 {#each view.reviews.actions as action (`${action.review.actionId}:${action.review.revision}:${action.review.reviewVersion}`)}
-<ActionReview {host} {itemId} {action} {run} {deny} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
+<ActionReview {host} {itemId} {action} {run} {deny} ondirty={(edited) => { actionDirty[action.review.actionId] = edited; }} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
 {/each}
 {#if view.reviews.nextCursor}<Button onclick={() => load(loadedPages + 1)}>{t(M['ingestion.more'])}</Button>{/if}
 </div></div>

@@ -121,6 +121,10 @@ export const M = defineMessages({
   'ingestion.itemOf': 'Item {index} of {count}',
   'ingestion.selectItem': 'Choose an item from the list to review it here.',
   'ingestion.queueDone': 'Nothing else in this list needs review.',
+  'ingestion.unsavedLeave':
+    'This item has input you have not sent. Leave it and discard that input?',
+  'ingestion.discardLeave': 'Discard and open the other item',
+  'ingestion.stay': 'Stay on this item',
   'ingestion.keyboardHelp':
     'Press J or K, or Alt+Down or Alt+Up, outside a text field to move between items.',
   'ingestion.statusReason': '{status}: {reason}',
