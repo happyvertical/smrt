@@ -33,6 +33,7 @@ import type {
 import {
   type DiscoveryGate,
   discoveryTransaction,
+  listReadGate,
   type TransactionRunner,
 } from './execution-internal.js';
 import {
@@ -389,21 +390,36 @@ export class IntakeExecutionService {
         ? new HandlerArgumentsInvalidError('Invalid handler payload')
         : new Error('Invalid handler payload');
   }
-  private async access(
+  /**
+   * The read-only half of `access`: current host authority, policy and
+   * ceiling allowlists and the retention deadline they imply. It writes
+   * nothing, so a listing may call it per (item, handler) without opening a
+   * transaction per row.
+   */
+  private async authority(
     db: DatabaseInterface,
     item: Row,
     handler: IntakeHandler,
     operation: ExecutionAccessInput['operation'],
+    onHostError?: (error: unknown) => void,
   ) {
     const ceiling = this.ceiling(item);
-    const current = await this.config.authorize({
-      db,
-      scope: this.scope,
-      itemId: String(item.id),
-      capturedCeiling: ceiling,
-      operation,
-      handlerId: handler.id,
-    });
+    let current: Awaited<ReturnType<IntakeExecutionOptions['authorize']>>;
+    try {
+      current = await this.config.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(item.id),
+        capturedCeiling: ceiling,
+        operation,
+        handlerId: handler.id,
+      });
+    } catch (error) {
+      // Callers that turn refusals into "not readable" must still tell a
+      // failing host apart from a refusing one.
+      onHostError?.(error);
+      throw error;
+    }
     if (
       !current.allowed ||
       current.mutationBoundary !== 'serialized' ||
@@ -432,6 +448,20 @@ export class IntakeExecutionService {
     const deadline = Math.min(
       time(item.expires_at),
       time(item.created_at) + policy.retentionMs,
+    );
+    return { current, ceiling, policy, deadline };
+  }
+  private async access(
+    db: DatabaseInterface,
+    item: Row,
+    handler: IntakeHandler,
+    operation: ExecutionAccessInput['operation'],
+  ) {
+    const { current, ceiling, policy, deadline } = await this.authority(
+      db,
+      item,
+      handler,
+      operation,
     );
     const enforce = async (executor: DatabaseInterface) => {
       const intents = this.retentionIntents.getStore();
@@ -683,6 +713,58 @@ export class IntakeExecutionService {
     )
       throw new Error('Handler version drift');
     return { item, action, proposal, binding, handler };
+  }
+  /**
+   * Read authority for one handler binding of a listed item, read-only. It
+   * applies the handler checks `listReviews` applies before projecting an
+   * action: the bound handler must resolve to a single operation whose
+   * operation and capability still match the saved binding (no version
+   * drift), and the execution read gate (host authority, policy and ceiling
+   * handler/operation allowlists, `policy.access`, principal) must pass, but
+   * without the retention write; an item past the deadline `access` would
+   * narrow to is not listable, and neither is a cancelled item, which
+   * `listReviews` refuses once it binds an action. Per-action target,
+   * evidence and plan gates are not evaluated here; `load` still enforces
+   * them. A refusal or any other failed check answers false and the list
+   * discloses nothing about why; a host `authorize` that throws propagates,
+   * as it does from `load`, so the page is rejected. Package-internal:
+   * reachable only through a symbol the service holds,
+   * so callers cannot hand it an unscoped row.
+   */
+  async [listReadGate](
+    item: Row,
+    binding: {
+      handlerId: string;
+      handlerVersion: string;
+      operation: unknown;
+      capability: unknown;
+    },
+  ): Promise<boolean> {
+    let hostFailure: { error: unknown } | undefined;
+    try {
+      if (item.cancelled) return false;
+      const handler = this.operation(
+        this.handler(binding.handlerId, binding.handlerVersion),
+      );
+      if (
+        canonical(handler.operation) !== canonical(binding.operation) ||
+        canonical(handler.capability) !== canonical(binding.capability)
+      )
+        return false;
+      const { deadline } = await this.authority(
+        this.db,
+        item,
+        handler,
+        'read',
+        (error) => {
+          hostFailure = { error };
+        },
+      );
+      return deadline > this.now().getTime();
+    } catch {
+      if (hostFailure) throw hostFailure.error;
+      return false;
+    }
   }
   private review(bound: Bound): ProposalReview {
     return {

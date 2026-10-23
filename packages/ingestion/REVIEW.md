@@ -332,6 +332,8 @@ reviewer-selected action. The UI hides Approve, Defer, Apply, every edit control
 preview and split controls on a resolved item.
 Resolved items hide the instruction editor and stop reinterpretation polling, even if an older processing projection is still queued. Recording an instruction cannot append a new revision after resolution.
 
+Paged lists project the resolved state and disposition time in the same bounded, scope-filtered query, so state filters and row controls agree with a full item reload.
+
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and
 `startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects only
@@ -404,8 +406,124 @@ degrades the same way. Repeated
 preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.
-Lists scan 20 items per page; filtered pages may be empty with a `nextCursor`.
-Continue until the cursor is absent. Listing does not load original bytes.
+`list({ state?, assigneeId?, cursor?, limit? })` returns one page newest receipt
+first (`intake_items.created_at`, id tiebreak) through `service.listItemsPage`.
+`limit` defaults to 20 and is capped at 100; the cursor is an opaque
+(received-at, id) continuation, never a bare id. Tenant, confidential scope,
+retention and the `state` filter run inside the page query, so a page is full
+and `nextCursor` is present only when more rows follow.
+
+Authority is rechecked at the same two levels `load` applies, but per page
+rather than per row: the host authorize callback once per distinct captured
+ceiling in a batch, and the execution read gate (policy, ceiling, handler and
+operation allowlists, principal) once per distinct (item, handler) bound by
+the page's saved actions. The list gate is read-only: it evaluates the same
+checks as `listReviews` without the retention write, so an item that the item
+view would narrow past its deadline is simply not listed. The list gate also
+resolves each bound handler and rejects version drift against the saved
+binding and omits a cancelled item, as `listReviews` does; it does not
+evaluate per-action target,
+evidence or plan gates, so an item whose target became unreadable still lists
+and its item view refuses. An item whose bound
+handler the actor cannot currently read is not listed at all, rather than
+listed with a state derived from actions the actor may not see; actions
+without a proposal bind no handler and are not gated, as in `listReviews`.
+Handler bindings (handler id and version, projected in SQL, distinct per
+item) are read once per fetched batch for the rows that passed the item-level
+gate. Note the host cost plainly: the execution `authorize` callback runs once
+per distinct (item, handler) bound by a scanned row that passed the item-level
+gate. Each item is its own authorization subject, so nothing is deduplicated
+across items; the count is bounded by rows scanned (at most
+`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. Either host callback, the item-level `authorize` or the execution
+`authorize` behind the handler gate, follows the same rule: a refusal (false,
+or an access check that fails) hides the rows it covers, and a callback that
+throws rejects the whole page (and `listItems()`) with its error, as `load`
+does, so a transient failure never lets paging move past readable rows.
+Denied or unreadable rows are skipped without
+disclosure and the page refills from the next rows; refills grow from the page
+size to 100 rows per query, so a fully denied scope costs about a dozen page
+reads and as many binding reads per call. One service call examines at most
+`ITEM_SCAN_CEILING` (1000) rows, or the caller's smaller `scanLimit`, and
+reports the count as `scanned`; when a mostly-denied scope reaches the ceiling
+the page comes back short with a `nextCursor`. Rows are authorized first and
+the `state` filter is then applied to the fetched batch, so it is bounded by
+the same scan limit: a rare state yields short pages with a cursor rather than
+an unbounded walk inside one query. A row the actor can read whose state does
+not match discloses nothing and may anchor the cursor, so a filter with no
+match among the next 1000 rows returns an empty page with a cursor and still
+pages to the end. The host `list` passes its remaining budget as `scanLimit`, so the
+rows scanned across the service calls of one host call never exceed 1000: a
+short service page with a cursor, or an exhausted budget while filtering by
+assignee, ends the host call with the same cursor and the caller continues.
+Only rows the service wrote are supported: cursors carry the canonical
+millisecond ISO receipt time the service stores. A row whose stored receipt
+time is not that form (on SQLite anything but `YYYY-MM-DDTHH:MM:SS.mmmZ`,
+including a parseable value without milliseconds or with an offset; on
+PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
+actor's access, and counts toward the scan, as does a row whose id is not a
+UUID. On SQLite a non-text stored value (an integer, say) and a receipt value
+or id longer than 64 characters or containing a NUL character are excluded by
+the page query itself: the first sorts after every text value so the scan
+could never move past it, the second could not be carried by any cursor, and
+the third is returned truncated at the NUL, so it would look canonical and
+sort above a legitimate row at the truncated value. Within a call the scan moves
+past a service-foreign row by its exact stored value, and an unsealed cursor
+names the last row before it that the actor can read. A call that finds no readable row within its scan limit (at
+most 1000) fails closed with `IntakeScanLimitError` unless a `cursorKey` is
+configured, as below. The host
+`list` returns what earlier service calls collected, with their cursor, when
+a later call fails that way.
+
+`listItems()` is deprecated and kept only for callers of the array-returning
+API. It walks every page, so its cost grows with the scope, including one
+execution authorization per (item, handler) across the whole scope. It follows
+the internal scan position, which never leaves the service, so runs of rows
+the actor cannot read never stop it and it returns `[]` where nothing is
+readable. Items are newest-first and gated exactly as on a page.
+
+The page's inbox state is the durable projection of the saved action journal
+and processing state, computed once per scanned row inside the page query;
+`load` remains the authoritative, live-gated projection for one item (it still
+projects individual stale actions, which the list does not). Cost is
+proportional to the page for unfiltered pages and common states, and to the
+number of items scanned until enough matches are found for rare states: the
+state is not persisted, because the action journal is append-only and
+projecting it into an indexed column would need a maintained denormalisation
+in the execution service plus a migration, which this change does not take.
+Listing does not load original bytes.
+
+Cursors never disclose an unreadable row. Without a `cursorKey` in the
+service options, every cursor (each row's and `nextCursor`) names a row the
+actor can read (the last one when a page stops early); a page that spends its scan limit before filling hands back
+the last such row, and one that found none fails closed with
+`IntakeScanLimitError` (`Intake scan limit`, no id or time). A run of rows the
+actor cannot read (refused by the captured ceiling or the execution gate, or
+stored with a non-canonical receipt time) at least as long as the scan limit
+therefore stops an unkeyed walk there; readable rows that the `state` filter
+excludes never count toward such a run. With a `cursorKey` (a server secret of at least 32 bytes), every
+cursor is sealed with AES-256-GCM, bound to the tenant, confidential scope and
+actor, and a budget-stopped page returns a sealed position past what it
+skipped, so the walk always progresses. Sealed cursors have a fixed length
+(the plaintext is padded to 1024 bytes) and a fresh nonce per seal, so neither
+their length nor their bytes reveal anything about the stop row. `scanned` is for trusted host
+accounting and must not be sent to clients; a short page with a cursor tells
+a caller only that unlisted rows exist, never which.
+
+Newest-first paging relies on `intake_items_received_idx`
+(`tenant_id, confidential_scope_id, created_at, id`), the full ordering key, so
+an unfiltered page is a backward index scan that stops at the page boundary;
+the foundation suite asserts that plan on both engines (SQLite
+`EXPLAIN QUERY PLAN`, PostgreSQL `EXPLAIN`), with the per-row state counters
+served by `intake_actions_item_idx`. On SQLite the page query pins the index with `INDEXED BY` (except under an
+id restriction, where direct id lookups are cheaper), because without planner
+statistics SQLite otherwise picks `intake_items_expiry_idx` plus a sort; the
+SQLite plan check runs without `ANALYZE`. A deployment must have applied the
+manifest migration, or the page query fails with a missing-index error. This package ships no
+migration files: indexes are declared on the model, the build emits them into
+`dist/manifest.json`, and `smrt db:migrate` / the public migration API create
+them, which is how `intake_items_receipt_idx` shipped. Deploy the manifest
+migration before upgrading hosts; `db:status --parity` reports the index as
+missing until then.
 
 Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
@@ -419,7 +537,10 @@ Row previews are opt-in through an optional fifth adapter,
 evidence metadata with one `service.listEvidence(itemIds)` query (at most 100
 ids; items the scope cannot read, and expired or inactive items, are omitted
 without disclosure; the host `authorize` runs once per distinct captured
-ceiling; a failing `authorize` rejects the page). It then calls `rowEvidence`
+ceiling through the same gate as `listItemsPage`, so a refusal or a
+malformed captured ceiling hides the item and a failing `authorize` rejects
+the page; an item whose stored data does not parse is skipped by both
+`listItemsPage` and `listEvidence`, never fatal). It then calls `rowEvidence`
 once with each row's primary part (`{ itemId, evidence }`) and publishes the
 returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
 (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
@@ -441,6 +562,14 @@ not an `aside` landmark, so a page does not add one landmark per row. Optional
 `label(item, evidence)` changes presentation; `evidence` is the item's durable
 parts with the primary part first, and the default label is the primary part's
 own original `filename`, else `Intake <8 hex>`. Optional
+`assignments(itemIds)` reads one page's assignments in one batch (otherwise
+`assignment` runs per row), and optional `assignedItemIds(assigneeId)` lets
+`list` push the assignee filter into the page query (junk ids are dropped, not
+fatal); without it an assignee filter scans further pages and filters by
+`assignment`, which stays correct but costs more rows. The page's continuation
+is always the last row actually returned, so an assignment that changes
+between the page read and the assignment read costs at most one extra scan and
+never skips or repeats a row. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment

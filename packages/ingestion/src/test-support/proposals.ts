@@ -128,6 +128,14 @@ export function proposalSuite(
     let policyMaxBytes: number;
     let reviewerAllowed: boolean;
     let policyReviewers: string[];
+    let deniedHandlers: string[];
+    let deniedOperations: string[];
+    let policyAccess: string[];
+    let principalOverride: string | undefined;
+    let policyRetentionMs: number | undefined;
+    let executionAuthorizations: number;
+    let executionThrows: boolean;
+    let executionRefuses: boolean;
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
       await expect(
@@ -172,6 +180,14 @@ export function proposalSuite(
       policyMaxBytes = 100000;
       reviewerAllowed = true;
       policyReviewers = ['owner', 'reviewer'];
+      deniedHandlers = [];
+      deniedOperations = [];
+      policyAccess = ['private'];
+      principalOverride = undefined;
+      policyRetentionMs = undefined;
+      executionAuthorizations = 0;
+      executionThrows = false;
+      executionRefuses = false;
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -236,34 +252,45 @@ export function proposalSuite(
         handlers,
         authorize: async ({ scope, db: executor }) => {
           authorizedExecutor = executor;
+          executionAuthorizations++;
+          if (executionThrows)
+            throw new Error('execution authorization unavailable');
           const deniedOnce = denyNextAuthorize;
           denyNextAuthorize = false;
           return {
             allowed:
+              !executionRefuses &&
               !deniedOnce &&
               allowed &&
               scope.tenantId === tenant &&
               scope.confidentialScopeId === 'private' &&
               ['owner', 'reviewer'].includes(scope.actorId),
             reviewer: reviewerAllowed,
-            principalId: principal,
+            principalId: principalOverride ?? principal,
             permissions,
             mutationBoundary: 'serialized',
             policy: [
               {
                 version: 'app1',
-                handlers: handlers.map((handler) => handler.id),
-                operations: handlers.map((handler) =>
-                  'model' in handler.operation
-                    ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
-                    : handler.operation.playbookKey,
-                ),
+                handlers: handlers
+                  .map((handler) => handler.id)
+                  .filter((id) => !deniedHandlers.includes(id)),
+                operations: handlers
+                  .map((handler) =>
+                    'model' in handler.operation
+                      ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
+                      : handler.operation.playbookKey,
+                  )
+                  .filter((key) => !deniedOperations.includes(key)),
                 providers: providerAllowed ? ['fixture'] : [],
                 reviewers: policyReviewers,
-                access: ['private'],
+                access: policyAccess,
                 requireReview: true,
                 maxBytes: policyMaxBytes,
                 leaseMs: 1000,
+                ...(policyRetentionMs === undefined
+                  ? {}
+                  : { retentionMs: policyRetentionMs }),
               },
               { version: policyVersion },
               { version: 'source1' },
@@ -801,6 +828,403 @@ export function proposalSuite(
       ).rejects.toThrow('Generation visibility changed');
     });
 
+    it('lists pages under the read-only execution gate: ceiling, policy, operation, access and principal denials', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: generated.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      await host.preview({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        index: 0,
+        requestId: randomUUID(),
+      });
+      // Trusted setup clones the item with its saved action and proposal so
+      // the handler gate runs for a whole page. Ten clones carry a captured
+      // ceiling without the bound handler.
+      const row = async (table: string, where: string, value: string) =>
+        (await db.query(`SELECT * FROM ${table} WHERE ${where}=?`, value))
+          .rows[0] as Record<string, unknown>;
+      const itemRow = await row('intake_items', 'id', generated.itemId);
+      const actionRow = await row(
+        'intake_actions',
+        'item_id',
+        generated.itemId,
+      );
+      const proposalRow = await row(
+        'intake_proposals',
+        'item_id',
+        generated.itemId,
+      );
+      const insert = async (
+        table: string,
+        template: Record<string, unknown>,
+        overrides: Record<string, unknown>,
+      ) => {
+        const values = { ...template, ...overrides };
+        const columns = Object.keys(values);
+        await db.query(
+          `INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
+          ...columns.map((column) => {
+            const value = values[column];
+            return value &&
+              typeof value === 'object' &&
+              !(value instanceof Date)
+              ? JSON.stringify(value)
+              : value;
+          }),
+        );
+      };
+      const json = (value: unknown) =>
+        typeof value === 'string' ? JSON.parse(value) : structuredClone(value);
+      const readable: string[] = [];
+      const mismatched: string[] = [];
+      const cloneProposals = new Map<string, string>();
+      const base = new Date(String(itemRow.created_at)).getTime();
+      for (let index = 0; index < 40; index++) {
+        const itemId = randomUUID();
+        const actionId = randomUUID();
+        const data = json(itemRow.data) as {
+          capturedCeiling: { execution: { handlers: string[] } };
+        };
+        if (index < 10) {
+          data.capturedCeiling.execution.handlers =
+            data.capturedCeiling.execution.handlers.filter(
+              (id) => id !== CREATE,
+            );
+          mismatched.push(itemId);
+        } else readable.push(itemId);
+        const at = new Date(base - (index + 1) * 1000).toISOString();
+        await insert('intake_items', itemRow, {
+          id: itemId,
+          slug: itemId,
+          delivery_key: `clone-${index}`,
+          created_at: at,
+          updated_at: at,
+          data,
+        });
+        await insert('intake_actions', actionRow, {
+          id: actionId,
+          slug: actionId,
+          item_id: itemId,
+          action_key: `clone-${index}`,
+        });
+        const proposalId = randomUUID();
+        cloneProposals.set(itemId, proposalId);
+        await insert('intake_proposals', proposalRow, {
+          id: proposalId,
+          slug: proposalId,
+          item_id: itemId,
+          action_id: actionId,
+        });
+      }
+      const expiry = async () =>
+        (
+          await db.query('SELECT id,expires_at FROM intake_items ORDER BY id')
+        ).rows.map((r) => [String(r.id), String(r.expires_at)]);
+      const before = await expiry();
+      let writes = 0;
+      let queries = 0;
+      const counted = new Proxy(db, {
+        get(target, property) {
+          if (property === 'query')
+            return (...args: unknown[]) => {
+              queries++;
+              if (/^\s*(UPDATE|INSERT|DELETE)/i.test(String(args[0]))) writes++;
+              return (target.query as (...a: unknown[]) => unknown)(...args);
+            };
+          if (property === 'transaction')
+            return (...args: unknown[]) => {
+              writes++;
+              return (target.transaction as (...a: unknown[]) => unknown)(
+                ...args,
+              );
+            };
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const paged = new IngestionService({ ...options, db: counted });
+      executionAuthorizations = 0;
+      const page = await paged.listItemsPage({ limit: 100 });
+      // The original (newest) plus the thirty clones whose ceiling still
+      // covers the handler, newest first; the ten mismatched clones are not
+      // listed and leak no state.
+      expect(page.items.map(({ item }) => item.id)).toEqual([
+        generated.itemId,
+        ...readable,
+      ]);
+      expect(page.items.every(({ state }) => state === 'waiting')).toBe(true);
+      expect(page.nextCursor).toBeUndefined();
+      // One execution authorization per (item, handler) in the page, and
+      // listing wrote nothing: no transaction, no retention narrowing.
+      expect(executionAuthorizations).toBe(41);
+      expect(writes).toBe(0);
+      expect(queries).toBeLessThanOrEqual(3);
+      expect(await expiry()).toEqual(before);
+      // The cursor anchor is set only after the handler gate: a budget stop
+      // inside the run of handler-denied clones names the last readable row
+      // (the original item), never one of them.
+      const stopped = await paged.listItemsPage({ limit: 20, scanLimit: 6 });
+      expect(stopped.items.map(({ item }) => item.id)).toEqual([
+        generated.itemId,
+      ]);
+      const named = JSON.parse(
+        Buffer.from(String(stopped.nextCursor), 'base64url').toString('utf8'),
+      );
+      expect(named[1]).toBe(generated.itemId);
+      expect(mismatched).not.toContain(named[1]);
+      // Every other denial path of the execution read gate empties the page
+      // while the item view refuses as before.
+      const createKey = (() => {
+        const handler = handlers.find((h) => h.id === CREATE)!;
+        return 'model' in handler.operation
+          ? `${handler.operation.model}:${handler.operation.action}@${handler.operation.version}`
+          : handler.operation.playbookKey;
+      })();
+      for (const deny of [
+        () => {
+          deniedHandlers = [CREATE];
+        },
+        () => {
+          deniedOperations = [createKey];
+        },
+        () => {
+          policyAccess = ['elsewhere'];
+        },
+        () => {
+          principalOverride = '44444444-4444-4444-8444-444444444444';
+        },
+      ]) {
+        deny();
+        expect((await paged.listItemsPage({ limit: 100 })).items).toEqual([]);
+        expect((await host.list({})).items).toEqual([]);
+        await expect(host.load(generated.itemId)).rejects.toThrow(
+          'unavailable',
+        );
+        deniedHandlers = [];
+        deniedOperations = [];
+        policyAccess = ['private'];
+        principalOverride = undefined;
+      }
+      expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+        31,
+      );
+      // Handler version drift: a clone whose saved binding no longer matches
+      // the configured handler is omitted, as its item view refuses it.
+      const driftedId = readable[0];
+      const driftProposal = cloneProposals.get(driftedId) ?? '';
+      const saved = (
+        await db.query(
+          'SELECT data FROM intake_proposals WHERE id=?',
+          driftProposal,
+        )
+      ).rows[0].data;
+      const drifted = json(saved) as {
+        binding: { operation: Record<string, unknown> };
+      };
+      drifted.binding.operation = {
+        ...drifted.binding.operation,
+        version: 'drifted',
+      };
+      await db.query(
+        'UPDATE intake_proposals SET data=? WHERE id=?',
+        JSON.stringify(drifted),
+        driftProposal,
+      );
+      const driftPage = await paged.listItemsPage({ limit: 100 });
+      expect(driftPage.items.map(({ item }) => item.id)).not.toContain(
+        driftedId,
+      );
+      expect(driftPage.items).toHaveLength(30);
+      await expect(host.load(driftedId)).rejects.toThrow('drift');
+      await db.query(
+        'UPDATE intake_proposals SET data=? WHERE id=?',
+        typeof saved === 'string' ? saved : JSON.stringify(saved),
+        driftProposal,
+      );
+      expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+        31,
+      );
+      expect(await expiry()).toEqual(before);
+      // A host execution `authorize` that throws rejects the page and the
+      // deprecated walk with its error, as `load` does; one that refuses
+      // (`allowed: false`) hides every row that binds a handler.
+      executionThrows = true;
+      await expect(paged.listItemsPage({ limit: 100 })).rejects.toThrow(
+        'execution authorization unavailable',
+      );
+      await expect(paged.listItems()).rejects.toThrow(
+        'execution authorization unavailable',
+      );
+      await expect(host.load(generated.itemId)).rejects.toThrow(
+        'execution authorization unavailable',
+      );
+      executionThrows = false;
+      executionRefuses = true;
+      expect((await paged.listItemsPage({ limit: 100 })).items).toEqual([]);
+      expect(await paged.listItems()).toEqual([]);
+      executionRefuses = false;
+      expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+        31,
+      );
+      // Capability-only drift is caught like version drift, and a cancelled
+      // item with saved proposals is omitted, as its item view refuses both.
+      {
+        const target = readable[1];
+        const proposalId = cloneProposals.get(target) ?? '';
+        const stored = (
+          await db.query(
+            'SELECT data FROM intake_proposals WHERE id=?',
+            proposalId,
+          )
+        ).rows[0].data;
+        const changed = json(stored) as {
+          binding: { capability?: Record<string, unknown> };
+        };
+        changed.binding.capability = {
+          ...(changed.binding.capability ?? {}),
+          drifted: true,
+        };
+        await db.query(
+          'UPDATE intake_proposals SET data=? WHERE id=?',
+          JSON.stringify(changed),
+          proposalId,
+        );
+        const capabilityPage = await paged.listItemsPage({ limit: 100 });
+        expect(capabilityPage.items.map(({ item }) => item.id)).not.toContain(
+          target,
+        );
+        expect(capabilityPage.items).toHaveLength(30);
+        await expect(host.load(target)).rejects.toThrow('drift');
+        await db.query(
+          'UPDATE intake_proposals SET data=? WHERE id=?',
+          typeof stored === 'string' ? stored : JSON.stringify(stored),
+          proposalId,
+        );
+        const cancelled = readable[2];
+        await db.query(
+          'UPDATE intake_items SET cancelled=? WHERE id=?',
+          dialect === 'postgres' ? true : 1,
+          cancelled,
+        );
+        const cancelledPage = await paged.listItemsPage({ limit: 100 });
+        expect(cancelledPage.items.map(({ item }) => item.id)).not.toContain(
+          cancelled,
+        );
+        expect(cancelledPage.items).toHaveLength(30);
+        await expect(host.load(cancelled)).rejects.toThrow('unavailable');
+        await db.query(
+          'UPDATE intake_items SET cancelled=? WHERE id=?',
+          dialect === 'postgres' ? false : 0,
+          cancelled,
+        );
+        expect((await paged.listItemsPage({ limit: 100 })).items).toHaveLength(
+          31,
+        );
+      }
+      // A thousand further clones, all older, every one binding the handler.
+      // When policy drops that handler the whole scope is denied at the
+      // handler gate: one list call scans exactly the ceiling, reads
+      // bindings once per batch and authorizes once per (item, handler).
+      const bulk = async (
+        table: string,
+        template: Record<string, unknown>,
+        rowsToInsert: Array<Record<string, unknown>>,
+      ) => {
+        const columns = Object.keys({ ...template, ...rowsToInsert[0] });
+        for (let offset = 0; offset < rowsToInsert.length; offset += 50) {
+          const chunk = rowsToInsert.slice(offset, offset + 50);
+          await db.query(
+            `INSERT INTO ${table} (${columns.join(',')}) VALUES ${chunk
+              .map(() => `(${columns.map(() => '?').join(',')})`)
+              .join(',')}`,
+            ...chunk.flatMap((overrides) => {
+              const values = { ...template, ...overrides };
+              return columns.map((column) => {
+                const value = values[column];
+                return value &&
+                  typeof value === 'object' &&
+                  !(value instanceof Date)
+                  ? JSON.stringify(value)
+                  : value;
+              });
+            }),
+          );
+        }
+      };
+      const bulkItems: Array<Record<string, unknown>> = [];
+      const bulkActions: Array<Record<string, unknown>> = [];
+      const bulkProposals: Array<Record<string, unknown>> = [];
+      for (let index = 0; index < 1000; index++) {
+        const itemId = randomUUID();
+        const actionId = randomUUID();
+        const proposalId = randomUUID();
+        const at = new Date(base - (index + 100) * 1000).toISOString();
+        bulkItems.push({
+          id: itemId,
+          slug: itemId,
+          delivery_key: `bulk-${index}`,
+          created_at: at,
+          updated_at: at,
+        });
+        bulkActions.push({
+          id: actionId,
+          slug: actionId,
+          item_id: itemId,
+          action_key: `bulk-${index}`,
+        });
+        bulkProposals.push({
+          id: proposalId,
+          slug: proposalId,
+          item_id: itemId,
+          action_id: actionId,
+        });
+      }
+      await bulk('intake_items', itemRow, bulkItems);
+      await bulk('intake_actions', actionRow, bulkActions);
+      await bulk('intake_proposals', proposalRow, bulkProposals);
+      const afterBulk = await expiry();
+      deniedHandlers = [CREATE];
+      executionAuthorizations = 0;
+      queries = 0;
+      writes = 0;
+      // Nothing is readable and no cursor key is configured, so after the
+      // full 1000-row scan the call fails closed rather than disclose a
+      // position derived from unreadable rows.
+      await expect(paged.listItemsPage({ limit: 20 })).rejects.toThrow(
+        /^Intake scan limit$/,
+      );
+      // Refills grow 20, 20, 40, 80, then 100-row batches and a final 40:
+      // thirteen page reads and thirteen binding reads for a thousand rows.
+      expect(queries).toBeLessThanOrEqual(26);
+      expect(executionAuthorizations).toBe(1000);
+      expect(writes).toBe(0);
+      deniedHandlers = [];
+      // Retention deadline: with a one-second policy window every clone
+      // (received 1..40 s earlier) is past the deadline `access` would narrow
+      // to, so the read-only gate omits them and writes nothing, while
+      // `listReviews` on such a clone tombstones its action as expired.
+      policyRetentionMs = 1000;
+      writes = 0;
+      expect(
+        (await paged.listItemsPage({ limit: 100 })).items.map(
+          ({ item }) => item.id,
+        ),
+      ).toEqual([generated.itemId]);
+      expect(writes).toBe(0);
+      expect(await expiry()).toEqual(afterBulk);
+      expect(
+        (await service.listReviews(readable[0])).actions.map(
+          (action) => action.review.state,
+        ),
+      ).toEqual(['expired']);
+      policyRetentionMs = undefined;
+    });
     it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
       chooseCreate();
       const generated = await generate();
@@ -833,6 +1257,18 @@ export function proposalSuite(
       expect(saved.reviews.actions).toHaveLength(1);
       expect(saved.reviews.actions[0].review.revision).toBe(1);
       expect(saved.entry.state).toBe('waiting');
+      expect((await host.list({})).items.map((entry) => entry.state)).toEqual([
+        'waiting',
+      ]);
+      // Policy no longer covers the bound handler: the list omits the item
+      // rather than deriving a state from actions the actor may not read, and
+      // the item view refuses as before (#4211 review).
+      deniedHandlers = [CREATE];
+      expect((await host.list({})).items).toEqual([]);
+      expect((await service.listItemsPage()).items).toEqual([]);
+      await expect(host.load(generated.itemId)).rejects.toThrow('unavailable');
+      deniedHandlers = [];
+      expect((await host.list({})).items).toHaveLength(1);
       await expect(
         host.preview({
           itemId: generated.itemId,
@@ -8020,6 +8456,33 @@ export function proposalSuite(
         ),
       ).toEqual([generated.itemId]);
       expect((await host.list({ state: 'waiting' })).items).toEqual([]);
+      const resolvedPage = await service.listItemsPage({
+        state: 'resolved',
+        itemIds: [generated.itemId],
+        limit: 1,
+      });
+      expect(
+        resolvedPage.items.map(({ item, state }) => ({
+          id: item.id,
+          disposition: item.disposition,
+          state,
+        })),
+      ).toEqual([
+        {
+          id: generated.itemId,
+          disposition: { state: 'resolved', at: clock.toISOString() },
+          state: 'resolved',
+        },
+      ]);
+      expect(resolvedPage.nextCursor).toBeUndefined();
+      expect(
+        (
+          await service.listItemsPage({
+            state: 'waiting',
+            itemIds: [generated.itemId],
+          })
+        ).items,
+      ).toEqual([]);
       // The leftover waiting action can still be rejected, never approved or automated.
       await expect(
         service.submitDecision({

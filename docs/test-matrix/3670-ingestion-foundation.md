@@ -32,9 +32,10 @@ Provider/component/e2e/evaluation lanes are frozen but have no implementation in
 | Immutable foundations | explicit stable action identity; proposal expected-revision CAS; pinned attempt digest; plan revision replay; successful action refuses new proposal | U,P |
 | Retention/deletion | revoke before failed purge; retry deletion; success tombstones; feedback content redaction; actual late-written object removed by next sweep | U,P |
 | Database rollback | owning executor rollback leaves both item and evidence unchanged | U,P |
-| Migrations/types | public MigrationTracker applies manifest DDL on each engine; registry columns/indexes match; live schema diff empty; missing schema fails diagnostic; fractional confidence round-trip | U,P |
+| Migrations/types | public MigrationTracker applies manifest DDL on each engine; registry columns/indexes (including `intake_items_received_idx`) match; live schema diff empty; missing schema fails diagnostic; fractional confidence round-trip | U,P |
 | Browser boundary | built root and DTO dependency graph bundled with browser conditions and banned provider/Node imports | K |
 | Host authority | owner and delegated allow; unrelated/revoked actor and foreign tenant/confidential scope deny at list/item/evidence/byte reads and writes | U,P |
+| Inbox paging (#4211) | 300 then 1500 seeded items: newest-first order with id tiebreak, identical query counts per page at both sizes, one authorize per ceiling per batch, denied ceilings refill the page, full state-filtered pages with honest `nextCursor`, id restriction, limit/cursor/state/id validation and the 100-row ceiling, index-backed plan without sort or table scan on both engines, mostly-denied actor bounded by the 1000-row scan ceiling with short pages and complete walk, foreign confidential scope empty; proposals suite: read-only handler gate over a cloned page with handler/operation/access/principal/ceiling denials, version drift omitted and no writes; deprecated `listItems()` equals the paged walk; service-foreign receipt times skipped with partial pages, a 130-row run passed in one call and a row-free error only without progress | U,P |
 
 No domain action is executed in this child. The durable-success fixture is inserted
 by trusted test setup to prove proposal/reprocessing/retention refusal and replay

@@ -10,7 +10,25 @@ methods through their authenticated application transport.
 
 Before starting a service, deploy the package manifest through the public s-m-r-t
 migration APIs or `smrt db:migrate`. `assertReady()` only checks existing tables.
-SQLite and PostgreSQL are supported; other engines fail construction.
+SQLite and PostgreSQL are supported; other engines fail construction. Index
+additions ship the same way: `intake_items_received_idx` (newest-first inbox
+paging on `tenant_id, confidential_scope_id, created_at, id`) is declared on the model and reaches existing deployments through the
+next manifest migration; there are no hand-written migration files in this
+package, and `smrt doctor --db` / `db:status --parity` report the index until
+it is applied.
+
+`listItemsPage({ limit?, cursor?, state?, itemIds?, scanLimit? })` returns
+`{ items: [{ item, state, cursor }], scanned, nextCursor? }`: one authorized
+inbox page newest receipt first with each row's durable inbox state and
+continuation cursor, and the number of rows the call examined. `listItems()`
+remains as a deprecated array-returning method that walks the private page
+scan to the end. Without the optional `cursorKey` service option every cursor
+names the last row the actor can read, and a page that finds no readable row
+within its scan limit fails with `IntakeScanLimitError`; with a server secret
+of at least 32 bytes, cursors are sealed and such a page resumes past what it
+skipped. `scanned` is for host
+accounting only. See [REVIEW.md](REVIEW.md) for the paging and authorization
+contract.
 
 A host supplies a database, AssetRuntime, authenticated tenant/actor/confidential
 scope, a live authorization callback, a registered jobs target, and an idempotent

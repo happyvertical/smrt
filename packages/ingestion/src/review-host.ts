@@ -16,7 +16,14 @@ import {
   ReviewerInstructionInvalidError,
   ReviewerInstructionStaleError,
 } from './reviewer-instruction.js';
-import type { IngestionService } from './server.js';
+import {
+  type IngestionService,
+  IntakeScanLimitError,
+  ITEM_ID_FILTER_CEILING,
+  ITEM_PAGE_CEILING,
+  ITEM_SCAN_CEILING,
+  isIntakeId,
+} from './server.js';
 
 /** One listed row's primary original, as passed to `rowEvidence`. */
 export interface RowEvidenceRequest {
@@ -32,6 +39,18 @@ export interface IntakeReviewHostOptions {
   upload: IntakeReviewHost['upload'];
   /** Read durable assignment state; assignment never grants ingestion permissions. */
   assignment(itemId: string): Promise<Assignment>;
+  /**
+   * Optional batched assignment read for one inbox page. Missing ids are
+   * unassigned at version 0. Without it, `list` calls `assignment` per row.
+   */
+  assignments?(itemIds: string[]): Promise<Map<string, Assignment>>;
+  /**
+   * Optional assignee pushdown: the item ids currently assigned to `assigneeId`.
+   * `list` restricts the page query to them, so a filtered page is cut in one
+   * query. Without it (or beyond ITEM_ID_FILTER_CEILING ids) `list` scans pages
+   * and filters by `assignment`, which is still honest but costs more rows.
+   */
+  assignedItemIds?(assigneeId: string): Promise<string[]>;
   /** Authorize manager/assignee and enforce durable CAS plus request-id replay checks. */
   assign: IntakeReviewHost['assign'];
   /** Produce safe text or an authenticated same-origin URL; never storage keys. */
@@ -185,33 +204,101 @@ export function createIntakeReviewHost(
       return named;
     }
   };
-  const entry = async (item: IntakeItemDTO): Promise<InboxEntry> => {
-    const { state } = await loadReviewSummary(service, item);
-    const assignment = await options.assignment(item.id);
-    await service.getItem(item.id);
-    // The label needs the page's evidence; `decorateRows` sets it.
-    return { item, label: '', state, assignment };
+  const assignments = async (
+    itemIds: string[],
+  ): Promise<Map<string, Assignment>> => {
+    if (!itemIds.length) return new Map();
+    if (options.assignments) return options.assignments(itemIds);
+    const read = new Map<string, Assignment>();
+    for (const itemId of itemIds)
+      read.set(itemId, await options.assignment(itemId));
+    return read;
   };
   return {
     async list(input) {
-      const items = (await service.listItems())
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .filter((item) => !input.cursor || item.id > input.cursor)
-        .slice(0, 21);
-      const projected: InboxEntry[] = [];
-      for (const item of items.slice(0, 20)) {
-        const current = await entry(item);
-        if (
-          (!input.state || current.state === input.state) &&
-          (!input.assigneeId ||
-            current.assignment.assigneeId === input.assigneeId)
-        )
-          projected.push(current);
+      // The contract caps `limit` at the service maximum rather than failing.
+      const requested = input.limit ?? 20;
+      const limit = Number.isNaN(requested)
+        ? 20
+        : Math.min(ITEM_PAGE_CEILING, Math.max(1, Math.floor(requested)));
+      let itemIds: string[] | undefined;
+      if (input.assigneeId && options.assignedItemIds) {
+        // Junk ids from the host narrow nothing and must not fail the list.
+        const assigned = [
+          ...new Set(
+            (await options.assignedItemIds(input.assigneeId)).filter(
+              isIntakeId,
+            ),
+          ),
+        ];
+        if (assigned.length <= ITEM_ID_FILTER_CEILING) itemIds = assigned;
       }
-      return {
-        items: await decorateRows(projected),
-        ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
-      };
+      const items: InboxEntry[] = [];
+      let cursor = input.cursor;
+      let examined = 0;
+      // One query per page when every filter is pushed down. Only an
+      // assignee filter the host cannot push down scans further pages, and
+      // each scan is still one query plus one batched assignment read. A
+      // host call never examines more than ITEM_SCAN_CEILING rows: a short
+      // service page with a cursor (the service hit its own ceiling) or the
+      // host's own count ends the call with that cursor for the caller.
+      for (;;) {
+        let page: Awaited<ReturnType<IngestionService['listItemsPage']>>;
+        try {
+          page = await service.listItemsPage({
+            limit,
+            cursor,
+            state: input.state,
+            itemIds,
+            // The remaining budget: the service never scans past it, so the
+            // host's total stays within ITEM_SCAN_CEILING across calls.
+            scanLimit: ITEM_SCAN_CEILING - examined,
+          });
+        } catch (error) {
+          // A later call that spent a small remaining budget without
+          // returning a row must not discard what earlier calls collected:
+          // hand back the position reached so far (a row the actor can read)
+          // and let the caller continue.
+          if (error instanceof IntakeScanLimitError && cursor !== input.cursor)
+            return {
+              items: await decorateRows(items),
+              ...(cursor ? { nextCursor: cursor } : {}),
+            };
+          throw error;
+        }
+        examined += page.scanned;
+        const read = await assignments(page.items.map(({ item }) => item.id));
+        for (const [
+          index,
+          { item, state, cursor: rowCursor },
+        ] of page.items.entries()) {
+          const assignment = read.get(item.id) ?? {
+            assigneeId: null,
+            version: 0,
+          };
+          if (input.assigneeId && assignment.assigneeId !== input.assigneeId)
+            continue;
+          // The label needs the page's evidence; `decorateRows` sets it.
+          items.push({ item, label: '', state, assignment });
+          // The continuation is the last row actually returned, so an
+          // assignment that changed between the page read and the assignment
+          // read can only cost one extra scan, never skip or repeat a row.
+          if (items.length === limit)
+            return {
+              items: await decorateRows(items),
+              ...(page.nextCursor || index < page.items.length - 1
+                ? { nextCursor: rowCursor }
+                : {}),
+            };
+        }
+        if (!page.nextCursor) return { items: await decorateRows(items) };
+        if (page.items.length < limit || examined >= ITEM_SCAN_CEILING)
+          return {
+            items: await decorateRows(items),
+            nextCursor: page.nextCursor,
+          };
+        cursor = page.nextCursor;
+      }
     },
     async load(itemId, cursor) {
       const item = await service.getItem(itemId);
