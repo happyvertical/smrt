@@ -71,24 +71,38 @@ export interface ProposalGenerator {
     responseModel?: string;
   }>;
 }
-export interface ProposalConfiguration {
+/**
+ * How validated decision answers affect readiness. `gate` (default) sends a
+ * suggestion to `needs_review` when the thresholds are not met; `record` still
+ * runs and persists the same answers but leaves outcome/disposition to the
+ * validator. Neither mode makes any action automation-eligible.
+ */
+export type DecisionReadiness = 'gate' | 'record';
+/** Public decision settings shared by generation and read configuration. */
+export interface DecisionSettings {
+  minimumDecisionProbability?: number;
+  tieMargin?: number;
+  /**
+   * Per-request token window forwarded to the decision client as `maxLen`
+   * (the SDK Laya provider option). Absent keeps the client/checkpoint default.
+   */
+  decisionMaxLen?: number;
+  decisionReadiness?: DecisionReadiness;
+}
+export interface ProposalConfiguration extends DecisionSettings {
   version: string;
   promptVersion: string;
   generator: ProposalGenerator;
   /** Absent means the normal unconfigured decision path, never fake probability. */
   decision?: { client: DecisionClient; identity: ProviderIdentity };
-  minimumDecisionProbability?: number;
-  tieMargin?: number;
   limits: GenerationLimits;
 }
 /** Credential-free configuration for validating persisted proposal snapshots. */
-export interface ProposalReadConfiguration {
+export interface ProposalReadConfiguration extends DecisionSettings {
   version: string;
   promptVersion: string;
   generator: ProviderIdentity;
   decision?: ProviderIdentity;
-  minimumDecisionProbability?: number;
-  tieMargin?: number;
   limits: GenerationLimits;
 }
 /** Remove generation capability while preserving the public persisted configuration. */
@@ -117,6 +131,12 @@ export function proposalReadConfiguration(
       ? {}
       : { minimumDecisionProbability: config.minimumDecisionProbability }),
     ...(config.tieMargin === undefined ? {} : { tieMargin: config.tieMargin }),
+    ...(config.decisionMaxLen === undefined
+      ? {}
+      : { decisionMaxLen: config.decisionMaxLen }),
+    ...(config.decisionReadiness === undefined
+      ? {}
+      : { decisionReadiness: config.decisionReadiness }),
     limits: {
       maxHandlers: config.limits.maxHandlers,
       maxCandidates: config.limits.maxCandidates,
@@ -142,5 +162,9 @@ export interface GenerationStageConfiguration extends IntakeValues {
     limits: GenerationLimits;
     minimumDecisionProbability: number;
     tieMargin: number;
+    /** Present only when configured, so default digests stay stable. */
+    decisionMaxLen?: number;
+    /** Present only for `record`; `gate` is the default. */
+    decisionReadiness?: 'record';
   };
 }

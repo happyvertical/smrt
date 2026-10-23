@@ -35,6 +35,11 @@ export const M = defineMessages({
   'ingestion.proposals': 'Proposed actions',
   'ingestion.preview': 'Prepare review',
   'ingestion.args': 'Exact arguments (JSON)',
+  'ingestion.suggestionArgs': 'Suggested arguments (JSON)',
+  'ingestion.previewRejected':
+    'These arguments did not pass the handler validation. Correct them and prepare review again.',
+  'ingestion.completeSuggestion':
+    'This suggestion needs review. Complete or confirm its arguments, then prepare review.',
   'ingestion.effects': 'Proposed effects',
   'ingestion.approve': 'Approve',
   'ingestion.reject': 'Reject',

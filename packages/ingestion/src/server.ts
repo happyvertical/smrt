@@ -2902,6 +2902,7 @@ export type * from './feedback-contracts.js';
 export {
   GenerationSnapshotStaleError,
   GenerationSourceStaleError,
+  HandlerArgumentsInvalidError,
 } from './proposal-errors.js';
 export {
   createIntakeReviewHost,

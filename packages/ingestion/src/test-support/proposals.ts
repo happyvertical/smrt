@@ -118,6 +118,8 @@ export function proposalSuite(
     let configuration: ProposalConfiguration;
     let handlers: IntakeHandler[];
     let allowed: boolean;
+    /** Deny exactly the next execution authorization, then restore. */
+    let denyNextAuthorize = false;
     let clock: Date;
     let permissions: string[];
     let providerAllowed: boolean;
@@ -164,6 +166,7 @@ export function proposalSuite(
       root = await mkdtemp(join(tmpdir(), 'proposal-'));
       clock = new Date('2026-10-09T00:00:00Z');
       allowed = true;
+      denyNextAuthorize = false;
       providerAllowed = true;
       policyVersion = 'tenant1';
       policyMaxBytes = 100000;
@@ -233,8 +236,11 @@ export function proposalSuite(
         handlers,
         authorize: async ({ scope, db: executor }) => {
           authorizedExecutor = executor;
+          const deniedOnce = denyNextAuthorize;
+          denyNextAuthorize = false;
           return {
             allowed:
+              !deniedOnce &&
               allowed &&
               scope.tenantId === tenant &&
               scope.confidentialScopeId === 'private' &&
@@ -5498,6 +5504,9 @@ export function proposalSuite(
       const input = await generate();
       expect(input.output.warnings).toContain('candidate_set_truncated');
       expect(input.output.outcome).toBe('needs_review');
+      expect(input.output.suggestions[0].disposition).toBe('needs_review');
+      // Explicit human preview stays available (#4208); automation never is.
+      expect(input.output.automaticActionEligible).toBe(false);
       await expect(
         service.previewGeneratedProposals({
           itemId: input.itemId,
@@ -5511,7 +5520,7 @@ export function proposalSuite(
             },
           ],
         }),
-      ).rejects.toThrow('not ready');
+      ).resolves.toHaveLength(1);
     });
     it.each([
       'revoke',
@@ -5670,6 +5679,43 @@ export function proposalSuite(
         disposition: 'needs_review',
       });
       expect(input.output.suggestions[0].args).not.toHaveProperty('title');
+      // The generated arguments alone fail the handler schema; the reviewer
+      // completes them through the explicit human preview path (#4208).
+      await expect(
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'incomplete',
+              expectedRevision: 0,
+              requestId: 'incomplete',
+            },
+          ],
+        }),
+      ).rejects.toThrow('Invalid handler payload');
+      expect(
+        (await db.query('SELECT id FROM intake_proposals')).rows,
+      ).toHaveLength(0);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
+      ).toHaveLength(0);
+      const actionId = await service.createAction(input.itemId, 'human', {
+        origin: 'generated-proposal',
+        intentionKey: 'human',
+      });
+      const review = await service.previewProposal({
+        itemId: input.itemId,
+        actionId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: 0,
+        requestId: 'human-preview',
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { ...input.output.suggestions[0].args, title: 'Human title' },
+      });
+      expect(review.state).toBe('waiting_review');
     });
     it.each([
       'unknown',
@@ -5685,6 +5731,69 @@ export function proposalSuite(
       expect(
         (await db.query('SELECT id FROM intake_actions')).rows,
       ).toHaveLength(0);
+    });
+    it('drops the failure reason when the output-limit fallback runs (#4207 review)', async () => {
+      const reply = () => ({
+        completion: 'complete' as const,
+        output: JSON.parse(
+          '{"outcome":"accept","suggestions":[{"handlerId":"h","handlerVersion":"1","args":{},"explanation":"x"}]}',
+        ),
+      });
+      calls.mockImplementation(async () => reply());
+      const measured = await generate();
+      const failure = measured.output.provenance.failure;
+      expect(failure?.reason).toBeTruthy();
+      const published = (
+        await service.getCompletedAnalysis(
+          measured.itemId,
+          measured.lease.attemptId,
+        )
+      ).result;
+      const withReason = Buffer.byteLength(JSON.stringify(published));
+      const reasonBytes = Buffer.byteLength(JSON.stringify(failure));
+      // Fits before generation (no reason yet) but not once the reason is
+      // added, so only the fallback can publish it.
+      configuration.limits.maxOutputBytes =
+        withReason - Math.floor(reasonBytes / 2);
+      const limited = await generate();
+      expect(limited.output.warnings).toContain('output_limit');
+      expect(limited.output.offered).toEqual([]);
+      expect(limited.output.provenance.failure).toBeUndefined();
+    });
+    it('records a bounded value-free validator reason next to malformed_output (#4207)', async () => {
+      calls.mockResolvedValue({
+        completion: 'complete',
+        output: JSON.parse(
+          '{"outcome":"accept","suggestions":[{"handlerId":"h","handlerVersion":"1","args":{},"explanation":"x"}]}',
+        ),
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('provider_error');
+      expect(input.output.warnings).toContain('malformed_output');
+      const failure = input.output.provenance.failure;
+      expect(failure?.category).toBe('malformed_output');
+      expect(failure?.reason).toContain('/outcome enum (allowedValues=');
+      for (const property of ['evidence', 'alternatives', 'splits'])
+        expect(failure?.reason).toContain(`missingProperty=${property}`);
+      expect(failure?.reason).not.toContain('accept');
+      expect(failure?.reason.length).toBeLessThanOrEqual(1000);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
+      ).toHaveLength(0);
+      await expect(
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'failed',
+              expectedRevision: 0,
+              requestId: 'failed',
+            },
+          ],
+        }),
+      ).rejects.toThrow('not ready');
     });
     it('configured decision failure remains explicit and never silently falls back', async () => {
       chooseCreate();
@@ -5921,10 +6030,270 @@ export function proposalSuite(
             },
           ],
         });
-        if (mode === 'route-below')
-          await expect(preview).rejects.toThrow('not ready');
-        else await expect(preview).resolves.toHaveLength(1);
+        // Both dispositions reach explicit human preview (#4208).
+        await expect(preview).resolves.toHaveLength(1);
       }
+    });
+    it.each([
+      'gate',
+      'record',
+    ] as const)('forwards the decision context window and applies %s readiness (#4209)', async (readiness) => {
+      chooseCreate();
+      configuration.decisionMaxLen = 8192;
+      configuration.decisionReadiness = readiness;
+      const received: unknown[] = [];
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async (raw, options) => {
+            received.push(options);
+            const request = raw as DecisionRequest;
+            const answers: Record<string, unknown> = {};
+            // Shaped like the teamworks-os measurement: low support, flat route, high risk.
+            for (const [key, question] of Object.entries(request.questions)) {
+              if (question.type === 'predicate')
+                answers[key] = { type: 'predicate', probability: 0.37 };
+              else if (question.type === 'score')
+                answers[key] = {
+                  type: 'score',
+                  score: 2,
+                  confidence: 0.94,
+                  levels: question.criteria,
+                  probabilities: { '0': 0.03, '1': 0.03, '2': 0.94 },
+                };
+              else {
+                const choices = Object.keys(question.criteria);
+                const selected = `${CREATE}@1`;
+                const rest = (1 - 0.15) / (choices.length - 1);
+                answers[key] = {
+                  type: 'choice',
+                  choice: selected,
+                  confidence: 0.15,
+                  probabilities: Object.fromEntries(
+                    choices.map((choice) => [
+                      choice,
+                      choice === selected ? 0.15 : rest,
+                    ]),
+                  ),
+                };
+              }
+            }
+            return {
+              answers,
+              provenance: {
+                provider: identity.provider,
+                model: identity.model,
+              },
+              usage: { promptTokens: 3 },
+            };
+          },
+        },
+      };
+      const input = await generate();
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({
+        maxLen: 8192,
+        model: identity.model,
+      });
+      expect(input.output.provenance.decision).toMatchObject({
+        configured: true,
+        readiness,
+        maxLen: 8192,
+        answers: { supported_0: { type: 'predicate', probability: 0.37 } },
+        usage: { promptTokens: 3 },
+      });
+      expect(input.output.automaticActionEligible).toBe(false);
+      const frozen = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).configuration.proposals as Record<string, unknown>;
+      expect(frozen).toMatchObject({
+        decisionMaxLen: 8192,
+        minimumDecisionProbability: 0.8,
+        tieMargin: 0.1,
+      });
+      const preview = () =>
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'readiness',
+              expectedRevision: 0,
+              requestId: randomUUID(),
+            },
+          ],
+        });
+      if (readiness === 'gate') {
+        expect(frozen).not.toHaveProperty('decisionReadiness');
+        // A flat route distribution is a tie, so the gate reports ambiguity.
+        expect(input.output.outcome).toBe('ambiguous');
+        expect(input.output.suggestions[0].disposition).toBe('needs_review');
+        await expect(preview()).resolves.toHaveLength(1);
+      } else {
+        expect(frozen.decisionReadiness).toBe('record');
+        expect(input.output.outcome).toBe('proposals');
+        expect(input.output.suggestions[0].disposition).toBe(
+          'ready_for_review',
+        );
+        await expect(preview()).resolves.toHaveLength(1);
+      }
+    });
+    it.each([
+      'unavailable',
+      'malformed',
+      'identity',
+      'revoked',
+      'limit',
+    ] as const)('record readiness keeps generated suggestions when the decision %s (#4209 review)', async (mode) => {
+      chooseCreate();
+      configuration.decisionReadiness = 'record';
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => {
+            // Deny exactly the gate before `decide`; authority is restored
+            // afterwards, so only the gate's own error can fail the attempt.
+            if (mode === 'revoked') denyNextAuthorize = true;
+            return { decisions: true };
+          },
+          decide: async (raw) => {
+            if (mode === 'unavailable') throw new Error('decision-secret');
+            const request = raw as DecisionRequest;
+            const answers: Record<string, unknown> = {};
+            for (const [key, question] of Object.entries(request.questions))
+              answers[key] =
+                question.type === 'predicate'
+                  ? {
+                      type: 'predicate',
+                      probability: mode === 'malformed' ? 9 : 0.5,
+                    }
+                  : question.type === 'score'
+                    ? {
+                        type: 'score',
+                        score: 0,
+                        confidence: 1,
+                        levels: question.criteria,
+                        probabilities: { '0': 1, '1': 0, '2': 0 },
+                      }
+                    : {
+                        type: 'choice',
+                        choice: `${CREATE}@1`,
+                        confidence: 1,
+                        probabilities: Object.fromEntries(
+                          Object.keys(question.criteria).map((choice) => [
+                            choice,
+                            choice === `${CREATE}@1` ? 1 : 0,
+                          ]),
+                        ),
+                      };
+            return {
+              answers,
+              provenance: {
+                provider: mode === 'identity' ? 'other' : identity.provider,
+                model: identity.model,
+              },
+              usage: { promptTokens: 4 },
+            };
+          },
+        },
+      };
+      if (mode === 'revoked') {
+        // Authority is never traded for the opt-out: the gate's denial is
+        // rethrown, so the attempt fails like any other stage failure (the
+        // outer recheck passes again because the denial was one-shot). Without
+        // the authority rethrow, record mode would instead keep the
+        // suggestions and record `decision_unavailable`.
+        const failed = await generate();
+        expect(denyNextAuthorize).toBe(false);
+        expect(failed.output.outcome).toBe('provider_error');
+        expect(failed.output.suggestions).toEqual([]);
+        expect(failed.output.warnings).not.toContain('decision_unavailable');
+        expect(failed.output.warnings).not.toContain('decision_malformed');
+        expect(failed.output.provenance.decision.answers).toBeUndefined();
+        return;
+      }
+      if (mode === 'limit') {
+        // The byte budget is configuration, not a provider answer: it still
+        // ends the attempt. Measure the serialized decision request once, then
+        // set the policy ceiling one byte below it before the next generation
+        // (a ceiling change after generation is a catalog change and fails
+        // closed on its own), so only the decision request overflows.
+        const sourceText = 'م'.repeat(8000);
+        let requestBytes = 0;
+        const decide = configuration.decision.client.decide;
+        configuration.decision.client.decide = async (raw, options) => {
+          requestBytes = Buffer.byteLength(JSON.stringify(raw));
+          return decide(raw, options);
+        };
+        const measured = await generate(
+          await source(100000, false, sourceText),
+        );
+        expect(measured.output.warnings).not.toContain('limit');
+        policyMaxBytes = requestBytes - 1;
+        const limited = await generate(await source(100000, false, sourceText));
+        expect(limited.output.outcome).toBe('provider_error');
+        expect(limited.output.warnings).toContain('limit');
+        expect(limited.output.warnings).not.toContain('decision_unavailable');
+        expect(limited.output.suggestions).toEqual([]);
+        return;
+      }
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.suggestions[0].disposition).toBe('ready_for_review');
+      expect(input.output.warnings).toContain(
+        mode === 'unavailable' ? 'decision_unavailable' : 'decision_malformed',
+      );
+      // Usage is kept whenever the provider replied, even when the SDK then
+      // rejected the reply's shape; only a thrown client call has none.
+      if (mode === 'unavailable')
+        expect(input.output.provenance.decision.usage).toBeUndefined();
+      else
+        expect(input.output.provenance.decision.usage).toEqual({
+          promptTokens: 4,
+        });
+      expect(input.output.warnings).not.toContain('malformed_output');
+      expect(input.output.provenance.decision).toMatchObject({
+        configured: true,
+        provider: identity.provider,
+        readiness: 'record',
+      });
+      expect(input.output.provenance.decision.answers).toBeUndefined();
+      expect(input.output.automaticActionEligible).toBe(false);
+      expect(JSON.stringify(input.output)).not.toContain('decision-secret');
+      // Gate mode is unchanged: the same failure ends the attempt.
+      configuration.decisionReadiness = 'gate';
+      const gated = await generate();
+      expect(gated.output.outcome).toBe('provider_error');
+      expect(gated.output.suggestions).toEqual([]);
+    });
+    it.each([
+      ['decisionMaxLen', 0, 'Invalid decision context length'],
+      ['decisionMaxLen', 1.5, 'Invalid decision context length'],
+      ['decisionReadiness', 'auto', 'Invalid decision readiness'],
+    ] as const)('rejects an invalid %s setting before any provider call', async (key, value, message) => {
+      chooseCreate();
+      Object.assign(configuration, { [key]: value });
+      await expect(generation()).rejects.toThrow(message);
+      expect(calls).not.toHaveBeenCalled();
+    });
+    it('keeps read configuration equivalence over the decision settings', () => {
+      configuration.decisionMaxLen = 4096;
+      configuration.decisionReadiness = 'record';
+      const read = proposalReadConfiguration(configuration);
+      expect(read).toMatchObject({
+        decisionMaxLen: 4096,
+        decisionReadiness: 'record',
+      });
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposals: configuration,
+            proposalRead: { ...read, decisionReadiness: 'gate' },
+          }),
+      ).toThrow('Proposal read configuration mismatch');
     });
     it.each([
       'operation',
@@ -6295,6 +6664,10 @@ export function proposalSuite(
         expect(input.output.outcome).toBe('provider_error');
         expect(input.output.warnings).toContain('malformed_output');
         expect(input.output.suggestions).toEqual([]);
+        expect(input.output.provenance.failure).toEqual({
+          category: 'malformed_output',
+          reason: 'Generator declared no validated completion',
+        });
       }
     });
     it('preserves provider identity projection and safe error/usage fields', async () => {

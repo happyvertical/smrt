@@ -99,10 +99,19 @@ export interface GenerationOutput {
       provider?: string;
       model?: string;
       version?: string;
+      /** Whether the recorded answers were allowed to withhold readiness. */
+      readiness?: 'gate' | 'record';
+      /** Per-request token window forwarded to the client, when configured. */
+      maxLen?: number;
       answers?: IntakeValues;
       usage?: Record<string, number>;
     };
     usage: Record<string, number>;
+    /**
+     * Bounded, value-free reason for a failed stage, next to its warning
+     * category: JSON paths, schema keywords and constants, never document text.
+     */
+    failure?: { category: string; reason: string };
   };
   automaticActionEligible: false;
 }

@@ -7,6 +7,7 @@ export type {
   IntakeReviewHost,
   ItemReviewView,
   LogicalSplitInput,
+  PreviewRejection,
   ReviewAction,
   ReviewerInstruction,
   ReviewerInstructionInput,

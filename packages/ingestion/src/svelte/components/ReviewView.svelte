@@ -4,10 +4,18 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy, onMount } from 'svelte';
 import type { EvidenceLocation } from '../../extraction-types.js';
+import type { GeneratedSuggestion } from '../../proposal-dto.js';
 import type { IntakeReviewHost, ItemReviewView } from '../../review-dto.js';
 import { M } from '../i18n.js';
-import { evidenceUrl, extractedContent, pageGroups } from '../view-utils.js';
+import {
+  argumentsObject,
+  evidenceUrl,
+  extractedContent,
+  missingRequired,
+  pageGroups,
+} from '../view-utils.js';
 import ActionReview from './ActionReview.svelte';
+import CandidatePicker from './CandidatePicker.svelte';
 import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
   host: IntakeReviewHost;
@@ -29,6 +37,15 @@ let view = $state<ItemReviewView>(),
   // The draft a stale result left unrecorded; the note stays until the
   // reviewer edits or resubmits it.
   unrecordedDraft = $state<string>(),
+  // Human drafts for `needs_review` suggestions, keyed by `attemptId:index`.
+  // They survive refresh, failures and actions on other cards and are cleared
+  // only by a successful preview of their own card.
+  drafts = $state<Record<string, string>>({}),
+  // Drafts the reviewer tried to preview while unparsable; the alert clears
+  // as soon as the draft parses again.
+  invalidDrafts = $state<Record<string, true>>({}),
+  // Suggestion whose last preview the host rejected; its draft is kept.
+  previewRejected = $state<number>(),
   invalid = $state(false);
 /** Same ceiling the server enforces (REVIEWER_INSTRUCTION_MAX_LENGTH). */
 const INSTRUCTION_MAX_LENGTH = 4000;
@@ -94,6 +111,9 @@ function deny() {
   clearTimeout(poll);
   view = undefined;
   splits = {};
+  // Drafts are the reviewer's own typed text, never host data: they are kept
+  // in memory (nothing renders while the view is denied) so a failed refresh
+  // or a failed action on another card does not discard them.
   error = true;
   pending = false;
 }
@@ -174,6 +194,33 @@ function splitDrafts(
     }),
   );
 }
+function syncSuggestionDrafts(current: ItemReviewView) {
+  // Drafts follow availability: revoked or expired access discards them;
+  // a transient `unavailable` or `stale` result keeps them (nothing renders
+  // meanwhile) so the reviewer's typing survives until the view returns;
+  // an available view prunes drafts of attempts or cards no longer offered.
+  if (
+    current.availability === 'revoked' ||
+    current.availability === 'expired'
+  ) {
+    drafts = {};
+    invalidDrafts = {};
+  } else if (current.availability === 'available') {
+    const attemptId = current.analysis?.attemptId;
+    const keys = new Set<string>();
+    (current.generation?.suggestions ?? []).forEach((suggestion, index) => {
+      if (!attemptId || suggestion.disposition !== 'needs_review') return;
+      const key = `${attemptId}:${index}`;
+      keys.add(key);
+      drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
+    });
+    for (const key of Object.keys(drafts))
+      if (!keys.has(key)) {
+        delete drafts[key];
+        delete invalidDrafts[key];
+      }
+  }
+}
 async function load(pageCount = loadedPages) {
   const ticket = ++epoch;
   clearTimeout(poll);
@@ -182,6 +229,7 @@ async function load(pageCount = loadedPages) {
   refreshFailed = false;
   view = undefined;
   splits = {};
+  previewRejected = undefined;
   pending = true;
   error = false;
   invalid = false;
@@ -191,6 +239,7 @@ async function load(pageCount = loadedPages) {
     if (fetched.result.availability === 'available')
       loadedPages = fetched.pages;
     view = fetched.result;
+    syncSuggestionDrafts(view);
     splits = splitDrafts(view, {});
     settleBusy();
   } catch {
@@ -212,6 +261,7 @@ async function refresh(ticket: number) {
     // An explicit host denial fails closed at once.
     if (fetched.result.availability !== 'available') {
       view = fetched.result;
+      syncSuggestionDrafts(view);
       splits = {};
       return;
     }
@@ -219,6 +269,7 @@ async function refresh(ticket: number) {
       loadedPages = fetched.pages;
       splits = splitDrafts(fetched.result, splits, view);
       view = fetched.result;
+      syncSuggestionDrafts(view);
     }
     settleBusy();
   } catch {
@@ -251,17 +302,120 @@ async function run(operation: () => Promise<unknown>) {
     if (alive && ticket === epoch) deny();
   }
 }
-function preview(index: number) {
+function offeredHandler(suggestion: GeneratedSuggestion) {
+  return view?.generation?.offered.find(
+    (entry) =>
+      entry.handler.id === suggestion.handlerId &&
+      entry.handler.version === suggestion.handlerVersion,
+  )?.handler;
+}
+// Presentation only: the host rechecks stage, outcome, handler and authority.
+function previewable(suggestion: GeneratedSuggestion) {
+  return (
+    !!view?.analysis &&
+    view.generation?.outcome !== 'provider_error' &&
+    ['ready_for_review', 'needs_review'].includes(suggestion.disposition)
+  );
+}
+function draftKey(index: number) {
+  return `${view?.analysis?.attemptId ?? ''}:${index}`;
+}
+function parseable(draft: string | undefined) {
+  if (draft === undefined) return false;
+  try {
+    argumentsObject(draft);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function edited(index: number) {
+  const suggestion = view?.generation?.suggestions[index];
+  const draft = drafts[draftKey(index)];
+  return (
+    !!suggestion &&
+    draft !== undefined &&
+    draft !== JSON.stringify(suggestion.args, null, 2)
+  );
+}
+// Every schema-required argument must be present in the draft before preview;
+// the host and handler still validate the published arguments.
+function canPreview(index: number) {
+  const suggestion = view?.generation?.suggestions[index];
+  if (!suggestion || !previewable(suggestion)) return false;
+  if (suggestion.disposition !== 'needs_review') return true;
+  const draft = drafts[draftKey(index)];
+  if (draft === undefined) return false;
+  if (suggestion.missingFields.length && !edited(index)) return false;
+  const handler = offeredHandler(suggestion);
+  return !handler || !missingRequired(handler.argsSchema, draft).length;
+}
+async function preview(index: number) {
   const analysis = view?.analysis;
   const suggestion = view?.generation?.suggestions[index];
-  if (!analysis || suggestion?.disposition !== 'ready_for_review') return;
+  if (pending || !analysis || !suggestion || !canPreview(index)) return;
+  let args: Record<string, unknown> | undefined;
+  const key = draftKey(index);
+  if (suggestion.disposition === 'needs_review' && edited(index)) {
+    try {
+      args = argumentsObject(drafts[key]);
+    } catch {
+      invalidDrafts[key] = true;
+      return;
+    }
+  }
   const input = {
     itemId,
     attemptId: analysis.attemptId,
     index,
     requestId: crypto.randomUUID(),
+    ...(args ? { args } : {}),
   };
-  void run(() => host.preview(input));
+  // Only the handler's validation refusal stays inline and keeps the view:
+  // a resolved `{ rejected: 'invalid' }` or a thrown error named
+  // `HandlerArgumentsInvalidError`. Anything else fails closed.
+  const ticket = ++epoch;
+  pending = true;
+  error = false;
+  previewRejected = undefined;
+  try {
+    const outcome = await host.preview(input);
+    if (!alive || ticket !== epoch) return;
+    if (outcome?.rejected === 'invalid') {
+      previewRejected = index;
+      pending = false;
+      return;
+    }
+    // Only a successful preview of this card consumes its draft.
+    delete drafts[key];
+    delete invalidDrafts[key];
+    await load();
+  } catch (error) {
+    if (!alive || ticket !== epoch) return;
+    if (
+      (error as { name?: unknown } | null)?.name ===
+      'HandlerArgumentsInvalidError'
+    ) {
+      previewRejected = index;
+      pending = false;
+      return;
+    }
+    deny();
+  }
+}
+function chooseFor(index: number) {
+  return (field: string, id: string) => {
+    const key = draftKey(index);
+    try {
+      drafts[key] = JSON.stringify(
+        { ...argumentsObject(drafts[key] ?? '{}'), [field]: id },
+        null,
+        2,
+      );
+    } catch {
+      invalidDrafts[key] = true;
+    }
+  };
 }
 function split(evidenceId: string) {
   const analysis = view?.analysis;
@@ -401,7 +555,17 @@ onMount(() => {
 {#if suggestion.alternatives.length}<h4>{t(M['ingestion.alternatives'])}</h4><ul>{#each suggestion.alternatives as alternative}<li>{alternative}</li>{/each}</ul>{/if}
 {#if suggestion.missingFields.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each suggestion.missingFields as missing}<li>{missing}</li>{/each}</ul>{/if}
 <ul>{#each suggestion.evidence as reference}{@const url = locationUrl(reference.evidenceId,reference.location)}<li>{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(reference.location)}</Button>{:else}{locationLabel(reference.location)}{/if}</li>{/each}</ul>
-<Button disabled={suggestion.disposition !== 'ready_for_review' || !view.analysis} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
+{#if suggestion.disposition === 'needs_review' && previewable(suggestion)}
+{@const handler = offeredHandler(suggestion)}
+{@const key = draftKey(index)}
+<p>{t(M['ingestion.completeSuggestion'])}</p>
+<Textarea aria-label={t(M['ingestion.suggestionArgs'])} bind:value={drafts[key]} rows={6} />
+{#if handler}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
+{#if edited(index)}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
+{#if invalidDrafts[key] && !parseable(drafts[key])}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
+{/if}
+{#if previewRejected === index}<p role="alert">{t(M['ingestion.previewRejected'])}</p>{/if}
+<Button disabled={!canPreview(index)} onclick={() => preview(index)}>{t(M['ingestion.preview'])}</Button>
 </article>
 {/each}
 {#each generation.splits as proposed (proposed.evidenceId)}<div><Textarea aria-label={`${t(M['ingestion.split'])}: ${proposed.evidenceId}`} bind:value={splits[proposed.evidenceId]} /><Button disabled={!view.analysis} onclick={() => split(proposed.evidenceId)}>{t(M['ingestion.saveSplit'])}</Button></div>{/each}
