@@ -58,7 +58,9 @@ function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
       result: { output: { proposals: { suggestions: [] } } },
     })),
     getEvidence: vi.fn(async (): Promise<IntakeEvidenceDTO[]> => []),
-    listEvidence: vi.fn(async () => new Map<string, IntakeEvidenceDTO[]>()),
+    listEvidence: vi.fn(
+      async (_itemIds: string[]) => new Map<string, IntakeEvidenceDTO[]>(),
+    ),
   };
   // The existing per-part adapter; `list` must never call it.
   const evidence = vi.fn(async (part: IntakeEvidenceDTO) => ({
@@ -280,7 +282,9 @@ describe('inbox primary evidence', () => {
         ]),
     );
     const f = fixture({ rowEvidence });
-    f.service.listItemsPage.mockImplementation(pageSource([f.item, other]));
+    f.service.listItemsPage.mockImplementation(
+      pageSource([{ id: f.item.id, state: 'completed' }, { id: other.id }]),
+    );
     f.service.listEvidence.mockResolvedValue(
       new Map([['item', [part('file', 'file', 'application/pdf')]]]),
     );
@@ -492,6 +496,85 @@ describe('published review host projection', () => {
     );
     expect(assignments).toHaveBeenCalledTimes(1);
     expect(assignments).toHaveBeenCalledWith(mine);
+  });
+  it('labels and previews rows on every list return path', async () => {
+    const rowEvidence = vi.fn(
+      async (rows: readonly RowEvidenceRequest[]) =>
+        new Map<string, RowEvidenceView>(
+          rows.map((row) => [row.itemId, { label: 'Original', viewUrl: '/o' }]),
+        ),
+    );
+    const f = fixture({
+      rowEvidence,
+      assignment: async (itemId) => ({
+        assigneeId: itemId === '0003' ? 'me' : null,
+        version: 0,
+      }),
+    });
+    f.service.listEvidence.mockImplementation(
+      async (ids: string[]) =>
+        new Map(
+          ids.map((id) => [
+            id,
+            [
+              {
+                ...part(`p-${id}`, 'file', 'application/pdf'),
+                filename: `${id}.pdf`,
+              },
+            ],
+          ]),
+        ),
+    );
+    const decorated = (page: Awaited<ReturnType<typeof f.host.list>>) =>
+      page.items.map((entry) => [entry.label, entry.evidence?.viewUrl]);
+    const rows = Array.from({ length: 40 }, (_, index) => ({
+      id: String(index).padStart(4, '0'),
+    }));
+    // Full page with a continuation.
+    f.service.listItemsPage.mockImplementation(pageSource(rows));
+    const full = await f.host.list({ limit: 2 });
+    expect(full.nextCursor).toBe('0001');
+    expect(decorated(full)).toEqual([
+      ['0000.pdf', '/o'],
+      ['0001.pdf', '/o'],
+    ]);
+    // Last page, no cursor.
+    f.service.listItemsPage.mockImplementation(pageSource(rows.slice(0, 1)));
+    const last = await f.host.list({});
+    expect(last.nextCursor).toBeUndefined();
+    expect(decorated(last)).toEqual([['0000.pdf', '/o']]);
+    // Short, budget-stopped service page.
+    f.service.listItemsPage.mockResolvedValueOnce({
+      items: [
+        {
+          item: { id: '0005', processingState: 'completed' } as IntakeItemDTO,
+          state: 'unresolved',
+          cursor: '0005',
+        },
+      ],
+      scanned: 1000,
+      nextCursor: '0005',
+    });
+    const short = await f.host.list({});
+    expect(short.nextCursor).toBe('0005');
+    expect(decorated(short)).toEqual([['0005.pdf', '/o']]);
+    // A later call that fails without progress keeps what was collected.
+    let calls = 0;
+    f.service.listItemsPage.mockImplementation(async (input = {}) => {
+      calls++;
+      if (calls === 2) throw new IntakeScanLimitError();
+      return { ...(await pageSource(rows)(input)), scanned: 999 };
+    });
+    const kept = await f.host.list({ assigneeId: 'me', limit: 20 });
+    expect(kept.nextCursor).toBe('0019');
+    expect(decorated(kept)).toEqual([['0003.pdf', '/o']]);
+    expect(rowEvidence).toHaveBeenCalledTimes(4);
+    // Without the opt-in, the same paths call no row-evidence host code and
+    // never the per-part `evidence` adapter.
+    const plain = fixture();
+    plain.service.listItemsPage.mockImplementation(pageSource(rows));
+    await plain.host.list({ limit: 2 });
+    expect(plain.evidence).not.toHaveBeenCalled();
   });
   it('clamps the requested page size to the service range instead of failing', async () => {
     const f = fixture();

@@ -879,6 +879,54 @@ export function foundationSuite(
       await expect(failing.listEvidence([first])).rejects.toThrow(
         'authorization store down',
       );
+      // A malformed captured ceiling hides that item, as on a list page,
+      // instead of rejecting the read; the other item is still returned.
+      const stored = (
+        await db.query('SELECT data FROM intake_items WHERE id=?', first)
+      ).rows[0].data;
+      const malformed =
+        typeof stored === 'string'
+          ? JSON.parse(stored)
+          : structuredClone(stored);
+      malformed.capturedCeiling = 5;
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        JSON.stringify(malformed),
+        first,
+      );
+      const withMalformed = await service.listEvidence([first, second]);
+      expect(withMalformed.has(first)).toBe(false);
+      expect(withMalformed.has(second)).toBe(true);
+      expect(
+        (await service.listItemsPage()).items.map(({ item }) => item.id),
+      ).not.toContain(first);
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        typeof stored === 'string' ? stored : JSON.stringify(stored),
+        first,
+      );
+      expect((await service.listEvidence([first])).has(first)).toBe(true);
+      // Item data that does not parse as an object (an array here, which
+      // both engines store) is skipped by both list paths, not fatal.
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        JSON.stringify([]),
+        first,
+      );
+      const unparsable = await service.listEvidence([first, second]);
+      expect(unparsable.has(first)).toBe(false);
+      expect(unparsable.has(second)).toBe(true);
+      const unparsablePage = (await service.listItemsPage()).items.map(
+        ({ item }) => item.id,
+      );
+      expect(unparsablePage).not.toContain(first);
+      expect(unparsablePage).toContain(second);
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        typeof stored === 'string' ? stored : JSON.stringify(stored),
+        first,
+      );
+      expect((await service.listEvidence([first])).has(first)).toBe(true);
       // Bounded, validated input.
       expect((await service.listEvidence([])).size).toBe(0);
       await expect(service.listEvidence(['not-a-uuid'])).rejects.toThrow(

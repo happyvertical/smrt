@@ -373,8 +373,6 @@ function decodeItemCursor(cursor: string): { receivedAt: string; id: string } {
     throw new Error('Invalid item page');
   return { receivedAt: parsed[0], id: parsed[1] };
 }
-/** The most items one batched page read may cover. */
-const EVIDENCE_PAGE_CEILING = 100;
 function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
 }
@@ -1765,15 +1763,17 @@ export class IngestionService {
    * Durable evidence for one inbox page in a single query, keyed by item id.
    * Items that are not active, retained and readable are omitted (no
    * existence disclosure); the host authorize callback runs once per distinct
-   * captured ceiling rather than once per item.
+   * captured ceiling rather than once per item, through the same gate as
+   * `listItemsPage`: a refusal or a malformed ceiling hides the item, and a
+   * host callback that throws rejects the read.
    */
   async listEvidence(
     itemIds: string[],
   ): Promise<Map<string, IntakeEvidenceDTO[]>> {
     if (
       !Array.isArray(itemIds) ||
-      itemIds.length > EVIDENCE_PAGE_CEILING ||
-      itemIds.some((id) => typeof id !== 'string' || !uuid.test(id))
+      itemIds.length > ITEM_PAGE_CEILING ||
+      !itemIds.every(isIntakeId)
     )
       throw new Error('Invalid item page');
     const result = new Map<string, IntakeEvidenceDTO[]>();
@@ -1787,9 +1787,15 @@ export class IngestionService {
         ...itemIds,
       )
     ).rows as Row[];
-    const allowed = this.evidenceCeilingGate();
+    const allowed = this.ceilingGate();
     for (const row of rows) {
-      if (!(await allowed(object(row.item_data)))) continue;
+      let data: Row;
+      try {
+        data = object(row.item_data);
+      } catch {
+        continue;
+      }
+      if (!(await allowed(data))) continue;
       const itemId = String(row.item_id);
       const parts = result.get(itemId) ?? [];
       parts.push(this.evidenceDTO(row));
@@ -1812,30 +1818,6 @@ export class IngestionService {
       contentHash: String(e.content_hash),
       byteLength: Number(e.byte_length),
       ...(filename ? { filename } : {}),
-    };
-  }
-  /** One read authorization per distinct captured ceiling for a page of rows. */
-  private evidenceCeilingGate(): (data: Row) => Promise<boolean> {
-    const ceilings = new Map<string, Promise<boolean>>();
-    return (data) => {
-      const ceiling = object(data.capturedCeiling ?? {});
-      const key = canonical(ceiling);
-      let decision = ceilings.get(key);
-      if (!decision) {
-        // Same check as `authorize('read', …)`, but a denial omits the row
-        // while a failing host callback (e.g. a database error) rejects the
-        // page instead of silently hiding its evidence.
-        decision = this.options
-          .authorize({
-            scope: this.scope,
-            operation: 'read',
-            capturedCeiling: ceiling,
-            db: this.db,
-          })
-          .then((allowed) => allowed === true);
-        ceilings.set(key, decision);
-      }
-      return decision;
     };
   }
   async readEvidence(itemId: string, evidenceId: string): Promise<Uint8Array> {

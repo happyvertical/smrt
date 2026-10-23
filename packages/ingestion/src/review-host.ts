@@ -269,6 +269,7 @@ export function createIntakeReviewHost(
           };
           if (input.assigneeId && assignment.assigneeId !== input.assigneeId)
             continue;
+          // The label needs the page's evidence; `decorateRows` sets it.
           items.push({ item, label: '', state, assignment });
           // The continuation is the last row actually returned, so an
           // assignment that changed between the page read and the assignment
