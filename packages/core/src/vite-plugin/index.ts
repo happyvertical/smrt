@@ -3,6 +3,8 @@
  * Provides virtual modules for REST, MCP, and other services
  */
 
+export { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
+
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
