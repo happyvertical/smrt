@@ -292,7 +292,11 @@ for an external action that was still in flight when the item was redacted,
 because reconciling it authorizes under that principal; it is dropped when that
 reconciliation reaches a final state, or by the next `repairDeletions` /
 `sweepRetention` pass. For a self-approvable receipt the principal is the
-submitter, so until then it identifies the sender. A successful result digest
+submitter, so until then it identifies the sender. Later deletion sweeps pass
+this redacted ceiling to the host's `authorize({ operation: 'delete' })`, so
+delete authorization must not depend on `execution.principalId`: a host that
+requires it would refuse, and the sweep would stop with later deletion intents
+still pending. A successful result digest
 is a plain SHA-256 of the canonical result, so it can confirm a guessed result:
 keep handler results to record ids or opaque references, never content.
 
