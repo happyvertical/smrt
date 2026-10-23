@@ -270,7 +270,36 @@ Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
 `assign(input)` (manager authorization, eligible assignees, durable CAS and request
 replay protection), and `evidence(part)` (safe label/text or authenticated
-same-origin URL). Optional `label(item)` changes presentation. Optional
+same-origin URL), which `load` calls for every part and `list` never calls;
+`load` sets no row preview on its entry.
+
+Row previews are opt-in through an optional fifth adapter,
+`rowEvidence(rows)`. When it is supplied, `list` reads the page's durable
+evidence metadata with one `service.listEvidence(itemIds)` query (at most 100
+ids; items the scope cannot read, and expired or inactive items, are omitted
+without disclosure; the host `authorize` runs once per distinct captured
+ceiling; a failing `authorize` rejects the page). It then calls `rowEvidence`
+once with each row's primary part (`{ itemId, evidence }`) and publishes the
+returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
+(`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
+from metadata without reading bytes; if `rowEvidence` throws or returns a
+malformed answer, the page still lists without previews, and a row without
+durable parts never gets one. When it is omitted, rows show no original link.
+Either way `list` reads the page's evidence metadata once, in that same query,
+so the row label can use the original filename; it never reads original bytes
+and never calls `evidence(part)`. The primary part is chosen by role, not media
+type: the shallowest child part when any part has a parent (an upload's file
+under its capture record, an email's first attachment under the message, even
+when that child is JSON), else the first root part (a watched-folder file);
+part ids sort numerically. `IntakeInbox`/`InboxView` accept an
+optional `rowAside` snippet receiving the `InboxEntry`; without it a row renders
+the host's "Open original" link (new tab) and thumbnail when the URLs are
+same-origin; each link's accessible name is "Open original: <row label>", and
+a row shows no wrapper when neither URL is usable. The slot is a plain `div`,
+not an `aside` landmark, so a page does not add one landmark per row. Optional
+`label(item, evidence)` changes presentation; `evidence` is the item's durable
+parts with the primary part first, and the default label is the primary part's
+own original `filename`, else `Intake <8 hex>`. Optional
 `assignments(itemIds)` reads one page's assignments in one batch (otherwise
 `assignment` runs per row), and optional `assignedItemIds(assigneeId)` lets
 `list` push the assignee filter into the page query (junk ids are dropped, not

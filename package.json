@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.57.19",
+  "version": "0.57.20",
   "files": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -50,6 +50,7 @@
     "check:mcp-protocol-hygiene": "node scripts/check-mcp-protocol-hygiene.mjs",
     "test:mcp-conformance": "pnpm --filter @happyvertical/smrt-dev-mcp exec vitest run src/mcp-conformance.spec.ts && pnpm --filter @happyvertical/smrt-app-mcp exec vitest run src/__tests__/mcp-conformance.test.ts && pnpm --filter @happyvertical/smrt-mcp-conformance-fixture test",
     "check:agents-chain": "node scripts/check-agents-chain.mjs",
+    "check:node-roots": "node scripts/survey-node-root-load.mjs --strict --allow=@happyvertical/smrt-products",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "knowledge:graph": "tsx scripts/generate-knowledge-graph.ts",
     "changeset": "changeset",

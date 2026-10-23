@@ -1,6 +1,25 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'projects.governance.questions': 'Questions',
+  'projects.governance.questions_description':
+    'Facts the project still needs from its owners.',
+  'projects.governance.questions_empty': 'No project questions are waiting.',
+  'projects.governance.decisions': 'Decisions',
+  'projects.governance.decisions_description':
+    'Choices that need an owner and a recorded outcome.',
+  'projects.governance.decisions_empty': 'No project decisions are waiting.',
+  'projects.governance.open_count': '{count} open',
+  'projects.governance.owner': 'Owner:',
+  'projects.governance.question_context': 'Question context',
+  'projects.governance.decision_context': 'Decision context',
+  'projects.governance.answer': 'Answer',
+  'projects.governance.save_answer': 'Save answer',
+  'projects.governance.outcome': 'Outcome',
+  'projects.governance.choose_option': 'Select an option',
+  'projects.governance.rationale': 'Rationale',
+  'projects.governance.record_decision': 'Record decision',
+
   'projects.development_request.type': 'Request type',
   'projects.development_request.feature': 'Feature',
   'projects.development_request.bug': 'Bug',

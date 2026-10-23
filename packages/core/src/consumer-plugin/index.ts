@@ -157,6 +157,118 @@ function sameInstalledPackage(
   );
 }
 
+function readInstalledPackageJson(
+  packageJsonPath: string | undefined,
+): ConsumerPackageJson | undefined {
+  if (!packageJsonPath) return undefined;
+  try {
+    return JSON.parse(
+      fs.readFileSync(packageJsonPath, 'utf8'),
+    ) as ConsumerPackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether an `exports` target (or any condition under it) needs Vite to
+ * compile it: a `.svelte`/`.css` file or a `svelte` resolution condition.
+ */
+function exportTargetNeedsViteCompilation(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return value.endsWith('.svelte') || value.endsWith('.css');
+  }
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([condition, target]) =>
+      condition === 'svelte' || exportTargetNeedsViteCompilation(target),
+  );
+}
+
+/**
+ * A component-bearing package publishes Svelte entries (a `svelte` field, a
+ * `svelte` condition, or a `.svelte`/`.css` export target). Plain Node cannot
+ * evaluate such a package's root: it may re-export `.svelte` files directly or
+ * through another component library (#4219).
+ */
+function isComponentBearingPackage(
+  packageJson: ConsumerPackageJson | undefined,
+): boolean {
+  return (
+    typeof packageJson?.svelte === 'string' ||
+    exportTargetNeedsViteCompilation(packageJson?.exports)
+  );
+}
+
+/**
+ * The package.json fields the Svelte-root rule reads. `exports` is `unknown`
+ * because npm allows a bare string target as well as a conditions map.
+ */
+interface ProviderPackageShape {
+  svelte?: unknown;
+  exports?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Whether the package declares its ROOT as a Svelte entry: a `svelte` field or
+ * a `.` export carrying a `svelte` condition (at any nesting) or a
+ * `.svelte`/`.css` target. Such a root (e.g. `@happyvertical/smrt-products`,
+ * which re-exports its components) cannot be evaluated by plain Node (#4219).
+ * A package that only publishes Svelte under a subpath keeps a Node-safe root,
+ * as the standards require.
+ *
+ * A `svelte` condition counts even when its target is plain `.js`: that is
+ * what svelte-package and Vite library builds emit for a root that re-exports
+ * components (the `.svelte` files sit one import deeper), and it is exactly
+ * the shape of every Svelte root in this workspace. Reading the condition as
+ * the package's declaration is deliberate — the trade-off is that a Node-safe
+ * root that nevertheless declares `svelte` loses its optional provider-context
+ * import, which costs nothing when its objects are imported from a subpath.
+ *
+ * A missing `exports` map, a `.` key absent from it, or an unreadable
+ * package.json (`undefined`) all answer `false`: the register then keeps the
+ * root import #4187 chose, as before.
+ *
+ * @internal Exported for tests.
+ */
+export function isComponentBearingRoot(
+  packageJson: ProviderPackageShape | undefined,
+): boolean {
+  if (typeof packageJson?.svelte === 'string') return true;
+  const exports = packageJson?.exports;
+  if (typeof exports === 'string') {
+    return exportTargetNeedsViteCompilation(exports);
+  }
+  if (!exports || typeof exports !== 'object') return false;
+  const exportsMap = exports as Record<string, unknown>;
+  const hasSubpathKeys = Object.keys(exportsMap).some((key) =>
+    key.startsWith('.'),
+  );
+  return exportTargetNeedsViteCompilation(
+    hasSubpathKeys ? exportsMap['.'] : exportsMap,
+  );
+}
+
+/**
+ * Pick the module the generated register imports so a configured provider is
+ * evaluated in Node's installed package context (#4187): the package root,
+ * unless the package declares that root as a Svelte entry, in which case
+ * nothing is imported for the provider (#4219). Its object entries, imported
+ * from their manifest `importPath`, already evaluate it in that context, and
+ * the transitive loader needs only `import.meta.resolve(provider)`, not an
+ * import. No substitute subpath is chosen: one that reaches `.svelte` would
+ * re-create the failure this avoids.
+ *
+ * @internal Exported for tests.
+ */
+export function resolveProviderContextImport(
+  packageName: string,
+  packageJson: ProviderPackageShape | undefined,
+): string | undefined {
+  return isComponentBearingRoot(packageJson) ? undefined : packageName;
+}
+
 /**
  * SvelteKit route-hosting options for dependency models. Unlike `packages`,
  * `objects` is an HTTP exposure boundary: every entry must be an exact,
@@ -675,16 +787,6 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     external: string[];
     selective: Map<string, SelectiveSsrPackage>;
   } {
-    const needsViteCompilation = (value: unknown): boolean => {
-      if (typeof value === 'string') {
-        return value.endsWith('.svelte') || value.endsWith('.css');
-      }
-      if (!value || typeof value !== 'object') return false;
-      return Object.entries(value).some(
-        ([condition, target]) =>
-          condition === 'svelte' || needsViteCompilation(target),
-      );
-    };
     const external = new Set<string>();
     const selective = new Map<string, SelectiveSsrPackage>();
     const visited = new Set<string>();
@@ -702,22 +804,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       if (visited.has(visitKey)) continue;
       visited.add(visitKey);
 
-      let packageJson: ConsumerPackageJson | undefined;
-      if (packageJsonPath) {
-        try {
-          packageJson = JSON.parse(
-            fs.readFileSync(packageJsonPath, 'utf8'),
-          ) as ConsumerPackageJson;
-        } catch {
-          // Manifest loading reports an unavailable declared provider with the
-          // actionable package context. Keep the root external here so Vite
-          // does not inline a partial substitute while reporting that error.
-        }
-      }
+      // Manifest loading reports an unavailable or unreadable declared
+      // provider with the actionable package context. Keep the root external
+      // here so Vite does not inline a partial substitute while reporting
+      // that error.
+      const packageJson = readInstalledPackageJson(packageJsonPath);
 
-      const needsSvelteCompilation =
-        typeof packageJson?.svelte === 'string' ||
-        needsViteCompilation(packageJson?.exports);
+      const needsSvelteCompilation = isComponentBearingPackage(packageJson);
       const projectPackageJson = findInstalledPackageJson(
         packageName,
         projectRoot,
@@ -1745,17 +1838,6 @@ async function generateRegistrationFile(
     return sameInstalledPackage(projectPackageJson, providerImportPackageJson);
   };
 
-  // Configured providers remain ordinary static imports. Transitive-only
-  // object modules are loaded below through their owning provider context.
-  for (const packageName of manifest.smrtDependencies ?? []) {
-    if (
-      isSameProjectAndProviderImport(packageName, packageName) &&
-      !importsByPath.has(packageName)
-    ) {
-      importsByPath.set(packageName, new Map());
-    }
-  }
-
   const registrations: string[] = [];
   const registrationManifests: Record<string, ConsumerManifest> = {};
   let importedEntryCount = 0;
@@ -1781,6 +1863,21 @@ async function generateRegistrationFile(
   }
 
   const collectionClassMemo = new WeakMap<object, boolean>();
+  const svelteRootImportWarnings = new Set<string>();
+  // External objects imported from a package ROOT, grouped by package, so the
+  // Svelte-root warning below can name every affected object once per package.
+  const rootImportedObjects = new Map<string, string[]>();
+  for (const [objectName, def] of Object.entries(manifestObjects)) {
+    if (!def.packageName || def.packageName === manifest.packageName) continue;
+    const objectImportPath = def.importPath || def.packageName;
+    if (objectImportPath !== packageNameFromImportPath(objectImportPath)) {
+      continue;
+    }
+    const names = rootImportedObjects.get(objectImportPath) ?? [];
+    names.push(def.className || def.exportName || objectName);
+    names.sort((left, right) => left.localeCompare(right));
+    rootImportedObjects.set(objectImportPath, names);
+  }
 
   const isCollectionClass = (
     def: ConsumerObjectDefinition | undefined,
@@ -1846,6 +1943,37 @@ async function generateRegistrationFile(
         `[smrt:consumer] ${objectName} has no configured provider provenance for ${importPath}`,
       );
     }
+    // An object exported only from a root the package declares as a Svelte
+    // entry leaves the register no server-safe module to import: the root
+    // import (static, or transitive through the owning provider's context)
+    // is the only way to reach the constructor, so it is kept. Vite SSR
+    // works; plain Node (`smrt db:migrate`, workers) can load it only when
+    // that root really is Node-safe, which the declaration cannot prove
+    // either way. Say so once per package rather than failing a build whose
+    // consumer may never run outside Vite (#4219).
+    if (
+      importPath === packageNameFromImportPath(importPath) &&
+      !svelteRootImportWarnings.has(importPath)
+    ) {
+      svelteRootImportWarnings.add(importPath);
+      const providerPackageJsonPath = appResolvable
+        ? undefined
+        : findInstalledPackageJson(providerPackageName as string, projectRoot);
+      const rootPackageJsonPath = appResolvable
+        ? findInstalledPackageJson(importPath, projectRoot)
+        : providerPackageJsonPath &&
+          findInstalledPackageJson(
+            importPath,
+            path.dirname(providerPackageJsonPath),
+          );
+      if (
+        isComponentBearingRoot(readInstalledPackageJson(rootPackageJsonPath))
+      ) {
+        console.warn(
+          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field, or a "svelte" condition or a .svelte/.css target on its "." export) and exports ${(rootImportedObjects.get(importPath) ?? [objectName]).join(', ')} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
+        );
+      }
+    }
     const exportBinding = appResolvable
       ? getImportBinding(importPath, exportName)
       : getTransitiveBinding(
@@ -1901,6 +2029,25 @@ async function generateRegistrationFile(
     }
 
     registeredObjectCount++;
+  }
+
+  // Configured providers remain ordinary static imports so each is evaluated
+  // in Node's installed package context (#4187); transitive-only object
+  // modules are loaded below through their owning provider context. The
+  // register must stay loadable under plain Node (`smrt db:migrate`, workers,
+  // `.smrt/runtime/register.js`), so a root the provider declares as a Svelte
+  // entry is never imported: its object entries already imported above
+  // establish the context (#4219).
+  for (const packageName of manifest.smrtDependencies ?? []) {
+    if (!isSameProjectAndProviderImport(packageName, packageName)) continue;
+    const contextImport = resolveProviderContextImport(
+      packageName,
+      readInstalledPackageJson(
+        findInstalledPackageJson(packageName, projectRoot),
+      ),
+    );
+    if (!contextImport || importsByPath.has(contextImport)) continue;
+    importsByPath.set(contextImport, new Map());
   }
 
   // Skip generation if no external entries
