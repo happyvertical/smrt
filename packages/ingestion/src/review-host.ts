@@ -1,7 +1,6 @@
 /** Server-side implementation of the transport-neutral review callback contract. */
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
 import type { GenerationAnalysisOutput } from './proposal-dto.js';
-import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import { loadReviewAnalysis } from './review-analysis.js';
 import type {
   Assignment,
