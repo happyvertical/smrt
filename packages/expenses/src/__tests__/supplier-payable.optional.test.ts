@@ -42,9 +42,7 @@ pg('Expense supplier payable authority (managed PostgreSQL)', () => {
   afterAll(async () => {
     await (db as { close?: () => Promise<void> })?.close?.();
     if (databaseName)
-      await admin?.query(
-        `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-      );
+      await admin?.query(`DROP DATABASE IF EXISTS ${databaseName}`);
     await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
   });
   it('migrates the command-owned nullable authority with native money and tenant types', async () => {

@@ -1,16 +1,14 @@
 <script lang="ts">
-import { Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
+import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy, untrack } from 'svelte';
 import type { ReviewInput } from '../../execution-dto.js';
-import type {
-  CandidatePage,
-  ProposalCatalogEntry,
-} from '../../proposal-dto.js';
+import type { ProposalCatalogEntry } from '../../proposal-dto.js';
 import type { IntakeReviewHost, ReviewAction } from '../../review-dto.js';
 import { M } from '../i18n.js';
-import { argumentsObject } from '../view-utils.js';
+import { argumentsObject, missingRequired } from '../view-utils.js';
+import CandidatePicker from './CandidatePicker.svelte';
 export interface Props {
   host: IntakeReviewHost;
   itemId: string;
@@ -36,10 +34,6 @@ const { t } = useI18n();
 // ReviewView keys this editor by action/revision/reviewVersion; edits are local to that binding.
 let args = $state(untrack(() => JSON.stringify(action.args, null, 2) ?? '')),
   reason = $state(''),
-  query = $state(''),
-  field = $state(''),
-  candidates = $state<CandidatePage>(),
-  searching = $state(false),
   invalid = $state(false),
   comment = $state(''),
   planArgs = $state(
@@ -73,6 +67,13 @@ const editable = $derived(
 );
 const planEditable = $derived(
   action.args !== undefined && (waiting || revisable),
+);
+// Required handler arguments absent from the current draft; a hint only,
+// the server-side preview still validates the published arguments (#4208).
+const missing = $derived(
+  catalog && editable && !action.plan
+    ? missingRequired(catalog.argsSchema, args)
+    : [],
 );
 async function decide(decision: ReviewInput['decision']) {
   if (!waiting) return;
@@ -130,24 +131,6 @@ async function saveEdits() {
   };
   await run(() => host.editAction?.(input) ?? Promise.resolve());
 }
-async function search() {
-  if (!action.handlerId || !action.handlerVersion || searching) return;
-  searching = true;
-  candidates = undefined;
-  try {
-    const result = await host.candidates({
-      itemId,
-      handlerId: action.handlerId,
-      handlerVersion: action.handlerVersion,
-      query,
-    });
-    if (alive) candidates = result;
-  } catch {
-    if (alive) deny();
-  } finally {
-    if (alive) searching = false;
-  }
-}
 async function editPlan() {
   const plan = action.plan ?? action.stalePlan;
   const attemptId = action.plan?.attemptId ?? currentAttemptId;
@@ -178,18 +161,9 @@ async function editPlan() {
   };
   await run(() => host.editPlan?.(input) ?? Promise.resolve());
 }
-function choose(id: string) {
+function choose(field: string, id: string) {
   try {
-    const values = argumentsObject(args);
-    const ref = catalog?.references[field];
-    if (
-      ref?.kind !== 'candidate' ||
-      !candidates?.items.some(
-        (candidate) => candidate.id === id && candidate.model === ref.model,
-      )
-    )
-      return;
-    args = JSON.stringify({ ...values, [field]: id }, null, 2);
+    args = JSON.stringify({ ...argumentsObject(args), [field]: id }, null, 2);
   } catch {
     invalid = true;
   }
@@ -203,14 +177,9 @@ function choose(id: string) {
 <h4>{t(M['ingestion.effects'])}</h4><pre>{JSON.stringify(action.review.display,null,2)}</pre>
 <Textarea aria-label={t(M['ingestion.args'])} bind:value={args} readonly={!editable || !!action.plan} rows={8} />
 {#if editable}
+{#if missing.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each missing as name (name)}<li>{name}</li>{/each}</ul>{/if}
 <Input aria-label={t(M['ingestion.reason'])} bind:value={reason} />
-{#if !action.plan && catalog && Object.values(catalog.references).some((ref) => ref.kind === 'candidate')}
-<h4>{t(M['ingestion.candidates'])}</h4>
-<Select aria-label={t(M['ingestion.field'])} bind:value={field}><option value="">{t(M['ingestion.field'])}</option>{#each Object.entries(catalog.references) as [name,ref]}{#if ref.kind === 'candidate'}<option value={name}>{name}</option>{/if}{/each}</Select>
-<Input aria-label={t(M['ingestion.query'])} bind:value={query} />
-<Button onclick={search} disabled={searching}>{t(M['ingestion.search'])}</Button>
-{#if candidates}<ul>{#each candidates.items as candidate (candidate.key)}<li>{candidate.label} <Button disabled={!field} onclick={() => choose(candidate.id)}>{t(M['ingestion.choose'])}</Button></li>{/each}</ul>{#if candidates.truncated}<p>{t(M['ingestion.truncated'])}</p>{/if}{/if}
-{/if}
+{#if !action.plan && catalog}<CandidatePicker {host} {itemId} {catalog} {deny} onchoose={choose} />{/if}
 {#if dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <div class="controls">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan && !resolved}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>

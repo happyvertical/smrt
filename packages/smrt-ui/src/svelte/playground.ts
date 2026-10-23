@@ -7,6 +7,7 @@ const loadFeedback = () => import('./playground/FeedbackPreview.svelte');
 const loadCollections = () => import('./playground/CollectionsPreview.svelte');
 const loadCalendar = () => import('./playground/CalendarPreview.svelte');
 const loadCapture = () => import('./playground/CapturePreview.svelte');
+const loadTouchTools = () => import('./playground/TouchToolsPreview.svelte');
 const loadPermissionPicker = () =>
   import('./playground/PermissionPickerPreview.svelte');
 const loadStyleless = () => import('./playground/StylelessPreview.svelte');
@@ -123,6 +124,16 @@ export default {
       loadComponent: loadStyleless,
       order: 10,
       tags: ['styling', 'styleless', 'layers', 'restyling'],
+      modes: { mock: { label: 'Interactive' } },
+    },
+    {
+      id: 'touch-tools',
+      title: 'Touch Keypad & Document Viewer',
+      description:
+        'Glove-sized number/money keypad with integer minor units, and a pinch-zoom document viewer that reads files through an injected fetch.',
+      loadComponent: loadTouchTools,
+      order: 11,
+      tags: ['forms', 'touch', 'keypad', 'money', 'pdf', 'viewer'],
       modes: { mock: { label: 'Interactive' } },
     },
   ],

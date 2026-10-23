@@ -39,10 +39,11 @@ export interface IntakeReviewHostOptions {
    * only, read in one batched query); return item id -> `{ label, viewUrl?,
    * thumbnailUrl? }` built from metadata, without reading bytes. Rows missing
    * from the map get no preview. When omitted, rows show no original link and
-   * no host code is called; `list` still reads the page's evidence metadata
-   * once for filename labels (#4214), and lists with item-only labels if that
-   * read fails. If `rowEvidence` throws, the page still lists without
-   * previews. `load` never calls it.
+   * `list` calls no review-host adapter (`evidence`/`rowEvidence`); it still
+   * reads the page's evidence metadata once for filename labels (#4214), for
+   * which the host's `authorize` runs once per distinct captured ceiling, and
+   * lists with item-only labels if that read fails. If `rowEvidence` throws,
+   * the page still lists without previews. `load` never calls it.
    */
   rowEvidence?(
     rows: readonly RowEvidenceRequest[],
@@ -267,7 +268,11 @@ export function createIntakeReviewHost(
         typeof input.attemptId !== 'string' ||
         !input.attemptId ||
         typeof input.requestId !== 'string' ||
-        !input.requestId.trim()
+        !input.requestId.trim() ||
+        (input.args !== undefined &&
+          (!input.args ||
+            typeof input.args !== 'object' ||
+            Array.isArray(input.args)))
       )
         throw new Error('Invalid preview');
       const analysis = await service.getCompletedAnalysis(
@@ -277,18 +282,25 @@ export function createIntakeReviewHost(
       const generation = (
         analysis.result.output as unknown as GenerationAnalysisOutput
       ).proposals;
+      const suggestion = generation?.suggestions[input.index];
+      // A `needs_review` suggestion is previewable by a person (#4208); a failed
+      // attempt, a missing handler or a foreign stage still is not.
       if (
         analysis.configuration.stage !== 'interpret' ||
-        generation?.suggestions[input.index]?.disposition !== 'ready_for_review'
+        generation?.outcome === 'provider_error' ||
+        !suggestion ||
+        !['ready_for_review', 'needs_review'].includes(suggestion.disposition)
       )
         throw new Error('Preview unavailable');
-      const suggestion = generation.suggestions[input.index];
       const handler = generation.offered.find(
         ({ handler }) =>
           handler.id === suggestion.handlerId &&
           handler.version === suggestion.handlerVersion,
       )?.handler;
       if (!handler) throw new Error('Preview unavailable');
+      // Human-completed arguments go through the same explicit preview as an
+      // edit; they never rewrite the generation snapshot.
+      const args = input.args ? structuredClone(input.args) : suggestion.args;
       const intentionKey = `ui:${input.index}`;
       const actionId =
         handler.kind === 'plan'
@@ -322,10 +334,7 @@ export function createIntakeReviewHost(
             binding.args
           ) {
             const { intakeBindingDigest } = await import('./execution.js');
-            if (
-              intakeBindingDigest(binding.args) ===
-              intakeBindingDigest(suggestion.args)
-            )
+            if (intakeBindingDigest(binding.args) === intakeBindingDigest(args))
               return;
           }
           break;
@@ -335,6 +344,25 @@ export function createIntakeReviewHost(
           throw new Error('Repeated review cursor');
         if (cursor) cursors.add(cursor);
       } while (cursor);
+      // Every failure throws, as on main. A handler's refusal of the
+      // arguments throws `HandlerArgumentsInvalidError`; a transport that
+      // preserves its `name` lets the component keep the draft inline.
+      if (input.args) {
+        const shared = {
+          itemId: input.itemId,
+          attemptId: input.attemptId,
+          expectedRevision,
+          requestId: input.requestId,
+          handlerId: suggestion.handlerId,
+          handlerVersion: suggestion.handlerVersion,
+          args,
+        };
+        if (handler.kind === 'plan')
+          await service.previewPlan({ ...shared, planKey: intentionKey });
+        else if (actionId)
+          await service.previewProposal({ ...shared, actionId });
+        return;
+      }
       await service.previewGeneratedProposals({
         itemId: input.itemId,
         attemptId: input.attemptId,

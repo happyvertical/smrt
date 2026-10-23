@@ -794,7 +794,7 @@ describe('intake review host boundary', () => {
   });
   it.each([
     'missing-analysis',
-    'needs-review',
+    'provider-error',
   ] as const)('does not offer misleading preview for %s', async (reason) => {
     const view = page();
     view.generation = {
@@ -824,6 +824,7 @@ describe('intake review host boundary', () => {
       automaticActionEligible: false,
     };
     if (reason !== 'missing-analysis') view.analysis = currentAnalysis();
+    if (reason === 'provider-error') view.generation.outcome = 'provider_error';
     view.generation.suggestions = [
       {
         handlerId: 'draft',
@@ -831,10 +832,9 @@ describe('intake review host boundary', () => {
         args: {},
         evidence: [],
         alternatives: [],
-        missingFields: ['title'],
-        explanation: 'Incomplete proposal',
-        disposition:
-          reason === 'needs-review' ? 'needs_review' : 'ready_for_review',
+        missingFields: [],
+        explanation: 'Proposal',
+        disposition: 'ready_for_review',
       },
     ];
     const callbacks = host(view);
@@ -845,6 +845,424 @@ describe('intake review host boundary', () => {
     expect((prepare as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(prepare);
     expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  function needsReviewView(missingFields: string[]) {
+    const view = page();
+    view.analysis = currentAnalysis();
+    view.generation = {
+      version: 1,
+      outcome: 'needs_review',
+      suggestions: [
+        {
+          handlerId: 'draft',
+          handlerVersion: '1',
+          args: { body: 'Minutes' },
+          evidence: [],
+          alternatives: [],
+          missingFields,
+          explanation: 'Incomplete proposal',
+          disposition: 'needs_review',
+        },
+      ],
+      splits: [],
+      warnings: [],
+      omittedSuggestions: 0,
+      source: {
+        attemptId: 'attempt',
+        revision: 2,
+        inputDigest: 'in',
+        outputDigest: 'out',
+        evidenceDigest: 'evidence',
+      },
+      offered: [
+        {
+          handler: {
+            id: 'draft',
+            version: '1',
+            description: 'Draft',
+            kind: 'operation',
+            capability: null,
+            argsSchema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['title', 'body'],
+              properties: { title: {}, body: {}, destination: {} },
+            },
+            references: {
+              destination: { kind: 'candidate', model: 'Document' },
+            },
+            operation: { model: 'Document', action: 'create', version: '1' },
+          },
+          candidates: [],
+        },
+      ],
+      provenance: {
+        configurationVersion: '1',
+        promptVersion: '1',
+        catalogDigest: 'catalog',
+        policyVersions: [],
+        generative: { provider: 'fixture', model: 'fixture', version: '1' },
+        decision: { configured: false },
+        usage: {},
+      },
+      automaticActionEligible: false,
+    };
+    view.reviews.actions = [];
+    return view;
+  }
+  it('lets a reviewer complete a needs_review suggestion before preview (#4208)', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.candidates).mockResolvedValue({
+      items: [
+        {
+          key: 'target',
+          model: 'Document',
+          id: 'authorized-id',
+          revision: '1',
+          label: 'Authorized destination',
+        },
+      ],
+      truncated: false,
+    });
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    expect(screen.getByText('Missing information')).toBeTruthy();
+    expect(screen.getByText('title')).toBeTruthy();
+    expect((prepare as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.change(
+      screen.getByRole('combobox', { name: 'Argument field' }),
+      { target: { value: 'destination' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Search destinations' }),
+    );
+    await screen.findByText('Authorized destination');
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose destination' }),
+    );
+    const draft = screen.getByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    }) as HTMLTextAreaElement;
+    expect(JSON.parse(draft.value)).toEqual({
+      body: 'Minutes',
+      destination: 'authorized-id',
+    });
+    await fireEvent.input(draft, {
+      target: {
+        value: JSON.stringify({
+          body: 'Minutes',
+          destination: 'authorized-id',
+          title: 'Human title',
+        }),
+      },
+    });
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    await waitFor(() =>
+      expect(callbacks.preview).toHaveBeenCalledWith({
+        itemId: 'item',
+        attemptId: 'generation-attempt',
+        index: 0,
+        requestId: expect.any(String),
+        args: {
+          body: 'Minutes',
+          destination: 'authorized-id',
+          title: 'Human title',
+        },
+      }),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+  });
+  it('previews a complete needs_review suggestion without inventing arguments', async () => {
+    const view = needsReviewView([]);
+    view.generation!.suggestions[0].args = { title: 'Minutes', body: 'Body' };
+    const callbacks = host(view);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    expect((prepare as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(prepare);
+    await waitFor(() => expect(callbacks.preview).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(callbacks.preview).mock.calls[0][0]).not.toHaveProperty(
+      'args',
+    );
+  });
+  it('rejects an unparsable suggestion draft locally without calling the host', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      { target: { value: '{"title":' } },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('fails closed when a preview throws, clearing originals and the view', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.preview).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      {
+        target: {
+          value: JSON.stringify({ body: 'Minutes', title: 'Human title' }),
+        },
+      },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'This view is unavailable',
+    );
+    expect(screen.queryByTestId('evidence-viewer')).toBeNull();
+    expect(
+      screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+    ).toBeNull();
+    expect(screen.queryByText('confidential', { exact: false })).toBeNull();
+  });
+  it('treats a thrown HandlerArgumentsInvalidError as the inline refusal', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.preview).mockRejectedValue(
+      Object.assign(new Error('Invalid handler payload'), {
+        name: 'HandlerArgumentsInvalidError',
+      }),
+    );
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Human title' });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      { target: { value: typed } },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'did not pass the handler validation',
+    );
+    expect(screen.getByTestId('evidence-viewer')).toBeTruthy();
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the typed draft and shows an inline refusal when the handler rejects the arguments', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.preview).mockResolvedValue({ rejected: 'invalid' });
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Human title' });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      { target: { value: typed } },
+    );
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'did not pass the handler validation',
+    );
+    expect(screen.getByTestId('evidence-viewer')).toBeTruthy();
+    expect(callbacks.preview).toHaveBeenCalledTimes(1);
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(screen.getByText('Missing information')).toBeTruthy();
+    expect((prepare as HTMLButtonElement).disabled).toBe(false);
+  });
+  it('keeps Prepare review disabled until every schema-required argument is in the draft', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const prepare = await screen.findByRole('button', {
+      name: 'Prepare review',
+    });
+    const draft = screen.getByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    });
+    // Edited, but `title` is still absent: the handler schema would reject it.
+    await fireEvent.input(draft, {
+      target: { value: JSON.stringify({ body: 'Minutes', note: 'x' }) },
+    });
+    await tick();
+    expect((prepare as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(draft, {
+      target: { value: JSON.stringify({ body: 'Minutes', title: 'T' }) },
+    });
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('fails closed when a destination search throws, keeping only the in-memory draft', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    vi.mocked(callbacks.candidates).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const draft = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Keep me' });
+    await fireEvent.input(draft, { target: { value: typed } });
+    await fireEvent.change(
+      screen.getByRole('combobox', { name: 'Argument field' }),
+      { target: { value: 'destination' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Search destinations' }),
+    );
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'This view is unavailable',
+    );
+    expect(screen.queryByTestId('evidence-viewer')).toBeNull();
+    expect(
+      screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+    ).toBeNull();
+    // After an authorized refresh the reviewer's own typing is still there.
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(
+      (
+        (await screen.findByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        })) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+  });
+  it('keeps every card draft across a failed action and the following refresh', async () => {
+    const view = needsReviewView(['title']);
+    view.generation!.suggestions.push({
+      ...structuredClone(view.generation!.suggestions[0]),
+      args: { body: 'Second' },
+    });
+    view.generation!.splits = [
+      { evidenceId: 'original', groups: [[1]], digest: 'split' },
+    ];
+    const callbacks = host(view);
+    vi.mocked(callbacks.split).mockRejectedValue(new Error('Denied'));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const drafts = (await screen.findAllByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement[];
+    expect(drafts).toHaveLength(2);
+    const first = JSON.stringify({ body: 'Minutes', title: 'A' });
+    const second = JSON.stringify({ body: 'Second', title: 'B' });
+    await fireEvent.input(drafts[0], { target: { value: first } });
+    await fireEvent.input(drafts[1], { target: { value: second } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Save split and reprocess' }),
+    );
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    const restored = (await screen.findAllByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement[];
+    expect(restored.map((area) => area.value)).toEqual([first, second]);
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['unavailable', true],
+    ['stale', true],
+    ['revoked', false],
+    ['expired', false],
+  ] as const)('a %s refresh keeps drafts: %s', async (availability, kept) => {
+    const ready = needsReviewView(['title']);
+    const callbacks = host(ready);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const draft = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Typed' });
+    await fireEvent.input(draft, { target: { value: typed } });
+    vi.mocked(callbacks.load).mockResolvedValueOnce({
+      ...structuredClone(ready),
+      availability,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+      ).toBeNull(),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    const restored = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    expect(restored.value).toBe(
+      kept ? typed : JSON.stringify({ body: 'Minutes' }, null, 2),
+    );
+  });
+  it('keeps unsent drafts across Refresh and clears the JSON alert once the draft parses', async () => {
+    const callbacks = host(needsReviewView(['title']));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const draft = (await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    await fireEvent.input(draft, { target: { value: '{"title":' } });
+    const prepare = screen.getByRole('button', { name: 'Prepare review' });
+    await waitFor(() =>
+      expect((prepare as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(prepare);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    const typed = JSON.stringify({ body: 'Minutes', title: 'Fixed' });
+    await fireEvent.input(draft, { target: { value: typed } });
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    expect(
+      (
+        (await screen.findByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        })) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('shows required arguments missing from an action draft while editing', async () => {
+    const view = page();
+    view.generation = needsReviewView([]).generation;
+    view.generation!.suggestions = [];
+    view.reviews.actions[0].args = { title: 'Invoice', body: 'Body' };
+    render(IntakeReview, { host: host(view), itemId: 'item' });
+    const args = (await screen.findByRole('textbox', {
+      name: 'Exact arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    expect(screen.queryByText('Missing information')).toBeNull();
+    await fireEvent.input(args, { target: { value: '{"body":"x"}' } });
+    expect(await screen.findByText('Missing information')).toBeTruthy();
+    expect(screen.getByText('title')).toBeTruthy();
   });
   it('re-previews approved edits with exact action revision and dependencies, requiring new approval', async () => {
     const view = page();
@@ -1266,6 +1684,22 @@ describe('intake review host boundary', () => {
         requestId: expect.any(String),
       }),
     );
+  });
+  it('keeps incomplete suggestion completion hidden after a no-action disposition', async () => {
+    const view = needsReviewView(['title']);
+    view.entry.state = 'resolved';
+    view.entry.item.disposition = {
+      state: 'resolved',
+      at: '2026-10-22T00:00:00.000Z',
+    };
+    const callbacks = host(view);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    await screen.findByTestId('disposition');
+    expect(
+      screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Prepare review' })).toBeNull();
+    expect(callbacks.preview).not.toHaveBeenCalled();
   });
   it('shows the disposition instead of start controls and labels reviewer-started actions', async () => {
     const view = catalogView();

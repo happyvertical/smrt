@@ -75,6 +75,22 @@ export function argumentsObject(value: string): Record<string, unknown> {
     throw new Error('Invalid arguments');
   return result as Record<string, unknown>;
 }
+/** Required top-level handler arguments missing from a JSON draft; unparsable drafts report none. */
+export function missingRequired(
+  schema: Record<string, unknown>,
+  draft: string,
+): string[] {
+  if (!Array.isArray(schema.required)) return [];
+  try {
+    const values = argumentsObject(draft);
+    return schema.required.filter(
+      (name): name is string =>
+        typeof name === 'string' && !Object.hasOwn(values, name),
+    );
+  } catch {
+    return [];
+  }
+}
 export function pageGroups(value: string): number[][] {
   const result: unknown = JSON.parse(value);
   if (

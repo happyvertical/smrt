@@ -71,9 +71,7 @@ describePostgres('Expense runtime timestamps on PostgreSQL (#3940)', () => {
   afterAll(async () => {
     await (db as { close?: () => Promise<void> } | undefined)?.close?.();
     if (databaseName)
-      await admin?.query(
-        `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-      );
+      await admin?.query(`DROP DATABASE IF EXISTS ${databaseName}`);
     await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
   });
 

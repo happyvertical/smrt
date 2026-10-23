@@ -2538,6 +2538,7 @@ export * from './extraction.js';
 export type * from './feedback-contracts.js';
 export {
   GenerationSnapshotStaleError,
+  HandlerArgumentsInvalidError,
   ProposalsNotConfiguredError,
 } from './proposal-errors.js';
 export {

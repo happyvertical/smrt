@@ -161,10 +161,21 @@ export {
   longPress,
 } from './long-press.js';
 export { default as MultiSelect } from './MultiSelect.svelte';
+export { default as NumericKeypad } from './NumericKeypad.svelte';
 export {
   detectNativeFileFieldStrategy,
   type NativeFileFieldStrategy,
 } from './native-file-field.js';
+export {
+  applyKey as applyKeypadKey,
+  type EntryValidity,
+  type KeypadKey,
+  minorUnitExponent,
+  minorUnitsToText,
+  type NumericKeypadDetail,
+  textToMinorUnits,
+  validateEntry as validateKeypadEntry,
+} from './numeric-keypad-logic.js';
 export { default as ProvinceSelect } from './ProvinceSelect.svelte';
 export { default as Radio } from './Radio.svelte';
 export { default as RadioGroup } from './RadioGroup.svelte';
@@ -198,6 +209,7 @@ export type {
   CameraCaptureState,
   CaptureResult,
   FormError,
+  NumericKeypadLabels,
   RangeSliderValue,
   RelationOption,
   SegmentedControlOption,

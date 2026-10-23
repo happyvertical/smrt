@@ -1,3 +1,14 @@
+/**
+ * The handler's argument schema or `validate` refused explicit arguments.
+ * Review hosts may report this to the reviewer as a correctable rejection;
+ * every other preview failure stays a denial.
+ */
+export class HandlerArgumentsInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HandlerArgumentsInvalidError';
+  }
+}
 /** The host configured neither proposals nor proposalRead; catalog reads are unavailable. */
 export class ProposalsNotConfiguredError extends Error {
   constructor() {
