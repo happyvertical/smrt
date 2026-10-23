@@ -293,3 +293,5 @@ quality. Full ingestion tests, PostgreSQL, providers, evaluation, types/build an
 root gates are required for the integrated revision.
 
 Round1 reference regression (#4260): provider schemas compile and accept original-valid inputs when references target relocated oneOf branches, deleted not subtrees, nested $id resources, and anchors. Provider reference constraints are omitted conservatively; original validator still rejects invalid inputs, and $ref property/const data is preserved.
+
+Incoming4270 review: typed schema-like objects inside enum/const and nested contentSchema are rejected by a type-qualified backend feature probe before sanitization and accepted afterward; provider widening preserves original-valid values and harmless colliding property names/data.

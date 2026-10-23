@@ -46,8 +46,8 @@ const string = { type: 'string', minLength: 1, maxLength: 512 };
  * - `not`, `if`/`then`/`else`, `dependentRequired`, `dependentSchemas`,
  *   `dependencies`, `unevaluatedItems`, `unevaluatedProperties`: implemented
  *   by neither xgrammar nor llama.cpp's grammar converter.
- * - `default`, `examples`: annotations, not constraints, but vLLM's feature
- *   check walks their values, so an object default could be flagged.
+ * - `default`, `examples`, `contentSchema`: annotations, not constraints, but
+ *   backend feature checks walk their values, including nested schemas/data.
  * Kept, because those backends implement them: `type`, `enum`, `const`,
  * `anyOf`/`allOf` (`oneOf` is weakened below), `items`/`prefixItems`,
  * `minItems`/`maxItems`,
@@ -85,7 +85,23 @@ export const UNPORTABLE_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
   'unevaluatedProperties',
   'default',
   'examples',
+  'contentSchema',
 ]);
+/** Backends may inspect typed keyword objects even inside enum/const data. */
+function hasProviderVisibleConstraint(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasProviderVisibleConstraint);
+  if (!value || typeof value !== 'object') return false;
+  const object = value as Record<string, unknown>;
+  // Conservatively remove a containing data constraint, never rewrite its
+  // literal value. Harmless property names without a schema type stay data.
+  if (
+    typeof object.type === 'string' &&
+    Object.keys(object).some((key) => UNPORTABLE_SCHEMA_KEYWORDS.has(key))
+  )
+    return true;
+  return Object.values(object).some(hasProviderVisibleConstraint);
+}
+
 /** Keywords whose value is a map from names to subschemas. */
 const SCHEMA_MAP_KEYWORDS = new Set(['properties', '$defs', 'definitions']);
 /** Keywords whose value is a list of subschemas. */
@@ -105,8 +121,9 @@ const SCHEMA_SINGLE_KEYWORDS = new Set([
 /**
  * Copy a response schema without {@link UNPORTABLE_SCHEMA_KEYWORDS}, walking
  * only schema positions. Property names (a handler argument may be called
- * `format`), `enum`/`const` values and `required` lists are copied as data,
- * never inspected as keywords.
+ * `format`) and required lists stay data. Kept enum/const values are copied
+ * unchanged; a containing enum/const constraint is omitted when its typed
+ * data would trigger a backend's recursive unsupported-feature check.
  *
  * Invariant: the provider copy only ever accepts a superset of what the
  * original accepts. Every removed keyword is a conjunct whose removal widens
@@ -115,7 +132,8 @@ const SCHEMA_SINGLE_KEYWORDS = new Set([
  * would narrow are rewritten: `oneOf` becomes `anyOf`, and an object that
  * loses `patternProperties` also loses `additionalProperties`. `enum`/`const`
  * with a removed sibling stay a superset, as the sibling was another
- * conjunct. The validator still checks the original.
+ * conjunct. Omitting a whole enum/const constraint also widens. The validator
+ * still checks the original.
  */
 export function portableResponseSchema<T>(schema: T): T {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema))
@@ -132,6 +150,11 @@ export function portableResponseSchema<T>(schema: T): T {
     if (key === '$ref' || key === '$dynamicRef' || key === '$recursiveRef')
       continue;
     if (UNPORTABLE_SCHEMA_KEYWORDS.has(key)) continue;
+    if (
+      (key === 'enum' || key === 'const') &&
+      hasProviderVisibleConstraint(value)
+    )
+      continue;
     if (
       SCHEMA_MAP_KEYWORDS.has(key) &&
       value &&

@@ -494,6 +494,68 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     expect(portableResponseSchema(data)).toEqual(data);
   });
 
+  it('widens typed grammar keywords inside data and content schemas (#4270 review)', () => {
+    // vLLM 0.28.0's real feature predicate is type-qualified, unlike the
+    // deliberately stricter flat-key fake endpoint above. It recursively
+    // visits data too. Names alone are not unsupported schema constraints.
+    function rejects(value: unknown): boolean {
+      if (Array.isArray(value)) return value.some(rejects);
+      if (!value || typeof value !== 'object') return false;
+      const object = value as Record<string, unknown>;
+      if (
+        object.type === 'array' &&
+        ['uniqueItems', 'contains', 'minContains', 'maxContains'].some(
+          (key) => key in object,
+        )
+      )
+        return true;
+      if (
+        (object.type === 'integer' || object.type === 'number') &&
+        'multipleOf' in object
+      )
+        return true;
+      if (
+        object.type === 'object' &&
+        ['patternProperties', 'propertyNames'].some((key) => key in object)
+      )
+        return true;
+      if (
+        object.type === 'string' &&
+        object.format === 'private-unsupported-format'
+      )
+        return true;
+      return Object.values(object).some(rejects);
+    }
+    const literal = { type: 'array', uniqueItems: true };
+    const schemas = [
+      { const: literal },
+      { enum: [{ wrapped: literal }, 'safe'] },
+      { type: 'string', contentSchema: { type: 'array', uniqueItems: true } },
+    ];
+    const values = [literal, { wrapped: literal }, 'text'];
+    for (const [index, schema] of schemas.entries()) {
+      expect(
+        new Ajv2020({ strict: false }).validate(schema, values[index]),
+      ).toBe(true);
+      expect(rejects(schema)).toBe(true);
+      const portable = portableResponseSchema(schema);
+      expect(rejects(portable)).toBe(false);
+      expect(
+        new Ajv2020({ strict: false }).validate(portable, values[index]),
+      ).toBe(true);
+    }
+    const harmless = {
+      type: 'object',
+      properties: {
+        format: { type: 'string' },
+        uniqueItems: { type: 'boolean' },
+      },
+      const: { format: 'date', uniqueItems: true },
+    };
+    expect(rejects(harmless)).toBe(false);
+    expect(portableResponseSchema(harmless)).toEqual(harmless);
+  });
+
   it('strips unportable keywords at schema positions only (#4260)', () => {
     const portable = portableResponseSchema({
       type: 'object',

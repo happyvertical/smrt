@@ -195,8 +195,14 @@ grammar: the validator still enforces the constraints, including unique
 entries. The exception is `format`, which is advisory: the validator runs Ajv
 with `validateFormats: false`, so `format` is enforced nowhere. When
 `patternProperties` is removed, the same object's `additionalProperties` is
-removed too, so the grammar does not shrink to `{}`. There is no automatic
-`json_object` fallback.
+removed too, so the grammar does not shrink to `{}`. The `contentSchema` annotation is omitted as well, so nested unsupported
+constraints cannot leak through an unvisited schema position. A backend may
+recursively inspect typed schema-like objects even inside `enum` or `const`
+data. When such data contains an unsupported keyword, the whole containing
+`enum`/`const` constraint is omitted conservatively; literal data is never
+rewritten. Harmless property names and ordinary enum/const data stay intact.
+The original validator remains authoritative for omitted literal constraints.
+There is no automatic `json_object` fallback.
 
 Invariant: the provider copy only ever accepts a superset of what the original
 accepts. Each removed keyword is a conjunct, so removing it only widens. The two
