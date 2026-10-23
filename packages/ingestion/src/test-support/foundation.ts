@@ -906,6 +906,27 @@ export function foundationSuite(
         first,
       );
       expect((await service.listEvidence([first])).has(first)).toBe(true);
+      // Item data that does not parse as an object (an array here, which
+      // both engines store) is skipped by both list paths, not fatal.
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        JSON.stringify([]),
+        first,
+      );
+      const unparsable = await service.listEvidence([first, second]);
+      expect(unparsable.has(first)).toBe(false);
+      expect(unparsable.has(second)).toBe(true);
+      const unparsablePage = (await service.listItemsPage()).items.map(
+        ({ item }) => item.id,
+      );
+      expect(unparsablePage).not.toContain(first);
+      expect(unparsablePage).toContain(second);
+      await db.query(
+        'UPDATE intake_items SET data=? WHERE id=?',
+        typeof stored === 'string' ? stored : JSON.stringify(stored),
+        first,
+      );
+      expect((await service.listEvidence([first])).has(first)).toBe(true);
       // Bounded, validated input.
       expect((await service.listEvidence([])).size).toBe(0);
       await expect(service.listEvidence(['not-a-uuid'])).rejects.toThrow(

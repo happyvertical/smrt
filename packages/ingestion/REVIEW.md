@@ -280,7 +280,8 @@ ids; items the scope cannot read, and expired or inactive items, are omitted
 without disclosure; the host `authorize` runs once per distinct captured
 ceiling through the same gate as `listItemsPage`, so a refusal or a
 malformed captured ceiling hides the item and a failing `authorize` rejects
-the page). It then calls `rowEvidence`
+the page; an item whose stored data does not parse is skipped by both
+`listItemsPage` and `listEvidence`, never fatal). It then calls `rowEvidence`
 once with each row's primary part (`{ itemId, evidence }`) and publishes the
 returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
 (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
