@@ -35,6 +35,7 @@ import type {
   RetrieveFeedbackInput,
   SuggestRuleInput,
 } from './feedback-dto.js';
+import { isStorableFilename, presentedFilename } from './presented-filename.js';
 import {
   type ProposalConfiguration,
   type ProposalReadConfiguration,
@@ -60,6 +61,8 @@ export interface IntakePart {
   bytes: Uint8Array;
   expectedHash?: string;
   sourceReference?: { owner: string; id: string; version: string };
+  /** Original name as the source presented it; presentation only, never identity. */
+  filename?: string;
 }
 /** Host-resolved delivery and retention policy, never untrusted content labels. */
 export interface ReceiveInput {
@@ -200,6 +203,11 @@ function nonempty(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512)
     throw new Error('Invalid intake identifier');
 }
+/** A source-supplied display name: bounded text with no unsafe characters. */
+function filename(value: unknown): asserts value is string {
+  // Same character set the source adapters strip (presented-filename.ts).
+  if (!isStorableFilename(value)) throw new Error('Invalid intake filename');
+}
 function integer(value: unknown, max = 2_147_483_647): asserts value is number {
   if (
     typeof value !== 'number' ||
@@ -209,6 +217,8 @@ function integer(value: unknown, max = 2_147_483_647): asserts value is number {
   )
     throw new Error('Invalid intake limit');
 }
+/** The most items one batched page read may cover. */
+const EVIDENCE_PAGE_CEILING = 100;
 function persistedDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
 }
@@ -497,6 +507,7 @@ export class IngestionService {
         const hash = bytesHash(part.bytes);
         if (part.expectedHash && part.expectedHash !== hash)
           throw new Error('Invalid hash');
+        if (part.filename !== undefined) filename(part.filename);
         return { ...part, bytes: Buffer.from(part.bytes), hash };
       });
       if (total > input.limits.maxBytes)
@@ -614,7 +625,12 @@ export class IngestionService {
             byte_length: part.bytes.byteLength,
             media_type: part.mediaType,
             source_uri: '',
-            data: canonical({ sourceReference: part.sourceReference ?? null }),
+            data: canonical({
+              sourceReference: part.sourceReference ?? null,
+              ...(part.filename === undefined
+                ? {}
+                : { filename: part.filename }),
+            }),
           });
       }
       return { kind: 'reserved' as const, item, created: !!inserted.length };
@@ -1177,7 +1193,50 @@ export class IngestionService {
         "item_id=? AND state='durable'",
         [itemId],
       )
-    ).map((e) => ({
+    ).map((e) => this.evidenceDTO(e));
+  }
+  /**
+   * Durable evidence for one inbox page in a single query, keyed by item id.
+   * Items that are not active, retained and readable are omitted (no
+   * existence disclosure); the host authorize callback runs once per distinct
+   * captured ceiling rather than once per item.
+   */
+  async listEvidence(
+    itemIds: string[],
+  ): Promise<Map<string, IntakeEvidenceDTO[]>> {
+    if (
+      !Array.isArray(itemIds) ||
+      itemIds.length > EVIDENCE_PAGE_CEILING ||
+      itemIds.some((id) => typeof id !== 'string' || !uuid.test(id))
+    )
+      throw new Error('Invalid item page');
+    const result = new Map<string, IntakeEvidenceDTO[]>();
+    if (!itemIds.length) return result;
+    const rows = (
+      await this.db.query(
+        `SELECT e.*, i.data AS item_data FROM intake_evidence e JOIN intake_items i ON i.tenant_id = e.tenant_id AND i.confidential_scope_id = e.confidential_scope_id AND i.id = e.item_id WHERE e.tenant_id = ? AND e.confidential_scope_id = ? AND e.state = 'durable' AND i.visibility = 'active' AND i.expires_at > ? AND e.item_id IN (${itemIds.map(() => '?').join(',')}) ORDER BY e.item_id, e.part_id`,
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        this.now().toISOString(),
+        ...itemIds,
+      )
+    ).rows as Row[];
+    const allowed = this.ceilingGate();
+    for (const row of rows) {
+      if (!(await allowed(object(row.item_data)))) continue;
+      const itemId = String(row.item_id);
+      const parts = result.get(itemId) ?? [];
+      parts.push(this.evidenceDTO(row));
+      result.set(itemId, parts);
+    }
+    return result;
+  }
+  private evidenceDTO(e: Row): IntakeEvidenceDTO {
+    // Only the cleaned name is exposed. `sourceReference` stays in storage:
+    // its ids are upstream locators (mailbox paths, raw folder names), not
+    // display text, and no host needs them on the DTO.
+    const filename = presentedFilename(object(e.data).filename);
+    return {
       id: String(e.id),
       partId: String(e.part_id),
       parentEvidenceId: e.parent_evidence_id
@@ -1186,7 +1245,32 @@ export class IngestionService {
       mediaType: String(e.media_type),
       contentHash: String(e.content_hash),
       byteLength: Number(e.byte_length),
-    }));
+      ...(filename ? { filename } : {}),
+    };
+  }
+  /** One read authorization per distinct captured ceiling for a page of rows. */
+  private ceilingGate(): (data: Row) => Promise<boolean> {
+    const ceilings = new Map<string, Promise<boolean>>();
+    return (data) => {
+      const ceiling = object(data.capturedCeiling ?? {});
+      const key = canonical(ceiling);
+      let decision = ceilings.get(key);
+      if (!decision) {
+        // Same check as `authorize('read', …)`, but a denial omits the row
+        // while a failing host callback (e.g. a database error) rejects the
+        // page instead of silently hiding its evidence.
+        decision = this.options
+          .authorize({
+            scope: this.scope,
+            operation: 'read',
+            capturedCeiling: ceiling,
+            db: this.db,
+          })
+          .then((allowed) => allowed === true);
+        ceilings.set(key, decision);
+      }
+      return decision;
+    };
   }
   async readEvidence(itemId: string, evidenceId: string): Promise<Uint8Array> {
     await this.item(itemId, 'read');
@@ -2389,5 +2473,7 @@ export { GenerationSnapshotStaleError } from './proposal-errors.js';
 export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
+  type RowEvidenceRequest,
+  type RowEvidenceView,
 } from './review-host.js';
 export * from './sources/index.js';

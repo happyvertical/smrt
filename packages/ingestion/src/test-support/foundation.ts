@@ -738,6 +738,156 @@ export function foundationSuite(
       expect(await service.getEvidence(id)).toHaveLength(1);
       expect((await service.receive(receive())).kind).toBe('duplicate');
     });
+    it('rejects unsafe filenames from direct receive callers and cleans stored names on read (#4214)', async () => {
+      // Built from code points: no invisible character appears in source.
+      const rlo = String.fromCodePoint(0x202e);
+      for (const filename of [
+        `invoice${rlo}fdp.exe`,
+        'tab\tname.pdf',
+        'x'.repeat(513),
+        '   ',
+      ]) {
+        const input = receive(
+          `unsafe-${filename.length}-${filename.charCodeAt(4)}`,
+        );
+        input.parts[0].filename = filename;
+        // Rejected as invalid input, never stored.
+        expect(await service.receive(input)).toEqual({
+          kind: 'rejected',
+          category: 'invalid',
+        });
+      }
+      // The same input with a safe name is accepted and stored as given, so
+      // the rejections above come from the filename check alone.
+      const named = receive('named');
+      named.parts[0].filename = 'Acme March.pdf';
+      const result = await service.receive(named);
+      if (!('itemId' in result)) throw new Error(JSON.stringify(result));
+      expect((await service.getEvidence(result.itemId))[0].filename).toBe(
+        'Acme March.pdf',
+      );
+      // A row written outside `receive` (older data, a direct SQL fix) is
+      // cleaned on the way out, never surfaced raw.
+      for (const [stored, shown] of [
+        [`Acme${rlo}fdp.pdf`, 'Acmefdp.pdf'],
+        [`${rlo}${String.fromCodePoint(0x200b)}`, undefined],
+      ] as const) {
+        await db.query(
+          'UPDATE intake_evidence SET data=? WHERE item_id=?',
+          JSON.stringify({ filename: stored, sourceReference: null }),
+          result.itemId,
+        );
+        expect((await service.getEvidence(result.itemId))[0].filename).toBe(
+          shown,
+        );
+        expect(
+          (await service.listEvidence([result.itemId])).get(result.itemId)?.[0]
+            .filename,
+        ).toBe(shown);
+      }
+    });
+    it('lists a page of durable evidence in one query and omits what the scope cannot read (#4213)', async () => {
+      const first = await accepted('page-a');
+      const second = await accepted('page-b');
+      const unknown = '00000000-0000-4000-8000-000000000000';
+      const query = vi.spyOn(db, 'query');
+      const page = await service.listEvidence([first, second, unknown]);
+      expect(
+        query.mock.calls.filter(([sql]) =>
+          String(sql).includes('FROM intake_evidence'),
+        ),
+      ).toHaveLength(1);
+      query.mockRestore();
+      // An unknown id is omitted, not disclosed.
+      expect([...page.keys()].sort()).toEqual([first, second].sort());
+      expect(page.get(first)).toEqual(await service.getEvidence(first));
+      // Rows of another tenant or confidential scope are never returned, even
+      // when that scope's authorization allows everything: the query itself
+      // is tenant- and scope-bound.
+      for (const scope of [
+        { ...options.scope, tenantId: otherTenant },
+        { ...options.scope, confidentialScopeId: 'other' },
+      ]) {
+        const outsider = new IngestionService({
+          ...options,
+          scope,
+          authorize: async () => true,
+        });
+        expect((await outsider.listEvidence([first, second])).size).toBe(0);
+      }
+      // A mixed page: one row under a ceiling the host denies is omitted
+      // while the readable rows are returned, with one authorization per
+      // distinct captured ceiling, not per item.
+      const restrictedInput = receive('page-restricted');
+      restrictedInput.capturedCeiling = { restricted: true };
+      const restrictedResult = await service.receive(restrictedInput);
+      if (!('itemId' in restrictedResult))
+        throw new Error(JSON.stringify(restrictedResult));
+      const restricted = restrictedResult.itemId;
+      const ceilingAuthorize = vi.fn(
+        async ({
+          capturedCeiling,
+        }: Parameters<IngestionOptions['authorize']>[0]) =>
+          capturedCeiling.restricted !== true,
+      );
+      const gated = new IngestionService({
+        ...options,
+        authorize: ceilingAuthorize,
+      });
+      const mixed = await gated.listEvidence([first, restricted, second]);
+      expect([...mixed.keys()].sort()).toEqual([first, second].sort());
+      expect(ceilingAuthorize).toHaveBeenCalledTimes(2);
+      // Each SQL predicate is needed on its own. A part still at reservation
+      // intent (item active) is not listed...
+      const intent = await accepted('page-intent');
+      await db.query(
+        "UPDATE intake_evidence SET state='intent' WHERE item_id=?",
+        intent,
+      );
+      expect((await service.listEvidence([intent])).size).toBe(0);
+      // ...nor is a durable part of an item that is no longer active. `expire`
+      // also revokes the parts, so the row is set directly to isolate the
+      // visibility predicate from the state predicate.
+      const inactive = await accepted('page-inactive');
+      await db.query(
+        "UPDATE intake_items SET visibility='expired' WHERE id=?",
+        inactive,
+      );
+      expect((await service.listEvidence([inactive])).size).toBe(0);
+      // A cancelled item stays active and readable, exactly as getEvidence
+      // agrees, so its evidence is still listed.
+      const cancelled = await accepted('page-cancelled');
+      await service.cancel(cancelled);
+      expect((await service.listEvidence([cancelled])).get(cancelled)).toEqual(
+        await service.getEvidence(cancelled),
+      );
+      // A denied ceiling omits the rows; so does an expired item.
+      allowed = false;
+      expect((await service.listEvidence([first])).size).toBe(0);
+      allowed = true;
+      const now = clock;
+      clock = new Date(now.getTime() + 100001);
+      expect((await service.listEvidence([first])).size).toBe(0);
+      clock = now;
+      // A failing host authorization surfaces instead of hiding evidence.
+      const failing = new IngestionService({
+        ...options,
+        authorize: async () => {
+          throw new Error('authorization store down');
+        },
+      });
+      await expect(failing.listEvidence([first])).rejects.toThrow(
+        'authorization store down',
+      );
+      // Bounded, validated input.
+      expect((await service.listEvidence([])).size).toBe(0);
+      await expect(service.listEvidence(['not-a-uuid'])).rejects.toThrow(
+        'Invalid item page',
+      );
+      await expect(
+        service.listEvidence(Array.from({ length: 101 }, () => unknown)),
+      ).rejects.toThrow('Invalid item page');
+    });
     for (const operation of ['cancel', 'expire'] as const)
       it(`review second regression: ${operation} terminates queued and running parent analyses`, async () => {
         for (const running of [false, true]) {

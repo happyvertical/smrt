@@ -94,6 +94,74 @@ so the artifact bundles them. SvelteKit
 virtual modules (`$env/*`, `$app/*`) are not available to a worker; an object
 importing one fails at worker startup. A failure fails the build.
 
+**Register imports stay Node-loadable (#4219).** `.smrt/register.js`
+(`generateRegistrationFile` in `src/consumer-plugin/index.ts`) is evaluated by
+plain Node — `smrt db:migrate`, every CLI, and the worker artifact above — as
+well as by Vite SSR, so it may only import modules Node can load. Each object
+is imported from its manifest `importPath` (the scanner's export-subpath match,
+e.g. `@happyvertical/smrt-products/models`). Each configured provider in
+`smrtDependencies` is also imported once so it is evaluated in Node's installed
+package context (#4187): the package root, unless the package declares that
+root as a Svelte entry (`isComponentBearingRoot`: a `svelte` field, or a `.`
+export with a `svelte` condition or a `.svelte`/`.css` target — e.g.
+`@happyvertical/smrt-products`, whose root re-exports its components and so
+reaches `@happyvertical/smrt-ui`'s `.svelte` files). Such a root is never
+imported and no subpath is substituted for it (`resolveProviderContextImport`
+returns `undefined`): its already-imported object entries establish the
+context, a provider contributing only nested objects needs none because the
+transitive loader uses only `import.meta.resolve(provider)`, and a substitute
+`./models` whose JS reached `.svelte` would re-create the failure. A package that publishes Svelte
+only under subpaths keeps its root import; the broader `isComponentBearingPackage`
+test (any Svelte export) only selects `ssr.noExternal` packages. A `svelte`
+condition counts even with a plain `.js` target — that is what svelte-package
+and Vite library builds emit for a root that re-exports components, and every
+Svelte root in this workspace (`smrt-products`, `smrt-ui`, `smrt-svelte`,
+`smrt-planner`) has that shape and fails under plain Node; a Node-safe root
+that declares `svelte` anyway only loses an optional context import.
+Transitive-only object modules are loaded through `importSmrtDependency()`
+from their provider's context, which needs no root import.
+
+Not covered by contract: a package whose root is a Svelte entry AND whose
+`@smrt()` objects are exported only from that root. The object loop must then
+import the root (it is the only module exporting the constructors) — statically
+when the app resolves the package, or through `importSmrtDependency()` when it
+is reached only through its provider — so Vite SSR works but plain Node can
+load the register only if that root happens to be Node-safe. Generation keeps
+the import and warns once per package (`declares a Svelte root entry`), asking
+to verify the root under plain Node or publish the objects from `./models` or
+`./objects`. The declaration is a heuristic: a Node-safe root that declares
+`svelte` only by convention gets the same warning (a false positive, harmless —
+the import is kept) and, when its objects come from subpaths, loses only its
+optional provider-context import. Regression: the `#4219` tests in
+`index.test.ts` (unit cases for `isComponentBearingRoot` /
+`resolveProviderContextImport`, a child-Node load of the generated register,
+the nested-only provider that gets no import, and the root-only and transitive
+warnings).
+
+**Gate: `pnpm check:node-roots`** (root script; run after `pnpm build`). It
+runs `scripts/survey-node-root-load.mjs --strict --allow=<packages>`, which
+spawns `node --input-type=module -e "await import('<name>')"` from every
+built workspace package whose manifest declares `@smrt()` objects and fails on
+any root plain Node cannot evaluate that is not allow-listed. The allow-list
+is explicit and lives in the root `package.json` script: currently only
+`@happyvertical/smrt-products`, whose root re-exports its Svelte components by
+documented contract. A new entry needs the same justification; a model root
+that merely starts importing `@happyvertical/smrt-ui` must be fixed, not
+allowed. `--strict` also fails when nothing was surveyed (run before
+`pnpm build`) and when an allow-listed package was not surveyed or now loads,
+so the list cannot go stale. `--all` surveys every published package,
+including those without objects, as a report.
+
+CI runs the gate in both Knowledge Freshness jobs of
+`.github/workflows/test-suite.yml`. In full mode (the merge queue, and every PR
+while `vars.CI_MERGE_QUEUE_ENABLED` is not `true`) it always runs. In affected
+mode it runs only when the `knowledge` paths filter matches, which covers
+`package.json` files and docs but not `packages/*/src/**`; a same-repo PR that
+makes a model root import smrt-ui only through source is therefore first
+caught in the merge queue, which still blocks the merge. The filter is not
+widened for this, because that would run the knowledge job on every PR. Run
+`pnpm check:node-roots` locally when changing a model package's root imports.
+
 ## Lightweight discovery
 
 Filesystem-only discovery, module-doc parsing, and graph freshness are owned by
