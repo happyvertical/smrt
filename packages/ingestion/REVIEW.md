@@ -32,6 +32,41 @@ Plan membership contains the exact parent args/version so edits call
 `previewPlan`, not per-step correction. An item may have more review pages; the
 host must aggregate state across pages when projecting a production inbox state.
 
+A `needs_review` suggestion is completable, not only rejectable (#4208). The
+component shows its `missingFields`, an editable `Suggested arguments (JSON)`
+draft prefilled from the generated arguments, and the candidate picker for
+declared candidate fields; Prepare review stays disabled while required fields
+are still missing from an unchanged draft. An unchanged draft previews the
+generated snapshot as before; an edited draft is sent as `preview({..., args})`,
+which the published host publishes through the ordinary `previewProposal` /
+`previewPlan` with the same `ui:<index>` intention, never by rewriting the
+generation. The handler validates the human arguments again before a
+`waiting_review` action exists, approval remains a separate explicit decision,
+`ActionReview` lists required arguments missing from the current draft while
+editing, and no authority or automation eligibility is added: a failed attempt,
+an unoffered handler or a foreign stage is still refused by the host.
+`preview` throws on every failure, as before. When the handler's argument
+schema or `validate` refused the arguments being previewed (operation preview,
+which also carries corrections, or plan preview), the server throws
+`HandlerArgumentsInvalidError` (`name` set, messages unchanged). Apply-time and
+external-send revalidation and result-schema checks keep a plain `Error`. The component shows an inline message and
+keeps the view and draft when `preview` either rejects with an error whose
+`name` is `HandlerArgumentsInvalidError` or resolves `{ rejected: 'invalid' }`
+(`PreviewRejection`). A transport that crosses a process boundary preserves
+the inline UX by keeping that name (for example re-throwing an `Error` with
+`name = 'HandlerArgumentsInvalidError'` in the browser callback) or by
+returning `{ rejected: 'invalid' }` for that case only, as the maintained
+fixture's `previewForReview` does. Without either, the refusal behaves like
+any other failure: the view is cleared exactly as before this change, and the
+reviewer's in-memory draft returns after an authorized refresh. Every other
+thrown preview or candidate-search failure (denied, revoked, unavailable or
+unknown) clears the view.
+Unsent drafts live only in component memory, keyed by attempt and suggestion
+index. They survive Refresh, a failed callback, an action on another card and a
+transient `unavailable`/`stale` reload; a `revoked` or `expired` result
+discards them, a successful preview clears that card's draft, and an available
+reload drops drafts for attempts or cards no longer offered.
+
 The host's `load` callback supplies a current `ItemReviewView`, using
 `getCompletedAnalysis` with no historical fallback. Generated suggestions bind
 the **current generation attempt**, not `generation.source.attemptId` (the prior

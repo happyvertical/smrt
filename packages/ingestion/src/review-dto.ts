@@ -112,6 +112,13 @@ export interface LogicalSplitInput {
   groups: number[][];
   requestId: string;
 }
+/**
+ * A preview the handler refused on its own validation of the arguments. The
+ * reviewer may correct the arguments and retry; it is never an access result.
+ */
+export interface PreviewRejection {
+  rejected: 'invalid';
+}
 /** Transport-neutral callbacks. Implement on an authenticated host; props confer no permission. */
 export interface IntakeReviewHost {
   list(input: {
@@ -126,7 +133,18 @@ export interface IntakeReviewHost {
     attemptId: string;
     index: number;
     requestId: string;
-  }): Promise<void>;
+    /**
+     * Explicit human arguments completing a `needs_review` suggestion. The host
+     * publishes them through the ordinary operation/plan preview, never through
+     * the generated snapshot, so the handler validates them again.
+     */
+    args?: IntakeValues;
+    /**
+     * Throws on every failure. A handler's refusal of the arguments is
+     * `HandlerArgumentsInvalidError` (by `name`); a transport may instead
+     * resolve `{ rejected: 'invalid' }` for that one case.
+     */
+  }): Promise<void | PreviewRejection>;
   decide(input: ReviewInput): Promise<void>;
   apply(actionId: string): Promise<ActionResult>;
   editPlan?: (input: PreviewPlanInput) => Promise<void>;

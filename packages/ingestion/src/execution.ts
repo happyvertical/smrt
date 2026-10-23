@@ -38,6 +38,7 @@ import {
   feedbackDiscoveryContext,
 } from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
 
@@ -361,10 +362,17 @@ export class IntakeExecutionService {
       throw new Error('Undeclared capability');
     return handler;
   }
+  /**
+   * `arguments` marks arguments being previewed (operation preview, which
+   * also carries corrections, and plan preview): only their schema refusal is
+   * the correctable `HandlerArgumentsInvalidError`. Apply-time and
+   * external-send revalidation and result-schema checks keep the plain error.
+   */
   private validate(
     schema: IntakeValues,
     value: IntakeValues,
     limit: number,
+    arguments_ = false,
   ): void {
     if (
       Buffer.byteLength(canonical(value)) > limit ||
@@ -373,7 +381,9 @@ export class IntakeExecutionService {
     )
       throw new Error('Invalid handler payload');
     if (!this.ajv.compile(schema)(value))
-      throw new Error('Invalid handler payload');
+      throw arguments_
+        ? new HandlerArgumentsInvalidError('Invalid handler payload')
+        : new Error('Invalid handler payload');
   }
   private async access(
     db: DatabaseInterface,
@@ -1180,10 +1190,16 @@ export class IntakeExecutionService {
       };
     });
   }
+  /**
+   * `reviewed` marks arguments a reviewer is previewing or correcting: only
+   * then is a refusal the typed `HandlerArgumentsInvalidError`. Apply-time
+   * verification and plan step expansion keep the plain error.
+   */
   private async buildBinding(
     db: DatabaseInterface,
     item: Row,
     input: PreviewProposalInput,
+    reviewed = false,
   ): Promise<Binding> {
     const handler = this.operation(
       this.handler(input.handlerId, input.handlerVersion),
@@ -1256,9 +1272,11 @@ export class IntakeExecutionService {
       // A symbolic ID validates against the handler schema, but is never executed.
       concrete[field] = `00000000-0000-4000-8000-000000000000`;
     }
-    this.validate(handler.argsSchema, concrete, policy.maxBytes);
+    this.validate(handler.argsSchema, concrete, policy.maxBytes, reviewed);
     if (!(await handler.validate(input.args, context)).ok)
-      throw new Error('Invalid handler arguments');
+      throw reviewed
+        ? new HandlerArgumentsInvalidError('Invalid handler arguments')
+        : new Error('Invalid handler arguments');
     const preview = await handler.preview(input.args, context);
     if (canonical(preview.normalizedArgs) !== canonical(input.args))
       throw new Error(
@@ -1444,7 +1462,7 @@ export class IntakeExecutionService {
     const frozen = JSON.parse(canonical(input)) as PreviewProposalInput;
     return this.tx(async (db) => {
       const item = await this.item(db, frozen.itemId, true);
-      const binding = await this.buildBinding(db, item, frozen);
+      const binding = await this.buildBinding(db, item, frozen, true);
       return this.publish(db, item, frozen, binding);
     });
   }
@@ -1617,7 +1635,12 @@ export class IntakeExecutionService {
           args: frozen.correctedArgs,
           dependencies: bound.binding.dependencies,
         };
-        const binding = await this.buildBinding(db, bound.item, corrected);
+        const binding = await this.buildBinding(
+          db,
+          bound.item,
+          corrected,
+          true,
+        );
         await this.feedbackLineage(db, bound);
         return this.publish(db, bound.item, corrected, binding);
       }
@@ -1930,6 +1953,8 @@ export class IntakeExecutionService {
       );
       args[field] = targetId;
     }
+    // Apply and external-send revalidation stay exactly as before: a plain
+    // error. Only preview refusals are the typed, correctable rejection.
     this.validate(bound.handler.argsSchema, args, context.policy.maxBytes);
     if (!(await bound.handler.validate(args, context)).ok)
       throw new Error('Invalid handler arguments');
@@ -2564,9 +2589,9 @@ export class IntakeExecutionService {
         handler,
         'preview',
       );
-      this.validate(handler.argsSchema, frozen.args, policy.maxBytes);
+      this.validate(handler.argsSchema, frozen.args, policy.maxBytes, true);
       if (!(await handler.validate(frozen.args, context)).ok)
-        throw new Error('Invalid plan arguments');
+        throw new HandlerArgumentsInvalidError('Invalid plan arguments');
       const preview = await handler.preview(frozen.args, context);
       if (
         canonical(preview.normalizedArgs) !== canonical(frozen.args) ||
