@@ -1,5 +1,9 @@
 /** Payout routing snapshots (#4148); real database persistence, no transfers. */
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  GlobalInterceptors,
+  getTestDatabase,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import {
   createIsolatedTestDbFromManifest,
   type IsolatedTestDbResult,
@@ -10,6 +14,7 @@ import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustm
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import { CommissionPayoutCollection } from '../collections/CommissionPayoutCollection.js';
 import { EarnerCollection } from '../collections/EarnerCollection.js';
+import { CommissionPayout } from '../models/CommissionPayout.js';
 import { CommissionPayoutService } from '../services/CommissionPayoutService.js';
 import type { PayoutDestination } from '../types.js';
 
@@ -73,6 +78,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         });
       });
       afterEach(async () => {
+        GlobalInterceptors.unregister('payout-routing-create-race');
         if (isolated) {
           await isolated.cleanup();
           isolated = undefined;
@@ -293,6 +299,104 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           await expect(untouched.save()).rejects.toThrow(/routing.*immutable/i);
         });
       }
+
+      it.each([
+        'paypal',
+        'stripe_connect',
+      ])('preserves the first persisted %s route when same-key creators pass both pre-reads', async (firstMethod) => {
+        const raceKey = `route-race-${firstMethod}`;
+        const earner = await earners.create({ payoutThresholdCents: 0 });
+        earner.setPayoutDestination(destinations[0]);
+        await earner.save();
+        await commissions.create({
+          earnerId: earner.id!,
+          amountCents: 500,
+          currency: 'USD',
+          status: 'payable',
+          dedupeKey: `${raceKey}-commission`,
+        });
+        let signalFirst!: () => void;
+        let releaseFirst!: () => void;
+        let releaseSecond!: () => void;
+        const firstArrived = new Promise<void>((resolve) => {
+          signalFirst = resolve;
+        });
+        const secondArrived = new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+        const firstPersisted = new Promise<void>((resolve) => {
+          releaseSecond = resolve;
+        });
+        let arrivals = 0;
+        let firstRoute: { method: string; destination: string } | undefined;
+        GlobalInterceptors.register({
+          name: 'payout-routing-create-race',
+          async beforeSave(instance) {
+            if (
+              !(instance instanceof CommissionPayout) ||
+              instance.idempotencyKey !== raceKey ||
+              instance.isPersisted
+            )
+              return;
+            arrivals += 1;
+            if (arrivals === 1) {
+              signalFirst();
+              await secondArrived;
+            } else if (arrivals === 2) {
+              releaseFirst();
+              await firstPersisted;
+            }
+          },
+          afterSave(instance) {
+            if (
+              !(instance instanceof CommissionPayout) ||
+              instance.idempotencyKey !== raceKey ||
+              firstRoute
+            )
+              return;
+            firstRoute = {
+              method: instance.payoutMethod,
+              destination: instance.payoutDestination,
+            };
+            releaseSecond();
+          },
+        });
+        const request = {
+          earnerId: earner.id!,
+          currency: 'USD',
+          idempotencyKey: raceKey,
+        };
+        const manual = service.createPayoutBatch({
+          ...request,
+          payoutMethod: firstMethod,
+        });
+        await firstArrived;
+        const stripe = service.createPayoutBatch(request);
+        const results = await Promise.allSettled([manual, stripe]);
+        expect(results[0].status).toBe('fulfilled');
+        expect(results[1].status).toBe('rejected');
+        if (results[1].status === 'rejected') {
+          expect(results[1].reason).toBeInstanceOf(ValidationError);
+          expect(results[1].reason.code).toBe('VALIDATION_UNIQUE_CONSTRAINT');
+        }
+        expect(arrivals).toBe(2);
+        expect(firstRoute).toEqual({
+          method: firstMethod,
+          destination:
+            firstMethod === 'paypal' ? '{}' : JSON.stringify(destinations[0]),
+        });
+        const persisted = (await payouts.findByIdempotencyKey(raceKey))!;
+        expect(persisted.payoutMethod).toBe(firstRoute!.method);
+        expect(persisted.payoutDestination).toBe(firstRoute!.destination);
+        const retry = await service.createPayoutBatch(request);
+        expect(retry.created).toBe(false);
+        expect(retry.payout!.id).toBe(persisted.id);
+        expect(retry.payout!.payoutMethod).toBe(firstRoute!.method);
+        expect(retry.payout!.payoutDestination).toBe(firstRoute!.destination);
+        expect(
+          await payouts.count({ where: { idempotencyKey: raceKey } }),
+        ).toBe(1);
+      });
 
       it('refuses pending routing edits, method changes, blind-id and natural-key overwrites', async () => {
         const { payout } = await batch(destinations[0], 'overwrite');

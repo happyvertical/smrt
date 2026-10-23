@@ -465,14 +465,10 @@ export class CommissionPayoutService {
       idempotencyKey,
     });
 
-    // Adopt the PERSISTED row for the idempotency key before claiming
-    // anything: two workers racing past the earlier lookup both reach the
-    // natural-key upsert, and the loser's in-memory instance carries an id
-    // the database no longer holds. Claiming with that orphaned id would
-    // stamp rows onto a payout that doesn't exist — so both workers
-    // converge on whichever row actually won the key.
-    const payout =
-      (await this.deps.payouts.findByIdempotencyKey(idempotencyKey)) ?? minted;
+    // Creation is a strict insert: a concurrent same-key creator gets a
+    // unique-constraint error before claiming members or overwriting routing.
+    // Retrying the request reads the persisted winner through the earlier lookup.
+    const payout = minted;
 
     // Claim the gathered rows conditionally and reconcile the stored
     // totals from what was VERIFIABLY claimed — a row grabbed by another
