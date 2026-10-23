@@ -1413,6 +1413,59 @@ export function internalSourceSuite(
       expect(generate).toHaveBeenCalledTimes(1);
     });
 
+    it('refuses a held inline interpretation when the host appends a competing one on the same extraction', async () => {
+      const id = randomUUID();
+      const itemId = await accepted(message(id));
+      let competing: { id: string; revision: number } | undefined;
+      // Hold the inline call after it prepared against extraction revision 1.
+      // Meanwhile the host's job path appends its own interpretation pinned to
+      // that SAME extraction, so #4228's latest-extraction check still passes:
+      // only the inline current-attempt check can refuse the held append.
+      const racing: IngestionService = new IngestionService({
+        ...options,
+        checkpoint: async (name) => {
+          if (name !== 'inline:prepared' || competing) return;
+          const [extractionRow] = (
+            await db.query(
+              'SELECT current_attempt_id FROM intake_analyses WHERE item_id=? AND revision=1',
+              itemId,
+            )
+          ).rows;
+          const configuration = await service.prepareGeneration(
+            itemId,
+            String(extractionRow.current_attempt_id),
+          );
+          expect(
+            (configuration.proposals.source as { revision: number }).revision,
+          ).toBe(1);
+          competing = await service.analyze(
+            itemId,
+            configuration,
+            `host-interpret:${id}`,
+          );
+        },
+      });
+      await expect(
+        racing.interpretInline(itemId, {
+          requestId: `held:${id}`,
+          extraction,
+        }),
+      ).rejects.toThrow('Generation source changed');
+      expect(competing?.revision).toBe(2);
+      const analyses = await rowsFor('intake_analyses', itemId);
+      expect(
+        analyses.map((row) => Number(row.revision)).sort((a, b) => a - b),
+      ).toEqual([1, 2]);
+      expect(
+        analyses.some(
+          (row) =>
+            (json(row.data) as Record<string, unknown>).requestKey ===
+            `inline:interpret:held:${id}`,
+        ),
+      ).toBe(false);
+      expect(generate).not.toHaveBeenCalled();
+    });
+
     it('refuses a self-decision whose effect would run as a different captured principal', async () => {
       const input = message(randomUUID());
       const execution = input.capturedCeiling.execution as Record<
