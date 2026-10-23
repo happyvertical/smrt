@@ -111,6 +111,7 @@
     "@happyvertical/smrt-projects": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-properties": "workspace:*",
+    "@happyvertical/smrt-reactions": "workspace:*",
     "@happyvertical/smrt-sales": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-sites": "workspace:*",
