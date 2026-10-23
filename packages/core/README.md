@@ -190,7 +190,12 @@ is required. It replaces only Vite 7's exact known backtracking asset URL
 prefilter with a literal substring filter; Vite's asset parsing, ID exclusions,
 resolution and rewriting remain unchanged. Vite 8 and unknown filter shapes
 are left untouched. This compatibility helper can be removed after moving
-the consuming app to a Vite release with a safe prefilter.
+the consuming app to a Vite release with a safe prefilter. The version is
+loaded lazily during configuration; the resolved hook changes filters
+synchronously before subsequent build hooks can observe them. Vite 7's
+unchanged tokenizer may also need Node's `--regexp-interpret-all` for very large
+escaped literals; use that flag on the Vite build process where required.
+
 
 #### One-call preset for SvelteKit apps
 
