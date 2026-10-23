@@ -180,6 +180,18 @@ export default defineConfig({
 });
 ```
 
+#### Vite 7 and large browser workers
+
+Apps using Vite 7 with Planner/browser AI workers can add
+`smrtAssetUrlCompatibility()` from `@happyvertical/smrt-core/vite-plugin`
+to their root `plugins` array. It also composes the existing worker plugin
+factory, including async plugin options, so no separate worker configuration
+is required. It replaces only Vite 7's exact known backtracking asset URL
+prefilter with a literal substring filter; Vite's asset parsing, ID exclusions,
+resolution and rewriting remain unchanged. Vite 8 and unknown filter shapes
+are left untouched. This compatibility helper can be removed after moving
+the consuming app to a Vite release with a safe prefilter.
+
 #### One-call preset for SvelteKit apps
 
 `smrt()` applies the Oxc decorator config and composes `smrtConsumer()` and
