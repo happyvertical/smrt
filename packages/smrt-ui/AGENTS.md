@@ -49,11 +49,12 @@ components are exempt — they *are* the primitives.
 | `./feedback` | `Alert`, `ToastViewport`, `Modal`, `Drawer`/`Sheet`, `ConfirmDialog`, `LoadingOverlay`, `Progress`, `Meter`, `Spinner`, phone surfaces `PhoneSheet` / `WorkingStrip` and the `swipeDismiss` action |
 | `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` (footer rows and column `summaries`: [agents/data-table.md](agents/data-table.md)) and their types — a **component barrel**: it re-exports `.svelte` files, so a plain Node `import()` of it throws `ERR_UNKNOWN_FILE_EXTENSION` |
 | `./data-surface` | **Svelte-free**: registry contracts and shared protocol limits (`DATA_SURFACE_MAX_REQUEST_BYTES`, `DATA_SURFACE_IDENTIFIER_MAX_LENGTH`, …). Server adapters must import these from here, not from `./data` — a server entry that reaches the barrel breaks the `smrt` CLI's plain-Node `.smrt/register.js` load (issue #2924) |
+| `./display` | `DocumentViewer` (touch PDF/image viewer reading through an injected `fetch`; pdf.js is an optional peer loaded lazily by `createPdfJsOpener()`), `CurrencyDisplay`, `DateDisplay`, `StatusBadge`, `Icon`; also re-exported from `.` |
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
 | `./charts` | Pure `Chart` renderer (`bar`, `line`, `table`, `pie`, `stat`), structural `ChartData`, and minor-unit number formatting; `./charts/format` is Svelte-free |
 | `./calendar` | `CalendarView` (time-zone-aware month/week grids + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `layoutWeek`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
-| `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, `CameraCapture`/`SignaturePad` capture, plus the transport-neutral control interaction registry |
+| `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, `CameraCapture`/`SignaturePad` capture, `NumericKeypad` (quantity/money keypad; money as integer minor units via the Svelte-free `numeric-keypad-logic.ts`), plus the transport-neutral control interaction registry |
 | `.` permissions | `PermissionCheck` and the domain-agnostic `PermissionPicker` for grouped, searchable native role-grant forms over host-supplied catalog records |
 | `./form-retry` | **Svelte-free** form retry (#3291): submission key, in-flight refusal, conditional reset, opt-in restore-after-reload, browser `runOnce()` digest. Also re-exported from `./forms`. Framework-free TS typed structurally against SvelteKit's `SubmitFunction` — never import `@sveltejs/kit` here. Guide: `docs/content/form-retry.md` |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
@@ -180,6 +181,15 @@ other text pairing clears WCAG AA in both schemes.
   A form `reset` empties a native file input, so both clear their capture on
   their form's reset (`attachFormResetListener`), even while `disabled`;
   otherwise the UI shows a file the next submit no longer posts.
+
+- **Touch viewers and keypads (#3463).** `DocumentViewer` never puts the API
+  URL in an `<img>`/`<iframe>`: it reads through `fetch` and shows blobs, and
+  revokes them on cleanup. `pdfjs-dist` is an *optional peer*: only
+  `display/pdf-opener.ts` imports it (dynamically, itself loaded lazily), so a
+  missing engine shows the `unsupported` state and nothing else breaks. Keep
+  zoom/scale rules in `document-viewer-logic.ts`. `NumericKeypad` money mode is
+  integer minor units end to end (string math, never floats); entry rules stay
+  in `numeric-keypad-logic.ts`. Keys use `max(4rem, --smrt-touch-target-min)`.
 
 - **i18n split**: the client (here) is dependency-free; the Node-only server
   resolver (`buildI18nSnapshot`, → `@happyvertical/smrt-languages`) stays in

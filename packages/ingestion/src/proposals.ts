@@ -1,8 +1,10 @@
 import {
+  type DecisionOptions,
   type DecisionRequest,
   executeDecision,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import Ajv from 'ajv';
 import type {
   AnalysisOutput,
   IntakeEvidenceDTO,
@@ -35,15 +37,21 @@ import type {
   CandidatePage,
   CompletedAnalysisSnapshot,
   GeneratedPreview,
+  GeneratedSuggestion,
   GenerationOutput,
   GenerationSourcePin,
   PreviewGeneratedInput,
   ProposalCandidate,
   ProposalCatalogEntry,
 } from './proposal-dto.js';
-import { GenerationSnapshotStaleError } from './proposal-errors.js';
+import {
+  GenerationSnapshotStaleError,
+  HandlerArgumentsInvalidError,
+} from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import {
+  PROPOSAL_REASON_LIMIT,
+  ProposalValidationError,
   record,
   safeUsage,
   text,
@@ -109,7 +117,11 @@ const pin = (source: CompletedAnalysisSnapshot): GenerationSourcePin => ({
 });
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 class StageFailure extends Error {
-  constructor(readonly category: IntakeFailure) {
+  /** Optional fixed diagnostic; never provider text or document content. */
+  constructor(
+    readonly category: IntakeFailure,
+    readonly reason?: string,
+  ) {
     super(category);
   }
 }
@@ -156,6 +168,36 @@ export class IngestionProposalService {
     ])
       if (!Number.isFinite(value) || value < 0 || value > 1)
         throw new Error('Invalid decision threshold');
+    if (
+      config.decisionMaxLen !== undefined &&
+      (!Number.isSafeInteger(config.decisionMaxLen) ||
+        config.decisionMaxLen < 1)
+    )
+      throw new Error('Invalid decision context length');
+    if (
+      config.decisionReadiness !== undefined &&
+      !['gate', 'record'].includes(config.decisionReadiness)
+    )
+      throw new Error('Invalid decision readiness');
+  }
+  /** Frozen public decision settings; defaults are omitted so existing digests hold. */
+  private decisionSettings(): Pick<
+    GenerationStageConfiguration['proposals'],
+    | 'minimumDecisionProbability'
+    | 'tieMargin'
+    | 'decisionMaxLen'
+    | 'decisionReadiness'
+  > {
+    return {
+      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
+      tieMargin: this.config.tieMargin ?? 0.1,
+      ...(this.config.decisionMaxLen === undefined
+        ? {}
+        : { decisionMaxLen: this.config.decisionMaxLen }),
+      ...(this.config.decisionReadiness === 'record'
+        ? { decisionReadiness: 'record' as const }
+        : {}),
+    };
   }
   private readonly config: ProposalReadConfiguration;
   private generation(): ProposalConfiguration['generator'] {
@@ -431,9 +473,7 @@ export class IngestionProposalService {
         generator: this.identity,
         decision: this.decisionIdentity,
         limits: structuredClone(this.config.limits),
-        minimumDecisionProbability:
-          this.config.minimumDecisionProbability ?? 0.8,
-        tieMargin: this.config.tieMargin ?? 0.1,
+        ...this.decisionSettings(),
       },
     };
   }
@@ -568,8 +608,7 @@ export class IngestionProposalService {
       generator: this.identity,
       decision: this.decisionIdentity,
       limits: this.config.limits,
-      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
-      tieMargin: this.config.tieMargin ?? 0.1,
+      ...this.decisionSettings(),
     };
     if (digest(frozen) !== digest(expected))
       throw new Error('Generation configuration changed');
@@ -744,7 +783,10 @@ export class IngestionProposalService {
           output.provenance.feedback,
         );
         if (!['complete', 'unknown'].includes(generated.completion))
-          throw new StageFailure('malformed_output');
+          throw new StageFailure(
+            'malformed_output',
+            'Generator declared no validated completion',
+          );
         if (generated.completion === 'unknown')
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
@@ -805,6 +847,17 @@ export class IngestionProposalService {
       await this.live(lease, expected.catalogDigest);
       failure =
         error instanceof StageFailure ? error.category : 'malformed_output';
+      // Carry only fixed/value-free reasons; unknown errors may quote anything.
+      const reason =
+        error instanceof StageFailure ||
+        error instanceof ProposalValidationError
+          ? error.reason
+          : undefined;
+      if (reason)
+        output.provenance.failure = {
+          category: failure,
+          reason: reason.slice(0, PROPOSAL_REASON_LIMIT),
+        };
       output.outcome = 'provider_error';
       output.suggestions = [];
       output.splits = [];
@@ -817,6 +870,7 @@ export class IngestionProposalService {
       output.suggestions = [];
       output.splits = [];
       output.offered = [];
+      delete output.provenance.failure;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');
@@ -899,52 +953,138 @@ export class IngestionProposalService {
       questions,
     };
     const requestBytes = bytes(request);
+    const identity = this.decisionIdentity;
+    const maxLen = this.config.decisionMaxLen;
+    const readiness = this.config.decisionReadiness ?? 'gate';
+    // Authority failures must always fail closed; only provider/shape failures
+    // may be recorded in `record` mode.
+    let authorityError: unknown;
+    let decided = false;
+    // Tokens are spent even when the SDK rejects the reply's shape; keep the
+    // provider-reported usage so record mode can persist it.
+    let spent: unknown;
     const assertRequestBudget = async () => {
-      const maxInputBytes = await this.live(
-        lease,
-        output.provenance.catalogDigest,
-        output.offered,
-        output.provenance.feedback,
-      );
+      let maxInputBytes: number;
+      try {
+        maxInputBytes = await this.live(
+          lease,
+          output.provenance.catalogDigest,
+          output.offered,
+          output.provenance.feedback,
+        );
+      } catch (error) {
+        authorityError = error;
+        throw error;
+      }
       if (requestBytes > maxInputBytes) throw new StageFailure('limit');
     };
-    await assertRequestBudget();
-    // Both SDK capability probing and deciding get a fresh gate, since either may use I/O.
-    const result = await this.deadline((signal) => {
-      const gate = async () => {
-        await assertRequestBudget();
-        signal.throwIfAborted();
+    const recordFailure = (
+      warning: 'decision_unavailable' | 'decision_malformed',
+      usage?: unknown,
+    ) => {
+      output.warnings.push(warning);
+      output.provenance.decision = {
+        configured: true,
+        provider: identity.provider,
+        model: identity.model,
+        version: identity.version,
+        readiness,
+        ...(maxLen === undefined ? {} : { maxLen }),
+        ...(usage === undefined ? {} : { usage: safeUsage(usage) }),
       };
-      return executeDecision(
-        {
-          getCapabilities: async () => {
-            await gate();
-            return configured.client.getCapabilities?.() ?? {};
-          },
-          decide: async (request: unknown, options?: unknown) => {
-            await gate();
-            return configured.client.decide(request, options);
-          },
-        },
-        request,
-        {
+    };
+    let result: Awaited<ReturnType<typeof executeDecision>> | undefined;
+    try {
+      await assertRequestBudget();
+      // Both SDK capability probing and deciding get a fresh gate, since either may use I/O.
+      result = await this.deadline((signal) => {
+        const gate = async () => {
+          await assertRequestBudget();
+          signal.throwIfAborted();
+        };
+        // `maxLen` is the SDK Laya per-request window; other clients ignore it.
+        const options: DecisionOptions & { maxLen?: number } = {
           signal,
           timeout: this.config.limits.timeoutMs,
-          model: this.decisionIdentity!.model,
-        },
+          model: identity.model,
+          ...(maxLen === undefined ? {} : { maxLen }),
+        };
+        return executeDecision(
+          {
+            getCapabilities: async () => {
+              await gate();
+              return configured.client.getCapabilities?.() ?? {};
+            },
+            decide: async (request: unknown, options?: unknown) => {
+              await gate();
+              const answer = await configured.client.decide(request, options);
+              decided = true;
+              if (answer && typeof answer === 'object' && 'usage' in answer)
+                spent = (answer as { usage?: unknown }).usage;
+              return answer;
+            },
+          },
+          request,
+          options,
+        );
+      });
+    } catch (error) {
+      if (authorityError !== undefined) throw authorityError;
+      // The serialized request exceeding the byte budget is a configuration
+      // failure, not a provider answer: it ends the attempt in both modes.
+      if (
+        readiness !== 'record' ||
+        (error instanceof StageFailure && error.category === 'limit')
+      )
+        throw error;
+      // Opt-out: the suggestions stay as generated; the failure is provenance,
+      // including whatever usage the provider reported before the SDK rejected
+      // the reply's shape.
+      recordFailure(
+        decided ? 'decision_malformed' : 'decision_unavailable',
+        spent,
       );
-    });
+    }
     await this.live(
       lease,
       output.provenance.catalogDigest,
       output.offered,
       output.provenance.feedback,
     );
-    if (
-      result.provenance.provider !== this.decisionIdentity!.provider ||
-      result.provenance.model !== this.decisionIdentity!.model
-    )
-      throw new StageFailure('malformed_output');
+    if (!result) return;
+    const malformed =
+      result.provenance.provider !== identity.provider ||
+      result.provenance.model !== identity.model ||
+      output.suggestions.some((suggestion, index) => {
+        const supported = result.answers[`supported_${index}`];
+        const route = result.answers[`route_${index}`];
+        const risk = result.answers[`risk_${index}`];
+        if (
+          supported?.type !== 'predicate' ||
+          route?.type !== 'choice' ||
+          risk?.type !== 'score'
+        )
+          return true;
+        const offered = output.offered.find(
+          ({ handler }) =>
+            handler.id === suggestion.handlerId &&
+            handler.version === suggestion.handlerVersion,
+        );
+        return Object.entries(offered?.handler.references ?? {}).some(
+          ([field, reference]) =>
+            reference.kind === 'candidate' &&
+            Object.hasOwn(suggestion.args, field) &&
+            result.answers[`entity_${index}_${field}`]?.type !== 'choice',
+        );
+      });
+    if (malformed) {
+      if (readiness === 'record')
+        return recordFailure('decision_malformed', result.usage);
+      throw new StageFailure(
+        'malformed_output',
+        'Decision answers do not match the configured identity or question types',
+      );
+    }
     const answers: Record<string, unknown> = {};
     for (const [key, question] of Object.entries(questions)) {
       const answer = result.answers[key];
@@ -979,8 +1119,20 @@ export class IngestionProposalService {
       provider: this.decisionIdentity!.provider,
       model: this.decisionIdentity!.model,
       version: this.decisionIdentity!.version,
+      readiness,
+      ...(maxLen === undefined ? {} : { maxLen }),
       answers,
       usage: safeUsage(result.usage),
+    };
+    // In `record` mode the validated answers are provenance only: the gate is
+    // evaluated for shape but never changes outcome or disposition.
+    const withhold = (ambiguous: boolean, suggestion: GeneratedSuggestion) => {
+      if (readiness !== 'gate') return;
+      output.outcome =
+        ambiguous || output.outcome === 'ambiguous'
+          ? 'ambiguous'
+          : 'needs_review';
+      suggestion.disposition = 'needs_review';
     };
     output.suggestions.forEach((suggestion, index) => {
       const supported = result.answers[`supported_${index}`];
@@ -991,7 +1143,10 @@ export class IngestionProposalService {
         route.type !== 'choice' ||
         risk.type !== 'score'
       )
-        throw new StageFailure('malformed_output');
+        throw new StageFailure(
+          'malformed_output',
+          `Decision answer types do not match the questions for suggestion ${index}`,
+        );
       const offered = output.offered.find(
         ({ handler }) =>
           handler.id === suggestion.handlerId &&
@@ -1011,7 +1166,10 @@ export class IngestionProposalService {
               candidate.model === reference.model,
           )!;
           if (match.type !== 'choice')
-            throw new StageFailure('malformed_output');
+            throw new StageFailure(
+              'malformed_output',
+              `Decision entity answer is not a choice for suggestion ${index}`,
+            );
           const probabilities = Object.values(match.probabilities).sort(
             (a, b) => b - a,
           );
@@ -1021,19 +1179,15 @@ export class IngestionProposalService {
               (this.config.minimumDecisionProbability ?? 0.8) ||
             probabilities[0] - probabilities[1] <=
               (this.config.tieMargin ?? 0.1)
-          ) {
-            output.outcome = 'ambiguous';
-            suggestion.disposition = 'needs_review';
-          }
+          )
+            withhold(true, suggestion);
         }
       const sorted = Object.values(route.probabilities).sort((a, b) => b - a);
       if (
         sorted.length > 1 &&
         sorted[0] - sorted[1] <= (this.config.tieMargin ?? 0.1)
-      ) {
-        output.outcome = 'ambiguous';
-        suggestion.disposition = 'needs_review';
-      }
+      )
+        withhold(true, suggestion);
       if (
         supported.probability <
           (this.config.minimumDecisionProbability ?? 0.8) ||
@@ -1041,11 +1195,8 @@ export class IngestionProposalService {
         route.choice !==
           `${suggestion.handlerId}@${suggestion.handlerVersion}` ||
         risk.score >= 1
-      ) {
-        output.outcome =
-          output.outcome === 'ambiguous' ? 'ambiguous' : 'needs_review';
-        suggestion.disposition = 'needs_review';
-      }
+      )
+        withhold(false, suggestion);
     });
   }
   [generationSnapshotRead](
@@ -1115,8 +1266,7 @@ export class IngestionProposalService {
       generator: this.identity,
       decision: this.decisionIdentity,
       limits: this.config.limits,
-      minimumDecisionProbability: this.config.minimumDecisionProbability ?? 0.8,
-      tieMargin: this.config.tieMargin ?? 0.1,
+      ...this.decisionSettings(),
     };
     const configurationStale = digest(configuration) !== digest(expected);
     const output = record(
@@ -1194,10 +1344,15 @@ export class IngestionProposalService {
         snapshot.result.output.proposals,
       ) as unknown as GenerationOutput;
       const suggestion = output.suggestions[selection.index];
+      // `needs_review` output may enter explicit human preview (#4208); the
+      // handler's own schema/validate/preview still decides whether it stands.
       if (
         !Number.isSafeInteger(selection.index) ||
         !suggestion ||
-        suggestion.disposition !== 'ready_for_review' ||
+        !['ready_for_review', 'needs_review'].includes(
+          suggestion.disposition,
+        ) ||
+        output.outcome === 'provider_error' ||
         output.automaticActionEligible !== false
       )
         throw new Error('Proposal is not ready for preview');
@@ -1262,6 +1417,14 @@ export class IngestionProposalService {
           }),
         });
       else {
+        // Reject incomplete generated arguments before persisting an intention.
+        const validator = new Ajv({
+          strict: true,
+          allErrors: false,
+          validateFormats: false,
+        });
+        if (!validator.validate(entry.handler.argsSchema, shared.args))
+          throw new HandlerArgumentsInvalidError('Invalid handler payload');
         const actionId = await this.service.createAction(
           input.itemId,
           selection.intentionKey,

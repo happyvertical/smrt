@@ -71,6 +71,24 @@ export interface SignaturePadLabels {
   committed: string;
 }
 
+/** Text overrides for `NumericKeypad`; defaults come from the `ui` i18n catalog. */
+export interface NumericKeypadLabels {
+  /** Accessible name of the keypad group. */
+  region: string;
+  /** Accessible name of the display line. */
+  display: string;
+  decimal: string;
+  backspace: string;
+  clear: string;
+  submit: string;
+  /** Template with `{min}`. */
+  belowMin: string;
+  /** Template with `{max}`. */
+  aboveMax: string;
+  /** The amount cannot be represented as safe integer minor units. */
+  invalidAmount: string;
+}
+
 /** A searchable relation target for the RelationInput component */
 export interface RelationOption {
   /** Record id; this is the value the form posts. */

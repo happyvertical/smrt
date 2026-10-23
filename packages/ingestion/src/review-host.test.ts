@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import type { ReviewPage } from './review-dto.js';
 import {
   createIntakeReviewHost,
@@ -61,6 +62,10 @@ function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
     listEvidence: vi.fn(
       async (_itemIds: string[]) => new Map<string, IntakeEvidenceDTO[]>(),
     ),
+    createAction: vi.fn(async () => 'action-1'),
+    previewProposal: vi.fn(async () => ({ state: 'waiting_review' })),
+    previewPlan: vi.fn(async () => ({ steps: [] })),
+    previewGeneratedProposals: vi.fn(async () => []),
   };
   // The existing per-part adapter; `list` must never call it.
   const evidence = vi.fn(async (part: IntakeEvidenceDTO) => ({
@@ -786,6 +791,153 @@ describe('published review host projection', () => {
       state: 'succeeded',
     });
     expect(f.service.listReviews).toHaveBeenCalledTimes(3);
+  });
+  function generation(
+    disposition: 'ready_for_review' | 'needs_review',
+    outcome = 'proposals',
+  ) {
+    return {
+      configuration: { stage: 'interpret' },
+      result: {
+        output: {
+          proposals: {
+            outcome,
+            offered: [
+              {
+                handler: { id: 'draft', version: '1', kind: 'operation' },
+                candidates: [],
+              },
+            ],
+            suggestions: [
+              {
+                handlerId: 'draft',
+                handlerVersion: '1',
+                args: { body: 'Body' },
+                missingFields: disposition === 'needs_review' ? ['title'] : [],
+                disposition,
+              },
+            ],
+          },
+        },
+      },
+    };
+  }
+  const previewInput = {
+    itemId: 'item',
+    attemptId: 'attempt',
+    index: 0,
+    requestId: 'request',
+  };
+  it('publishes human-completed arguments for a needs_review suggestion through the explicit preview (#4208)', async () => {
+    const f = fixture();
+    f.service.getCompletedAnalysis.mockResolvedValue(
+      generation('needs_review') as never,
+    );
+    await f.host.preview({
+      ...previewInput,
+      args: { body: 'Body', title: 'Human title' },
+    });
+    expect(f.service.createAction).toHaveBeenCalledWith('item', 'ui:0', {
+      origin: 'generated-proposal',
+      intentionKey: 'ui:0',
+    });
+    expect(f.service.previewProposal).toHaveBeenCalledWith({
+      itemId: 'item',
+      actionId: 'action-1',
+      attemptId: 'attempt',
+      expectedRevision: 0,
+      requestId: 'request',
+      handlerId: 'draft',
+      handlerVersion: '1',
+      args: { body: 'Body', title: 'Human title' },
+    });
+    expect(f.service.previewGeneratedProposals).not.toHaveBeenCalled();
+  });
+  it('keeps throwing as on main, with the typed error for argument refusals', async () => {
+    const f = fixture();
+    f.service.getCompletedAnalysis.mockResolvedValue(
+      generation('needs_review') as never,
+    );
+    f.service.previewProposal.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler payload'),
+    );
+    const refused = f.host.preview({ ...previewInput, args: { body: 'Body' } });
+    await expect(refused).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+    await expect(refused).rejects.toMatchObject({
+      name: 'HandlerArgumentsInvalidError',
+      message: 'Invalid handler payload',
+    });
+    f.service.previewGeneratedProposals.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler payload'),
+    );
+    await expect(f.host.preview(previewInput)).rejects.toBeInstanceOf(
+      HandlerArgumentsInvalidError,
+    );
+    f.service.previewProposal.mockRejectedValueOnce(new Error('Access denied'));
+    await expect(
+      f.host.preview({ ...previewInput, args: { body: 'Body' } }),
+    ).rejects.toThrow('Access denied');
+  });
+  it('previews a needs_review suggestion from the generated snapshot when no arguments are supplied', async () => {
+    const f = fixture();
+    f.service.getCompletedAnalysis.mockResolvedValue(
+      generation('needs_review') as never,
+    );
+    await f.host.preview(previewInput);
+    expect(f.service.previewGeneratedProposals).toHaveBeenCalledWith({
+      itemId: 'item',
+      attemptId: 'attempt',
+      selections: [
+        {
+          index: 0,
+          intentionKey: 'ui:0',
+          expectedRevision: 0,
+          requestId: 'request',
+        },
+      ],
+    });
+    expect(f.service.previewProposal).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['a failed attempt', generation('needs_review', 'provider_error'), {}],
+    [
+      'an interpretation without proposal output',
+      { configuration: { stage: 'interpret' }, result: { output: {} } },
+      {},
+    ],
+    [
+      'a foreign stage',
+      {
+        ...generation('ready_for_review'),
+        configuration: { stage: 'extract' },
+      },
+      {},
+    ],
+    ['array arguments', generation('needs_review'), { args: [] }],
+    [
+      'an unoffered handler with human arguments',
+      {
+        ...generation('needs_review'),
+        result: {
+          output: {
+            proposals: {
+              ...generation('needs_review').result.output.proposals,
+              offered: [],
+            },
+          },
+        },
+      },
+      { args: { title: 'x', body: 'y' } },
+    ],
+  ] as const)('refuses preview for %s', async (_name, analysis, extra) => {
+    const f = fixture();
+    f.service.getCompletedAnalysis.mockResolvedValue(analysis as never);
+    await expect(
+      f.host.preview({ ...previewInput, ...(extra as object) }),
+    ).rejects.toThrow(/Preview unavailable|Invalid preview/);
+    expect(f.service.createAction).not.toHaveBeenCalled();
+    expect(f.service.previewProposal).not.toHaveBeenCalled();
+    expect(f.service.previewGeneratedProposals).not.toHaveBeenCalled();
   });
   it('propagates denial rather than returning prior saved reviews', async () => {
     const f = fixture();
