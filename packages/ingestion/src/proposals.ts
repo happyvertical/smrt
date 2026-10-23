@@ -4,6 +4,7 @@ import {
   executeDecision,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import Ajv from 'ajv';
 import type {
   AnalysisOutput,
   IntakeEvidenceDTO,
@@ -43,7 +44,10 @@ import type {
   ProposalCandidate,
   ProposalCatalogEntry,
 } from './proposal-dto.js';
-import { GenerationSnapshotStaleError } from './proposal-errors.js';
+import {
+  GenerationSnapshotStaleError,
+  HandlerArgumentsInvalidError,
+} from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import {
   PROPOSAL_REASON_LIMIT,
@@ -1413,6 +1417,14 @@ export class IngestionProposalService {
           }),
         });
       else {
+        // Reject incomplete generated arguments before persisting an intention.
+        const validator = new Ajv({
+          strict: true,
+          allErrors: false,
+          validateFormats: false,
+        });
+        if (!validator.validate(entry.handler.argsSchema, shared.args))
+          throw new HandlerArgumentsInvalidError('Invalid handler payload');
         const actionId = await this.service.createAction(
           input.itemId,
           selection.intentionKey,

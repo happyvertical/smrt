@@ -436,7 +436,15 @@ export function validateSuggestions(
         `/splits/${index}`,
       );
     seen.add(split.evidenceId);
-    const result = proposeDocumentSplits(source, revision, split.groups);
+    let result: ReturnType<typeof proposeDocumentSplits>;
+    try {
+      result = proposeDocumentSplits(source, revision, split.groups);
+    } catch {
+      throw new ProposalValidationError(
+        'Invalid split groups',
+        `/splits/${index}/groups`,
+      );
+    }
     return {
       evidenceId: split.evidenceId,
       groups: structuredClone(split.groups),

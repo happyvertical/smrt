@@ -3868,6 +3868,9 @@ export function proposalSuite(
       expect(
         (await db.query('SELECT id FROM intake_proposals')).rows,
       ).toHaveLength(0);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
+      ).toHaveLength(0);
       const actionId = await service.createAction(input.itemId, 'human', {
         origin: 'generated-proposal',
         intentionKey: 'human',

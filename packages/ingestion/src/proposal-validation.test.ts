@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ExtractionResult } from './extraction-types.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type { GenerationOutput } from './proposal-dto.js';
 import {
@@ -33,6 +34,41 @@ function failure(
 }
 
 describe('proposal validator reasons', () => {
+  it.each([
+    { groups: [[1, 1]] },
+    { groups: [[9]] },
+    { groups: [[2, 1]] },
+  ])('reports invalid split groups without echoing generated data ($groups)', ({
+    groups,
+  }) => {
+    const extraction = [
+      {
+        evidence: { id: 'e', contentHash: 'hash' },
+        configurationRevision: 'test',
+        segments: [1, 2].map((page) => ({ location: { kind: 'page', page } })),
+      },
+    ] as ExtractionResult[];
+    try {
+      validateSuggestions(
+        {
+          outcome: 'needs_review',
+          suggestions: [],
+          splits: [{ evidenceId: 'e', groups }],
+        },
+        [],
+        extraction,
+        limits,
+        1,
+      );
+      throw new Error('Expected invalid split');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProposalValidationError);
+      expect((error as ProposalValidationError).reason).toBe(
+        'Invalid split groups: /splits/0/groups',
+      );
+    }
+  });
+
   it('names schema violations by path and keyword without quoting values (#4207)', () => {
     const reply = JSON.parse(
       '{"outcome":"accept","suggestions":[{"handlerId":"h","handlerVersion":"1","args":{},"explanation":"x"}]}',
