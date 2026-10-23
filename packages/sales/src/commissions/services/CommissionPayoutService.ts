@@ -667,6 +667,20 @@ export class CommissionPayoutService {
       );
     }
 
+    // Refuse unroutable batches before the deliberately retryable member
+    // writes below: a legacy missing snapshot must not mark anything paid.
+    const destination = payout.getPayoutDestination();
+    if (
+      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
+        payout.payoutMethod,
+      ) &&
+      !destination
+    ) {
+      throw new Error(
+        `CommissionPayout ${payout.id ?? '<new>'}: ${payout.payoutMethod} requires a payoutDestination snapshot; reject and recreate the batch`,
+      );
+    }
+
     const members = await this.deps.commissions.findByPayout(payoutId);
     for (const commission of members) {
       if (commission.isPayable()) {

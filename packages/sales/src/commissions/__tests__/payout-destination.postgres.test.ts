@@ -203,6 +203,54 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         expect(members[0].status).toBe('payable');
       });
 
+      it('refuses public completion of a legacy processing batch before marking any members paid', async () => {
+        const { payout } = await batch(
+          destinations[0],
+          'legacy-public-completion',
+        );
+        await db.query(
+          "UPDATE commission_payouts SET payout_destination = '{}', status = 'processing' WHERE id = ?",
+          payout.id,
+        );
+        await expect(
+          service.completePayout(payout.id!, 'blocked-ref'),
+        ).rejects.toThrow(/requires.*payoutDestination/);
+        const members = await commissions.list({
+          where: { payoutId: payout.id! },
+        });
+        expect(members).toHaveLength(1);
+        expect(members[0].status).toBe('payable');
+        expect(members[0].paidAt).toBeNull();
+        const unchanged = (await payouts.get({ id: payout.id! }))!;
+        expect(unchanged.status).toBe('processing');
+        expect(unchanged.paymentReference).toBe('');
+        expect(unchanged.paidAt).toBeNull();
+      });
+
+      it('completes a valid typed batch through the public service using its frozen route', async () => {
+        const { earner, payout } = await batch(
+          destinations[0],
+          'typed-public-completion',
+        );
+        payout.approve();
+        await payout.save();
+        payout.markProcessing();
+        await payout.save();
+        earner.setPayoutDestination(destinations[1]);
+        await earner.save();
+        const completed = await service.completePayout(
+          payout.id!,
+          'provider-ref',
+        );
+        expect(completed.status).toBe('completed');
+        expect(completed.getPayoutDestination()).toEqual(destinations[0]);
+        const members = await commissions.list({
+          where: { payoutId: payout.id! },
+        });
+        expect(members[0].status).toBe('paid');
+        expect(members[0].paidAt).not.toBeNull();
+      });
+
       for (const status of ['approved', 'processing', 'completed'] as const) {
         it(`restamps and saves metadata on a legacy ${status} batch without reopening routing`, async () => {
           const key = `restamp-legacy-${status}`;
