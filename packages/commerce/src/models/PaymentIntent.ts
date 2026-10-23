@@ -490,7 +490,7 @@ export class PaymentIntent extends SmrtObject {
   > {
     if (!this.id) return undefined;
     try {
-      const row = await this.db.get(this.tableName, { id: this.id });
+      const row = await this.getCanonicalPersistedRow({ id: this.id });
       return row ?? undefined;
     } catch {
       // DB not ready / table absent — treat as new (in-memory fallback in save).

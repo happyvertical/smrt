@@ -718,7 +718,7 @@ export class Payment extends SmrtObject {
   > {
     if (!this.id) return undefined;
     try {
-      const row = await this.db.get(this.tableName, { id: this.id });
+      const row = await this.getCanonicalPersistedRow({ id: this.id });
       return row ?? undefined;
     } catch {
       // DB not ready / table absent — treat as new (in-memory fallback in save).
@@ -896,7 +896,7 @@ export class Payment extends SmrtObject {
         await this.claimRevision(this.updated_at);
         // In-memory status can be edited without saving (including markFailed).
         // Only the claimed persisted row decides whether settlement happened.
-        const persisted = await this.db.get(this.tableName, { id: this.id });
+        const persisted = await this.getCanonicalPersistedRow({ id: this.id });
         if (!persisted) throw new Error('Claimed payment could not be loaded');
         if (persisted.status === PaymentStatus.COMPLETED) {
           throw new Error('Payment already recorded');
