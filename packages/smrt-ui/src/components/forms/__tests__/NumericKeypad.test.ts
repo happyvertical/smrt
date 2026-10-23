@@ -122,6 +122,29 @@ describe('NumericKeypad', () => {
     expect(screen.queryByRole('button', { name: 'Decimal point' })).toBeNull();
   });
 
+  it('blocks money that cannot be represented as safe integer minor units', async () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    const { container } = render(NumericKeypad, {
+      props: { mode: 'money', maxLength: 20, onChange, onSubmit },
+    });
+    await tap(...'99999999999999');
+    expect(root(container)).toHaveAttribute('data-state', 'invalid');
+    expect(key('Confirm')).toBeDisabled();
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minorUnits: null, valid: false }),
+    );
+    await fireEvent.keyDown(root(container), { key: 'Enter' });
+    expect(onSubmit).not.toHaveBeenCalled();
+    await tap('Delete last character');
+    expect(root(container)).toHaveAttribute('data-state', 'ok');
+    expect(key('Confirm')).toBeEnabled();
+    await fireEvent.click(key('Confirm'));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ minorUnits: 999999999999900, valid: true }),
+    );
+  });
+
   it('accepts an initial numeric value', () => {
     render(NumericKeypad, { props: { value: 42, unit: 'pcs' } });
     expect(display()).toHaveTextContent('42');

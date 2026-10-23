@@ -125,6 +125,7 @@ const text = $derived<NumericKeypadLabels>({
   submit: submitLabel ?? t(M['ui.numeric_keypad.submit']),
   belowMin: t(M['ui.numeric_keypad.below_min']),
   aboveMax: t(M['ui.numeric_keypad.above_max']),
+  invalidAmount: t(M['ui.numeric_keypad.invalid_amount']),
   ...labels,
 });
 
@@ -144,14 +145,18 @@ const rules = $derived<EntryRules>({
   maxLength,
 });
 const typed = $derived(normalizeText(value, rules));
-const validity = $derived(validateEntry(typed, { min, max }));
-const showError = $derived(validity === 'below' || validity === 'above');
+const validity = $derived(entryValidity(typed));
+const showError = $derived(
+  validity === 'below' || validity === 'above' || validity === 'invalid',
+);
 const errorText = $derived(
   validity === 'below'
     ? renderTemplate(text.belowMin, { min })
     : validity === 'above'
       ? renderTemplate(text.aboveMax, { max })
-      : '',
+      : validity === 'invalid'
+        ? text.invalidAmount
+        : '',
 );
 const minorUnits = $derived(
   mode === 'money' ? textToMinorUnits(typed, exponent) : null,
@@ -162,12 +167,21 @@ const postedValue = $derived(
 
 let rootEl = $state<HTMLDivElement | null>(null);
 
+function entryValidity(next: string) {
+  const result = validateEntry(next, { min, max });
+  return result === 'ok' &&
+    mode === 'money' &&
+    textToMinorUnits(next, exponent) === null
+    ? 'invalid'
+    : result;
+}
+
 function detail(next: string): NumericKeypadDetail {
   return {
     text: next,
     number: parseEntry(next),
     minorUnits: mode === 'money' ? textToMinorUnits(next, exponent) : null,
-    valid: validateEntry(next, { min, max }) === 'ok',
+    valid: entryValidity(next) === 'ok',
   };
 }
 
@@ -250,8 +264,8 @@ useControlRegistration(() => {
     validate: () => validity === 'ok' || validity === 'empty',
     validateValue: (next) => {
       try {
-        const outcome = validateEntry(String(prepareValue(next)), { min, max });
-        return outcome !== 'below' && outcome !== 'above';
+        const outcome = entryValidity(String(prepareValue(next)));
+        return outcome === 'ok' || outcome === 'empty';
       } catch {
         return false;
       }

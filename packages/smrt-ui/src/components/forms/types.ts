@@ -85,6 +85,8 @@ export interface NumericKeypadLabels {
   belowMin: string;
   /** Template with `{max}`. */
   aboveMax: string;
+  /** The amount cannot be represented as safe integer minor units. */
+  invalidAmount: string;
 }
 
 /** A searchable relation target for the RelationInput component */

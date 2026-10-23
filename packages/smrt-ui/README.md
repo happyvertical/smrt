@@ -693,7 +693,9 @@ caps the typed text (default 12).
 `mode="money"` keeps integer minor units: the decimals allowed follow the
 currency's ISO 4217 exponent (`currency`, or `minorUnitExponent`), `minorUnits`
 is computed by string arithmetic and never a float, and a `name` posts the
-integer minor units (in `number` mode it posts the typed text). The pure
+integer minor units (in `number` mode it posts the typed text).
+Money amounts beyond JavaScript's safe integer minor-unit range are invalid
+and cannot be confirmed, including when `maxLength` is increased. The pure
 helpers `textToMinorUnits()`, `minorUnitsToText()`, `minorUnitExponent()`,
 `applyKeypadKey()` and `validateKeypadEntry()` are exported from `/forms`.
 

@@ -169,6 +169,8 @@ export const M = defineMessages({
   'ui.numeric_keypad.submit': 'Confirm',
   'ui.numeric_keypad.below_min': 'Must be at least {min}.',
   'ui.numeric_keypad.above_max': 'Must be at most {max}.',
+  'ui.numeric_keypad.invalid_amount':
+    'Enter an amount within the supported range.',
 
   // display/DocumentViewer.svelte
   'ui.document_viewer.region': 'Document',
