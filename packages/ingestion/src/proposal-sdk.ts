@@ -105,6 +105,15 @@ const SCHEMA_SINGLE_KEYWORDS = new Set([
  * only schema positions. Property names (a handler argument may be called
  * `format`), `enum`/`const` values and `required` lists are copied as data,
  * never inspected as keywords.
+ *
+ * Invariant: the provider copy only ever accepts a superset of what the
+ * original accepts. Every removed keyword is a conjunct whose removal widens
+ * (`not`, `if`/`then`/`else`, `contains`, `dependent*`, `propertyNames`,
+ * `multipleOf`, `unevaluated*`, ...), and the two places where removal
+ * would narrow are rewritten: `oneOf` becomes `anyOf`, and an object that
+ * loses `patternProperties` also loses `additionalProperties`. `enum`/`const`
+ * with a removed sibling stay a superset, as the sibling was another
+ * conjunct. The validator still checks the original.
  */
 export function portableResponseSchema<T>(schema: T): T {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema))
@@ -134,6 +143,23 @@ export function portableResponseSchema<T>(schema: T): T {
         ? value.map((subschema) => portableResponseSchema(subschema))
         : portableResponseSchema(value);
     else portable[key] = structuredClone(value);
+  }
+  // `oneOf` means "exactly one branch matches". Loosening its branches can
+  // make a value match two, so an originally valid value would be rejected
+  // (#4261 review: `oneOf` of `multipleOf: 2` / `multipleOf: 3` integers
+  // rejects `2` once both become `{type: 'integer'}`). Every `oneOf` becomes
+  // `anyOf`, which only ever loosens; the validator keeps the original
+  // `oneOf`, so exclusivity is still enforced after decoding. If the object
+  // already has an `anyOf`, the rewritten branches go into `allOf`.
+  if (Array.isArray(portable.oneOf)) {
+    const branches = portable.oneOf;
+    delete portable.oneOf;
+    if (portable.anyOf === undefined) portable.anyOf = branches;
+    else
+      portable.allOf = [
+        ...(Array.isArray(portable.allOf) ? portable.allOf : []),
+        { anyOf: branches },
+      ];
   }
   // Removing `patternProperties` would narrow the grammar: keys it allowed
   // would then fall to `additionalProperties`, so with `false` the model could

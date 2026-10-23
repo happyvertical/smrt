@@ -196,10 +196,21 @@ entries. The exception is `format`, which is advisory: the validator runs Ajv
 with `validateFormats: false`, so `format` is enforced nowhere. When
 `patternProperties` is removed, the same object's `additionalProperties` is
 removed too, so the grammar does not shrink to `{}`. There is no automatic
-`json_object` fallback. The generated schema itself uses only `anyOf`; handler
-argument schemas may carry `oneOf`/`allOf` through unchanged, and support for
-those across backends is unverified, so check such a handler against the
-deployed backend.
+`json_object` fallback.
+
+Invariant: the provider copy only ever accepts a superset of what the original
+accepts. Each removed keyword is a conjunct, so removing it only widens. The two
+places where removal would narrow are rewritten:
+- every `oneOf` becomes `anyOf` (or joins an existing `anyOf` through `allOf`),
+  because loosened `oneOf` branches could both match and reject a value the
+  original accepted;
+- an object that loses `patternProperties` also loses `additionalProperties`.
+
+The validator still checks the original, including `oneOf` exclusivity. A
+property-style regression checks original-valid ⇒ portable-valid across the
+removed keywords. Handler argument schemas may still carry `allOf` through
+unchanged; its support across backends is unverified, so check such a handler
+against the deployed backend.
 
 A generator call that throws ends the attempt as `provider_error` with the
 `unavailable` warning and `provenance.failure` `{category: 'unavailable',

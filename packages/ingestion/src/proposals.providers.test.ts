@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { AIError, getAI } from '@happyvertical/ai';
 import { executeDecision } from '@happyvertical/smrt-core';
 import Ajv from 'ajv';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import type { FeedbackSelection } from './feedback-dto.js';
 import {
@@ -143,6 +144,14 @@ const offeredInput = {
               examples: [{ format: 'date' }],
             },
             weight: { type: 'number', multipleOf: 0.5 },
+            // Rewritten to anyOf for the provider (#4261 review), which the
+            // vLLM-style checker accepts.
+            bucket: {
+              oneOf: [
+                { type: 'integer', multipleOf: 2 },
+                { type: 'integer', multipleOf: 3 },
+              ],
+            },
             tags: {
               type: 'array',
               uniqueItems: true,
@@ -269,6 +278,128 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     ).toBe(0);
   });
 
+  it('the provider copy only ever accepts a superset of the original (#4261 review)', () => {
+    // Ajv's 2020-12 build gives every stripped keyword its real semantics
+    // (`dependentRequired`, `minContains`, `unevaluated*`, ...); formats are
+    // not validated, exactly as in the proposal validator.
+    const ajv = new Ajv2020({ strict: false, validateFormats: false });
+    const evenOrTriple = {
+      oneOf: [
+        { type: 'integer', multipleOf: 2 },
+        { type: 'integer', multipleOf: 3 },
+      ],
+    };
+    const schemas: Record<string, Record<string, unknown>> = {
+      // The maintainer's repro: `{n: 2}` must stay valid.
+      oneOfRepro: {
+        type: 'object',
+        properties: { n: evenOrTriple },
+        required: ['n'],
+        additionalProperties: false,
+      },
+      oneOfBesideAnyOf: { anyOf: [{ minimum: 3 }], ...evenOrTriple },
+      nestedOneOf: { type: 'array', items: evenOrTriple },
+      oneOfInDefs: {
+        $defs: { pick: evenOrTriple },
+        type: 'object',
+        properties: { n: { $ref: '#/$defs/pick' } },
+      },
+      uniqueItems: { type: 'array', uniqueItems: true },
+      contains: {
+        type: 'array',
+        contains: { const: 2 },
+        minContains: 1,
+        maxContains: 1,
+      },
+      multipleOfWithEnum: { enum: [2, 3, 6], multipleOf: 2 },
+      constWithMultipleOf: { const: 6, multipleOf: 3 },
+      patternProperties: {
+        type: 'object',
+        additionalProperties: false,
+        patternProperties: { '^x-': { type: 'string' } },
+      },
+      propertyNames: { type: 'object', propertyNames: { pattern: '^x-' } },
+      minMaxProperties: { type: 'object', minProperties: 1, maxProperties: 1 },
+      not: { type: 'integer', not: { const: 3 } },
+      // Built from entries: a literal `then` key trips Biome's noThenProperty,
+      // but it is the JSON Schema keyword here.
+      ifThenElse: Object.fromEntries([
+        ['type', 'object'],
+        ['if', { required: ['a'] }],
+        ['then', { required: ['b'] }],
+        ['else', { required: ['n'] }],
+      ]),
+      dependentRequired: {
+        type: 'object',
+        dependentRequired: { a: ['b'] },
+      },
+      dependentSchemas: {
+        type: 'object',
+        dependentSchemas: { a: { required: ['b'] } },
+      },
+      unevaluatedProperties: {
+        type: 'object',
+        properties: { a: { type: 'string' } },
+        unevaluatedProperties: false,
+      },
+      formatIsAdvisory: { type: 'string', format: 'date' },
+    };
+    const pool: unknown[] = [
+      null,
+      true,
+      0,
+      1,
+      2,
+      3,
+      4,
+      6,
+      1.5,
+      '',
+      'x',
+      '2026-10-23',
+      [],
+      [2],
+      [2, 2],
+      [2, 3],
+      [2, 3, 6],
+      [1, 1],
+      ['a', 'a'],
+      {},
+      { n: 2 },
+      { n: 3 },
+      { n: 6 },
+      { n: 1 },
+      { a: 'x' },
+      { a: 'x', b: 'y' },
+      { b: 'y' },
+      { 'x-a': 's' },
+      { 'x-a': 1 },
+      { other: 1 },
+      { a: 'x', other: 1 },
+    ];
+    for (const [name, original] of Object.entries(schemas)) {
+      const isOriginal = ajv.compile(original);
+      const isPortable = ajv.compile(portableResponseSchema(original));
+      const valid = pool.filter((value) => isOriginal(value));
+      // Never vacuous: each schema accepts something in the pool.
+      expect(valid.length, name).toBeGreaterThan(0);
+      for (const value of valid)
+        expect(isPortable(value), `${name}: ${JSON.stringify(value)}`).toBe(
+          true,
+        );
+    }
+    // The repro specifically, and that oneOf never reaches the provider.
+    const repro = portableResponseSchema(schemas.oneOfRepro);
+    expect(ajv.validate(repro, { n: 2 })).toBe(true);
+    expect(JSON.stringify(repro)).not.toContain('oneOf');
+    // The validator keeps the original: exclusivity still holds there.
+    expect(ajv.validate(schemas.oneOfRepro, { n: 6 })).toBe(false);
+    // Loosen only what must be loosened: an existing anyOf beside the
+    // rewritten oneOf is kept (via allOf), so 2 (< 3) stays rejected.
+    expect(
+      ajv.validate(portableResponseSchema(schemas.oneOfBesideAnyOf), 2),
+    ).toBe(false);
+  });
   it('does not narrow an object to {} when patternProperties is stripped (#4260)', () => {
     const metadata = {
       type: 'object',
@@ -473,6 +604,9 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
           output: { outcome: 'no_action' },
         });
         expect(sentSchema).toBeTruthy();
+        // The handler's oneOf reached the backend as anyOf, which it accepted.
+        expect(vllmVisibleKeys(sentSchema).has('oneOf')).toBe(false);
+        expect(vllmVisibleKeys(sentSchema).has('anyOf')).toBe(true);
         return;
       }
       const error = await result.then(
@@ -571,7 +705,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       'provider call aborted or timed out',
     );
     expect(providerFailureReason(undefined)).toBe('provider call failed');
-    expect(providerFailureReason('a string with ' + secret)).toBe(
+    expect(providerFailureReason(`a string with ${secret}`)).toBe(
       'provider call failed',
     );
   });
