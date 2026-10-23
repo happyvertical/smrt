@@ -20,6 +20,23 @@ describe('standard persisted UI analytics', () => {
     observe([{ id: 'private-id', status: 'answered' }], 'open', outcomes);
     expect(emit.mock.calls).toEqual([['project_question_answered']]);
   });
+  it.each([
+    { replacement: [] },
+    { replacement: [{ id: 'other', status: 'open' }] },
+  ])('forgets rows absent from a later observed snapshot $replacement', ({
+    replacement,
+  }) => {
+    const emit = vi.fn();
+    const observe = createAnalyticsTransitions(emit);
+    const outcomes = { answered: 'project_question_answered' as const };
+    observe([{ id: 'x', status: 'open' }], 'open', outcomes);
+    observe(replacement, 'open', outcomes);
+    observe([{ id: 'x', status: 'answered' }], 'open', outcomes);
+    expect(emit).not.toHaveBeenCalled();
+    observe([{ id: 'x', status: 'open' }], 'open', outcomes);
+    observe([{ id: 'x', status: 'answered' }], 'open', outcomes);
+    expect(emit.mock.calls).toEqual([['project_question_answered']]);
+  });
   it('contains a configured sink failure', () => {
     const observe = createAnalyticsTransitions(() => {
       throw new Error('offline');

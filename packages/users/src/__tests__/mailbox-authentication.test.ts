@@ -21,7 +21,7 @@ import {
   type PreparedTenantInvitation,
   TenantInvitationService,
 } from '../services/TenantInvitationService.js';
-import { MembershipStatus, UserStatus } from '../types/index.js';
+import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
 
 const secret = 'test-independent-mailbox-authentication-secret';
 type Mail = Parameters<MailboxAuthenticationDelivery>[0];
@@ -166,6 +166,113 @@ describe('independently delivered mailbox authentication', () => {
       ).get({ id: first.userId }, { cache: false })
     )?.status;
   }
+
+  it('blank and whitespace requests consume the normal budget and return uniformly without proof or mail', async () => {
+    const deliver = vi.fn(async (_mail: Mail) => {});
+    for (const email of ['', ' \t\n ', 'unknown@example.com']) {
+      const started = performance.now();
+      expect(
+        await generic((service) =>
+          service.request({ email, sourceKey, deliver }),
+        ),
+      ).toEqual({ requested: true });
+      expect(performance.now() - started).toBeGreaterThanOrEqual(240);
+    }
+    expect(deliver).not.toHaveBeenCalled();
+    expect(
+      (await db.query('SELECT nonce FROM users_magic_link_tokens')).rows,
+    ).toHaveLength(0);
+    const budgets = (
+      await db.query(
+        'SELECT scope, limiter_key, attempt_count FROM users_login_attempts',
+      )
+    ).rows.map((row) => ({
+      scope: row.scope,
+      limiter_key: row.limiter_key,
+      attempt_count: Number(row.attempt_count),
+    }));
+    expect(budgets.find((row) => row.scope === 'source')).toMatchObject({
+      attempt_count: 3,
+    });
+    expect(
+      budgets.find(
+        (row) => row.limiter_key === limiter.hashKey('subject', 'mailbox:'),
+      ),
+    ).toMatchObject({ attempt_count: 2 });
+    expect(
+      budgets.find(
+        (row) =>
+          row.limiter_key ===
+          limiter.hashKey('subject', 'mailbox:unknown@example.com'),
+      ),
+    ).toMatchObject({ attempt_count: 1 });
+    expect(await status()).toBe(UserStatus.PENDING);
+  });
+
+  it.each([
+    'request',
+    'authenticate',
+  ] as const)('%s finds the active tenant after more than 100 active memberships', async (flow) => {
+    await active();
+    const mails: Mail[] = [];
+    const send = () =>
+      generic((service) =>
+        service.request({
+          email: 'client@example.com',
+          sourceKey,
+          deliver: async (mail) => {
+            mails.push(mail);
+          },
+        }),
+      );
+    if (flow === 'authenticate') await send();
+    const tenants = await TenantCollection.create({ db });
+    const memberships = await MembershipCollection.create({ db });
+    const original = await tenants.get({ id: tenantId });
+    const member = await memberships.get({ id: first.membershipId });
+    if (!original || !member?.roleId)
+      throw new Error('Missing original tenant/membership');
+    original.status = TenantStatus.SUSPENDED;
+    await original.save();
+    for (let i = 0; i < 100; i++) {
+      const tenant = await tenants.create({
+        name: `Inactive tenant ${i}`,
+        slug: randomUUID(),
+        status: TenantStatus.SUSPENDED,
+      });
+      await memberships.create({
+        id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+        userId: first.userId,
+        tenantId: tenant.id,
+        roleId: member.roleId,
+        status: MembershipStatus.ACTIVE,
+      });
+    }
+    const target = await tenants.create({
+      id: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
+      name: 'Later active tenant',
+      slug: randomUUID(),
+      status: TenantStatus.ACTIVE,
+    });
+    await memberships.create({
+      id: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
+      userId: first.userId,
+      tenantId: target.id,
+      roleId: member.roleId,
+      status: MembershipStatus.ACTIVE,
+    });
+    if (flow === 'request') await send();
+    expect(mails).toHaveLength(1);
+    const mail = mails[0];
+    if (!mail) throw new Error('Missing mailbox proof');
+    expect(
+      await generic((service) => service.authenticate({ token: mail.token })),
+    ).toEqual({
+      userId: first.userId,
+      profileId: first.profileId,
+      tenantId: target.id,
+    });
+  });
 
   it.each([
     'returning',

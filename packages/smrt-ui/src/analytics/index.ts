@@ -46,6 +46,10 @@ export function createAnalyticsTransitions(
     from: string,
     outcomes: Readonly<Record<string, StandardAnalyticsEvent>>,
   ) => {
+    const present = new Set(rows.map((row) => row.id));
+    for (const id of seen.keys()) {
+      if (!present.has(id)) seen.delete(id);
+    }
     for (const row of rows) {
       const previous = seen.get(row.id);
       seen.set(row.id, row.status);

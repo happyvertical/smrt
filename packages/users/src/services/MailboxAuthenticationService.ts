@@ -14,7 +14,7 @@ import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
-import { isValidEmail } from '../models/User.js';
+import { isValidEmail, normalizeEmail } from '../models/User.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
 import {
   type LoginAttemptLimiter,
@@ -141,7 +141,7 @@ export class MailboxAuthenticationService {
     const started = performance.now();
     try {
       await reserveMailboxRequest({
-        subject: normalizeIdentityEmail(input.email),
+        subject: normalizeEmail(input.email),
         sourceKey: input.sourceKey,
         limiter: this.auth.loginLimiter,
       });
@@ -232,40 +232,51 @@ export class MailboxAuthenticationService {
     }
     const memberships = await MembershipCollection.create(this.options);
     const tenants = await TenantCollection.create(this.options);
-    const active = await memberships.list({
-      where: { userId: user.id, status: MembershipStatus.ACTIVE },
-      limit: 100,
-    });
-    for (let membership of active) {
-      if (lock && isPostgresDatabase(db)) {
-        await db.query(
-          'SELECT id FROM memberships WHERE id = ? FOR UPDATE',
-          membership.id,
-        );
-        const current = await memberships.get(
-          { id: membership.id },
+    const pageSize = 100;
+    let afterId: string | undefined;
+    for (;;) {
+      const active = await memberships.list({
+        where: {
+          userId: user.id,
+          status: MembershipStatus.ACTIVE,
+          ...(afterId ? { 'id >': afterId } : {}),
+        },
+        orderBy: 'id ASC',
+        limit: pageSize,
+      });
+      for (let membership of active) {
+        if (lock && isPostgresDatabase(db)) {
+          await db.query(
+            'SELECT id FROM memberships WHERE id = ? FOR UPDATE',
+            membership.id,
+          );
+          const current = await memberships.get(
+            { id: membership.id },
+            { cache: false },
+          );
+          if (
+            !current ||
+            current.userId !== user.id ||
+            current.status !== MembershipStatus.ACTIVE
+          )
+            continue;
+          membership = current;
+        }
+        if (!membership.tenantId) continue;
+        const tenant = await tenants.get(
+          { id: membership.tenantId },
           { cache: false },
         );
-        if (
-          !current ||
-          current.userId !== user.id ||
-          current.status !== MembershipStatus.ACTIVE
-        )
-          continue;
-        membership = current;
+        if (tenant?.status === TenantStatus.ACTIVE)
+          return {
+            user,
+            tenantId: membership.tenantId,
+            binding: JSON.stringify([user.id, user.profileId]),
+          };
       }
-      if (!membership.tenantId) continue;
-      const tenant = await tenants.get(
-        { id: membership.tenantId },
-        { cache: false },
-      );
-      if (tenant?.status === TenantStatus.ACTIVE)
-        return {
-          user,
-          tenantId: membership.tenantId,
-          binding: JSON.stringify([user.id, user.profileId]),
-        };
+      const lastId = active.at(-1)?.id;
+      if (active.length < pageSize || !lastId) return null;
+      afterId = lastId;
     }
-    return null;
   }
 }
