@@ -58,6 +58,7 @@ components are exempt — they *are* the primitives.
 | `.` permissions | `PermissionCheck` and the domain-agnostic `PermissionPicker` for grouped, searchable native role-grant forms over host-supplied catalog records |
 | `./form-retry` | **Svelte-free** form retry (#3291): submission key, in-flight refusal, conditional reset, opt-in restore-after-reload, browser `runOnce()` digest. Also re-exported from `./forms`. Framework-free TS typed structurally against SvelteKit's `SubmitFunction` — never import `@sveltejs/kit` here. Guide: `docs/content/form-retry.md` |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
+| `./analytics` | Optional provider-neutral Svelte context for static shared component outcomes; noop without a host sink. No Matomo dependency. Browser provider lives in smrt-analytics. |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | deprecated compatibility path forwarding to the canonical theme system |
 | `./themes` | canonical `ThemeProvider`, context, preset token system (material/glass/studio/smrt/happyvertical), and CSS generation |
