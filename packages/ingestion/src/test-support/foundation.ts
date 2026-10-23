@@ -738,6 +738,54 @@ export function foundationSuite(
       expect(await service.getEvidence(id)).toHaveLength(1);
       expect((await service.receive(receive())).kind).toBe('duplicate');
     });
+    it('rejects unsafe filenames from direct receive callers and cleans stored names on read (#4214)', async () => {
+      // Built from code points: no invisible character appears in source.
+      const rlo = String.fromCodePoint(0x202e);
+      for (const filename of [
+        `invoice${rlo}fdp.exe`,
+        'tab\tname.pdf',
+        'x'.repeat(513),
+        '   ',
+      ]) {
+        const input = receive(
+          `unsafe-${filename.length}-${filename.charCodeAt(4)}`,
+        );
+        input.parts[0].filename = filename;
+        // Rejected as invalid input, never stored.
+        expect(await service.receive(input)).toEqual({
+          kind: 'rejected',
+          category: 'invalid',
+        });
+      }
+      // The same input with a safe name is accepted and stored as given, so
+      // the rejections above come from the filename check alone.
+      const named = receive('named');
+      named.parts[0].filename = 'Acme March.pdf';
+      const result = await service.receive(named);
+      if (!('itemId' in result)) throw new Error(JSON.stringify(result));
+      expect((await service.getEvidence(result.itemId))[0].filename).toBe(
+        'Acme March.pdf',
+      );
+      // A row written outside `receive` (older data, a direct SQL fix) is
+      // cleaned on the way out, never surfaced raw.
+      for (const [stored, shown] of [
+        [`Acme${rlo}fdp.pdf`, 'Acmefdp.pdf'],
+        [`${rlo}${String.fromCodePoint(0x200b)}`, undefined],
+      ] as const) {
+        await db.query(
+          'UPDATE intake_evidence SET data=? WHERE item_id=?',
+          JSON.stringify({ filename: stored, sourceReference: null }),
+          result.itemId,
+        );
+        expect((await service.getEvidence(result.itemId))[0].filename).toBe(
+          shown,
+        );
+        expect(
+          (await service.listEvidence([result.itemId])).get(result.itemId)?.[0]
+            .filename,
+        ).toBe(shown);
+      }
+    });
     it('lists a page of durable evidence in one query and omits what the scope cannot read (#4213)', async () => {
       const first = await accepted('page-a');
       const second = await accepted('page-b');
