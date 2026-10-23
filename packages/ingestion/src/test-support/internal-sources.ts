@@ -707,6 +707,7 @@ export function internalSourceSuite(
               parentPartId: 'body',
               mediaType: 'text/plain',
               bytes: Buffer.from('copied note'),
+              filename: 'copied-note.txt',
             },
           ],
         }),
@@ -728,6 +729,12 @@ export function internalSourceSuite(
       expect(await count('SELECT COUNT(*) AS n FROM assets')).toBe(1);
       const copied = evidence.find((e) => e.partId === 'note');
       if (!copied) throw new Error('Missing copy');
+      expect(copied.filename).toBe('copied-note.txt');
+      expect(
+        (await service.listEvidence([itemId]))
+          .get(itemId)
+          ?.find((part) => part.id === copied.id)?.filename,
+      ).toBe('copied-note.txt');
       const [copiedRow] = (
         await db.query(
           'SELECT asset_id FROM intake_evidence WHERE id=?',
