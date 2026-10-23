@@ -1422,7 +1422,7 @@ describe('triage workspace paging failures', () => {
       await screen.findByRole('button', { name: 'Apply approved action' }),
     );
     expect((await screen.findByTestId('advance-held')).textContent).toMatch(
-      /couldn't be loaded/,
+      /couldn't load more items\. Refresh the list to continue/,
     );
     expect(screen.queryByTestId('queue-done')).toBeNull();
     // The host cannot say whether the failure was transient or a revoked
@@ -1433,6 +1433,14 @@ describe('triage workspace paging failures', () => {
     ).toMatch(/unavailable/);
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     expect(screen.getByTestId('intake-review')).toBeTruthy();
+    // Nothing is left to step to, so the note does not offer Next item.
+    expect(
+      (screen.getByRole('button', { name: 'Next item' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.getByTestId('advance-held').textContent).not.toMatch(
+      /Next item/,
+    );
   });
 
   it('a failed Load more in the plain inbox clears the rows', async () => {
@@ -1488,10 +1496,15 @@ describe('triage workspace paging failures', () => {
       await screen.findByRole('button', { name: 'Apply approved action' }),
     );
     expect((await screen.findByTestId('advance-held')).textContent).toMatch(
-      /couldn't be loaded/,
+      /Try Next item again/,
     );
     expect(page).toBe(5);
     expect(screen.queryByTestId('queue-done')).toBeNull();
+    // More pages remain, so Next item still works here.
+    expect(
+      (screen.getByRole('button', { name: 'Next item' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
   });
 
   it('does not advance over input typed while the next page loaded', async () => {
@@ -1547,7 +1560,7 @@ describe('triage workspace paging failures', () => {
     );
     await fireEvent.click(apply);
     expect((await screen.findByTestId('advance-held')).textContent).toMatch(
-      /couldn't be loaded/,
+      /Try Next item again/,
     );
     expect(screen.queryByTestId('queue-done')).toBeNull();
     hold.resolve(undefined);
