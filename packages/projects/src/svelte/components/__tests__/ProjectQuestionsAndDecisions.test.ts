@@ -147,7 +147,7 @@ it('automatically emits static analytics only after persisted question/decision 
   await view.rerender({ questions: answered, decisions: decided });
   await view.rerender({ questions: answered, decisions: decided });
   expect(emit.mock.calls).toEqual([
-    ['project_question_answered'],
-    ['project_decision_resolved'],
+    ['project_question_answered', undefined],
+    ['project_decision_resolved', undefined],
   ]);
 });

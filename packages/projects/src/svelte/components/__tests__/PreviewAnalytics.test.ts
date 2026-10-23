@@ -22,11 +22,11 @@ it('distinguishes shared preview engagement from persisted conversion, without e
   expect(ondecide).toHaveBeenCalledWith(true);
   expect(emit).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('link'));
-  expect(emit.mock.calls).toEqual([['project_preview_opened']]);
+  expect(emit.mock.calls).toEqual([['project_preview_opened', undefined]]);
   await view.rerender({ preview: { ...preview, status: 'approved' } });
   await view.rerender({ preview: { ...preview, status: 'approved' } });
   expect(emit.mock.calls).toEqual([
-    ['project_preview_opened'],
-    ['project_preview_approved'],
+    ['project_preview_opened', undefined],
+    ['project_preview_approved', undefined],
   ]);
 });
