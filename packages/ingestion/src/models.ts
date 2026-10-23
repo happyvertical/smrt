@@ -30,6 +30,13 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
       columns: ['tenantId', 'submitterId'],
     },
     { name: 'intake_items_owner_idx', columns: ['tenantId', 'ownerKey'] },
+    // Newest-first inbox paging within one authenticated scope (#4211):
+    // the page orders by (created_at DESC, id DESC), so the id is part of
+    // the key and the scan terminates at the page boundary.
+    {
+      name: 'intake_items_received_idx',
+      columns: ['tenantId', 'confidentialScopeId', 'createdAt', 'id'],
+    },
   ],
 })
 @TenantScoped({ mode: 'required' })

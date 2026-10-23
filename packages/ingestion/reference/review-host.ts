@@ -26,6 +26,7 @@ import type {
   LogicalSplitInput,
   ReviewerInstructionInput,
 } from '../src/review-dto.js';
+import { createIntakeReviewHost } from '../src/review-host.js';
 import { loadInstructionView } from '../src/review-instruction-view.js';
 import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
@@ -597,26 +598,59 @@ export class ReferenceReviewHost {
   }
   async list(
     scope: ReviewSession,
-    input: { state?: InboxState; assigneeId?: string; cursor?: string },
+    input: {
+      state?: InboxState;
+      assigneeId?: string;
+      cursor?: string;
+      limit?: number;
+    },
   ) {
     const { service } = await this.service(scope);
-    const items = (await service.listItems())
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .filter((item) => !input.cursor || item.id > input.cursor)
-      .slice(0, 21);
-    const projected = [];
-    for (const item of items.slice(0, 20)) {
-      const entry = (await this.load(scope, item.id)).entry;
-      if (
-        (!input.state || entry.state === input.state) &&
-        (!input.assigneeId || entry.assignment.assigneeId === input.assigneeId)
-      )
-        projected.push(entry);
-    }
-    return {
-      items: projected,
-      ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
+    const notListing = async (): Promise<never> => {
+      throw new Error('Not used for listing');
     };
+    // Listing composes the published host, so this reference gets the same
+    // paging, scan ceiling, junk-id filtering and assignee fallback as a
+    // production host. This host owns review_assignments and supplies the
+    // batched reads and the assignee pushdown.
+    return createIntakeReviewHost(service, {
+      upload: notListing,
+      assign: notListing,
+      evidence: notListing,
+      assignment: (itemId) => this.assignment(scope, itemId),
+      assignments: (itemIds) => this.assignments(scope, itemIds),
+      assignedItemIds: async (assigneeId) =>
+        (
+          await this.db.query(
+            'SELECT item_id FROM review_assignments WHERE tenant_id=? AND assignee_id=?',
+            scope.tenantId,
+            assigneeId,
+          )
+        ).rows.map((row) => String(row.item_id)),
+    }).list(input);
+  }
+  /** One read for a listed page; the page itself is already authorized. */
+  async assignments(
+    scope: ReviewSession,
+    itemIds: string[],
+  ): Promise<Map<string, Assignment>> {
+    if (!itemIds.length) return new Map();
+    const rows = (
+      await this.db.query(
+        `SELECT item_id,assignee_id,version FROM review_assignments WHERE tenant_id=? AND item_id IN (${itemIds.map(() => '?').join(',')})`,
+        scope.tenantId,
+        ...itemIds,
+      )
+    ).rows;
+    return new Map(
+      rows.map((row) => [
+        String(row.item_id),
+        {
+          assigneeId: row.assignee_id ? String(row.assignee_id) : null,
+          version: Number(row.version ?? 0),
+        },
+      ]),
+    );
   }
   async preview(
     scope: ReviewSession,
