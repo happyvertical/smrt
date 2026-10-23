@@ -1555,6 +1555,106 @@ describe('triage workspace paging failures', () => {
   });
 });
 
+describe('workspace GitHub review regressions', () => {
+  it.each([
+    'Reason',
+    'Feedback comment',
+  ])('does not Apply over an unsent action-card %s', async (name) => {
+    const initial = editable('a');
+    initial.reviews.actions = [action('a', 'authorized')];
+    initial.reviews.actions[0].attemptId = 'attempt-a';
+    const host = editableHost({ a: [initial] });
+    host.editAction = vi.fn(async () => {});
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const apply = await screen.findByRole('button', {
+      name: 'Apply approved action',
+    });
+    const input = screen.getByRole('textbox', { name });
+    await fireEvent.input(input, { target: { value: 'Unsent note' } });
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(apply);
+    expect(host.apply).not.toHaveBeenCalled();
+    expect((input as HTMLInputElement).value).toBe('Unsent note');
+    await fireEvent.input(input, { target: { value: '' } });
+    await waitFor(() =>
+      expect((apply as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it('keeps the selected filtered row when input arrives during automatic paging', async () => {
+    const hold = deferred<{ items: InboxEntry[] }>();
+    const requested = deferred();
+    const initial = editable('a');
+    initial.reviews.actions = [action('a', 'authorized')];
+    const applied = editable('a', 'partially_completed');
+    applied.reviews.actions = [action('a', 'succeeded')];
+    const host = editableHost({ a: [initial, applied] });
+    host.list = vi.fn(async ({ cursor }) => {
+      if (!cursor)
+        return { items: [entry('a', 'waiting')], nextCursor: 'next' };
+      requested.resolve();
+      return hold.promise;
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await screen.findByRole('button', { name: 'Apply approved action' });
+    await fireEvent.change(screen.getByRole('combobox', { name: 'State' }), {
+      target: { value: 'waiting' },
+    });
+    await waitFor(() =>
+      expect(host.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: 'waiting' }),
+      ),
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Apply approved action' }),
+    );
+    await requested.promise;
+    const draft = await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    });
+    await fireEvent.input(draft, {
+      target: { value: '{"vendor":"Keep row"}' },
+    });
+    hold.resolve({ items: [entry('b', 'waiting')] });
+    await screen.findByTestId('advance-held');
+    expect(row('a')?.getAttribute('aria-current')).toBe('true');
+    expect(pane().getAttribute('aria-label')).toBe('Item A');
+    expect((draft as HTMLTextAreaElement).value).toBe('{"vendor":"Keep row"}');
+  });
+
+  it('keeps a refresh newer than an already settled follow result', async () => {
+    let settled = false;
+    let fresh = false;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const load = host.load;
+    host.load = vi.fn(async (id, cursor) =>
+      id === 'b' && settled ? ready('b') : load(id, cursor),
+    );
+    host.list = vi.fn(async () => ({
+      items: [
+        entry('b', fresh ? 'failed' : 'unresolved'),
+        entry('c', 'waiting'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    await screen.findByText('Item C');
+    await fireEvent.click(
+      within(row('c')).getByRole('button', { name: 'Review' }),
+    );
+    settled = true;
+    await waitFor(() => expect(statusText('b')).toBe('Ready to review'));
+    fresh = true;
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(statusText('b')).toBe('Failed'));
+  });
+});
+
 describe('triage workspace following bounds', () => {
   it('follows at most 20 items; the longest-followed one returns to its listed state', async () => {
     const ids = Array.from({ length: 21 }, (_, index) => `i${index + 1}`);

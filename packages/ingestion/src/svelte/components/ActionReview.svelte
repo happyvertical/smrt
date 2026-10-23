@@ -60,8 +60,9 @@ const dirty = $derived(
   args !== (JSON.stringify(action.args, null, 2) ?? '') ||
     planArgs !== (JSON.stringify(action.plan?.args, null, 2) ?? ''),
 );
+const unsent = $derived(dirty || !!reason || !!comment);
 $effect(() => {
-  const edited = dirty || !!reason || !!comment;
+  const edited = unsent;
   untrack(() => ondirty?.(edited));
 });
 const waiting = $derived(
@@ -208,7 +209,7 @@ function choose(field: string, id: string) {
 {#if !editable && invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
-{#if action.review.state === 'authorized' && !resolved}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId), 'apply'); }}>{t(M['ingestion.apply'])}</Button>{/if}
+{#if action.review.state === 'authorized' && !resolved}<Button disabled={unsent} onclick={() => { if (!unsent) void run(() => host.apply(action.review.actionId), 'apply'); }}>{t(M['ingestion.apply'])}</Button>{/if}
 {/if}
 {#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction && !resolved}
 <p>{t(M['ingestion.reviewAgain'])}</p>

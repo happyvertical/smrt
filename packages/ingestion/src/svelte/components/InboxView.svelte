@@ -32,6 +32,8 @@ export interface Props {
     more: boolean,
     page?: { entries: InboxEntry[]; appended: boolean },
   ) => void;
+  /** Called before a page request so a workspace can order concurrent follow reads. */
+  onreadstart?: () => void;
   /** A row's status text; the listed inbox state is shown when omitted or undefined. */
   status?: (entry: InboxEntry) => string | undefined;
   /** Show the per-row "Handled, no action" control (a workspace resolves in its item pane). */
@@ -43,6 +45,7 @@ let {
   rowAside,
   selectedId,
   onitems,
+  onreadstart,
   status,
   resolveInRow = true,
 }: Props = $props();
@@ -134,6 +137,7 @@ onDestroy(() => {
 /** Resolves true when this read's page was displayed. */
 async function load(more = false): Promise<boolean> {
   const ticket = ++epoch;
+  onreadstart?.();
   pending = true;
   error = false;
   moreFailed = false;

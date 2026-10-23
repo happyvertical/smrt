@@ -739,3 +739,10 @@ choosing the same local file explicitly starts a new upload identity. Opening
 then dismissing the chooser preserves the separately retained originals and
 request identity for retry; it does not clear the shared FilePicker's native-form
 behavior. Successful upload and host/context disposal still discard retry state.
+
+Workspace ordering also protects an open item during an awaited automatic page walk:
+the selected row remains until navigation succeeds. Applying an action is disabled
+while that action card holds unsent arguments, reason, or feedback comment. A list
+refresh retires earlier follow snapshots; only follow reads started after that
+page request may override its rows, so a newer refresh cannot be regressed by an
+already settled or older in-flight follow read.

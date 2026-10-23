@@ -151,6 +151,12 @@ let listedEntries = new Map<string, InboxEntry>();
 // The latest entry a follow read saw, per followed or just-settled item,
 // re-applied over a page that may have been read before it.
 let followedEntries = new Map<string, InboxEntry>();
+let listEpoch = 0;
+function readStarted() {
+  listEpoch++;
+  // Only follow reads begun after this page request may override its result.
+  followedEntries.clear();
+}
 /**
  * Forget what loaded views said about a row (a denial, a failed follow, the
  * follow cap): drop its cached status and restore the entry its page listed.
@@ -168,7 +174,14 @@ function listed(
 ) {
   if (page) {
     if (!page.appended) listedEntries = new Map();
-    for (const entry of page.entries) listedEntries.set(entry.item.id, entry);
+    for (const entry of page.entries) {
+      listedEntries.set(entry.item.id, entry);
+      if (
+        entry.item.id !== paneView?.entry.item.id &&
+        !followedEntries.has(entry.item.id)
+      )
+        delete statuses[entry.item.id];
+    }
   }
   rows = items;
   more = hasMore;
@@ -266,6 +279,7 @@ async function followBatch() {
     if (!alive) return;
     if (!watched.includes(id)) continue;
     try {
+      const requestedAt = listEpoch;
       const view = await host.load(id);
       if (!alive) return;
       if (!watched.includes(id)) continue;
@@ -275,6 +289,7 @@ async function followBatch() {
         fallback(id);
         continue;
       }
+      if (requestedAt !== listEpoch) continue;
       const settled = !reviewInFlight(view);
       if (!settled) staged.add(id);
       const finished = settled && staged.has(id);
@@ -382,7 +397,7 @@ async function advance() {
   const ticket = navigation;
   const current = selected;
   const before = rows.findIndex((row) => row.item.id === current);
-  let list = paneView && inbox ? inbox.patch(paneView.entry) : rows;
+  let list = paneView && inbox ? inbox.patch(paneView.entry, true) : rows;
   rows = list;
   const start =
     before < 0 ? 0 : list[before]?.item.id === current ? before + 1 : before;
@@ -458,7 +473,7 @@ function keydown(event: KeyboardEvent) {
 <svelte:window onkeydown={keydown} />
 <div class="workspace" bind:this={root} data-testid="intake-workspace">
 <div class="list-pane">
-<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} status={rowStatus} resolveInRow={false} />
+<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} status={rowStatus} resolveInRow={false} />
 </div>
 <section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
 <div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>
