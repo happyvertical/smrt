@@ -56,6 +56,28 @@ export const M = defineMessages({
   'ingestion.choose': 'Choose destination',
   'ingestion.split': 'Logical page groups (JSON)',
   'ingestion.saveSplit': 'Save split and reprocess',
+  'ingestion.instructions': 'Instructions for the assistant',
+  'ingestion.reinterpret': 'Re-read with these instructions',
+  'ingestion.reinterpreting': 'Reinterpreting…',
+  'ingestion.appliedInstruction':
+    'Suggestions were produced under this instruction',
+  'ingestion.pendingInstruction': 'Latest instruction, not yet applied',
+  'ingestion.refreshRetrying': "Couldn't refresh; retrying.",
+  'ingestion.instructionNotRecorded':
+    'This item changed while you were writing; your instruction was not recorded.',
+  'ingestion.instructionLength': '{count} / {max} characters',
+  'ingestion.instructionInvalid':
+    'Enter an instruction of 1 to {max} characters. It was not recorded.',
+  'ingestion.droppedInstruction':
+    "A reprocess replaced this item's extraction, so this instruction no longer applies. Re-record it to use it",
+  'ingestion.reinterpretNotStarted':
+    'The reinterpretation did not start. Re-read again to retry.',
+  'ingestion.instructionBusy':
+    'This item changed or is still being re-read. It has been refreshed; try again when it finishes.',
+  'ingestion.reinterpretFailed':
+    'The reinterpretation did not complete. Adjust the instruction or re-read again.',
+  'ingestion.instructionStale':
+    'Superseded: the current suggestions do not reflect the latest instruction.',
   'ingestion.result': 'Result',
   'ingestion.stale': 'Stale',
   'ingestion.revoked': 'Access revoked',

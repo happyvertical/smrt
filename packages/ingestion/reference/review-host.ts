@@ -24,14 +24,18 @@ import type {
   InboxState,
   ItemReviewView,
   LogicalSplitInput,
+  ReviewerInstructionInput,
 } from '../src/review-dto.js';
 import { createIntakeReviewHost } from '../src/review-host.js';
+import { loadInstructionView } from '../src/review-instruction-view.js';
 import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
   createSDKExtractionAdapter,
   createSourceDeliveryHandler,
   extractAnalysis,
   IngestionService,
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
 } from '../src/server.js';
 import {
   ATTACH,
@@ -576,10 +580,12 @@ export class ReferenceReviewHost {
       state,
       assignment: await this.assignment(scope, itemId),
     };
+    const instruction = await loadInstructionView(service, itemId, analysis);
     return {
       entry,
       evidence: views,
       analysis,
+      ...(instruction ? { instruction } : {}),
       ...(analysis?.configuration.stage === 'interpret'
         ? {
             generation: analysis.result.output
@@ -788,6 +794,31 @@ export class ReferenceReviewHost {
     const result = await service.reviseLogicalSplit(input);
     await this.process(scope, input.itemId, result.revision);
   }
+  /** Durable record first; the fixture then reinterprets in the background like a job worker. */
+  async instruct(scope: ReviewSession, input: ReviewerInstructionInput) {
+    const { service } = await this.service(scope);
+    let result: Awaited<ReturnType<typeof service.recordReviewerInstruction>>;
+    try {
+      result = await service.recordReviewerInstruction(input);
+    } catch (error) {
+      if (error instanceof ReviewerInstructionStaleError)
+        return { stale: true as const };
+      if (error instanceof ReviewerInstructionInvalidError)
+        return { invalid: true as const };
+      throw error;
+    }
+    const pending = this.process(scope, input.itemId, result.revision).catch(
+      () => undefined,
+    );
+    this.background.add(pending);
+    void pending.finally(() => this.background.delete(pending));
+    return { revision: result.revision };
+  }
+  /** Tests and shutdown wait for fixture background stages instead of racing them. */
+  async settle() {
+    while (this.background.size) await Promise.all([...this.background]);
+  }
+  private readonly background = new Set<Promise<unknown>>();
   async result(scope: ReviewSession, id: string) {
     if (!(await this.allowed(scope))) throw new Error('Unavailable');
     const record = await (await Contents.create({ db: this.db })).get({ id });

@@ -52,7 +52,19 @@ import type {
   CompletedAnalysisSnapshot,
   PreviewGeneratedInput,
 } from './proposal-dto.js';
-import type { InboxState, LogicalSplitInput } from './review-dto.js';
+import { GenerationSourceStaleError } from './proposal-errors.js';
+import type {
+  InboxState,
+  LogicalSplitInput,
+  ReviewerInstruction,
+  ReviewerInstructionInput,
+} from './review-dto.js';
+import {
+  REVIEWER_INSTRUCTION_MAX_LENGTH,
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
 
 /** Authenticated host context. Never construct this from transport JSON. */
 export interface IngestionScope {
@@ -290,7 +302,7 @@ function actionCount(where = ''): string {
  * state. It mirrors the host's page-traversal classifier without live handler
  * or target gates, so it filters and labels a list; `load` stays authoritative.
  */
-const INBOX_STATE_SQL = `CASE WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
+const INBOX_STATE_SQL = `CASE WHEN i.processing_state IN ('queued','running') THEN 'processing' WHEN ${actionCount()} = 0 THEN CASE WHEN i.processing_state = 'needs_attention' THEN 'failed' ELSE 'unresolved' END WHEN ${actionCount("a.state <> 'succeeded'")} = 0 THEN 'completed' WHEN ${actionCount("a.state = 'succeeded'")} > 0 THEN 'partially_completed' WHEN ${actionCount("a.state = 'deferred'")} > 0 THEN 'deferred' WHEN ${actionCount("a.state IN ('failed','outcome_unknown')")} > 0 THEN 'failed' ELSE 'waiting' END`;
 /** The only receipt-time text the service writes, and the only cursor form. */
 const RECEIPT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /**
@@ -1859,6 +1871,15 @@ export class IngestionService {
       frozen.stage !== 'interpret'
     )
       throw new Error('Human corrections require authenticated split revision');
+    // Interpretation copies are verified against the pinned extraction source
+    // before any provider disclosure (getGenerationInput).
+    if (
+      Object.hasOwn(frozen, 'reviewerInstruction') &&
+      frozen.stage !== 'interpret'
+    )
+      throw new Error(
+        'Reviewer instructions require authenticated instruction revision',
+      );
     return this.tx((db) => this.appendAnalysis(db, itemId, frozen, requestKey));
   }
   private async appendAnalysis(
@@ -1886,6 +1907,24 @@ export class IngestionService {
       if (object(replay.data).configDigest !== configDigest)
         throw new Error('Analysis request conflict');
       return { id: String(replay.id), revision: Number(replay.revision) };
+    }
+    // An interpretation must pin the item's latest extraction. Checked under
+    // the item lock before anything is superseded, so a slow host appending a
+    // late interpretation cannot clobber a newer extraction (for example a
+    // reviewer's retry): it is refused and nothing is appended.
+    if (configuration.stage === 'interpret') {
+      const pinned = Number(
+        object(object(configuration.proposals).source).revision,
+      );
+      const latestExtraction = previous
+        .filter(
+          (row) => object(object(row.data).configuration).stage !== 'interpret',
+        )
+        .reduce(
+          (max, row) => Math.max(max, Number(row.revision)),
+          Number.NEGATIVE_INFINITY,
+        );
+      if (pinned !== latestExtraction) throw new GenerationSourceStaleError();
     }
     const evidence = await this.rows(
       db,
@@ -2010,19 +2049,45 @@ export class IngestionService {
       );
       return replay;
     }
+    await this.point('split:checked');
     let result: { id: string; revision: number } | undefined;
     await (await this.proposalReader())[generationSnapshotRead](
       frozen.itemId,
       (work) => this.tx(work),
+      // Read the anchor without requiring it to be current: a concurrent
+      // duplicate must reach the locked replay check below instead of failing
+      // the read. Currency is enforced under the lock instead.
       (db) =>
         this.completedAnalysisSnapshot(
           db,
           frozen.itemId,
           frozen.attemptId,
-          true,
+          false,
         ),
       async (db, current) => {
-        if (current.revision !== frozen.expectedRevision)
+        // Every guard read and the append run under the item lock in this one
+        // transaction (the snapshot read above already took it; re-asserting it
+        // keeps the invariant local to this step).
+        await this.lock(db, frozen.itemId);
+        await this.point('split:locked');
+        const [found] = (
+          await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+        ).filter((row) => object(row.data).requestKey === requestKey);
+        if (found) {
+          // A duplicate that committed after our unlocked replay check.
+          if (
+            digest(object(object(found.data).configuration).humanCorrection) !==
+            digest(correction)
+          )
+            throw new Error('Split request conflict');
+          result = { id: String(found.id), revision: Number(found.revision) };
+          return;
+        }
+        const item = await this.item(frozen.itemId, 'process', db);
+        if (
+          current.revision !== frozen.expectedRevision ||
+          Number(item.analysis_revision) !== frozen.expectedRevision
+        )
           throw new Error('Stale logical split');
         const pin = object(object(current.configuration.proposals).source);
         const source = await this.completedAnalysisSnapshot(
@@ -2068,6 +2133,7 @@ export class IngestionService {
           pages.some((page) => !observed.has(page))
         )
           throw new Error('Split must cover observed pages exactly');
+        await this.point('split:guarded');
         // Re-extraction retains the supported immediate-predecessor interpretation pin.
         result = await this.appendAnalysis(
           db,
@@ -2080,6 +2146,369 @@ export class IngestionService {
     );
     if (!result) throw new Error('Split unavailable');
     return result;
+  }
+  /**
+   * Record an authenticated reviewer instruction as an immutable human correction
+   * and queue a fresh extraction plus interpretation that carries it as trusted
+   * guidance. The text steers the model only; it never changes the catalog,
+   * candidates, schemas, permissions or automation eligibility.
+   */
+  async recordReviewerInstruction(input: ReviewerInstructionInput): Promise<{
+    id: string;
+    revision: number;
+    instruction: ReviewerInstruction;
+  }> {
+    const frozen = structuredClone(input);
+    nonempty(frozen.requestId);
+    nonempty(frozen.attemptId);
+    integer(frozen.expectedRevision);
+    if (
+      typeof frozen.text !== 'string' ||
+      !frozen.text.trim() ||
+      frozen.text.length > REVIEWER_INSTRUCTION_MAX_LENGTH
+    )
+      throw new ReviewerInstructionInvalidError();
+    const requestKey = `instruction:${frozen.requestId}`;
+    const intent = {
+      kind: 'reviewer_instruction',
+      itemId: frozen.itemId,
+      attemptId: frozen.attemptId,
+      expectedRevision: frozen.expectedRevision,
+      requestId: frozen.requestId,
+      actorId: this.scope.actorId,
+      text: frozen.text,
+    };
+    const replayIntent = (record: Record<string, unknown>) => {
+      const {
+        id: _id,
+        recordedAt: _recordedAt,
+        supersedesId: _supersedesId,
+        digest: _digest,
+        ...rest
+      } = record;
+      return rest;
+    };
+    const replay = await this.tx(async (db) => {
+      await this.lock(db, frozen.itemId);
+      await this.item(frozen.itemId, 'process', db);
+      const found = (
+        await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+      ).find((row) => object(row.data).requestKey === requestKey);
+      if (!found) return null;
+      const record = object(
+        object(object(found.data).configuration).reviewerInstruction,
+      );
+      if (digest(replayIntent(record)) !== digest(intent))
+        throw new Error('Reviewer instruction request conflict');
+      return {
+        id: String(found.id),
+        revision: Number(found.revision),
+        instruction: reviewerInstructionView(record),
+      };
+    });
+    if (replay) {
+      // Idempotency acknowledges only an intent the current reviewer may still access.
+      await (await this.proposalReader())[generationSnapshotRead](
+        frozen.itemId,
+        (work) => this.tx(work),
+        (db) =>
+          this.completedAnalysisSnapshot(
+            db,
+            frozen.itemId,
+            frozen.attemptId,
+            false,
+          ),
+        undefined,
+        true,
+      );
+      return replay;
+    }
+    await this.point('instruction:checked');
+    let result:
+      | { id: string; revision: number; instruction: ReviewerInstruction }
+      | undefined;
+    await (await this.proposalReader())[generationSnapshotRead](
+      frozen.itemId,
+      (work) => this.tx(work),
+      // The anchor may be historical: after a failed reinterpretation the
+      // reviewer retries against the latest completed generation.
+      (db) =>
+        this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          frozen.attemptId,
+          false,
+        ),
+      async (db, current) => {
+        // Every guard read, the history read for supersedesId and the append
+        // run under the item lock in this one transaction (the snapshot read
+        // above already took it; re-asserting it keeps the invariant local).
+        await this.lock(db, frozen.itemId);
+        await this.point('instruction:locked');
+        const [found] = (
+          await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+        ).filter((row) => object(row.data).requestKey === requestKey);
+        if (found) {
+          // A duplicate (double-click) that committed after our unlocked
+          // replay check: replay it rather than refusing.
+          const record = object(
+            object(object(found.data).configuration).reviewerInstruction,
+          );
+          if (digest(replayIntent(record)) !== digest(intent))
+            throw new Error('Reviewer instruction request conflict');
+          result = {
+            id: String(found.id),
+            revision: Number(found.revision),
+            instruction: reviewerInstructionView(record),
+          };
+          return;
+        }
+        const item = await this.item(frozen.itemId, 'process', db);
+        if (Number(item.analysis_revision) !== frozen.expectedRevision)
+          throw new ReviewerInstructionStaleError();
+        let carriedConfiguration: Record<string, unknown> | undefined;
+        if (current.revision !== frozen.expectedRevision) {
+          // The same predicate drives getReinterpretationState, so the review
+          // UI and this guard always agree on "in flight".
+          const later = await this.laterWork(db, item, current.revision);
+          if (later.phase === 'in_flight' || later.phase === 'superseded')
+            throw new ReviewerInstructionStaleError();
+          carriedConfiguration = later.configuration;
+        }
+        const pin = object(object(current.configuration.proposals).source);
+        const source = await this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          String(pin.attemptId),
+          false,
+        );
+        for (const key of [
+          'attemptId',
+          'revision',
+          'inputDigest',
+          'outputDigest',
+          'evidenceDigest',
+        ] as const)
+          if (pin[key] !== source[key])
+            throw new Error('Instruction source changed');
+        // Supersede the latest recorded instruction, even one whose
+        // reinterpretation never completed; the ledger, not the anchor, is history.
+        const [previous] = await this.recordedInstructions(db, frozen.itemId);
+        const body = {
+          ...intent,
+          id: randomUUID(),
+          recordedAt: date(this.now()),
+          supersedesId: previous?.id ?? null,
+        };
+        const record = { ...body, digest: digest(body) };
+        await this.point('instruction:guarded');
+        // Re-extraction retains the supported immediate-predecessor interpretation pin
+        // and any existing split correction; the instruction travels beside it.
+        const appended = await this.appendAnalysis(
+          db,
+          frozen.itemId,
+          {
+            ...(carriedConfiguration ?? source.configuration),
+            reviewerInstruction: record,
+          },
+          requestKey,
+        );
+        result = { ...appended, instruction: reviewerInstructionView(record) };
+      },
+      true,
+    );
+    if (!result) throw new Error('Reviewer instruction unavailable');
+    return result;
+  }
+  /**
+   * How the revisions after an anchor generation relate to it. Shared by the
+   * retry guard and getReinterpretationState so they cannot disagree.
+   * A completed extraction with no interpretation appended is in flight until
+   * its attempt's completion plus the item's analysis lease duration
+   * (`limits.leaseMs`, the same lease claimAnalysis grants); after that it is
+   * treated as a reinterpretation that did not start.
+   */
+  private async laterWork(
+    db: DatabaseInterface,
+    item: Row,
+    anchorRevision: number,
+  ): Promise<{
+    phase: 'none' | 'in_flight' | 'superseded' | 'failed';
+    failure: IntakeFailure | 'not_started' | null;
+    configuration: Record<string, unknown> | undefined;
+  }> {
+    const later = (
+      await this.rows(db, 'intake_analyses', 'item_id=? AND revision>?', [
+        String(item.id),
+        anchorRevision,
+      ])
+    ).sort((a, b) => Number(b.revision) - Number(a.revision));
+    const stage = (row: Row) => object(object(row.data).configuration).stage;
+    // The newest later extraction's configuration is the item's current one:
+    // corrections chain forward through it, and a host reprocess replaces it
+    // (dropping corrections). A retry from an older anchor builds on it so it
+    // neither reverts a reprocess nor drops or resurrects a split.
+    const newestExtraction = later.find((row) => stage(row) !== 'interpret');
+    const configuration = newestExtraction
+      ? object(object(newestExtraction.data).configuration)
+      : undefined;
+    const [latest] = later;
+    if (!latest) return { phase: 'none', failure: null, configuration };
+    if (
+      later.some(
+        (row) =>
+          ['completed', 'partial'].includes(String(row.state)) &&
+          stage(row) === 'interpret',
+      )
+    )
+      return { phase: 'superseded', failure: null, configuration };
+    if (later.some((row) => ['queued', 'running'].includes(String(row.state))))
+      return { phase: 'in_flight', failure: null, configuration };
+    const [attempt] = latest.current_attempt_id
+      ? await this.rows(db, 'intake_analysis_attempts', 'id=? AND item_id=?', [
+          latest.current_attempt_id,
+          String(item.id),
+        ])
+      : [];
+    if (['completed', 'partial'].includes(String(latest.state))) {
+      // Extraction done, interpretation not appended: between stages.
+      const completedAt = attempt
+        ? object(attempt.data).completedAt
+        : undefined;
+      const leaseMs = Number(object(object(item.data).limits).leaseMs);
+      // Missing or malformed timing cannot hold retries forever: it counts as
+      // already expired, which is safe because a late append is refused.
+      const started =
+        typeof completedAt === 'string'
+          ? persistedDate(completedAt).getTime()
+          : Number.NaN;
+      const deadline =
+        Number.isFinite(started) && Number.isFinite(leaseMs)
+          ? started + leaseMs
+          : Number.NEGATIVE_INFINITY;
+      return this.now().getTime() <= deadline
+        ? { phase: 'in_flight', failure: null, configuration }
+        : { phase: 'failed', failure: 'not_started', configuration };
+    }
+    const safe = attempt?.safe_error ? String(attempt.safe_error) : '';
+    return {
+      phase: 'failed',
+      failure: failures.has(safe) ? (safe as IntakeFailure) : null,
+      configuration,
+    };
+  }
+  /** Pollable reinterpretation state: current revision, safe failure and the retry anchor. */
+  async getReinterpretationState(itemId: string): Promise<{
+    revision: number;
+    processingState: string;
+    /** Safe category, or `not_started` when the interpretation was never appended in time. */
+    failure: IntakeFailure | 'not_started' | null;
+    /** True while work after the latest completed generation is in flight, including between stages. */
+    reinterpreting: boolean;
+    /** Latest completed generation attempt; absent when none has completed. */
+    generationAttemptId: string | null;
+    /**
+     * Id of the instruction carried by the item's newest extraction (verified
+     * by digest), or null. A host reprocess builds its own configuration and
+     * cannot carry human corrections, so it drops the instruction exactly as
+     * it drops a split.
+     */
+    instructionInEffect: string | null;
+  }> {
+    const item = await this.item(itemId, 'read');
+    const analyses = (
+      await this.rows(this.db, 'intake_analyses', 'item_id=?', [itemId])
+    ).sort((a, b) => Number(b.revision) - Number(a.revision));
+    const generation = analyses.find(
+      (row) =>
+        ['completed', 'partial'].includes(String(row.state)) &&
+        row.current_attempt_id &&
+        object(object(row.data).configuration).stage === 'interpret',
+    );
+    let failure: IntakeFailure | 'not_started' | null = null;
+    let reinterpreting = false;
+    if (generation) {
+      const later = await this.laterWork(
+        this.db,
+        item,
+        Number(generation.revision),
+      );
+      failure = later.failure;
+      reinterpreting = later.phase === 'in_flight';
+    } else {
+      const latest = analyses[0];
+      reinterpreting = ['queued', 'running'].includes(String(latest?.state));
+      if (
+        latest &&
+        String(latest.state) === 'needs_attention' &&
+        latest.current_attempt_id
+      ) {
+        const [attempt] = await this.rows(
+          this.db,
+          'intake_analysis_attempts',
+          'id=? AND item_id=?',
+          [latest.current_attempt_id, itemId],
+        );
+        if (attempt?.safe_error && failures.has(String(attempt.safe_error)))
+          failure = String(attempt.safe_error) as IntakeFailure;
+      }
+    }
+    const newestExtraction = analyses.find(
+      (row) => object(object(row.data).configuration).stage !== 'interpret',
+    );
+    const carried = newestExtraction
+      ? object(object(newestExtraction.data).configuration).reviewerInstruction
+      : undefined;
+    const instructionInEffect = carried
+      ? reviewerInstructionView(carried).id
+      : null;
+    await this.item(itemId, 'read');
+    return {
+      revision: Number(item.analysis_revision),
+      processingState: String(item.processing_state),
+      failure,
+      reinterpreting,
+      instructionInEffect,
+      generationAttemptId: generation
+        ? String(generation.current_attempt_id)
+        : null,
+    };
+  }
+  /** Immutable instruction history, newest first. History is never deleted. */
+  async listReviewerInstructions(
+    itemId: string,
+  ): Promise<ReviewerInstruction[]> {
+    await this.item(itemId, 'read');
+    const history = await this.recordedInstructions(this.db, itemId);
+    await this.item(itemId, 'read');
+    return history;
+  }
+  private async recordedInstructions(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<ReviewerInstruction[]> {
+    const rows = await this.rows(db, 'intake_analyses', 'item_id=?', [itemId]);
+    const seen = new Set<string>();
+    const history: ReviewerInstruction[] = [];
+    for (const row of rows.sort(
+      (a, b) => Number(b.revision) - Number(a.revision),
+    )) {
+      const configuration = object(object(row.data).configuration);
+      // Only the authenticated mint writes an extraction-stage record; interpret
+      // copies are verified against it separately and never define history.
+      if (
+        configuration.stage === 'interpret' ||
+        !configuration.reviewerInstruction
+      )
+        continue;
+      const instruction = reviewerInstructionView(
+        configuration.reviewerInstruction,
+      );
+      if (seen.has(instruction.id)) continue;
+      seen.add(instruction.id);
+      history.push(instruction);
+    }
+    return history;
   }
   /** Allocate a fenced attempt; active leases cannot be stolen before expiry. */
   async claimAnalysis(
@@ -2384,6 +2813,8 @@ export class IngestionService {
       source.revision !== generation.revision - 1 ||
       digest(configuration.humanCorrection ?? null) !==
         digest(source.configuration.humanCorrection ?? null) ||
+      digest(configuration.reviewerInstruction ?? null) !==
+        digest(source.configuration.reviewerInstruction ?? null) ||
       digest(
         generation.evidence.map((entry) => ({
           id: entry.id,
@@ -3019,6 +3450,7 @@ export * from './extraction.js';
 export type * from './feedback-contracts.js';
 export {
   GenerationSnapshotStaleError,
+  GenerationSourceStaleError,
   HandlerArgumentsInvalidError,
 } from './proposal-errors.js';
 export {
@@ -3027,4 +3459,10 @@ export {
   type RowEvidenceRequest,
   type RowEvidenceView,
 } from './review-host.js';
+export {
+  REVIEWER_INSTRUCTION_MAX_LENGTH,
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
 export * from './sources/index.js';

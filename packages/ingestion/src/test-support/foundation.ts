@@ -1515,6 +1515,39 @@ export function foundationSuite(
         }),
       ).rejects.toThrow('conflict');
     });
+    it('lists a reprocessing item as processing despite older saved actions', async () => {
+      const id = await accepted('page-reprocessing');
+      const action = await service.createAction(id, 'prior-action', {});
+      for (const processing of ['queued', 'running']) {
+        await db.query(
+          'UPDATE intake_items SET processing_state=? WHERE id=?',
+          processing,
+          id,
+        );
+        for (const priorState of ['succeeded', 'deferred']) {
+          await db.query(
+            'UPDATE intake_actions SET state=? WHERE id=?',
+            priorState,
+            action,
+          );
+          const page = await service.listItemsPage({
+            itemIds: [id],
+            state: 'processing',
+          });
+          expect(page.items.map((row) => [row.item.id, row.state])).toEqual([
+            [id, 'processing'],
+          ]);
+          expect(
+            (
+              await service.listItemsPage({
+                itemIds: [id],
+                state: priorState === 'succeeded' ? 'completed' : 'deferred',
+              })
+            ).items,
+          ).toEqual([]);
+        }
+      }
+    });
     it('pages the inbox newest-first with query-side filters, bounded authorization and page-proportional queries', async () => {
       const seed = await accepted('page-seed');
       const [template] = (
@@ -1575,9 +1608,11 @@ export function foundationSuite(
             created_at: receivedAt(index),
             updated_at: receivedAt(index),
             processing_state:
-              index % 10 === 0
-                ? 'needs_attention'
-                : String(template.processing_state),
+              index % 50 === 7 || index % 50 === 9
+                ? 'completed'
+                : index % 10 === 0
+                  ? 'needs_attention'
+                  : String(template.processing_state),
             data: JSON.stringify(data),
           };
           pendingRows.push(columns.map((column) => row[column]));

@@ -720,6 +720,636 @@ describe('intake review host boundary', () => {
     await screen.findByText(/confidential/);
     expect(callbacks.decide).not.toHaveBeenCalled();
   });
+  function instructionView(
+    id: string,
+  ): NonNullable<ItemReviewView['instruction']>['current'] {
+    return {
+      id,
+      text: `Instruction ${id}`,
+      actorId: 'owner',
+      recordedAt: '2026-10-22T00:00:00.000Z',
+      supersedesId: null,
+      digest: `digest-${id}`,
+    };
+  }
+  function generationFor(view: ItemReviewView) {
+    view.generation = {
+      version: 1,
+      outcome: 'proposals',
+      suggestions: [],
+      splits: [],
+      warnings: [],
+      omittedSuggestions: 0,
+      source: {
+        attemptId: 'attempt',
+        revision: 2,
+        inputDigest: 'in',
+        outputDigest: 'out',
+        evidenceDigest: 'evidence',
+      },
+      offered: [],
+      provenance: {
+        configurationVersion: '1',
+        promptVersion: '1',
+        catalogDigest: 'catalog',
+        policyVersions: [],
+        generative: { provider: 'fixture', model: 'fixture', version: '1' },
+        decision: { configured: false },
+        usage: {},
+      },
+      automaticActionEligible: false,
+    };
+    view.analysis = currentAnalysis();
+    return view;
+  }
+  it('records reviewer instructions against the current analysis revision and polls until the background reinterpretation lands in place', async () => {
+    const before = generationFor(page());
+    const processing: ItemReviewView = {
+      ...page(),
+      entry: {
+        ...page().entry,
+        state: 'processing',
+        item: { ...page().entry.item, processingState: 'running' },
+      },
+      instruction: {
+        current: instructionView('new'),
+        applied: null,
+        stale: false,
+      },
+    };
+    const after = generationFor(page());
+    after.instruction = {
+      current: instructionView('new'),
+      applied: instructionView('new'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [before, processing, processing, after];
+    const load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.load = load;
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    const box = await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    const button = screen.getByRole('button', {
+      name: 'Re-read with these instructions',
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(load).toHaveBeenCalledTimes(1);
+    await fireEvent.input(box, { target: { value: '  ' } });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(box, {
+      target: { value: 'Customer PO from Badger. File it, do not bill it.' },
+    });
+    await fireEvent.click(button);
+    await waitFor(() =>
+      expect(callbacks.instruct).toHaveBeenCalledWith({
+        itemId: 'item',
+        attemptId: 'generation-attempt',
+        expectedRevision: 9,
+        text: 'Customer PO from Badger. File it, do not bill it.',
+        requestId: expect.any(String),
+      }),
+    );
+    await screen.findByTestId('reinterpreting');
+    expect(screen.getByTestId('pending-instruction').textContent).toContain(
+      'Instruction new',
+    );
+    await screen.findByTestId('applied-instruction');
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    expect(screen.queryByTestId('instruction-stale')).toBeNull();
+    expect(load.mock.calls.length).toBeGreaterThanOrEqual(4);
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.preview).not.toHaveBeenCalled();
+  });
+  it('shows which instruction produced the current suggestions and marks a superseded one as stale', async () => {
+    const view = generationFor(page());
+    view.instruction = {
+      current: instructionView('later'),
+      applied: instructionView('earlier'),
+      stale: true,
+    };
+    const callbacks = host(view);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    expect(
+      (await screen.findByTestId('applied-instruction')).textContent,
+    ).toContain('Instruction earlier');
+    expect(screen.getByTestId('instruction-stale')).toBeTruthy();
+    expect(screen.getByTestId('pending-instruction').textContent).toContain(
+      'Instruction later',
+    );
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    // Without an instruct callback the control is absent; presence confers nothing.
+    expect(
+      screen.queryByRole('textbox', { name: 'Instructions for the assistant' }),
+    ).toBeNull();
+  });
+  it('polls in place after an instruction when an action already exists, keeping drafts and never blanking the view', async () => {
+    const before = generationFor(page());
+    const processing = generationFor(page());
+    processing.analysis = undefined;
+    processing.generation = undefined;
+    processing.entry = {
+      ...processing.entry,
+      state: 'waiting',
+      item: { ...processing.entry.item, processingState: 'running' },
+    };
+    processing.reviews.actions[0].review.state = 'stale';
+    processing.instruction = {
+      current: instructionView('new'),
+      applied: null,
+      stale: false,
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    const after = generationFor(page());
+    after.instruction = {
+      current: instructionView('new'),
+      applied: instructionView('new'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [before, processing, processing, processing, after];
+    const load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.load = load;
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    const box = await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'File it.' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    await screen.findByTestId('reinterpreting');
+    // The earlier action is still listed (stale) and the state is not processing,
+    // yet the item-level processing flag drives the poll.
+    expect(screen.getByText('Waiting')).toBeTruthy();
+    const draftBox = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    }) as HTMLTextAreaElement;
+    expect(draftBox.value).toBe('');
+    await fireEvent.input(draftBox, { target: { value: 'second thoughts' } });
+    // A second record cannot be minted while a stage is in flight.
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Re-read with these instructions',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    const loadsBefore = load.mock.calls.length;
+    await screen.findByTestId('applied-instruction');
+    expect(load.mock.calls.length).toBeGreaterThan(loadsBefore);
+    // Patched in place: the same textarea element and its draft survive, and
+    // no loading placeholder was rendered between ticks.
+    expect(
+      screen.getByRole('textbox', { name: 'Instructions for the assistant' }),
+    ).toBe(draftBox);
+    expect(draftBox.value).toBe('second thoughts');
+    expect(screen.queryByText('Loading…')).toBeNull();
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    const settled = load.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(load.mock.calls.length).toBe(settled);
+  });
+  it('shows the safe failure and keeps the instruction form usable against the latest completed generation', async () => {
+    const view = page();
+    view.entry = {
+      ...view.entry,
+      state: 'failed',
+      item: { ...view.entry.item, processingState: 'needs_attention' },
+    };
+    view.instruction = {
+      current: instructionView('failed-run'),
+      applied: null,
+      stale: false,
+      failure: 'unavailable',
+      binding: { attemptId: 'last-generation', expectedRevision: 12 },
+    };
+    const callbacks = host(view);
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const failure = await screen.findByTestId('instruction-failure');
+    expect(failure.textContent).toContain('unavailable');
+    expect(screen.getByTestId('pending-instruction').textContent).toContain(
+      'Instruction failed-run',
+    );
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+    const box = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'Try again, file it.' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    await waitFor(() =>
+      expect(callbacks.instruct).toHaveBeenCalledWith({
+        itemId: 'item',
+        attemptId: 'last-generation',
+        expectedRevision: 12,
+        text: 'Try again, file it.',
+        requestId: expect.any(String),
+      }),
+    );
+  });
+  it('caps poll backoff at 5x, keeps the view through a transient error and fails closed after repeated errors', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const processing = page();
+      processing.entry = {
+        ...processing.entry,
+        state: 'processing',
+        item: { ...processing.entry.item, processingState: 'running' },
+      };
+      processing.instruction = {
+        current: instructionView('running'),
+        applied: null,
+        stale: false,
+      };
+      let failures = 0;
+      const load = vi.fn(async () => {
+        if (failures > 0) {
+          failures--;
+          throw new Error('Temporarily unavailable');
+        }
+        return structuredClone(processing);
+      });
+      const callbacks = host(processing);
+      callbacks.load = load;
+      render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 200 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(load).toHaveBeenCalledTimes(1);
+      // 200 * 1.5^n, capped at 5x = 1000.
+      const delays = [200, 300, 450, 675, 1000, 1000, 1000];
+      for (const [index, delay] of delays.entries()) {
+        await vi.advanceTimersByTimeAsync(delay - 1);
+        expect(load).toHaveBeenCalledTimes(index + 1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(load).toHaveBeenCalledTimes(index + 2);
+      }
+      // One thrown tick keeps the view and shows a non-blocking note.
+      failures = 1;
+      await vi.advanceTimersByTimeAsync(1000);
+      await tick();
+      expect(screen.getByText('Private invoice')).toBeTruthy();
+      expect(screen.getByTestId('refresh-retrying')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      // The next tick (still capped) recovers and clears the note.
+      await vi.advanceTimersByTimeAsync(1000);
+      await tick();
+      expect(screen.queryByTestId('refresh-retrying')).toBeNull();
+      expect(screen.getByText('Private invoice')).toBeTruthy();
+      // Three consecutive thrown ticks fail closed and stop polling.
+      failures = 3;
+      await vi.advanceTimersByTimeAsync(3000);
+      await tick();
+      expect(screen.queryByText('Private invoice')).toBeNull();
+      expect(screen.getByRole('alert').textContent).toContain('unavailable');
+      const stopped = load.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(load.mock.calls.length).toBe(stopped);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps edited split drafts across an in-place refresh but replaces untouched ones with the new generation', async () => {
+    const first = generationFor(page());
+    first.entry = {
+      ...first.entry,
+      item: { ...first.entry.item, processingState: 'running' },
+    };
+    first.generation!.splits = [
+      { evidenceId: 'original', groups: [[1], [2]], digest: 'a' },
+      { evidenceId: 'second', groups: [[1, 2]], digest: 'b' },
+    ];
+    const next = structuredClone(first);
+    next.entry.item.processingState = 'completed';
+    next.generation!.splits = [
+      { evidenceId: 'original', groups: [[1, 2, 3]], digest: 'c' },
+      { evidenceId: 'second', groups: [[1], [2], [3]], digest: 'd' },
+    ];
+    const callbacks = host(first);
+    const sequence = [first, next];
+    callbacks.load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    const edited = (await screen.findByRole('textbox', {
+      name: 'Logical page groups (JSON): original',
+    })) as HTMLTextAreaElement;
+    const untouched = screen.getByRole('textbox', {
+      name: 'Logical page groups (JSON): second',
+    }) as HTMLTextAreaElement;
+    await fireEvent.input(edited, { target: { value: '[[2],[1]]' } });
+    await waitFor(() => expect(untouched.value).toBe('[[1],[2],[3]]'));
+    expect(edited.value).toBe('[[2],[1]]');
+  });
+  it('keeps polling with re-read disabled through the gap between extraction and interpretation', async () => {
+    const before = generationFor(page());
+    // Between stages: extraction completed, interpretation not yet appended.
+    // The item and the inbox state look settled; only the server's own
+    // predicate (instruction.reinterpreting) says the work is still in flight.
+    const gap = page();
+    gap.entry = {
+      ...gap.entry,
+      state: 'unresolved',
+      item: { ...gap.entry.item, processingState: 'completed' },
+    };
+    gap.reviews.actions[0].review.state = 'stale';
+    gap.analysis = {
+      ...currentAnalysis(),
+      attemptId: 'extraction-attempt',
+      configuration: { stage: 'extract' },
+    };
+    gap.instruction = {
+      current: instructionView('new'),
+      applied: null,
+      stale: true,
+      reinterpreting: true,
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    const after = generationFor(page());
+    after.instruction = {
+      current: instructionView('new'),
+      applied: instructionView('new'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [gap, gap, after];
+    const load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.load = load;
+    callbacks.instruct = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    const button = screen.getByRole('button', {
+      name: 'Re-read with these instructions',
+    }) as HTMLButtonElement;
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Instructions for the assistant' }),
+      { target: { value: 'Another instruction' } },
+    );
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(callbacks.instruct).not.toHaveBeenCalled();
+    // Polling did not stop in the gap: the interpretation lands in place.
+    await screen.findByTestId('applied-instruction');
+    expect(load.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+  });
+  it('treats a stale instruction result as refresh-and-retry, not a denial, and offers a retry when interpretation never started', async () => {
+    const view = page();
+    view.entry = {
+      ...view.entry,
+      state: 'unresolved',
+      item: { ...view.entry.item, processingState: 'completed' },
+    };
+    view.analysis = {
+      ...currentAnalysis(),
+      attemptId: 'extraction-attempt',
+      configuration: { stage: 'extract' },
+    };
+    view.instruction = {
+      current: instructionView('wedged'),
+      applied: null,
+      stale: true,
+      failure: 'not_started',
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    const callbacks = host(view);
+    callbacks.instruct = vi.fn(async () => ({ stale: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    expect(
+      (await screen.findByTestId('instruction-failure')).textContent,
+    ).toContain('did not start');
+    const box = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    await fireEvent.input(box, { target: { value: 'Try again.' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    // The retry targets the server's anchor, not the displayed extraction.
+    await waitFor(() =>
+      expect(callbacks.instruct).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attemptId: 'generation-attempt',
+          expectedRevision: 10,
+        }),
+      ),
+    );
+    // The reload answering the click already shows the item settled, so the
+    // busy note is cleared at once; the view stays up and is not denied.
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    await screen.findByTestId('instruction-failure');
+    expect(screen.queryByTestId('instruction-busy')).toBeNull();
+    expect(screen.getByText('Private invoice')).toBeTruthy();
+    expect(screen.queryByText(/This view is unavailable/)).toBeNull();
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Instructions for the assistant',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe('Try again.');
+  });
+  it('clears the still-being-re-read note once a later reload shows the item settled', async () => {
+    const wedged = page();
+    wedged.entry = {
+      ...wedged.entry,
+      state: 'unresolved',
+      item: { ...wedged.entry.item, processingState: 'completed' },
+    };
+    wedged.analysis = {
+      ...currentAnalysis(),
+      attemptId: 'extraction-attempt',
+      configuration: { stage: 'extract' },
+    };
+    wedged.instruction = {
+      current: instructionView('wedged'),
+      applied: null,
+      stale: true,
+      failure: 'not_started',
+      binding: { attemptId: 'generation-attempt', expectedRevision: 10 },
+    };
+    // Another reviewer's retry is in flight when this one is refused...
+    const inFlightView = structuredClone(wedged);
+    inFlightView.instruction = {
+      current: instructionView('other'),
+      applied: null,
+      stale: true,
+      reinterpreting: true,
+    };
+    // ...and then lands.
+    const settled = generationFor(page());
+    settled.instruction = {
+      current: instructionView('other'),
+      applied: instructionView('other'),
+      stale: false,
+    };
+    const callbacks = host(wedged);
+    const sequence = [wedged, inFlightView, inFlightView, settled];
+    callbacks.load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.instruct = vi.fn(async () => ({ stale: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 5 });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'Try again.' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    // The reload answering the click keeps the note while work is in flight.
+    await screen.findByTestId('instruction-busy');
+    await screen.findByTestId('reinterpreting');
+    expect(screen.getByTestId('instruction-busy')).toBeTruthy();
+    // Once a poll shows the item settled, the note is gone.
+    await screen.findByTestId('applied-instruction');
+    expect(screen.queryByTestId('instruction-busy')).toBeNull();
+    expect(screen.queryByTestId('reinterpreting')).toBeNull();
+  });
+  it('limits instruction length client-side and shows a server validation result inline without denying', async () => {
+    const view = generationFor(page());
+    const callbacks = host(view);
+    callbacks.instruct = vi.fn(async () => ({ invalid: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const box = (await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    })) as HTMLTextAreaElement;
+    expect(box.maxLength).toBe(4000);
+    const button = screen.getByRole('button', {
+      name: 'Re-read with these instructions',
+    }) as HTMLButtonElement;
+    // A paste or script can still exceed maxlength; the client check holds.
+    await fireEvent.input(box, { target: { value: 'x'.repeat(4001) } });
+    expect(screen.getByTestId('instruction-length').textContent).toContain(
+      '4001 / 4000',
+    );
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(callbacks.instruct).not.toHaveBeenCalled();
+    // At the limit it may be sent; the server's validation result is inline.
+    await fireEvent.input(box, { target: { value: 'y'.repeat(4000) } });
+    expect(button.disabled).toBe(false);
+    await fireEvent.click(button);
+    await screen.findByTestId('instruction-invalid');
+    expect(callbacks.instruct).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Private invoice')).toBeTruthy();
+    expect(screen.queryByText(/This view is unavailable/)).toBeNull();
+    const kept = screen.getByRole('textbox', {
+      name: 'Instructions for the assistant',
+    }) as HTMLTextAreaElement;
+    expect(kept.value).toBe('y'.repeat(4000));
+    // Editing the draft clears the note.
+    await fireEvent.input(kept, { target: { value: 'File it.' } });
+    expect(screen.queryByTestId('instruction-invalid')).toBeNull();
+  });
+  it('keeps a not-recorded note on the draft after another reinterpretation wins, until the reviewer edits it', async () => {
+    const before = generationFor(page());
+    const other = generationFor(page());
+    other.instruction = {
+      current: instructionView('other'),
+      applied: instructionView('other'),
+      stale: false,
+    };
+    const callbacks = host(before);
+    const sequence = [before, other];
+    callbacks.load = vi.fn(async () =>
+      structuredClone(sequence.length > 1 ? sequence.shift()! : sequence[0]),
+    );
+    callbacks.instruct = vi.fn(async () => ({ stale: true as const }));
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'My instruction.' } },
+    );
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Re-read with these instructions' }),
+    );
+    // The answering reload is already settled under someone else's instruction.
+    await screen.findByTestId('applied-instruction');
+    expect(
+      (await screen.findByTestId('instruction-not-recorded')).textContent,
+    ).toContain('was not recorded');
+    expect(screen.queryByTestId('instruction-busy')).toBeNull();
+    // It persists across a manual reload...
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(3));
+    expect(await screen.findByTestId('instruction-not-recorded')).toBeTruthy();
+    // ...until the reviewer edits the draft.
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Instructions for the assistant' }),
+      { target: { value: 'My revised instruction.' } },
+    );
+    expect(screen.queryByTestId('instruction-not-recorded')).toBeNull();
+  });
+  it('stops a superseded poll tick from fetching further pages after a newer load overtakes it', async () => {
+    let inFlight = true;
+    const pageFor = (cursor?: string) => {
+      const view = cursor ? reviewPage(2, 4) : reviewPage(0, 2, 'page-2');
+      view.entry = {
+        ...view.entry,
+        state: inFlight ? 'processing' : 'waiting',
+        item: {
+          ...view.entry.item,
+          processingState: inFlight ? 'running' : 'completed',
+        },
+      };
+      return view;
+    };
+    const requested: Array<string | undefined> = [];
+    let park: ReturnType<typeof deferred<ItemReviewView>> | undefined;
+    const callbacks = host(pageFor());
+    callbacks.load = vi.fn(async (_itemId: string, cursor?: string) => {
+      requested.push(cursor);
+      if (!cursor && park) return park.promise;
+      return pageFor(cursor);
+    });
+    render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 200 });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Load more' }),
+    );
+    await waitFor(() =>
+      expect(requested).toEqual([undefined, undefined, 'page-2']),
+    );
+    // The next poll tick parks on its first page.
+    const parked = deferred<ItemReviewView>();
+    park = parked;
+    await waitFor(() => expect(requested).toHaveLength(4), { timeout: 2000 });
+    park = undefined;
+    // A newer load overtakes it and settles the item, so no later poll runs.
+    inFlight = false;
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() =>
+      expect(requested).toEqual([
+        undefined,
+        undefined,
+        'page-2',
+        undefined,
+        undefined,
+        'page-2',
+      ]),
+    );
+    await screen.findByText('Waiting');
+    // The superseded tick resolves late: it must not request page 2.
+    parked.resolve(pageFor());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await tick();
+    expect(requested).toHaveLength(6);
+    expect(screen.getByText('Waiting')).toBeTruthy();
+  });
   it('previews the current generation attempt rather than its extraction source pin', async () => {
     const view = page();
     view.generation = {
@@ -895,6 +1525,44 @@ describe('intake review host boundary', () => {
     view.reviews.actions = [];
     return view;
   }
+  it('preserves same-attempt suggestion drafts during polling and prunes them after reinterpretation', async () => {
+    vi.useFakeTimers();
+    try {
+      const first = needsReviewView(['title']);
+      first.entry.item.processingState = 'running';
+      const callbacks = host(first);
+      let latest = first;
+      callbacks.load = vi.fn(async () => structuredClone(latest));
+      render(IntakeReview, { host: callbacks, itemId: 'item', pollMs: 200 });
+      await vi.advanceTimersByTimeAsync(0);
+      const draft = screen.getByRole('textbox', {
+        name: 'Suggested arguments (JSON)',
+      }) as HTMLTextAreaElement;
+      const typed = JSON.stringify({ body: 'Minutes', title: 'Typed' });
+      await fireEvent.input(draft, { target: { value: typed } });
+      latest = structuredClone(first);
+      latest.entry.label = 'Updated label';
+      await vi.advanceTimersByTimeAsync(200);
+      await tick();
+      expect(draft.value).toBe(typed);
+      expect(screen.getByText('Updated label')).toBeTruthy();
+      latest = structuredClone(first);
+      latest.entry.item.processingState = 'completed';
+      latest.analysis!.attemptId = 'new-attempt';
+      latest.generation!.suggestions[0].args = { body: 'New generation' };
+      await vi.advanceTimersByTimeAsync(300);
+      await tick();
+      expect(
+        (
+          screen.getByRole('textbox', {
+            name: 'Suggested arguments (JSON)',
+          }) as HTMLTextAreaElement
+        ).value,
+      ).toBe(JSON.stringify({ body: 'New generation' }, null, 2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('lets a reviewer complete a needs_review suggestion before preview (#4208)', async () => {
     const callbacks = host(needsReviewView(['title']));
     vi.mocked(callbacks.candidates).mockResolvedValue({

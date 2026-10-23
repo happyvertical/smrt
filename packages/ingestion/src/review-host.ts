@@ -9,7 +9,12 @@ import type {
   InboxEvidence,
   IntakeReviewHost,
 } from './review-dto.js';
+import { loadInstructionView } from './review-instruction-view.js';
 import { loadReviewSummary } from './review-summary.js';
+import {
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
+} from './reviewer-instruction.js';
 import {
   type IngestionService,
   IntakeScanLimitError,
@@ -77,6 +82,8 @@ export interface IntakeReviewHostOptions {
   enableFeedback?: boolean;
   /** Optional wakeup after a durable logical split has queued extraction. */
   onSplit?(itemId: string, revision: number): Promise<void>;
+  /** Optional wakeup after a durable reviewer instruction has queued reinterpretation. */
+  onInstruct?(itemId: string, revision: number): Promise<void>;
 }
 
 /**
@@ -306,6 +313,7 @@ export function createIntakeReviewHost(
         evidence.push({ ...(await options.evidence(part)), evidence: part });
       }
       const assignment = await options.assignment(itemId);
+      const instruction = await loadInstructionView(service, itemId, analysis);
       await service.getItem(itemId);
       return {
         entry: {
@@ -317,6 +325,7 @@ export function createIntakeReviewHost(
         evidence,
         analysis,
         reviews,
+        ...(instruction ? { instruction } : {}),
         availability: 'available',
         ...(analysis?.configuration.stage === 'interpret'
           ? {
@@ -461,6 +470,20 @@ export function createIntakeReviewHost(
     async split(input) {
       const result = await service.reviseLogicalSplit(input);
       await options.onSplit?.(input.itemId, result.revision);
+    },
+    async instruct(input) {
+      // Durable first; the reinterpretation runs through the normal dispatch path.
+      let result: Awaited<ReturnType<typeof service.recordReviewerInstruction>>;
+      try {
+        result = await service.recordReviewerInstruction(input);
+      } catch (error) {
+        if (error instanceof ReviewerInstructionStaleError)
+          return { stale: true as const };
+        if (error instanceof ReviewerInstructionInvalidError)
+          return { invalid: true as const };
+        throw error;
+      }
+      await options.onInstruct?.(input.itemId, result.revision);
     },
     ...(options.enableFeedback
       ? {
