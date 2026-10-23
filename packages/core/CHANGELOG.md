@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.20
+
+### Patch Changes
+
+- ### Features
+  
+  - add governance, specifications, and participant intake (#4236) (projects)
+- @happyvertical/smrt-config@0.57.20
+  - @happyvertical/smrt-scanner@0.57.20
+  - @happyvertical/smrt-types@0.57.20
+
 ## 0.57.19
 
 ### Patch Changes

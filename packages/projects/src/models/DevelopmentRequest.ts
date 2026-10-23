@@ -16,7 +16,7 @@ import type {
 export interface DevelopmentRequestOptions extends SmrtObjectOptions {
   tenantId?: string;
   projectId?: string;
-  integrationId?: string;
+  integrationId?: string | null;
   requesterId?: string;
   participantId?: string;
   type?: DevelopmentRequestType;
@@ -80,8 +80,9 @@ export class DevelopmentRequest extends SmrtObject {
 
   projectId: string = '';
 
-  @foreignKey('ProjectIntegration', { required: true })
-  integrationId: string = '';
+  // Participant-origin requests have no managed integration credential.
+  @foreignKey('ProjectIntegration')
+  integrationId: string | null = null;
 
   requesterId: string = '';
 
