@@ -151,3 +151,120 @@ test('standard global pricing rejects regional, alternate and credential-bearing
       'Unpriced provider endpoint',
     );
 });
+
+const responseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { outcome: { type: 'string' } },
+  required: ['outcome'],
+};
+function schemaOptions() {
+  // The owning SDK's OpenAI-shaped protocol uses snake_case field names.
+  const responseFormat = JSON.parse(
+    '{"type":"json_schema","json_schema":{"name":"ingestion_proposal","strict":false}}',
+  );
+  responseFormat.json_schema.schema = structuredClone(responseSchema);
+  return {
+    ...options,
+    responseSchema: structuredClone(responseSchema),
+    responseFormat,
+  };
+}
+test('schema envelope counts every schema byte and rejects malformed or mismatched schema options', () => {
+  const settings = schemaOptions();
+  const bytes = proposalRequestBound(messages, settings).serializedBytes;
+  const exact = structuredClone(messages);
+  exact[1].content += 'x'.repeat(8192 - bytes);
+  expect(proposalRequestBound(exact, settings).serializedBytes).toBe(8192);
+  exact[1].content += 'x';
+  expect(() => proposalRequestBound(exact, settings)).toThrow('byte ceiling');
+  for (const overrides of [
+    { responseSchema: [] },
+    { responseSchema: { type: 'string' } },
+    { responseFormat: { type: 'json_schema' } },
+    { responseFormat: { ...settings.responseFormat, extra: 'ignored' } },
+    {
+      responseFormat: JSON.parse(
+        '{"type":"json_schema","json_schema":{"name":"x","schema":null}}',
+      ),
+    },
+  ])
+    expect(() =>
+      proposalRequestBound(messages, { ...settings, ...overrides }),
+    ).toThrow();
+  expect(() =>
+    proposalRequestBound(messages, { ...options, responseSchema }),
+  ).toThrow();
+});
+test('nested schema caller mutation cannot enlarge the reserved request', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'evaluation-schema-'));
+  const ledger = new BudgetLedger(join(root, 'ledger.sqlite'));
+  const settings = schemaOptions();
+  const expected = structuredClone(settings);
+  let release!: () => void;
+  const latch = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    const client = createBudgetedProposalChat(
+      ledger,
+      { callId: 'schema', runHash: 'd'.repeat(64) },
+      {
+        chat: async (_messages: unknown, captured: unknown) => {
+          await latch;
+          expect(captured).toEqual({
+            ...expected,
+            reasoning: { effort: 'none' },
+          });
+          return { content: 'captured' };
+        },
+      },
+    );
+    const pending = client.chat(structuredClone(messages), settings);
+    settings.responseSchema.properties.outcome.type = 'x'.repeat(100000);
+    settings.responseFormat.json_schema.schema.properties.outcome.type =
+      'x'.repeat(100000);
+    release();
+    await expect(pending).resolves.toEqual({ content: 'captured' });
+    expect(ledger.snapshot().charged).toBe(1600000);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('chat refuses unsupported caller options before normalization or reservation', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'evaluation-options-'));
+  const ledger = new BudgetLedger(join(root, 'ledger.sqlite'));
+  let calls = 0;
+  try {
+    const client = createBudgetedProposalChat(
+      ledger,
+      { callId: 'refused', runHash: 'e'.repeat(64) },
+      {
+        chat: async () => {
+          calls++;
+          return { content: 'unexpected' };
+        },
+      },
+    );
+    await expect(
+      client.chat(messages, { ...options, reasoning: { effort: 'medium' } }),
+    ).rejects.toThrow();
+    await expect(
+      client.chat([{ ...messages[0], name: 'extra' }, messages[1]], options),
+    ).rejects.toThrow();
+    const settings = schemaOptions();
+    const bytes = proposalRequestBound(messages, settings).serializedBytes;
+    const oversized = structuredClone(messages);
+    oversized[1].content += 'x'.repeat(8193 - bytes);
+    await expect(client.chat(oversized, settings)).rejects.toThrow(
+      'byte ceiling',
+    );
+    expect(calls).toBe(0);
+    expect(ledger.snapshot().charged).toBe(0);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

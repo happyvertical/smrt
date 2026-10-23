@@ -59,6 +59,15 @@ labels, exclusions, matching rules or partitions.
 
 ## Aggregate budget boundary
 
+The current proposal adapter admits JSON-object output or the owning SDK's
+`ingestion_proposal` JSON-schema format, including the identical `responseSchema`
+used by local adapters. The full serialized response format is counted inside the
+unchanged 8,192-byte request ceiling; schema support does not increase the charge
+reservation. A loopback transport test checks the bound against actual SDK wire
+bytes. Nested schema and message data are captured before reservation so later
+caller mutation cannot enlarge the request. These are tooling contracts, not a
+new measured evaluation or spending authorization (#4257).
+
 `budget.mjs` uses Node's SQLite API for a **separate runner-owned accounting file**.
 It never creates application schema or touches SMRT registry/models. All concurrent
 processes, stages, development probes, retries and reruns must use the same absolute

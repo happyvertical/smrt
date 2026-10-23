@@ -34,6 +34,36 @@ export function assertProviderEndpoint(baseUrl) {
     return;
   throw Error('Unpriced provider endpoint');
 }
+/** Only the two proposal SDK output formats; schemas are part of the wire bound. */
+function supportedResponseFormat(options) {
+  const format = options.responseFormat;
+  if (JSON.stringify(format) === '{"type":"json_object"}')
+    return options.responseSchema === undefined;
+  const schema = format?.json_schema;
+  return (
+    format?.type === 'json_schema' &&
+    Object.keys(format).every((key) => ['type', 'json_schema'].includes(key)) &&
+    schema &&
+    typeof schema === 'object' &&
+    !Array.isArray(schema) &&
+    Object.keys(schema).every((key) =>
+      ['name', 'description', 'schema', 'strict'].includes(key),
+    ) &&
+    schema.name === 'ingestion_proposal' &&
+    schema.strict === false &&
+    (schema.description === undefined ||
+      typeof schema.description === 'string') &&
+    schema.schema &&
+    typeof schema.schema === 'object' &&
+    !Array.isArray(schema.schema) &&
+    schema.schema.type === 'object' &&
+    schema.schema.additionalProperties === false &&
+    schema.schema.properties &&
+    typeof schema.schema.properties === 'object' &&
+    !Array.isArray(schema.schema.properties) &&
+    JSON.stringify(schema.schema) === JSON.stringify(options.responseSchema)
+  );
+}
 /** Complete text-only chat envelope guard. No decision/vision/tools/continuation route. */
 export function proposalRequestBound(messages, options) {
   if (
@@ -57,7 +87,7 @@ export function proposalRequestBound(messages, options) {
     options.maxTokens > PROPOSAL_BOUND.maxOutputTokens ||
     options.toolChoice !== 'none' ||
     options.continueOnLength !== false ||
-    JSON.stringify(options.responseFormat) !== '{"type":"json_object"}' ||
+    !supportedResponseFormat(options) ||
     Object.keys(options).some(
       (key) =>
         ![
@@ -67,6 +97,7 @@ export function proposalRequestBound(messages, options) {
           'toolChoice',
           'continueOnLength',
           'responseFormat',
+          'responseSchema',
           'signal',
           'timeout',
         ].includes(key),
@@ -76,13 +107,15 @@ export function proposalRequestBound(messages, options) {
   // JSON spelling follows the inspected owning SDK wire. The complete envelope
   // includes roles/content and provider framing allowance, not just evidence text.
   const envelope = JSON.stringify({
-    messages,
     model: options.model,
-    ...JSON.parse('{"reasoning_effort":"none"}'),
-    ...JSON.parse(
-      '{"tool_choice":"none","response_format":{"type":"json_object"}}',
-    ),
+    messages,
     ...JSON.parse(`{"max_completion_tokens":${options.maxTokens}}`),
+    ...JSON.parse(
+      `{"response_format":${JSON.stringify(options.responseFormat)}}`,
+    ),
+    // The owning OpenAI SDK sends no tool_choice without tools, and sets stream=false.
+    stream: false,
+    ...JSON.parse('{"reasoning_effort":"none"}'),
   });
   const bytes = Buffer.byteLength(envelope);
   if (bytes > PROPOSAL_BOUND.maxSerializedBytes)
@@ -107,7 +140,8 @@ export function proposalRequestBound(messages, options) {
 export function createBudgetedProposalChat(ledger, identity, client) {
   return {
     async chat(messages, options) {
-      const bound = proposalRequestBound(messages, options);
+      // Validate caller options before normalization can replace or omit fields.
+      proposalRequestBound(messages, options);
       const capturedMessages = messages.map(({ role, content }) => ({
         role,
         content,
@@ -115,8 +149,12 @@ export function createBudgetedProposalChat(ledger, identity, client) {
       const capturedOptions = {
         ...options,
         reasoning: { effort: 'none' },
-        responseFormat: { ...options.responseFormat },
+        responseFormat: structuredClone(options.responseFormat),
+        ...(options.responseSchema === undefined
+          ? {}
+          : { responseSchema: structuredClone(options.responseSchema) }),
       };
+      const bound = proposalRequestBound(capturedMessages, capturedOptions);
       const result = await runReservedCall(
         ledger,
         {
