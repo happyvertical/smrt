@@ -38,10 +38,11 @@ export interface IntakeReviewHostOptions {
    * only, read in one batched query); return item id -> `{ label, viewUrl?,
    * thumbnailUrl? }` built from metadata, without reading bytes. Rows missing
    * from the map get no preview. When omitted, rows show no original link and
-   * no host code is called; `list` still reads the page's evidence metadata
-   * once for filename labels (#4214), and lists with item-only labels if that
-   * read fails. If `rowEvidence` throws, the page still lists without
-   * previews. `load` never calls it.
+   * `list` calls no review-host adapter (`evidence`/`rowEvidence`); it still
+   * reads the page's evidence metadata once for filename labels (#4214), for
+   * which the host's `authorize` runs once per distinct captured ceiling, and
+   * lists with item-only labels if that read fails. If `rowEvidence` throws,
+   * the page still lists without previews. `load` never calls it.
    */
   rowEvidence?(
     rows: readonly RowEvidenceRequest[],
