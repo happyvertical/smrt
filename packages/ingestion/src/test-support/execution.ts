@@ -1339,6 +1339,8 @@ export function executionSuite(
       ['succeeded', 'sweep'],
       ['unknown', 'sweep'],
       ['not_applied', 'sweep'],
+      // The action is still `executing` (submission in flight) at redaction.
+      ['submission', 'sweep'],
       ['succeeded', 'deadline'],
       ['unknown', 'deadline'],
       ['not_applied', 'deadline'],
