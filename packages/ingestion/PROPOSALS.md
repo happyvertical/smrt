@@ -189,7 +189,13 @@ removed at schema positions, including inside handler argument schemas
 `src/proposal-sdk.ts`). vLLM's xgrammar, for example, answers
 `400 Unimplemented keys: ["uniqueItems"]`. This only loosens the grammar: the
 validator still enforces every constraint, including unique `alternatives` and
-`missingFields`. There is no automatic `json_object` fallback.
+`missingFields`, and the fixed instructions ask for distinct entries. When
+`patternProperties` is removed, the same object's `additionalProperties` is
+removed too, so the grammar does not shrink to `{}`. There is no automatic
+`json_object` fallback. The generated schema itself uses only `anyOf`; handler
+argument schemas may carry `oneOf`/`allOf` through unchanged, and support for
+those across backends is unverified, so check such a handler against the
+deployed backend.
 
 A generator call that throws ends the attempt as `provider_error` with the
 `unavailable` warning and `provenance.failure` `{category: 'unavailable',

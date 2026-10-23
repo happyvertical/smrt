@@ -127,6 +127,17 @@ export function portableResponseSchema<T>(schema: T): T {
         : portableResponseSchema(value);
     else portable[key] = structuredClone(value);
   }
+  // Removing `patternProperties` would narrow the grammar: keys it allowed
+  // would then fall to `additionalProperties`, so with `false` the model could
+  // only emit declared properties (or `{}`). Drop `additionalProperties` too;
+  // the validator still enforces the handler's real rule. (Removing
+  // `propertyNames` or `dependentRequired` only ever widens what is accepted,
+  // so it needs no such adjustment.)
+  if (
+    'patternProperties' in (schema as Record<string, unknown>) &&
+    'additionalProperties' in portable
+  )
+    delete portable.additionalProperties;
   return portable as T;
 }
 

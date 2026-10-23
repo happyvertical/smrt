@@ -6,8 +6,8 @@
  * text. So no free text is ever copied. The reason is assembled only from:
  * - a fixed category phrase;
  * - the HTTP status, read from a numeric `status`/`statusCode` field or from a
- *   three-digit status at the start of the message (`400 ...`) or in
- *   parentheses (`failed (400): ...`);
+ *   strictly anchored provider prefix (`400 ...`, or
+ *   `<Provider> request failed (400): ...`); otherwise it is omitted;
  * - the SDK error `code`, only when it is an upper-case identifier;
  * - for a response-schema rejection, only quoted tokens that are members of a
  *   closed list of JSON Schema keywords (e.g. vLLM/xgrammar's
@@ -100,7 +100,13 @@ function httpStatus(error: unknown, message: string): number | undefined {
     )
       return value as number;
   }
-  const match = /^(\d{3})\b/.exec(message) ?? /\((\d{3})\)/.exec(message);
+  // Only strictly anchored provider prefixes, never a number found elsewhere
+  // in the text (an echoed document can contain "Total (150)"):
+  // - the OpenAI SDK's `APIError` message: `400 Grammar error: ...`;
+  // - the SDK's TypeSafe/Laya adapters: `<Provider> request failed (400): ...`.
+  const match =
+    /^(\d{3}) /.exec(message) ??
+    /^[A-Za-z][A-Za-z0-9 _.-]{0,40} request failed \((\d{3})\):/.exec(message);
   const value = match ? Number(match[1]) : undefined;
   return value && value >= 100 && value <= 599 ? value : undefined;
 }

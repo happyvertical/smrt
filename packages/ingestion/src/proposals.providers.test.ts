@@ -2,6 +2,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { getAI } from '@happyvertical/ai';
 import { executeDecision } from '@happyvertical/smrt-core';
+import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 import type { FeedbackSelection } from './feedback-dto.js';
 import {
@@ -12,6 +13,29 @@ import {
   UNPORTABLE_SCHEMA_KEYWORDS,
 } from './proposal-sdk.js';
 import { providerFailureReason } from './provider-failure.js';
+
+/**
+ * Keywords the fake vLLM endpoint rejects, kept independent of the production
+ * `UNPORTABLE_SCHEMA_KEYWORDS` so that a keyword missing there fails the test.
+ * Taken from vLLM's xgrammar feature check (`has_xgrammar_unsupported_json_features`
+ * in `vllm/v1/structured_output/backend_xgrammar.py`): `multipleOf` on numbers;
+ * `uniqueItems`, `contains`, `minContains`, `maxContains` on arrays; `format`
+ * on strings; `minProperties`, `maxProperties`, `propertyNames`,
+ * `patternProperties` on objects. The reported failure itself (#4260) is
+ * xgrammar's `Unimplemented keys: ["uniqueItems"]`.
+ */
+const XGRAMMAR_REJECTED_KEYWORDS = [
+  'multipleOf',
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+  'format',
+  'minProperties',
+  'maxProperties',
+  'propertyNames',
+  'patternProperties',
+];
 
 /** Every keyword used at a schema position, walking schema structure only. */
 function schemaKeywords(
@@ -62,7 +86,9 @@ const input = {
   offered: [],
 };
 /** One offered handler, so the schema has suggestion variants with
- * `alternatives` and `missingFields` (the arrays that carried `uniqueItems`). */
+ * `alternatives` and `missingFields` (the arrays that carried `uniqueItems`),
+ * and whose argument schema uses every keyword on the fake endpoint's
+ * xgrammar list, so a keyword missing from production fails the request. */
 const offeredInput = {
   ...input,
   offered: [
@@ -81,7 +107,26 @@ const offeredInput = {
           type: 'object',
           additionalProperties: false,
           required: ['lessonId'],
-          properties: { lessonId: { type: 'string' } },
+          minProperties: 1,
+          maxProperties: 5,
+          properties: {
+            lessonId: { type: 'string' },
+            dueOn: { type: 'string', format: 'date' },
+            weight: { type: 'number', multipleOf: 0.5 },
+            tags: {
+              type: 'array',
+              uniqueItems: true,
+              contains: { type: 'string' },
+              minContains: 1,
+              maxContains: 3,
+              items: { type: 'string' },
+            },
+            extra: {
+              type: 'object',
+              patternProperties: { '^x-': { type: 'string' } },
+              propertyNames: { pattern: '^x-' },
+            },
+          },
         },
         references: {
           lessonId: { kind: 'candidate' as const, model: 'Lesson' },
@@ -194,6 +239,38 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     ).toBe(0);
   });
 
+  it('does not narrow an object to {} when patternProperties is stripped (#4260)', () => {
+    const metadata = {
+      type: 'object',
+      additionalProperties: false,
+      patternProperties: { '^x-': { type: 'string' } },
+    };
+    const portable = portableResponseSchema(metadata);
+    // Without the adjustment the grammar would accept only `{}`.
+    expect(portable).toEqual({ type: 'object' });
+    const ajv = new Ajv({ allErrors: true, strict: false });
+    const grammar = ajv.compile(portable);
+    expect(grammar({ 'x-ref': 'a', other: 1 })).toBe(true);
+    // The validator compiles the handler's original schema, so the real rule
+    // still holds: only `x-` keys, with string values.
+    const real = ajv.compile(metadata);
+    expect(real({ 'x-ref': 'a' })).toBe(true);
+    expect(real({ other: 1 })).toBe(false);
+    expect(real({ 'x-ref': 1 })).toBe(false);
+    // propertyNames only constrains names, so stripping it never narrows.
+    expect(
+      portableResponseSchema({
+        type: 'object',
+        additionalProperties: false,
+        properties: { a: { type: 'string' } },
+        propertyNames: { pattern: '^a$' },
+      }),
+    ).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      properties: { a: { type: 'string' } },
+    });
+  });
   it('strips unportable keywords at schema positions only (#4260)', () => {
     const portable = portableResponseSchema({
       type: 'object',
@@ -297,7 +374,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const body = JSON.parse(Buffer.concat(chunks).toString());
       sentSchema = body.response_format?.json_schema?.schema;
-      const unportable = [...UNPORTABLE_SCHEMA_KEYWORDS].filter((keyword) =>
+      const unportable = XGRAMMAR_REJECTED_KEYWORDS.filter((keyword) =>
         schemaKeywords(sentSchema).has(keyword),
       );
       response.setHeader('content-type', 'application/json');
@@ -415,6 +492,21 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     ).toBe(
       'provider rejected the response schema (HTTP 400); unsupported response-schema keywords: uniqueItems',
     );
+    // A number in echoed text is never taken as a status: only a structured
+    // field or a strictly anchored provider prefix counts.
+    for (const echoed of [
+      'Total (150) for INV-301',
+      'Upstream said: request failed (404): Total (150)',
+      'Total 150 due',
+    ])
+      expect(providerFailureReason(new Error(echoed))).toBe(
+        'provider call failed',
+      );
+    expect(
+      providerFailureReason(
+        Object.assign(new Error('Total (150) for INV-301'), { status: 429 }),
+      ),
+    ).toBe('provider rejected the request (HTTP 429)');
     const abort = new Error(secret);
     abort.name = 'AbortError';
     expect(providerFailureReason(abort)).toBe(
