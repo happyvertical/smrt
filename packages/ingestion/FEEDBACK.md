@@ -58,17 +58,32 @@ or a rule suggestion stored its support, the lineage re-checks (reading the
 generation, reviewing or deciding its actions, reading or adopting the rule,
 and replaying `suggestRoutingRule`, which returns the stored suggestion) verify:
 
-- for every kind: the record digest, retention (no redaction or deletion),
-  no supersession, the source attempt/evidence hashes, the live tenant,
-  confidential scope, `retrieve` authority and source provider policy, and that
-  the record still matches its action's current revision, binding hash, attempt,
-  handler and arguments;
-- for `interpretation` records additionally (unchanged from #3676): the source
-  action's target preconditions at their recorded revisions unless the action
-  `succeeded`, and the prompt, configuration and model versions;
-- for `reviewer_routing` records: that the action is still reviewer-selected and
-  its targets are still accessible — not their revisions, since the record means
-  the handler choice, not the target state.
+- every record: its digest, that it is not superseded, retention (no
+  redaction or deletion), the unchanged source attempt digest and frozen
+  evidence hashes, and live `retrieve` authority in the same tenant and
+  confidential scope with every generation recipient allowed by the source's
+  provider policy;
+- an `interpretation` record (unchanged from #3676): its action's current
+  revision, binding hash, attempt, handler@version and arguments; the action's
+  target preconditions at their recorded revisions unless the action
+  `succeeded`; the prompt, configuration and model versions; and that the action
+  is not reviewer-selected;
+- a `reviewer_routing` record with `choice: 'handler'`: its action's current
+  revision, binding hash, attempt, handler@version and arguments, that the
+  action is still reviewer-selected, and that its targets are still accessible
+  (not their revisions: the record means the handler choice, not target state);
+- a `reviewer_routing` record with `choice: 'none'`: it has no action, so the
+  source item is re-checked under the first currently offered receiving handler
+  that still authorizes it.
+
+Rule support (`suggestRoutingRule`, and on read, adoption and replay of a stored
+suggestion) additionally requires: at least two records from distinct source
+items; `judgment: 'correct'` with matching prompt/configuration/model versions
+for an interpretation record; `choice: 'handler'` for a routing record; each
+record's handler@version equal to the receiving binding's; and each source's
+live routing projection (or full arguments when no projection is configured)
+equal to the receiving action's. Settledness of a routing source is checked only
+when the support is first selected.
 
 A later disposition, approval lapse, outcome change or target write of a routing
 source never revokes it.

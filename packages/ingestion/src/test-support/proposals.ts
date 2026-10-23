@@ -6900,6 +6900,245 @@ export function proposalSuite(
         ).state,
       ).toBe('authorized');
     });
+    it('stored rule support re-checks targets for interpretation records only, and excludes tampered routing provenance', async () => {
+      enableFeedback();
+      options.feedback!.routing = [
+        {
+          handlerId: ATTACH,
+          handlerVersion: '1',
+          version: 'routing-fields-1',
+          fields: ['contentId'],
+        },
+      ];
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'attach-policy-1',
+          preview: 'File Acme orders with the Acme document',
+        }),
+        adopt: async () => ({ version: 'attach-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const decideAction = (
+        review: {
+          actionId: string;
+          revision: number;
+          reviewVersion: number;
+          bindingHash: string;
+        },
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision: 'approve',
+        });
+      const bindingOf = (
+        itemId: string,
+        review: {
+          actionId: string;
+          revision: number;
+          reviewVersion: number;
+          bindingHash: string;
+        },
+      ) => ({
+        itemId,
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+      });
+      const rename = async (
+        target: Awaited<ReturnType<typeof document>>,
+        title: string,
+      ) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        target.title = title;
+        await target.save();
+      };
+      // Routing support: two reviewer ATTACH choices to the same document.
+      const routed = await document('Acme orders (routing)');
+      const attach = async (text: string, requestId: string) => {
+        const item = await source(100000, false, text);
+        const [evidence] = await service.getEvidence(item.itemId);
+        const review = await service.startReviewerAction({
+          itemId: item.itemId,
+          handlerId: ATTACH,
+          handlerVersion: '1',
+          args: { contentId: routed.id, evidenceId: evidence.id },
+          requestId,
+          reason: 'File with the Acme orders',
+        });
+        await decideAction(review, `approve-${requestId}`);
+        const [row] = (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            item.itemId,
+          )
+        ).rows;
+        return { item, review, feedbackId: String(row.id) };
+      };
+      const r1 = await attach(
+        'Customer purchase order 17 from Acme for widgets',
+        'route-1',
+      );
+      const r2 = await attach(
+        'Customer purchase order 42 from Acme for widgets',
+        'route-2',
+      );
+      const t = await attach(
+        'Customer purchase order 7 from Acme for widgets',
+        'route-target',
+      );
+      const routingBinding = bindingOf(t.item.itemId, t.review);
+      const routingRule = await service.suggestRoutingRule({
+        ...routingBinding,
+        supportingFeedbackIds: [r1.feedbackId, r2.feedbackId],
+        requestId: 'suggest-routing',
+      });
+      const r4 = await attach(
+        'Customer purchase order 23 from Acme for widgets',
+        'route-4',
+      );
+      // Tampered provenance: a routing record whose action no longer claims
+      // reviewer selection is neither an example nor support.
+      const receiver = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Acme for widgets',
+      );
+      const retrieved = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Acme for widgets',
+          })
+        ).examples.map((example) => example.feedbackId);
+      expect(await retrieved()).toContain(r4.feedbackId);
+      const [action] = (
+        await db.query(
+          'SELECT data FROM intake_actions WHERE id=?',
+          r4.review.actionId,
+        )
+      ).rows;
+      await db.query(
+        'UPDATE intake_actions SET data=? WHERE id=?',
+        JSON.stringify({
+          ...(typeof action.data === 'string'
+            ? JSON.parse(action.data)
+            : action.data),
+          origin: 'generated-proposal',
+        }),
+        r4.review.actionId,
+      );
+      expect(await retrieved()).not.toContain(r4.feedbackId);
+      await expect(
+        service.suggestRoutingRule({
+          ...routingBinding,
+          supportingFeedbackIds: [r1.feedbackId, r4.feedbackId],
+          requestId: 'suggest-tampered',
+        }),
+      ).rejects.toThrow('Rule evidence unavailable');
+      // The reading action has applied; the routing sources stay authorized
+      // while their target is written: the stored support still verifies.
+      expect((await service.applyAction(t.review.actionId)).state).toBe(
+        'succeeded',
+      );
+      await rename(routed, 'Acme orders (routing, renamed)');
+      expect(
+        await service.getRoutingRule({
+          ...routingBinding,
+          suggestionId: routingRule.id,
+        }),
+      ).toEqual(routingRule);
+      // Interpretation support: generated ATTACH suggestions to one document,
+      // both generated before any judgment exists.
+      const judged = await document('Acme orders (interpretation)');
+      calls.mockImplementation(async (input) => {
+        const evidence = input.evidence[0];
+        return {
+          completion: 'complete',
+          output: {
+            outcome: 'proposals',
+            suggestions: [
+              {
+                handlerId: ATTACH,
+                handlerVersion: '1',
+                args: { contentId: judged.id, evidenceId: evidence.evidenceId },
+                evidence: [
+                  {
+                    evidenceId: evidence.evidenceId,
+                    location: evidence.segments[0].location,
+                  },
+                ],
+                alternatives: [],
+                missingFields: [],
+                explanation: 'File with the Acme document.',
+              },
+            ],
+            splits: [],
+          },
+        };
+      });
+      const prepare = async (text: string, key: string) => {
+        const generated = await generate(await source(100000, false, text));
+        const [prepared] = await service.previewGeneratedProposals({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: key,
+              expectedRevision: 0,
+              requestId: key,
+            },
+          ],
+        });
+        if (prepared.kind !== 'operation')
+          throw new Error('Operation expected');
+        return bindingOf(generated.itemId, prepared.review);
+      };
+      const first = await prepare('Acme invoice 3 for widgets', 'judged-1');
+      const second = await prepare('Acme invoice 4 for widgets', 'judged-2');
+      const one = await service.recordFeedback({
+        ...first,
+        judgment: 'correct',
+        requestId: 'judge-1',
+      });
+      const two = await service.recordFeedback({
+        ...second,
+        judgment: 'correct',
+        requestId: 'judge-2',
+      });
+      const interpretationRule = await service.suggestRoutingRule({
+        ...second,
+        supportingFeedbackIds: [one.id, two.id],
+        requestId: 'suggest-interpretation',
+      });
+      await decideAction(
+        {
+          actionId: second.actionId,
+          revision: second.expectedRevision,
+          reviewVersion: second.expectedReviewVersion,
+          bindingHash: second.bindingHash,
+        },
+        'approve-judged-2',
+      );
+      expect((await service.applyAction(second.actionId)).state).toBe(
+        'succeeded',
+      );
+      // An interpretation record keeps the #3676 target check: the first
+      // source is still waiting, so a write to its target retires the support.
+      await rename(judged, 'Acme orders (interpretation, renamed)');
+      await expect(
+        service.getRoutingRule({
+          ...second,
+          suggestionId: interpretationRule.id,
+        }),
+      ).rejects.toThrow();
+    });
     it('a reviewer-selected action is re-previewed only under reviewer authority and with its handler fixed', async () => {
       enableFeedback();
       options.feedback!.policy = {
