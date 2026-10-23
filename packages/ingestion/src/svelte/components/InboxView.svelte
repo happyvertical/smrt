@@ -30,7 +30,7 @@ export interface Props {
   onitems?: (
     items: InboxEntry[],
     more: boolean,
-    page?: { entries: InboxEntry[]; appended: boolean },
+    page?: { entries: InboxEntry[]; appended: boolean; issued?: number },
   ) => void;
   /** Called before a page request so a workspace can order concurrent follow reads. */
   onreadstart?: () => void;
@@ -38,6 +38,8 @@ export interface Props {
   status?: (entry: InboxEntry) => string | undefined;
   /** Show the per-row "Handled, no action" control (a workspace resolves in its item pane). */
   resolveInRow?: boolean;
+  /** Numbers each page read when its request starts (`issued` on the page). */
+  stamp?: () => number;
 }
 let {
   host,
@@ -48,6 +50,7 @@ let {
   onreadstart,
   status,
   resolveInRow = true,
+  stamp,
 }: Props = $props();
 const { t } = useI18n();
 const states: InboxState[] = [
@@ -75,7 +78,11 @@ let uploadRequestId: string | undefined;
 // The filter the displayed rows were listed under (the inputs may have been
 // edited since); `patch` keeps a row only while it still matches it.
 let listed: { state?: InboxState; assigneeId?: string } = {};
-function publish(page?: { entries: InboxEntry[]; appended: boolean }) {
+function publish(page?: {
+  entries: InboxEntry[];
+  appended: boolean;
+  issued?: number;
+}) {
   onitems?.($state.snapshot(items) as InboxEntry[], !!cursor, page);
 }
 /**
@@ -151,7 +158,9 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
   onreadstart?.();
   pending = true;
   error = false;
-  let page: { entries: InboxEntry[]; appended: boolean } | undefined;
+  let page:
+    | { entries: InboxEntry[]; appended: boolean; issued?: number }
+    | undefined;
   const next = more ? cursor : undefined;
   // The displayed rows stay (controls disabled while pending) until the new
   // page arrives, so a workspace can keep patching and navigating them; a
@@ -163,6 +172,7 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
         assigneeId: assignee || undefined,
       };
   try {
+    const issued = stamp?.();
     const read = await host.list({ ...filter, cursor: next });
     if (!alive || ticket !== epoch) return 'superseded';
     listed = filter;
@@ -173,6 +183,7 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
     page = {
       entries: $state.snapshot(more ? added : read.items) as InboxEntry[],
       appended: more,
+      ...(issued !== undefined ? { issued } : {}),
     };
     const kept = more ? { assignments, reasons } : undefined;
     items = more ? [...items, ...added] : read.items;

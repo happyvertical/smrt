@@ -138,30 +138,48 @@ function statusText(status: TriageStatus) {
 }
 const rowStatus = (entry: InboxEntry) => statusText(statusOf(entry));
 const displayed = (id: string) => rows.some((row) => row.item.id === id);
+/**
+ * Read sequence: every read (a page, a pane view, a follow read) takes the
+ * next number when its request STARTS, and every entry held for a row keeps
+ * the number of the read that produced it, so a newer read always wins over
+ * an older one, whatever its source.
+ */
+let sequence = 0;
+const stamp = () => ++sequence;
+type Held = { entry: InboxEntry; read: number };
 // Each row's entry exactly as a page read returned it (never a patched
 // entry): the state a row falls back to.
-let listedEntries = new Map<string, InboxEntry>();
-// The latest entry a follow read saw, per followed or just-settled item,
-// re-applied over a page that may have been read before it.
-let followedEntries = new Map<string, InboxEntry>();
+let listedEntries = new Map<string, Held>();
+// The newest entry known for each row, from any read.
+let newest = new Map<string, Held>();
+// Per-item follow generation, bumped whenever a follow stops or starts: a
+// follow read answering for an earlier generation is dropped.
+const generation = new Map<string, number>();
+// The read that produced the pane view.
+let paneRead = 0;
+const bump = (id: string) => generation.set(id, (generation.get(id) ?? 0) + 1);
 let listEpoch = 0;
 function readStarted() {
   listEpoch++;
-  // Only follow reads begun after this page request may override its result.
-  followedEntries.clear();
 }
 /**
- * Extra settled reads still owed to an item left while its pane was
- * mid-operation (an Apply not yet answered): it keeps following while a read
- * still shows an action authorized or executing, at most OPERATION_READS
- * more reads.
+ * Extra settled reads still owed to a reviewer operation the pane had not
+ * answered when the item was left (an Apply): the item keeps following while
+ * a read still shows an action authorized or executing, at most
+ * OPERATION_READS more reads. The debt belongs to the operation, so it
+ * survives reopening and leaving the item again, until a view shows the
+ * operation answered or the reads run out.
  */
 const OPERATION_READS = 3;
 const operationReads = new Map<string, number>();
+const operationPending = (view: ItemReviewView) =>
+  view.reviews.actions.some((action) =>
+    ['authorized', 'executing'].includes(action.review.state),
+  );
 
 // Row bookkeeping, one function per lifecycle event. Each keeps `statuses`,
-// `followedEntries`, the follow sets (`watched`, `started`, `staged`,
-// `failures`, `operationReads`), the announcement and the row together.
+// `newest`, the follow sets (`watched`, `started`, `staged`, `failures`,
+// `generation`, `operationReads`), the announcement and the row together.
 
 /** Stop following an item; what its row shows is left to the caller. */
 function stopFollowing(id: string) {
@@ -169,52 +187,74 @@ function stopFollowing(id: string) {
   started = started.filter((entry) => entry !== id);
   failures.delete(id);
   staged.delete(id);
-  operationReads.delete(id);
+  bump(id);
 }
 /**
  * Forget everything loaded views said about an item: it is no longer
- * followed, has no cached status, and (`restore`) its row returns to the
- * entry exactly as its page read returned it.
+ * followed, has no cached status or owed operation reads, and (`restore`)
+ * its row returns to the entry exactly as its page read returned it.
  */
 function forget(id: string, restore: boolean) {
   stopFollowing(id);
+  operationReads.delete(id);
   delete statuses[id];
-  followedEntries.delete(id);
-  const entry = listedEntries.get(id);
-  if (restore && entry && inbox) rows = inbox.patch(entry, true);
+  newest.delete(id);
+  const listed = listedEntries.get(id);
+  if (restore && listed && inbox) {
+    newest.set(id, listed);
+    rows = inbox.patch(listed.entry, true);
+  }
 }
-/** Patch a row from a view; a row the filter removes is forgotten. */
-function patchRow(view: ItemReviewView, keep: boolean) {
-  const id = view.entry.item.id;
-  statuses[id] = { key: fingerprint(view.entry), status: viewStatus(view) };
-  if (inbox) rows = inbox.patch(view.entry, keep);
+/**
+ * Show a read's entry on its row unless a newer read already did; a row the
+ * filter removes is forgotten. Returns whether the entry was applied.
+ */
+function show(entry: InboxEntry, read: number, keep: boolean) {
+  const id = entry.item.id;
+  if (read < (newest.get(id)?.read ?? 0) || !inbox) return false;
+  newest.set(id, { entry, read });
+  rows = inbox.patch(entry, keep);
   if (!displayed(id)) rowRemoved(id);
+  return true;
+}
+/** Cache a view's status (valid only while the row shows its entry) and show it. */
+function showView(view: ItemReviewView, read: number, keep: boolean) {
+  const id = view.entry.item.id;
+  if (read < (newest.get(id)?.read ?? 0)) return;
+  statuses[id] = { key: fingerprint(view.entry), status: viewStatus(view) };
+  show(view.entry, read, keep);
 }
 /** Event: a row left the displayed list (filter, refresh, failed list). */
 function rowRemoved(id: string) {
   forget(id, false);
 }
-/** Event: an item opens in the pane. Its row shows the listed state until the pane's first view. */
+/**
+ * Event: an item opens in the pane. It is no longer followed and its row
+ * shows its entry's own state until the pane's first view; a debt of
+ * operation reads stays with the operation.
+ */
 function opened(id: string) {
-  forget(id, false);
+  stopFollowing(id);
+  delete statuses[id];
 }
 /**
  * Event: the reviewer left an item. Its row takes the listed filter; an item
- * left mid-stage, or before the pane showed the result of its latest
- * operation, keeps following while its row is displayed.
+ * left mid-stage, before the pane showed the result of its latest operation,
+ * or with operation reads still owed, keeps following while its row is
+ * displayed.
  */
 function left(id: string, view: ItemReviewView | undefined, busy: boolean) {
-  if (view && inbox) rows = inbox.patch(view.entry);
+  if (view) show(view.entry, paneRead, false);
   if (!displayed(id)) {
     rowRemoved(id);
     return;
   }
   const running = reviewInFlight(view);
-  if (!busy && !running) return;
+  if (busy && !operationReads.has(id)) operationReads.set(id, OPERATION_READS);
+  if (!busy && !running && !operationReads.has(id)) return;
   if (watched.includes(id)) return;
+  bump(id);
   if (running) staged.add(id);
-  if (busy) operationReads.set(id, OPERATION_READS);
-  if (view) followedEntries.set(id, view.entry);
   watched = [...watched, id];
   started = [...started, id];
   // Beyond the cap the longest-followed item (the earliest started, whatever
@@ -233,8 +273,8 @@ function denied(id: string) {
   forget(id, true);
   announcement = '';
 }
-/** Event: a follow read answered for a followed item. */
-function followed(view: ItemReviewView) {
+/** Event: a current-generation follow read answered for a followed item. */
+function followed(view: ItemReviewView, read: number) {
   const id = view.entry.item.id;
   failures.delete(id);
   const running = reviewInFlight(view);
@@ -242,17 +282,13 @@ function followed(view: ItemReviewView) {
   // A reviewer operation the pane had not answered yet (left mid-Apply) is
   // waited for while an action is still authorized or executing.
   const owed = operationReads.get(id) ?? 0;
-  const waiting =
-    owed > 0 &&
-    view.reviews.actions.some((action) =>
-      ['authorized', 'executing'].includes(action.review.state),
-    );
+  const waiting = owed > 0 && operationPending(view);
   if (waiting) operationReads.set(id, owed - 1);
+  else operationReads.delete(id);
   const finished = !running && !waiting;
   const announce = finished && staged.has(id);
-  followedEntries.set(id, view.entry);
   if (finished) stopFollowing(id);
-  patchRow(view, false);
+  showView(view, read, false);
   // Announce only a background stage that was seen running and has now
   // settled, on a row still displayed, under its listed label.
   if (announce && displayed(id))
@@ -268,49 +304,57 @@ function followFailed(id: string) {
   if (count >= MAX_WATCH_FAILURES) forget(id, true);
 }
 /** Event: a page read landed (a refresh replaces, Load more appends). */
-function pageLanded(page: { entries: InboxEntry[]; appended: boolean }) {
+function pageLanded(page: {
+  entries: InboxEntry[];
+  appended: boolean;
+  issued?: number;
+}) {
+  const read = page.issued ?? 0;
   if (!page.appended) {
     listedEntries = new Map();
     announcement = '';
   }
-  for (const entry of page.entries) {
-    listedEntries.set(entry.item.id, entry);
-    if (
-      entry.item.id !== paneView?.entry.item.id &&
-      !followedEntries.has(entry.item.id)
-    )
-      delete statuses[entry.item.id];
-  }
+  for (const entry of page.entries)
+    listedEntries.set(entry.item.id, { entry, read });
   if (!inbox) return;
-  // A page read before the pane's latest view, or before a followed item's
-  // latest read, must not regress those rows.
-  const open = paneView;
-  if (open && displayed(open.entry.item.id))
-    rows = inbox.patch(open.entry, true);
-  for (const [id, entry] of followedEntries) {
-    if (displayed(id) && id !== open?.entry.item.id) rows = inbox.patch(entry);
-    // A settled item needed this one re-application only.
-    if (!watched.includes(id)) followedEntries.delete(id);
+  // Each listed row shows whichever is newer: this page's entry, or an entry
+  // a later-started read (the pane, a follow read) already produced.
+  for (const entry of page.entries) {
+    const id = entry.item.id;
+    const known = newest.get(id);
+    if (known && known.read > read) {
+      if (displayed(id))
+        rows = inbox.patch(known.entry, id === paneView?.entry.item.id);
+    } else {
+      newest.set(id, { entry, read });
+      delete statuses[id];
+    }
   }
+  for (const id of [...newest.keys()]) if (!displayed(id)) newest.delete(id);
   for (const id of [...watched]) if (!displayed(id)) rowRemoved(id);
 }
 /** Event: a page read failed and the list failed closed (no rows). */
 function listFailed() {
   for (const id of [...watched]) forget(id, false);
-  followedEntries = new Map();
+  newest = new Map();
+  operationReads.clear();
   announcement = '';
 }
 function listed(
   items: InboxEntry[],
   hasMore: boolean,
-  page?: { entries: InboxEntry[]; appended: boolean },
+  page?: { entries: InboxEntry[]; appended: boolean; issued?: number },
 ) {
   rows = items;
   more = hasMore;
   if (page) pageLanded(page);
   else listFailed();
 }
-function paneChanged(view: ItemReviewView | undefined, refused = false) {
+function paneChanged(
+  view: ItemReviewView | undefined,
+  refused = false,
+  issued = 0,
+) {
   if (!view) {
     // A failed callback (or a first load that failed) cleared the pane: it
     // fails closed, so nothing it showed stays on the row or is followed.
@@ -331,9 +375,13 @@ function paneChanged(view: ItemReviewView | undefined, refused = false) {
     return;
   }
   paneView = snapshot;
+  paneRead = issued;
+  // The pane itself shows whether an operation left owed reads has answered.
+  if (!operationPending(snapshot))
+    operationReads.delete(snapshot.entry.item.id);
   // The open item stays listed while the reviewer works on it, even if its
   // state no longer matches the filter; it leaves when they move on.
-  patchRow(snapshot, true);
+  showView(snapshot, issued, true);
 }
 function schedule() {
   clearTimeout(watchTimer);
@@ -371,16 +419,21 @@ async function followBatch() {
   for (const id of batch) {
     if (!alive) return;
     if (!watched.includes(id)) continue;
+    // An answer is used only by the follow that asked for it.
+    const asked = generation.get(id) ?? 0;
+    const current = () =>
+      watched.includes(id) && (generation.get(id) ?? 0) === asked;
+    const read = stamp();
     try {
       const requestedAt = listEpoch;
       const view = await host.load(id);
       if (!alive) return;
-      if (!watched.includes(id)) continue;
+      if (!current()) continue;
       if (view.availability !== 'available') denied(id);
-      else if (requestedAt === listEpoch) followed(view);
+      else if (requestedAt === listEpoch) followed(view, read);
     } catch {
       if (!alive) return;
-      if (watched.includes(id)) followFailed(id);
+      if (current()) followFailed(id);
     }
   }
 }
@@ -543,7 +596,7 @@ async function advance() {
 }
 function outcome(_kind: ReviewOutcome, view: ItemReviewView) {
   if (view.entry.item.id !== selected) return;
-  paneChanged(view);
+  paneChanged(view, false, paneRead);
   if (!triageSettled(view)) return;
   // Unsent input on the same item is never discarded by an automatic
   // move: the reviewer moves on explicitly (through the confirmation).
@@ -583,7 +636,7 @@ function keydown(event: KeyboardEvent) {
 <svelte:window onkeydown={keydown} />
 <div class="workspace" bind:this={root} data-testid="intake-workspace">
 <div class="list-pane">
-<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} status={rowStatus} resolveInRow={false} />
+<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
 </div>
 <section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
 <div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>
@@ -597,7 +650,7 @@ function keydown(event: KeyboardEvent) {
 <p role="status" class="pane-note" data-testid="pane-note">{#if held}<span data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</span>{:else if done && !selected}<span data-testid="queue-done">{t(M['ingestion.queueDone'])}</span>{/if}</p>
 {#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
-{#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
+{#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" {stamp} onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
 {:else if !done}<p>{t(M['ingestion.selectItem'])}</p>{/if}
 </section>
 </div>
