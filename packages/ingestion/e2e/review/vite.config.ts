@@ -185,7 +185,7 @@ export default defineConfig({
             }
             const input = body.length ? JSON.parse(body.toString()) : {};
             const allowed: Record<string, string[]> = {
-              preview: ['itemId', 'attemptId', 'index', 'requestId'],
+              preview: ['itemId', 'attemptId', 'index', 'requestId', 'args'],
               decide: [
                 'actionId',
                 'expectedRevision',
@@ -204,6 +204,13 @@ export default defineConfig({
                 'expectedRevision',
                 'evidenceId',
                 'groups',
+                'requestId',
+              ],
+              instruct: [
+                'itemId',
+                'attemptId',
+                'expectedRevision',
+                'text',
                 'requestId',
               ],
               candidates: ['itemId', 'handlerId', 'handlerVersion', 'query'],
@@ -256,7 +263,7 @@ export default defineConfig({
             let result: unknown;
             switch (operation) {
               case 'preview':
-                result = await app.preview(scope, input);
+                result = await app.previewForReview(scope, input);
                 break;
               case 'decide':
                 result = await app.decide(scope, input);
@@ -269,6 +276,9 @@ export default defineConfig({
                 break;
               case 'split':
                 result = await app.split(scope, input);
+                break;
+              case 'instruct':
+                result = await app.instruct(scope, input);
                 break;
               case 'candidates':
                 result = await service.findCandidates(input);

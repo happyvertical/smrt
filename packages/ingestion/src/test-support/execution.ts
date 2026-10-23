@@ -34,6 +34,7 @@ import type {
 } from '../execution-contracts.js';
 import * as models from '../models.js';
 import {
+  HandlerArgumentsInvalidError,
   type IngestionOptions,
   IngestionService,
   type ReceiveInput,
@@ -970,6 +971,209 @@ export function executionSuite(
       expect(
         (await db.query('SELECT id FROM content_assets')).rows,
       ).toHaveLength(0);
+    });
+    it('throws HandlerArgumentsInvalidError only for argument refusals (#4208 review)', async () => {
+      const create = handlers[0] as OperationHandler;
+      const refusing: OperationHandler = {
+        ...create,
+        id: '@test/ingestion:refusing',
+        validate: async () => ({ ok: false }),
+      };
+      handlers.push(refusing);
+      const input = await ready();
+      // Operation argument schema refusal.
+      const schemaAction = await service.createAction(
+        input.itemId,
+        'schema',
+        {},
+      );
+      const schema = service.previewProposal({
+        ...input,
+        actionId: schemaAction,
+        expectedRevision: 0,
+        requestId: 'schema',
+        handlerId: create.id,
+        handlerVersion: '1',
+        args: { title: 'Missing body' },
+      });
+      await expect(schema).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+      await expect(schema).rejects.toMatchObject({
+        name: 'HandlerArgumentsInvalidError',
+        message: 'Invalid handler payload',
+      });
+      // Operation `validate` refusal.
+      const refusedAction = await service.createAction(
+        input.itemId,
+        'refused',
+        {},
+      );
+      await expect(
+        service.previewProposal({
+          ...input,
+          actionId: refusedAction,
+          expectedRevision: 0,
+          requestId: 'refused',
+          handlerId: refusing.id,
+          handlerVersion: '1',
+          args: { title: 'Refused', body: 'Body' },
+        }),
+      ).rejects.toMatchObject({
+        name: 'HandlerArgumentsInvalidError',
+        message: 'Invalid handler arguments',
+      });
+      // Corrections publish through the preview binding, so they are typed too.
+      const okAction = await service.createAction(input.itemId, 'ok', {});
+      const review = await service.previewProposal({
+        ...input,
+        actionId: okAction,
+        expectedRevision: 0,
+        requestId: 'ok',
+        handlerId: create.id,
+        handlerVersion: '1',
+        args: { title: 'Fine', body: 'Body' },
+      });
+      await expect(
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId: 'correct-missing',
+          decision: 'correct',
+          correctedArgs: { title: 'No body' },
+        }),
+      ).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+    });
+    it('keeps apply-time argument revalidation a plain error (#4208 review)', async () => {
+      const create = handlers[0] as OperationHandler;
+      let calls = 0;
+      // Accepts at preview, refuses when apply revalidates the bound arguments.
+      const lateRefusal: OperationHandler = {
+        ...create,
+        id: '@test/ingestion:late-refusal',
+        validate: async () => ({ ok: calls++ === 0 }),
+      };
+      handlers.push(lateRefusal);
+      const input = await ready();
+      const actionId = await service.createAction(input.itemId, 'late', {});
+      const review = await service.previewProposal({
+        ...input,
+        actionId,
+        expectedRevision: 0,
+        requestId: 'late',
+        handlerId: lateRefusal.id,
+        handlerVersion: '1',
+        args: { title: 'Later refused', body: 'Body' },
+      });
+      await approve(review);
+      const failure = await service.applyAction(actionId).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect((failure as Error).message).toBe('Invalid handler arguments');
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+    });
+    it('throws HandlerArgumentsInvalidError for a plan validate refusal (#4208 review)', async () => {
+      const key = `refused-plan-${randomUUID()}`;
+      definePlaybook({
+        key,
+        title: 'Refused plan',
+        description: 'Plan whose validate refuses',
+        steps: [{ kind: 'operation', model: CONTENT, action: 'create' }],
+      });
+      const create = handlers[0] as OperationHandler;
+      const resolved = await resolvePlaybook(key, {
+        db,
+        tenantId: tenant,
+        plane: 'server',
+        classifier: () => create.capability,
+      });
+      if (!resolved.ok) throw new Error('playbook');
+      const plan: PlanHandler = {
+        id: '@test/ingestion:refused-plan',
+        version: '1',
+        description: 'Refused plan',
+        operation: {
+          playbookKey: key,
+          definitionHash: intakeBindingDigest(resolved.plan),
+        },
+        argsSchema: { type: 'object', additionalProperties: false },
+        resultSchema: { type: 'object', additionalProperties: false },
+        resultModels: {},
+        validate: async () => ({ ok: false }),
+        preview: async (args) => ({
+          display: args,
+          normalizedArgs: args,
+          targetPreconditions: [],
+        }),
+        expand: async () => [],
+      };
+      handlers.push(plan);
+      const input = await ready();
+      const refused = service.previewPlan({
+        ...input,
+        planKey: 'refused',
+        expectedRevision: 0,
+        requestId: 'refused-plan',
+        handlerId: plan.id,
+        handlerVersion: '1',
+        args: {},
+      });
+      await expect(refused).rejects.toBeInstanceOf(
+        HandlerArgumentsInvalidError,
+      );
+      await expect(refused).rejects.toMatchObject({
+        message: 'Invalid plan arguments',
+      });
+    });
+    it('keeps result-schema failures a plain error on reconcile (#4208 review)', async () => {
+      const external: OperationHandler = {
+        ...(handlers[0] as OperationHandler),
+        id: '@test/ingestion:bad-result',
+        resultModels: {},
+        resultSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['receipt'],
+          properties: { receipt: { type: 'string', maxLength: 64 } },
+        },
+        capability: { effect: 'write', idempotent: false, openWorld: true },
+        execution: {
+          kind: 'external',
+          submit: async () => {
+            throw new Error('sent');
+          },
+          reconcile: async () => ({
+            kind: 'succeeded',
+            result: { receipt: 42 } as unknown as Record<string, unknown>,
+          }),
+        },
+      };
+      handlers.push(external);
+      const input = await ready();
+      const actionId = await service.createAction(input.itemId, 'bad', {});
+      const review = await service.previewProposal({
+        ...input,
+        actionId,
+        expectedRevision: 0,
+        requestId: 'bad',
+        handlerId: external.id,
+        handlerVersion: '1',
+        args: { title: 'Send', body: 'Body' },
+      });
+      await approve(review);
+      expect((await service.applyAction(actionId)).state).toBe(
+        'outcome_unknown',
+      );
+      const failure = await service.reconcileAction(actionId).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect((failure as Error).message).toBe('Invalid handler payload');
     });
     it('records unknown external outcomes and reconciles before any repeat send', async () => {
       let sends = 0;

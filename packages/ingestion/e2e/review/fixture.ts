@@ -27,6 +27,7 @@ export async function createReviewFixture(
     close() {
       closing ??= (async () => {
         try {
+          await app.settle();
           await app.db.close?.();
         } finally {
           await rm(root, { recursive: true, force: true });
