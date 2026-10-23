@@ -24,6 +24,7 @@ import type {
   ProposalGenerator,
 } from '../proposal-contracts.js';
 import {
+  GenerationSourceStaleError,
   type IngestionOptions,
   IngestionService,
   type ReceiveInput,
@@ -1395,7 +1396,7 @@ export function internalSourceSuite(
           requestId: `earlier:${id}`,
           extraction,
         }),
-      ).rejects.toThrow('Generation source changed');
+      ).rejects.toThrow(GenerationSourceStaleError);
       const later = await held;
       expect(later?.generation?.state).toBe('completed');
       const analyses = await rowsFor('intake_analyses', itemId);

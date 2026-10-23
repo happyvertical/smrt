@@ -1565,15 +1565,6 @@ export class IngestionService {
         throw new Error('Analysis request conflict');
       return { id: String(replay.id), revision: Number(replay.revision) };
     }
-    // Under the item lock: the pinned extraction must still be the latest
-    // revision and its current attempt, so a concurrent reprocess wins.
-    if (pinnedSourceAttemptId !== undefined) {
-      const latest = previous.find(
-        (a) => Number(a.revision) === Number(item.analysis_revision),
-      );
-      if (!latest || latest.current_attempt_id !== pinnedSourceAttemptId)
-        throw new Error('Generation source changed');
-    }
     // An interpretation must pin the item's latest extraction. Checked under
     // the item lock before anything is superseded, so a slow host appending a
     // late interpretation cannot clobber a newer extraction (for example a
@@ -1591,6 +1582,15 @@ export class IngestionService {
           Number.NEGATIVE_INFINITY,
         );
       if (pinned !== latestExtraction) throw new GenerationSourceStaleError();
+    }
+    // Inline only, after #4228's general check: the pinned extraction must
+    // also be the latest revision of any stage and its current attempt.
+    if (pinnedSourceAttemptId !== undefined) {
+      const latest = previous.find(
+        (a) => Number(a.revision) === Number(item.analysis_revision),
+      );
+      if (!latest || latest.current_attempt_id !== pinnedSourceAttemptId)
+        throw new Error('Generation source changed');
     }
     const evidence = await this.rows(
       db,

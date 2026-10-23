@@ -98,7 +98,9 @@ ever deliverable and nothing is enqueued. A retry with the same `requestId`
 replays the recorded revisions rather than re-preparing against a superseded
 source, also under concurrency. The interpretation append rechecks, under the
 item lock, that its pinned extraction is still the latest revision and refuses
-a superseded pin with `Generation source changed`. Generated suggestions still require explicit preview and a human
+a superseded pin: first through the general latest-extraction check that
+every interpretation append runs (`GenerationSourceStaleError`), then by the
+inline check that the pinned attempt is still current (`Generation source changed`). Generated suggestions still require explicit preview and a human
 decision, either through the reviewer surface or the submitter-scoped surface
 described in [REVIEW.md](REVIEW.md).
 
