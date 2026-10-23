@@ -33,11 +33,16 @@ let { host, itemId, pollMs = 2000, onselect, rowAside }: Props = $props();
 const { t } = useI18n();
 /**
  * Most followed items read per watch tick. Followed items are read in
- * rotation, so every followed row is reached and none is dropped; an item
- * stops being followed only when it settles, is denied, fails three reads in
- * a row, or leaves the displayed list.
+ * rotation, so every followed row is reached; an item stops being followed
+ * when it settles, is denied, fails three reads in a row, leaves the
+ * displayed list, or is the longest-followed item beyond WATCH_CAP.
  */
 const WATCH_LIMIT = 5;
+/**
+ * Most items followed at once. Beyond it the longest-followed item stops
+ * following and its row returns to the entry its page listed.
+ */
+const WATCH_CAP = 20;
 /** Consecutive thrown watch reads tolerated before a row stops following. */
 const MAX_WATCH_FAILURES = 3;
 let selected = $state<string | undefined>(untrack(() => itemId)),
@@ -45,8 +50,12 @@ let selected = $state<string | undefined>(untrack(() => itemId)),
   more = $state(false),
   done = $state(false),
   announcement = $state(''),
-  // A selection the reviewer asked for while the pane held unsent input.
-  leaving = $state<{ id: string }>(),
+  // A selection the reviewer asked for while the pane held unsent input, and
+  // the control they were in, which "Stay" returns to.
+  leaving = $state<{ id: string; from?: HTMLElement }>(),
+  // The open item finished but did not advance: `unsent` input remains on
+  // it, or the next items could not be loaded (`retry`).
+  held = $state<'unsent' | 'retry'>(),
   // Richer status from a loaded view, valid while the row still shows the
   // same entry (revision, state, processing, disposition) it came from.
   statuses = $state<Record<string, { key: string; status: TriageStatus }>>({});
@@ -69,6 +78,16 @@ let alive = true,
   // Only one watch tick runs at a time.
   following = false;
 let stay = $state<HTMLElement>();
+// The last form field the reviewer used in the item pane.
+let lastField: HTMLElement | undefined;
+function noteField(event: FocusEvent) {
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    target.matches('input,textarea,select,[contenteditable]')
+  )
+    lastField = target;
+}
 const failures = new Map<string, number>();
 // Followed items seen with a stage in flight; only those announce settling.
 const staged = new Set<string>();
@@ -122,30 +141,50 @@ function record(view: ItemReviewView, keep: boolean) {
   }
   statuses[id] = { key: fingerprint(view.entry), status: viewStatus(view) };
   if (inbox) rows = inbox.patch(view.entry, keep);
+  // A followed row the filter removed is no longer followed.
+  if (!displayed(id)) unwatch(id);
 }
-// Each row's entry as its page listed it, the state a row falls back to.
+const displayed = (id: string) => rows.some((row) => row.item.id === id);
+// Each row's entry exactly as a page read returned it (never a patched
+// entry): the state a row falls back to.
 let listedEntries = new Map<string, InboxEntry>();
+// The latest entry a follow read saw, per followed or just-settled item,
+// re-applied over a page that may have been read before it.
+let followedEntries = new Map<string, InboxEntry>();
 /**
- * Forget what loaded views said about a row (a denial, a failed follow):
- * drop its cached status and restore the entry its page listed.
+ * Forget what loaded views said about a row (a denial, a failed follow, the
+ * follow cap): drop its cached status and restore the entry its page listed.
  */
 function fallback(id: string) {
   delete statuses[id];
+  followedEntries.delete(id);
   const entry = listedEntries.get(id);
   if (entry && inbox) rows = inbox.patch(entry, true);
 }
-function listed(items: InboxEntry[], hasMore: boolean) {
-  listedEntries = new Map(items.map((row) => [row.item.id, row]));
+function listed(
+  items: InboxEntry[],
+  hasMore: boolean,
+  page?: { entries: InboxEntry[]; appended: boolean },
+) {
+  if (page) {
+    if (!page.appended) listedEntries = new Map();
+    for (const entry of page.entries) listedEntries.set(entry.item.id, entry);
+  }
   rows = items;
   more = hasMore;
-  // A page read before the pane's latest view must not regress the open
-  // row: the row keeps following the form.
+  if (!page || !inbox) return;
+  // A page read before the pane's latest view, or before a followed item's
+  // latest read, must not regress those rows.
   const open = paneView;
-  if (open && inbox && items.some((row) => row.item.id === open.entry.item.id))
+  if (open && displayed(open.entry.item.id))
     rows = inbox.patch(open.entry, true);
+  for (const [id, entry] of followedEntries) {
+    if (displayed(id) && id !== open?.entry.item.id) rows = inbox.patch(entry);
+    // A settled item needed this one re-application only.
+    if (!watched.includes(id)) followedEntries.delete(id);
+  }
   // Rows no longer displayed are not followed.
-  for (const id of watched)
-    if (!rows.some((row) => row.item.id === id)) unwatch(id);
+  for (const id of watched) if (!displayed(id)) unwatch(id);
 }
 function paneChanged(view: ItemReviewView | undefined, denied = false) {
   if (!view) {
@@ -172,19 +211,30 @@ function paneChanged(view: ItemReviewView | undefined, denied = false) {
 }
 function schedule() {
   clearTimeout(watchTimer);
+  watchTimer = undefined;
   if (!alive || !watched.length) {
     watchTicks = 0;
     return;
   }
   const delay = Math.min(pollMs * 1.5 ** watchTicks, pollMs * 5);
   watchTicks++;
-  watchTimer = setTimeout(() => void follow(), delay);
+  watchTimer = setTimeout(() => {
+    watchTimer = undefined;
+    void follow();
+  }, delay);
 }
 function watch(id: string) {
-  if (!watched.includes(id)) watched = [...watched, id];
-  watchTicks = 0;
-  // A running tick reschedules when it ends.
-  if (!following) schedule();
+  if (!displayed(id) || watched.includes(id)) return;
+  watched = [...watched, id];
+  // Beyond the cap the longest-followed item stops and falls back.
+  while (watched.length > WATCH_CAP) {
+    const dropped = watched[0];
+    unwatch(dropped);
+    fallback(dropped);
+  }
+  // The backoff carries on; only an idle follower starts a tick (a running
+  // tick, or one already scheduled, picks the new item up).
+  if (!following && watchTimer === undefined) schedule();
 }
 function unwatch(id: string) {
   watched = watched.filter((entry) => entry !== id);
@@ -229,10 +279,11 @@ async function followBatch() {
       if (!settled) staged.add(id);
       const finished = settled && staged.has(id);
       if (settled) unwatch(id);
+      followedEntries.set(id, view.entry);
       record(view, false);
       // Announce only a background stage that was seen running and has now
-      // settled, under the row's listed label.
-      if (finished)
+      // settled, on a row still displayed, under its listed label.
+      if (finished && displayed(id))
         announcement = t(M['ingestion.backgroundUpdate'], {
           label:
             rows.find((row) => row.item.id === id)?.label ?? view.entry.label,
@@ -263,12 +314,16 @@ async function choose(id: string | undefined, focus: boolean) {
     paneView = undefined;
     paneBusy = false;
     // Leaving the item applies the listed filter to its row.
-    if (previous && previous.entry.item.id === left && inbox)
+    if (previous && previous.entry.item.id === left && inbox) {
       rows = inbox.patch(previous.entry);
+      if (watched.includes(left)) followedEntries.set(left, previous.entry);
+    }
+    if (left && !displayed(left)) unwatch(left);
     selected = id;
     navigation++;
     paneDirty = false;
     leaving = undefined;
+    held = undefined;
     if (id) unwatch(id);
     onselect?.(id);
   }
@@ -285,7 +340,8 @@ async function choose(id: string | undefined, focus: boolean) {
 async function request(id: string) {
   if (id === selected) return;
   if (paneDirty) {
-    leaving = { id };
+    const from = lastField?.isConnected ? lastField : undefined;
+    leaving = { id, ...(from ? { from } : {}) };
     await tick();
     stay
       ?.querySelector<HTMLElement>('[data-stay] button, button[data-stay]')
@@ -300,9 +356,12 @@ async function discardAndLeave() {
   if (target) await choose(target, true);
 }
 async function keepEditing() {
+  const from = leaving?.from;
   leaving = undefined;
   await tick();
-  pane?.focus();
+  // Back to the control the reviewer was in, when it is still there.
+  if (from?.isConnected) from.focus();
+  else pane?.focus();
 }
 async function move(offset: 1 | -1) {
   const ticket = navigation;
@@ -311,10 +370,10 @@ async function move(offset: 1 | -1) {
   let target =
     index < 0 ? (offset > 0 ? list[0] : list.at(-1)) : list[index + offset];
   if (!target && offset > 0 && more && inbox) {
-    list = await inbox.more();
+    const page = await inbox.more();
     // The reviewer chose something else while the page loaded.
     if (ticket !== navigation) return;
-    target = list[(index < 0 ? -1 : index) + 1];
+    target = page.items[(index < 0 ? -1 : index) + 1];
   }
   if (target) await request(target.item.id);
 }
@@ -330,21 +389,36 @@ async function advance() {
   const open = (row: InboxEntry) =>
     row.item.id !== current && !triageTerminal(statusOf(row));
   let next = list.slice(start).find(open);
+  let unknown = false;
   while (!next && more && inbox) {
     const count = list.length;
-    list = await inbox.more();
+    const page = await inbox.more();
     if (!alive || ticket !== navigation) return;
+    list = page.items;
+    // Whether anything follows is unknown: never report an empty queue.
+    unknown = page.result === 'failed' || page.result === 'pending';
     next = list.slice(start).find(open);
     // No progress (for example a denied page) must not spin on a host callback.
-    if (list.length <= count) break;
+    if (unknown || list.length <= count) break;
   }
   next ??= list.slice(0, start).find(open);
+  if (!next && unknown) {
+    held = 'retry';
+    return;
+  }
   await choose(next?.item.id, true);
 }
 function outcome(_kind: ReviewOutcome, view: ItemReviewView) {
   if (view.entry.item.id !== selected) return;
   paneChanged(view);
-  if (triageSettled(view)) void advance();
+  if (!triageSettled(view)) return;
+  // Unsent input on the same item is never discarded by an automatic
+  // move: the reviewer moves on explicitly (through the confirmation).
+  if (paneDirty) {
+    held = 'unsent';
+    return;
+  }
+  void advance();
 }
 function keydown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
@@ -378,7 +452,7 @@ function keydown(event: KeyboardEvent) {
 <div class="list-pane">
 <InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} status={rowStatus} resolveInRow={false} />
 </div>
-<section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item">
+<section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
 <div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>
 <Button disabled={position === 0 || !rows.length} aria-keyshortcuts="K Alt+ArrowUp" onclick={() => move(-1)}>{t(M['ingestion.previousItem'])}</Button>
 {#if position >= 0}<p data-testid="queue-position">{t(M['ingestion.itemOf'], { index: position + 1, count: rows.length })}</p>{/if}
@@ -386,7 +460,8 @@ function keydown(event: KeyboardEvent) {
 </div>
 <p class="hint">{t(M['ingestion.keyboardHelp'])}</p>
 <p role="status" data-testid="background-update">{announcement}</p>
-{#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note" role="alert">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
+{#if held}<p role="status" data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : 'ingestion.advanceRetry'])}</p>{/if}
+{#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
 {#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
 {:else if done}<p role="status" data-testid="queue-done">{t(M['ingestion.queueDone'])}</p>

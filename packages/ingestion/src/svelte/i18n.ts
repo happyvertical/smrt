@@ -125,6 +125,11 @@ export const M = defineMessages({
     'This item has input you have not sent. Leave it and discard that input?',
   'ingestion.discardLeave': 'Discard and open the other item',
   'ingestion.stay': 'Stay on this item',
+  'ingestion.moreFailed': "Couldn't load more items. Try Load more again.",
+  'ingestion.finishedUnsent':
+    'Finished. You have unsent input on this item; move on with Next item when ready.',
+  'ingestion.advanceRetry':
+    "Finished, but the next items couldn't be loaded. Try Next item again.",
   'ingestion.keyboardHelp':
     'Press J or K, or Alt+Down or Alt+Up, outside a text field to move between items.',
   'ingestion.statusReason': '{status}: {reason}',
