@@ -31,6 +31,8 @@ export interface FeedbackExample {
   model: { provider: string; model: string; version: string };
   promptVersion: string;
   configurationVersion: string;
+  /** Reviewer guidance the judged suggestion was produced under; an example, never authority. */
+  instruction?: { id: string; digest: string; text: string };
 }
 export interface FeedbackReceipt {
   id: string;

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
 import { HandlerArgumentsInvalidError } from './proposal-errors.js';
-import type { ReviewPage } from './review-dto.js';
+import type { ReviewerInstruction, ReviewPage } from './review-dto.js';
 import {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,
@@ -10,9 +10,19 @@ import {
   type RowEvidenceView,
 } from './review-host.js';
 import {
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
+  reviewerInstructionView,
+} from './reviewer-instruction.js';
+import {
   GenerationSnapshotStaleError,
   type IngestionService,
 } from './server.js';
+
+vi.mock('./reviewer-instruction.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./reviewer-instruction.js')>()),
+  reviewerInstructionView: (value: unknown) => value,
+}));
 
 function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
   const item = { id: 'item', processingState: 'completed' } as IntakeItemDTO;
@@ -25,16 +35,31 @@ function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
       page.cursor ? last : first,
     ),
     getCompletedAnalysis: vi.fn(async () => ({
-      configuration: { stage: 'interpret' },
+      configuration: { stage: 'interpret' } as Record<string, unknown>,
       result: { output: { proposals: { suggestions: [] } } },
     })),
     getEvidence: vi.fn(async (): Promise<IntakeEvidenceDTO[]> => []),
     listEvidence: vi.fn(async () => new Map<string, IntakeEvidenceDTO[]>()),
+    listReviewerInstructions: vi.fn(async () => [] as ReviewerInstruction[]),
+    getReinterpretationState: vi.fn(async () => ({
+      revision: 4,
+      processingState: 'completed',
+      failure: null as string | null,
+      reinterpreting: false,
+      generationAttemptId: null as string | null,
+      instructionInEffect: 'current' as string | null,
+    })),
+    recordReviewerInstruction: vi.fn(async () => ({
+      id: 'analysis',
+      revision: 4,
+      instruction: instruction('current'),
+    })),
     createAction: vi.fn(async () => 'action-1'),
     previewProposal: vi.fn(async () => ({ state: 'waiting_review' })),
     previewPlan: vi.fn(async () => ({ steps: [] })),
     previewGeneratedProposals: vi.fn(async () => []),
   };
+  const woken: Array<[string, number]> = [];
   // The existing per-part adapter; `list` must never call it.
   const evidence = vi.fn(async (part: IntakeEvidenceDTO) => ({
     label: part.partId,
@@ -49,9 +74,22 @@ function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
     assignment: async () => ({ assigneeId: null, version: 0 }),
     assign: async () => {},
     evidence,
+    onInstruct: async (itemId, revision) => {
+      woken.push([itemId, revision]);
+    },
     ...overrides,
   });
-  return { host, service, first, last, item, evidence };
+  return { host, service, first, last, item, evidence, woken };
+}
+function instruction(id: string): ReviewerInstruction {
+  return {
+    id,
+    text: `Instruction ${id}`,
+    actorId: 'owner',
+    recordedAt: '2026-10-22T00:00:00.000Z',
+    supersedesId: null,
+    digest: `digest-${id}`,
+  };
 }
 function part(
   id: string,
@@ -514,5 +552,111 @@ describe('published review host projection', () => {
     f.service.getCompletedAnalysis.mockRejectedValue(new Error('Denied'));
     await expect(f.host.load('item')).rejects.toThrow('Denied');
     expect(f.service.getEvidence).not.toHaveBeenCalled();
+  });
+  it('records an instruction durably, wakes the host and reports the applied instruction as stale once superseded', async () => {
+    const f = fixture();
+    const input = {
+      itemId: 'item',
+      attemptId: 'attempt',
+      expectedRevision: 3,
+      text: 'File it, do not bill it.',
+      requestId: 'request',
+    };
+    await f.host.instruct?.(input);
+    expect(f.service.recordReviewerInstruction).toHaveBeenCalledWith(input);
+    expect(f.woken).toEqual([['item', 4]]);
+    expect((await f.host.load('item')).instruction).toBeUndefined();
+    f.service.listReviewerInstructions.mockResolvedValue([
+      instruction('current'),
+      instruction('old'),
+    ]);
+    f.service.getCompletedAnalysis.mockResolvedValue({
+      configuration: {
+        stage: 'interpret',
+        reviewerInstruction: instruction('old'),
+      },
+      result: { output: { proposals: { suggestions: [] } } },
+    });
+    expect((await f.host.load('item')).instruction).toEqual({
+      current: instruction('current'),
+      applied: instruction('old'),
+      stale: true,
+    });
+    f.service.listReviewerInstructions.mockResolvedValue([instruction('old')]);
+    expect((await f.host.load('item')).instruction).toMatchObject({
+      stale: false,
+    });
+    expect(reviewerInstructionView(instruction('old'))).toEqual(
+      instruction('old'),
+    );
+  });
+  it('turns a stale instruction into a refresh signal and projects the in-flight gap', async () => {
+    const f = fixture();
+    f.service.recordReviewerInstruction.mockRejectedValueOnce(
+      new ReviewerInstructionStaleError(),
+    );
+    const input = {
+      itemId: 'item',
+      attemptId: 'attempt',
+      expectedRevision: 3,
+      text: 'File it.',
+      requestId: 'stale',
+    };
+    await expect(f.host.instruct?.(input)).resolves.toEqual({ stale: true });
+    f.service.recordReviewerInstruction.mockRejectedValueOnce(
+      new ReviewerInstructionInvalidError(),
+    );
+    await expect(f.host.instruct?.(input)).resolves.toEqual({ invalid: true });
+    expect(f.woken).toEqual([]);
+    f.service.recordReviewerInstruction.mockRejectedValueOnce(
+      new Error('Intake unavailable'),
+    );
+    await expect(f.host.instruct?.(input)).rejects.toThrow(
+      'Intake unavailable',
+    );
+    // Between stages: the displayed analysis is the extraction, so the host
+    // offers the retry anchor and marks the item as still reinterpreting.
+    f.service.listReviewerInstructions.mockResolvedValue([
+      instruction('current'),
+    ]);
+    f.service.getCompletedAnalysis.mockResolvedValue({
+      configuration: { stage: 'extract' },
+      result: { output: {} },
+    } as never);
+    f.service.getReinterpretationState.mockResolvedValue({
+      revision: 7,
+      processingState: 'completed',
+      failure: null,
+      reinterpreting: true,
+      generationAttemptId: 'generation',
+      instructionInEffect: 'current',
+    });
+    expect((await f.host.load('item')).instruction).toEqual({
+      current: instruction('current'),
+      applied: null,
+      stale: true,
+      reinterpreting: true,
+      binding: { attemptId: 'generation', expectedRevision: 7 },
+    });
+  });
+  it('reports a reprocess-dropped instruction as dropped, not pending', async () => {
+    const f = fixture();
+    f.service.listReviewerInstructions.mockResolvedValue([
+      instruction('dropped'),
+    ]);
+    f.service.getReinterpretationState.mockResolvedValue({
+      revision: 9,
+      processingState: 'completed',
+      failure: null,
+      reinterpreting: false,
+      generationAttemptId: 'generation',
+      instructionInEffect: null,
+    });
+    expect((await f.host.load('item')).instruction).toEqual({
+      current: null,
+      applied: null,
+      stale: false,
+      dropped: instruction('dropped'),
+    });
   });
 });

@@ -65,6 +65,12 @@ that declaration and its target authorization semantics.
    or pass an explicit attempt ID to additionally reject stale client state.
    Queued/running revisions never return an older completed attempt.
 
+`analyze` refuses an interpretation configuration whose pinned source is not
+the item's latest extraction, checked under the item lock before anything is
+superseded (`GenerationSourceStaleError`, nothing appended). A preparation
+superseded by a later extraction therefore fails at append time rather than
+after a revision was created.
+
 A generation revision does not rewrite terminal extraction. Reprocessing starts
 with a new extraction revision, followed by interpretation, while the host keeps
 the same business intention keys. An interrupted still-current generation lease
@@ -99,6 +105,33 @@ adapter conservatively declares `unknown`, persisted as
 for human preview; automatic eligibility always remains false. The service
 deadline aborts requests and prevents late publication; it does not claim to terminate computation at a remote
 provider or isolate native allocations. Extractor process limits remain separate.
+
+When the pinned extraction carries an authenticated reviewer instruction
+(REVIEW.md), `prepareGeneration` copies it into the interpretation configuration
+and `generateProposals` verifies that copy against the extraction record and its
+own digest before provider disclosure (`integrity` otherwise). The prompt then
+carries it in its own **trusted reviewer guidance** section after the fixed
+system instruction and handler contract: the guidance is named as authenticated
+human input, limited to the offered catalog, and the evidence remains untrusted
+data. `GenerativeProposalInput.reviewerInstruction` exposes `{id, text}` to custom
+generators; `provenance.reviewerInstruction` records `{id, digest}`. The
+instruction never changes `offered`, `catalogDigest`, argument schemas,
+permissions or `automaticActionEligible`; a reply that follows guidance outside
+the catalog fails validation like any other hostile output. **Budget cost:** the instruction counts once against the input budget
+(`maxInputBytes`, each offered handler's `maxBytes` and the live policy
+ceiling), as its JSON-escaped text inside the prompt's guidance section — up
+to 4,000 characters plus escaping and the fixed guidance sentence. The
+`reviewerInstruction` field duplicated for custom generators is not counted
+again. The decision stage also carries it once: its request state holds the
+evidence-side input with the un-guided base instructions under `evidence`, and
+the guidance only under a separate `reviewerGuidance` key, never under
+`evidence`; the decision budget measures that serialized request as sent. Size `maxInputBytes` with that headroom. Learned examples are
+still retrieved for an instructed generation; only a logical split correction
+suppresses them. Every instruction costs a fresh extraction revision before the
+new interpretation: the predecessor-pin contract above (source = immediately
+preceding revision, current-revision reads) is deliberately left intact rather
+than reused for a same-source second interpretation, so OCR/speech hosts budget
+one extraction per instruction, as for split corrections.
 
 Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.

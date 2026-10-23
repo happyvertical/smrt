@@ -54,6 +54,8 @@ export interface GenerativeProposalInput {
   examples?: import('./feedback-dto.js').FeedbackSelection;
   /** Authenticated human correction carried through fresh extraction; never model authority. */
   humanCorrection?: IntakeValues;
+  /** Authenticated reviewer guidance; trusted steering only, never catalog or approval authority. */
+  reviewerInstruction?: { id: string; text: string };
 }
 /** Inject only trusted SDK-bound adapters. Generative output is always untrusted. */
 export interface ProposalGenerator {
@@ -148,6 +150,8 @@ export function proposalReadConfiguration(
 }
 export interface GenerationStageConfiguration extends IntakeValues {
   stage: 'interpret';
+  /** Copied from the pinned extraction source; verified against it before provider disclosure. */
+  reviewerInstruction?: IntakeValues;
   proposals: {
     source: import('./proposal-dto.js').GenerationSourcePin;
     configurationVersion: string;
