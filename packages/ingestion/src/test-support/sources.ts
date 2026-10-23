@@ -152,19 +152,21 @@ export function sourcesSuite(
       type = 'application/pdf',
       bytes = Buffer.from('%PDF-original'),
       fields: Record<string, string> = {},
+      name = 'original',
+      deliveryKey = 'capture',
     ) {
       const form = new FormData();
       for (const [key, value] of Object.entries({
-        captureId: 'capture',
+        captureId: deliveryKey,
         capturedAt,
         captureSource: 'document',
         ...fields,
       }))
         form.set(key, value);
-      form.set('file', new Blob([bytes], { type }), 'original');
+      form.set('file', new Blob([bytes], { type }), name);
       const request = new Request('https://host/intake', {
         method: 'POST',
-        headers: { 'idempotency-key': 'capture' },
+        headers: { 'idempotency-key': deliveryKey },
         body: form,
       });
       // Serialize real multipart framing before delivery, as a network peer does.
@@ -235,12 +237,52 @@ export function sourcesSuite(
       expect(await count()).toBe(2);
     });
     it('retains original upload bytes and capture metadata; replay conflicts and bounds fail explicitly', async () => {
-      const receipt = await (await handler()(await upload())).json();
+      const receipt = await (
+        await handler()(
+          await upload(
+            'application/pdf',
+            Buffer.from('%PDF-original'),
+            {},
+            'Acme March.pdf',
+          ),
+        )
+      ).json();
       expect(receipt.kind).toBe('accepted');
       const evidence = await service.getEvidence(receipt.itemId);
       const original = evidence.find((e) => e.partId === 'file')!;
       const capture = evidence.find((e) => e.partId === 'capture')!;
       expect(original.parentEvidenceId).toBe(capture.id);
+      // The multipart filename is kept for labels (#4214) without becoming identity.
+      expect(original.filename).toBe('Acme March.pdf');
+      expect(capture.filename).toBeUndefined();
+      const stored = (
+        await db.query(
+          'SELECT data FROM intake_evidence WHERE id=?',
+          original.id,
+        )
+      ).rows[0].data;
+      expect(typeof stored === 'string' ? JSON.parse(stored) : stored).toEqual({
+        filename: 'Acme March.pdf',
+        sourceReference: null,
+      });
+      // Same bytes and capture under another name replay the same receipt.
+      expect(
+        await (
+          await handler()(
+            await upload(
+              'application/pdf',
+              Buffer.from('%PDF-original'),
+              {},
+              'renamed.pdf',
+            ),
+          )
+        ).json(),
+      ).toMatchObject({ kind: 'duplicate', itemId: receipt.itemId });
+      expect(
+        (await service.getEvidence(receipt.itemId)).find(
+          (e) => e.partId === 'file',
+        )?.filename,
+      ).toBe('Acme March.pdf');
       expect(
         Buffer.from(
           await service.readEvidence(receipt.itemId, original.id),
@@ -381,6 +423,70 @@ export function sourcesSuite(
       ).not.toContain('private-secret');
       expect(await count()).toBe(4);
     });
+    it('cleans or drops upload and host-snapshot names instead of failing the delivery (#4214)', async () => {
+      // Built from code points: no invisible character appears in source.
+      const rlo = String.fromCodePoint(0x202e);
+      const filenames = async (receipt: { itemId?: string }) =>
+        (await service.getEvidence(receipt.itemId as string))
+          .filter((e) => e.partId !== 'capture')
+          .map((e) => e.filename);
+      // Multipart upload: a bidi override is removed, `blob` (the name a
+      // nameless Blob part gets) is not kept as a name.
+      const bidi = await (
+        await handler()(
+          await upload(
+            'application/pdf',
+            Buffer.from('%PDF-bidi'),
+            {},
+            `Acme${rlo}fdp.pdf`,
+            'upload-bidi',
+          ),
+        )
+      ).json();
+      expect(bidi.kind).toBe('accepted');
+      expect(await filenames(bidi)).toEqual(['Acmefdp.pdf']);
+      const blob = await (
+        await handler()(
+          await upload(
+            'application/pdf',
+            Buffer.from('%PDF-blob'),
+            {},
+            'blob',
+            'upload-blob',
+          ),
+        )
+      ).json();
+      expect(blob.kind).toBe('accepted');
+      expect(await filenames(blob)).toEqual([undefined]);
+      // Host snapshot parts go through the same cleaning.
+      const reference = { owner: 'asset', id: 'named', version: '1' };
+      binding.snapshotReference = async () => [
+        {
+          partId: 'owner',
+          mediaType: 'application/pdf',
+          bytes: Buffer.from('%PDF-named'),
+          filename: `Owned${rlo}fdp.exe`,
+        },
+        {
+          partId: 'long',
+          mediaType: 'application/pdf',
+          bytes: Buffer.from('%PDF-long-name'),
+          filename: 'x'.repeat(600),
+        },
+      ];
+      const snapshot = await (
+        await handler()(json({ capturedAt, reference }, 'snapshot-names'))
+      ).json();
+      expect(snapshot.kind).toBe('accepted');
+      expect(
+        (await service.getEvidence(snapshot.itemId))
+          .map((e) => [e.partId, e.filename])
+          .sort(),
+      ).toEqual([
+        ['long', undefined],
+        ['owner', 'Ownedfdp.exe'],
+      ]);
+    });
     it('bounds chunked bodies and handles malformed JSON / upstream stream failure', async () => {
       const chunks = new ReadableStream<Uint8Array>({
         start(c) {
@@ -468,6 +574,17 @@ export function sourcesSuite(
       const first = await adapter.receive(delivery);
       expect(first.kind).toBe('accepted');
       if (!('itemId' in first)) throw new Error('receipt missing');
+      // Attachment names are exposed on the DTO (#4214); the upstream
+      // locator (mailbox path) stays in storage and is not exposed.
+      const attachments = (await service.getEvidence(first.itemId)).filter(
+        (e) => e.partId.startsWith('attachment:'),
+      );
+      expect(attachments.map((e) => [e.partId, e.filename]).sort()).toEqual([
+        ['attachment:0', 'a.pdf'],
+        ['attachment:1', 'b.tif'],
+      ]);
+      for (const attachment of attachments)
+        expect(attachment).not.toHaveProperty('sourceReference');
       const evidence = await service.getEvidence(first.itemId);
       expect(evidence).toHaveLength(3);
       const parent = evidence.find((e) => e.partId === 'message')!;
@@ -516,6 +633,53 @@ export function sourcesSuite(
         await adapter.receive({ ...delivery, locator: '45' }),
       ).toMatchObject({ category: 'authentication' });
       expect(await count()).toBe(2);
+    });
+    it('cleans or drops odd attachment names instead of failing the receipt (#4214)', async () => {
+      const adapter = new EmailSourceAdapter({
+        binding,
+        accountId: 'account',
+        readMessage: async () => ({
+          accountId: 'account',
+          messageId: 'rfc-odd-names',
+          threadId: 'thread-odd-names',
+          inReplyTo: '',
+          subject: 'odd names',
+          text: 'body',
+          html: '',
+          date: capturedAt,
+          attachments: [
+            {
+              partId: '0',
+              filename: 'bad\u0000name\n.pdf',
+              mediaType: 'application/pdf',
+              bytes: Buffer.from('%PDF-odd'),
+            },
+            {
+              partId: '1',
+              filename: 'x'.repeat(600),
+              mediaType: 'application/pdf',
+              bytes: Buffer.from('%PDF-long'),
+            },
+          ],
+        }),
+        acknowledge: async () => {},
+      });
+      const receipt = await adapter.receive({
+        locator: 'INBOX:uidvalidity:odd-names',
+        revision: '1',
+        checkpoint: '1',
+      });
+      expect(receipt.kind).toBe('accepted');
+      if (!('itemId' in receipt)) throw new Error('receipt missing');
+      expect(
+        (await service.getEvidence(receipt.itemId))
+          .filter((e) => e.partId.startsWith('attachment:'))
+          .map((e) => [e.partId, e.filename])
+          .sort(),
+      ).toEqual([
+        ['attachment:0', 'badname.pdf'],
+        ['attachment:1', undefined],
+      ]);
     });
     it('retries failed email checkpoint without duplicating bytes and rejects missing/oversized attachments', async () => {
       const snapshot: EmailIntakeSnapshot = {
@@ -616,7 +780,13 @@ export function sourcesSuite(
       const restarted = new WatchFolderSourceAdapter(config);
       expect(await restarted.poll()).toEqual([]);
       clock += 11;
-      expect((await restarted.poll())[0].result.kind).toBe('accepted');
+      const accepted = (await restarted.poll())[0].result;
+      expect(accepted.kind).toBe('accepted');
+      // The folder entry name is the evidence filename (#4214).
+      if (!('itemId' in accepted)) throw new Error('receipt missing');
+      expect(
+        (await service.getEvidence(accepted.itemId)).map((e) => e.filename),
+      ).toEqual(['scan.pdf']);
       expect(await readdir(join(root, '.ingestion-processed'))).toEqual([
         claimId,
       ]);
@@ -711,6 +881,38 @@ export function sourcesSuite(
             (await db.query(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n,
           ),
         ).toBe(0);
+    });
+    it('cleans a vendor webhook part name instead of failing the delivery (#4214)', async () => {
+      // Built from code points: no invisible character appears in source.
+      const rlo = String.fromCodePoint(0x202e);
+      const endpoint = createVendorWebhookHandler({
+        maxRequestBytes: 100,
+        verify: async (_request, bytes) => ({
+          binding,
+          deliveryKey: 'vendor-named',
+          deliveredAt: new Date(capturedAt),
+          parts: [
+            {
+              partId: 'body',
+              mediaType: 'text/plain',
+              bytes,
+              filename: `Vendor\nreport${rlo}txt.exe`,
+            },
+          ],
+        }),
+      });
+      const receipt = await (
+        await endpoint(
+          new Request('https://host/vendor', {
+            method: 'POST',
+            body: 'vendor-named',
+          }),
+        )
+      ).json();
+      expect(receipt.kind).toBe('accepted');
+      expect(
+        (await service.getEvidence(receipt.itemId)).map((e) => e.filename),
+      ).toEqual(['Vendorreporttxt.exe']);
     });
   });
 }

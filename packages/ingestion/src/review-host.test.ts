@@ -106,10 +106,11 @@ describe('inbox primary evidence', () => {
     const long = part('l', 'long', 'application/pdf');
     expect(primaryEvidence([owner, long])).toBe(long);
   });
-  it('changes nothing for existing hosts: without rowEvidence, list reads no evidence', async () => {
+  it('without rowEvidence, list reads metadata once for labels but never the per-part adapter or a link', async () => {
     const f = fixture();
     const page = await f.host.list({});
-    expect(f.service.listEvidence).not.toHaveBeenCalled();
+    // One metadata read per page so labels can use the filename (#4214).
+    expect(f.service.listEvidence).toHaveBeenCalledTimes(1);
     expect(f.service.getEvidence).not.toHaveBeenCalled();
     expect(f.evidence).not.toHaveBeenCalled();
     expect(page.items[0].evidence).toBeUndefined();
@@ -225,6 +226,91 @@ describe('inbox primary evidence', () => {
       expect(page.items.map((entry) => entry.item.id)).toEqual(['item']);
       expect(page.items[0].evidence).toBeUndefined();
     }
+  });
+});
+
+describe('labels from original names', () => {
+  it('labels a row and a view by the primary original filename by default', async () => {
+    const f = fixture();
+    const parts = [
+      part('capture', 'capture', 'application/json'),
+      {
+        ...part('file', 'file', 'application/pdf', 'capture'),
+        filename: 'Acme March.pdf',
+      },
+    ];
+    f.service.listEvidence.mockResolvedValue(new Map([['item', parts]]));
+    expect((await f.host.list({})).items[0].label).toBe('Acme March.pdf');
+    f.service.getEvidence.mockResolvedValue(parts);
+    expect((await f.host.load('item')).entry.label).toBe('Acme March.pdf');
+    f.service.listEvidence.mockResolvedValue(new Map());
+    expect((await f.host.list({})).items[0].label).toBe('Intake item');
+  });
+  it('without rowEvidence, a failing evidence read lists with item labels instead of rejecting', async () => {
+    const f = fixture();
+    f.service.listEvidence.mockRejectedValue(new Error('Intake unavailable'));
+    const page = await f.host.list({});
+    expect(page.items.map((entry) => entry.item.id)).toEqual(['item']);
+    expect(page.items[0].label).toBe('Intake item');
+    expect(page.items[0].evidence).toBeUndefined();
+    // A host label gets no evidence, as for a row without parts.
+    const label = vi.fn(() => 'custom');
+    const custom = fixture({ label });
+    custom.service.listEvidence.mockRejectedValue(new Error('down'));
+    expect((await custom.host.list({})).items[0].label).toBe('custom');
+    expect(label).toHaveBeenCalledWith(custom.item, []);
+  });
+  it('with rowEvidence, a failing evidence read still rejects the page, as #4213 defines', async () => {
+    const f = fixture({ rowEvidence: async () => new Map() });
+    f.service.listEvidence.mockRejectedValue(new Error('Intake unavailable'));
+    await expect(f.host.list({})).rejects.toThrow('Intake unavailable');
+  });
+  it('labels only from the primary part, never from another part with a name', async () => {
+    const f = fixture();
+    // The primary part (the attachment) has no name; the message record does.
+    const parts = [
+      {
+        ...part('message', 'message', 'application/json'),
+        filename: 'record.json',
+      },
+      part('att', 'attachment:0', 'application/pdf', 'message'),
+    ];
+    f.service.listEvidence.mockResolvedValue(new Map([['item', parts]]));
+    expect((await f.host.list({})).items[0].label).toBe('Intake item');
+    f.service.getEvidence.mockResolvedValue(parts);
+    expect((await f.host.load('item')).entry.label).toBe('Intake item');
+  });
+  it('passes the evidence, primary part first, to a host label callback', async () => {
+    const f = fixture();
+    const label = vi.fn(
+      (item: IntakeItemDTO, evidence: IntakeEvidenceDTO[]) =>
+        `${item.id}:${evidence.map((part) => part.partId).join(',')}`,
+    );
+    const host = createIntakeReviewHost(
+      f.service as unknown as IngestionService,
+      {
+        upload: async () => ({ itemId: 'item' }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async () => ({ label: 'Original' }),
+        label,
+      },
+    );
+    f.service.listEvidence.mockResolvedValue(
+      new Map([
+        [
+          'item',
+          [
+            part('message', 'message', 'application/json'),
+            part('att', 'attachment:0', 'application/pdf', 'message'),
+          ],
+        ],
+      ]),
+    );
+    expect((await host.list({})).items[0].label).toBe(
+      'item:attachment:0,message',
+    );
+    expect(label).toHaveBeenCalledTimes(1);
   });
 });
 
