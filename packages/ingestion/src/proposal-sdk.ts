@@ -31,6 +31,105 @@ function acceptsResponseModel(
 
 const string = { type: 'string', minLength: 1, maxLength: 512 };
 
+/**
+ * JSON Schema keywords removed from the provider-facing response schema
+ * (#4260), because common OpenAI-compatible structured-output backends reject
+ * them and fail the whole request:
+ * - `uniqueItems`, `contains`, `minContains`, `maxContains`: vLLM's xgrammar
+ *   backend answers `400 Grammar error: Unimplemented keys: ["uniqueItems"]`,
+ *   and vLLM's own xgrammar feature check rejects them on arrays.
+ * - `multipleOf`, `minProperties`, `maxProperties`, `propertyNames`,
+ *   `patternProperties`, `format`: also rejected by vLLM's xgrammar feature
+ *   check (`format` additionally has only partial support in llama.cpp's
+ *   json-schema-to-grammar, used by Ollama).
+ * - `not`, `if`/`then`/`else`, `dependentRequired`, `dependentSchemas`,
+ *   `dependencies`, `unevaluatedItems`, `unevaluatedProperties`: implemented
+ *   by neither xgrammar nor llama.cpp's grammar converter.
+ * Kept, because those backends implement them: `type`, `enum`, `const`,
+ * `anyOf`/`oneOf`/`allOf`, `items`/`prefixItems`, `minItems`/`maxItems`,
+ * `minLength`/`maxLength`, `pattern`, numeric ranges, `required`,
+ * `additionalProperties`, `$ref`/`$defs`. OpenAI's own non-strict mode
+ * (`strict: false` below) accepts any of them.
+ *
+ * Dropping a keyword only loosens the grammar: the Ajv validator
+ * (`suggestionSchema` in proposal-validation.ts) still enforces every
+ * constraint, including uniqueness of `alternatives` and `missingFields`.
+ */
+export const UNPORTABLE_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+  'multipleOf',
+  'minProperties',
+  'maxProperties',
+  'propertyNames',
+  'patternProperties',
+  'format',
+  'not',
+  'if',
+  'then',
+  'else',
+  'dependentRequired',
+  'dependentSchemas',
+  'dependencies',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+]);
+/** Keywords whose value is a map from names to subschemas. */
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', '$defs', 'definitions']);
+/** Keywords whose value is a list of subschemas. */
+const SCHEMA_LIST_KEYWORDS = new Set([
+  'anyOf',
+  'oneOf',
+  'allOf',
+  'prefixItems',
+]);
+/** Keywords whose value is one subschema (or, for `items`, possibly a list). */
+const SCHEMA_SINGLE_KEYWORDS = new Set([
+  'items',
+  'additionalItems',
+  'additionalProperties',
+]);
+
+/**
+ * Copy a response schema without {@link UNPORTABLE_SCHEMA_KEYWORDS}, walking
+ * only schema positions. Property names (a handler argument may be called
+ * `format`), `enum`/`const` values and `required` lists are copied as data,
+ * never inspected as keywords.
+ */
+export function portableResponseSchema<T>(schema: T): T {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema))
+    return structuredClone(schema);
+  const portable: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(
+    schema as Record<string, unknown>,
+  )) {
+    if (UNPORTABLE_SCHEMA_KEYWORDS.has(key)) continue;
+    if (
+      SCHEMA_MAP_KEYWORDS.has(key) &&
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    )
+      portable[key] = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(
+          ([name, subschema]) => [name, portableResponseSchema(subschema)],
+        ),
+      );
+    else if (SCHEMA_LIST_KEYWORDS.has(key) && Array.isArray(value))
+      portable[key] = value.map((subschema) =>
+        portableResponseSchema(subschema),
+      );
+    else if (SCHEMA_SINGLE_KEYWORDS.has(key))
+      portable[key] = Array.isArray(value)
+        ? value.map((subschema) => portableResponseSchema(subschema))
+        : portableResponseSchema(value);
+    else portable[key] = structuredClone(value);
+  }
+  return portable as T;
+}
+
 function locationSchema(location: unknown): Record<string, unknown> {
   const value = location as Record<string, unknown>;
   switch (value.kind) {
@@ -82,9 +181,15 @@ function locationSchema(location: unknown): Record<string, unknown> {
  * The provider receives the same catalog as the validator, but JSON mode alone
  * does not distinguish an opaque candidate key from the record id an operation
  * accepts. Give providers a closed response schema as well as the catalog.
- * Validation remains the authority because non-grammar providers may ignore it.
+ * Validation remains the authority because non-grammar providers may ignore it,
+ * and the schema is made portable (see {@link portableResponseSchema}) so a
+ * grammar backend that lacks a keyword does not reject the request (#4260).
  */
 export function proposalResponseSchema(input: GenerativeProposalInput) {
+  return portableResponseSchema(closedResponseSchema(input));
+}
+
+function closedResponseSchema(input: GenerativeProposalInput) {
   const alternativeKeys = [
     ...new Set(
       input.offered.flatMap(({ handler, candidates }) => [
@@ -196,6 +301,7 @@ export function proposalResponseSchema(input: GenerativeProposalInput) {
         alternatives: alternativeKeys.length
           ? {
               type: 'array',
+              // Not portable; dropped for providers, enforced by the validator.
               uniqueItems: true,
               maxItems: 20,
               items: { type: 'string', enum: alternativeKeys },

@@ -180,6 +180,26 @@ The SDK adapter constrains replies with a `json_schema` response format built
 from the validator's schema and the fixed instructions describe the shape; a
 custom `ProposalGenerator` receives no schema, so its raw reply meets the
 validator directly and the same reason is recorded.
+The provider-facing schema is made portable (`portableResponseSchema`, #4260):
+keywords that common OpenAI-compatible structured-output backends reject are
+removed at schema positions, including inside handler argument schemas
+(`uniqueItems`, `contains`, `multipleOf`, `format`, `patternProperties`,
+`propertyNames`, `min`/`maxProperties`, `not`, `if`/`then`/`else`,
+`dependent*`, `unevaluated*`; the full list and reasons are in
+`src/proposal-sdk.ts`). vLLM's xgrammar, for example, answers
+`400 Unimplemented keys: ["uniqueItems"]`. This only loosens the grammar: the
+validator still enforces every constraint, including unique `alternatives` and
+`missingFields`. There is no automatic `json_object` fallback.
+
+A generator call that throws ends the attempt as `provider_error` with the
+`unavailable` warning and `provenance.failure` `{category: 'unavailable',
+reason}`. The reason is value-free by construction: a provider's own text can
+quote the prompt or document, so it is never copied. The reason is built only
+from a fixed phrase, the HTTP status, the SDK error code (upper-case
+identifiers only) and, for a schema rejection, quoted tokens that are JSON
+Schema keywords. For example: `provider rejected the response schema (HTTP 400,
+code API_ERROR); unsupported response-schema keywords: uniqueItems`, or just
+`provider call failed`. It is cut at 500 characters.
 
 `createSDKProposalDecisionClient(client)` adapts an existing SDK client’s optional
 capability without changing its errors or protocol. Optional `decision` uses public core `executeDecision` and the existing SDK

@@ -59,6 +59,7 @@ import {
   text,
   validateSuggestions,
 } from './proposal-validation.js';
+import { providerFailureReason } from './provider-failure.js';
 import type { ReviewerInstruction } from './review-dto.js';
 import { reviewerInstructionView } from './reviewer-instruction.js';
 import type {
@@ -128,7 +129,11 @@ const pin = (source: CompletedAnalysisSnapshot): GenerationSourcePin => ({
 });
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 class StageFailure extends Error {
-  /** Optional fixed diagnostic; never provider text or document content. */
+  /**
+   * Optional value-free diagnostic: fixed phrases, statuses, SDK codes and
+   * allowlisted schema keyword names only; never provider free text or
+   * document content.
+   */
   constructor(
     readonly category: IntakeFailure,
     readonly reason?: string,
@@ -837,8 +842,10 @@ export class IngestionProposalService {
               signal,
               maxOutputBytes: maxBytes,
             });
-          } catch {
-            throw new StageFailure('unavailable');
+          } catch (error) {
+            // Value-free by construction: status, SDK code and allowlisted
+            // schema keyword names only, never the provider's free text (#4260).
+            throw new StageFailure('unavailable', providerFailureReason(error));
           }
         });
         await this.live(

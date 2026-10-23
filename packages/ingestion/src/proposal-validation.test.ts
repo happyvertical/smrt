@@ -69,6 +69,28 @@ describe('proposal validator reasons', () => {
     }
   });
 
+  it.each([
+    'alternatives',
+    'missingFields',
+  ] as const)('still rejects duplicate %s although providers no longer receive uniqueItems (#4260)', (field) => {
+    const suggestion = {
+      handlerId: 'h',
+      handlerVersion: '1',
+      args: {},
+      evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+      alternatives: [] as string[],
+      missingFields: [] as string[],
+      explanation: '',
+      [field]: ['same', 'same'],
+    };
+    const error = failure({
+      outcome: 'proposals',
+      suggestions: [suggestion],
+      splits: [],
+    });
+    expect(error.reason).toContain(`/suggestions/0/${field} uniqueItems`);
+    expect(error.reason).not.toContain('same');
+  });
   it('names schema violations by path and keyword without quoting values (#4207)', () => {
     const reply = JSON.parse(
       '{"outcome":"accept","suggestions":[{"handlerId":"h","handlerVersion":"1","args":{},"explanation":"x"}]}',

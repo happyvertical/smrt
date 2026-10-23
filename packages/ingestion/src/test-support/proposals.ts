@@ -6231,6 +6231,36 @@ export function proposalSuite(
         }),
       ).rejects.toThrow('not ready');
     });
+    it('records a value-free provider reason next to unavailable (#4260)', async () => {
+      const documentText = 'Invoice INV-5521 for Jane Doe, total 1234.00';
+      // What the SDK raises for vLLM's grammar rejection, plus an echo of the
+      // prompt, which must never be recorded.
+      calls.mockRejectedValue(
+        Object.assign(
+          new Error(
+            `400 Grammar error: Unimplemented keys: ["uniqueItems"] while compiling ${documentText}`,
+          ),
+          { code: 'API_ERROR' },
+        ),
+      );
+      const rejected = await generate();
+      expect(rejected.output.outcome).toBe('provider_error');
+      expect(rejected.output.warnings).toContain('unavailable');
+      expect(rejected.output.provenance.failure).toEqual({
+        category: 'unavailable',
+        reason:
+          'provider rejected the response schema (HTTP 400, code API_ERROR); unsupported response-schema keywords: uniqueItems',
+      });
+      // An unrecognised failure records only the fixed category phrase.
+      calls.mockRejectedValue(new Error(documentText));
+      const unknown = await generate();
+      expect(unknown.output.provenance.failure).toEqual({
+        category: 'unavailable',
+        reason: 'provider call failed',
+      });
+      for (const recorded of [rejected, unknown])
+        expect(JSON.stringify(recorded.output)).not.toContain('Jane Doe');
+    });
     it('configured decision failure remains explicit and never silently falls back', async () => {
       chooseCreate();
       configuration.decision = {
