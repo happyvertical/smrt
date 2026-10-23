@@ -243,8 +243,10 @@ returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
 (`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
 from metadata without reading bytes; if `rowEvidence` throws or returns a
 malformed answer, the page still lists without previews, and a row without
-durable parts never gets one. When it is omitted, `list` makes no evidence read and
-rows show no original link. The primary part is chosen by role, not media
+durable parts never gets one. When it is omitted, rows show no original link.
+Either way `list` reads the page's evidence metadata once, in that same query,
+so the row label can use the original filename; it never reads original bytes
+and never calls `evidence(part)`. The primary part is chosen by role, not media
 type: the shallowest child part when any part has a parent (an upload's file
 under its capture record, an email's first attachment under the message, even
 when that child is JSON), else the first root part (a watched-folder file);
@@ -254,7 +256,9 @@ the host's "Open original" link (new tab) and thumbnail when the URLs are
 same-origin; each link's accessible name is "Open original: <row label>", and
 a row shows no wrapper when neither URL is usable. The slot is a plain `div`,
 not an `aside` landmark, so a page does not add one landmark per row. Optional
-`label(item)` changes presentation. Optional
+`label(item, evidence)` changes presentation; `evidence` is the item's durable
+parts with the primary part first, and the default label is the primary part's
+own original `filename`, else `Intake <8 hex>`. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment

@@ -38,6 +38,7 @@ import type {
   RetrieveFeedbackInput,
   SuggestRuleInput,
 } from './feedback-dto.js';
+import { isStorableFilename, presentedFilename } from './presented-filename.js';
 import {
   type ProposalConfiguration,
   type ProposalReadConfiguration,
@@ -63,6 +64,8 @@ export interface IntakePart {
   bytes: Uint8Array;
   expectedHash?: string;
   sourceReference?: { owner: string; id: string; version: string };
+  /** Original name as the source presented it; presentation only, never identity. */
+  filename?: string;
 }
 /** Host-resolved delivery and retention policy, never untrusted content labels. */
 export interface ReceiveInput {
@@ -203,6 +206,11 @@ function bytesHash(value: Uint8Array): string {
 function nonempty(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512)
     throw new Error('Invalid intake identifier');
+}
+/** A source-supplied display name: bounded text with no unsafe characters. */
+function filename(value: unknown): asserts value is string {
+  // Same character set the source adapters strip (presented-filename.ts).
+  if (!isStorableFilename(value)) throw new Error('Invalid intake filename');
 }
 function integer(value: unknown, max = 2_147_483_647): asserts value is number {
   if (
@@ -525,6 +533,7 @@ export class IngestionService {
         const hash = bytesHash(part.bytes);
         if (part.expectedHash && part.expectedHash !== hash)
           throw new Error('Invalid hash');
+        if (part.filename !== undefined) filename(part.filename);
         return { ...part, bytes: Buffer.from(part.bytes), hash };
       });
       if (total > input.limits.maxBytes)
@@ -642,7 +651,12 @@ export class IngestionService {
             byte_length: part.bytes.byteLength,
             media_type: part.mediaType,
             source_uri: '',
-            data: canonical({ sourceReference: part.sourceReference ?? null }),
+            data: canonical({
+              sourceReference: part.sourceReference ?? null,
+              ...(part.filename === undefined
+                ? {}
+                : { filename: part.filename }),
+            }),
           });
       }
       return { kind: 'reserved' as const, item, created: !!inserted.length };
@@ -1266,6 +1280,10 @@ export class IngestionService {
     return result;
   }
   private evidenceDTO(e: Row): IntakeEvidenceDTO {
+    // Only the cleaned name is exposed. `sourceReference` stays in storage:
+    // its ids are upstream locators (mailbox paths, raw folder names), not
+    // display text, and no host needs them on the DTO.
+    const filename = presentedFilename(object(e.data).filename);
     return {
       id: String(e.id),
       partId: String(e.part_id),
@@ -1275,6 +1293,7 @@ export class IngestionService {
       mediaType: String(e.media_type),
       contentHash: String(e.content_hash),
       byteLength: Number(e.byte_length),
+      ...(filename ? { filename } : {}),
     };
   }
   /** One read authorization per distinct captured ceiling for a page of rows. */

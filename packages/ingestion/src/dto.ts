@@ -58,6 +58,12 @@ export interface IntakeEvidenceDTO {
   mediaType: string;
   contentHash: string;
   byteLength: number;
+  /**
+   * Original name supplied by the source (upload, attachment, folder), with
+   * control, bidi and zero-width characters removed. Still untrusted text:
+   * render it as text, never as markup or a path.
+   */
+  filename?: string;
 }
 
 /** Explicit resource limits captured with each receipt. */
