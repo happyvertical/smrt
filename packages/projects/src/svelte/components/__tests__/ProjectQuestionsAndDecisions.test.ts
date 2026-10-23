@@ -106,3 +106,48 @@ describe('ProjectQuestionsAndDecisions', () => {
     ).toBeNull();
   });
 });
+
+it('automatically emits static analytics only after persisted question/decision status updates', async () => {
+  const emit = vi.fn();
+  const questions = [
+    {
+      id: 'private-q',
+      prompt: 'Private prompt',
+      status: 'open' as const,
+      revision: 1,
+    },
+  ];
+  const decisions = [
+    {
+      id: 'private-d',
+      question: 'Private question',
+      status: 'open' as const,
+      revision: 1,
+    },
+  ];
+  const view = render(ProjectQuestionsAndDecisions, {
+    props: { questions, decisions },
+    context: new Map([[Symbol.for('@happyvertical/smrt-ui/analytics'), emit]]),
+  });
+  expect(emit).not.toHaveBeenCalled();
+  await view.rerender({ questions, decisions, busy: false });
+  expect(emit).not.toHaveBeenCalled();
+  const answered = questions.map((row) => ({
+    ...row,
+    status: 'answered' as const,
+    answer: 'Private answer',
+    revision: 2,
+  }));
+  const decided = decisions.map((row) => ({
+    ...row,
+    status: 'decided' as const,
+    outcome: 'Private outcome',
+    revision: 2,
+  }));
+  await view.rerender({ questions: answered, decisions: decided });
+  await view.rerender({ questions: answered, decisions: decided });
+  expect(emit.mock.calls).toEqual([
+    ['project_question_answered', undefined],
+    ['project_decision_resolved', undefined],
+  ]);
+});

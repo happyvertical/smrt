@@ -954,3 +954,37 @@ export function sumExpenseRowsByCurrency(
       netAccruedCents: expense + adjustments - payouts,
     }));
 }
+
+/** Host-owned display state; eligibility is informational, server guards decide. */
+export interface SellerGovernanceView {
+  sellerLabel: string;
+  authorized: boolean;
+  advertiserLabel: string;
+  lease:
+    | import('../crm/services/sales-governance-types.js').SalesAdvertiserLease
+    | null;
+  quote:
+    | import('../crm/services/sales-governance-types.js').SalesQuoteSnapshot
+    | null;
+  /** Hosts independently authorize finance actions. */
+  canReview: boolean;
+}
+
+/** Exact current revision/request identifiers are included in every UI action. */
+export interface SellerGovernanceAction {
+  action:
+    | 'acquire'
+    | 'renew'
+    | 'release'
+    | 'request'
+    | 'approve'
+    | 'reject'
+    | 'revoke'
+    | 'issue'
+    | 'sign';
+  quoteId?: string;
+  revision?: number;
+  requestId?: string;
+  leaseId?: string;
+  reason?: string;
+}

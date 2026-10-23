@@ -313,3 +313,20 @@ lane: PostgreSQL locks the oldest persisted version and re-reads the latest;
 embedded engines use core's transaction/write queue. Each successful call keeps
 its own terms and version. Direct `supersede()` requires a finite `effectiveTo`
 set before the transition; saving an open-ended superseded row is rejected.
+
+Governed sales are available from `/crm`: `SalesGovernanceService` authorizes
+sellers, exclusively leases canonical advertisers, freezes quote revisions and
+requires exact maker/checker discount approval. Hosts supply current membership,
+suspension, inventory and seller/finance policies. See
+[the governed sales integration contract](agents/crm.md#governed-sellers-quotes-and-canonical-advertiser-registration)
+for transactional executor ownership, migration and provider signing boundaries.
+The Svelte export includes `SellerGovernancePanel` and its view/action contracts.
+
+Governance currently accepts owned PostgreSQL connection configurations
+only. Other adapters fail before connection creation. Full issue #4264 remains
+blocked on [SDK DuckDB connection visibility #1452](https://github.com/happyvertical/sdk/issues/1452).
+
+SQLite governance is also refused before opening because same-process recovery
+from BUSY invalidation has not been proven for this workflow. Previous SQLite
+behavioral tests are investigation evidence, not a supported runtime claim.
+Follow-up validation is tracked in [s-m-r-t #4269](https://github.com/happyvertical/smrt/issues/4269).

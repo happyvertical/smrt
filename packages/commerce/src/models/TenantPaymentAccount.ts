@@ -273,7 +273,7 @@ export class TenantPaymentAccount extends SmrtObject {
     if (!this.providerAccountId)
       throw new Error('TenantPaymentAccount requires a providerAccountId');
     if (this.id) {
-      const prior = await this.db.get(this.tableName, { id: this.id });
+      const prior = await this.getCanonicalPersistedRow({ id: this.id });
       if (prior) {
         const identity: Array<[string, unknown, unknown]> = [
           ['tenantId', String(prior.tenant_id ?? ''), this.tenantId],

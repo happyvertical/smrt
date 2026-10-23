@@ -1,3 +1,7 @@
+<script lang="ts" module>
+/** A reviewer operation whose result may finish the item for this reviewer. */
+export type ReviewOutcome = 'approve' | 'apply' | 'resolve';
+</script>
 <script lang="ts">
 import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -17,8 +21,14 @@ export interface Props {
   currentAttemptId?: string;
   /** A resolved item is terminal: approve/correct/defer/apply and edits are hidden; only reject remains. */
   resolved?: boolean;
-  run: (operation: () => Promise<unknown>) => Promise<void>;
+  /** `outcome` names an approve or apply so the parent can report it after its reload. */
+  run: (
+    operation: () => Promise<unknown>,
+    outcome?: ReviewOutcome,
+  ) => Promise<void>;
   deny: () => void;
+  /** Whether this editor holds unsent input (arguments, reason, comment). */
+  ondirty?: (dirty: boolean) => void;
 }
 let {
   host,
@@ -29,6 +39,7 @@ let {
   resolved = false,
   run,
   deny,
+  ondirty,
 }: Props = $props();
 const { t } = useI18n();
 // ReviewView keys this editor by action/revision/reviewVersion; edits are local to that binding.
@@ -42,11 +53,18 @@ let args = $state(untrack(() => JSON.stringify(action.args, null, 2) ?? '')),
 let alive = true;
 onDestroy(() => {
   alive = false;
+  // The editor's local input goes with it.
+  ondirty?.(false);
 });
 const dirty = $derived(
   args !== (JSON.stringify(action.args, null, 2) ?? '') ||
     planArgs !== (JSON.stringify(action.plan?.args, null, 2) ?? ''),
 );
+const unsent = $derived(dirty || !!reason || !!comment);
+$effect(() => {
+  const edited = unsent;
+  untrack(() => ondirty?.(edited));
+});
 const waiting = $derived(
   action.args !== undefined && action.review.state === 'waiting_review',
 );
@@ -97,6 +115,7 @@ async function decide(decision: ReviewInput['decision']) {
       ...(reason ? { reason } : {}),
       ...(correctedArgs ? { correctedArgs } : {}),
     }),
+    decision === 'approve' ? 'approve' : undefined,
   );
 }
 async function saveEdits() {
@@ -190,7 +209,7 @@ function choose(field: string, id: string) {
 {#if !editable && invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
-{#if action.review.state === 'authorized' && !resolved}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
+{#if action.review.state === 'authorized' && !resolved}<Button disabled={unsent} onclick={() => { if (!unsent) void run(() => host.apply(action.review.actionId), 'apply'); }}>{t(M['ingestion.apply'])}</Button>{/if}
 {/if}
 {#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction && !resolved}
 <p>{t(M['ingestion.reviewAgain'])}</p>

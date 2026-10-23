@@ -40,7 +40,9 @@ import {
   refreshTenantPaymentAccount,
   refundConnectedPayment,
   setTenantPaymentAccountDisabled,
+  setTenantPaymentFeePolicy,
 } from '../../connected-payments.js';
+import { withConnectedPaymentAuthority } from '../../connected-payments-internal.js';
 import { PaymentIntentStatus, PaymentStatus } from '../../types/index.js';
 import {
   StripeConnectFixture,
@@ -191,6 +193,128 @@ export function connectedPaymentsContract(
         }),
       };
     }
+
+    it('freezes the bakery agreement version independently of purchase identity and live policy', async () => {
+      const accountId = stripe.accountId('riverbendbakery');
+      await connect(bakery, accountId);
+      const input = {
+        db,
+        gateway: stripe.adapter(),
+        tenantId: bakery,
+        environment: 'test' as const,
+        offeringRef: 'sourdough-share',
+        licenseeEmail: 'member@example.org',
+        idempotencyKey: 'agreement-purchase',
+        amount: 10_000,
+        currency: 'USD',
+        applicationFeeAmount: 500,
+        feePolicyRef: 'bakery-membership:version:1',
+      };
+      const first = await createConnectedCheckout(input);
+      expect(first.intent.connectedFeePolicyRef).toBe(input.feePolicyRef);
+      await setTenantPaymentFeePolicy({
+        db,
+        tenantId: bakery,
+        environment: 'test',
+        feePolicyRef: 'bakery-membership:version:2',
+      });
+      const retry = await createConnectedCheckout(input);
+      expect(retry.intent.id).toBe(first.intent.id);
+      expect(retry.checkoutUrl).toBe(first.checkoutUrl);
+      await expect(
+        createConnectedCheckout({
+          ...input,
+          feePolicyRef: 'bakery-membership:version:2',
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      await expect(
+        createConnectedCheckout({ ...input, feePolicyRef: undefined }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      const { result } = await deliverCompleted(
+        first.intent.paymentOptions[0]!.memo!,
+        accountId,
+      );
+      await withTenant({ tenantId: bakery }, async () => {
+        const payment = await (await PaymentCollection.create({ db })).get({
+          id: result.paymentId!,
+        });
+        expect(payment!.connectedFeePolicyRef).toBe(input.feePolicyRef);
+        payment!.connectedFeePolicyRef = 'forged';
+        await expect(
+          withConnectedPaymentAuthority(bakery, () => payment!.save()),
+        ).rejects.toThrow('connectedFeePolicyRef');
+        const intents = await PaymentIntentCollection.create({ db });
+        const persisted = await intents.get({ id: first.intent.id! });
+        persisted!.connectedFeePolicyRef = 'forged';
+        await expect(
+          withConnectedPaymentAuthority(bakery, () => persisted!.save()),
+        ).rejects.toThrow('cannot change');
+      });
+      const refunded = await refundConnectedPayment({
+        db,
+        gateway: stripe.adapter(),
+        tenantId: bakery,
+        environment: 'test',
+        paymentId: result.paymentId!,
+        amount: 1000,
+        refundApplicationFee: false,
+        idempotencyKey: 'version-refund',
+        resolveSettlementAccounts,
+      });
+      expect(refunded.refund.connectedFeePolicyRef).toBe(input.feePolicyRef);
+      expect((await createConnectedCheckout(input)).settled).toBe(true);
+    });
+
+    it('retains durable policy evidence across a lost checkout response and rejects malformed references', async () => {
+      await connect(bakery, stripe.accountId('riverbendbakery'));
+      const gateway = stripe.adapter();
+      const input = {
+        db,
+        gateway,
+        tenantId: bakery,
+        environment: 'test' as const,
+        offeringRef: 'sourdough-share',
+        licenseeEmail: 'member@example.org',
+        idempotencyKey: 'lost-version',
+        amount: 10_000,
+        currency: 'USD',
+        applicationFeeAmount: 500,
+        feePolicyRef: 'bakery:fee-policy:v7',
+      };
+      for (const feePolicyRef of ['', '  ', ' version '])
+        await expect(
+          createConnectedCheckout({ ...input, feePolicyRef }),
+        ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      const send = vi
+        .spyOn(gateway, 'createPaymentOption')
+        .mockRejectedValueOnce(new Error('transport lost'));
+      await expect(createConnectedCheckout(input)).rejects.toThrow(
+        'transport lost',
+      );
+      await withTenant({ tenantId: bakery }, async () => {
+        const intents = await PaymentIntentCollection.create({ db });
+        const intent = await intents.findByIdempotencyKey(input);
+        expect(intent!.connectedFeePolicyRef).toBe(input.feePolicyRef);
+        expect(intent!.paymentOptions).toHaveLength(0);
+      });
+      await expect(
+        createConnectedCheckout({
+          ...input,
+          feePolicyRef: 'bakery:fee-policy:v8',
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      const retry = await createConnectedCheckout(input);
+      expect(retry.intent.connectedFeePolicyRef).toBe(input.feePolicyRef);
+      expect(send).toHaveBeenCalledTimes(2);
+      await connect(toolLibrary, stripe.accountId('harbortools'));
+      const other = await createConnectedCheckout({
+        ...input,
+        tenantId: toolLibrary,
+        feePolicyRef: 'tool-library:policy:v1',
+      });
+      expect(other.intent.id).not.toBe(retry.intent.id);
+      expect(other.intent.connectedFeePolicyRef).toBe('tool-library:policy:v1');
+    });
 
     it('onboards a Standard account and enables it from account.updated', async () => {
       const gateway = stripe.adapter();
@@ -825,7 +949,9 @@ export function connectedPaymentsContract(
       ).toBe('refund_updated');
       await withTenant({ tenantId: bakery }, async () => {
         const payments = await PaymentCollection.create({ db });
-        const row = (await payments.get({ id: waitingForUpdate.refund.id! }))!;
+        const row = (await payments.get({
+          id: waitingForUpdate.refund.id!,
+        }))!;
         expect(row.status).toBe(PaymentStatus.COMPLETED);
         expect(row.backendTxRef).toBe('re_staleanswer');
       });
@@ -949,7 +1075,9 @@ export function connectedPaymentsContract(
           providerAccountId: stripe.accountId('riverbendbakery'),
           replace: true,
         });
-      await expect(relink()).rejects.toMatchObject({ code: 'ACCOUNT_IN_USE' });
+      await expect(relink()).rejects.toMatchObject({
+        code: 'ACCOUNT_IN_USE',
+      });
       await expect(withSystemContext(relink)).rejects.toMatchObject({
         code: 'ACCOUNT_IN_USE',
       });

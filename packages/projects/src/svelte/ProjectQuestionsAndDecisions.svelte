@@ -1,4 +1,8 @@
 <script lang="ts">
+import {
+  createAnalyticsTransitions,
+  getAnalyticsContext,
+} from '@happyvertical/smrt-ui/analytics';
 import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
@@ -32,6 +36,17 @@ let {
 }: Props = $props();
 
 const { t } = useI18n();
+const analytics = getAnalyticsContext();
+const observeQuestions = createAnalyticsTransitions(analytics);
+const observeDecisions = createAnalyticsTransitions(analytics);
+$effect(() =>
+  observeQuestions(questions, 'open', {
+    answered: 'project_question_answered',
+  }),
+);
+$effect(() =>
+  observeDecisions(decisions, 'open', { decided: 'project_decision_resolved' }),
+);
 
 function submitAnswer(event: SubmitEvent, question: ProjectQuestionView) {
   event.preventDefault();

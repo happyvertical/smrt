@@ -173,6 +173,8 @@ export interface ExecutedAgreementOptions extends SmrtObjectOptions {
 }
 
 export interface CreateAgreementExecutionInput {
+  /** Required for governed sourceKind sales-quote; bound into retry intent. */
+  signingActorProfileId?: string;
   tenantId: string;
   idempotencyKey: string;
   sourceKind: string;

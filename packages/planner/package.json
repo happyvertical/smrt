@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-planner",
-  "version": "0.57.21",
+  "version": "0.57.23",
   "type": "module",
   "description": "The smrt planner as a mountable Svelte component with a typed command set and plan snapshot.",
   "license": "MIT",
@@ -111,6 +111,7 @@
     "@happyvertical/smrt-projects": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-properties": "workspace:*",
+    "@happyvertical/smrt-reactions": "workspace:*",
     "@happyvertical/smrt-sales": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-sites": "workspace:*",

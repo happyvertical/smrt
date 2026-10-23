@@ -362,6 +362,7 @@ export class InvoicingRecipe extends SmrtRecipe {
         usdAtConfirmation: { visibility: 'hidden' },
         transactionId: { visibility: 'hidden' },
         connectedAccountId: { visibility: 'hidden' },
+        connectedFeePolicyRef: { visibility: 'hidden' },
         applicationFeeCents: { visibility: 'hidden' },
         refundOfPaymentId: { visibility: 'hidden' },
         connectedRefundState: { visibility: 'hidden' },

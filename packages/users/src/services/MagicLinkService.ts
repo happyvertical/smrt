@@ -63,6 +63,8 @@ export interface MagicLinkVerifyResult {
   email: string;
   /** The nonce (for correlation/logging) */
   nonce: string;
+  /** Optional signed immutable identity binding supplied by a trusted host. */
+  subject?: string;
 }
 
 /**
@@ -128,7 +130,10 @@ export class MagicLinkService {
    * Stores a nonce in the database for replay protection.
    * The caller is responsible for emailing the token to the user.
    */
-  async generate(email: string): Promise<MagicLinkResult> {
+  async generate(
+    email: string,
+    options: { subject?: string } = {},
+  ): Promise<MagicLinkResult> {
     // Dynamic import to avoid eagerly loading jose at module init
     const { SignJWT } = await import('jose');
 
@@ -154,6 +159,7 @@ export class MagicLinkService {
     const token = await new SignJWT({
       email: normalizedEmail,
       nonce,
+      ...(options.subject !== undefined ? { sub: options.subject } : {}),
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -173,6 +179,24 @@ export class MagicLinkService {
    * @throws {MagicLinkError} If the token is invalid, expired, or already used
    */
   async verify(token: string): Promise<MagicLinkVerifyResult> {
+    const proof = await this.verifySignature(token);
+    if (!(await this.tokenCollection.markUsed(proof.nonce)))
+      throw new MagicLinkError('Token has already been used or has expired');
+    return proof;
+  }
+
+  /**
+   * Validate a signed live nonce without consuming it. This is preparation only,
+   * never authentication: a final verify() must atomically claim the token.
+   */
+  async inspect(token: string): Promise<MagicLinkVerifyResult> {
+    const proof = await this.verifySignature(token);
+    if (!(await this.tokenCollection.isAvailable(proof.nonce, proof.email)))
+      throw new MagicLinkError('Token has already been used or has expired');
+    return proof;
+  }
+
+  private async verifySignature(token: string): Promise<MagicLinkVerifyResult> {
     const { jwtVerify, errors } = await import('jose');
 
     const key = await this.getSigningKey();
@@ -199,16 +223,11 @@ export class MagicLinkService {
       throw new MagicLinkError('Invalid token payload');
     }
 
-    // Atomically claim the nonce (single-use enforcement) via a single
-    // conditional UPDATE. Only one concurrent verify() call can flip the
-    // row from used=false to used=true before the DB expires the nonce.
-    const claimed = await this.tokenCollection.markUsed(nonce);
-
-    if (!claimed) {
-      throw new MagicLinkError('Token has already been used or has expired');
-    }
-
-    return { email: normalizeEmail(email), nonce };
+    return {
+      email: normalizeEmail(email),
+      nonce,
+      ...(typeof payload.sub === 'string' ? { subject: payload.sub } : {}),
+    };
   }
 
   /**

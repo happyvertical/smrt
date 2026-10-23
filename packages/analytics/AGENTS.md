@@ -95,3 +95,10 @@ passes in memory and renders the help. See
 - **JSON fields**: params, dimensions, metrics use string storage with getter/setter helpers
 - **Measurement IDs differ per platform**: G-XXXXXX (GA4 web) vs Firebase app ID (mobile)
 - **`analyzeResults` is now a single AI call**: previously issued a second freeform `do()` to summarize "top 3 insights"; folded into the registered template, and `insights` mirrors `analysis` in the response shape.
+
+## Browser tracking (#4251)
+
+The isolated `./browser` subpath owns the optional browser tracker and Matomo
+HTTP adapter; it must never import model registration or the server SDK.
+The optional `smrt-ui/analytics` context connects shared component standard
+events to the configured provider. See [browser contract](agents/browser.md).

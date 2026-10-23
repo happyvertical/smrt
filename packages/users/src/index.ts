@@ -483,6 +483,21 @@ export {
   withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from './services/index.js';
+export {
+  type AuthenticatedMailbox,
+  type MailboxAuthenticationDelivery,
+  MailboxAuthenticationService,
+  type MailboxAuthenticationServiceOptions,
+} from './services/MailboxAuthenticationService.js';
+export {
+  type AcceptedTenantInvitation,
+  type IssuedTenantInvitation,
+  type PreparedTenantInvitation,
+  type PrepareTenantInvitationInput,
+  TenantInvitationError,
+  TenantInvitationService,
+  type TenantInvitationServiceOptions,
+} from './services/TenantInvitationService.js';
 // Types
 export {
   AccessRequestStatus,

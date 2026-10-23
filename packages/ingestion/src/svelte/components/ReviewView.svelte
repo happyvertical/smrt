@@ -2,7 +2,7 @@
 import { Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { onDestroy, onMount } from 'svelte';
+import { onDestroy, onMount, untrack } from 'svelte';
 import type { EvidenceLocation } from '../../extraction-types.js';
 import type {
   GeneratedSuggestion,
@@ -17,9 +17,11 @@ import {
   extractedContent,
   missingArguments,
   missingRequired,
+  observedPages,
   pageGroups,
+  reviewInFlight,
 } from '../view-utils.js';
-import ActionReview from './ActionReview.svelte';
+import ActionReview, { type ReviewOutcome } from './ActionReview.svelte';
 import CandidatePicker from './CandidatePicker.svelte';
 import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
@@ -27,8 +29,37 @@ export interface Props {
   itemId: string;
   /** Reload interval while the host reports the item as processing. */
   pollMs?: number;
+  /** `split` puts the original beside the form; `stacked` puts it above, one part at a time. */
+  layout?: 'split' | 'stacked';
+  /**
+   * Every displayed view (load, in-place poll patch, denial projection), and
+   * `undefined` when a displayed view is cleared for a reload or an operation
+   * whose result has not been shown yet. `denied` is true when it was cleared
+   * because a callback failed (the view fails closed), not for a reload.
+   * Presentation only.
+   */
+  onview?: (
+    view: ItemReviewView | undefined,
+    denied: boolean,
+    issued: number,
+  ) => void;
+  /** Numbers each load when its request starts; reported as `issued` with the view. */
+  stamp?: () => number;
+  /** Whether the reviewer has unsent input on this item. */
+  ondirty?: (dirty: boolean) => void;
+  /** After an approve, apply or resolve and the reload that follows it succeeded. */
+  onoutcome?: (outcome: ReviewOutcome, view: ItemReviewView) => void;
 }
-let { host, itemId, pollMs = 2000 }: Props = $props();
+let {
+  host,
+  itemId,
+  pollMs = 2000,
+  layout = 'split',
+  onview,
+  stamp,
+  ondirty,
+  onoutcome,
+}: Props = $props();
 const { t } = useI18n();
 let view = $state<ItemReviewView>(),
   pending = $state(false),
@@ -76,17 +107,83 @@ onDestroy(() => {
   epoch++;
   clearTimeout(poll);
 });
-function inFlight(current: ItemReviewView | undefined) {
-  return (
-    current?.availability === 'available' &&
-    !current.entry.item.disposition &&
-    (current.entry.state === 'processing' ||
-      ['queued', 'running'].includes(current.entry.item.processingState) ||
-      // The server's own predicate, which also covers the gap between a
-      // completed extraction and its not-yet-appended interpretation.
-      !!current.instruction?.reinterpreting)
-  );
+// Includes the server's own predicate, which also covers the gap between a
+// completed extraction and its not-yet-appended interpretation.
+const inFlight = reviewInFlight;
+// Parents follow the displayed view (a workspace keeps its list row in step);
+// untracked so the callback's own reads never re-run this effect. Undefined
+// means a displayed view was cleared for a reload or an operation.
+let shown = false;
+// The read sequence number of the load that produced the displayed view.
+let viewIssued = 0;
+$effect(() => {
+  const current = view;
+  // Read too, so a denial after an operation cleared the view still reports.
+  const denied = !current && error;
+  // A first load that failed reports its denial too.
+  if (!current && !shown && !denied) return;
+  shown = true;
+  untrack(() => onview?.(current, denied, viewIssued));
+});
+// Unsent reviewer input on this item (instruction, drafts, split edits,
+// start/resolve fields, action editors); a workspace confirms before leaving.
+// It is read from the drafts themselves, against the text each draft started
+// from, so it holds while a reload has cleared the view. While the view is
+// denied nothing is shown, so nothing counts: the reviewer is never asked to
+// discard input they cannot see (it is kept, and returns with an authorized
+// refresh, as before).
+let actionDirty = $state<Record<string, boolean>>({}),
+  // The generated text each suggestion draft and split draft started from.
+  draftBase = $state<Record<string, string>>({}),
+  splitBase = $state<Record<string, string>>({});
+const dirty = $derived(
+  (view ? view.availability === 'available' : !error) &&
+    (!!instruction.trim() ||
+      editedFields() ||
+      Object.values(actionDirty).some(Boolean) ||
+      Object.entries(drafts).some(([key, draft]) => draft !== draftBase[key]) ||
+      Object.entries(splits).some(([id, draft]) => draft !== splitBase[id])),
+);
+/** Start-action and resolve fields (declared with their controls below). */
+function editedFields() {
+  return !!resolveReason || !!startHandler || !!startReason;
 }
+// Split drafts start from the generation's groups whenever a view shows them.
+$effect(() => {
+  const current = view;
+  if (current)
+    splitBase = Object.fromEntries(
+      (current.generation?.splits ?? []).map((split) => [
+        split.evidenceId,
+        JSON.stringify(split.groups),
+      ]),
+    );
+});
+// A closed item takes no instruction, suggestion, split or started action, so
+// such input left when it closed can never be sent: it is discarded rather
+// than kept as unsent work.
+$effect(() => {
+  if (view?.availability !== 'available' || !view.entry.item.disposition)
+    return;
+  untrack(() => {
+    instruction = '';
+    drafts = {};
+    draftBase = {};
+    startHandler = '';
+    startArgs = '';
+    startReason = '';
+    splits = {};
+    resolveReason = '';
+  });
+});
+$effect(() => {
+  const current = dirty;
+  untrack(() => ondirty?.(current));
+});
+// The original's chosen part and pages outlive in-place reloads and
+// operations (the viewer itself unmounts while a reload is pending).
+let viewerPart = $state<string>(),
+  viewerPages = $state<Record<string, number>>({});
 /** Prefer the server's retry binding; otherwise the displayed generation. */
 function instructionBinding(current: ItemReviewView | undefined) {
   if (current?.instruction?.binding) return current.instruction.binding;
@@ -127,7 +224,10 @@ function deny() {
 async function fetchView(
   ticket: number,
   pageCount: number,
-): Promise<{ result: ItemReviewView; pages: number } | undefined> {
+): Promise<
+  { result: ItemReviewView; pages: number; issued: number } | undefined
+> {
+  const issued = stamp?.() ?? 0;
   let cursor: string | undefined;
   let result: ItemReviewView | undefined;
   const actions: ItemReviewView['reviews']['actions'] = [];
@@ -177,6 +277,7 @@ async function fetchView(
             availability: result.availability,
           },
     pages: refreshedPages,
+    issued,
   };
 }
 /** Keep only drafts the reviewer edited; untouched ones follow the new generation. */
@@ -210,6 +311,7 @@ function syncSuggestionDrafts(current: ItemReviewView) {
     current.availability === 'expired'
   ) {
     drafts = {};
+    draftBase = {};
     invalidDrafts = {};
   } else if (current.availability === 'available') {
     const attemptId = current.analysis?.attemptId;
@@ -218,11 +320,14 @@ function syncSuggestionDrafts(current: ItemReviewView) {
       if (!attemptId || suggestion.disposition !== 'needs_review') return;
       const key = `${attemptId}:${index}`;
       keys.add(key);
-      drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
+      const generated = JSON.stringify(suggestion.args, null, 2);
+      drafts[key] ??= generated;
+      draftBase[key] ??= generated;
     });
     for (const key of Object.keys(drafts))
       if (!keys.has(key)) {
         delete drafts[key];
+        delete draftBase[key];
         delete invalidDrafts[key];
       }
   }
@@ -244,6 +349,7 @@ async function load(pageCount = loadedPages) {
     if (!fetched) return;
     if (fetched.result.availability === 'available')
       loadedPages = fetched.pages;
+    viewIssued = fetched.issued;
     view = fetched.result;
     syncSuggestionDrafts(view);
     splits = splitDrafts(view, {});
@@ -266,6 +372,7 @@ async function refresh(ticket: number) {
     refreshFailed = false;
     // An explicit host denial fails closed at once.
     if (fetched.result.availability !== 'available') {
+      viewIssued = fetched.issued;
       view = fetched.result;
       syncSuggestionDrafts(view);
       splits = {};
@@ -274,8 +381,14 @@ async function refresh(ticket: number) {
     if (JSON.stringify(fetched.result) !== JSON.stringify(view)) {
       loadedPages = fetched.pages;
       splits = splitDrafts(fetched.result, splits, view);
+      viewIssued = fetched.issued;
       view = fetched.result;
       syncSuggestionDrafts(view);
+    } else if (view) {
+      // Unchanged, but read again: the displayed view is this fresh.
+      viewIssued = fetched.issued;
+      const current = view;
+      untrack(() => onview?.(current, false, viewIssued));
     }
     settleBusy();
   } catch {
@@ -293,7 +406,7 @@ async function refresh(ticket: number) {
     if (alive && ticket === epoch && !pending) schedulePoll(ticket);
   }
 }
-async function run(operation: () => Promise<unknown>) {
+async function run(operation: () => Promise<unknown>, outcome?: ReviewOutcome) {
   if (pending) return;
   const ticket = ++epoch;
   clearTimeout(poll);
@@ -303,7 +416,18 @@ async function run(operation: () => Promise<unknown>) {
   splits = {};
   try {
     await operation();
-    if (alive && ticket === epoch) await load();
+    if (!alive || ticket !== epoch) return;
+    await load();
+    // Only the reload that answered this operation reports its outcome.
+    // `load` reassigned the view; TypeScript still narrows it to undefined.
+    const settled = view as ItemReviewView | undefined;
+    if (
+      outcome &&
+      alive &&
+      ticket + 1 === epoch &&
+      settled?.availability === 'available'
+    )
+      onoutcome?.(outcome, settled);
   } catch {
     if (alive && ticket === epoch) deny();
   }
@@ -395,6 +519,7 @@ async function preview(index: number) {
     }
     // Only a successful preview of this card consumes its draft.
     delete drafts[key];
+    delete draftBase[key];
     delete invalidDrafts[key];
     await load();
   } catch (error) {
@@ -521,7 +646,7 @@ function resolve() {
   void run(async () => {
     await close(input);
     resolveReason = '';
-  });
+  }, 'resolve');
 }
 function instruct() {
   const binding = instructionBinding(view);
@@ -609,7 +734,7 @@ onMount(() => {
 {:else}
 {@const extracted = view.analysis ? extractedContent(view.analysis.result.output) : []}
 <h2>{view.entry.label}</h2><p>{t(M[`ingestion.${view.entry.state}`])}</p>
-<div class="review-grid"><EvidenceViewer evidence={view.evidence} /><div class="details">
+<div class="review-grid" class:stacked={layout === 'stacked'}><EvidenceViewer evidence={view.evidence} pages={observedPages(view)} layout={layout === 'stacked' ? 'pager' : 'stack'} bind:chosen={viewerPart} bind:page={viewerPages} /><div class="details">
 {#if view.instruction}
 {@const applied = view.instruction.applied}{@const current = view.instruction.current}
 {#if inFlight(view) && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
@@ -689,7 +814,7 @@ onMount(() => {
 {/if}
 {#if !view.reviews.actions.length}<p>{t(M['ingestion.noReviews'])}</p>{/if}
 {#each view.reviews.actions as action (`${action.review.actionId}:${action.review.revision}:${action.review.reviewVersion}`)}
-<ActionReview {host} {itemId} {action} {run} {deny} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
+<ActionReview {host} {itemId} {action} {run} {deny} ondirty={(edited) => { actionDirty[action.review.actionId] = edited; }} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
 {/each}
 {#if view.reviews.nextCursor}<Button onclick={() => load(loadedPages + 1)}>{t(M['ingestion.more'])}</Button>{/if}
 </div></div>
@@ -698,6 +823,6 @@ onMount(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}fieldset{margin-block:1rem;min-width:0;display:grid;gap:.5rem}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
+section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.review-grid.stacked{grid-template-columns:minmax(0,1fr)}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}fieldset{margin-block:1rem;min-width:0;display:grid;gap:.5rem}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
 }
 </style>

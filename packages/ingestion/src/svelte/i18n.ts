@@ -108,4 +108,38 @@ export const M = defineMessages({
   'ingestion.state': 'State',
   'ingestion.reason': 'Reason',
   'ingestion.feedbackSent': 'Feedback sent.',
+  'ingestion.previousPage': 'Previous page',
+  'ingestion.nextPage': 'Next page',
+  'ingestion.pageOf': 'Page {page} of {count}',
+  'ingestion.previousOriginal': 'Previous original',
+  'ingestion.nextOriginal': 'Next original',
+  'ingestion.originalOf': 'Original {index} of {count}',
+  'ingestion.workspace': 'Intake triage',
+  'ingestion.selectedItem': 'Selected item',
+  'ingestion.previousItem': 'Previous item',
+  'ingestion.nextItem': 'Next item',
+  'ingestion.itemOf': 'Item {index} of {count}',
+  'ingestion.selectItem': 'Choose an item from the list to review it here.',
+  'ingestion.queueDone': 'Nothing else in this list needs review.',
+  'ingestion.unsavedLeave':
+    'This item has input you have not sent. Leave it and discard that input?',
+  'ingestion.discardLeave': 'Discard and open the other item',
+  'ingestion.stay': 'Stay on this item',
+  'ingestion.finishedUnsent':
+    'Finished. You have unsent input on this item; move on with Next item when ready.',
+  'ingestion.advanceRetry':
+    "Finished, but the next open item wasn't reached yet. Try Next item again.",
+  'ingestion.advanceFailed':
+    "Finished, but the list couldn't load more items. Refresh the list to continue.",
+  'ingestion.keyboardHelp':
+    'Press J or K, or Alt+Down or Alt+Up, outside a text field to move between items.',
+  'ingestion.statusReason': '{status}: {reason}',
+  'ingestion.backgroundUpdate': '{label}: {status}',
+  'ingestion.triage.pending': 'Interpreting…',
+  'ingestion.triage.ready': 'Ready to review',
+  'ingestion.triage.needs_review': 'Needs review',
+  'ingestion.triage.approval': 'Awaiting approval',
+  'ingestion.triage.apply': 'Approved, not yet applied',
+  'ingestion.triage.failed': 'Failed',
+  'ingestion.triage.missing': 'missing {fields}',
 });

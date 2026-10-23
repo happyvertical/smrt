@@ -282,6 +282,9 @@ export class PaymentIntent extends SmrtObject {
    */
   connectedAccountId: string = '';
 
+  /** Immutable host-supplied agreement/fee-policy version at checkout pricing. */
+  connectedFeePolicyRef: string = '';
+
   /**
    * Platform application fee requested on the direct charge, in integer
    * minor units of the option's currency (#3831). Server-managed.
@@ -346,6 +349,8 @@ export class PaymentIntent extends SmrtObject {
     if (options.notes !== undefined) this.notes = options.notes;
     if (options.connectedAccountId !== undefined)
       this.connectedAccountId = options.connectedAccountId;
+    if (options.connectedFeePolicyRef !== undefined)
+      this.connectedFeePolicyRef = options.connectedFeePolicyRef;
     if (options.applicationFeeCents !== undefined)
       this.applicationFeeCents = options.applicationFeeCents;
     if (options.connectedEnvironment !== undefined)
@@ -490,7 +495,7 @@ export class PaymentIntent extends SmrtObject {
   > {
     if (!this.id) return undefined;
     try {
-      const row = await this.db.get(this.tableName, { id: this.id });
+      const row = await this.getCanonicalPersistedRow({ id: this.id });
       return row ?? undefined;
     } catch {
       // DB not ready / table absent — treat as new (in-memory fallback in save).
@@ -579,7 +584,9 @@ export class PaymentIntent extends SmrtObject {
       String(priorRow.connected_environment ?? '') !==
         this.connectedEnvironment ||
       Number(priorRow.connected_amount ?? 0) !== this.connectedAmount ||
-      String(priorRow.connected_currency ?? '') !== this.connectedCurrency
+      String(priorRow.connected_currency ?? '') !== this.connectedCurrency ||
+      String(priorRow.connected_fee_policy_ref ?? '') !==
+        this.connectedFeePolicyRef
     )
       throw new Error(
         `PaymentIntent ${this.id}: a connected checkout's account, environment, application fee and price cannot change`,
@@ -698,6 +705,7 @@ export class PaymentIntent extends SmrtObject {
       nativeAmount?: number;
       amount?: number;
       connectedAccountId?: string;
+      connectedFeePolicyRef?: string;
       applicationFeeCents?: number;
     },
     option: PaymentOption,
@@ -708,7 +716,8 @@ export class PaymentIntent extends SmrtObject {
     // another tenant's account (or the platform's) never satisfy it.
     if (
       (payment.connectedAccountId ?? '') !== this.connectedAccountId ||
-      Number(payment.applicationFeeCents ?? 0) !== this.applicationFeeCents
+      Number(payment.applicationFeeCents ?? 0) !== this.applicationFeeCents ||
+      (payment.connectedFeePolicyRef ?? '') !== this.connectedFeePolicyRef
     ) {
       throw new Error(
         `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' was not made on ` +

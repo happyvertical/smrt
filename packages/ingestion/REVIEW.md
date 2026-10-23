@@ -1,9 +1,12 @@
 # Authenticated review surfaces
 
-`@happyvertical/smrt-ingestion/svelte` exports `IntakeInbox`, `IntakeReview` and
-`EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
+`@happyvertical/smrt-ingestion/svelte` exports `IntakeInbox`, `IntakeReview`,
+`IntakeWorkspace` and `EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
 callback contract. Import styling/theme configuration from smrt-ui in the host.
 Components use smrt-ui primitives and the `ingestion.*` i18n catalog.
+Existing `IntakeInbox` hosts now keep the previous rows visible, with their
+controls disabled, while a refresh or filter change loads; any failed read
+(Load more included) still clears them.
 
 The host authenticates every request, resolves tenant/actor/confidential scope
 from its session, enforces CSRF on mutations, and constructs `IngestionService`.
@@ -400,6 +403,141 @@ provider. The UI picker shows the offered catalog, so a handler hidden from it i
 only reachable by a reviewer who already holds `review` authority for it. The maintained
 browser fixture serves both operations behind CSRF and the same session scope.
 
+## Single-page triage workspace
+
+`IntakeWorkspace` (#4215) composes the existing pieces so a reviewer works the
+whole queue on one page: the paged inbox as a list pane, the review view of the
+selected item beside it (the original above its action form), and the
+reviewer-instruction message box of the item pane. Props: `host`, `contextKey`
+(replace on session change, as for the other components), optional initial
+`itemId`, `pollMs`, `rowAside` and `onselect(itemId | undefined)`, which only
+reports the selection (to keep a URL in step) and never navigates. It adds **no
+host callback and no server authority**: every read is the host's `list` and
+`load`, every action still goes through the handler preview and an explicit
+approval and apply under the approver's live grants, and the message steers the
+model only, exactly as in `IntakeReview`.
+
+- **Inline original.** In the item pane `EvidenceViewer` shows one part at a
+  time (`layout="pager"`), opening on the first part that renders inline (the
+  uploaded file rather than its capture record), with previous/next original.
+  A PDF with more than one *observed* page (extraction locations or proposed
+  page groups; `pages` prop) gets previous/next page, which reloads the frame
+  at the same-origin URL plus `#page=n`; only `evidenceUrl`-approved URLs ever
+  reach a frame. `IntakeReview` gets the same page navigation over its
+  unchanged stacked list of parts. The chosen part and page belong to the item
+  view (bindable `chosen`/`page`), so they survive in-place reloads, Prepare
+  review, Approve and Apply.
+- **Keyboard.** J/K and Alt+Down/Alt+Up move to the next/previous row (loading
+  the next page at the end), ignored while focus is in a text field, select or
+  editable region; "Previous item"/"Next item" buttons carry
+  `aria-keyshortcuts`. The selected row is `aria-current`, and every selection
+  moves focus to the item pane region, named by the row's label. A navigation
+  that waited for the next page is dropped if the reviewer chose another item
+  meanwhile.
+- **Unsent input.** The pane holds unsent input when it has instruction text,
+  an edited suggestion draft or split draft, a chosen start handler or start
+  reason, a no-action reason, or an action editor with edited arguments, a
+  reason or a feedback comment. It is read from the drafts themselves, so it
+  holds while a reload has cleared the view; while the view is denied nothing
+  is shown and nothing counts (the drafts stay in memory and return with an
+  authorized refresh, as before). A reviewer-initiated move (J/K, Alt+arrows,
+  Next/Previous item, a row's Review button) then asks inline, in a group
+  labelled by its note: "Stay on this item" takes focus and returns it to the
+  field the reviewer last used; "Discard and open the other item" proceeds.
+  When an item is closed without action (here or by another session), input a
+  closed item cannot take
+  (instruction, suggestion and split drafts, a started action, a no-action
+  reason) is discarded.
+- **Live state.** A row's status follows the item: "Interpreting…", "Ready to
+  review", "Needs review" with missing argument names or the generation
+  outcome, "Awaiting approval", "Approved, not yet applied", "Failed" with a
+  safe category, "Handled, no action", or the listed inbox state. Rows the
+  reviewer has not opened show the listed state only; reasons come from a
+  loaded view, never from server exception text. The open item's own polling
+  (`ReviewView`, unchanged backoff and three-failure fail-closed) reports each
+  displayed view and the workspace patches that row in place
+  (`InboxView.patch`, keeping the listed label and preview, and the row's
+  assignment unless the patch carries a newer assignment version, so a view
+  read before an assignment never rolls the row or the next expected version
+  back), so the row follows each newer read of the form and the list is
+  **not** re-listed per tick. An item the
+  reviewer leaves while its stage is in flight, or before the pane showed the
+  result of its last operation (an instruction just recorded), keeps
+  following: the workspace re-reads followed items with the same `load` (first
+  review page) on the pane's backoff, at most **5** reads per tick, one after
+  another, least recently read first (so every followed row is reached), with
+  only one tick running at a time. At most **20** items are followed; beyond
+  that the longest-followed one (the earliest started, whatever the read
+  rotation) stops. An item left while its pane was mid-operation (an Apply not
+  yet answered) keeps following while a read still shows an action authorized
+  or executing: exactly **3** more reads when it never answers, the fourth
+  ending the follow. That debt belongs to the operation, so it survives
+  reopening and leaving the item again until a view shows the operation
+  answered or the reads run out; leaving mid-operation again starts a full
+  debt for the new operation. Each follow has a
+  generation: an answer from an earlier follow of the same item (one asked
+  before the reviewer reopened or left it again) is dropped, and its failure
+  does not count toward the new follow's three. An item stops being followed
+  when it settles, its view is denied, three reads in a row throw, its row
+  leaves the displayed list (a filter or a refreshed page removed it), the
+  list fails closed, or the cap drops it; a denial, the failure stop or the
+  cap drops its cached status and restores its entry exactly as its page read
+  returned it (never a patched entry). Opening an item drops its cached
+  status until the pane shows a view; a denial in the open pane (a failed
+  action, the pane's own fail-closed poll, or a first load that failed) does
+  the same as a follow denial, clears the announcement, and the item is not
+  followed when left. A settled stage that was seen running is announced in a
+  polite status region ("badger-po.pdf: Ready to review"), only while its row
+  is displayed; a refreshed page or a failed list clears it.
+  Other rows update on Refresh, a filter change or when opened; there is no
+  streaming. While a refresh or "Load more" is pending, the displayed rows stay
+  (controls disabled) and keep taking patches. Every read (a page, a pane
+  view, including an unchanged poll, and a follow read) is numbered when its
+  request starts, and each row shows the entry of its newest read, whatever
+  the source: a page read before a pane or follow read never regresses the
+  row, and a page read after them replaces what they showed. The same rule
+  governs a follow: a follow read older than the row's newest read changes
+  no status, does not stop the follow and announces nothing (a newer read
+  settles it), so the announcement never contradicts the row. Cached status reasons follow the same ordering, even when entries have identical
+  fingerprints. "Load more" continues the
+  filter the rows were listed under, not filter inputs edited since, and does
+  not repeat a row already shown. A failed "Load more" fails closed like any
+  failed read (the host cannot tell a transient failure from a revoked
+  grant): the rows clear and the list shows its error.
+- **Approve and advance.** After an approve, apply or "Handled, no action" whose
+  reload left nothing for the reviewer (closed without action, or an action
+  succeeded and none is waiting for approval, waiting to be applied, executing,
+  unknown or failed; stale, rejected and deferred actions do not hold it), the
+  item's row is patched and leaves the list when it no longer matches the
+  listed state/assignee filter, and the next row that is not closed or
+  completed opens and takes focus, with no navigation and no re-listing. An
+  approval that leaves an apply step keeps the item open with Apply in place.
+  Unloaded saved-review pages and an active background stage also prevent
+  settlement. Advancing skips completed inbox pages until a reviewable row
+  appears; a page that makes no progress stops the walk.
+  It never advances over unsent input on the same item: the item stays open,
+  the input stays, and a note says it is finished but has unsent input; the
+  reviewer moves on explicitly, through the confirmation; input typed while
+  the next page loads counts too. When no open row is displayed, the advance
+  appends pages of finished rows until one has an open row or no page
+  remains, at most **5** appends. After each append, the advance (like
+  J/K at the end of the list) finds its place again by id: just after the
+  item it left, or, if that row has gone, at the first row that followed it
+  and is still listed, or at the first new row, so a row that left the list
+  meanwhile never shifts it onto the wrong item. Its notes (and "nothing else
+  needs review") are written into one persistent polite status region. The queue is never reported empty when
+  that is unknown: past the bound, or when an append cannot start (a refresh
+  is pending) or is superseded, the item stays open with a note to try Next
+  item again, which still works; when an append fails, the list has failed
+  closed (no rows, Next disabled), so the item stays open with a note to
+  refresh the list to continue. The open item stays listed while the
+  reviewer works on it even if its state stops matching the filter; it
+  leaves once they move on.
+  When nothing is left the pane says so. The per-row "Handled, no action"
+  control is hidden in the workspace (`resolveInRow={false}`) so closing always
+  goes through the item pane and advances.
+
+
 ## Maintained browser proof
 
 `pnpm test:components` runs real Svelte component tests; `pnpm test:e2e` runs the
@@ -640,3 +778,11 @@ choosing the same local file explicitly starts a new upload identity. Opening
 then dismissing the chooser preserves the separately retained originals and
 request identity for retry; it does not clear the shared FilePicker's native-form
 behavior. Successful upload and host/context disposal still discard retry state.
+
+Workspace ordering also protects an open item during an awaited automatic page walk:
+the selected row remains until navigation succeeds, except that a failed list read
+clears the inbox. Applying an action is disabled
+while that action card holds unsent arguments, reason, or feedback comment. A list
+refresh retires earlier follow snapshots; only follow reads started after that
+page request may override its rows, so a newer refresh cannot be regressed by an
+already settled or older in-flight follow read.

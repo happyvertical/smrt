@@ -273,7 +273,7 @@ export class Agreement extends SmrtObject {
   async refreshAfterLifecycleTransition(): Promise<void> {
     if (!this.isPersisted || !this.id)
       throw new Error('Agreement is not persisted');
-    const durableRow = await this.db.get(this.tableName, { id: this.id });
+    const durableRow = await this.getCanonicalPersistedRow({ id: this.id });
     if (!durableRow) throw new Error('Agreement disappeared during transition');
     await this.completePersistedUpdate(durableRow);
     loadedStatus.set(this, this.status);
@@ -284,7 +284,7 @@ export class Agreement extends SmrtObject {
   private async assertActivationProvenanceUnchanged(): Promise<void> {
     const persisted =
       this.isPersisted && this.id
-        ? await this.db.get(this.tableName, { id: this.id })
+        ? await this.getCanonicalPersistedRow({ id: this.id })
         : null;
     const priorId = persisted?.amendment_predecessor_id ?? null;
     const priorEnd =
@@ -348,23 +348,25 @@ export class Agreement extends SmrtObject {
   private async assertNaturalKeyNotTaken(): Promise<void> {
     if (!this.kind || !this.partyA || !this.partyB) return;
     try {
-      const res = await this.db.query(
+      const result = await this.db.query(
         `SELECT id, tenant_id FROM ${this.tableName} WHERE kind = $1 AND party_a = $2 AND party_b = $3 AND version = $4`,
         this.kind,
         this.partyA,
         this.partyB,
         this.version,
       );
-      const rows = Array.isArray(res)
-        ? (res as Record<string, unknown>[])
-        : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
-      if (
-        rows.some(
-          (row) =>
-            (row.tenant_id ?? null) === (this.tenantId ?? null) &&
-            row.id !== this.id,
-        )
-      ) {
+      const rows = Array.isArray(result) ? result : result.rows;
+      if (rows.length === 0) return;
+      // Scope and compare UUIDs through core's canonical persisted-row read.
+      const row = await this.getCanonicalPersistedRow({
+        kind: this.kind,
+        party_a: this.partyA,
+        party_b: this.partyB,
+        version: this.version,
+        tenant_id: this.tenantId,
+        ...(this.id ? { 'id !=': this.id } : {}),
+      });
+      if (row) {
         throw new Error(
           `Agreement ${this.kind}@${this.version}: this immutable version already exists; create an amendment instead`,
         );
@@ -382,7 +384,7 @@ export class Agreement extends SmrtObject {
   private async resolvePriorStatus(): Promise<AgreementStatus | undefined> {
     if (this.id) {
       try {
-        const row = await this.db.get(this.tableName, { id: this.id });
+        const row = await this.getCanonicalPersistedRow({ id: this.id });
         if (row?.status != null) return row.status as AgreementStatus;
       } catch {
         // Fall back to the loaded state when storage is unavailable.

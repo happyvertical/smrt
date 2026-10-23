@@ -48,6 +48,7 @@ export const PACKAGE_BROWSER_CAPABILITY: Readonly<Record<string, PackageBrowserC
   "@happyvertical/smrt-projects": {"status":"server-only","issues":["#3617","#3624","#3626","#3627"],"reason":"node:crypto/async_hooks; core migrations; repos and ai SDKs","via":["@happyvertical/smrt-profiles","@happyvertical/smrt-subscriptions","@happyvertical/smrt-tenancy","@happyvertical/smrt-timesheets","@happyvertical/smrt-users"]},
   "@happyvertical/smrt-prompts": {"status":"server-only","issues":["#3624"],"via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-properties": {"status":"server-only","issues":["#3624"],"via":["@happyvertical/smrt-tenancy"]},
+  "@happyvertical/smrt-reactions": {"status":"server-only","issues":["#3624"],"via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-reports": {"status":"server-only","issues":["#3615","#3624","#3625","#3627"],"reason":"node:crypto/events; @happyvertical/sql root: the sync query builders it needs (validateColumnName, buildWhere, buildAggregate, bucketExpr, tableExists) have no browser-safe SDK entry","via":["@happyvertical/smrt-jobs","@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-sales": {"status":"server-only","issues":["#3624"],"reason":"node:crypto","via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-secrets": {"status":"server-only","issues":["#3624","#3627"],"reason":"@happyvertical/secrets (node:child_process, node:crypto) and sql","via":["@happyvertical/smrt-tenancy"]},
