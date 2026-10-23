@@ -707,6 +707,7 @@ export function internalSourceSuite(
               parentPartId: 'body',
               mediaType: 'text/plain',
               bytes: Buffer.from('copied note'),
+              filename: 'site-b note.txt',
             },
           ],
         }),
@@ -728,6 +729,18 @@ export function internalSourceSuite(
       expect(await count('SELECT COUNT(*) AS n FROM assets')).toBe(1);
       const copied = evidence.find((e) => e.partId === 'note');
       if (!copied) throw new Error('Missing copy');
+      // #4243 filenames and #4242 batched evidence coexist with references:
+      // the copy keeps its presented name, the snapshot never reaches a DTO.
+      expect(copied.filename).toBe('site-b note.txt');
+      expect(structured.filename).toBeUndefined();
+      const page = await service.listEvidence([itemId]);
+      expect(
+        (page.get(itemId) ?? []).map((e) => [e.partId, e.filename]).sort(),
+      ).toEqual([
+        ['body', undefined],
+        ['note', 'site-b note.txt'],
+      ]);
+      expect(JSON.stringify([...page.values()])).not.toContain('bricks');
       const [copiedRow] = (
         await db.query(
           'SELECT asset_id FROM intake_evidence WHERE id=?',
@@ -751,6 +764,13 @@ export function internalSourceSuite(
       );
       expect(await service.expireOwned({ kind: 'message', id })).toBe(1);
       expect(await count('SELECT COUNT(*) AS n FROM assets')).toBe(0);
+      // Owner deletion blanks the filename, the source reference and the
+      // snapshot with every other evidence payload; batched reads omit it.
+      for (const row of await rowsFor('intake_evidence', itemId)) {
+        expect(json(row.data)).toEqual({});
+        expect(row.media_type).toBe('');
+      }
+      expect((await service.listEvidence([itemId])).size).toBe(0);
     });
 
     it('runs receive to proposals in-process without creating or delivering any queue intent', async () => {
