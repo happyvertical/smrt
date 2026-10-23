@@ -662,7 +662,7 @@ describe('intake triage workspace edge cases', () => {
     expect(row('b')).not.toBeNull();
     settled = true;
     await waitFor(() => expect(statusText('b')).toBe('Ready to review'));
-    hold.resolve();
+    hold.resolve(undefined);
     await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
     await screen.findByText('Item C');
     await sleep(20);
@@ -703,7 +703,7 @@ describe('intake triage workspace edge cases', () => {
       expect(row('b').getAttribute('aria-current')).toBe('true'),
     );
     expect(screen.queryByTestId('queue-done')).toBeNull();
-    hold.resolve();
+    hold.resolve(undefined);
   });
 
   it('drops a navigation that awaited the next page when the reviewer chose another item meanwhile', async () => {
@@ -806,6 +806,50 @@ describe('intake triage workspace edge cases', () => {
     expect(ticks.length).toBeGreaterThanOrEqual(2);
     for (const tick of ticks) expect(tick.length).toBeLessThanOrEqual(5);
     expect(new Set(ticks.slice(0, 2).flat())).toEqual(new Set(ids));
+  });
+
+  it('runs one watch tick at a time even when another item is left mid-tick', async () => {
+    const host = backend(['b', 'c', 'd'], {
+      b: [inFlight('b')],
+      c: [inFlight('c')],
+      d: [ready('d')],
+    });
+    const load = host.load;
+    const hold = deferred();
+    let outstanding = 0;
+    let most = 0;
+    // A read of an item that is not open is a follow read.
+    const open = () =>
+      document
+        .querySelector('li[aria-current="true"]')
+        ?.getAttribute('data-item-id');
+    let tracking = false;
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      const followed = tracking && id !== open();
+      if (followed) most = Math.max(most, ++outstanding);
+      try {
+        // The first follow read of b hangs while the reviewer moves on.
+        if (followed && id === 'b') await hold.promise;
+        return await load(id, cursor);
+      } finally {
+        if (followed) outstanding--;
+      }
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await waitFor(() =>
+      expect(row('b').getAttribute('aria-current')).toBe('true'),
+    );
+    await screen.findByTestId('reinterpreting');
+    tracking = true;
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(outstanding).toBe(1));
+    await leaveInFlight(['c']);
+    await waitFor(() =>
+      expect(row('d').getAttribute('aria-current')).toBe('true'),
+    );
+    await sleep(60);
+    expect(most).toBe(1);
+    hold.resolve();
   });
 
   it('stops following after three thrown reads in a row and falls back to the listed state', async () => {
