@@ -257,6 +257,8 @@ test('a reviewer completes a needs_review suggestion through the ordinary previe
     missingFields: ['title'],
   });
   // The generated arguments alone still fail the handler schema server-side.
+  // The fixture's review transport reports that one case as a correctable
+  // rejection body; nothing is published.
   const incomplete = await page.request.post('/api/preview', {
     headers: { 'x-review-csrf': await csrf(page) },
     data: {
@@ -266,7 +268,32 @@ test('a reviewer completes a needs_review suggestion through the ordinary previe
       requestId: randomUUID(),
     },
   });
-  expect(incomplete.status()).toBe(409);
+  expect(incomplete.status()).toBe(200);
+  expect(await incomplete.json()).toEqual({ rejected: 'invalid' });
+  // Only the action identity exists (created before preview, as on main);
+  // no proposal, binding or arguments were published.
+  const afterRefusal = (
+    await (await page.request.get(`/api/load?itemId=${itemId}`)).json()
+  ).reviews.actions as Array<{
+    args?: unknown;
+    review: { proposalId: string; bindingHash: string };
+  }>;
+  for (const action of afterRefusal) {
+    expect(action.review.proposalId).toBe('');
+    expect(action.review.bindingHash).toBe('');
+    expect(action.args).toBeUndefined();
+  }
+  // Any other preview failure is still a refusal (here: a forged index).
+  const forged = await page.request.post('/api/preview', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId,
+      attemptId: snapshot.analysis.attemptId,
+      index: 7,
+      requestId: randomUUID(),
+    },
+  });
+  expect(forged.status()).toBe(409);
   const draft = page.getByRole('textbox', {
     name: 'Suggested arguments (JSON)',
     exact: true,
