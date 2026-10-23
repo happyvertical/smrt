@@ -203,6 +203,49 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         expect(members[0].status).toBe('payable');
       });
 
+      for (const status of ['approved', 'processing', 'completed'] as const) {
+        it(`restamps and saves metadata on a legacy ${status} batch without reopening routing`, async () => {
+          const key = `restamp-legacy-${status}`;
+          const { payout } = await batch(destinations[0], key);
+          // Simulate a pre-snapshot row after manifest migration, including
+          // the missing source stamp that the documented any-status backfill fixes.
+          await db.query(
+            "UPDATE commission_payouts SET payout_destination = '{}', status = ?, payment_reference = 'legacy-ref', source_kind = '', source_id = '' WHERE id = ?",
+            status,
+            payout.id,
+          );
+          const restamped = await service.restampPayoutSource(payout.id!);
+          expect(restamped.changed).toBe(true);
+          expect(restamped.sourceKind).toBe('network');
+          expect(restamped.sourceId).toBe(key);
+          expect(restamped.payout?.getPayoutDestination()).toBeNull();
+          expect((await service.restampPayoutSource(payout.id!)).changed).toBe(
+            false,
+          );
+          const legacy = (await payouts.get({ id: payout.id! }))!;
+          legacy.setMetadata({ historical: true });
+          await legacy.save();
+          expect(
+            (await payouts.get({ id: payout.id! }))?.getMetadata(),
+          ).toEqual({ historical: true });
+          if (status === 'approved') {
+            legacy.markProcessing();
+            await expect(legacy.save()).rejects.toThrow(
+              /requires.*payoutDestination/,
+            );
+          } else if (status === 'processing') {
+            legacy.complete('new-ref');
+            await expect(legacy.save()).rejects.toThrow(
+              /requires.*payoutDestination/,
+            );
+          }
+          const untouched = (await payouts.get({ id: payout.id! }))!;
+          expect(untouched.status).toBe(status);
+          untouched.setPayoutDestination(destinations[0]);
+          await expect(untouched.save()).rejects.toThrow(/routing.*immutable/i);
+        });
+      }
+
       it('refuses pending routing edits, method changes, blind-id and natural-key overwrites', async () => {
         const { payout } = await batch(destinations[0], 'overwrite');
         payout.payoutMethod = 'paypal';

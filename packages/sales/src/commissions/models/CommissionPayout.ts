@@ -435,10 +435,13 @@ export class CommissionPayout extends SmrtObject {
   override async save(): Promise<this> {
     this.validateTotals();
     await this.assertRoutingUnchanged();
-    this.validateRouting(
-      ['approved', 'processing', 'completed'].includes(this.status),
-    );
     const prior = await this.resolvePriorStatus();
+    // Legacy typed batches have no historical route to backfill. Keep
+    // administrative saves/restamping possible while refusing payment progress.
+    this.validateRouting(
+      prior !== this.status &&
+        ['approved', 'processing', 'completed'].includes(this.status),
+    );
     this.assertStatusTransition(prior);
     if (this.status === 'completed' && !this.paymentReference) {
       throw new Error(
