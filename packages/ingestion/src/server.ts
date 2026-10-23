@@ -2163,12 +2163,17 @@ export class IngestionService {
       await this.lock(db, input.itemId);
       const item = await this.item(input.itemId, 'process', db);
       if (item.cancelled) throw new Error('Intake cancelled');
+      await this.assertUnresolved(db, input.itemId);
       const [action] = await this.rows(
         db,
         'intake_actions',
         'item_id=? AND id=?',
         [input.itemId, input.actionId],
       );
+      // A reviewer-selected action is revised only through the reviewer path
+      // (`previewProposal`/`submitDecision`); process authority cannot rewrite it.
+      if (action && object(action.data).origin === 'reviewer-selected')
+        throw new Error('Reviewer-selected action requires review');
       const [attempt] = await this.rows(
         db,
         'intake_analysis_attempts',

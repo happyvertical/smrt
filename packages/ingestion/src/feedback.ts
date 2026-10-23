@@ -750,6 +750,8 @@ export class IntakeFeedbackService {
           },
           executor,
           providers,
+          undefined,
+          !lineage,
         );
       // No handler was chosen: the source item must still be readable under a
       // currently offered handler, with the generation recipients allowed.
@@ -1044,6 +1046,9 @@ export class IntakeFeedbackService {
           });
         },
         ctx.db,
+        undefined,
+        undefined,
+        !(lineage && routing),
       );
     }
     return result;
@@ -1058,6 +1063,20 @@ export class IntakeFeedbackService {
       async (ctx) => {
         this.checkBinding(input, ctx);
         await this.authorize(ctx, 'suggest');
+        const key = `rule:${input.requestId}`;
+        // A replay returns the stored suggestion; its support is re-checked
+        // as lineage (integrity and revocation), never re-selected.
+        const [stored] = await this.rows(
+          ctx.db,
+          'item_id=? AND request_key=?',
+          [ctx.itemId, key],
+        );
+        if (stored) {
+          if (object(stored.data).requestHash !== digest(input))
+            throw new Error('Rule request conflict');
+          await this.rule(ctx, String(stored.id));
+          return this.ruleDTO(stored);
+        }
         const support = await this.support(ctx, input.supportingFeedbackIds);
         const terms = feedbackTerms(support[0].query).filter((term) =>
           support.every((example) =>
@@ -1090,19 +1109,10 @@ export class IntakeFeedbackService {
           reviewer: this.scope().actorId,
           requestHash: digest(input),
         };
-        const key = `rule:${input.requestId}`;
-        let [row] = await this.rows(ctx.db, 'item_id=? AND request_key=?', [
-          ctx.itemId,
-          key,
-        ]);
-        if (row) {
-          if (object(row.data).requestHash !== body.requestHash)
-            throw new Error('Rule request conflict');
-        } else
-          row = await this.insert(ctx, key, 'rule_suggestion', {
-            ...body,
-            digest: digest(body),
-          });
+        const row = await this.insert(ctx, key, 'rule_suggestion', {
+          ...body,
+          digest: digest(body),
+        });
         await this.authorize(ctx, 'suggest');
         await this.rule(ctx, String(row.id));
         return this.ruleDTO(row);

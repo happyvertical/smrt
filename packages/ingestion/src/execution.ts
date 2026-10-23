@@ -716,6 +716,12 @@ export class IntakeExecutionService {
     executor?: DatabaseInterface,
     requiredProviders?: string[],
     proposalId?: string,
+    /**
+     * Compare target revisions (default). A lineage re-check of a reviewer
+     * routing choice passes false: its meaning is the handler choice, so later
+     * writes to the target only need the target to remain accessible.
+     */
+    targetRevisions = true,
   ): Promise<T> {
     const operation = async (db: DatabaseInterface) => {
       const load = async () => {
@@ -737,7 +743,9 @@ export class IntakeExecutionService {
           await context.assertTarget(
             target.model,
             target.id,
-            bound.action.state === 'succeeded' ? undefined : target.revision,
+            bound.action.state === 'succeeded' || !targetRevisions
+              ? undefined
+              : target.revision,
           );
         if (bound.binding.plan) {
           const plans = await this.rows(

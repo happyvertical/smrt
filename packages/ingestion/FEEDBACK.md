@@ -55,10 +55,23 @@ before approval records nothing until that revision is approved.
 
 Settledness is a selection-time condition. Once a generation used an example,
 or a rule suggestion stored its support, the lineage re-checks (reading the
-generation, reviewing or deciding its actions, reading or adopting the rule)
-verify only integrity and true revocation: digests, redaction or deletion,
-supersession, binding revision, live scope/provider authority. A later
-disposition, approval lapse or outcome change of the source never revokes it.
+generation, reviewing or deciding its actions, reading or adopting the rule,
+and replaying `suggestRoutingRule`, which returns the stored suggestion) verify:
+
+- for every kind: the record digest, retention (no redaction or deletion),
+  no supersession, the source attempt/evidence hashes, the live tenant,
+  confidential scope, `retrieve` authority and source provider policy, and that
+  the record still matches its action's current revision, binding hash, attempt,
+  handler and arguments;
+- for `interpretation` records additionally (unchanged from #3676): the source
+  action's target preconditions at their recorded revisions unless the action
+  `succeeded`, and the prompt, configuration and model versions;
+- for `reviewer_routing` records: that the action is still reviewer-selected and
+  its targets are still accessible — not their revisions, since the record means
+  the handler choice, not the target state.
+
+A later disposition, approval lapse, outcome change or target write of a routing
+source never revokes it.
 
 Retrieval scans `interpretation` and `reviewer_routing` records together under
 the same bounds and lexical matcher. A routing example is returned only when its

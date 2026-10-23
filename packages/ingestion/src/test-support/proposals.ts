@@ -6583,13 +6583,15 @@ export function proposalSuite(
         }),
       };
       service = new IngestionService(options);
+      // Both generations run before any judgment exists, so neither one's
+      // lineage depends on the other's judgment.
       const training = await feedbackCase();
+      const second = await feedbackCase();
       const one = await service.recordFeedback({
         ...training.binding,
         judgment: 'correct',
         requestId: 'one',
       });
-      const second = await feedbackCase();
       const two = await service.recordFeedback({
         ...second.binding,
         judgment: 'correct',
@@ -6640,10 +6642,8 @@ export function proposalSuite(
         training.binding.actionId,
       );
       expect(await retrieved()).not.toContain(one.id);
-      // (The second item's own generation selected it, so its lineage gate
-      // refuses first; either way it is not support.)
       await expect(suggest('suggest-reviewer-origin')).rejects.toThrow(
-        /Rule evidence unavailable|Feedback eligibility changed/,
+        'Rule evidence unavailable',
       );
     });
     it('lineage re-checks ignore later resolution, approval lapse and outcome changes of examples already used', async () => {
@@ -6790,6 +6790,116 @@ export function proposalSuite(
           .map((example) => example.itemId),
       ).not.toEqual(expect.arrayContaining([a.itemId]));
     });
+    it('lineage re-checks of a routing choice ignore later writes to its target', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const target = await document('Acme purchase orders');
+      const a = await source(
+        100000,
+        false,
+        'Customer purchase order 17 from Acme for widgets',
+      );
+      const [evidence] = await service.getEvidence(a.itemId);
+      const aReview = await service.startReviewerAction({
+        itemId: a.itemId,
+        handlerId: ATTACH,
+        handlerVersion: '1',
+        args: { contentId: target.id, evidenceId: evidence.id },
+        requestId: 'route-attach',
+        reason: 'File with the Acme orders',
+      });
+      await decide(aReview, 'approve', 'approve-attach');
+      const b = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Acme for widgets',
+      );
+      chooseCreate(args);
+      const generated = await generate(b);
+      expect(
+        calls.mock.calls
+          .at(-1)![0]
+          .examples?.examples.map((example) => example.itemId),
+      ).toContain(a.itemId);
+      const [prepared] = await service.previewGeneratedProposals({
+        itemId: b.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'b-intention',
+            expectedRevision: 0,
+            requestId: 'b-preview',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      // B's own generation offered the target as a candidate, so a write to it
+      // makes that snapshot stale (pre-existing, unrelated to feedback); B's
+      // action review and decision still pass the feedback lineage gate.
+      const reviewable = () => service.getAction(prepared.review.actionId);
+      expect((await reviewable()).state).toBe('waiting_review');
+      // An ordinary domain write to the target document.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      target.title = 'Acme purchase orders (renamed)';
+      await target.save();
+      expect((await reviewable()).state).toBe('waiting_review');
+      // A source of unknown outcome whose target was written again afterwards.
+      await db.query(
+        "UPDATE intake_actions SET state='outcome_unknown' WHERE id=?",
+        aReview.actionId,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      target.title = 'Acme purchase orders (filed)';
+      await target.save();
+      const current = await reviewable();
+      expect(
+        (
+          await service.submitDecision({
+            actionId: current.actionId,
+            expectedRevision: current.revision,
+            expectedReviewVersion: current.reviewVersion,
+            bindingHash: current.bindingHash,
+            requestId: 'approve-b',
+            decision: 'approve',
+          })
+        ).state,
+      ).toBe('authorized');
+    });
     it('a reviewer-selected action is re-previewed only under reviewer authority and with its handler fixed', async () => {
       enableFeedback();
       options.feedback!.policy = {
@@ -6854,6 +6964,16 @@ export function proposalSuite(
       await expect(repreview(ATTACH, 'switch-handler')).rejects.toThrow(
         'Reviewer-selected handler is fixed',
       );
+      // Process authority cannot rewrite it either.
+      await expect(
+        service.publishProposal({
+          itemId: item.itemId,
+          actionId: started.actionId,
+          attemptId: item.attemptId,
+          expectedRevision: started.revision,
+          binding: { handlerId: ATTACH, handlerVersion: '1', args: {} },
+        }),
+      ).rejects.toThrow('Reviewer-selected action requires review');
       reviewerAllowed = false;
       await expect(repreview(CREATE, 'no-reviewer')).rejects.toThrow();
       reviewerAllowed = true;
@@ -6903,6 +7023,16 @@ export function proposalSuite(
       expect(
         await service.claimAnalysis(item.itemId, queued.revision, 'worker'),
       ).toBeNull();
+      // Nothing may be published onto the closed item through the process path.
+      await expect(
+        service.publishProposal({
+          itemId: item.itemId,
+          actionId: randomUUID(),
+          attemptId: item.attemptId,
+          expectedRevision: 0,
+          binding: {},
+        }),
+      ).rejects.toThrow('Item resolved');
       expect(calls.mock.calls.length).toBe(providerCalls);
     });
     it('reviewer-selected actions never label a generation, and lapsed or closed choices never support routing', async () => {
@@ -7026,15 +7156,14 @@ export function proposalSuite(
       ).rows;
       expect(lapsedRow).toBeDefined();
       expect(await retrievedNow()).toContain(String(lapsedRow.id));
-      expect(
-        (
-          await service.suggestRoutingRule({
-            ...supportBinding,
-            supportingFeedbackIds: [String(secondRow.id), String(lapsedRow.id)],
-            requestId: 'suggest-before-lapse',
-          })
-        ).automaticActionEligible,
-      ).toBe(false);
+      const suggestBeforeLapse = () =>
+        service.suggestRoutingRule({
+          ...supportBinding,
+          supportingFeedbackIds: [String(secondRow.id), String(lapsedRow.id)],
+          requestId: 'suggest-before-lapse',
+        });
+      const stored = await suggestBeforeLapse();
+      expect(stored.automaticActionEligible).toBe(false);
       const [lapsedGrant] = (
         await db.query(
           'SELECT data FROM intake_review_decisions WHERE action_id=?',
@@ -7069,6 +7198,15 @@ export function proposalSuite(
           requestId: 'suggest-lapsed',
         }),
       ).rejects.toThrow('Rule evidence unavailable');
+      // The suggestion stored before the lapse is lineage: a retry returns it and
+      // reading it still verifies, because settledness gated only its selection.
+      expect(await suggestBeforeLapse()).toEqual(stored);
+      expect(
+        await service.getRoutingRule({
+          ...supportBinding,
+          suggestionId: stored.id,
+        }),
+      ).toEqual(stored);
     });
     it('reloads only the current completed analysis without requiring a remembered attempt ID', async () => {
       chooseCreate();

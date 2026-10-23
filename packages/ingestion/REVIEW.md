@@ -145,7 +145,10 @@ effect, and `analyze`, `reviseLogicalSplit` and `createAction` refuse the item
 under its lock before any write, so it is never reanalysed, re-split or given a
 new action. `resolveItem` supersedes any queued or running analysis under the
 same lock and `claimAnalysis` refuses a resolved item, so no provider is called
-after a human closed it. The UI hides Approve, Defer, Apply, every edit control, suggestion
+after a human closed it; the item's `processingState` keeps its last value (it
+describes analysis, not review), and the inbox state `resolved` is authoritative.
+`publishProposal` (process authority) refuses a resolved item and any
+reviewer-selected action. The UI hides Approve, Defer, Apply, every edit control, suggestion
 preview and split controls on a resolved item.
 The append-only `intake_dispositions` record is terminal: replaying the same
 request returns the same disposition, any other request conflicts, and

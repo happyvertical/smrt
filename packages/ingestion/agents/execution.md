@@ -78,7 +78,9 @@ any write. `createAction` (process authority) also refuses the reserved
 `startReviewerAction` mints; `previewProposal` on such an action requires
 `review` access and the current handler@version. `resolveItem` supersedes
 queued/running analyses and completes dispatch intents under the item lock, and
-`claimAnalysis` returns `null` for a resolved item. The feedback context's
+`claimAnalysis` returns `null` for a resolved item; `publishProposal` refuses
+a resolved item and any reviewer-selected action. `[feedbackActionTransaction]`
+takes `targetRevisions` (default true); routing lineage re-checks pass false. The feedback context's
 `settled` flag gates selection only; lineage re-checks ignore it (FEEDBACK.md). `intake_dispositions` is a new model: deploy
 its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
 `assertReady` checks it, and both privacy deletion and retention expiry
