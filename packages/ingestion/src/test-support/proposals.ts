@@ -37,6 +37,10 @@ import type {
 } from '../proposal-contracts.js';
 import { proposalReadConfiguration } from '../proposal-contracts.js';
 import type { GenerationOutput } from '../proposal-dto.js';
+import {
+  proposalInstructionsFor,
+  reviewerGuidanceInstructions,
+} from '../proposals.js';
 import { loadReviewSummary } from '../review-summary.js';
 import {
   type AnalysisLease,
@@ -4823,10 +4827,15 @@ export function proposalSuite(
       const captured = latestRequest();
       if (!captured) throw new Error('decision request required');
       const state = captured.state as Record<string, Record<string, unknown>>;
+      // Framed as trusted guidance, outside evidence, counted in the request.
       expect(state.reviewerGuidance).toEqual({
+        instructions: reviewerGuidanceInstructions,
         id: recorded.instruction.id,
         text,
       });
+      expect(String(state.reviewerGuidance.instructions)).toContain(
+        'Trusted reviewer guidance',
+      );
       expect(state.evidence).not.toHaveProperty('reviewerInstruction');
       expect(String(state.evidence.instructions)).not.toContain(
         'Trusted reviewer guidance',
@@ -4834,6 +4843,75 @@ export function proposalSuite(
       expect(String(state.evidence.instructions)).not.toContain(text);
       // The guidance appears exactly once in what is actually sent.
       expect(JSON.stringify(captured).split(text).length - 1).toBe(1);
+    });
+    it('keeps the decision evidence byte-identical without guidance and in the original key order with guidance and examples', async () => {
+      enableFeedback();
+      const phrase = 'Please draft meeting minutes with retained evidence';
+      // Training runs before the decision stage is configured.
+      const training = await feedbackCase(phrase);
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'decision-order-training',
+      });
+      const seen: { request?: DecisionRequest } = {};
+      const latestRequest = () => seen.request;
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async (raw) => {
+            seen.request = raw as DecisionRequest;
+            throw new Error('Captured for inspection');
+          },
+        },
+      };
+      service = new IngestionService(options);
+      // Without guidance: evidence is exactly the generation input.
+      const receiver = await generate(await source(100000, false, phrase));
+      const plainInput = calls.mock.calls.at(-1)![0];
+      expect(plainInput.examples?.examples.length).toBeGreaterThan(0);
+      const plain = latestRequest();
+      if (!plain) throw new Error('decision request required');
+      expect(
+        JSON.stringify((plain.state as Record<string, unknown>).evidence),
+      ).toBe(JSON.stringify(plainInput));
+      expect(plain.state).not.toHaveProperty('reviewerGuidance');
+      // With guidance and examples: original key order, base instructions.
+      const recorded = await service.recordReviewerInstruction({
+        itemId: receiver.itemId,
+        attemptId: receiver.lease.attemptId,
+        expectedRevision: receiver.lease.revision,
+        text: 'File as minutes.',
+        requestId: 'decision-order-guided',
+      });
+      const guided = await reextract(receiver.itemId, recorded.revision);
+      seen.request = undefined;
+      await service.generateProposals(guided.lease);
+      const guidedInput = calls.mock.calls.at(-1)![0];
+      expect(guidedInput.examples?.examples.length).toBeGreaterThan(0);
+      const request = latestRequest();
+      if (!request) throw new Error('decision request required');
+      const evidence = (request.state as Record<string, unknown>)
+        .evidence as Record<string, unknown>;
+      expect(Object.keys(evidence)).toEqual([
+        'evidence',
+        'offered',
+        'instructions',
+        'examples',
+      ]);
+      const { reviewerInstruction: _duplicate, ...rest } = guidedInput;
+      expect(JSON.stringify(evidence)).toBe(
+        JSON.stringify({
+          ...rest,
+          instructions: proposalInstructionsFor(rest.offered, rest.evidence),
+        }),
+      );
+      expect(request.state).toHaveProperty('reviewerGuidance', {
+        instructions: reviewerGuidanceInstructions,
+        id: recorded.instruction.id,
+        text: 'File as minutes.',
+      });
     });
     it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
       const extraction = await source();

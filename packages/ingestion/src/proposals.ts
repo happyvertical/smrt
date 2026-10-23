@@ -938,25 +938,35 @@ export class IngestionProposalService {
           };
         }
     });
-    // Trusted reviewer guidance travels once, under its own key, never under
-    // `evidence` (untrusted document text): the evidence-side input drops the
-    // convenience duplicate and carries the un-guided base instructions.
-    const {
-      reviewerInstruction: guidance,
-      instructions: _guided,
-      ...evidenceSide
-    } = input;
+    // Trusted reviewer guidance travels once, under its own framed key, never
+    // under `evidence` (untrusted document text). Without guidance `evidence`
+    // is the generation input exactly as before; with it, the evidence side
+    // keeps the original key order and the un-guided base instructions.
+    const guidance = input.reviewerInstruction;
+    const evidenceSide = guidance
+      ? {
+          evidence: input.evidence,
+          offered: input.offered,
+          instructions: proposalInstructionsFor(input.offered, input.evidence),
+          ...(input.examples ? { examples: input.examples } : {}),
+          ...(input.humanCorrection
+            ? { humanCorrection: input.humanCorrection }
+            : {}),
+        }
+      : input;
     const request: DecisionRequest = {
       state: JSON.parse(
         JSON.stringify({
-          evidence: {
-            ...evidenceSide,
-            instructions: proposalInstructionsFor(
-              input.offered,
-              input.evidence,
-            ),
-          },
-          ...(guidance ? { reviewerGuidance: guidance } : {}),
+          evidence: evidenceSide,
+          ...(guidance
+            ? {
+                reviewerGuidance: {
+                  instructions: reviewerGuidanceInstructions,
+                  id: guidance.id,
+                  text: guidance.text,
+                },
+              }
+            : {}),
           suggestions: output.suggestions,
         }),
       ),
