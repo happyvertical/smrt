@@ -8161,6 +8161,1978 @@ export function proposalSuite(
       expect(result.warnings).toContain('timeout');
     });
 
+    function automationService(eligible: () => boolean) {
+      const authorize = options.execution!.authorize;
+      return new IngestionService({
+        ...options,
+        execution: {
+          ...options.execution!,
+          authorize: async (input) => {
+            const access = await authorize(input);
+            return {
+              ...access,
+              policy: access.policy.map((layer) => ({
+                ...layer,
+                requireReview: false,
+                automation: { handlers: [CREATE], evaluationVersion: 'eval1' },
+              })) as typeof access.policy,
+            };
+          },
+          evaluateAutomatic: async () => ({
+            eligible: eligible(),
+            evaluationVersion: 'eval1',
+            certainty: 1,
+          }),
+        },
+      });
+    }
+    it('reviewer starts a chosen handler on items without, with failed and with wrong suggestions; same approval path, never automatic', async () => {
+      const assignment = async () => ({ assigneeId: null, version: 0 });
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: '' }),
+        assignment,
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      // No interpretation at all: extraction-only item.
+      const extraction = await source(
+        100000,
+        false,
+        'Customer purchase order 17 received from Acme',
+      );
+      const before = await host.load(extraction.itemId);
+      expect(before.generation).toBeUndefined();
+      expect(before.catalog?.map((entry) => entry.id).sort()).toEqual(
+        [ATTACH, CREATE].sort(),
+      );
+      expect(before.entry.state).toBe('unresolved');
+      const input = {
+        itemId: extraction.itemId,
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+        requestId: 'start-po-17',
+        reason: 'A received customer PO, not a vendor bill',
+      };
+      reviewerAllowed = false;
+      await expect(service.startReviewerAction(input)).rejects.toThrow();
+      reviewerAllowed = true;
+      await expect(
+        new IngestionService({
+          ...options,
+          scope: { ...options.scope, actorId: 'observer' },
+        }).startReviewerAction(input),
+      ).rejects.toThrow();
+      await expect(
+        service.startReviewerAction({ ...input, handlerId: 'missing:handler' }),
+      ).rejects.toThrow('Handler unavailable');
+      await expect(
+        service.startReviewerAction({ ...input, args: { title: '' } }),
+      ).rejects.toThrow();
+      const previousTypes = handlers[0].discovery!.mediaTypes;
+      handlers[0].discovery!.mediaTypes = ['image/png'];
+      await expect(service.startReviewerAction(input)).rejects.toThrow(
+        'Handler unavailable',
+      );
+      handlers[0].discovery!.mediaTypes = previousTypes;
+      for (const table of ['intake_actions', 'intake_proposals'])
+        expect((await db.query(`SELECT id FROM ${table}`)).rows).toHaveLength(
+          0,
+        );
+      const review = await service.startReviewerAction(input);
+      expect(review.state).toBe('waiting_review');
+      expect(review.revision).toBe(1);
+      expect(await service.startReviewerAction(input)).toEqual(review);
+      await expect(
+        service.startReviewerAction({
+          ...input,
+          args: { ...input.args, title: 'Changed' },
+        }),
+      ).rejects.toThrow('conflict');
+      await expect(
+        service.startReviewerAction({ ...input, reason: 'Changed reason' }),
+      ).rejects.toThrow('conflict');
+      const page = await service.listReviews(extraction.itemId);
+      expect(page.actions).toHaveLength(1);
+      expect(page.actions[0]).toMatchObject({
+        origin: 'reviewer-selected',
+        handlerId: CREATE,
+        args: input.args,
+        attemptId: extraction.attemptId,
+      });
+      expect((await host.load(extraction.itemId)).entry.state).toBe('waiting');
+      expect(
+        (await db.query('SELECT id FROM intake_feedback')).rows,
+      ).toHaveLength(0);
+      // Machine authorization never applies to a human routing choice.
+      const automatic = automationService(() => true);
+      await expect(
+        automatic.authorizeAutomatic(review.actionId),
+      ).rejects.toThrow('Automatic execution unavailable');
+      await expect(service.applyAction(review.actionId)).rejects.toThrow();
+      await service.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'approve-po-17',
+        decision: 'approve',
+      });
+      const applied = await service.applyAction(review.actionId);
+      expect(applied.state).toBe('succeeded');
+      const created = await (await Contents.create({ db })).get({
+        id: String(applied.result?.contentId),
+      });
+      expect(created?.title).toBe('Customer PO 17');
+      expect((await host.load(extraction.itemId)).entry.state).toBe(
+        'completed',
+      );
+      // A generated suggestion remains automation-eligible under the same opt-in.
+      chooseCreate();
+      const generated = await generate();
+      const [prepared] = await automatic.previewGeneratedProposals({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'automatic-control',
+            expectedRevision: 0,
+            requestId: 'automatic-control',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      expect(
+        (await automatic.authorizeAutomatic(prepared.review.actionId)).state,
+      ).toBe('authorized');
+      // Failed interpretation: a completed attempt with provider_error and no suggestion.
+      calls.mockRejectedValue(new Error('provider down'));
+      const failed = await generate();
+      expect(failed.output.outcome).toBe('provider_error');
+      expect(failed.output.suggestions).toHaveLength(0);
+      const fromFailed = await service.startReviewerAction({
+        ...input,
+        itemId: failed.itemId,
+        requestId: 'start-after-failure',
+      });
+      expect(fromFailed.state).toBe('waiting_review');
+      expect(
+        (await service.listReviews(failed.itemId)).actions[0].attemptId,
+      ).toBe(failed.lease.attemptId);
+      // Wrong suggestion: redirect to the handler the reviewer chooses instead.
+      chooseCreate({ title: 'Vendor bill', body: 'Wrong classification' });
+      const wrong = await generate();
+      const redirected = await service.startReviewerAction({
+        itemId: wrong.itemId,
+        handlerId: ATTACH,
+        handlerVersion: '1',
+        args: {
+          contentId: String(applied.result?.contentId),
+          evidenceId: (await service.getEvidence(wrong.itemId))[0].id,
+        },
+        requestId: 'start-attach',
+      });
+      expect(redirected.state).toBe('waiting_review');
+      expect(
+        (await service.listReviews(wrong.itemId)).actions.map(
+          (action) => action.handlerId,
+        ),
+      ).toEqual([ATTACH]);
+      await expect(
+        service.startReviewerAction({
+          ...input,
+          itemId: wrong.itemId,
+          requestId: 'start-expired',
+          handlerVersion: '2',
+        }),
+      ).rejects.toThrow('Handler unavailable');
+    });
+    it('reviewer closes an item as handled without action: terminal, distinct from reject, and visible as a queue state', async () => {
+      chooseCreate();
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: '' }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      const generated = await generate();
+      await host.preview({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        index: 0,
+        requestId: 'preview-before-resolve',
+      });
+      const [waiting] = (await service.listReviews(generated.itemId)).actions;
+      const input = {
+        itemId: generated.itemId,
+        disposition: 'resolve_no_action' as const,
+        requestId: 'resolve-paid-invoice',
+        reason: 'Already paid; nothing to do',
+      };
+      reviewerAllowed = false;
+      await expect(service.resolveItem(input)).rejects.toThrow();
+      reviewerAllowed = true;
+      await expect(
+        new IngestionService({
+          ...options,
+          scope: { ...options.scope, tenantId: randomUUID() },
+        }).resolveItem(input),
+      ).rejects.toThrow();
+      await expect(
+        service.resolveItem({ ...input, disposition: 'reject' as never }),
+      ).rejects.toThrow('Invalid disposition');
+      expect((await service.getItem(generated.itemId)).disposition).toBe(
+        undefined,
+      );
+      const disposition = await service.resolveItem(input);
+      const beforeInstruction = await db.query(
+        'SELECT id FROM intake_analyses',
+      );
+      await expect(
+        service.recordReviewerInstruction({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          expectedRevision: (await service.getItem(generated.itemId))
+            .analysisRevision,
+          requestId: 'instruction-after-resolve',
+          text: 'Re-read this closed item',
+        }),
+      ).rejects.toThrow('Item resolved');
+      expect((await db.query('SELECT id FROM intake_analyses')).rows).toEqual(
+        beforeInstruction.rows,
+      );
+      expect(disposition).toEqual({
+        kind: 'resolved_no_action',
+        reviewer: 'owner',
+        reason: 'Already paid; nothing to do',
+        decidedAt: clock.toISOString(),
+      });
+      expect(await service.resolveItem(input)).toEqual(disposition);
+      await expect(
+        service.resolveItem({ ...input, requestId: 'resolve-again' }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.resolveItem({ ...input, reason: 'Changed' }),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (await db.query('SELECT disposition FROM intake_dispositions')).rows,
+      ).toEqual([{ disposition: 'resolved_no_action' }]);
+      expect(
+        (await db.query('SELECT id FROM intake_review_decisions')).rows,
+      ).toHaveLength(0);
+      // Item readers see only the state and time; the reviewer and reason come
+      // from the review surface under reviewer authority.
+      expect((await service.getItem(generated.itemId)).disposition).toEqual({
+        state: 'resolved',
+        at: clock.toISOString(),
+      });
+      expect(
+        (await service.listItems()).find((item) => item.id === generated.itemId)
+          ?.disposition,
+      ).toEqual({ state: 'resolved', at: clock.toISOString() });
+      // Unresolved items carry no disposition in the same batched read.
+      expect(
+        (await service.listItems()).filter((item) => item.disposition),
+      ).toHaveLength(1);
+      expect(await service.getItemDisposition(generated.itemId)).toEqual(
+        disposition,
+      );
+      expect((await host.load(generated.itemId)).disposition?.reviewer).toBe(
+        'owner',
+      );
+      reviewerAllowed = false;
+      await expect(
+        service.getItemDisposition(generated.itemId),
+      ).rejects.toThrow();
+      const readerView = await host.load(generated.itemId);
+      expect(readerView.entry.item.disposition?.state).toBe('resolved');
+      expect(readerView.disposition).toBeUndefined();
+      reviewerAllowed = true;
+      expect((await host.load(generated.itemId)).entry.state).toBe('resolved');
+      expect(
+        (await host.list({ state: 'resolved' })).items.map(
+          (entry) => entry.item.id,
+        ),
+      ).toEqual([generated.itemId]);
+      expect((await host.list({ state: 'waiting' })).items).toEqual([]);
+      const resolvedPage = await service.listItemsPage({
+        state: 'resolved',
+        itemIds: [generated.itemId],
+        limit: 1,
+      });
+      expect(
+        resolvedPage.items.map(({ item, state }) => ({
+          id: item.id,
+          disposition: item.disposition,
+          state,
+        })),
+      ).toEqual([
+        {
+          id: generated.itemId,
+          disposition: { state: 'resolved', at: clock.toISOString() },
+          state: 'resolved',
+        },
+      ]);
+      expect(resolvedPage.nextCursor).toBeUndefined();
+      expect(
+        (
+          await service.listItemsPage({
+            state: 'waiting',
+            itemIds: [generated.itemId],
+          })
+        ).items,
+      ).toEqual([]);
+      // The leftover waiting action can still be rejected, never approved or automated.
+      await expect(
+        service.submitDecision({
+          actionId: waiting.review.actionId,
+          expectedRevision: waiting.review.revision,
+          expectedReviewVersion: waiting.review.reviewVersion,
+          bindingHash: waiting.review.bindingHash,
+          requestId: 'approve-after-resolve',
+          decision: 'approve',
+        }),
+      ).rejects.toThrow('Item resolved');
+      // Only reject remains: correction, deferral and re-preview would publish or
+      // park a revision the disposition already closed.
+      await expect(
+        service.submitDecision({
+          actionId: waiting.review.actionId,
+          expectedRevision: waiting.review.revision,
+          expectedReviewVersion: waiting.review.reviewVersion,
+          bindingHash: waiting.review.bindingHash,
+          requestId: 'correct-after-resolve',
+          decision: 'correct',
+          correctedArgs: { title: 'Corrected', body: 'Body' },
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.submitDecision({
+          actionId: waiting.review.actionId,
+          expectedRevision: waiting.review.revision,
+          expectedReviewVersion: waiting.review.reviewVersion,
+          bindingHash: waiting.review.bindingHash,
+          requestId: 'defer-after-resolve',
+          decision: 'defer',
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.previewProposal({
+          itemId: generated.itemId,
+          actionId: waiting.review.actionId,
+          attemptId: generated.lease.attemptId,
+          expectedRevision: waiting.review.revision,
+          requestId: 'repreview-after-resolve',
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args: { title: 'Edited', body: 'Body' },
+        }),
+      ).rejects.toThrow('Item resolved');
+      // Nor may the item be reanalysed, re-split or given a new action.
+      const analyses = async () =>
+        (
+          await db.query(
+            'SELECT id FROM intake_analyses WHERE item_id=?',
+            generated.itemId,
+          )
+        ).rows.length;
+      const analysesBefore = await analyses();
+      await expect(
+        service.createAction(generated.itemId, 'ui:late', {
+          origin: 'generated-proposal',
+          intentionKey: 'ui:late',
+        }),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.analyze(
+          generated.itemId,
+          { stage: 'extract' },
+          'late-analysis',
+        ),
+      ).rejects.toThrow('Item resolved');
+      await expect(
+        service.reviseLogicalSplit({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          evidenceId: randomUUID(),
+          expectedRevision: 1,
+          groups: [[1]],
+          requestId: 'split-after-resolve',
+        }),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (await db.query('SELECT id FROM intake_review_decisions')).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_proposals WHERE action_id=?',
+            waiting.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(1);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_actions WHERE item_id=?',
+            generated.itemId,
+          )
+        ).rows,
+      ).toHaveLength(1);
+      expect(await analyses()).toBe(analysesBefore);
+      await expect(
+        automationService(() => true).authorizeAutomatic(
+          waiting.review.actionId,
+        ),
+      ).rejects.toThrow('Automatic execution unavailable');
+      await expect(
+        service.startReviewerAction({
+          itemId: generated.itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args: { title: 'Late', body: 'Late' },
+          requestId: 'start-after-resolve',
+        }),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (
+          await service.submitDecision({
+            actionId: waiting.review.actionId,
+            expectedRevision: waiting.review.revision,
+            expectedReviewVersion: waiting.review.reviewVersion,
+            bindingHash: waiting.review.bindingHash,
+            requestId: 'reject-after-resolve',
+            decision: 'reject',
+          })
+        ).state,
+      ).toBe('rejected');
+      expect((await host.load(generated.itemId)).entry.state).toBe('resolved');
+      // Pending or applied effects must be concluded before closing without action.
+      const other = await generate();
+      const [prepared] = await service.previewGeneratedProposals({
+        itemId: other.itemId,
+        attemptId: other.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'authorized-blocks-resolve',
+            expectedRevision: 0,
+            requestId: 'authorized-blocks-resolve',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      await service.submitDecision({
+        actionId: prepared.review.actionId,
+        expectedRevision: prepared.review.revision,
+        expectedReviewVersion: prepared.review.reviewVersion,
+        bindingHash: prepared.review.bindingHash,
+        requestId: 'approve-other',
+        decision: 'approve',
+      });
+      await expect(
+        service.resolveItem({ ...input, itemId: other.itemId }),
+      ).rejects.toThrow('pending or applied');
+      // Effects in flight or of unknown outcome block it the same way.
+      for (const state of ['executing', 'outcome_unknown', 'succeeded']) {
+        await db.query(
+          'UPDATE intake_actions SET state=? WHERE id=?',
+          state,
+          prepared.review.actionId,
+        );
+        await expect(
+          service.resolveItem({ ...input, itemId: other.itemId }),
+        ).rejects.toThrow('pending or applied');
+      }
+      await db.query(
+        "UPDATE intake_actions SET state='authorized' WHERE id=?",
+        prepared.review.actionId,
+      );
+      // Process authority cannot mint reviewer-selected provenance.
+      await expect(
+        service.createAction(other.itemId, 'reviewer:forged', {
+          origin: 'generated-proposal',
+          intentionKey: 'reviewer:forged',
+        }),
+      ).rejects.toThrow('Reserved action provenance');
+      await expect(
+        service.createAction(other.itemId, 'ui:forged', {
+          origin: 'reviewer-selected',
+          intentionKey: 'ui:forged',
+          reviewer: 'owner',
+          reason: 'forged',
+        }),
+      ).rejects.toThrow('Reserved action provenance');
+      // An action that exhausted its attempts cannot be rejected, so it must
+      // not keep the item open; once resolved it can never be retried either.
+      const create = handlers.find((handler) => handler.id === CREATE) as
+        | OperationHandler
+        | undefined;
+      if (!create || create.execution.kind !== 'database')
+        throw new Error('Database handler expected');
+      const apply = create.execution.apply;
+      create.execution = {
+        kind: 'database',
+        apply: async () => {
+          throw new Error('Domain failure');
+        },
+      };
+      expect((await service.applyAction(prepared.review.actionId)).state).toBe(
+        'failed',
+      );
+      create.execution = { kind: 'database', apply };
+      expect(
+        (await service.resolveItem({ ...input, itemId: other.itemId })).kind,
+      ).toBe('resolved_no_action');
+      await expect(
+        service.applyAction(prepared.review.actionId),
+      ).rejects.toThrow('Item resolved');
+      expect((await host.load(other.itemId)).entry.state).toBe('resolved');
+      // Defence in depth: even an authorized state reached after resolution cannot apply.
+      await db.query(
+        "UPDATE intake_actions SET state='authorized' WHERE id=?",
+        waiting.review.actionId,
+      );
+      await expect(
+        service.applyAction(waiting.review.actionId),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_executions WHERE action_id=?',
+            waiting.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      // An approval that expired can be neither applied nor rejected, so it must
+      // not keep the item open; once resolved it can never be applied.
+      const lapsed = await generate();
+      const [approved] = await service.previewGeneratedProposals({
+        itemId: lapsed.itemId,
+        attemptId: lapsed.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'expired-approval',
+            expectedRevision: 0,
+            requestId: 'expired-approval',
+          },
+        ],
+      });
+      if (approved.kind !== 'operation') throw new Error('Operation expected');
+      await service.submitDecision({
+        actionId: approved.review.actionId,
+        expectedRevision: approved.review.revision,
+        expectedReviewVersion: approved.review.reviewVersion,
+        bindingHash: approved.review.bindingHash,
+        requestId: 'approve-then-expire',
+        decision: 'approve',
+      });
+      await expect(
+        service.resolveItem({ ...input, itemId: lapsed.itemId }),
+      ).rejects.toThrow('pending or applied');
+      const [grant] = (
+        await db.query(
+          'SELECT data FROM intake_review_decisions WHERE action_id=?',
+          approved.review.actionId,
+        )
+      ).rows;
+      const approvalExpiry = Date.parse(
+        String(
+          (typeof grant.data === 'string' ? JSON.parse(grant.data) : grant.data)
+            .expiresAt,
+        ),
+      );
+      const beforeExpiry = clock;
+      clock = new Date(approvalExpiry + 1);
+      expect(
+        (await service.resolveItem({ ...input, itemId: lapsed.itemId })).kind,
+      ).toBe('resolved_no_action');
+      await expect(
+        service.applyAction(approved.review.actionId),
+      ).rejects.toThrow('Item resolved');
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_executions WHERE action_id=?',
+            approved.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      clock = beforeExpiry;
+      // Extraction-only items close the same way.
+      const extraction = await source();
+      expect(
+        (
+          await service.resolveItem({
+            ...input,
+            itemId: extraction.itemId,
+            reason: undefined,
+          })
+        ).reason,
+      ).toBe('');
+      expect((await host.load(extraction.itemId)).entry.state).toBe('resolved');
+      // Retention expiry redacts the reviewer and reason under the owning lock.
+      const retained = await service.resolveItem({
+        ...input,
+        itemId: (await source()).itemId,
+        requestId: 'resolve-retained',
+      });
+      expect(retained.reviewer).toBe('owner');
+      clock = new Date(clock.getTime() + 1_500_000);
+      await service.listReviews(extraction.itemId);
+      expect(
+        (
+          await db.query(
+            'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
+            extraction.itemId,
+          )
+        ).rows.map((row) => ({
+          disposition: row.disposition,
+          data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        })),
+      ).toEqual([{ disposition: 'resolved_no_action', data: {} }]);
+      clock = new Date(clock.getTime() - 1_500_000);
+      // Privacy deletion of a fresh, still-retained item redacts the same way.
+      const deleted = (await source()).itemId;
+      await service.resolveItem({
+        ...input,
+        itemId: deleted,
+        requestId: 'resolve-deleted',
+      });
+      await service.expire(deleted);
+      expect(
+        (
+          await db.query(
+            'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
+            deleted,
+          )
+        ).rows.map((row) => ({
+          disposition: row.disposition,
+          data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        })),
+      ).toEqual([{ disposition: 'resolved_no_action', data: {} }]);
+    });
+    it('reviewer routing choices become retrievable routing feedback and rule support without automation', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const first = await source(
+        100000,
+        false,
+        'Customer purchase order 17 from Acme for widgets',
+      );
+      // Starting alone records nothing; rejected or deferred starts never do.
+      const startedOnly = await start(first.itemId, 'route-first');
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing'",
+          )
+        ).rows,
+      ).toHaveLength(0);
+      const rejected = await source(
+        100000,
+        false,
+        'Customer purchase order 18 from Acme for widgets',
+      );
+      await decide(
+        await start(rejected.itemId, 'route-rejected'),
+        'reject',
+        'reject-rejected',
+      );
+      const deferred = await source(
+        100000,
+        false,
+        'Customer purchase order 19 from Acme for widgets',
+      );
+      await decide(
+        await start(deferred.itemId, 'route-deferred'),
+        'defer',
+        'defer-deferred',
+      );
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing'",
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await decide(startedOnly, 'approve', 'approve-first');
+      const second = await source(
+        100000,
+        false,
+        'Customer purchase order 42 from Globex for widgets',
+      );
+      const closed = await source(
+        100000,
+        false,
+        'Paid invoice 9 from Initech, nothing to do',
+      );
+      const secondReview = await start(second.itemId, 'route-second');
+      await decide(secondReview, 'approve', 'approve-second');
+      await service.resolveItem({
+        itemId: closed.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'route-closed',
+        reason: 'Already paid',
+      });
+      const rows: Array<{
+        id: string;
+        item_id: string;
+        kind: string;
+        data: Record<string, unknown>;
+      }> = (
+        await db.query(
+          "SELECT id,item_id,kind,data FROM intake_feedback WHERE kind='reviewer_routing' ORDER BY id",
+        )
+      ).rows.map((row) => ({
+        id: String(row.id),
+        item_id: String(row.item_id),
+        kind: String(row.kind),
+        data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+      }));
+      expect(rows.map((row) => row.kind)).toEqual([
+        'reviewer_routing',
+        'reviewer_routing',
+        'reviewer_routing',
+      ]);
+      const byItem = (itemId: string) =>
+        rows.find((row) => row.item_id === itemId)!;
+      expect(byItem(first.itemId).data).toMatchObject({
+        choice: 'handler',
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args,
+        reviewer: 'owner',
+        reason: 'Customer purchase order',
+        attemptId: first.attemptId,
+      });
+      expect(byItem(first.itemId).data.query).toContain(
+        'Customer purchase order 17',
+      );
+      expect(byItem(closed.itemId).data).toMatchObject({
+        choice: 'none',
+        handlerId: null,
+        actionId: null,
+        reason: 'Already paid',
+      });
+      // Comparable later items retrieve the explicit choices, each under live authority.
+      const receiver = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Umbrella for widgets',
+      );
+      const retrieved = await service.retrieveFeedback({
+        itemId: receiver.itemId,
+        query: 'Customer purchase order 99 from Umbrella for widgets',
+      });
+      expect(retrieved.examples.map((example) => example.feedbackId)).toEqual(
+        [byItem(first.itemId).id, byItem(second.itemId).id].sort(),
+      );
+      expect(retrieved.examples[0]).toMatchObject({
+        kind: 'reviewer_routing',
+        handlerId: CREATE,
+        judgment: 'correct',
+        args,
+        routing: { choice: 'handler', reason: 'Customer purchase order' },
+      });
+      expect(retrieved.examples[0].model).toBeUndefined();
+      const paid = await source(
+        100000,
+        false,
+        'Paid invoice 12 from Initech, nothing to do',
+      );
+      const none = await service.retrieveFeedback({
+        itemId: paid.itemId,
+        query: 'Paid invoice 12 from Initech, nothing to do',
+      });
+      expect(none.examples.map((example) => example.handlerId)).toEqual([
+        'none',
+      ]);
+      expect(none.examples[0]).toMatchObject({
+        feedbackId: byItem(closed.itemId).id,
+        actionId: '',
+        routing: { choice: 'none', reason: 'Already paid' },
+      });
+      // Tenant/confidential scope and per-item authority still gate every example.
+      for (const scope of [
+        { ...options.scope, tenantId: '22222222-2222-4222-8222-222222222222' },
+        { ...options.scope, confidentialScopeId: 'other' },
+      ])
+        await expect(
+          new IngestionService({ ...options, scope }).retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          }),
+        ).rejects.toThrow();
+      const authorize = options.feedback!.authorize;
+      options.feedback!.authorize = async (input) =>
+        input.itemId !== first.itemId && (await authorize(input));
+      expect(
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples.map((example) => example.feedbackId),
+      ).toEqual([byItem(second.itemId).id]);
+      options.feedback!.authorize = authorize;
+      // Generation receives the same bounded examples as model input, not authority.
+      chooseCreate(args);
+      const generated = await generate(receiver);
+      expect(
+        calls.mock.calls
+          .at(-1)![0]
+          .examples?.examples.map((example) => example.feedbackId),
+      ).toEqual([byItem(first.itemId).id, byItem(second.itemId).id].sort());
+      expect(generated.output.automaticActionEligible).toBe(false);
+      // Repeated explicit choices support a routing suggestion; `none` and duplicates do not.
+      const third = await source(
+        100000,
+        false,
+        'Customer purchase order 7 from Hooli for widgets',
+      );
+      const started = await start(third.itemId, 'route-third');
+      // A correction before approval retires nothing (nothing was recorded) and
+      // the approved new revision is what gets captured.
+      const corrected = await service.submitDecision({
+        actionId: started.actionId,
+        expectedRevision: started.revision,
+        expectedReviewVersion: started.reviewVersion,
+        bindingHash: started.bindingHash,
+        requestId: 'correct-before-approve',
+        decision: 'correct',
+        correctedArgs: args,
+      });
+      expect(corrected.revision).toBe(2);
+      await decide(corrected, 'approve', 'approve-third');
+      const review = await service.getAction(started.actionId);
+      expect(
+        (
+          await db.query(
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            third.itemId,
+          )
+        ).rows.map((row) =>
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ),
+      ).toMatchObject([{ choice: 'handler', revision: 2, args }]);
+      const binding = {
+        itemId: third.itemId,
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+      };
+      const suggestion = await service.suggestRoutingRule({
+        ...binding,
+        supportingFeedbackIds: [
+          byItem(first.itemId).id,
+          byItem(second.itemId).id,
+        ],
+        requestId: 'suggest-routing',
+      });
+      expect(suggestion.rule).toMatchObject({
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args,
+      });
+      expect(suggestion.rule.matchTerms).toContain('purchase');
+      expect(suggestion.automaticActionEligible).toBe(false);
+      await expect(
+        service.suggestRoutingRule({
+          ...binding,
+          supportingFeedbackIds: [
+            byItem(first.itemId).id,
+            byItem(closed.itemId).id,
+          ],
+          requestId: 'suggest-none',
+        }),
+      ).rejects.toThrow('Rule evidence unavailable');
+      await expect(
+        service.suggestRoutingRule({
+          ...binding,
+          supportingFeedbackIds: [
+            byItem(first.itemId).id,
+            byItem(first.itemId).id,
+          ],
+          requestId: 'suggest-duplicate',
+        }),
+      ).rejects.toThrow('Insufficient rule evidence');
+      await expect(
+        automationService(() => true).authorizeAutomatic(review.actionId),
+      ).rejects.toThrow('Automatic execution unavailable');
+      // Rejected and deferred reviewer-started actions are never examples.
+      const retrievedItems = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples.map((example) => example.itemId);
+      expect(await retrievedItems()).toEqual(
+        expect.arrayContaining([first.itemId, second.itemId, third.itemId]),
+      );
+      expect(await retrievedItems()).not.toEqual(
+        expect.arrayContaining([rejected.itemId]),
+      );
+      expect(await retrievedItems()).not.toEqual(
+        expect.arrayContaining([deferred.itemId]),
+      );
+      // Applying the approved action keeps the example; a later correction retires
+      // it until the new revision is approved and captured again.
+      expect((await service.applyAction(secondReview.actionId)).state).toBe(
+        'succeeded',
+      );
+      expect(await retrievedItems()).toEqual(
+        expect.arrayContaining([second.itemId]),
+      );
+      const revised = await service.previewProposal({
+        itemId: third.itemId,
+        actionId: review.actionId,
+        attemptId: third.attemptId,
+        expectedRevision: review.revision,
+        requestId: 'revise-third',
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { title: 'Customer PO (revised)', body: args.body },
+      });
+      expect(revised.state).toBe('waiting_review');
+      expect(await retrievedItems()).not.toContain(third.itemId);
+      await decide(revised, 'approve', 'approve-third-again');
+      expect(await retrievedItems()).toContain(third.itemId);
+      expect(
+        (
+          await db.query(
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            third.itemId,
+          )
+        ).rows
+          .map(
+            (row) =>
+              (typeof row.data === 'string' ? JSON.parse(row.data) : row.data)
+                .revision,
+          )
+          // Ids are random UUIDs, so row order is not insertion order.
+          .sort((a, b) => a - b),
+      ).toEqual([2, 3]);
+      // Capture never vetoes the decision: an unavailable extraction pin or
+      // malformed evidence skips the projection while approval/resolution commit.
+      const routingRows = async (itemId: string) =>
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            itemId,
+          )
+        ).rows;
+      const pinned = await generate(
+        await source(
+          100000,
+          false,
+          'Quarterly rainfall totals for the orchard',
+        ),
+      );
+      const pinnedStart = await start(pinned.itemId, 'route-pinned');
+      await db.query(
+        "UPDATE intake_analysis_attempts SET output_digest='tampered' WHERE id=?",
+        pinned.attemptId,
+      );
+      expect(
+        (await decide(pinnedStart, 'approve', 'approve-pinned')).state,
+      ).toBe('authorized');
+      expect(await routingRows(pinned.itemId)).toHaveLength(0);
+      const malformed = await generate(
+        await source(100000, false, 'Greenhouse humidity log for the orchard'),
+      );
+      const malformedStart = await start(malformed.itemId, 'route-malformed');
+      await db.query(
+        "UPDATE intake_analyses SET data='{}' WHERE id=(SELECT analysis_id FROM intake_analysis_attempts WHERE id=?)",
+        malformed.lease.attemptId,
+      );
+      expect(
+        (await decide(malformedStart, 'approve', 'approve-malformed')).state,
+      ).toBe('authorized');
+      expect(await routingRows(malformed.itemId)).toHaveLength(0);
+      const malformedClose = await generate(
+        await source(100000, false, 'Soil acidity notes for the orchard'),
+      );
+      await db.query(
+        "UPDATE intake_analyses SET data='{}' WHERE id=(SELECT analysis_id FROM intake_analysis_attempts WHERE id=?)",
+        malformedClose.lease.attemptId,
+      );
+      expect(
+        (
+          await service.resolveItem({
+            itemId: malformedClose.itemId,
+            disposition: 'resolve_no_action',
+            requestId: 'resolve-malformed',
+          })
+        ).kind,
+      ).toBe('resolved_no_action');
+      expect(await routingRows(malformedClose.itemId)).toHaveLength(0);
+      // Retention expiry and privacy deletion redact routing feedback and the
+      // disposition alike, keeping only kinds.
+      const redacted = async (itemId: string) => ({
+        feedback: (
+          await db.query(
+            "SELECT data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            itemId,
+          )
+        ).rows.map((row) =>
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ),
+        disposition: (
+          await db.query(
+            'SELECT disposition,data FROM intake_dispositions WHERE item_id=?',
+            itemId,
+          )
+        ).rows.map((row) => ({
+          disposition: row.disposition,
+          data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        })),
+      });
+      const expiring = await source(100000, false, 'Expiring paid invoice');
+      await service.resolveItem({
+        itemId: expiring.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-expiring',
+        reason: 'Paid',
+      });
+      expect((await redacted(expiring.itemId)).feedback).toMatchObject([
+        { choice: 'none', reason: 'Paid' },
+      ]);
+      clock = new Date(clock.getTime() + 1_500_000);
+      await service.listReviews(expiring.itemId);
+      expect(await redacted(expiring.itemId)).toEqual({
+        feedback: [{}],
+        disposition: [{ disposition: 'resolved_no_action', data: {} }],
+      });
+      clock = new Date(clock.getTime() - 1_500_000);
+      const purged = await source(100000, false, 'Deleted paid invoice');
+      await service.resolveItem({
+        itemId: purged.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-purged',
+        reason: 'Paid',
+      });
+      await service.expire(purged.itemId);
+      expect(await redacted(purged.itemId)).toEqual({
+        feedback: [{}],
+        disposition: [{ disposition: 'resolved_no_action', data: {} }],
+      });
+    });
+    it('interpretation judgments survive a disposition but never count when bound to a reviewer-selected action', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'interpretation-policy-1',
+          preview: 'Prefer drafts for meeting minutes',
+        }),
+        adopt: async () => ({
+          version: 'interpretation-policy-2',
+          auditId: 'audit',
+        }),
+      };
+      service = new IngestionService(options);
+      // Both generations run before any judgment exists, so neither one's
+      // lineage depends on the other's judgment.
+      const training = await feedbackCase();
+      const second = await feedbackCase();
+      const one = await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'one',
+      });
+      const two = await service.recordFeedback({
+        ...second.binding,
+        judgment: 'correct',
+        requestId: 'two',
+      });
+      const receiver = await source(
+        100000,
+        false,
+        'Meeting minutes draft evidence',
+      );
+      const retrieved = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Meeting minutes draft evidence',
+          })
+        ).examples.map((example) => example.feedbackId);
+      const suggest = (requestId: string) =>
+        service.suggestRoutingRule({
+          ...second.binding,
+          supportingFeedbackIds: [one.id, two.id],
+          requestId,
+        });
+      expect(await retrieved()).toContain(one.id);
+      // Closing the item without action says nothing about the suggestion.
+      await service.resolveItem({
+        itemId: training.generated.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-training',
+      });
+      expect(await retrieved()).toContain(one.id);
+      expect(
+        (await suggest('suggest-after-resolve')).automaticActionEligible,
+      ).toBe(false);
+      // A judgment whose action now carries reviewer-selected provenance is a
+      // routing choice, never a model example or interpretation support.
+      const [action] = (
+        await db.query(
+          'SELECT data FROM intake_actions WHERE id=?',
+          training.binding.actionId,
+        )
+      ).rows;
+      const provenance =
+        typeof action.data === 'string' ? JSON.parse(action.data) : action.data;
+      await db.query(
+        'UPDATE intake_actions SET data=? WHERE id=?',
+        JSON.stringify({ ...provenance, origin: 'reviewer-selected' }),
+        training.binding.actionId,
+      );
+      expect(await retrieved()).not.toContain(one.id);
+      await expect(suggest('suggest-reviewer-origin')).rejects.toThrow(
+        'Rule evidence unavailable',
+      );
+    });
+    it('lineage re-checks ignore later resolution, approval lapse and outcome changes of examples already used', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const grantExpiry = async (actionId: string) => {
+        const [grant] = (
+          await db.query(
+            'SELECT data FROM intake_review_decisions WHERE action_id=?',
+            actionId,
+          )
+        ).rows;
+        return Date.parse(
+          String(
+            (typeof grant.data === 'string'
+              ? JSON.parse(grant.data)
+              : grant.data
+            ).expiresAt,
+          ),
+        );
+      };
+      const a = await source(
+        100000,
+        false,
+        'Customer purchase order 17 from Acme for widgets',
+      );
+      const aReview = await start(a.itemId, 'route-a');
+      await decide(aReview, 'approve', 'approve-a');
+      const c = await source(
+        100000,
+        false,
+        'Customer purchase order 42 from Globex for widgets',
+      );
+      const cReview = await start(c.itemId, 'route-c');
+      await decide(cReview, 'approve', 'approve-c');
+      await db.query(
+        "UPDATE intake_actions SET state='executing' WHERE id=?",
+        cReview.actionId,
+      );
+      // B's generation selects both reviewer choices as examples.
+      const b = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Umbrella for widgets',
+      );
+      chooseCreate(args);
+      const generated = await generate(b);
+      expect(
+        calls.mock.calls
+          .at(-1)![0]
+          .examples?.examples.map((example) => example.itemId)
+          .sort(),
+      ).toEqual([a.itemId, c.itemId].sort());
+      const [prepared] = await service.previewGeneratedProposals({
+        itemId: b.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'b-intention',
+            expectedRevision: 0,
+            requestId: 'b-preview',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      const reviewable = async () => {
+        await service.getCompletedAnalysis(b.itemId);
+        return service.getAction(prepared.review.actionId);
+      };
+      expect((await reviewable()).state).toBe('waiting_review');
+      // C's effect becomes of unknown outcome.
+      await db.query(
+        "UPDATE intake_actions SET state='outcome_unknown' WHERE id=?",
+        cReview.actionId,
+      );
+      expect((await reviewable()).state).toBe('waiting_review');
+      // A's approval lapses unapplied, then A is closed without action.
+      const beforeLapse = clock;
+      clock = new Date((await grantExpiry(aReview.actionId)) + 1);
+      expect((await reviewable()).state).toBe('waiting_review');
+      await service.resolveItem({
+        itemId: a.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-a',
+      });
+      clock = beforeLapse;
+      const current = await reviewable();
+      expect(
+        (
+          await service.submitDecision({
+            actionId: current.actionId,
+            expectedRevision: current.revision,
+            expectedReviewVersion: current.reviewVersion,
+            bindingHash: current.bindingHash,
+            requestId: 'approve-b',
+            decision: 'approve',
+          })
+        ).state,
+      ).toBe('authorized');
+      // Selection still applies settledness: a new retrieval excludes both.
+      expect(
+        (
+          await service.retrieveFeedback({
+            itemId: b.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples
+          .filter((example) => example.handlerId !== 'none')
+          .map((example) => example.itemId),
+      ).not.toEqual(expect.arrayContaining([a.itemId]));
+    });
+    it('lineage re-checks of a routing choice ignore later writes to its target', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const target = await document('Acme purchase orders');
+      const a = await source(
+        100000,
+        false,
+        'Customer purchase order 17 from Acme for widgets',
+      );
+      const [evidence] = await service.getEvidence(a.itemId);
+      const aReview = await service.startReviewerAction({
+        itemId: a.itemId,
+        handlerId: ATTACH,
+        handlerVersion: '1',
+        args: { contentId: target.id, evidenceId: evidence.id },
+        requestId: 'route-attach',
+        reason: 'File with the Acme orders',
+      });
+      await decide(aReview, 'approve', 'approve-attach');
+      const b = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Acme for widgets',
+      );
+      chooseCreate(args);
+      const generated = await generate(b);
+      expect(
+        calls.mock.calls
+          .at(-1)![0]
+          .examples?.examples.map((example) => example.itemId),
+      ).toContain(a.itemId);
+      const [prepared] = await service.previewGeneratedProposals({
+        itemId: b.itemId,
+        attemptId: generated.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'b-intention',
+            expectedRevision: 0,
+            requestId: 'b-preview',
+          },
+        ],
+      });
+      if (prepared.kind !== 'operation') throw new Error('Operation expected');
+      // B's own generation offered the target as a candidate, so a write to it
+      // makes that snapshot stale (pre-existing, unrelated to feedback); B's
+      // action review and decision still pass the feedback lineage gate.
+      const reviewable = () => service.getAction(prepared.review.actionId);
+      expect((await reviewable()).state).toBe('waiting_review');
+      // An ordinary domain write to the target document.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      target.title = 'Acme purchase orders (renamed)';
+      await target.save();
+      expect((await reviewable()).state).toBe('waiting_review');
+      // A source of unknown outcome whose target was written again afterwards.
+      await db.query(
+        "UPDATE intake_actions SET state='outcome_unknown' WHERE id=?",
+        aReview.actionId,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      target.title = 'Acme purchase orders (filed)';
+      await target.save();
+      const current = await reviewable();
+      expect(
+        (
+          await service.submitDecision({
+            actionId: current.actionId,
+            expectedRevision: current.revision,
+            expectedReviewVersion: current.reviewVersion,
+            bindingHash: current.bindingHash,
+            requestId: 'approve-b',
+            decision: 'approve',
+          })
+        ).state,
+      ).toBe('authorized');
+    });
+    it('stored rule support re-checks targets for interpretation records only, and excludes tampered routing provenance', async () => {
+      enableFeedback();
+      options.feedback!.routing = [
+        {
+          handlerId: ATTACH,
+          handlerVersion: '1',
+          version: 'routing-fields-1',
+          fields: ['contentId'],
+        },
+      ];
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'attach-policy-1',
+          preview: 'File Acme orders with the Acme document',
+        }),
+        adopt: async () => ({ version: 'attach-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const decideAction = (
+        review: {
+          actionId: string;
+          revision: number;
+          reviewVersion: number;
+          bindingHash: string;
+        },
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision: 'approve',
+        });
+      const bindingOf = (
+        itemId: string,
+        review: {
+          actionId: string;
+          revision: number;
+          reviewVersion: number;
+          bindingHash: string;
+        },
+      ) => ({
+        itemId,
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+      });
+      const rename = async (
+        target: Awaited<ReturnType<typeof document>>,
+        title: string,
+      ) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        target.title = title;
+        await target.save();
+      };
+      // Routing support: two reviewer ATTACH choices to the same document.
+      const routed = await document('Acme orders (routing)');
+      const attach = async (text: string, requestId: string) => {
+        const item = await source(100000, false, text);
+        const [evidence] = await service.getEvidence(item.itemId);
+        const review = await service.startReviewerAction({
+          itemId: item.itemId,
+          handlerId: ATTACH,
+          handlerVersion: '1',
+          args: { contentId: routed.id, evidenceId: evidence.id },
+          requestId,
+          reason: 'File with the Acme orders',
+        });
+        await decideAction(review, `approve-${requestId}`);
+        const [row] = (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+            item.itemId,
+          )
+        ).rows;
+        return { item, review, feedbackId: String(row.id) };
+      };
+      const r1 = await attach(
+        'Customer purchase order 17 from Acme for widgets',
+        'route-1',
+      );
+      const r2 = await attach(
+        'Customer purchase order 42 from Acme for widgets',
+        'route-2',
+      );
+      const t = await attach(
+        'Customer purchase order 7 from Acme for widgets',
+        'route-target',
+      );
+      const routingBinding = bindingOf(t.item.itemId, t.review);
+      const routingRule = await service.suggestRoutingRule({
+        ...routingBinding,
+        supportingFeedbackIds: [r1.feedbackId, r2.feedbackId],
+        requestId: 'suggest-routing',
+      });
+      const r4 = await attach(
+        'Customer purchase order 23 from Acme for widgets',
+        'route-4',
+      );
+      // Tampered provenance: a routing record whose action no longer claims
+      // reviewer selection is neither an example nor support.
+      const receiver = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Acme for widgets',
+      );
+      const retrieved = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Acme for widgets',
+          })
+        ).examples.map((example) => example.feedbackId);
+      expect(await retrieved()).toContain(r4.feedbackId);
+      const [action] = (
+        await db.query(
+          'SELECT data FROM intake_actions WHERE id=?',
+          r4.review.actionId,
+        )
+      ).rows;
+      await db.query(
+        'UPDATE intake_actions SET data=? WHERE id=?',
+        JSON.stringify({
+          ...(typeof action.data === 'string'
+            ? JSON.parse(action.data)
+            : action.data),
+          origin: 'generated-proposal',
+        }),
+        r4.review.actionId,
+      );
+      expect(await retrieved()).not.toContain(r4.feedbackId);
+      await expect(
+        service.suggestRoutingRule({
+          ...routingBinding,
+          supportingFeedbackIds: [r1.feedbackId, r4.feedbackId],
+          requestId: 'suggest-tampered',
+        }),
+      ).rejects.toThrow('Rule evidence unavailable');
+      // The reading action has applied; the routing sources stay authorized
+      // while their target is written: the stored support still verifies.
+      expect((await service.applyAction(t.review.actionId)).state).toBe(
+        'succeeded',
+      );
+      await rename(routed, 'Acme orders (routing, renamed)');
+      expect(
+        await service.getRoutingRule({
+          ...routingBinding,
+          suggestionId: routingRule.id,
+        }),
+      ).toEqual(routingRule);
+      // Interpretation support: generated ATTACH suggestions to one document,
+      // both generated before any judgment exists.
+      const judged = await document('Acme orders (interpretation)');
+      calls.mockImplementation(async (input) => {
+        const evidence = input.evidence[0];
+        return {
+          completion: 'complete',
+          output: {
+            outcome: 'proposals',
+            suggestions: [
+              {
+                handlerId: ATTACH,
+                handlerVersion: '1',
+                args: { contentId: judged.id, evidenceId: evidence.evidenceId },
+                evidence: [
+                  {
+                    evidenceId: evidence.evidenceId,
+                    location: evidence.segments[0].location,
+                  },
+                ],
+                alternatives: [],
+                missingFields: [],
+                explanation: 'File with the Acme document.',
+              },
+            ],
+            splits: [],
+          },
+        };
+      });
+      const prepare = async (text: string, key: string) => {
+        const generated = await generate(await source(100000, false, text));
+        const [prepared] = await service.previewGeneratedProposals({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: key,
+              expectedRevision: 0,
+              requestId: key,
+            },
+          ],
+        });
+        if (prepared.kind !== 'operation')
+          throw new Error('Operation expected');
+        return bindingOf(generated.itemId, prepared.review);
+      };
+      const first = await prepare('Acme invoice 3 for widgets', 'judged-1');
+      const second = await prepare('Acme invoice 4 for widgets', 'judged-2');
+      const one = await service.recordFeedback({
+        ...first,
+        judgment: 'correct',
+        requestId: 'judge-1',
+      });
+      const two = await service.recordFeedback({
+        ...second,
+        judgment: 'correct',
+        requestId: 'judge-2',
+      });
+      const interpretationRule = await service.suggestRoutingRule({
+        ...second,
+        supportingFeedbackIds: [one.id, two.id],
+        requestId: 'suggest-interpretation',
+      });
+      await decideAction(
+        {
+          actionId: second.actionId,
+          revision: second.expectedRevision,
+          reviewVersion: second.expectedReviewVersion,
+          bindingHash: second.bindingHash,
+        },
+        'approve-judged-2',
+      );
+      expect((await service.applyAction(second.actionId)).state).toBe(
+        'succeeded',
+      );
+      // An interpretation record keeps the #3676 target check: the first
+      // source is still waiting, so a write to its target retires the support.
+      await rename(judged, 'Acme orders (interpretation, renamed)');
+      await expect(
+        service.getRoutingRule({
+          ...second,
+          suggestionId: interpretationRule.id,
+        }),
+      ).rejects.toThrow();
+    });
+    it('a reviewer-selected action is re-previewed only under reviewer authority and with its handler fixed', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const item = await source(
+        100000,
+        false,
+        'Customer purchase order 5 from Acme for widgets',
+      );
+      const started = await start(item.itemId, 'route-fixed');
+      const repreview = (
+        handlerId: string,
+        requestId: string,
+        body = 'Corrected order',
+      ) =>
+        service.previewProposal({
+          itemId: item.itemId,
+          actionId: started.actionId,
+          attemptId: item.attemptId,
+          expectedRevision: started.revision,
+          requestId,
+          handlerId,
+          handlerVersion: '1',
+          args:
+            handlerId === CREATE
+              ? { ...args, body }
+              : { contentId: randomUUID(), evidenceId: randomUUID() },
+        });
+      await expect(repreview(ATTACH, 'switch-handler')).rejects.toThrow(
+        'Reviewer-selected handler is fixed',
+      );
+      // Process authority cannot rewrite it either.
+      await expect(
+        service.publishProposal({
+          itemId: item.itemId,
+          actionId: started.actionId,
+          attemptId: item.attemptId,
+          expectedRevision: started.revision,
+          binding: { handlerId: ATTACH, handlerVersion: '1', args: {} },
+        }),
+      ).rejects.toThrow('Reviewer-selected action requires review');
+      reviewerAllowed = false;
+      await expect(repreview(CREATE, 'no-reviewer')).rejects.toThrow();
+      reviewerAllowed = true;
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_proposals WHERE action_id=?',
+            started.actionId,
+          )
+        ).rows,
+      ).toHaveLength(1);
+      const corrected = await repreview(CREATE, 'correct-args');
+      expect(corrected).toMatchObject({
+        revision: started.revision + 1,
+        state: 'waiting_review',
+      });
+      expect((await service.listReviews(item.itemId)).actions).toMatchObject([
+        { origin: 'reviewer-selected', handlerId: CREATE },
+      ]);
+    });
+    it('resolving an item supersedes queued analysis and is never claimed for a provider', async () => {
+      chooseCreate();
+      const item = await source();
+      const queued = await service.analyze(
+        item.itemId,
+        {
+          stage: 'extract',
+          extraction: { configurationRevision: '1', limits: extractionLimits },
+        },
+        'queued-before-resolve',
+      );
+      const providerCalls = calls.mock.calls.length;
+      await service.resolveItem({
+        itemId: item.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-queued',
+      });
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_analyses WHERE item_id=? AND revision=?',
+            item.itemId,
+            queued.revision,
+          )
+        ).rows,
+      ).toEqual([{ state: 'superseded' }]);
+      expect(
+        await service.claimAnalysis(item.itemId, queued.revision, 'worker'),
+      ).toBeNull();
+      // Nothing may be published onto the closed item through the process path.
+      await expect(
+        service.publishProposal({
+          itemId: item.itemId,
+          actionId: randomUUID(),
+          attemptId: item.attemptId,
+          expectedRevision: 0,
+          binding: {},
+        }),
+      ).rejects.toThrow('Item resolved');
+      expect(calls.mock.calls.length).toBe(providerCalls);
+    });
+    it('reviewer-selected actions never label a generation, and lapsed or closed choices never support routing', async () => {
+      enableFeedback();
+      options.feedback!.policy = {
+        preview: async () => ({
+          version: 'routing-policy-1',
+          preview: 'Route customer purchase orders to drafts',
+        }),
+        adopt: async () => ({ version: 'routing-policy-2', auditId: 'audit' }),
+      };
+      service = new IngestionService(options);
+      const args = { title: 'Customer PO', body: 'Customer purchase order' };
+      const start = async (
+        itemId: string,
+        requestId: string,
+        reason = 'Customer purchase order',
+      ) =>
+        service.startReviewerAction({
+          itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+          requestId,
+          reason,
+        });
+      const decide = async (
+        review: Awaited<ReturnType<typeof start>>,
+        decision: 'approve' | 'reject' | 'defer',
+        requestId: string,
+      ) =>
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId,
+          decision,
+        });
+      const receiver = await source(
+        100000,
+        false,
+        'Customer purchase order 99 from Umbrella for widgets',
+      );
+      chooseCreate(args);
+      await generate(receiver);
+      // A reviewer-selected action is a routing choice, never a label for the
+      // item's model generation, even after it was rejected.
+      const overridden = await start(receiver.itemId, 'route-over-generation');
+      await decide(overridden, 'reject', 'reject-over-generation');
+      const rejectedReview = await service.getAction(overridden.actionId);
+      await expect(
+        service.recordFeedback({
+          itemId: receiver.itemId,
+          actionId: rejectedReview.actionId,
+          expectedRevision: rejectedReview.revision,
+          expectedReviewVersion: rejectedReview.reviewVersion,
+          bindingHash: rejectedReview.bindingHash,
+          judgment: 'correct',
+          requestId: 'judge-reviewer-selected',
+        }),
+      ).rejects.toThrow('Feedback requires a model suggestion');
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='interpretation' AND item_id=?",
+            receiver.itemId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      const second = await source(
+        100000,
+        false,
+        'Customer purchase order 42 from Globex for widgets',
+      );
+      await decide(
+        await start(second.itemId, 'route-second'),
+        'approve',
+        'approve-second',
+      );
+      const [secondRow] = (
+        await db.query(
+          "SELECT id FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+          second.itemId,
+        )
+      ).rows;
+      const targetItem = await source(
+        100000,
+        false,
+        'Customer purchase order 7 from Hooli for widgets',
+      );
+      const target = await start(targetItem.itemId, 'route-target');
+      const supportBinding = {
+        itemId: targetItem.itemId,
+        actionId: target.actionId,
+        expectedRevision: target.revision,
+        expectedReviewVersion: target.reviewVersion,
+        bindingHash: target.bindingHash,
+      };
+      // A choice whose approval lapsed unapplied and whose item was then closed
+      // without action is neither an example nor rule support.
+      const lapsed = await source(
+        100000,
+        false,
+        'Customer purchase order 77 from Acme for widgets',
+      );
+      const retrievedNow = async () =>
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Customer purchase order 99 from Umbrella for widgets',
+          })
+        ).examples.map((example) => example.feedbackId);
+      const lapsedReview = await start(lapsed.itemId, 'route-lapsed');
+      await decide(lapsedReview, 'approve', 'approve-lapsed');
+      const [lapsedRow] = (
+        await db.query(
+          "SELECT id,data FROM intake_feedback WHERE kind='reviewer_routing' AND item_id=?",
+          lapsed.itemId,
+        )
+      ).rows;
+      expect(lapsedRow).toBeDefined();
+      expect(await retrievedNow()).toContain(String(lapsedRow.id));
+      const suggestBeforeLapse = () =>
+        service.suggestRoutingRule({
+          ...supportBinding,
+          supportingFeedbackIds: [String(secondRow.id), String(lapsedRow.id)],
+          requestId: 'suggest-before-lapse',
+        });
+      const stored = await suggestBeforeLapse();
+      expect(stored.automaticActionEligible).toBe(false);
+      const [lapsedGrant] = (
+        await db.query(
+          'SELECT data FROM intake_review_decisions WHERE action_id=?',
+          lapsedReview.actionId,
+        )
+      ).rows;
+      const beforeLapse = clock;
+      clock = new Date(
+        Date.parse(
+          String(
+            (typeof lapsedGrant.data === 'string'
+              ? JSON.parse(lapsedGrant.data)
+              : lapsedGrant.data
+            ).expiresAt,
+          ),
+        ) + 1,
+      );
+      expect(await retrievedNow()).not.toContain(String(lapsedRow.id));
+      await service.resolveItem({
+        itemId: lapsed.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'route-lapsed-closed',
+      });
+      // Back inside the approval window, the disposition alone still excludes the
+      // handler choice (the item's own `none` record is a separate example).
+      clock = beforeLapse;
+      expect(await retrievedNow()).not.toContain(String(lapsedRow.id));
+      await expect(
+        service.suggestRoutingRule({
+          ...supportBinding,
+          supportingFeedbackIds: [String(secondRow.id), String(lapsedRow.id)],
+          requestId: 'suggest-lapsed',
+        }),
+      ).rejects.toThrow('Rule evidence unavailable');
+      // The suggestion stored before the lapse is lineage: a retry returns it and
+      // reading it still verifies, because settledness gated only its selection.
+      expect(await suggestBeforeLapse()).toEqual(stored);
+      expect(
+        await service.getRoutingRule({
+          ...supportBinding,
+          suggestionId: stored.id,
+        }),
+      ).toEqual(stored);
+    });
     it('reloads only the current completed analysis without requiring a remembered attempt ID', async () => {
       chooseCreate();
       const input = await generate();

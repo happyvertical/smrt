@@ -11,6 +11,7 @@ import type { JobExecutionContext } from '@happyvertical/smrt-jobs';
 import { resolvePlaybook } from '@happyvertical/smrt-playbooks';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
+import type { ItemDisposition } from './dto.js';
 import type {
   ActionResult,
   ExecutionAccessInput,
@@ -24,8 +25,10 @@ import type {
   PreviewPlanInput,
   PreviewProposalInput,
   ProposalReview,
+  ResolveItemInput,
   ResultReference,
   ReviewInput,
+  StartActionInput,
 } from './execution-contracts.js';
 import {
   type DiscoveryGate,
@@ -218,6 +221,7 @@ export class IntakeExecutionService {
       'intake_executions',
       'intake_plans',
       'intake_feedback',
+      'intake_dispositions',
     ])
       await db.query(
         `UPDATE ${table} SET data='{}' WHERE item_id=? AND tenant_id=? AND confidential_scope_id=?`,
@@ -804,6 +808,12 @@ export class IntakeExecutionService {
     executor?: DatabaseInterface,
     requiredProviders?: string[],
     proposalId?: string,
+    /**
+     * Compare target revisions (default). A lineage re-check of a reviewer
+     * routing choice passes false: its meaning is the handler choice, so later
+     * writes to the target only need the target to remain accessible.
+     */
+    targetRevisions = true,
   ): Promise<T> {
     const operation = async (db: DatabaseInterface) => {
       const load = async () => {
@@ -825,7 +835,9 @@ export class IntakeExecutionService {
           await context.assertTarget(
             target.model,
             target.id,
-            bound.action.state === 'succeeded' ? undefined : target.revision,
+            bound.action.state === 'succeeded' || !targetRevisions
+              ? undefined
+              : target.revision,
           );
         if (bound.binding.plan) {
           const plans = await this.rows(
@@ -894,10 +906,20 @@ export class IntakeExecutionService {
         )
           throw new Error('Analysis input integrity');
         if (!this.retained(bound.item)) throw new Error('Feedback unavailable');
+        const resolved = !!(await this.disposition(db, String(bound.item.id)));
+        const state = String(bound.action.state);
+        const settled =
+          !resolved &&
+          (['executing', 'succeeded'].includes(state) ||
+            (state === 'authorized' &&
+              (await this.approvalLive(db, bound.action))));
+        const origin = object(bound.action.data).origin;
         return {
           db,
           context,
           permissions,
+          origin: typeof origin === 'string' ? origin : '',
+          settled,
           review: this.review(bound),
           itemId: String(bound.item.id),
           attemptId: String(attempt.id),
@@ -1144,12 +1166,14 @@ export class IntakeExecutionService {
               recoveryAttemptId = String(attempt.id);
           }
         }
+        const origin = object(action.data).origin;
         const entry: ReviewAction = {
           review: this.review(bound),
           args: structuredClone(bound.binding.args),
           handlerId: bound.handler.id,
           handlerVersion: bound.handler.version,
           attemptId: String(proposal.analysis_attempt_id),
+          ...(typeof origin === 'string' && origin ? { origin } : {}),
           dependencies: structuredClone(bound.binding.dependencies),
         };
         if (action.state === 'succeeded')
@@ -1485,6 +1509,9 @@ export class IntakeExecutionService {
       )
     )
       throw new Error('Proposal conflict');
+    // A resolved item is terminal: no new revision (correction, edit, re-preview).
+    if (await this.disposition(db, String(item.id)))
+      throw new Error('Item resolved');
     const [attempt] = await this.rows(
       db,
       'intake_analysis_attempts',
@@ -1544,9 +1571,49 @@ export class IntakeExecutionService {
     const frozen = JSON.parse(canonical(input)) as PreviewProposalInput;
     return this.tx(async (db) => {
       const item = await this.item(db, frozen.itemId, true);
+      await this.assertReviewerRevision(db, item, frozen);
       const binding = await this.buildBinding(db, item, frozen, true);
       return this.publish(db, item, frozen, binding);
     });
+  }
+  /**
+   * A reviewer-selected action records a human routing choice: re-previewing it
+   * needs the reviewer grant (not just `preview`) and keeps its handler fixed,
+   * so only the arguments can be corrected.
+   */
+  private async assertReviewerRevision(
+    db: DatabaseInterface,
+    item: Row,
+    input: PreviewProposalInput,
+  ): Promise<void> {
+    const [action] = await this.rows(
+      db,
+      'intake_actions',
+      'id=? AND item_id=?',
+      [input.actionId, item.id],
+    );
+    if (!action || object(action.data).origin !== 'reviewer-selected') return;
+    const [current] = await this.rows(
+      db,
+      'intake_proposals',
+      'action_id=? AND revision=?',
+      [action.id, action.proposal_revision],
+    );
+    const binding = current
+      ? (object(object(current.data).binding) as unknown as Binding)
+      : undefined;
+    if (
+      !binding ||
+      binding.handlerId !== input.handlerId ||
+      binding.handlerVersion !== input.handlerVersion
+    )
+      throw new Error('Reviewer-selected handler is fixed');
+    await this.access(
+      db,
+      item,
+      this.operation(this.handler(input.handlerId, input.handlerVersion)),
+      'review',
+    );
   }
   /** Capture owner facts in the same transaction; these are never correctness labels. */
   private async feedbackEvent(
@@ -1671,6 +1738,13 @@ export class IntakeExecutionService {
       )
         throw new Error('Stale review');
       await this.verifyEvidence(db, bound);
+      // A resolved item is terminal: only reject remains; approval, correction or
+      // deferral would reopen a decision the disposition closed.
+      if (
+        frozen.decision !== 'reject' &&
+        (await this.disposition(db, String(bound.item.id)))
+      )
+        throw new Error('Item resolved');
       const expiresAt = new Date(
         Math.min(
           time(bound.item.expires_at),
@@ -1739,6 +1813,35 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
+      // An approved reviewer-selected action is a real routing judgment; rejected
+      // or deferred ones never become examples. Keyed by the decision request.
+      const provenance = object(bound.action.data);
+      if (
+        frozen.decision === 'approve' &&
+        provenance.origin === 'reviewer-selected'
+      ) {
+        const [attempt] = await this.rows(
+          db,
+          'intake_analysis_attempts',
+          'id=? AND item_id=?',
+          [bound.proposal.analysis_attempt_id, bound.item.id],
+        );
+        if (attempt)
+          await this.routingFeedback(db, bound.item, attempt, {
+            requestId: frozen.requestId,
+            reason:
+              typeof provenance.reason === 'string' ? provenance.reason : '',
+            ...(typeof provenance.reviewer === 'string'
+              ? { startedBy: provenance.reviewer }
+              : {}),
+            handler: {
+              handlerId: bound.handler.id,
+              handlerVersion: bound.handler.version,
+              args: structuredClone(bound.binding.args),
+              review: this.review(bound),
+            },
+          });
+      }
       return { ...this.review(bound), state };
     });
   }
@@ -1789,6 +1892,9 @@ export class IntakeExecutionService {
   private async approved(db: DatabaseInterface, bound: Bound): Promise<number> {
     await this.feedbackLineage(db, bound);
     await this.verifyEvidence(db, bound);
+    // A resolved item is terminal: no prior approval (or failed retry) may apply.
+    if (await this.disposition(db, String(bound.item.id)))
+      throw new Error('Item resolved');
     if (bound.binding.plan) {
       const plans = await this.rows(
         db,
@@ -2597,7 +2703,10 @@ export class IntakeExecutionService {
         bound.action.state !== 'waiting_review' ||
         !policy.automaticHandlers.includes(bound.handler.id) ||
         (consequential && !policy.consequentialAutomation) ||
-        !this.config.evaluateAutomatic
+        !this.config.evaluateAutomatic ||
+        // Human routing choices are never machine authority, and a resolved item is terminal.
+        object(bound.action.data).origin === 'reviewer-selected' ||
+        (await this.disposition(db, String(bound.item.id)))
       )
         throw new Error('Automatic execution unavailable');
       await this.feedbackLineage(db, bound);
@@ -2654,6 +2763,380 @@ export class IntakeExecutionService {
         this.scope.confidentialScopeId,
       );
       return { ...this.review(bound), state: 'authorized' };
+    });
+  }
+  /**
+   * Whether an `authorized` action still holds an unexpired approval for its
+   * current review version. An expired one can be neither applied nor rejected,
+   * so it must not keep the item open; `approved()` refuses resolved items.
+   */
+  private async approvalLive(
+    db: DatabaseInterface,
+    action: Row,
+  ): Promise<boolean> {
+    const decisions = await this.rows(
+      db,
+      'intake_review_decisions',
+      "action_id=? AND review_version=? AND decision='approve'",
+      [action.id, action.review_version],
+    );
+    return decisions.some(
+      (row) => time(object(row.data).expiresAt) > this.now().getTime(),
+    );
+  }
+  /** Current terminal reviewer disposition, if any. */
+  private async disposition(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<Row | undefined> {
+    const [row] = await this.rows(
+      db,
+      'intake_dispositions',
+      'item_id=? ORDER BY id LIMIT 1',
+      [itemId],
+    );
+    return row;
+  }
+  private dispositionDTO(row: Row): ItemDisposition {
+    const data = object(row.data);
+    return {
+      kind: 'resolved_no_action',
+      reviewer: typeof data.reviewer === 'string' ? data.reviewer : '',
+      reason: typeof data.reason === 'string' ? data.reason : '',
+      decidedAt: typeof data.decidedAt === 'string' ? data.decidedAt : '',
+    };
+  }
+  /** The current revision's completed/partial attempt; failed revisions need reprocessing. */
+  private async currentAttempt(db: DatabaseInterface, item: Row): Promise<Row> {
+    const [analysis] = await this.rows(
+      db,
+      'intake_analyses',
+      'item_id=? AND revision=?',
+      [item.id, item.analysis_revision],
+    );
+    if (!analysis?.current_attempt_id) throw new Error('Analysis unavailable');
+    const [attempt] = await this.rows(
+      db,
+      'intake_analysis_attempts',
+      'id=? AND item_id=?',
+      [analysis.current_attempt_id, item.id],
+    );
+    if (
+      !attempt ||
+      !['completed', 'partial'].includes(String(attempt.state)) ||
+      !attempt.output_digest
+    )
+      throw new Error('Analysis unavailable');
+    return attempt;
+  }
+  /** Reviewer authority under a handler this item's captured ceiling offers; no new grant. */
+  private async reviewerAccess(db: DatabaseInterface, item: Row) {
+    const handlers = [...this.config.handlers].sort((a, b) =>
+      `${a.id}@${a.version}`.localeCompare(`${b.id}@${b.version}`),
+    );
+    for (const handler of handlers) {
+      try {
+        return await this.access(db, item, handler, 'review');
+      } catch (error) {
+        if (error instanceof RetentionExpired) throw error;
+      }
+    }
+    throw new Error('Intake unavailable');
+  }
+  /** Extracted text for routing examples: the attempt's own results or its pinned extraction. */
+  private async extractedQuery(
+    db: DatabaseInterface,
+    item: Row,
+    attempt: Row,
+  ): Promise<string> {
+    let source = attempt;
+    const output = object(object(attempt.data).output);
+    if (output.proposals) {
+      const pin = object(object(output.proposals).source);
+      const [row] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND item_id=?',
+        [pin.attemptId, item.id],
+      );
+      if (!row || row.output_digest !== pin.outputDigest)
+        throw new Error('Feedback source unavailable');
+      source = row;
+    }
+    const results = object(object(source.data).output).results;
+    if (!Array.isArray(results)) return '';
+    return results
+      .flatMap((entry) => {
+        const segments = object(entry).segments;
+        return Array.isArray(segments)
+          ? segments.map((segment) => String(object(segment).text ?? ''))
+          : [];
+      })
+      .join('\n')
+      .slice(0, 4096);
+  }
+  /** Optional explicit routing projection; the reviewer's action or disposition stays authoritative. */
+  private async routingFeedback(
+    db: DatabaseInterface,
+    item: Row,
+    attempt: Row,
+    choice: {
+      requestId: string;
+      reason: string;
+      /** Actor who started the action; the current actor is the approver. */
+      startedBy?: string;
+      handler?: {
+        handlerId: string;
+        handlerVersion: string;
+        args: IntakeValues;
+        review: ProposalReview;
+      };
+    },
+  ): Promise<void> {
+    if (!this.options.feedback || !this.retained(item)) return;
+    if (
+      !(await this.options.feedback.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(item.id),
+        operation: 'capture',
+      }))
+    )
+      return;
+    const key = `routing:${choice.requestId}`;
+    const [replay] = await this.rows(
+      db,
+      'intake_feedback',
+      'item_id=? AND request_key=?',
+      [item.id, key],
+    );
+    if (replay) return;
+    // The projection's own source checks never veto the authoritative decision
+    // or disposition: an unavailable pin or malformed evidence skips capture.
+    // Storage failures below still propagate and roll back.
+    let data: Row;
+    try {
+      const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+        attempt.analysis_id,
+      ]);
+      const inputs = object(analysis.data).inputs;
+      if (!Array.isArray(inputs)) throw new Error('Invalid evidence');
+      const body = {
+        version: 1,
+        choice: choice.handler ? 'handler' : 'none',
+        handlerId: choice.handler?.handlerId ?? null,
+        handlerVersion: choice.handler?.handlerVersion ?? null,
+        args: choice.handler?.args ?? null,
+        actionId: choice.handler?.review.actionId ?? null,
+        proposalId: choice.handler?.review.proposalId ?? null,
+        revision: choice.handler?.review.revision ?? null,
+        bindingHash: choice.handler?.review.bindingHash ?? null,
+        attemptId: String(attempt.id),
+        attemptDigest: String(attempt.output_digest),
+        analysisRevision: Number(analysis.revision),
+        evidence: inputs,
+        query: await this.extractedQuery(db, item, attempt),
+        reviewer: this.scope.actorId,
+        startedBy: choice.startedBy ?? null,
+        approvedBy: choice.handler ? this.scope.actorId : null,
+        reason: choice.reason,
+        requestId: choice.requestId,
+        decidedAt: this.now().toISOString(),
+      };
+      data = { ...body, digest: intakeBindingDigest(body) };
+    } catch {
+      return;
+    }
+    if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
+      return;
+    await this.insert(db, 'intake_feedback', {
+      item_id: item.id,
+      request_key: key,
+      supersedes_id: null,
+      kind: 'reviewer_routing',
+      data: canonical(data),
+    });
+  }
+  /** Human-chosen handler for any item. Same preview/approval path; never automation-eligible. */
+  async startAction(input: StartActionInput): Promise<ProposalReview> {
+    const frozen = JSON.parse(
+      canonical(JSON.parse(JSON.stringify(input))),
+    ) as StartActionInput;
+    id(frozen.requestId);
+    if (
+      (frozen.reason !== undefined &&
+        (typeof frozen.reason !== 'string' || frozen.reason.length > 2048)) ||
+      !frozen.args ||
+      typeof frozen.args !== 'object' ||
+      Array.isArray(frozen.args)
+    )
+      throw new Error('Invalid reviewer action');
+    return this.tx(async (db) => {
+      const item = await this.item(db, frozen.itemId, true);
+      const handler = this.handler(frozen.handlerId, frozen.handlerVersion);
+      if (!('execution' in handler)) throw new Error('Handler unavailable');
+      // Reviewer authority is checked before any handler callback runs.
+      await this.access(db, item, handler, 'review');
+      const evidence = await this.rows(
+        db,
+        'intake_evidence',
+        "item_id=? AND state='durable'",
+        [item.id],
+      );
+      if (
+        !handler.discovery?.mediaTypes.some((type) =>
+          evidence.some((entry) => entry.media_type === type),
+        )
+      )
+        throw new Error('Handler unavailable');
+      if (await this.disposition(db, String(item.id)))
+        throw new Error('Item resolved');
+      const attempt = await this.currentAttempt(db, item);
+      const actionKey = `reviewer:${frozen.requestId}`;
+      const provenance = canonical({
+        origin: 'reviewer-selected',
+        intentionKey: actionKey,
+        reviewer: this.scope.actorId,
+        reason: frozen.reason ?? '',
+      });
+      let [action] = await this.rows(
+        db,
+        'intake_actions',
+        'item_id=? AND action_key=?',
+        [item.id, actionKey],
+      );
+      if (action && canonical(object(action.data)) !== provenance)
+        throw new Error('Action identity conflict');
+      action ??= await this.insert(db, 'intake_actions', {
+        item_id: item.id,
+        action_key: actionKey,
+        state: 'proposed',
+        proposal_revision: 0,
+        review_version: 0,
+        execution_attempt: 0,
+        fence: 0,
+        result_digest: '',
+        data: provenance,
+      });
+      // A replayed request re-previews against its original revision so the
+      // publication ledger can compare the identical request hash.
+      const replayed = (
+        await this.rows(db, 'intake_proposals', 'action_id=?', [action.id])
+      ).find((row) => object(row.data).requestId === frozen.requestId);
+      const preview: PreviewProposalInput = {
+        itemId: String(item.id),
+        actionId: String(action.id),
+        attemptId: String(attempt.id),
+        expectedRevision: replayed
+          ? Number(replayed.revision) - 1
+          : Number(action.proposal_revision),
+        requestId: frozen.requestId,
+        handlerId: handler.id,
+        handlerVersion: handler.version,
+        args: frozen.args,
+      };
+      const binding = await this.buildBinding(db, item, preview);
+      // The routing choice becomes feedback only once the reviewer approves it.
+      return this.publish(db, item, preview, binding);
+    });
+  }
+  /** The full disposition (reviewer, reason) under the current reviewer authority. */
+  async getItemDisposition(
+    itemId: string,
+  ): Promise<ItemDisposition | undefined> {
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId);
+      await this.reviewerAccess(db, item);
+      const row = await this.disposition(db, String(item.id));
+      return row ? this.dispositionDTO(row) : undefined;
+    });
+  }
+  /** Close an item as handled without an action. Terminal; replay returns the same disposition. */
+  async resolveItem(input: ResolveItemInput): Promise<ItemDisposition> {
+    const frozen = JSON.parse(
+      canonical(JSON.parse(JSON.stringify(input))),
+    ) as ResolveItemInput;
+    id(frozen.requestId);
+    if (
+      frozen.disposition !== 'resolve_no_action' ||
+      (frozen.reason !== undefined &&
+        (typeof frozen.reason !== 'string' || frozen.reason.length > 2048))
+    )
+      throw new Error('Invalid disposition');
+    return this.tx(async (db) => {
+      const item = await this.item(db, frozen.itemId, true);
+      const { policy } = await this.reviewerAccess(db, item);
+      const requestHash = intakeBindingDigest(frozen);
+      const key = `disposition:${frozen.requestId}`;
+      const existing = await this.disposition(db, String(item.id));
+      if (existing) {
+        const data = object(existing.data);
+        if (
+          existing.request_key === key &&
+          data.requestHash === requestHash &&
+          data.reviewer === this.scope.actorId
+        )
+          return this.dispositionDTO(existing);
+        throw new Error('Item resolved');
+      }
+      const pending: Row[] = [];
+      for (const action of await this.rows(
+        db,
+        'intake_actions',
+        "item_id=? AND state IN ('authorized','executing','outcome_unknown','succeeded')",
+        [item.id],
+      ))
+        if (
+          action.state !== 'authorized' ||
+          (await this.approvalLive(db, action))
+        )
+          pending.push(action);
+      if (pending.length)
+        throw new Error('Item has pending or applied actions');
+      if (!this.retained(item))
+        throw new RetentionExpired(String(item.id), time(item.expires_at));
+      let attempt: Row | undefined;
+      try {
+        attempt = await this.currentAttempt(db, item);
+      } catch {
+        attempt = undefined;
+      }
+      // A closed item is never sent to a provider again: supersede queued or
+      // running analysis under the item lock, as a new revision would.
+      for (const table of ['intake_analysis_attempts', 'intake_analyses'])
+        await db.query(
+          `UPDATE ${table} SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          item.id,
+        );
+      await db.query(
+        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state<>'completed'",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        item.id,
+      );
+      const row = await this.insert(db, 'intake_dispositions', {
+        item_id: item.id,
+        request_key: key,
+        disposition: 'resolved_no_action',
+        data: canonical({
+          reviewer: this.scope.actorId,
+          reason: frozen.reason ?? '',
+          requestId: frozen.requestId,
+          requestHash,
+          decidedAt: this.now().toISOString(),
+          attemptId: attempt ? String(attempt.id) : null,
+          attemptDigest: attempt ? String(attempt.output_digest) : null,
+          policyVersions: policy.versions,
+        }),
+      });
+      if (attempt)
+        await this.routingFeedback(db, item, attempt, {
+          requestId: frozen.requestId,
+          reason: frozen.reason ?? '',
+        });
+      return this.dispositionDTO(row);
     });
   }
   async previewPlan(input: PreviewPlanInput): Promise<PlanReview> {

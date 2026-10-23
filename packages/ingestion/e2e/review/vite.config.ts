@@ -246,6 +246,15 @@ export default defineConfig({
                 'requestId',
                 'supersedesId',
               ],
+              startAction: [
+                'itemId',
+                'handlerId',
+                'handlerVersion',
+                'args',
+                'requestId',
+                'reason',
+              ],
+              resolve: ['itemId', 'disposition', 'requestId', 'reason'],
               revoke: [],
             };
             const operation = url.pathname.slice('/api/'.length);
@@ -292,15 +301,25 @@ export default defineConfig({
               case 'feedback':
                 result = await service.recordFeedback(input);
                 break;
+              case 'startAction':
+                result = await service.startReviewerAction(input);
+                break;
+              case 'resolve':
+                result = await service.resolveItem(input);
+                break;
               case 'revoke':
                 await app.revoke(scope.actorId);
                 result = {};
                 break;
             }
             respond(200, result ?? {});
-          } catch {
+          } catch (error) {
+            // Fixture only: the safe message plus the service's refusal reason
+            // so browser tests can assert which gate refused. The UI never
+            // renders this body.
             respond(409, {
               error: 'Review unavailable; refresh current state',
+              reason: error instanceof Error ? error.message : 'unknown',
             });
           }
         });

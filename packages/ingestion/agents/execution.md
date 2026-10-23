@@ -47,6 +47,50 @@ row lock before public `Contents` reads. A current `PrincipalRun` intersects liv
 permissions with the captured ceiling and checks the exact registered collection
 operation at every effect. No `runOnce` atomicity is assumed.
 
+## Reviewer-chosen actions and dispositions
+
+`startAction(StartActionInput)` lets an authenticated reviewer begin any
+operation handler the item's evidence media types offer, without a model
+suggestion. It checks `review` access under that handler before any callback,
+refuses plan handlers and resolved items, binds the current analysis revision's
+completed/partial attempt, inserts an action keyed `reviewer:<requestId>` with
+`data.origin = 'reviewer-selected'`, and reuses `buildBinding`/`publish`: schema
+validation, `validate`, `preview`, exact normalized arguments, target locks,
+evidence pins and the request ledger behave exactly as for `previewProposal`.
+Replays re-preview against the original revision and return the same review.
+Approval, apply, retention, redaction and reconciliation are unchanged.
+`authorizeAutomatic` refuses `reviewer-selected` actions and resolved items;
+human routing is never machine authority.
+
+`resolveItem(ResolveItemInput)` appends one terminal `intake_dispositions` row
+(`disposition = 'resolved_no_action'`, reason/reviewer in redactable `data`)
+under the item lock. Reviewer authority is taken from the first handler the
+captured ceiling and policy offer; no new grant exists. It refuses while any
+action is `authorized` with an unexpired approval for its current review
+version, `executing`, `outcome_unknown` or `succeeded`; `failed` actions and
+lapsed approvals do not block it (neither can be rejected). Afterwards
+`submitDecision` refuses everything but `reject`, `publish` refuses any new
+revision (correction, re-preview, plan preview), the apply gate (`approved`)
+refuses any execution or retry, and `IngestionService.analyze`,
+`reviseLogicalSplit` and `createAction` refuse the item under its lock before
+any write. `createAction` (process authority) also refuses the reserved
+`reviewer:` key prefix and `reviewer-selected` origin, which only
+`startReviewerAction` mints; `previewProposal` on such an action requires
+`review` access and the current handler@version. `resolveItem` supersedes
+queued/running analyses and completes dispatch intents under the item lock, and
+`claimAnalysis` returns `null` for a resolved item; `publishProposal` refuses
+a resolved item and any reviewer-selected action. `[feedbackActionTransaction]`
+takes `targetRevisions` (default true); routing lineage re-checks pass false. The feedback context's
+`settled` flag gates selection only; lineage re-checks ignore it (FEEDBACK.md). `intake_dispositions` is a new model: deploy
+its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
+`assertReady` checks it, and both privacy deletion and retention expiry
+(`redactExecution`) redact its payload with the other item-owned tables.
+`IntakeItemDTO.disposition` is `{ state: 'resolved', at }` (row `created_at`,
+never redacted); `getItemDisposition` returns reviewer and reason under
+`reviewerAccess`. `resolveItem` captures an optional `reviewer_routing` feedback projection in the
+same transaction; a reviewer-selected action is captured when its approval is
+recorded (FEEDBACK.md).
+
 ## Durable review and effects
 
 Preview appends a proposal bound to exact analysis attempt/evidence, handler,

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
+import type {
+  IntakeEvidenceDTO,
+  IntakeItemDTO,
+  ItemDisposition,
+} from './dto.js';
 import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import type { ReviewerInstruction, ReviewPage } from './review-dto.js';
 import {
@@ -20,6 +24,7 @@ import {
   type IntakeItemPage,
   IntakeScanLimitError,
   type ListItemsInput,
+  ProposalsNotConfiguredError,
 } from './server.js';
 
 /** A fake service page source: newest-first rows cut by limit/cursor/itemIds. */
@@ -70,6 +75,12 @@ function fixture(overrides: Partial<IntakeReviewHostOptions> = {}) {
     getEvidence: vi.fn(async (): Promise<IntakeEvidenceDTO[]> => []),
     listEvidence: vi.fn(
       async (_itemIds: string[]) => new Map<string, IntakeEvidenceDTO[]>(),
+    ),
+    listHandlers: vi.fn(async () => [{ id: 'host:draft', version: '1' }]),
+    startReviewerAction: vi.fn(async () => ({})),
+    resolveItem: vi.fn(async () => ({})),
+    getItemDisposition: vi.fn(
+      async (): Promise<ItemDisposition | undefined> => undefined,
     ),
     listReviewerInstructions: vi.fn(async () => [] as ReviewerInstruction[]),
     getReinterpretationState: vi.fn(async () => ({
@@ -828,6 +839,74 @@ describe('published review host projection', () => {
       state: 'succeeded',
     });
     expect(f.service.listReviews).toHaveBeenCalledTimes(3);
+  });
+  it('exposes the offered catalog and forwards reviewer-chosen actions and dispositions unchanged', async () => {
+    const f = fixture();
+    const view = await f.host.load('item');
+    expect(view.catalog).toEqual([{ id: 'host:draft', version: '1' }]);
+    const start = {
+      itemId: 'item',
+      handlerId: 'host:draft',
+      handlerVersion: '1',
+      args: { title: 'Customer PO' },
+      requestId: 'start',
+      reason: 'Customer PO',
+    };
+    await f.host.startAction?.(start);
+    expect(f.service.startReviewerAction).toHaveBeenCalledWith(start);
+    const close = {
+      itemId: 'item',
+      disposition: 'resolve_no_action' as const,
+      requestId: 'close',
+    };
+    await f.host.resolve?.(close);
+    expect(f.service.resolveItem).toHaveBeenCalledWith(close);
+    f.service.listHandlers.mockRejectedValueOnce(
+      new ProposalsNotConfiguredError(),
+    );
+    expect((await f.host.load('item')).catalog).toBeUndefined();
+    // Any catalog failure hides only the picker; saved reviews stay reviewable.
+    f.service.listHandlers.mockRejectedValueOnce(
+      new Error('Authorized catalog exceeds configured bound'),
+    );
+    const degraded = await f.host.load('item');
+    expect(degraded.catalog).toBeUndefined();
+    expect(degraded.reviews).toBe(f.first);
+  });
+  it('projects a reviewer disposition as the terminal resolved inbox state', async () => {
+    const f = fixture();
+    f.service.listItemsPage.mockImplementation(
+      pageSource([{ id: 'item', state: 'resolved' }]),
+    );
+    const full = {
+      kind: 'resolved_no_action' as const,
+      reviewer: 'owner',
+      reason: 'Already paid',
+      decidedAt: '2026-10-22T00:00:00.000Z',
+    };
+    f.service.getItemDisposition.mockResolvedValue(full);
+    f.service.getItem.mockResolvedValue({
+      id: 'item',
+      processingState: 'completed',
+      disposition: { state: 'resolved', at: '2026-10-22T00:00:00.000Z' },
+    } as IntakeItemDTO);
+    expect((await f.host.list({})).items[0].state).toBe('resolved');
+    expect((await f.host.list({ state: 'waiting' })).items).toEqual([]);
+    // The inbox never asks for reviewer content.
+    expect(f.service.getItemDisposition).not.toHaveBeenCalled();
+    // The item view loads reviewer and reason through the review surface, and a
+    // denial there hides only that detail.
+    expect((await f.host.load('item')).disposition).toEqual(full);
+    f.service.getItemDisposition.mockRejectedValueOnce(new Error('Denied'));
+    const reader = await f.host.load('item');
+    expect(reader.disposition).toBeUndefined();
+    expect(reader.entry.state).toBe('resolved');
+    f.service.getItem.mockResolvedValue({
+      id: 'item',
+      processingState: 'queued',
+      disposition: { state: 'resolved', at: '2026-10-22T00:00:00.000Z' },
+    } as IntakeItemDTO);
+    expect((await f.host.load('item')).entry.state).toBe('resolved');
   });
   function generation(
     disposition: 'ready_for_review' | 'needs_review',

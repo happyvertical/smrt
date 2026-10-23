@@ -9,6 +9,13 @@ export class HandlerArgumentsInvalidError extends Error {
     this.name = 'HandlerArgumentsInvalidError';
   }
 }
+/** The host configured neither proposals nor proposalRead; catalog reads are unavailable. */
+export class ProposalsNotConfiguredError extends Error {
+  constructor() {
+    super('Intake proposals are not configured');
+    this.name = 'ProposalsNotConfiguredError';
+  }
+}
 /**
  * An interpretation was requested for an extraction that is no longer the
  * item's latest (for example a slow host appending after a reviewer retried).

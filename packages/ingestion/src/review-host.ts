@@ -8,6 +8,7 @@ import type {
   InboxEntry,
   InboxEvidence,
   IntakeReviewHost,
+  ItemReviewView,
 } from './review-dto.js';
 import { loadInstructionView } from './review-instruction-view.js';
 import { loadReviewSummary } from './review-summary.js';
@@ -313,6 +314,23 @@ export function createIntakeReviewHost(
         evidence.push({ ...(await options.evidence(part)), evidence: part });
       }
       const assignment = await options.assignment(itemId);
+      // The offered catalog lets a reviewer start any handler; it grants nothing.
+      // A catalog failure (not configured, bound exceeded, denied) only hides the
+      // start-action picker; existing reviews stay reviewable.
+      let catalog: ItemReviewView['catalog'];
+      try {
+        catalog = await service.listHandlers(itemId);
+      } catch {
+        catalog = undefined;
+      }
+      // Reviewer and reason come from the review surface, not the item DTO.
+      let disposition: ItemReviewView['disposition'];
+      if (item.disposition)
+        try {
+          disposition = await service.getItemDisposition(itemId);
+        } catch {
+          disposition = undefined;
+        }
       const instruction = await loadInstructionView(service, itemId, analysis);
       await service.getItem(itemId);
       return {
@@ -324,6 +342,8 @@ export function createIntakeReviewHost(
         },
         evidence,
         analysis,
+        ...(catalog ? { catalog } : {}),
+        ...(disposition ? { disposition } : {}),
         reviews,
         ...(instruction ? { instruction } : {}),
         availability: 'available',
@@ -470,6 +490,12 @@ export function createIntakeReviewHost(
     async split(input) {
       const result = await service.reviseLogicalSplit(input);
       await options.onSplit?.(input.itemId, result.revision);
+    },
+    async startAction(input) {
+      await service.startReviewerAction(input);
+    },
+    async resolve(input) {
+      await service.resolveItem(input);
     },
     async instruct(input) {
       // Durable first; the reinterpretation runs through the normal dispatch path.

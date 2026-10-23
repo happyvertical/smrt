@@ -1,4 +1,50 @@
 import type { EvidenceLocation } from '../extraction-types.js';
+import type {
+  GeneratedSuggestion,
+  ProposalCatalogEntry,
+} from '../proposal-dto.js';
+
+/**
+ * Initial arguments for a reviewer-chosen handler: a same-handler suggestion's
+ * arguments when one exists, otherwise evidence references for a single
+ * original. Nothing else is invented; the handler's preview validates them.
+ */
+export function draftArguments(
+  entry: ProposalCatalogEntry,
+  suggestions: readonly GeneratedSuggestion[],
+  evidenceIds: readonly string[],
+): Record<string, unknown> {
+  const suggestion = suggestions.find(
+    (candidate) =>
+      candidate.handlerId === entry.id &&
+      candidate.handlerVersion === entry.version,
+  );
+  // Plain JSON arguments; reactive state proxies cannot be structured-cloned.
+  const args: Record<string, unknown> = suggestion
+    ? (JSON.parse(JSON.stringify(suggestion.args)) as Record<string, unknown>)
+    : {};
+  for (const [field, reference] of Object.entries(entry.references))
+    if (
+      reference.kind === 'evidence' &&
+      !Object.hasOwn(args, field) &&
+      evidenceIds.length === 1
+    )
+      args[field] = evidenceIds[0];
+  return args;
+}
+/** Required schema properties the draft does not supply yet. */
+export function missingArguments(
+  entry: ProposalCatalogEntry,
+  args: Record<string, unknown>,
+): string[] {
+  const required = entry.argsSchema.required;
+  return Array.isArray(required)
+    ? required.filter(
+        (field): field is string =>
+          typeof field === 'string' && !Object.hasOwn(args, field),
+      )
+    : [];
+}
 /** Only host-authorized same-origin HTTP URLs may reach original media elements. */
 export function evidenceUrl(
   value?: string,

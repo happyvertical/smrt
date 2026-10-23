@@ -15,11 +15,21 @@ export interface Props {
   action: ReviewAction;
   catalog?: ProposalCatalogEntry;
   currentAttemptId?: string;
+  /** A resolved item is terminal: approve/correct/defer/apply and edits are hidden; only reject remains. */
+  resolved?: boolean;
   run: (operation: () => Promise<unknown>) => Promise<void>;
   deny: () => void;
 }
-let { host, itemId, action, catalog, currentAttemptId, run, deny }: Props =
-  $props();
+let {
+  host,
+  itemId,
+  action,
+  catalog,
+  currentAttemptId,
+  resolved = false,
+  run,
+  deny,
+}: Props = $props();
 const { t } = useI18n();
 // ReviewView keys this editor by action/revision/reviewVersion; edits are local to that binding.
 let args = $state(untrack(() => JSON.stringify(action.args, null, 2) ?? '')),
@@ -161,6 +171,7 @@ function choose(field: string, id: string) {
 </script>
 <article data-testid={`action-${action.review.actionId}`}>
 <h3>{action.handlerId ?? action.review.actionId}</h3>
+{#if action.origin === 'reviewer-selected'}<p>{t(M['ingestion.reviewerSelected'])}</p>{/if}
 <p>{t(M['ingestion.state'])}: {action.review.state}</p>
 {#if action.args !== undefined}
 <h4>{t(M['ingestion.effects'])}</h4><pre>{JSON.stringify(action.review.display,null,2)}</pre>
@@ -171,30 +182,30 @@ function choose(field: string, id: string) {
 {#if !action.plan && catalog}<CandidatePicker {host} {itemId} {catalog} {deny} onchoose={choose} />{/if}
 {#if dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
-<div class="controls">{#if waiting}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button><Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}</div>
+<div class="controls">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan && !resolved}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>
 {/if}
-{#if action.plan?.stepIndex === 0 && action.plan.args && host.editPlan && planEditable}
+{#if action.plan?.stepIndex === 0 && action.plan.args && host.editPlan && planEditable && !resolved}
 <Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
 {#if !editable && dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if !editable && invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
-{#if action.review.state === 'authorized'}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
+{#if action.review.state === 'authorized' && !resolved}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
 {/if}
-{#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction}
+{#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction && !resolved}
 <p>{t(M['ingestion.reviewAgain'])}</p>
 <Textarea aria-label={t(M['ingestion.args'])} bind:value={args} rows={8} />
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>
 {/if}
-{#if action.review.state === 'stale' && action.stalePlan && currentAttemptId && host.editPlan}
+{#if action.review.state === 'stale' && action.stalePlan && currentAttemptId && host.editPlan && !resolved}
 <p>{t(M['ingestion.reviewAgain'])}</p>
 <Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 <Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
 {#if action.result}<h4>{t(M['ingestion.result'])}</h4><pre>{JSON.stringify(action.result,null,2)}</pre>{/if}
-{#if host.feedback && action.args !== undefined}<fieldset><legend>{t(M['ingestion.feedback'])}</legend><Textarea aria-label={t(M['ingestion.comment'])} bind:value={comment} /><Button disabled={dirty} onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,expectedRevision:action.review.revision,expectedReviewVersion:action.review.reviewVersion,bindingHash:action.review.bindingHash,judgment:'correct',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.correctJudgment'])}</Button><Button disabled={dirty} onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,expectedRevision:action.review.revision,expectedReviewVersion:action.review.reviewVersion,bindingHash:action.review.bindingHash,judgment:'incorrect',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.incorrectJudgment'])}</Button></fieldset>{/if}
+{#if host.feedback && action.args !== undefined && action.origin !== 'reviewer-selected'}<fieldset><legend>{t(M['ingestion.feedback'])}</legend><Textarea aria-label={t(M['ingestion.comment'])} bind:value={comment} /><Button disabled={dirty} onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,expectedRevision:action.review.revision,expectedReviewVersion:action.review.reviewVersion,bindingHash:action.review.bindingHash,judgment:'correct',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.correctJudgment'])}</Button><Button disabled={dirty} onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,expectedRevision:action.review.revision,expectedReviewVersion:action.review.reviewVersion,bindingHash:action.review.bindingHash,judgment:'incorrect',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.incorrectJudgment'])}</Button></fieldset>{/if}
 </article>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
