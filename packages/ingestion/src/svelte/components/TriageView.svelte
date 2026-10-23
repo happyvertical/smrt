@@ -168,7 +168,9 @@ function readStarted() {
  * a read still shows an action authorized or executing, at most
  * OPERATION_READS more reads. The debt belongs to the operation, so it
  * survives reopening and leaving the item again, until a view shows the
- * operation answered or the reads run out.
+ * operation answered or the reads run out. Leaving mid-operation again (a
+ * new operation the pane has not answered) resets the debt to the full
+ * OPERATION_READS, whatever was left of the earlier one.
  */
 const OPERATION_READS = 3;
 const operationReads = new Map<string, number>();
