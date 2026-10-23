@@ -17,3 +17,4 @@ export type {
 export { default as EvidenceViewer } from './components/EvidenceViewer.svelte';
 export { default as IntakeInbox } from './components/IntakeInbox.svelte';
 export { default as IntakeReview } from './components/IntakeReview.svelte';
+export { default as IntakeWorkspace } from './components/IntakeWorkspace.svelte';
