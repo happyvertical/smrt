@@ -20,21 +20,23 @@ function fixture(code: unknown = unsafe()) {
   };
   return { asset, filter, handler, id };
 }
-function apply(plugin: Plugin, plugins: unknown[]) {
-  const hook = plugin.configResolved as (config: ResolvedConfig) => void;
-  hook({ plugins } as unknown as ResolvedConfig);
+async function apply(plugin: Plugin, plugins: unknown[]) {
+  const hook = plugin.configResolved as (
+    config: ResolvedConfig,
+  ) => Promise<void>;
+  await hook({ plugins } as unknown as ResolvedConfig);
 }
-function configure(plugin: Plugin, config: UserConfig) {
-  return (plugin.config as (config: UserConfig) => UserConfig | undefined)(
-    config,
-  );
+async function configure(plugin: Plugin, config: UserConfig) {
+  return (
+    plugin.config as (config: UserConfig) => Promise<UserConfig | undefined>
+  )(config);
 }
 
 describe('smrtAssetUrlCompatibility', () => {
-  it('replaces only the exact Vite 7 prefilter and preserves handler/id identity', () => {
+  it('replaces only the exact Vite 7 prefilter and preserves handler/id identity', async () => {
     runtime.version = '7.3.7';
     const f = fixture();
-    apply(smrtAssetUrlCompatibility(), [f.asset]);
+    await apply(smrtAssetUrlCompatibility(), [f.asset]);
     expect(f.filter.code).toBe('import.meta.url');
     expect(f.asset.transform.handler).toBe(f.handler);
     expect(f.filter.id).toBe(f.id);
@@ -45,15 +47,15 @@ describe('smrtAssetUrlCompatibility', () => {
     '6.4.1',
     '8.3.3',
     'unknown',
-  ])('does not modify Vite %s', (version) => {
+  ])('does not modify Vite %s', async (version) => {
     runtime.version = version;
     const f = fixture();
-    apply(smrtAssetUrlCompatibility(), [f.asset]);
+    await apply(smrtAssetUrlCompatibility(), [f.asset]);
     expect(f.filter.code).toBeInstanceOf(RegExp);
-    expect(configure(smrtAssetUrlCompatibility(), {})).toBeUndefined();
+    expect(await configure(smrtAssetUrlCompatibility(), {})).toBeUndefined();
   });
 
-  it('leaves unknown filters, handlers, and other plugins untouched; is idempotent', () => {
+  it('leaves unknown filters, handlers, and other plugins untouched; is idempotent', async () => {
     runtime.version = '7.3.7';
     for (const code of [
       /different/,
@@ -62,21 +64,21 @@ describe('smrtAssetUrlCompatibility', () => {
       'import.meta.url',
     ]) {
       const f = fixture(code);
-      apply(smrtAssetUrlCompatibility(), [f.asset]);
+      await apply(smrtAssetUrlCompatibility(), [f.asset]);
       expect(f.filter.code).toBe(code);
     }
     const f = fixture();
-    apply(smrtAssetUrlCompatibility(), [{ ...f.asset, name: 'other' }]);
+    await apply(smrtAssetUrlCompatibility(), [{ ...f.asset, name: 'other' }]);
     expect(f.filter.code).toBeInstanceOf(RegExp);
-    apply(smrtAssetUrlCompatibility(), [
+    await apply(smrtAssetUrlCompatibility(), [
       { name: 'vite:asset-import-meta-url', transform: vi.fn() },
     ]);
-    apply(smrtAssetUrlCompatibility(), [f.asset]);
-    apply(smrtAssetUrlCompatibility(), [f.asset]);
+    await apply(smrtAssetUrlCompatibility(), [f.asset]);
+    await apply(smrtAssetUrlCompatibility(), [f.asset]);
     expect(f.filter.code).toBe('import.meta.url');
   });
 
-  it('includes every previous positive static/template URL and safely filters large no-match code', () => {
+  it('includes every previous positive static/template URL and safely filters large no-match code', async () => {
     runtime.version = '7.3.7';
     const examples = [
       'new URL("./asset.png", import.meta.url)',
@@ -86,7 +88,7 @@ describe('smrtAssetUrlCompatibility', () => {
       `const huge = "${'x'.repeat(6_817_321)}"; new URL("./asset.png", import.meta.url)`,
     ];
     const f = fixture();
-    apply(smrtAssetUrlCompatibility(), [f.asset]);
+    await apply(smrtAssetUrlCompatibility(), [f.asset]);
     for (const code of examples) {
       expect(unsafe().test(code)).toBe(true);
       expect(code.includes(String(f.filter.code))).toBe(true);
@@ -105,7 +107,7 @@ describe('smrtAssetUrlCompatibility', () => {
     runtime.version = '7.3.7';
     const existing: Plugin = { name: 'existing-worker' };
     const factory = vi.fn(async () => [existing]);
-    const config = configure(smrtAssetUrlCompatibility(), {
+    const config = await configure(smrtAssetUrlCompatibility(), {
       worker: { plugins: factory },
     } as unknown as UserConfig);
     const workerFactory = config?.worker?.plugins;
@@ -117,9 +119,9 @@ describe('smrtAssetUrlCompatibility', () => {
     const worker = plugins?.[1] as Plugin;
     expect(worker.config).toBeUndefined();
     const f = fixture();
-    apply(worker, [f.asset]);
+    await apply(worker, [f.asset]);
     expect(f.filter.code).toBe('import.meta.url');
-    const empty = configure(smrtAssetUrlCompatibility(), {});
+    const empty = await configure(smrtAssetUrlCompatibility(), {});
     expect((await empty?.worker?.plugins?.())?.[1]).toHaveProperty(
       'name',
       'smrt-asset-url-compatibility',

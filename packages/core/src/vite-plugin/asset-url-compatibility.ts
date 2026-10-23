@@ -1,4 +1,4 @@
-import { type Plugin, version } from 'vite';
+import type { Plugin } from 'vite';
 
 const unsafeAssetFilter = /new\s+URL.+import\.meta\.url/s;
 
@@ -13,7 +13,8 @@ export function smrtAssetUrlCompatibility(): Plugin {
     name: 'smrt-asset-url-compatibility',
     ...(includeWorkers
       ? ({
-          config(config) {
+          async config(config) {
+            const { version } = await import('vite');
             if (!version.startsWith('7.')) return;
             const existing = config.worker?.plugins;
             return {
@@ -27,7 +28,8 @@ export function smrtAssetUrlCompatibility(): Plugin {
           },
         } satisfies Partial<Plugin>)
       : {}),
-    configResolved(config) {
+    async configResolved(config) {
+      const { version } = await import('vite');
       if (!version.startsWith('7.')) return;
       for (const plugin of config.plugins) {
         if (plugin.name !== 'vite:asset-import-meta-url') continue;
