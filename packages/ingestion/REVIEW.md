@@ -495,11 +495,14 @@ model only, exactly as in `IntakeReview`.
   reviewer moves on explicitly, through the confirmation; input typed while
   the next page loads counts too. When no open row is displayed, the advance
   appends pages of finished rows until one has an open row or no page
-  remains, at most **5** appends; past that bound, or when an append fails,
-  cannot start (a refresh is pending) or is superseded, the item stays open
-  with a note to try Next item again rather than reporting an empty queue
-  (after a failed append the list itself has failed closed). The open item stays listed while the reviewer works on it
-  even if its state stops matching the filter; it leaves once they move on.
+  remains, at most **5** appends. The queue is never reported empty when
+  that is unknown: past the bound, or when an append cannot start (a refresh
+  is pending) or is superseded, the item stays open with a note to try Next
+  item again, which still works; when an append fails, the list has failed
+  closed (no rows, Next disabled), so the item stays open with a note to
+  refresh the list to continue. The open item stays listed while the
+  reviewer works on it even if its state stops matching the filter; it
+  leaves once they move on.
   When nothing is left the pane says so. The per-row "Handled, no action"
   control is hidden in the workspace (`resolveInRow={false}`) so closing always
   goes through the item pane and advances.

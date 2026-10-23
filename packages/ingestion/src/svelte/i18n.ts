@@ -128,7 +128,9 @@ export const M = defineMessages({
   'ingestion.finishedUnsent':
     'Finished. You have unsent input on this item; move on with Next item when ready.',
   'ingestion.advanceRetry':
-    "Finished, but the next items couldn't be loaded. Try Next item again.",
+    "Finished, but the next open item wasn't reached yet. Try Next item again.",
+  'ingestion.advanceFailed':
+    "Finished, but the list couldn't load more items. Refresh the list to continue.",
   'ingestion.keyboardHelp':
     'Press J or K, or Alt+Down or Alt+Up, outside a text field to move between items.',
   'ingestion.statusReason': '{status}: {reason}',

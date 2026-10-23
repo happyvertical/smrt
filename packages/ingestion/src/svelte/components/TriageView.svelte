@@ -56,8 +56,9 @@ let selected = $state<string | undefined>(untrack(() => itemId)),
   // the control they were in, which "Stay" returns to.
   leaving = $state<{ id: string; from?: HTMLElement }>(),
   // The open item finished but did not advance: `unsent` input remains on
-  // it, or the next items could not be loaded (`retry`).
-  held = $state<'unsent' | 'retry'>(),
+  // it, the next open item was not reached (`retry`: Next still works), or
+  // a page append failed and the list failed closed (`failed`).
+  held = $state<'unsent' | 'retry' | 'failed'>(),
   // Richer status from a loaded view, valid while the row still shows the
   // same entry (revision, state, processing, disposition) it came from.
   statuses = $state<Record<string, { key: string; status: TriageStatus }>>({});
@@ -411,13 +412,13 @@ async function advance() {
   const open = (row: InboxEntry) =>
     row.item.id !== current && !triageTerminal(statusOf(row));
   let next = list.slice(start).find(open);
-  let unknown = false;
+  let unknown: 'retry' | 'failed' | undefined;
   // Pages of finished rows are skipped, up to ADVANCE_PAGES appends; past
   // that bound, or when an append fails or cannot start, whether anything
   // follows is unknown and the queue is never reported empty.
   for (let pages = 0; !next && more && inbox; pages++) {
     if (pages === ADVANCE_PAGES) {
-      unknown = true;
+      unknown = 'retry';
       break;
     }
     const count = list.length;
@@ -430,19 +431,21 @@ async function advance() {
     }
     list = page.items;
     if (page.result === 'failed' || page.result === 'pending') {
-      unknown = true;
+      // A failed append failed the list closed (no rows, no Next); a
+      // pending one leaves Next working.
+      unknown = page.result === 'failed' ? 'failed' : 'retry';
       break;
     }
     next = list.slice(start).find(open);
     // No progress (for example a denied page) must not spin on a host callback.
     if (list.length <= count) {
-      unknown = more;
+      unknown = more ? 'retry' : undefined;
       break;
     }
   }
   next ??= list.slice(0, start).find(open);
   if (!next && unknown) {
-    held = 'retry';
+    held = unknown;
     return;
   }
   if (paneDirty) {
@@ -503,7 +506,7 @@ function keydown(event: KeyboardEvent) {
 </div>
 <p class="hint">{t(M['ingestion.keyboardHelp'])}</p>
 <p role="status" data-testid="background-update">{announcement}</p>
-{#if held}<p role="status" data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : 'ingestion.advanceRetry'])}</p>{/if}
+{#if held}<p role="status" data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</p>{/if}
 {#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
 {#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
