@@ -92,7 +92,7 @@ overrides:
   # never published, so the selector cannot resolve to it. 14.3.0 is the current
   # 14.x release carrying the fix.
   'markdown-it@<14.1.2': 14.3.0
-  'body-parser@<2.3.0': 2.3.0
+  'body-parser@<2.4.0': 2.4.0
   # sharp <0.35.5 inherits four libvips CVEs. Its consumers here declare older
   # ranges (@gutenye/ocr-node ^0.33.3, @huggingface/transformers ^0.34.5,
   # @xenova/transformers ^0.32.0); 0.35.x keeps the decode/resize/metadata API
