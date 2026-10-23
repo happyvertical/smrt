@@ -1411,6 +1411,51 @@ describe('triage workspace unsent input', () => {
   });
 });
 
+describe('triage workspace assignment', () => {
+  it("assigning the open item's row survives the re-applied pane view, so a second assign carries the current version", async () => {
+    const assignment = { assigneeId: null as string | null, version: 1 };
+    const current = () => ({
+      ...entry('a', 'waiting'),
+      assignment: { ...assignment },
+    });
+    const host = backend(['a'], { a: [ready('a', 'waiting')] });
+    host.list = vi.fn(async () => ({ items: [current()] }));
+    // The pane's view is read once, before any assignment.
+    host.load = vi.fn(async () =>
+      view(current(), { reviews: { actions: [] } }),
+    );
+    host.assign = vi.fn(async (input) => {
+      if (input.expectedVersion !== assignment.version)
+        throw new Error('Assignment changed');
+      assignment.assigneeId = input.assigneeId;
+      assignment.version++;
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await screen.findByText('Item A');
+    await waitFor(() => expect(host.load).toHaveBeenCalled());
+    const input = () =>
+      screen.getByRole('textbox', { name: 'Assignee ID: Item A' });
+    await fireEvent.input(input(), { target: { value: 'alice' } });
+    await fireEvent.click(
+      within(row('a')).getByRole('button', { name: 'Save assignment' }),
+    );
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect((input() as HTMLInputElement).value).toBe('alice'),
+    );
+    await fireEvent.input(input(), { target: { value: 'bob' } });
+    await fireEvent.click(
+      within(row('a')).getByRole('button', { name: 'Save assignment' }),
+    );
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(3));
+    expect(host.assign).toHaveBeenLastCalledWith(
+      expect.objectContaining({ expectedVersion: 2, assigneeId: 'bob' }),
+    );
+    expect(assignment).toEqual({ assigneeId: 'bob', version: 3 });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
 describe('triage workspace paging failures', () => {
   function lastPage(
     host: IntakeReviewHost,
@@ -1478,7 +1523,7 @@ describe('triage workspace paging failures', () => {
     expect(row('a').getAttribute('aria-current')).toBe('true');
   });
 
-  it('a failed page append during advance keeps the item and the rows, with a retry note', async () => {
+  it('a failed page append during advance fails the list closed but keeps the open item, with a retry note', async () => {
     const host = backend(['a'], { a: applying() });
     lastPage(host, async () => {
       throw new Error('Unavailable');
@@ -1491,11 +1536,104 @@ describe('triage workspace paging failures', () => {
       /couldn't be loaded/,
     );
     expect(screen.queryByTestId('queue-done')).toBeNull();
-    expect(row('a')).not.toBeNull();
-    expect(screen.getByTestId('more-failed')).toBeTruthy();
+    // The host cannot say whether the failure was transient or a revoked
+    // grant: the list clears and shows its error, as any failed read does.
+    expect(row('a')).toBeNull();
+    expect(
+      within(screen.getByTestId('intake-inbox')).getByRole('alert').textContent,
+    ).toMatch(/unavailable/);
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     expect(screen.getByTestId('intake-review')).toBeTruthy();
-    // The cursor survives, so Load more can be retried.
-    expect(screen.getByRole('button', { name: 'Load more' })).toBeTruthy();
+  });
+
+  it('a failed Load more in the plain inbox clears the rows', async () => {
+    const host = backend(['a'], { a: [ready('a')] });
+    lastPage(host, async () => {
+      throw new Error('Unavailable');
+    });
+    render(IntakeInbox, { host });
+    await screen.findByText('Item A');
+    await fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Item A')).toBeNull();
+  });
+
+  it('skips pages of finished rows until an open one, and stops at the bound', async () => {
+    const pages: Record<string, { items: InboxEntry[]; nextCursor?: string }> =
+      {
+        p2: { items: [entry('b', 'completed')], nextCursor: 'p3' },
+        p3: { items: [entry('c', 'unresolved')] },
+      };
+    const host = backend(['a'], {
+      a: applying(),
+      c: [ready('c')],
+    });
+    host.list = vi.fn(async ({ cursor }) =>
+      cursor
+        ? pages[cursor]
+        : { items: [entry('a', 'waiting')], nextCursor: 'p2' },
+    );
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await waitFor(() =>
+      expect(row('c')?.getAttribute('aria-current')).toBe('true'),
+    );
+    expect(screen.queryByTestId('queue-done')).toBeNull();
+  });
+
+  it('after the page bound it asks to try again instead of reporting an empty queue', async () => {
+    const host = backend(['a'], { a: applying() });
+    let page = 0;
+    host.list = vi.fn(async ({ cursor }) => {
+      if (!cursor) return { items: [entry('a', 'waiting')], nextCursor: 'p1' };
+      page++;
+      return {
+        items: [entry(`done${page}`, 'completed')],
+        nextCursor: `p${page + 1}`,
+      };
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    expect((await screen.findByTestId('advance-held')).textContent).toMatch(
+      /couldn't be loaded/,
+    );
+    expect(page).toBe(5);
+    expect(screen.queryByTestId('queue-done')).toBeNull();
+  });
+
+  it('does not advance over input typed while the next page loaded', async () => {
+    const page2 = deferred<{ items: InboxEntry[] }>();
+    const applied = applying();
+    applied[1] = editable('a', 'completed');
+    applied[1].reviews.actions = [action('a', 'succeeded')];
+    applied[0] = editable('a');
+    applied[0].reviews.actions = [action('a', 'authorized')];
+    const host = backend(['a'], { a: applied, c: [ready('c')] });
+    lastPage(host, () => page2.promise);
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await waitFor(() =>
+      expect(host.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'page-2' }),
+      ),
+    );
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'Typed while loading' } },
+    );
+    page2.resolve({ items: [entry('c', 'unresolved')] });
+    expect((await screen.findByTestId('advance-held')).textContent).toMatch(
+      /unsent input/,
+    );
+    expect(row('a').getAttribute('aria-current')).toBe('true');
   });
 
   it('a page append that cannot start because a refresh is pending is not an empty queue', async () => {
@@ -1678,13 +1816,21 @@ describe('triage workspace following bounds', () => {
       return load(id, cursor);
     });
     render(IntakeWorkspace, { host, itemId: 'i1', pollMs: 20 });
-    await leaveInFlight(ids);
+    await leaveInFlight(ids.slice(0, 20));
+    // Let the reads rotate first, so the least recently read item is no
+    // longer the longest-followed one.
+    recording = true;
+    await waitFor(() =>
+      expect(reads.filter((id) => id !== 'i21')).toContain('i6'),
+    );
+    await waitFor(() => expect(reads).toContain('i1'));
+    await leaveInFlight(['i21']);
     await waitFor(() =>
       expect(row('z').getAttribute('aria-current')).toBe('true'),
     );
     expect(statusText('i1')).toBe('Unresolved');
-    expect(statusText('i2')).toBe('Interpreting…');
-    recording = true;
+    for (const id of ids.slice(1)) expect(statusText(id)).toBe('Interpreting…');
+    reads.length = 0;
     await sleep(300);
     expect(reads).not.toContain('i1');
     expect(new Set(reads).size).toBeGreaterThan(5);

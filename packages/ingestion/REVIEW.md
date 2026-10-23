@@ -451,15 +451,18 @@ model only, exactly as in `IntakeReview`.
   loaded view, never from server exception text. The open item's own polling
   (`ReviewView`, unchanged backoff and three-failure fail-closed) reports each
   displayed view and the workspace patches that row in place
-  (`InboxView.patch`, keeping the listed label and preview), so the row and the
-  form never disagree and the list is **not** re-listed per tick. An item the
+  (`InboxView.patch`, keeping the listed label and preview, and the row's
+  assignment unless the patch carries a newer assignment version, so a view
+  read before an assignment never rolls the row or the next expected version
+  back), so the row and the form never disagree and the list is **not** re-listed per tick. An item the
   reviewer leaves while its stage is in flight, or before the pane showed the
   result of its last operation (an instruction just recorded), keeps
   following: the workspace re-reads followed items with the same `load` (first
   review page) on the pane's backoff, at most **5** reads per tick, one after
   another, least recently read first (so every followed row is reached), with
-  only one tick running at a time. At most **20** items are followed; beyond that the longest-followed
-  one stops. An item stops being followed when it settles, its view is denied,
+  only one tick running at a time. At most **20** items are followed; beyond
+  that the longest-followed one (the earliest started, whatever the read
+  rotation) stops. An item stops being followed when it settles, its view is denied,
   three reads in a row throw, its row leaves the displayed list (a filter
   removed it), or the cap drops it; a denial, the failure stop or the cap drops
   its cached status and restores its entry exactly as its page read returned
@@ -473,8 +476,9 @@ model only, exactly as in `IntakeReview`.
   row and followed (or just settled) rows are patched again from their latest
   views, so an older page never regresses them. "Load more" continues the
   filter the rows were listed under, not filter inputs edited since, and does
-  not repeat a row already shown; if it fails, the displayed rows and the
-  cursor stay and a note asks to try again.
+  not repeat a row already shown. A failed "Load more" fails closed like any
+  failed read (the host cannot tell a transient failure from a revoked
+  grant): the rows clear and the list shows its error.
 - **Approve and advance.** After an approve, apply or "Handled, no action" whose
   reload left nothing for the reviewer (closed without action, or an action
   succeeded and none is waiting for approval, waiting to be applied, executing,
@@ -488,11 +492,13 @@ model only, exactly as in `IntakeReview`.
   appears; a page that makes no progress stops the walk.
   It never advances over unsent input on the same item: the item stays open,
   the input stays, and a note says it is finished but has unsent input; the
-  reviewer moves on explicitly, through the confirmation. Input typed while
-  automatic advance awaits another inbox page also holds the current item.
-  When the next items must be loaded and that read fails or cannot start (a refresh is pending),
-  the item stays open with a note to try Next item again rather than reporting
-  an empty queue. The open item stays listed while the reviewer works on it
+  reviewer moves on explicitly, through the confirmation; input typed while
+  the next page loads counts too. When no open row is displayed, the advance
+  appends pages of finished rows until one has an open row or no page
+  remains, at most **5** appends; past that bound, or when an append fails,
+  cannot start (a refresh is pending) or is superseded, the item stays open
+  with a note to try Next item again rather than reporting an empty queue
+  (after a failed append the list itself has failed closed). The open item stays listed while the reviewer works on it
   even if its state stops matching the filter; it leaves once they move on.
   When nothing is left the pane says so. The per-row "Handled, no action"
   control is hidden in the workspace (`resolveInRow={false}`) so closing always
@@ -741,7 +747,8 @@ request identity for retry; it does not clear the shared FilePicker's native-for
 behavior. Successful upload and host/context disposal still discard retry state.
 
 Workspace ordering also protects an open item during an awaited automatic page walk:
-the selected row remains until navigation succeeds. Applying an action is disabled
+the selected row remains until navigation succeeds, except that a failed list read
+clears the inbox. Applying an action is disabled
 while that action card holds unsent arguments, reason, or feedback comment. A list
 refresh retires earlier follow snapshots; only follow reads started after that
 page request may override its rows, so a newer refresh cannot be regressed by an
