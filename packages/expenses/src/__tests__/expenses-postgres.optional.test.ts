@@ -131,11 +131,8 @@ describePostgres('expenses on PostgreSQL', () => {
   afterAll(async () => {
     await (db as Closable | undefined)?.close?.();
     if (databaseName) {
-      // FORCE may not terminate a superuser-owned autovacuum worker as the
-      // NOSUPERUSER CI role (42501); a plain DROP signals autovacuum itself.
-      await admin
-        ?.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`)
-        .catch(() => admin?.query(`DROP DATABASE IF EXISTS ${databaseName}`));
+      // Plain DROP lets PostgreSQL stop its own autovacuum workers.
+      await admin?.query(`DROP DATABASE IF EXISTS ${databaseName}`);
     }
     await (admin as Closable | undefined)?.close?.();
   });

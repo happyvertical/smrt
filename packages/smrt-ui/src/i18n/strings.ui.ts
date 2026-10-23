@@ -160,6 +160,36 @@ export const M = defineMessages({
   'ui.signature_pad.use_signature': 'Use signature',
   'ui.signature_pad.committed': 'Signature attached.',
 
+  // forms/NumericKeypad.svelte
+  'ui.numeric_keypad.region': 'Number keypad',
+  'ui.numeric_keypad.display': 'Entered amount',
+  'ui.numeric_keypad.decimal': 'Decimal point',
+  'ui.numeric_keypad.backspace': 'Delete last character',
+  'ui.numeric_keypad.clear': 'Clear',
+  'ui.numeric_keypad.submit': 'Confirm',
+  'ui.numeric_keypad.below_min': 'Must be at least {min}.',
+  'ui.numeric_keypad.above_max': 'Must be at most {max}.',
+  'ui.numeric_keypad.invalid_amount':
+    'Enter an amount within the supported range.',
+
+  // display/DocumentViewer.svelte
+  'ui.document_viewer.region': 'Document',
+  'ui.document_viewer.pages': 'Pages',
+  'ui.document_viewer.zoom': 'Zoom',
+  'ui.document_viewer.previous_page': 'Previous page',
+  'ui.document_viewer.next_page': 'Next page',
+  'ui.document_viewer.page_of': 'Page {page} of {pages}',
+  'ui.document_viewer.page_label': '{label}, page {page}',
+  'ui.document_viewer.zoom_out': 'Zoom out',
+  'ui.document_viewer.zoom_in': 'Zoom in',
+  'ui.document_viewer.fit': 'Fit',
+  'ui.document_viewer.loading': 'Loading the document…',
+  'ui.document_viewer.failed':
+    'This document could not be opened. Check the network and try again.',
+  'ui.document_viewer.retry': 'Try again',
+  'ui.document_viewer.unsupported':
+    'This kind of file cannot be shown here. Use a PDF or a picture.',
+
   // forms/StagedControlReview.svelte
   'ui.staged_control_review.region': 'Review proposed changes',
   'ui.staged_control_review.heading': 'Proposed changes',

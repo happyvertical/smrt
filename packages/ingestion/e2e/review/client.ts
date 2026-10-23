@@ -65,12 +65,19 @@ export const host: IntakeReviewHost = {
     if (!response.ok) throw new Error('Upload unavailable');
     return response.json();
   },
-  preview: (input) => call('preview', input),
+  preview: async (input) => {
+    // Forward only the typed handler rejection; any other body is discarded.
+    const result = await call('preview', input);
+    return result && result.rejected === 'invalid'
+      ? { rejected: 'invalid' as const }
+      : undefined;
+  },
   decide: (input) => call('decide', input),
   apply: (actionId) => call('apply', { actionId }),
   candidates: (input) => call('candidates', input),
   assign: (input) => call('assign', input),
   split: (input) => call('split', input),
+  instruct: (input) => call('instruct', input),
   editPlan: (input) => call('editPlan', input),
   feedback: (input) => call('feedback', input),
   editAction: (input) => call('editAction', input),

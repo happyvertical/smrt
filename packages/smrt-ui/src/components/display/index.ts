@@ -6,6 +6,7 @@
 export { default as ConfidenceBadge } from './ConfidenceBadge.svelte';
 export { default as CurrencyDisplay } from './CurrencyDisplay.svelte';
 export { default as DateDisplay } from './DateDisplay.svelte';
+export { default as DocumentViewer } from './DocumentViewer.svelte';
 export { default as Icon } from './Icon.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
 
@@ -16,4 +17,11 @@ export { default as StatusBadge } from './StatusBadge.svelte';
 export type { IconPathMap } from './icons.svelte.js';
 export { registerIcons } from './icons.svelte.js';
 // Re-export types from types file
-export type { StatusTone, StatusType } from './types.js';
+export {
+  createPdfJsOpener,
+  type PdfJsLike,
+  type PdfJsOpenerOptions,
+} from './pdf-opener.js';
+export type { OpenPdf, PdfDocument } from './pdf-types.js';
+export { PdfEngineUnavailableError } from './pdf-types.js';
+export type { DocumentViewerLabels, StatusTone, StatusType } from './types.js';

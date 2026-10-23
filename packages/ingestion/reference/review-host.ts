@@ -12,25 +12,30 @@ import {
 } from '@happyvertical/smrt-core';
 import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { ReviewInput } from '../src/execution-dto.js';
+import type { IntakeValues, ReviewInput } from '../src/execution-dto.js';
 import type { ExtractionRequest } from '../src/extraction-types.js';
 import type { FeedbackConfiguration } from '../src/feedback-contracts.js';
 import * as models from '../src/models.js';
 import type { GenerationOutput } from '../src/proposal-dto.js';
+import { HandlerArgumentsInvalidError } from '../src/proposal-errors.js';
 import type {
   Assignment,
   InboxEntry,
   InboxState,
   ItemReviewView,
   LogicalSplitInput,
+  ReviewerInstructionInput,
 } from '../src/review-dto.js';
 import { createIntakeReviewHost } from '../src/review-host.js';
+import { loadInstructionView } from '../src/review-instruction-view.js';
 import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
   createSDKExtractionAdapter,
   createSourceDeliveryHandler,
   extractAnalysis,
   IngestionService,
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
 } from '../src/server.js';
 import {
   ATTACH,
@@ -285,6 +290,10 @@ export class ReferenceReviewHost {
                   e.segments.some((s) => s.text.trim()) &&
                   e.mediaType !== 'application/json',
               ) ?? input.evidence[0];
+            const body = part?.segments.map((s) => s.text).join('\n') ?? '';
+            // A deterministic incomplete suggestion: the marker leaves the
+            // required title unfilled so the browser proof can complete it.
+            const incomplete = body.includes('[[missing-title]]');
             return {
               completion: 'complete',
               output: {
@@ -295,8 +304,10 @@ export class ReferenceReviewHost {
                         handlerId: CREATE,
                         handlerVersion: '1',
                         args: {
-                          title: 'Reviewed intake draft',
-                          body: part.segments.map((s) => s.text).join('\n'),
+                          ...(incomplete
+                            ? {}
+                            : { title: 'Reviewed intake draft' }),
+                          body,
                         },
                         evidence: [
                           {
@@ -305,7 +316,7 @@ export class ReferenceReviewHost {
                           },
                         ],
                         alternatives: [],
-                        missingFields: [],
+                        missingFields: incomplete ? ['title'] : [],
                         explanation:
                           'Deterministic fixture suggestion from retained extracted text.',
                       },
@@ -569,10 +580,12 @@ export class ReferenceReviewHost {
       state,
       assignment: await this.assignment(scope, itemId),
     };
+    const instruction = await loadInstructionView(service, itemId, analysis);
     return {
       entry,
       evidence: views,
       analysis,
+      ...(instruction ? { instruction } : {}),
       ...(analysis?.configuration.stage === 'interpret'
         ? {
             generation: analysis.result.output
@@ -646,6 +659,7 @@ export class ReferenceReviewHost {
       attemptId: string;
       index: number;
       requestId: string;
+      args?: IntakeValues;
     },
   ) {
     const { service } = await this.service(scope);
@@ -655,7 +669,11 @@ export class ReferenceReviewHost {
       typeof input.attemptId !== 'string' ||
       !input.attemptId ||
       typeof input.requestId !== 'string' ||
-      !input.requestId.trim()
+      !input.requestId.trim() ||
+      (input.args !== undefined &&
+        (!input.args ||
+          typeof input.args !== 'object' ||
+          Array.isArray(input.args)))
     )
       throw new Error('Invalid preview');
     const current = await service.getCompletedAnalysis(
@@ -664,29 +682,77 @@ export class ReferenceReviewHost {
     );
     const generation = current.result.output
       .proposals as unknown as GenerationOutput;
+    const suggestion = generation?.suggestions[input.index];
     if (
       current.configuration.stage !== 'interpret' ||
-      generation?.suggestions[input.index]?.disposition !== 'ready_for_review'
+      generation?.outcome === 'provider_error' ||
+      !suggestion ||
+      !['ready_for_review', 'needs_review'].includes(suggestion.disposition)
     )
       throw new Error('Preview unavailable');
+    const handler = generation.offered.find(
+      ({ handler }) =>
+        handler.id === suggestion.handlerId &&
+        handler.version === suggestion.handlerVersion,
+    )?.handler;
+    if (!handler) throw new Error('Preview unavailable');
     const intentionKey = `ui:${input.index}`;
-    const actionId = await service.createAction(input.itemId, intentionKey, {
-      origin: 'generated-proposal',
-      intentionKey,
-    });
+    const actionId =
+      handler.kind === 'plan'
+        ? undefined
+        : await service.createAction(input.itemId, intentionKey, {
+            origin: 'generated-proposal',
+            intentionKey,
+          });
     let cursor: string | undefined,
       expectedRevision = 0;
     do {
       const page = await service.listReviews(input.itemId, { cursor });
-      const found = page.actions.find(
-        (entry) => entry.review.actionId === actionId,
+      const found = page.actions.find((entry) =>
+        handler.kind === 'plan'
+          ? (entry.plan?.key ?? entry.stalePlan?.key) === intentionKey
+          : entry.review.actionId === actionId,
       );
       if (found) {
-        expectedRevision = found.review.revision;
+        expectedRevision =
+          handler.kind === 'plan'
+            ? (found.plan?.revision ?? found.stalePlan?.revision ?? 0)
+            : found.review.revision;
         break;
       }
       cursor = page.nextCursor;
     } while (cursor);
+    if (input.args) {
+      // Human-completed arguments use the ordinary explicit preview (#4208).
+      const shared = {
+        itemId: input.itemId,
+        attemptId: input.attemptId,
+        expectedRevision,
+        requestId: input.requestId,
+        handlerId: suggestion.handlerId,
+        handlerVersion: suggestion.handlerVersion,
+        args: structuredClone(input.args),
+      };
+      return handler.kind === 'plan'
+        ? [
+            {
+              kind: 'plan' as const,
+              review: await service.previewPlan({
+                ...shared,
+                planKey: intentionKey,
+              }),
+            },
+          ]
+        : [
+            {
+              kind: 'operation' as const,
+              review: await service.previewProposal({
+                ...shared,
+                actionId: actionId as string,
+              }),
+            },
+          ];
+    }
     return service.previewGeneratedProposals({
       itemId: input.itemId,
       attemptId: input.attemptId,
@@ -700,6 +766,26 @@ export class ReferenceReviewHost {
       ],
     });
   }
+  /**
+   * Review-UI transport for `preview`: only the handler's own refusal of the
+   * arguments becomes the correctable `{ rejected: 'invalid' }` result; every
+   * other failure (denied, revoked, unavailable, unknown) still throws.
+   */
+  async previewForReview(
+    scope: ReviewSession,
+    input: Parameters<ReferenceReviewHost['preview']>[1],
+  ): Promise<
+    | Awaited<ReturnType<ReferenceReviewHost['preview']>>
+    | { rejected: 'invalid' }
+  > {
+    try {
+      return await this.preview(scope, input);
+    } catch (error) {
+      if (error instanceof HandlerArgumentsInvalidError)
+        return { rejected: 'invalid' };
+      throw error;
+    }
+  }
   async decide(scope: ReviewSession, input: ReviewInput) {
     return (await this.service(scope)).service.submitDecision(input);
   }
@@ -708,6 +794,31 @@ export class ReferenceReviewHost {
     const result = await service.reviseLogicalSplit(input);
     await this.process(scope, input.itemId, result.revision);
   }
+  /** Durable record first; the fixture then reinterprets in the background like a job worker. */
+  async instruct(scope: ReviewSession, input: ReviewerInstructionInput) {
+    const { service } = await this.service(scope);
+    let result: Awaited<ReturnType<typeof service.recordReviewerInstruction>>;
+    try {
+      result = await service.recordReviewerInstruction(input);
+    } catch (error) {
+      if (error instanceof ReviewerInstructionStaleError)
+        return { stale: true as const };
+      if (error instanceof ReviewerInstructionInvalidError)
+        return { invalid: true as const };
+      throw error;
+    }
+    const pending = this.process(scope, input.itemId, result.revision).catch(
+      () => undefined,
+    );
+    this.background.add(pending);
+    void pending.finally(() => this.background.delete(pending));
+    return { revision: result.revision };
+  }
+  /** Tests and shutdown wait for fixture background stages instead of racing them. */
+  async settle() {
+    while (this.background.size) await Promise.all([...this.background]);
+  }
+  private readonly background = new Set<Promise<unknown>>();
   async result(scope: ReviewSession, id: string) {
     if (!(await this.allowed(scope))) throw new Error('Unavailable');
     const record = await (await Contents.create({ db: this.db })).get({ id });

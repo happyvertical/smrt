@@ -3634,6 +3634,9 @@ importers:
       axe-core:
         specifier: ^4.13.0
         version: 4.13.0
+      pdfjs-dist:
+        specifier: ^6.2.108
+        version: 6.2.108
       svelte:
         specifier: ^5.57.1
         version: 5.57.1

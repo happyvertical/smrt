@@ -1,5 +1,5 @@
 /** Browser-only view contracts. Every value must come from an authenticated host. */
-import type { IntakeEvidenceDTO, IntakeItemDTO } from './dto.js';
+import type { IntakeEvidenceDTO, IntakeFailure, IntakeItemDTO } from './dto.js';
 import type {
   ActionResult,
   IntakeValues,
@@ -100,9 +100,52 @@ export interface ItemReviewView {
   analysis?: CompletedAnalysisSnapshot;
   generation?: GenerationOutput;
   reviews: ReviewPage;
+  /** Present when an instruction was recorded or carried by the displayed generation. */
+  instruction?: ReviewerInstructionView;
   /** Host-projected safe state, never raw server exception text. */
   availability: 'available' | 'stale' | 'revoked' | 'expired' | 'unavailable';
   message?: string;
+}
+/** Immutable authenticated reviewer guidance for one item; it steers the model only. */
+export interface ReviewerInstruction {
+  id: string;
+  text: string;
+  actorId: string;
+  recordedAt: string;
+  /** The instruction this one replaced for future interpretations, if any. */
+  supersedesId: string | null;
+  digest: string;
+}
+export interface ReviewerInstructionInput {
+  itemId: string;
+  attemptId: string;
+  expectedRevision: number;
+  text: string;
+  requestId: string;
+}
+export interface ReviewerInstructionView {
+  /**
+   * Latest recorded instruction that is still in effect: the item's newest
+   * extraction carries it, so its interpretations do. Null when none was
+   * recorded or a host reprocess dropped it (see `dropped`).
+   */
+  current: ReviewerInstruction | null;
+  /**
+   * Latest recorded instruction that a host reprocess dropped (a reprocess
+   * builds its own configuration and cannot carry human corrections). It no
+   * longer applies; the reviewer can re-record it.
+   */
+  dropped?: ReviewerInstruction;
+  /** The instruction the displayed generation was produced under. */
+  applied: ReviewerInstruction | null;
+  /** Displayed suggestions predate the current instruction. */
+  stale: boolean;
+  /** Safe failure category, or `not_started` when interpretation was never appended in time. */
+  failure?: IntakeFailure | 'not_started';
+  /** Server-side "in flight", including the gap between extraction and interpretation. */
+  reinterpreting?: boolean;
+  /** Record/retry binding when no current generation is displayable: the latest completed generation attempt and the item's current revision. */
+  binding?: { attemptId: string; expectedRevision: number };
 }
 export interface LogicalSplitInput {
   itemId: string;
@@ -111,6 +154,13 @@ export interface LogicalSplitInput {
   evidenceId: string;
   groups: number[][];
   requestId: string;
+}
+/**
+ * A preview the handler refused on its own validation of the arguments. The
+ * reviewer may correct the arguments and retry; it is never an access result.
+ */
+export interface PreviewRejection {
+  rejected: 'invalid';
 }
 /** Transport-neutral callbacks. Implement on an authenticated host; props confer no permission. */
 export interface IntakeReviewHost {
@@ -128,7 +178,18 @@ export interface IntakeReviewHost {
     attemptId: string;
     index: number;
     requestId: string;
-  }): Promise<void>;
+    /**
+     * Explicit human arguments completing a `needs_review` suggestion. The host
+     * publishes them through the ordinary operation/plan preview, never through
+     * the generated snapshot, so the handler validates them again.
+     */
+    args?: IntakeValues;
+    /**
+     * Throws on every failure. A handler's refusal of the arguments is
+     * `HandlerArgumentsInvalidError` (by `name`); a transport may instead
+     * resolve `{ rejected: 'invalid' }` for that one case.
+     */
+  }): Promise<void | PreviewRejection>;
   decide(input: ReviewInput): Promise<void>;
   apply(actionId: string): Promise<ActionResult>;
   editPlan?: (input: PreviewPlanInput) => Promise<void>;
@@ -146,6 +207,16 @@ export interface IntakeReviewHost {
     requestId: string;
   }): Promise<void>;
   split(input: LogicalSplitInput): Promise<void>;
+  /**
+   * Record reviewer guidance and request a background reinterpretation; never
+   * approval. Resolves `{ stale: true }` when the anchor is superseded or work
+   * is still in flight, a refresh-and-retry signal rather than a denial, and
+   * `{ invalid: true }` when the text fails validation (empty, whitespace-only
+   * or longer than 4,000 characters), shown inline rather than as a denial.
+   */
+  instruct?: (
+    input: ReviewerInstructionInput,
+  ) => Promise<void | { stale: true } | { invalid: true }>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,
