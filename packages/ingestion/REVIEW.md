@@ -387,11 +387,19 @@ model only, exactly as in `IntakeReview`.
   `aria-keyshortcuts`. The selected row is `aria-current`, and every selection
   moves focus to the item pane region, named by the row's label. A navigation
   that waited for the next page is dropped if the reviewer chose another item
-  meanwhile. When the pane holds unsent input (instruction text, an edited
-  suggestion draft or split, start-action or no-action fields, an action
-  editor's arguments, reason or comment), a reviewer-initiated move asks
-  inline first ("Stay on this item" takes focus; "Discard and open the other
-  item" proceeds); an automatic advance after a finished item does not ask.
+  meanwhile.
+- **Unsent input.** The pane holds unsent input when it has instruction text,
+  an edited suggestion draft or split draft, a chosen start handler or start
+  reason, a no-action reason, or an action editor with edited arguments, a
+  reason or a feedback comment. It is read from the drafts themselves, so it
+  holds while a reload has cleared the view; while the view is denied nothing
+  is shown and nothing counts (the drafts stay in memory and return with an
+  authorized refresh, as before). A reviewer-initiated move (J/K, Alt+arrows,
+  Next/Previous item, a row's Review button) then asks inline, in a group
+  labelled by its note: "Stay on this item" takes focus and returns it to the
+  field the reviewer last used; "Discard and open the other item" proceeds.
+  When an item is closed without action, input a closed item cannot take
+  (instruction, suggestion drafts, a started action) is discarded.
 - **Live state.** A row's status follows the item: "Interpreting…", "Ready to
   review", "Needs review" with missing argument names or the generation
   outcome, "Awaiting approval", "Approved, not yet applied", "Failed" with a
@@ -406,20 +414,24 @@ model only, exactly as in `IntakeReview`.
   result of its last operation (an instruction just recorded), keeps
   following: the workspace re-reads followed items with the same `load` (first
   review page) on the pane's backoff, at most **5** reads per tick, one after
-  another, least recently read first (so every followed row is reached and none
-  is dropped), with only one tick running at a time. An item stops being
-  followed when it settles, its view is denied, three reads in a row throw, or
-  it leaves the displayed list; a denial or the failure stop drops its cached
-  status and restores the entry its page listed. A denial in the open pane (a
-  failed action or the pane's own fail-closed poll) does the same and the item
-  is not followed when left. A settled stage that was seen running is announced
-  in a polite status region ("badger-po.pdf: Ready to review"). Other rows
-  update on Refresh, a filter change or when opened; there is no streaming.
-  While a refresh or "Load more" is pending, the displayed rows stay (controls
-  disabled) and keep taking patches; when the page arrives the open row is
-  patched again from the pane's latest view, so an older page never regresses
-  it. "Load more" continues the filter the rows were listed under, not filter
-  inputs edited since, and does not repeat a row already shown.
+  another, least recently read first (so every followed row is reached), with
+  only one tick running at a time. At most **20** items are followed; beyond that the longest-followed
+  one stops. An item stops being followed when it settles, its view is denied,
+  three reads in a row throw, its row leaves the displayed list (a filter
+  removed it), or the cap drops it; a denial, the failure stop or the cap drops
+  its cached status and restores its entry exactly as its page read returned
+  it (never a patched entry). A denial in the open pane (a failed action or the
+  pane's own fail-closed poll) does the same and the item is not followed when
+  left. A settled stage that was seen running is announced in a polite status
+  region ("badger-po.pdf: Ready to review"), only while its row is displayed.
+  Other rows update on Refresh, a filter change or when opened; there is no
+  streaming. While a refresh or "Load more" is pending, the displayed rows stay
+  (controls disabled) and keep taking patches; when the page arrives the open
+  row and followed (or just settled) rows are patched again from their latest
+  views, so an older page never regresses them. "Load more" continues the
+  filter the rows were listed under, not filter inputs edited since, and does
+  not repeat a row already shown; if it fails, the displayed rows and the
+  cursor stay and a note asks to try again.
 - **Approve and advance.** After an approve, apply or "Handled, no action" whose
   reload left nothing for the reviewer (closed without action, or an action
   succeeded and none is waiting for approval, waiting to be applied, executing,
@@ -428,11 +440,16 @@ model only, exactly as in `IntakeReview`.
   listed state/assignee filter, and the next row that is not closed or
   completed opens and takes focus, with no navigation and no re-listing. An
   approval that leaves an apply step keeps the item open with Apply in place.
-  The open item stays listed while the reviewer works on it even if its state
-  stops matching the filter; it leaves once they move on. When nothing is left
-  the pane says so. The per-row "Handled, no action" control is hidden in the
-  workspace (`resolveInRow={false}`) so closing always goes through the item
-  pane and advances.
+  It never advances over unsent input on the same item: the item stays open,
+  the input stays, and a note says it is finished but has unsent input; the
+  reviewer moves on explicitly, through the confirmation. When the next items
+  must be loaded and that read fails or cannot start (a refresh is pending),
+  the item stays open with a note to try Next item again rather than reporting
+  an empty queue. The open item stays listed while the reviewer works on it
+  even if its state stops matching the filter; it leaves once they move on.
+  When nothing is left the pane says so. The per-row "Handled, no action"
+  control is hidden in the workspace (`resolveInRow={false}`) so closing always
+  goes through the item pane and advances.
 
 ## Maintained browser proof
 

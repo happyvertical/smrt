@@ -117,34 +117,53 @@ $effect(() => {
 });
 // Unsent reviewer input on this item (instruction, drafts, split edits,
 // start/resolve fields, action editors); a workspace confirms before leaving.
-let actionDirty = $state<Record<string, boolean>>({});
+// It is read from the drafts themselves, against the text each draft started
+// from, so it holds while a reload has cleared the view. While the view is
+// denied nothing is shown, so nothing counts: the reviewer is never asked to
+// discard input they cannot see (it is kept, and returns with an authorized
+// refresh, as before).
+let actionDirty = $state<Record<string, boolean>>({}),
+  // The generated text each suggestion draft and split draft started from.
+  draftBase = $state<Record<string, string>>({}),
+  splitBase = $state<Record<string, string>>({});
 const dirty = $derived(
-  !!instruction.trim() ||
-    editedFields() ||
-    Object.values(actionDirty).some(Boolean) ||
-    editedDrafts() ||
-    editedSplits(),
+  (view ? view.availability === 'available' : !error) &&
+    (!!instruction.trim() ||
+      editedFields() ||
+      Object.values(actionDirty).some(Boolean) ||
+      Object.entries(drafts).some(([key, draft]) => draft !== draftBase[key]) ||
+      Object.entries(splits).some(([id, draft]) => draft !== splitBase[id])),
 );
 /** Start-action and resolve fields (declared with their controls below). */
 function editedFields() {
   return !!resolveReason || !!startHandler || !!startReason;
 }
-function editedDrafts() {
-  const attemptId = view?.analysis?.attemptId;
-  return (view?.generation?.suggestions ?? []).some((suggestion, index) => {
-    const draft = drafts[`${attemptId ?? ''}:${index}`];
-    return (
-      draft !== undefined && draft !== JSON.stringify(suggestion.args, null, 2)
+// Split drafts start from the generation's groups whenever a view shows them.
+$effect(() => {
+  const current = view;
+  if (current)
+    splitBase = Object.fromEntries(
+      (current.generation?.splits ?? []).map((split) => [
+        split.evidenceId,
+        JSON.stringify(split.groups),
+      ]),
     );
+});
+// A closed item takes no instruction, suggestion, split or started action, so
+// such input left when it closed can never be sent: it is discarded rather
+// than kept as unsent work.
+$effect(() => {
+  if (view?.availability !== 'available' || !view.entry.item.disposition)
+    return;
+  untrack(() => {
+    instruction = '';
+    drafts = {};
+    draftBase = {};
+    startHandler = '';
+    startArgs = '';
+    startReason = '';
   });
-}
-function editedSplits() {
-  return (view?.generation?.splits ?? []).some(
-    (split) =>
-      splits[split.evidenceId] !== undefined &&
-      splits[split.evidenceId] !== JSON.stringify(split.groups),
-  );
-}
+});
 $effect(() => {
   const current = dirty;
   untrack(() => ondirty?.(current));
@@ -276,6 +295,7 @@ function syncSuggestionDrafts(current: ItemReviewView) {
     current.availability === 'expired'
   ) {
     drafts = {};
+    draftBase = {};
     invalidDrafts = {};
   } else if (current.availability === 'available') {
     const attemptId = current.analysis?.attemptId;
@@ -284,11 +304,14 @@ function syncSuggestionDrafts(current: ItemReviewView) {
       if (!attemptId || suggestion.disposition !== 'needs_review') return;
       const key = `${attemptId}:${index}`;
       keys.add(key);
-      drafts[key] ??= JSON.stringify(suggestion.args, null, 2);
+      const generated = JSON.stringify(suggestion.args, null, 2);
+      drafts[key] ??= generated;
+      draftBase[key] ??= generated;
     });
     for (const key of Object.keys(drafts))
       if (!keys.has(key)) {
         delete drafts[key];
+        delete draftBase[key];
         delete invalidDrafts[key];
       }
   }
@@ -472,6 +495,7 @@ async function preview(index: number) {
     }
     // Only a successful preview of this card consumes its draft.
     delete drafts[key];
+    delete draftBase[key];
     delete invalidDrafts[key];
     await load();
   } catch (error) {

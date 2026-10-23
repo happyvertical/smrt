@@ -21,8 +21,17 @@ export interface Props {
   rowAside?: Snippet<[InboxEntry]>;
   /** The row a workspace has open; marked `aria-current`. */
   selectedId?: string;
-  /** The displayed rows after every settled load or page append (not after `patch`, which returns them), and whether more pages exist. */
-  onitems?: (items: InboxEntry[], more: boolean) => void;
+  /**
+   * The displayed rows after every settled load or page append (not after
+   * `patch`, which returns them), whether more pages exist, and the entries
+   * exactly as the page read returned them (`appended` for Load more), absent
+   * when the read failed.
+   */
+  onitems?: (
+    items: InboxEntry[],
+    more: boolean,
+    page?: { entries: InboxEntry[]; appended: boolean },
+  ) => void;
   /** A row's status text; the listed inbox state is shown when omitted or undefined. */
   status?: (entry: InboxEntry) => string | undefined;
   /** Show the per-row "Handled, no action" control (a workspace resolves in its item pane). */
@@ -56,15 +65,16 @@ let items = $state<InboxEntry[]>([]),
   files = $state<File[]>([]),
   cursor = $state<string>(),
   pending = $state(false),
-  error = $state(false);
+  error = $state(false),
+  moreFailed = $state(false);
 let alive = true,
   epoch = 0;
 let uploadRequestId: string | undefined;
 // The filter the displayed rows were listed under (the inputs may have been
 // edited since); `patch` keeps a row only while it still matches it.
 let listed: { state?: InboxState; assigneeId?: string } = {};
-function publish() {
-  onitems?.($state.snapshot(items) as InboxEntry[], !!cursor);
+function publish(page?: { entries: InboxEntry[]; appended: boolean }) {
+  onitems?.($state.snapshot(items) as InboxEntry[], !!cursor, page);
 }
 /**
  * Replace one displayed row with a fresher entry for the same item (item,
@@ -96,10 +106,24 @@ export function patch(entry: InboxEntry, keep = false): InboxEntry[] {
   } else items = items.filter((row) => row.item.id !== entry.item.id);
   return $state.snapshot(items) as InboxEntry[];
 }
-/** Append the next page, if any; resolves with the displayed rows. */
-export async function more(): Promise<InboxEntry[]> {
-  if (cursor && !pending) await load(true);
-  return $state.snapshot(items) as InboxEntry[];
+/**
+ * Append the next page, if any. Resolves with the displayed rows and what
+ * happened: `appended` (or `none` when there is no further page), `pending`
+ * when another read is in flight (nothing was appended), or `failed` when the
+ * page read failed (the displayed rows are kept).
+ */
+export async function more(): Promise<{
+  items: InboxEntry[];
+  result: 'appended' | 'none' | 'pending' | 'failed';
+}> {
+  const result = pending
+    ? 'pending'
+    : !cursor
+      ? 'none'
+      : (await load(true))
+        ? 'appended'
+        : 'failed';
+  return { items: $state.snapshot(items) as InboxEntry[], result };
 }
 onDestroy(() => {
   alive = false;
@@ -107,10 +131,13 @@ onDestroy(() => {
   files = [];
   uploadRequestId = undefined;
 });
-async function load(more = false) {
+/** Resolves true when this read's page was displayed. */
+async function load(more = false): Promise<boolean> {
   const ticket = ++epoch;
   pending = true;
   error = false;
+  moreFailed = false;
+  let page: { entries: InboxEntry[]; appended: boolean } | undefined;
   const next = more ? cursor : undefined;
   // The displayed rows stay (controls disabled while pending) until the new
   // page arrives, so a workspace can keep patching and navigating them; a
@@ -122,16 +149,20 @@ async function load(more = false) {
         assigneeId: assignee || undefined,
       };
   try {
-    const page = await host.list({ ...filter, cursor: next });
-    if (!alive || ticket !== epoch) return;
+    const read = await host.list({ ...filter, cursor: next });
+    if (!alive || ticket !== epoch) return false;
     listed = filter;
     // An appended page builds on the rows as displayed now (patches made
     // while it loaded included); a row already shown is not repeated.
     const shown = new Set(more ? items.map((entry) => entry.item.id) : []);
-    const added = page.items.filter((entry) => !shown.has(entry.item.id));
+    const added = read.items.filter((entry) => !shown.has(entry.item.id));
+    page = {
+      entries: $state.snapshot(more ? added : read.items) as InboxEntry[],
+      appended: more,
+    };
     const kept = more ? { assignments, reasons } : undefined;
-    items = more ? [...items, ...added] : page.items;
-    cursor = page.nextCursor;
+    items = more ? [...items, ...added] : read.items;
+    cursor = read.nextCursor;
     assignments = Object.fromEntries(
       items.map((entry) => [
         entry.item.id,
@@ -143,18 +174,25 @@ async function load(more = false) {
     );
   } catch {
     if (alive && ticket === epoch) {
-      items = [];
-      assignments = {};
-      reasons = {};
-      cursor = undefined;
-      error = true;
+      if (more) {
+        // The rows already displayed were listed under this filter and stay;
+        // the cursor stays too, so Load more can be retried.
+        moreFailed = true;
+      } else {
+        items = [];
+        assignments = {};
+        reasons = {};
+        cursor = undefined;
+        error = true;
+      }
     }
   } finally {
     if (alive && ticket === epoch) {
       pending = false;
-      publish();
+      publish(page);
     }
   }
+  return !!page;
 }
 async function mutate(operation: () => Promise<unknown>, selected = false) {
   if (pending) return;
@@ -203,6 +241,7 @@ onMount(() => {
 <FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
 <Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
+{#if moreFailed}<p role="alert" data-testid="more-failed">{t(M['ingestion.moreFailed'])}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
 <ul>{#each items as entry (entry.item.id)}<li data-item-id={entry.item.id} aria-current={entry.item.id === selectedId ? 'true' : undefined} class:selected={entry.item.id === selectedId}>

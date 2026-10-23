@@ -1072,6 +1072,488 @@ describe('intake triage workspace edge cases', () => {
   });
 });
 
+const catalogEntry = {
+  id: 'draft',
+  version: '1',
+  description: 'Create a draft',
+  kind: 'operation' as const,
+  capability: null,
+  argsSchema: {},
+  references: {},
+  operation: { model: 'Document', action: 'create', version: '1' },
+};
+/** An open item offering every kind of reviewer input the pane tracks. */
+function editable(id: string, state: InboxState = 'waiting') {
+  const generated = generation([suggestion('needs_review', ['vendor'])]);
+  generated.splits = [{ evidenceId: 'e', groups: [[1]], digest: 'd' }];
+  return view(entry(id, state), {
+    analysis: analysis(id),
+    generation: generated,
+    catalog: [catalogEntry],
+    reviews: { actions: [action(id, 'waiting_review')] },
+  });
+}
+function editableHost(extra: Record<string, ItemReviewView[]> = {}) {
+  const host = backend(['a', 'b'], {
+    a: [editable('a')],
+    b: [ready('b')],
+    ...extra,
+  });
+  host.startAction = vi.fn(async () => {});
+  host.feedback = vi.fn(async () => {});
+  return host;
+}
+
+describe('triage workspace unsent input', () => {
+  const sources: Array<[string, () => Promise<void>]> = [
+    [
+      'a suggestion draft',
+      async () => {
+        await fireEvent.input(
+          screen.getByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+          { target: { value: '{"vendor":"Badger"}' } },
+        );
+      },
+    ],
+    [
+      'a split draft',
+      async () => {
+        await fireEvent.input(
+          screen.getByRole('textbox', {
+            name: 'Logical page groups (JSON): e',
+          }),
+          { target: { value: '[[1],[2]]' } },
+        );
+      },
+    ],
+    [
+      'a chosen start handler',
+      async () => {
+        await fireEvent.change(
+          screen.getByRole('combobox', { name: 'Handler' }),
+          { target: { value: 'draft@1' } },
+        );
+      },
+    ],
+    [
+      'a no-action reason',
+      async () => {
+        await fireEvent.input(
+          screen.getByRole('textbox', { name: 'Reason for no action' }),
+          { target: { value: 'Duplicate' } },
+        );
+      },
+    ],
+    [
+      "an action card's reason",
+      async () => {
+        await fireEvent.input(screen.getByRole('textbox', { name: 'Reason' }), {
+          target: { value: 'Checked' },
+        });
+      },
+    ],
+    [
+      "an action card's feedback comment",
+      async () => {
+        await fireEvent.input(
+          screen.getByRole('textbox', { name: 'Feedback comment' }),
+          { target: { value: 'Close call' } },
+        );
+      },
+    ],
+  ];
+  const ways: Array<[string, () => Promise<void>]> = [
+    [
+      'J',
+      async () => {
+        await fireEvent.keyDown(document.body, { key: 'j' });
+      },
+    ],
+    [
+      'Next item',
+      async () => {
+        await fireEvent.click(
+          screen.getByRole('button', { name: 'Next item' }),
+        );
+      },
+    ],
+    [
+      "the row's Review button",
+      async () => {
+        await fireEvent.click(
+          within(row('b')).getByRole('button', { name: 'Review' }),
+        );
+      },
+    ],
+  ];
+  it.each(
+    sources.flatMap(([source, edit]) =>
+      ways.map(([way, go]) => [source, way, edit, go] as const),
+    ),
+  )('asks before %s is discarded by %s', async (_source, _way, edit, go) => {
+    const host = editableHost();
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await screen.findByRole('textbox', { name: 'Suggested arguments (JSON)' });
+    await screen.findByText('Item B');
+    await edit();
+    await go();
+    await screen.findByTestId('unsaved-leave');
+    expect(row('a').getAttribute('aria-current')).toBe('true');
+  });
+
+  it('asks before Previous item too, and "Stay" returns to the field', async () => {
+    const host = backend(['b', 'a'], { a: [editable('a')], b: [ready('b')] });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const box = await screen.findByRole('textbox', {
+      name: 'Instructions for the assistant',
+    });
+    box.focus();
+    await fireEvent.input(box, { target: { value: 'File it' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Previous item' }),
+    );
+    const confirm = await screen.findByTestId('unsaved-leave');
+    // Announced once, through the focused group, not also as an alert.
+    expect(within(confirm).queryByRole('alert')).toBeNull();
+    await fireEvent.click(
+      within(confirm).getByRole('button', { name: 'Stay on this item' }),
+    );
+    await waitFor(() => expect(document.activeElement).toBe(box));
+  });
+
+  it('does not count a draft as clean while a reload has cleared the view', async () => {
+    const host = editableHost();
+    const load = host.load;
+    let hold: ReturnType<typeof deferred> | undefined;
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      if (hold && id === 'a') await hold.promise;
+      return load(id, cursor);
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Suggested arguments (JSON)',
+      }),
+      { target: { value: '{"vendor":"Badger"}' } },
+    );
+    hold = deferred();
+    await fireEvent.click(
+      within(pane()).getByRole('button', { name: 'Refresh' }),
+    );
+    expect(
+      screen.queryByRole('textbox', { name: 'Suggested arguments (JSON)' }),
+    ).toBeNull();
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await screen.findByTestId('unsaved-leave');
+    hold.resolve(undefined);
+  });
+
+  it('does not ask about input the denied pane no longer shows', async () => {
+    const host = editableHost();
+    host.decide = vi.fn(async () => {
+      throw new Error('Denied');
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'File it' } },
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await screen.findByRole('alert');
+    expect(
+      screen.queryByRole('textbox', { name: 'Instructions for the assistant' }),
+    ).toBeNull();
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(row('b').getAttribute('aria-current')).toBe('true'),
+    );
+    expect(screen.queryByTestId('unsaved-leave')).toBeNull();
+  });
+
+  it('a finished item with unsent input stays open, keeps the input and says so', async () => {
+    const applied = editable('a', 'partially_completed');
+    applied.reviews.actions = [action('a', 'succeeded')];
+    const host = editableHost({
+      a: [
+        (() => {
+          const authorized = editable('a');
+          authorized.reviews.actions = [action('a', 'authorized')];
+          return authorized;
+        })(),
+        applied,
+      ],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const draft = await screen.findByRole('textbox', {
+      name: 'Suggested arguments (JSON)',
+    });
+    await fireEvent.input(draft, { target: { value: '{"vendor":"Badger"}' } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Apply approved action' }),
+    );
+    await waitFor(() => expect(host.apply).toHaveBeenCalled());
+    expect((await screen.findByTestId('advance-held')).textContent).toMatch(
+      /unsent input/,
+    );
+    expect(row('a').getAttribute('aria-current')).toBe('true');
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Suggested arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe('{"vendor":"Badger"}');
+    // Moving on explicitly still asks.
+    await fireEvent.click(screen.getByRole('button', { name: 'Next item' }));
+    await fireEvent.click(
+      within(await screen.findByTestId('unsaved-leave')).getByRole('button', {
+        name: 'Discard and open the other item',
+      }),
+    );
+    await waitFor(() =>
+      expect(row('b').getAttribute('aria-current')).toBe('true'),
+    );
+  });
+
+  it('closing an item discards input a closed item cannot take, then advances', async () => {
+    const host = editableHost({
+      a: [
+        editable('a', 'unresolved'),
+        view(
+          entry('a', 'resolved', {
+            disposition: { state: 'resolved', at: '2026-10-23T00:00:00.000Z' },
+          }),
+        ),
+      ],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.input(
+      await screen.findByRole('textbox', {
+        name: 'Instructions for the assistant',
+      }),
+      { target: { value: 'Never sent' } },
+    );
+    await fireEvent.click(
+      within(
+        screen.getByRole('group', { name: 'Handled, no action' }),
+      ).getByRole('button', { name: 'Handled, no action' }),
+    );
+    await waitFor(() =>
+      expect(row('b').getAttribute('aria-current')).toBe('true'),
+    );
+    expect(screen.queryByTestId('unsaved-leave')).toBeNull();
+    expect(host.instruct).not.toHaveBeenCalled();
+  });
+});
+
+describe('triage workspace paging failures', () => {
+  function lastPage(
+    host: IntakeReviewHost,
+    more: () => Promise<{ items: InboxEntry[] }>,
+  ) {
+    host.list = vi.fn(async ({ cursor }) =>
+      cursor
+        ? more()
+        : { items: [entry('a', 'waiting')], nextCursor: 'page-2' },
+    );
+  }
+  const applying = () => [
+    view(entry('a', 'waiting'), {
+      reviews: { actions: [action('a', 'authorized')] },
+    }),
+    view(entry('a', 'completed'), {
+      reviews: { actions: [action('a', 'succeeded')] },
+    }),
+  ];
+  it('a failed page append during advance keeps the item and the rows, with a retry note', async () => {
+    const host = backend(['a'], { a: applying() });
+    lastPage(host, async () => {
+      throw new Error('Unavailable');
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    expect((await screen.findByTestId('advance-held')).textContent).toMatch(
+      /couldn't be loaded/,
+    );
+    expect(screen.queryByTestId('queue-done')).toBeNull();
+    expect(row('a')).not.toBeNull();
+    expect(screen.getByTestId('more-failed')).toBeTruthy();
+    expect(screen.getByTestId('intake-review')).toBeTruthy();
+    // The cursor survives, so Load more can be retried.
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeTruthy();
+  });
+
+  it('a page append that cannot start because a refresh is pending is not an empty queue', async () => {
+    const host = backend(['a'], { a: applying() });
+    let hold: ReturnType<typeof deferred> | undefined;
+    host.list = vi.fn(async ({ cursor }) => {
+      if (hold) await hold.promise;
+      return cursor
+        ? { items: [] }
+        : { items: [entry('a', 'waiting')], nextCursor: 'page-2' };
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const apply = await screen.findByRole('button', {
+      name: 'Apply approved action',
+    });
+    await screen.findByText('Load more');
+    hold = deferred();
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    await fireEvent.click(apply);
+    expect((await screen.findByTestId('advance-held')).textContent).toMatch(
+      /couldn't be loaded/,
+    );
+    expect(screen.queryByTestId('queue-done')).toBeNull();
+    hold.resolve(undefined);
+  });
+
+  it('a denial after Load more restores the entry as its page listed it, not a patched one', async () => {
+    const failing = view(entry('b', 'waiting'), {
+      reviews: { actions: [action('b', 'waiting_review')] },
+      instruction: {
+        current: null,
+        applied: null,
+        stale: false,
+        failure: 'timeout',
+      },
+    });
+    const host = backend(['b'], { b: [failing], c: [ready('c')] });
+    host.list = vi.fn(async ({ cursor }) =>
+      cursor
+        ? { items: [entry('c', 'unresolved')] }
+        : { items: [entry('b', 'unresolved')], nextCursor: 'page-2' },
+    );
+    host.decide = vi.fn(async () => {
+      throw new Error('Denied');
+    });
+    render(IntakeWorkspace, { host, itemId: 'b' });
+    await waitFor(() => expect(statusText('b')).toBe('Failed: timeout'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await screen.findByText('Item C');
+    await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await screen.findByRole('alert');
+    await waitFor(() => expect(statusText('b')).toBe('Unresolved'));
+  });
+});
+
+describe('triage workspace following bounds', () => {
+  it('follows at most 20 items; the longest-followed one returns to its listed state', async () => {
+    const ids = Array.from({ length: 21 }, (_, index) => `i${index + 1}`);
+    const views: Record<string, ItemReviewView[]> = { z: [ready('z')] };
+    for (const id of ids) views[id] = [inFlight(id)];
+    const host = backend([...ids, 'z'], views);
+    const list = host.list;
+    host.list = vi.fn(async (input) => {
+      const page = await list(input);
+      return {
+        items: page.items.map((row) =>
+          row.item.id === 'z' ? row : entry(row.item.id, 'unresolved'),
+        ),
+      };
+    });
+    const load = host.load;
+    let recording = false;
+    const reads: string[] = [];
+    host.load = vi.fn(async (id: string, cursor?: string) => {
+      if (recording) reads.push(id);
+      return load(id, cursor);
+    });
+    render(IntakeWorkspace, { host, itemId: 'i1', pollMs: 20 });
+    await leaveInFlight(ids);
+    await waitFor(() =>
+      expect(row('z').getAttribute('aria-current')).toBe('true'),
+    );
+    expect(statusText('i1')).toBe('Unresolved');
+    expect(statusText('i2')).toBe('Interpreting…');
+    recording = true;
+    await sleep(300);
+    expect(reads).not.toContain('i1');
+    expect(new Set(reads).size).toBeGreaterThan(5);
+  }, 30000);
+
+  it('does not follow or announce an item whose row the filter removed', async () => {
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const list = host.list;
+    host.list = vi.fn(async (input) => {
+      const page = await list(input);
+      return {
+        items: [entry('b', 'unresolved'), entry('c', 'unresolved')].filter(
+          (row) => !input.state || row.state === input.state,
+        ),
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByText('Item C');
+    await fireEvent.change(screen.getByRole('combobox', { name: 'State' }), {
+      target: { value: 'unresolved' },
+    });
+    await waitFor(() =>
+      expect(host.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: 'unresolved' }),
+      ),
+    );
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(row('c').getAttribute('aria-current')).toBe('true'),
+    );
+    // Processing no longer matches "Unresolved": the row left on leaving.
+    expect(row('b')).toBeNull();
+    const reads = vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b');
+    await sleep(60);
+    expect(
+      vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b'),
+    ).toHaveLength(reads.length);
+    expect(screen.getByTestId('background-update').textContent).toBe('');
+  });
+
+  it('a page read before a followed item settled does not regress its row', async () => {
+    let settled = false;
+    let hold: ReturnType<typeof deferred> | undefined;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.load = vi.fn(async (id: string) =>
+      structuredClone(
+        id === 'b'
+          ? settled
+            ? ready('b', 'waiting')
+            : inFlight('b')
+          : ready(id),
+      ),
+    );
+    host.list = vi.fn(async () => {
+      if (hold) await hold.promise;
+      return { items: [inFlight('b').entry, ready('c').entry] };
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(row('c').getAttribute('aria-current')).toBe('true'),
+    );
+    hold = deferred();
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    settled = true;
+    await waitFor(() => expect(statusText('b')).toBe('Ready to review'));
+    hold.resolve(undefined);
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await sleep(20);
+    expect(statusText('b')).toBe('Ready to review');
+  });
+});
+
 describe('inbox paging', () => {
   it('"Load more" continues the filter the rows were listed under, not edited inputs', async () => {
     const host = backend(['a'], { a: [ready('a')] });
