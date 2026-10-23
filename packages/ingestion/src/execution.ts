@@ -1855,11 +1855,12 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
-      // An approved reviewer-selected action is a real routing judgment; rejected
-      // or deferred ones never become examples. Keyed by the decision request.
+      // Only the reviewer decision path supplies routing evidence. Submitter
+      // self-approval authorizes normally without judging a reviewer choice.
       const provenance = object(bound.action.data);
       if (
         frozen.decision === 'approve' &&
+        mode === 'review' &&
         provenance.origin === 'reviewer-selected'
       ) {
         const [attempt] = await this.rows(

@@ -1521,6 +1521,72 @@ export function internalSourceSuite(
       expect(await count('SELECT COUNT(*) AS n FROM contents')).toBe(0);
     });
 
+    it('never turns submitter-mode approval into reviewer routing support', async () => {
+      enableFeedback();
+      const reviewer = as('reviewer');
+      for (const scenario of [
+        {
+          submitter: sender,
+          mode: 'review_own',
+          routing: false,
+          selfDecision: true,
+        },
+        {
+          submitter: 'reviewer',
+          mode: 'review',
+          routing: true,
+          selfDecision: true,
+        },
+        {
+          submitter: sender,
+          mode: 'review',
+          routing: true,
+          selfDecision: false,
+        },
+      ] as const) {
+        const source = as(scenario.submitter);
+        const receipt = await source.receive(message(randomUUID()));
+        if (!('itemId' in receipt)) throw new Error('Receipt failed');
+        await source.interpretInline(receipt.itemId, {
+          requestId: randomUUID(),
+          extraction,
+        });
+        const review = await reviewer.startReviewerAction({
+          itemId: receipt.itemId,
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args: { title: 'Explicit choice', body: 'Create a work order' },
+          requestId: randomUUID(),
+          reason: 'Use the offered create handler',
+        });
+        const input = decision(review, randomUUID());
+        const approved =
+          scenario.mode === 'review_own'
+            ? await source.submitOwnDecision(input)
+            : await reviewer.submitDecision(input);
+        expect(approved.state).toBe('authorized');
+        const decisions = (
+          await db.query(
+            'SELECT data FROM intake_review_decisions WHERE action_id=?',
+            review.actionId,
+          )
+        ).rows;
+        expect(json(decisions[0].data)).toMatchObject({
+          mode: scenario.mode,
+          selfDecision: scenario.selfDecision,
+        });
+        const routing = (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE item_id=? AND kind='reviewer_routing'",
+            receipt.itemId,
+          )
+        ).rows;
+        expect(routing, JSON.stringify(scenario)).toHaveLength(
+          scenario.routing ? 1 : 0,
+        );
+      }
+    });
+
     it('marks a reviewer approving their own submission as a self-decision', async () => {
       const reviewer = as('reviewer');
       const id = randomUUID();

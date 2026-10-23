@@ -45,8 +45,12 @@ feedback is configured and `capture` is authorized, at the moment the choice is
 final: `resolveItem` (REVIEW.md) records `choice: 'none'` keyed
 `routing:<requestId>`, and `submitDecision` records `choice: 'handler'` keyed
 `routing:<decision requestId>` when a reviewer **approves** a reviewer-selected
-action. Starting an action records nothing; rejecting or deferring it never
-produces an example. The record needs no model suggestion: it binds the current
+action. Handler-choice capture requires `mode: 'review'`: a `review_own`
+submitter approval authorizes normally but appends no reviewer-routing example or
+rule support. A reviewer using the reviewer path may still record an explicit
+routing choice for their own receipt; it does not judge any model suggestion.
+Starting an action records nothing; rejecting or deferring it never produces an
+example. The record needs no model suggestion: it binds the current
 completed/partial attempt (`attemptId`, output digest, analysis revision, frozen
 evidence hashes and the extracted text as `query`), the acting reviewer
 (`reviewer`, also `approvedBy` for a handler choice), the actor who started the
