@@ -266,6 +266,15 @@ export {
   type SwitchTenantResult,
 } from './SessionService.js';
 export {
+  type AcceptedTenantInvitation,
+  type IssuedTenantInvitation,
+  type PreparedTenantInvitation,
+  type PrepareTenantInvitationInput,
+  TenantInvitationError,
+  TenantInvitationService,
+  type TenantInvitationServiceOptions,
+} from './TenantInvitationService.js';
+export {
   type EnsureTenantResult,
   TenantService,
   type TenantWithOwnershipResult,

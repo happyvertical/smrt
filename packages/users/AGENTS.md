@@ -184,3 +184,33 @@ Start with the relevant test file via `test -- src/__tests__/<file>.test.ts`.
 Run `test:postgres` for RLS, principal context, OIDC, or terminal-auth database
 changes. `typecheck` includes Svelte accessibility checks; plain `tsc` is
 insufficient. Follow root knowledge freshness checks before shipping.
+
+## Pending invitations
+
+`TenantInvitationService.create({ db: tx, transaction: 'caller' }).prepare({
+tenantId, email, roleSlug })` is a trusted host integration seam. The caller
+must authorize the destination tenant and system role, serialize its invitation
+scope, and own the entire transaction. It prepares only pending User and
+Membership records, with a canonical global Person and email reservation;
+it never proves email ownership, activates access, sends email, or mints login
+credentials. Existing canonical User/Profile links remain unchanged; unowned
+same-email Profiles require explicit reconciliation. Pending retries reuse rows,
+active memberships remain active with their existing role, and inactive or
+conflicting memberships fail closed. Caller failures must roll back the whole
+transaction; retry identity uniqueness conflicts only after rollback. Run the
+profile/user email-key backfills before using this service.
+
+`issue({ membershipId })` requires the host to authorize that exact destination
+and returns a signed single-use `{ membershipId, token, expiresAt }`; secure
+delivery is the host’s responsibility (no email is sent). Configure `secret` and
+optional `tokenExpiry` (1–604800 seconds, default one day) at service creation.
+`accept({ membershipId, token, expectedUserId? })` consumes that proof and
+activates only the bound pending User and Membership in the caller transaction.
+The signed scope fixes the user, profile, tenant, membership and role; expiration,
+replay, changed bindings, inactive membership and suspended users fail closed.
+Provide the signed-in user as `expectedUserId` to prevent account switching.
+Nonce consumption and activation roll back together; mint a session only from
+committed returned ids. `TenantInvitationError` is an expected 400/403 refusal;
+`MagicLinkError` represents invalid, expired or replayed proof. Database failures
+remain distinct. Treat tokens as secrets, prefer URL fragments and POST bodies,
+and never log or persist a copy outside the canonical token ledger.
