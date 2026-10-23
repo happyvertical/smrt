@@ -180,6 +180,50 @@ The SDK adapter constrains replies with a `json_schema` response format built
 from the validator's schema and the fixed instructions describe the shape; a
 custom `ProposalGenerator` receives no schema, so its raw reply meets the
 validator directly and the same reason is recorded.
+The provider-facing schema is made portable (`portableResponseSchema`, #4260):
+keywords that common OpenAI-compatible structured-output backends reject are
+removed at schema positions, including inside handler argument schemas
+(`uniqueItems`, `contains`, `multipleOf`, `format`, `patternProperties`,
+`propertyNames`, `min`/`maxProperties`, `not`, `if`/`then`/`else`,
+`dependent*`, `unevaluated*`, and the `default`/`examples` annotations; the
+full list and reasons are in `src/proposal-sdk.ts`). With `uniqueItems`, for
+example, vLLM's xgrammar feature check flags the schema, its auto mode routes
+it to llguidance, and llguidance answers
+`400 Grammar error: Unimplemented keys: ["uniqueItems"]`. This only loosens the
+grammar: the validator still enforces the constraints, including unique
+`alternatives` and `missingFields`, and the fixed instructions ask for distinct
+entries. The exception is `format`, which is advisory: the validator runs Ajv
+with `validateFormats: false`, so `format` is enforced nowhere. When
+`patternProperties` is removed, the same object's `additionalProperties` is
+removed too, so the grammar does not shrink to `{}`. There is no automatic
+`json_object` fallback.
+
+Invariant: the provider copy only ever accepts a superset of what the original
+accepts. Each removed keyword is a conjunct, so removing it only widens. The two
+places where removal would narrow are rewritten:
+- every `oneOf` becomes `anyOf` (or joins an existing `anyOf` through `allOf`),
+  because loosened `oneOf` branches could both match and reject a value the
+  original accepted;
+- an object that loses `patternProperties` also loses `additionalProperties`.
+
+The validator still checks the original, including `oneOf` exclusivity. A
+property-style regression checks original-valid ⇒ portable-valid across the
+removed keywords. Handler argument schemas may still carry `allOf` through
+unchanged; its support across backends is unverified, so check such a handler
+against the deployed backend.
+
+A generator call that throws ends the attempt as `provider_error` with the
+`unavailable` warning and `provenance.failure` `{category: 'unavailable',
+reason}`. The reason is value-free by construction: a provider's own text can
+quote the prompt or document, so it is never copied. The reason is built only
+from a fixed phrase and, for an SDK `AIError` only, the HTTP status (from a
+structured field, or from the exact `<status> ...` / `TypeSafe request failed
+(<status>): ...` shapes the SDK produces), the SDK error code (from the closed
+list of codes the SDK raises) and, for a schema rejection, quoted tokens that
+are JSON Schema keywords. Any other error contributes at most a structured
+numeric status. For example: `provider rejected the response schema (HTTP 400,
+code API_ERROR); unsupported response-schema keywords: uniqueItems`, or just
+`provider call failed`. It is cut at 500 characters.
 
 `createSDKProposalDecisionClient(client)` adapts an existing SDK client’s optional
 capability without changing its errors or protocol. Optional `decision` uses public core `executeDecision` and the existing SDK
