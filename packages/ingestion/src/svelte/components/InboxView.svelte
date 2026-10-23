@@ -2,18 +2,25 @@
 import { FilePicker, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { onDestroy, onMount } from 'svelte';
+import { onDestroy, onMount, type Snippet } from 'svelte';
 import type {
   InboxEntry,
   InboxState,
   IntakeReviewHost,
 } from '../../review-dto.js';
 import { M } from '../i18n.js';
+import { evidenceUrl } from '../view-utils.js';
 export interface Props {
   host: IntakeReviewHost;
   onselect?: (itemId: string) => void;
+  /**
+   * Optional per-row aside; without it a row shows the host's original
+   * link/preview. Rendered in a plain `div`, not an `aside` landmark, so a
+   * page of rows does not add one complementary landmark per row.
+   */
+  rowAside?: Snippet<[InboxEntry]>;
 }
-let { host, onselect }: Props = $props();
+let { host, onselect, rowAside }: Props = $props();
 const { t } = useI18n();
 const states: InboxState[] = [
   'processing',
@@ -121,6 +128,10 @@ onMount(() => {
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
 <ul>{#each items as entry (entry.item.id)}<li>
 <h2>{entry.label}</h2><p>{t(M[`ingestion.${entry.state}`])}</p>
+{#if rowAside}<div class="row-aside">{@render rowAside(entry)}</div>{:else if entry.evidence}{@const original = evidenceUrl(entry.evidence.viewUrl)}{@const thumbnail = evidenceUrl(entry.evidence.thumbnailUrl)}{#if thumbnail || original}<div class="row-aside">
+{#if thumbnail}<img src={thumbnail} alt={entry.evidence.label} loading="lazy" />{/if}
+{#if original}<a href={original} target="_blank" rel="noopener noreferrer" aria-label={`${t(M['ingestion.original'])}: ${entry.label}`}>{t(M['ingestion.original'])}</a>{/if}
+</div>{/if}{/if}
 <Button onclick={() => onselect?.(entry.item.id)} disabled={pending}>{t(M['ingestion.open'])}</Button>
 <Input aria-label={`${t(M['ingestion.assignee'])}: ${entry.label}`} bind:value={assignments[entry.item.id]} disabled={pending} />
 <Button disabled={pending} onclick={() => mutate(() => host.assign({itemId:entry.item.id,expectedVersion:entry.assignment.version,assigneeId:assignments[entry.item.id] || null,requestId:crypto.randomUUID()}))}>{t(M['ingestion.assign'])}</Button>
@@ -130,6 +141,6 @@ onMount(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-section{max-width:72rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}.toolbar{display:flex;flex-wrap:wrap;gap:.75rem;margin-block:1rem}ul{list-style:none;padding:0}li{padding:1rem;border-block-end:var(--smrt-hairline);display:grid;gap:.75rem}h2{font-size:1.1rem}
+section{max-width:72rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}.toolbar{display:flex;flex-wrap:wrap;gap:.75rem;margin-block:1rem}ul{list-style:none;padding:0}li{padding:1rem;border-block-end:var(--smrt-hairline);display:grid;gap:.75rem}h2{font-size:1.1rem}.row-aside{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem}.row-aside img{max-block-size:6rem;max-inline-size:100%;object-fit:contain}
 }
 </style>
