@@ -11,6 +11,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
+import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { backfillUserEmailKeys } from '../migrations/backfillUserEmailKeys.js';
@@ -153,8 +154,242 @@ describe('TenantInvitationService', () => {
     );
   }
 
+  async function independentSession(userId: string, authMethod = 'oidc') {
+    const users = await UserCollection.create({ db });
+    const user = await users.get({ id: userId });
+    if (!user) throw new Error('Missing fixture User');
+    user.status = UserStatus.ACTIVE;
+    await user.save();
+    const sessions = await SessionCollection.create({ db });
+    return (await sessions.createSession({ userId, authMethod })).id as string;
+  }
+
+  it('never lets a grant issuer impersonate an invitee or activate a pending identity', async () => {
+    const invitee = await prepare();
+    const issuer = await prepare({ email: 'issuer@example.com' });
+    const sessionId = await independentSession(issuer.userId);
+    const proof = await signed((service) =>
+      service.issue({ membershipId: invitee.membershipId }),
+    );
+    for (const identity of ['', sessionId]) {
+      await expect(
+        signed((service) =>
+          service.accept({
+            membershipId: invitee.membershipId,
+            token: proof.token,
+            sessionId: identity,
+          }),
+        ),
+      ).rejects.toMatchObject({ name: 'TenantInvitationError', status: 403 });
+    }
+    const users = await UserCollection.create({ db });
+    expect(
+      await users.get({ id: invitee.userId }, { cache: false }),
+    ).toMatchObject({ status: UserStatus.PENDING });
+    expect((await db.query('SELECT id FROM sessions')).rows).toHaveLength(1);
+    const inviteeSession = await independentSession(invitee.userId);
+    await expect(
+      signed((service) =>
+        service.accept({
+          membershipId: invitee.membershipId,
+          token: proof.token,
+          sessionId,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'TenantInvitationError' });
+    await signed((service) =>
+      service.accept({
+        membershipId: invitee.membershipId,
+        token: proof.token,
+        sessionId: inviteeSession,
+      }),
+    );
+    expect((await db.query('SELECT id FROM sessions')).rows).toHaveLength(2);
+  });
+
+  it('requires protocol-verified exact OIDC email before activating pending identity', async () => {
+    const first = await prepare();
+    const proof = await signed((service) =>
+      service.issue({ membershipId: first.membershipId }),
+    );
+    const users = await UserCollection.create({ db });
+    const claims = {
+      iss: 'https://idp.example.com',
+      sub: 'verified-client',
+      email: 'prospect@example.com',
+      email_verified: true,
+    };
+    for (const invalid of [
+      { ...claims, email_verified: undefined },
+      { ...claims, email_verified: false },
+      { ...claims, email: 'wrong@example.com' },
+    ]) {
+      await expect(
+        db.transaction(async (tx) => {
+          const service = await TenantInvitationService.create({
+            db: tx,
+            transaction: 'caller',
+            secret: 'test-invitation-signing-secret',
+          });
+          return service.authorizeOidcOwner(
+            { db: tx, claims: invalid, provider: 'test', users },
+            { membershipId: first.membershipId, token: proof.token },
+          );
+        }),
+      ).rejects.toMatchObject({ name: 'TenantInvitationError' });
+    }
+    const result = await users.getOrCreateFromOidc(claims, 'test', {
+      authorizeProfileOwner: async (context) =>
+        (
+          await TenantInvitationService.create({
+            db: context.db,
+            transaction: 'caller',
+            secret: 'test-invitation-signing-secret',
+          })
+        ).authorizeOidcOwner(context, {
+          membershipId: first.membershipId,
+          token: proof.token,
+        }),
+    });
+    expect(result.user.id).toBe(first.userId);
+    expect(result.user.status).toBe(UserStatus.ACTIVE);
+    const memberships = await MembershipCollection.create({ db });
+    expect(
+      await memberships.get({ id: first.membershipId }, { cache: false }),
+    ).toMatchObject({ status: MembershipStatus.ACTIVE });
+    expect((await db.query('SELECT id FROM sessions')).rows).toHaveLength(0);
+  });
+
+  it.each([
+    'terminal',
+    'pin',
+    'unknown',
+  ])('refuses %s sessions even for the exact identity', async (authMethod) => {
+    const first = await prepare();
+    const sessionId = await independentSession(first.userId, authMethod);
+    const proof = await signed((service) =>
+      service.issue({ membershipId: first.membershipId }),
+    );
+    await expect(
+      signed((service) =>
+        service.accept({
+          membershipId: first.membershipId,
+          token: proof.token,
+          sessionId,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'TenantInvitationError' });
+  });
+
+  it('refuses layered sessions and preserves their parent authority', async () => {
+    const first = await prepare();
+    const parentId = await independentSession(first.userId);
+    const sessions = await SessionCollection.create({ db });
+    const child = await sessions.createSession({
+      userId: first.userId,
+      authMethod: 'oidc',
+      parentSessionId: parentId,
+    });
+    const proof = await signed((service) =>
+      service.issue({ membershipId: first.membershipId }),
+    );
+    await expect(
+      signed((service) =>
+        service.accept({
+          membershipId: first.membershipId,
+          token: proof.token,
+          sessionId: child.id as string,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'TenantInvitationError' });
+    await signed((service) =>
+      service.accept({
+        membershipId: first.membershipId,
+        token: proof.token,
+        sessionId: parentId,
+      }),
+    );
+  });
+
+  it('refuses a permission-ceiling session without consuming the grant', async () => {
+    const first = await prepare();
+    const sessionId = await independentSession(first.userId);
+    const sessions = await SessionCollection.create({ db });
+    const session = await sessions.get({ id: sessionId });
+    if (!session) throw new Error('Missing fixture Session');
+    session.data = { permissionCeiling: [] };
+    await session.save();
+    const proof = await signed((service) =>
+      service.issue({ membershipId: first.membershipId }),
+    );
+    await expect(
+      signed((service) =>
+        service.accept({
+          membershipId: first.membershipId,
+          token: proof.token,
+          sessionId,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'TenantInvitationError' });
+    session.data = {};
+    await session.save();
+    await signed((service) =>
+      service.accept({
+        membershipId: first.membershipId,
+        token: proof.token,
+        sessionId,
+      }),
+    );
+  });
+
+  it('rolls back OIDC identity activation and proof consumption with caller failure', async () => {
+    const first = await prepare();
+    const proof = await signed((service) =>
+      service.issue({ membershipId: first.membershipId }),
+    );
+    const claims = {
+      iss: 'https://idp.example.com',
+      sub: 'rollback-client',
+      email: 'prospect@example.com',
+      email_verified: true,
+    };
+    await expect(
+      db.transaction(async (tx) => {
+        const users = await UserCollection.create({ db: tx });
+        const service = await TenantInvitationService.create({
+          db: tx,
+          transaction: 'caller',
+          secret: 'test-invitation-signing-secret',
+        });
+        await service.authorizeOidcOwner(
+          { db: tx, claims, provider: 'test', users },
+          { membershipId: first.membershipId, token: proof.token },
+        );
+        throw new Error('OIDC caller rollback');
+      }),
+    ).rejects.toThrow('OIDC caller rollback');
+    const users = await UserCollection.create({ db });
+    expect(
+      await users.get({ id: first.userId }, { cache: false }),
+    ).toMatchObject({ status: UserStatus.PENDING });
+    await users.getOrCreateFromOidc(claims, 'test', {
+      authorizeProfileOwner: async (context) =>
+        (
+          await TenantInvitationService.create({
+            db: context.db,
+            transaction: 'caller',
+            secret: 'test-invitation-signing-secret',
+          })
+        ).authorizeOidcOwner(context, {
+          membershipId: first.membershipId,
+          token: proof.token,
+        }),
+    });
+  });
+
   it('accepts one exact child membership through signed proof and refuses replay or another membership', async () => {
     const first = await prepare();
+    const sessionId = await independentSession(first.userId);
     const second = await prepare({ email: 'other@example.com' });
     const proof = await signed((service) =>
       service.issue({ membershipId: first.membershipId }),
@@ -162,14 +397,16 @@ describe('TenantInvitationService', () => {
     await expect(
       signed((service) =>
         service.accept({
+          sessionId,
           membershipId: second.membershipId,
           token: proof.token,
         }),
       ),
-    ).rejects.toMatchObject({ name: 'MagicLinkError' });
+    ).rejects.toMatchObject({ name: 'TenantInvitationError' });
     await expect(
       signed((service) =>
         service.accept({
+          sessionId,
           membershipId: first.membershipId,
           token: proof.token,
           expectedUserId: randomUUID(),
@@ -178,6 +415,7 @@ describe('TenantInvitationService', () => {
     ).rejects.toMatchObject({ name: 'TenantInvitationError' });
     const accepted = await signed((service) =>
       service.accept({
+        sessionId,
         membershipId: first.membershipId,
         token: proof.token,
         expectedUserId: first.userId,
@@ -187,6 +425,7 @@ describe('TenantInvitationService', () => {
     await expect(
       signed((service) =>
         service.accept({
+          sessionId,
           membershipId: first.membershipId,
           token: proof.token,
         }),
@@ -207,12 +446,14 @@ describe('TenantInvitationService', () => {
 
   it('rolls back nonce consumption and activation together when the host fails', async () => {
     const first = await prepare();
+    const sessionId = await independentSession(first.userId);
     const proof = await signed((service) =>
       service.issue({ membershipId: first.membershipId }),
     );
     await expect(
       signed(async (service) => {
         await service.accept({
+          sessionId,
           membershipId: first.membershipId,
           token: proof.token,
         });
@@ -223,7 +464,7 @@ describe('TenantInvitationService', () => {
     const memberships = await MembershipCollection.create({ db });
     expect(
       await users.get({ id: first.userId }, { cache: false }),
-    ).toMatchObject({ status: UserStatus.PENDING });
+    ).toMatchObject({ status: UserStatus.ACTIVE });
     expect(
       await memberships.get({ id: first.membershipId }, { cache: false }),
     ).toMatchObject({ status: MembershipStatus.PENDING });
@@ -231,6 +472,7 @@ describe('TenantInvitationService', () => {
       (
         await signed((service) =>
           service.accept({
+            sessionId,
             membershipId: first.membershipId,
             token: proof.token,
           }),
@@ -241,6 +483,7 @@ describe('TenantInvitationService', () => {
 
   it('denies suspended identity and changed role binding without consuming valid proof', async () => {
     const first = await prepare();
+    const sessionId = await independentSession(first.userId);
     const proof = await signed((service) =>
       service.issue({ membershipId: first.membershipId }),
     );
@@ -252,12 +495,13 @@ describe('TenantInvitationService', () => {
     await expect(
       signed((service) =>
         service.accept({
+          sessionId,
           membershipId: first.membershipId,
           token: proof.token,
         }),
       ),
     ).rejects.toMatchObject({ name: 'TenantInvitationError' });
-    user.status = UserStatus.PENDING;
+    user.status = UserStatus.ACTIVE;
     await user.save();
     const memberships = await MembershipCollection.create({ db });
     const membership = await memberships.get({ id: first.membershipId });
@@ -271,6 +515,7 @@ describe('TenantInvitationService', () => {
     await expect(
       signed((service) =>
         service.accept({
+          sessionId,
           membershipId: first.membershipId,
           token: proof.token,
         }),
@@ -282,6 +527,7 @@ describe('TenantInvitationService', () => {
       (
         await signed((service) =>
           service.accept({
+            sessionId,
             membershipId: first.membershipId,
             token: proof.token,
           }),
@@ -292,6 +538,7 @@ describe('TenantInvitationService', () => {
 
   it('rejects expired and malformed proof with no access change', async () => {
     const first = await prepare();
+    const sessionId = await independentSession(first.userId);
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
       const proof = await signed(
@@ -302,6 +549,7 @@ describe('TenantInvitationService', () => {
       await expect(
         signed((service) =>
           service.accept({
+            sessionId,
             membershipId: first.membershipId,
             token: proof.token,
           }),
@@ -310,6 +558,7 @@ describe('TenantInvitationService', () => {
       await expect(
         signed((service) =>
           service.accept({
+            sessionId,
             membershipId: first.membershipId,
             token: 'malformed-proof',
           }),

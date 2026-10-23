@@ -15,14 +15,16 @@ Ordered items:
    access fail closed. Reverse target lookup and pure read mode are public.
 2. #4246: TenantInvitationService prepares pending identity/membership, issues
    membership-bound signed single-use proof, and accepts only that exact scope.
-   No outbound email or session minting. Named high risk: bearer proof grants
-   active identity and membership; root must include an auth/security review.
+   No outbound email or session minting. Grants never authenticate identity;
+   independent first-class sessions or protocol-verified exact OIDC identity
+   are mandatory. Named high risk: identity binding and access activation;
+   root must include an auth/security review.
 3. #4249: LeadWorkflowService corrects contact fields under the existing tenant
    transaction/row lock and appends one audit; exact retry is a no-op and audit
    failure rolls the correction back. Identity/acquisition provenance survives.
 
 Focused evidence: sales `lead-conversion.test.ts` and `lead-workflow.test.ts`
-(22 tests); users `tenant-invitation.test.ts` (9 tests); package typecheck,
+(22 tests); users `tenant-invitation.test.ts` (17 tests); package typecheck,
 build, and packed-export verification. SQLite tests cover ownership/context,
 wrong child/user/role, expiry/replay, suspended identity and caller rollback.
 Logs: `/tmp/smrt4245-*`, `/tmp/smrt4246-*`, `/tmp/smrt4249-*`.

@@ -16,11 +16,16 @@ import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
+import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
-import { UserCollection } from '../collections/UserCollection.js';
+import {
+  type OidcProfileOwnerAuthorizerContext,
+  UserCollection,
+} from '../collections/UserCollection.js';
 import { isValidEmail } from '../models/User.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
 import { MagicLinkService } from './MagicLinkService.js';
+import { SessionService } from './SessionService.js';
 
 /** Host-authorized invitation destination and least-privilege system role. */
 export interface PrepareTenantInvitationInput {
@@ -52,7 +57,7 @@ export interface TenantInvitationServiceOptions extends SmrtClassOptions {
   secret?: string;
   tokenExpiry?: number;
 }
-/** Copyable bearer proof; the host owns secure delivery and must not log it. */
+/** Copyable tenant grant, never identity proof; the host must not log it. */
 export interface IssuedTenantInvitation {
   membershipId: string;
   token: string;
@@ -69,8 +74,8 @@ export interface AcceptedTenantInvitation
  * Trusted host integration seam, never a public unauthenticated endpoint.
  * The host authorizes the destination tenant/role and owns the transaction.
  * prepare() creates pending records only. issue() returns a signed bearer proof
- * for host-controlled secure delivery; accept() consumes that exact proof before
- * activating the bound pending User/Membership. No email or session is created.
+ * for host-controlled delivery. accept() requires independent identity login;
+ * only the protocol-verified OIDC owner callback may activate a pending User. No email or session is created.
  * Concurrent identity conflicts fail and roll back the caller transaction;
  * the host may retry the entire transaction after that rollback.
  */
@@ -108,42 +113,116 @@ export class TenantInvitationService {
     });
   }
 
-  /** Verify single-use membership-bound proof and atomically accept pending access. */
+  /** Accept a tenant grant using an independently authenticated first-class session. */
   async accept(input: {
     membershipId: string;
     token: string;
+    sessionId: string;
     expectedUserId?: string;
   }): Promise<AcceptedTenantInvitation> {
     return await withSystemContext(async () => {
-      const { user, membership, profileId, binding } =
-        await this.invitationRecords(input.membershipId);
+      const records = await this.invitationRecords(input.membershipId);
+      const sessions = await SessionCollection.create(this.options);
+      const session = input.sessionId
+        ? await sessions.findValidSession(input.sessionId)
+        : null;
+      const context = session
+        ? await (await SessionService.create(this.options)).loadSessionContext(
+            input.sessionId,
+          )
+        : null;
       if (
-        input.expectedUserId !== undefined &&
-        input.expectedUserId !== user.id
+        !session ||
+        !context ||
+        records.user.status !== UserStatus.ACTIVE ||
+        context.user.id !== records.user.id ||
+        session.userId !== records.user.id ||
+        session.parentSessionId ||
+        session.getPermissionCeiling() !== null ||
+        !['oidc', 'magic-link', 'password', 'passkey'].includes(
+          session.authMethod ?? '',
+        ) ||
+        (input.expectedUserId !== undefined &&
+          input.expectedUserId !== records.user.id)
       )
         throw new TenantInvitationError(
-          'Invitation does not belong to the signed-in user',
+          'Independent invitation identity authentication is required',
+          403,
         );
-      const links = await this.magicLinks(binding);
-      const proof = await links.verify(input.token);
-      if (proof.email !== normalizeIdentityEmail(user.email))
-        throw new TenantInvitationError('Invitation identity does not match');
-      if (user.status === UserStatus.PENDING) {
-        user.status = UserStatus.ACTIVE;
-        await user.save();
-      }
-      if (membership.status === MembershipStatus.PENDING) {
-        membership.status = MembershipStatus.ACTIVE;
-        await membership.save();
-      }
+      await this.verifyProof(records.binding, records.user.email, input.token);
+      await this.activateMembership(records.membership);
       return {
-        userId: requiredId(user.id),
-        profileId,
-        membershipId: requiredId(membership.id),
-        tenantId: requiredId(membership.tenantId),
+        userId: requiredId(records.user.id),
+        profileId: records.profileId,
+        membershipId: requiredId(records.membership.id),
+        tenantId: requiredId(records.membership.tenantId),
         status: 'active',
       };
     });
+  }
+
+  /**
+   * Authorize a pre-provisioned owner ONLY inside the canonical protocol-verified
+   * OIDC callback. A tenant grant alone never proves global identity. The host
+   * must not expose this trusted callback seam to arbitrary claims.
+   */
+  async authorizeOidcOwner(
+    context: OidcProfileOwnerAuthorizerContext,
+    input: {
+      membershipId: string;
+      token: string;
+    },
+  ) {
+    if (
+      context.db !== this.options.db ||
+      context.claims.email_verified !== true
+    )
+      throw new TenantInvitationError(
+        'Verified OIDC invitation identity is required',
+        403,
+      );
+    return await withSystemContext(async () => {
+      const records = await this.invitationRecords(input.membershipId);
+      if (
+        !context.claims.email ||
+        normalizeIdentityEmail(context.claims.email) !==
+          normalizeIdentityEmail(records.user.email)
+      )
+        throw new TenantInvitationError(
+          'Verified OIDC invitation identity does not match',
+          403,
+        );
+      await this.verifyProof(records.binding, records.user.email, input.token);
+      if (records.user.status === UserStatus.PENDING) {
+        records.user.status = UserStatus.ACTIVE;
+        await records.user.save();
+      }
+      await this.activateMembership(records.membership);
+      return {
+        profile: records.profile,
+        user: records.user,
+        tenantId: requiredId(records.membership.tenantId),
+        membershipId: requiredId(records.membership.id),
+      };
+    });
+  }
+
+  private async activateMembership(
+    membership: import('../models/Membership.js').Membership,
+  ) {
+    if (membership.status === MembershipStatus.PENDING) {
+      membership.status = MembershipStatus.ACTIVE;
+      await membership.save();
+    }
+  }
+
+  private async verifyProof(binding: string, email: string, token: string) {
+    const proof = await (await this.magicLinks(binding)).verify(token);
+    if (proof.email !== normalizeIdentityEmail(email))
+      throw new TenantInvitationError(
+        'Invitation identity does not match',
+        403,
+      );
   }
 
   private async magicLinks(binding: string): Promise<MagicLinkService> {
@@ -244,7 +323,7 @@ export class TenantInvitationService {
         ]),
       )
       .digest('hex');
-    return { user, membership, profileId, binding };
+    return { user, membership, profile, profileId, binding };
   }
 
   /** Prepare or replay a pending membership, preserving all existing authority. */

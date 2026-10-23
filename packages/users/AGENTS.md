@@ -204,13 +204,24 @@ profile/user email-key backfills before using this service.
 and returns a signed single-use `{ membershipId, token, expiresAt }`; secure
 delivery is the host’s responsibility (no email is sent). Configure `secret` and
 optional `tokenExpiry` (1–604800 seconds, default one day) at service creation.
-`accept({ membershipId, token, expectedUserId? })` consumes that proof and
-activates only the bound pending User and Membership in the caller transaction.
-The signed scope fixes the user, profile, tenant, membership and role; expiration,
+`accept({ membershipId, token, sessionId, expectedUserId? })` consumes the tenant
+grant only after validating an independently authenticated, active exact User's
+stored first-class OIDC, magic-link, password or passkey session. Layered,
+permission-ceiling, terminal and unknown sessions fail closed. It activates only
+the Membership; reuse/switch that session through canonical session APIs.
+Never mint global identity sessions from an operator-copyable invitation.
+
+For a new pending User, wire `authorizeOidcOwner(context, { membershipId, token })`
+only into the canonical protocol-verified OIDC `authorizeProfileOwner` callback.
+It requires the exact caller transaction, strict `email_verified: true` and the
+exact canonical invitee email, consumes the grant and activates pending User
+and Membership atomically before returning `{ profile, user, tenantId, membershipId }`.
+Arbitrary claims must never reach this trusted callback seam. The canonical
+binder still verifies ownership and issuer/subject authority before commit.
+The signed scope fixes user, profile, tenant, membership and role; expiration,
 replay, changed bindings, inactive membership and suspended users fail closed.
-Provide the signed-in user as `expectedUserId` to prevent account switching.
-Nonce consumption and activation roll back together; mint a session only from
-committed returned ids. `TenantInvitationError` is an expected 400/403 refusal;
+Nonce consumption and activation roll back together. `TenantInvitationError`
+is an expected 400/403 refusal;
 `MagicLinkError` represents invalid, expired or replayed proof. Database failures
 remain distinct. Treat tokens as secrets, prefer URL fragments and POST bodies,
 and never log or persist a copy outside the canonical token ledger.
