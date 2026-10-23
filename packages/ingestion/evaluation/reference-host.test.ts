@@ -192,12 +192,12 @@ test('real maintained-host generation envelope fits the pinned budgeted SDK requ
   const { createServer } = await import('node:http');
   const { getAI } = await import('@happyvertical/ai');
   const { createSDKProposalGenerator } = await import('../src/proposal-sdk.js');
-  const { createBudgetedProposalChat, PROPOSAL_BOUND } = await import(
-    './bounded-chat.mjs'
-  );
+  const { createBudgetedProposalChat, proposalRequestBound, PROPOSAL_BOUND } =
+    await import('./bounded-chat.mjs');
   const { BudgetLedger } = await import('./budget.mjs');
   let httpCalls = 0,
-    wireBytes = 0;
+    wireBytes = 0,
+    boundedBytes = 0;
   const server = createServer(async (request, response) => {
     httpCalls++;
     const chunks: Buffer[] = [];
@@ -238,13 +238,22 @@ test('real maintained-host generation envelope fits the pinned budgeted SDK requ
     configured.proposalPolicy!.providers = ['openai'];
     configured.proposals!.limits.maxInputBytes = 8192;
     configured.proposals!.generator = createSDKProposalGenerator(
-      client,
-      { provider: 'openai', model: PROPOSAL_BOUND.model, version: '0.102.7' },
+      {
+        chat: async (messages, options) => {
+          boundedBytes = proposalRequestBound(
+            messages,
+            options,
+          ).serializedBytes;
+          return client.chat(messages, options);
+        },
+      },
+      { provider: 'openai', model: PROPOSAL_BOUND.model, version: '0.106.0' },
       { maxTokens: 1024, timeoutMs: 5000 },
     );
     const app = await provision(configured);
     const receipt = await app.upload(scope, request());
     expect(httpCalls).toBe(1);
+    expect(wireBytes).toBe(boundedBytes);
     expect(wireBytes).toBeLessThanOrEqual(8192);
     expect(ledger.snapshot().charged).toBe(1600000);
     const completed = await (
