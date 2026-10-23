@@ -160,6 +160,301 @@ export function salesGovernanceCases(
         ).rejects.toThrow('already_registered');
       });
 
+    it('canonicalizes mixed-case UUID identities for lease exclusivity and exact replay', async () => {
+      const input = leaseOp();
+      const lease = await scope(() =>
+        service.acquireLease({
+          ...input,
+          actorProfileId: actor.toUpperCase(),
+          sellerId: sellerId.toUpperCase(),
+          advertiserId: terms.advertiserId.toUpperCase(),
+        }),
+      );
+      expect(lease).toMatchObject({
+        sellerId,
+        advertiserId: terms.advertiserId,
+        tenantId,
+      });
+      expect(
+        await scope(() =>
+          service.acquireLease({
+            ...input,
+            operationId: input.operationId.toUpperCase(),
+          }),
+        ),
+      ).toEqual(lease);
+      expect(
+        await withTenant({ tenantId: tenantId.toUpperCase() }, () =>
+          service.acquireLease({ ...input, tenantId: tenantId.toUpperCase() }),
+        ),
+      ).toEqual(lease);
+      const renewal = { ...leaseOp(), leaseId: lease.leaseId };
+      const renewed = await scope(() =>
+        service.renewLease({
+          ...renewal,
+          leaseId: lease.leaseId.toUpperCase(),
+          sellerId: sellerId.toUpperCase(),
+        }),
+      );
+      expect(await scope(() => service.renewLease(renewal))).toEqual(renewed);
+      await expect(
+        scope(() => service.acquireLease(leaseOp())),
+      ).rejects.toThrow('already_registered');
+      expect(
+        await scope(() =>
+          service.getLease({
+            tenantId: tenantId.toUpperCase(),
+            actorProfileId: actor.toUpperCase(),
+            advertiserId: terms.advertiserId.toUpperCase(),
+          }),
+        ),
+      ).toEqual(lease);
+    });
+
+    it('rejects mixed-case maker identity self-approval', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
+      terms.totalCents = 8000;
+      await scope(() => service.createQuote({ ...op(), terms }));
+      const requested = await scope(() => service.requestApproval(quoteOp()));
+      await expect(
+        scope(() =>
+          service.decideApproval({
+            ...quoteOp(),
+            actorProfileId: actor.toUpperCase(),
+            requestId: requested.approval!.requestId,
+            decision: 'approved',
+            reason: 'Self approval',
+          }),
+        ),
+      ).rejects.toThrow('self_approval');
+    });
+
+    it('rejects mixed-case maker self-approval and canonicalizes quote/checker replay', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
+      terms.totalCents = 8000;
+      const create = { ...op(), terms };
+      const quote = await scope(() =>
+        service.createQuote({
+          ...create,
+          actorProfileId: actor.toUpperCase(),
+          terms: {
+            ...terms,
+            sellerId: sellerId.toUpperCase(),
+            advertiserId: terms.advertiserId.toUpperCase(),
+            quoteId: terms.quoteId.toUpperCase(),
+          },
+        }),
+      );
+      expect(quote.makerProfileId).toBe(actor);
+      expect(await scope(() => service.createQuote(create))).toEqual(quote);
+      const requestInput = quoteOp();
+      const requested = await scope(() =>
+        service.requestApproval(requestInput),
+      );
+      const decision = {
+        ...quoteOp(),
+        requestId: requested.approval!.requestId,
+        decision: 'approved' as const,
+        reason: 'Reviewed',
+      };
+      await expect(
+        scope(() =>
+          service.decideApproval({
+            ...decision,
+            actorProfileId: actor.toUpperCase(),
+          }),
+        ),
+      ).rejects.toThrow('self_approval');
+      const finance = { ...decision, actorProfileId: checker };
+      const approved = await scope(() =>
+        service.decideApproval({
+          ...finance,
+          actorProfileId: checker.toUpperCase(),
+          requestId: finance.requestId.toUpperCase(),
+          quoteId: finance.quoteId.toUpperCase(),
+        }),
+      );
+      expect(approved.approval?.checkerProfileId).toBe(checker);
+      expect(await scope(() => service.decideApproval(finance))).toEqual(
+        approved,
+      );
+    });
+
+    it('normalizes persisted UUID owner and checker spellings without allowing self-approval', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
+      terms.totalCents = 8000;
+      await scope(() => service.createQuote({ ...op(), terms }));
+      const requested = await scope(() => service.requestApproval(quoteOp()));
+      await scope(() =>
+        service.decideApproval({
+          ...quoteOp(),
+          actorProfileId: checker,
+          requestId: requested.approval!.requestId,
+          decision: 'approved',
+          reason: 'Reviewed',
+        }),
+      );
+      const states = await SalesGovernanceStateCollection.create({ db });
+      const rows = await scope(() => states.list({ limit: 100 }));
+      const quoteState = rows.find(
+        (row) => JSON.parse(row.payload).quoteId === terms.quoteId,
+      )!;
+      const leaseState = rows.find((row) => JSON.parse(row.payload).leaseId)!;
+      const quote = JSON.parse(quoteState.payload);
+      const lease = JSON.parse(leaseState.payload);
+      for (const field of ['tenantId', 'advertiserId', 'sellerId', 'leaseId'])
+        lease[field] = lease[field].toUpperCase();
+      for (const field of [
+        'tenantId',
+        'quoteId',
+        'advertiserId',
+        'sellerId',
+        'makerProfileId',
+      ])
+        quote[field] = quote[field].toUpperCase();
+      quote.approval.checkerProfileId = checker.toUpperCase();
+      quote.approval.requestId = quote.approval.requestId.toUpperCase();
+      await db.query(
+        `UPDATE ${states.tableName} SET payload = ? WHERE id = ?`,
+        JSON.stringify(lease),
+        leaseState.id,
+      );
+      await db.query(
+        `UPDATE ${states.tableName} SET payload = ? WHERE id = ?`,
+        JSON.stringify(quote),
+        quoteState.id,
+      );
+      await scope(() => service.issueQuote(quoteOp()));
+      const issued = (await scope(() =>
+        service.getQuote({ tenantId, quoteId: terms.quoteId, revision: 1 }),
+      ))!;
+      expect(issued.makerProfileId).toBe(actor);
+      expect(issued.approval?.checkerProfileId).toBe(checker);
+      issued.approval!.checkerProfileId = actor.toUpperCase();
+      await db.query(
+        `UPDATE ${states.tableName} SET payload = ? WHERE id = ?`,
+        JSON.stringify(issued),
+        quoteState.id,
+      );
+      await expect(scope(() => service.signQuote(quoteOp()))).rejects.toThrow(
+        'approval_required',
+      );
+    });
+
+    it.each([
+      'tenantId',
+      'actorProfileId',
+      'operationId',
+      'sellerId',
+      'advertiserId',
+    ] as const)('rejects malformed UUID identity: %s', async (field) => {
+      await expect(
+        scope(() =>
+          service.acquireLease({ ...leaseOp(), [field]: 'not-a-uuid' }),
+        ),
+      ).rejects.toThrow('invalid_uuid_identity');
+      expect(host.isMember).not.toHaveBeenCalled();
+    });
+
+    it('requires the canonical advertiser live lease owner before creating a quote', async () => {
+      await expect(
+        scope(() => service.createQuote({ ...op(), terms })),
+      ).rejects.toThrow('advertiser_lease_required');
+      const lease = await scope(() => service.acquireLease(leaseOp()));
+      const otherSeller = randomUUID();
+      const otherActor = randomUUID();
+      await db.insert(reps.tableName, {
+        id: otherSeller,
+        slug: otherSeller,
+        context: '',
+        tenant_id: tenantId,
+        profile_id: otherActor,
+        earner_id: null,
+        status: 'active',
+        title: '',
+        metadata: '{}',
+      });
+      await expect(
+        scope(() =>
+          service.createQuote({
+            ...op(),
+            actorProfileId: otherActor,
+            terms: { ...terms, sellerId: otherSeller },
+          }),
+        ),
+      ).rejects.toThrow('advertiser_lease_required');
+      await scope(() =>
+        service.releaseLease({ ...leaseOp(), leaseId: lease.leaseId }),
+      );
+      await expect(
+        scope(() => service.createQuote({ ...op(), terms })),
+      ).rejects.toThrow('advertiser_lease_required');
+    });
+
+    it.each([
+      'issue',
+      'sign',
+      'approval',
+      'decision',
+      'preflight',
+    ] as const)('rechecks live lease at the %s boundary after release, expiry and replacement', async (boundary) => {
+      let lease = await scope(() => service.acquireLease(leaseOp()));
+      terms.totalCents = boundary === 'decision' ? 8000 : 9000;
+      await scope(() => service.createQuote({ ...op(), terms }));
+      const request =
+        boundary === 'decision'
+          ? await scope(() => service.requestApproval(quoteOp()))
+          : null;
+      if (boundary === 'sign' || boundary === 'preflight')
+        await scope(() => service.issueQuote(quoteOp()));
+      if (boundary === 'preflight')
+        await scope(() => service.signQuote(quoteOp()));
+      const attempt: () => Promise<unknown> = () =>
+        boundary === 'issue'
+          ? service.issueQuote(quoteOp())
+          : boundary === 'sign'
+            ? service.signQuote(quoteOp())
+            : boundary === 'approval'
+              ? service.requestApproval(quoteOp())
+              : boundary === 'decision'
+                ? service.decideApproval({
+                    ...quoteOp(),
+                    actorProfileId: checker,
+                    requestId: request!.approval!.requestId,
+                    decision: 'approved',
+                    reason: 'Reviewed',
+                  })
+                : service.assertCanSign(quoteOp());
+      await scope(() =>
+        service.releaseLease({ ...leaseOp(), leaseId: lease.leaseId }),
+      );
+      await expect(scope(attempt)).rejects.toThrow('advertiser_lease_required');
+      lease = await scope(() => service.acquireLease(leaseOp()));
+      now = lease.expiresAtMs;
+      await expect(scope(attempt)).rejects.toThrow('advertiser_lease_required');
+      const otherSeller = randomUUID();
+      const otherActor = randomUUID();
+      await db.insert(reps.tableName, {
+        id: otherSeller,
+        slug: otherSeller,
+        context: '',
+        tenant_id: tenantId,
+        profile_id: otherActor,
+        earner_id: null,
+        status: 'active',
+        title: '',
+        metadata: '{}',
+      });
+      await scope(() =>
+        service.acquireLease({
+          ...leaseOp(),
+          actorProfileId: otherActor,
+          sellerId: otherSeller,
+        }),
+      );
+      await expect(scope(attempt)).rejects.toThrow('advertiser_lease_required');
+    });
+
     it('closes direct collection/model mutation bypasses', async () => {
       const input = leaseOp();
       await scope(() => service.acquireLease(input));
@@ -204,6 +499,7 @@ export function salesGovernanceCases(
     });
 
     it('requires actor, active tenant, owned active role and all host guards', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
       const input = { ...op(), terms };
       await expect(service.createQuote(input)).rejects.toThrow();
       await expect(
@@ -290,6 +586,7 @@ export function salesGovernanceCases(
     });
 
     it('issues exact boundary cents, rejects malformed values and rechecks seller revocation at sign', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
       await scope(() => service.createQuote({ ...op(), terms }));
       await scope(() => service.issueQuote(quoteOp()));
       await db.query(
@@ -309,6 +606,7 @@ export function salesGovernanceCases(
     });
 
     it('binds approval to exact revision/policy and requires distinct current authorized finance', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
       terms.totalCents = 8999;
       await scope(() => service.createQuote({ ...op(), terms }));
       await expect(scope(() => service.issueQuote(quoteOp()))).rejects.toThrow(
@@ -370,6 +668,7 @@ export function salesGovernanceCases(
       'policy',
       'revision',
     ] as const)('denies stale approval state: %s', async (kind) => {
+      await scope(() => service.acquireLease(leaseOp()));
       terms.totalCents = 8000;
       await scope(() => service.createQuote({ ...op(), terms }));
       const requested = await scope(() => service.requestApproval(quoteOp()));
@@ -384,7 +683,10 @@ export function salesGovernanceCases(
           }),
         );
       }
-      if (kind === 'expired') now += 2000;
+      if (kind === 'expired') {
+        now += 2000;
+        await scope(() => service.acquireLease(leaseOp()));
+      }
       if (kind === 'policy')
         host.policy = vi.fn(async () => ({
           version: 'v2',
@@ -410,6 +712,7 @@ export function salesGovernanceCases(
       'advertiserId',
       'makerProfileId',
     ] as const)('rejects altered approved binding: %s', async (field) => {
+      await scope(() => service.acquireLease(leaseOp()));
       terms.totalCents = 8000;
       await scope(() => service.createQuote({ ...op(), terms }));
       const requested = await scope(() => service.requestApproval(quoteOp()));
@@ -439,7 +742,9 @@ export function salesGovernanceCases(
         state.id,
       );
       await expect(scope(() => service.issueQuote(quoteOp()))).rejects.toThrow(
-        'approval_required',
+        field === 'advertiserId'
+          ? 'advertiser_lease_required'
+          : 'approval_required',
       );
     });
 
@@ -467,6 +772,7 @@ export function salesGovernanceCases(
     });
 
     it('commits sign authority and preflight rechecks even exact historical replay', async () => {
+      await scope(() => service.acquireLease(leaseOp()));
       const create = { ...op(), terms };
       await scope(() => service.createQuote(create));
       await scope(() => service.issueQuote(quoteOp()));

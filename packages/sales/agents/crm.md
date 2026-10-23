@@ -89,7 +89,7 @@ identity, acquisition context/source, CRM status and downstream records stay int
 
 `SalesGovernanceService` is the required mutation boundary for governed sales.
 Referral identity never grants seller authority. Every fresh seller mutation
-requires a tenant context exactly matching `tenantId`, an actor Profile matching
+requires a tenant context matching the canonical UUID `tenantId`, an actor Profile matching
 an active tenant-owned `SalesRepresentative`, host membership and suspension
 checks, and `canSell`. There is no seller count limit. Hosts own newsroom or
 editorial classification through `canSell`; SMRT imports no application policy.
@@ -120,7 +120,9 @@ without partial writes. Host predicates receive the exact transaction executor;
 lock current authoritative membership, suspension, policy and inventory rows
 through that executor. A cached predicate or remote network check cannot promise
 transactionally stable authority. `validateQuote` must validate the exact rate
-card version, inventory version, advertiser ownership and cents totals.
+card version, inventory version, advertiser resource validity and cents totals.
+Sales itself enforces exclusive advertiser lease ownership on the same executor;
+host quote validation cannot replace or disable that lease guard.
 
 `acquireLease` accepts a canonical tenant-local `advertiserId`, never free-text
 organization/email dedupe. `advertiserExists` validates this identity and tenant
@@ -134,9 +136,19 @@ owner token and does not transfer ownership; release at expiry is allowed.
 A newly acquired replacement has a new token. `getLease` returns the current
 registration after host member/suspension and advertiser checks.
 
-Every mutation accepts a globally unique lowercase UUID `operationId`. An exact
+All tenant, actor/Profile, seller, advertiser, quote, lease, approval-request and
+operation identities must be valid UUIDs. The service lowercases them before
+resource-key hashing, host predicates, comparisons, persistence and replay intent
+binding. UUID spelling is not a distinct identity: uppercase advertiser forms
+cannot acquire another lease, and uppercase maker forms cannot self-approve.
+The ambient tenant context is normalized within the service while preserving its
+other metadata. Loaded owner/maker/checker identities are normalized before
+comparisons; altered approval terms still invalidate their exact binding.
+
+Every mutation accepts a globally unique UUID `operationId` (either case). An exact
 retry returns its immutable original outcome, including its original expiry,
-without extending a lease or repeating a transition. Changed inputs conflict.
+without extending a lease or repeating a transition. Case-only UUID changes
+are the same replay intent; changed identities or terms conflict.
 An outcome replay is historical evidence, **never fresh authority to sign**.
 To combine host writes and Sales writes, use:
 
@@ -161,6 +173,15 @@ The comparison `(subtotalCents - totalCents) * 10000 <= subtotalCents *
 maxDiscountBps` uses BigInt, so the discount boundary has no floating rounding.
 `issueQuote` moves draft to issued; `signQuote` moves issued to signed. Both
 revalidate current seller, host resources and exact policy version/values.
+`createQuote`, every fresh quote issue/sign transition, approval request/decision,
+and `assertCanSign` require the canonical advertiser's live, unreleased lease to
+belong to the quote seller. The service locks that lease state in the **same
+transaction** as the guarded action. Missing ownership, another seller, release,
+or expiry at `expiresAtMs <= now` refuses the action even when every host
+predicate returns true. Existing issued/signed records do not preserve ownership
+once the lease expires, is released or is acquired by another seller. There is
+no policy flag that makes this guard optional. Historical operation outcomes
+remain audit evidence; provider preflight always rechecks current ownership.
 
 Above-limit terms require `requestApproval` then `decideApproval`. Requests bind
 the entire frozen revision and policy hash. A distinct current tenant member

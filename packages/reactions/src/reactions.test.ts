@@ -6,10 +6,12 @@ import { pathToFileURL } from 'node:url';
 import {
   ParticipationBanCollection,
   ParticipationPolicyCollection,
+  ParticipationRateBucketCollection,
 } from '@happyvertical/smrt-comments';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { getChangesSince, ObjectRegistry } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { withTenant } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PollCollection,
@@ -554,6 +556,160 @@ describe.each([
     });
     await expect(missing.vote(id, 'parks')).rejects.toThrow('snapshot');
     expect((await polls.results(id)).totalVotes).toBe(0);
+  });
+  if (dialect === 'postgres')
+    it('identical concurrent reaction retries reserve quota once', async () => {
+      const { db, options } = await setup();
+      const fixed = { ...options, now: () => new Date('2026-10-23T12:00:00Z') };
+      const left = await ParticipationRuntime.create(fixed);
+      dbs.push(left.database);
+      const reactions = left.reactions;
+      await withTenant({ tenantId }, async () =>
+        (await ParticipationPolicyCollection.create({ db })).create({
+          tenantId,
+          action: 'react',
+          maxActions: 2,
+          windowSeconds: 60,
+        }),
+      );
+      const right = await ParticipationRuntime.create(fixed);
+      dbs.push(right.database);
+      expect(right.database).not.toBe(left.database);
+      let arrivals = 0;
+      let release!: () => void;
+      const bothAbsent = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // Synchronize the public transaction SELECT results, so both independent
+      // sessions see absence before either may arbitrate/consume quota.
+      function coordinateAbsentRead(database: DatabaseInterface) {
+        const transaction = database.transaction?.bind(database);
+        if (!transaction) throw new Error('Transactions required.');
+        database.transaction = async <T>(
+          work: (tx: DatabaseInterface) => Promise<T>,
+        ): Promise<T> =>
+          transaction(async (tx) => {
+            const query = tx.query.bind(tx);
+            let coordinated = false;
+            tx.query = async (sql, ...parameters) => {
+              const result = await query(sql, ...parameters);
+              if (
+                !coordinated &&
+                /^\s*SELECT/i.test(sql) &&
+                /\bFROM\s+"?record_reactions"?/i.test(sql) &&
+                result.rows.length === 0
+              ) {
+                coordinated = true;
+                arrivals += 1;
+                if (arrivals === 2) release();
+                await bothAbsent;
+              }
+              return result;
+            };
+            return work(tx);
+          });
+        return () => {
+          database.transaction = transaction;
+        };
+      }
+      const restoreLeft = coordinateAbsentRead(left.database);
+      const restoreRight = coordinateAbsentRead(right.database);
+      try {
+        await Promise.all([
+          reactions.setReaction(input.recordType, recordId, 'like', true),
+          right.reactions.setReaction(input.recordType, recordId, 'like', true),
+        ]);
+      } finally {
+        restoreLeft();
+        restoreRight();
+      }
+      expect(arrivals).toBe(2);
+      const used = () =>
+        withTenant({ tenantId }, async () =>
+          (
+            await (
+              await ParticipationRateBucketCollection.create({ db })
+            ).list({ where: { tenantId } })
+          ).reduce((total, row) => total + row.actionCount, 0),
+        );
+      expect(
+        (await reactions.tally(input.recordType, recordId)).find(
+          (r) => r.kind === 'like',
+        )?.count,
+      ).toBe(1);
+      expect(await used()).toBe(1);
+      await right.reactions.setReaction(
+        input.recordType,
+        recordId,
+        'love',
+        true,
+      );
+      expect(await used()).toBe(2);
+      await expect(
+        reactions.setReaction(input.recordType, recordId, 'support', true),
+      ).rejects.toThrow('Rate limit');
+      expect(await used()).toBe(2);
+      expect(
+        (await reactions.tally(input.recordType, recordId)).find(
+          (r) => r.kind === 'support',
+        )?.count,
+      ).toBe(0);
+    });
+  it('rolls back denied reaction candidates without quota or change-feed effects', async () => {
+    const { db, options } = await setup();
+    const fixed = { ...options, now: () => new Date('2026-10-23T12:00:00Z') };
+    const reactions = await makeReaction(fixed);
+    await withTenant({ tenantId }, async () =>
+      (await ParticipationPolicyCollection.create({ db })).create({
+        tenantId,
+        action: 'react',
+        maxActions: 1,
+        windowSeconds: 60,
+      }),
+    );
+    let calls = 0;
+    const denied = await makeReaction({
+      ...fixed,
+      participation: {
+        authorize: async () => ({ allowed: ++calls === 1, reason: 'revoked' }),
+      },
+    });
+    const changes = () =>
+      getChangesSince(db, { since: 0, tenantId, tables: ['record_reactions'] });
+    const before = await changes();
+    await expect(
+      denied.setReaction(input.recordType, recordId, 'like', true),
+    ).rejects.toThrow('revoked');
+    expect(
+      (await reactions.tally(input.recordType, recordId)).every(
+        (row) => row.count === 0,
+      ),
+    ).toBe(true);
+    expect(
+      await withTenant({ tenantId }, async () =>
+        (await ParticipationRateBucketCollection.create({ db })).count({
+          where: { tenantId },
+        }),
+      ),
+    ).toBe(0);
+    expect((await changes()).changes).toEqual(before.changes);
+    await reactions.setReaction(input.recordType, recordId, 'like', true);
+    const priorToLimit = await changes();
+    await expect(
+      reactions.setReaction(input.recordType, recordId, 'love', true),
+    ).rejects.toThrow('Rate limit');
+    expect(
+      (await reactions.tally(input.recordType, recordId)).find(
+        (row) => row.kind === 'love',
+      )?.count,
+    ).toBe(0);
+    const buckets = await withTenant({ tenantId }, async () =>
+      (await ParticipationRateBucketCollection.create({ db })).list({
+        where: { tenantId },
+      }),
+    );
+    expect(buckets.map((row) => row.actionCount)).toEqual([1]);
+    expect((await changes()).changes).toEqual(priorToLimit.changes);
   });
   it('shares ban and quota storage; rejected snapshot rolls back quota and retries successfully', async () => {
     const { db, options, polls, reactions } = await setup();

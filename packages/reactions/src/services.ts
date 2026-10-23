@@ -159,22 +159,29 @@ class ReactionService extends ParticipationBoundary {
           await this.guard(tx).authorize(request);
           return;
         }
+        // Arbitrate identity before reserving quota: a concurrent replay must
+        // not commit a reservation for an insert that lost uniqueness.
+        const id = crypto.randomUUID();
+        const inserted = await tx.query(
+          `INSERT INTO ${table(scoped.tableName)} (id, slug, context, role, tenant_id, meta_type, meta_id, actor_profile_id, kind) VALUES (?, ?, '', 'default', ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, meta_type, meta_id, actor_profile_id, kind) DO NOTHING RETURNING id`,
+          id,
+          id,
+          tenantId,
+          recordType,
+          recordId,
+          profileId,
+          kind,
+        );
+        if (inserted.rows.length === 0) {
+          await this.guard(tx).authorize(request);
+          return;
+        }
+        // Authorization/reservation failure rolls this candidate insert back
+        // with the owned transaction, including any transactional change feed.
         await this.guard(tx).executeInTransaction(
           tx,
           request,
-          async (guarded) => {
-            const id = crypto.randomUUID();
-            await guarded.query(
-              `INSERT INTO ${table(scoped.tableName)} (id, slug, context, role, tenant_id, meta_type, meta_id, actor_profile_id, kind) VALUES (?, ?, '', 'default', ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, meta_type, meta_id, actor_profile_id, kind) DO NOTHING`,
-              id,
-              id,
-              tenantId,
-              recordType,
-              recordId,
-              profileId,
-              kind,
-            );
-          },
+          async () => undefined,
         );
       });
     });

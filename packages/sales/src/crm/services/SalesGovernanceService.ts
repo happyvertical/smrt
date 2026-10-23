@@ -1,6 +1,10 @@
 /** Authorized seller, canonical advertiser leases and exact maker/checker terms. */
 import { createHash } from 'node:crypto';
-import { requireTenantId } from '@happyvertical/smrt-tenancy';
+import {
+  requireTenant,
+  requireTenantId,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { SalesGovernanceEventCollection } from '../collections/SalesGovernanceEventCollection.js';
 import { SalesGovernanceStateCollection } from '../collections/SalesGovernanceStateCollection.js';
@@ -126,14 +130,20 @@ export class SalesGovernanceService {
     input: SalesLeaseInput,
     transaction?: DatabaseInterface,
   ): Promise<SalesAdvertiserLease> {
-    input = { ...input };
+    input = {
+      ...operationIdentity(input),
+      sellerId: uuid(input.sellerId),
+      advertiserId: uuid(input.advertiserId),
+    };
     return this.operation('acquire', input, transaction, async (deps, db) => {
       const policy = await this.seller(input, input.sellerId, deps, db);
       await this.advertiser(input, input.advertiserId, db);
       const state = await deps.states.lock(
         key('lease', input.tenantId, input.advertiserId),
       );
-      const previous = parse<SalesAdvertiserLease>(state.payload);
+      const previous = leaseSnapshot(
+        parse<SalesAdvertiserLease>(state.payload),
+      );
       const now = this.time();
       if (previous && !previous.released && previous.expiresAtMs > now)
         deny('advertiser_already_registered');
@@ -171,14 +181,19 @@ export class SalesGovernanceService {
     input: SalesLeaseChangeInput,
     tx?: DatabaseInterface,
   ): Promise<SalesAdvertiserLease> {
-    input = { ...input };
+    input = {
+      ...operationIdentity(input),
+      sellerId: uuid(input.sellerId),
+      advertiserId: uuid(input.advertiserId),
+      leaseId: uuid(input.leaseId),
+    };
     return this.operation(kind, input, tx, async (deps, db) => {
       const policy = await this.seller(input, input.sellerId, deps, db);
       await this.advertiser(input, input.advertiserId, db);
       const state = await deps.states.lock(
         key('lease', input.tenantId, input.advertiserId),
       );
-      const lease = parse<SalesAdvertiserLease>(state.payload);
+      const lease = leaseSnapshot(parse<SalesAdvertiserLease>(state.payload));
       if (
         !lease ||
         lease.leaseId !== input.leaseId ||
@@ -200,11 +215,20 @@ export class SalesGovernanceService {
     input: SalesCreateQuoteInput,
     transaction?: DatabaseInterface,
   ): Promise<SalesQuoteSnapshot> {
-    input = { ...input, terms: { ...input.terms } };
+    input = {
+      ...operationIdentity(input),
+      terms: quoteTermsIdentity(input.terms),
+    };
     validateTerms(input.terms);
     return this.operation('quote', input, transaction, async (deps, db) => {
       const policy = await this.seller(input, input.terms.sellerId, deps, db);
       await this.advertiser(input, input.terms.advertiserId, db);
+      await this.assertLiveLease(
+        input.tenantId,
+        input.terms.sellerId,
+        input.terms.advertiserId,
+        deps,
+      );
       if (
         (await this.host.validateQuote(
           { ...input.terms, tenantId: input.tenantId },
@@ -240,7 +264,7 @@ export class SalesGovernanceService {
     input: SalesQuoteOperation,
     transaction?: DatabaseInterface,
   ): Promise<SalesQuoteSnapshot> {
-    input = { ...input };
+    input = quoteOperationIdentity(input);
     return this.operation(
       'request-approval',
       input,
@@ -268,7 +292,10 @@ export class SalesGovernanceService {
     input: SalesApprovalDecision,
     transaction?: DatabaseInterface,
   ): Promise<SalesQuoteSnapshot> {
-    input = { ...input };
+    input = {
+      ...quoteOperationIdentity(input),
+      requestId: uuid(input.requestId),
+    };
     if (
       !['approved', 'rejected', 'revoked'].includes(input.decision) ||
       !input.reason?.trim()
@@ -281,7 +308,13 @@ export class SalesGovernanceService {
       async (deps, db) => {
         const [state, quote] = await this.quote(input, deps);
         await this.context(input, db);
-        if (input.actorProfileId === quote.makerProfileId)
+        await this.assertLiveLease(
+          input.tenantId,
+          quote.sellerId,
+          quote.advertiserId,
+          deps,
+        );
+        if (uuid(input.actorProfileId) === uuid(quote.makerProfileId))
           deny('self_approval');
         if ((await this.host.canApprove(input, db)) !== true)
           deny('finance_unauthorized');
@@ -328,7 +361,7 @@ export class SalesGovernanceService {
     input: SalesQuoteOperation,
     tx?: DatabaseInterface,
   ): Promise<SalesQuoteSnapshot> {
-    input = { ...input };
+    input = quoteOperationIdentity(input);
     return this.operation(kind, input, tx, async (deps, db) => {
       const [state, quote] = await this.quote(input, deps);
       await this.validateSellerQuote(input, quote, deps, db);
@@ -348,7 +381,7 @@ export class SalesGovernanceService {
     input: Omit<SalesQuoteOperation, 'operationId'>,
     transaction?: DatabaseInterface,
   ): Promise<void> {
-    input = { ...input };
+    input = { ...contextIdentity(input), quoteId: uuid(input.quoteId) };
     this.assertContext(input);
     await this.run(transaction, async (deps, db) => {
       const [, quote] = await this.quote(input, deps);
@@ -362,6 +395,10 @@ export class SalesGovernanceService {
   async getLease(
     input: SellerContext & { advertiserId: string },
   ): Promise<SalesAdvertiserLease | null> {
+    input = {
+      ...contextIdentity(input),
+      advertiserId: uuid(input.advertiserId),
+    };
     this.assertContext(input);
     return this.run(undefined, async (deps, db) => {
       await this.context(input, db);
@@ -370,7 +407,9 @@ export class SalesGovernanceService {
         { id: key('lease', input.tenantId, input.advertiserId) },
         { cache: false },
       );
-      return state ? parse<SalesAdvertiserLease>(state.payload) : null;
+      return state
+        ? leaseSnapshot(parse<SalesAdvertiserLease>(state.payload))
+        : null;
     });
   }
 
@@ -380,15 +419,25 @@ export class SalesGovernanceService {
     quoteId: string;
     revision: number;
   }): Promise<SalesQuoteSnapshot | null> {
-    if (requireTenantId() !== input.tenantId) deny('tenant_context_mismatch');
-    const states = await SalesGovernanceStateCollection.create({
-      db: this.database,
+    input = {
+      ...input,
+      tenantId: uuid(input.tenantId),
+      quoteId: uuid(input.quoteId),
+    };
+    if (uuid(requireTenantId()) !== input.tenantId)
+      deny('tenant_context_mismatch');
+    return this.inCanonicalTenant(async () => {
+      const states = await SalesGovernanceStateCollection.create({
+        db: this.database,
+      });
+      const state = await states.get(
+        { id: quoteKey(input.tenantId, input.quoteId, input.revision) },
+        { cache: false },
+      );
+      return state
+        ? quoteSnapshot(parse<SalesQuoteSnapshot>(state.payload))
+        : null;
     });
-    const state = await states.get(
-      { id: quoteKey(input.tenantId, input.quoteId, input.revision) },
-      { cache: false },
-    );
-    return state ? parse<SalesQuoteSnapshot>(state.payload) : null;
   }
 
   private approved(quote: SalesQuoteSnapshot): void {
@@ -405,9 +454,30 @@ export class SalesGovernanceService {
       approval.expiresAtMs <= this.time() ||
       approval.termsHash !== termsHash(quote) ||
       !approval.checkerProfileId ||
-      approval.checkerProfileId === quote.makerProfileId
+      uuid(approval.checkerProfileId) === uuid(quote.makerProfileId)
     )
       deny('discount_approval_required');
+  }
+
+  private async assertLiveLease(
+    tenantId: string,
+    sellerId: string,
+    advertiserId: string,
+    deps: Deps,
+  ): Promise<void> {
+    const state = await deps.states.lock(
+      key('lease', uuid(tenantId), uuid(advertiserId)),
+    );
+    const lease = leaseSnapshot(parse<SalesAdvertiserLease>(state.payload));
+    if (
+      !lease ||
+      lease.tenantId !== uuid(tenantId) ||
+      lease.advertiserId !== uuid(advertiserId) ||
+      lease.sellerId !== uuid(sellerId) ||
+      lease.released ||
+      lease.expiresAtMs <= this.time()
+    )
+      deny('advertiser_lease_required');
   }
 
   private async validateSellerQuote(
@@ -420,6 +490,12 @@ export class SalesGovernanceService {
     if (JSON.stringify(policy) !== JSON.stringify(quote.policy))
       deny('policy_changed');
     await this.advertiser(input, quote.advertiserId, db);
+    await this.assertLiveLease(
+      input.tenantId,
+      quote.sellerId,
+      quote.advertiserId,
+      deps,
+    );
     if ((await this.host.validateQuote(quote, db)) !== true)
       deny('quote_unavailable');
     if (
@@ -450,7 +526,7 @@ export class SalesGovernanceService {
     const state = await deps.states.lock(
       quoteKey(input.tenantId, input.quoteId, input.revision),
     );
-    const quote = parse<SalesQuoteSnapshot>(state.payload);
+    const quote = quoteSnapshot(parse<SalesQuoteSnapshot>(state.payload));
     if (!quote || quote.tenantId !== input.tenantId) deny('quote_unavailable');
     return [state, quote];
   }
@@ -511,7 +587,8 @@ export class SalesGovernanceService {
   private assertContext(input: SellerContext): void {
     text(input.tenantId);
     text(input.actorProfileId);
-    if (requireTenantId() !== input.tenantId) deny('tenant_context_mismatch');
+    if (uuid(requireTenantId()) !== input.tenantId)
+      deny('tenant_context_mismatch');
   }
   private time(): number {
     const now = this.now().getTime();
@@ -546,7 +623,7 @@ export class SalesGovernanceService {
       )
     )
       deny('invalid_operation_id');
-    const intent = canonical({ kind, input });
+    const intent = canonical(normalizeIdentityEnvelope({ kind, input }));
     return this.run(tx, async (deps, db) => {
       await deps.states.lock(key('operation', input.operationId));
       const previous = await deps.events.get(
@@ -554,9 +631,13 @@ export class SalesGovernanceService {
         { cache: false },
       );
       if (previous) {
-        if (previous.intent !== intent) deny('replay_conflict');
+        if (
+          canonical(normalizeIdentityEnvelope(JSON.parse(previous.intent))) !==
+          intent
+        )
+          deny('replay_conflict');
         // Replays return historical evidence, never a fresh transition authority.
-        return JSON.parse(previous.result) as T;
+        return normalizeIdentityEnvelope(JSON.parse(previous.result)) as T;
       }
       const result = await fn(deps, db);
       await deps.events.create({
@@ -573,20 +654,27 @@ export class SalesGovernanceService {
     if (this.#backend !== 'postgres') deny('unsupported_backend');
   }
 
+  private async inCanonicalTenant<T>(fn: () => Promise<T>): Promise<T> {
+    const current = requireTenant();
+    return withTenant({ ...current, tenantId: uuid(current.tenantId) }, fn);
+  }
+
   private async run<T>(
     tx: DatabaseInterface | undefined,
     fn: (deps: Deps, db: DatabaseInterface) => Promise<T>,
   ): Promise<T> {
     this.assertBackend();
     const execute = async (db: DatabaseInterface) =>
-      withGovernanceWrite(db, async () =>
-        fn(
-          {
-            states: await SalesGovernanceStateCollection.create({ db }),
-            events: await SalesGovernanceEventCollection.create({ db }),
-            reps: await SalesRepresentativeCollection.create({ db }),
-          },
-          db,
+      this.inCanonicalTenant(() =>
+        withGovernanceWrite(db, async () =>
+          fn(
+            {
+              states: await SalesGovernanceStateCollection.create({ db }),
+              events: await SalesGovernanceEventCollection.create({ db }),
+              reps: await SalesRepresentativeCollection.create({ db }),
+            },
+            db,
+          ),
         ),
       );
     if (tx) {
@@ -658,4 +746,91 @@ function canonical(value: unknown): string {
         `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`,
     )
     .join(',')}}`;
+}
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function uuid(value: string): string {
+  if (typeof value !== 'string' || !UUID.test(value))
+    deny('invalid_uuid_identity');
+  return value.toLowerCase();
+}
+function contextIdentity<T extends SellerContext>(input: T): T {
+  return {
+    ...input,
+    tenantId: uuid(input.tenantId),
+    actorProfileId: uuid(input.actorProfileId),
+  };
+}
+function operationIdentity<T extends SellerOperation>(input: T): T {
+  return { ...contextIdentity(input), operationId: uuid(input.operationId) };
+}
+function quoteOperationIdentity<T extends SalesQuoteOperation>(input: T): T {
+  return { ...operationIdentity(input), quoteId: uuid(input.quoteId) };
+}
+function quoteTermsIdentity(terms: SalesQuoteTerms): SalesQuoteTerms {
+  if (!terms) deny('invalid_quote');
+  return {
+    ...terms,
+    quoteId: uuid(terms.quoteId),
+    sellerId: uuid(terms.sellerId),
+    advertiserId: uuid(terms.advertiserId),
+  };
+}
+function leaseSnapshot(
+  lease: SalesAdvertiserLease | null,
+): SalesAdvertiserLease | null {
+  return (
+    lease && {
+      ...lease,
+      tenantId: uuid(lease.tenantId),
+      advertiserId: uuid(lease.advertiserId),
+      sellerId: uuid(lease.sellerId),
+      leaseId: uuid(lease.leaseId),
+    }
+  );
+}
+function quoteSnapshot(
+  quote: SalesQuoteSnapshot | null,
+): SalesQuoteSnapshot | null {
+  return (
+    quote && {
+      ...quote,
+      ...quoteTermsIdentity(quote),
+      tenantId: uuid(quote.tenantId),
+      makerProfileId: uuid(quote.makerProfileId),
+      approval: quote.approval && {
+        ...quote.approval,
+        requestId: uuid(quote.approval.requestId),
+        checkerProfileId:
+          quote.approval.checkerProfileId === null
+            ? null
+            : uuid(quote.approval.checkerProfileId),
+      },
+    }
+  );
+}
+const IDENTITY_FIELDS = new Set([
+  'tenantId',
+  'actorProfileId',
+  'sellerId',
+  'advertiserId',
+  'quoteId',
+  'operationId',
+  'leaseId',
+  'requestId',
+  'makerProfileId',
+  'checkerProfileId',
+]);
+function normalizeIdentityEnvelope(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(normalizeIdentityEnvelope);
+  return Object.fromEntries(
+    Object.entries(value).map(([field, item]) => [
+      field,
+      IDENTITY_FIELDS.has(field) && item !== null
+        ? uuid(item)
+        : normalizeIdentityEnvelope(item),
+    ]),
+  );
 }

@@ -30,3 +30,7 @@ Package validation commands: `pnpm --filter @happyvertical/smrt-reactions test`,
 ## Browser/server boundary
 
 `/server` owns the SQL connection factory and participation runtime; the root owns only models, collections and types. The existing browser bundle gate attributes zero new server imports to reactions; the known upstream tenancy boundary is inherited. Executor-keyed WeakMap authority is isomorphic and scoped only to a unique transaction executor, revoked in finally. Tests ensure root adapters and unrelated concurrent transactions cannot inherit permission, including across await/failure, and server/root exports retain identical model constructors.
+
+## Concurrent reaction quota regression
+
+Independent PostgreSQL pools synchronize their public transaction SELECT results so both observe absence before competing. With a fixed clock and maxActions=2, identical retries must yield one reaction and exactly one reserved unit; another kind consumes the remaining unit, and a third is denied without adding a row or unit. A second scenario reauthorizes to denial after initial allowance, asserting no reaction, bucket or committed reaction change-feed effect; rate denial also leaves the candidate row absent and prior quota unchanged. SQLite process contention and same-process invalidation/recovery remain required regressions.

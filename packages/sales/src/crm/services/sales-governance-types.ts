@@ -13,6 +13,7 @@ export type SalesGovernanceDatabaseConfig = {
   idleTimeoutMillis?: number;
 };
 
+/** UUID identities accept either case; all service/host values use lowercase. */
 export interface SellerContext {
   tenantId: string;
   actorProfileId: string;
@@ -32,6 +33,7 @@ export interface SalesQuoteTerms {
   quoteId: string;
   revision: number;
   sellerId: string;
+  /** Canonical advertiser UUID; quote actions require this seller's live lease. */
   advertiserId: string;
   rateCardVersion: string;
   subtotalCents: number;
