@@ -52,6 +52,7 @@ export const NO_ROOT_ELEMENT = {
   'packages/smrt-svelte/src/Provider.svelte': SLOT,
   'packages/ingestion/src/svelte/components/IntakeInbox.svelte': CHILD,
   'packages/ingestion/src/svelte/components/IntakeReview.svelte': CHILD,
+  'packages/ingestion/src/svelte/components/IntakeWorkspace.svelte': CHILD,
   'packages/commerce/src/svelte/components/CustomerSelect.svelte': CHILD,
   'packages/commerce/src/svelte/components/InvoiceEditor.svelte': CHILD,
   'packages/commerce/src/svelte/components/InvoiceRecordScreen.svelte': CHILD,

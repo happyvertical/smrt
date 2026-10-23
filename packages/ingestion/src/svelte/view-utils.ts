@@ -3,6 +3,7 @@ import type {
   GeneratedSuggestion,
   ProposalCatalogEntry,
 } from '../proposal-dto.js';
+import type { InboxEntry, InboxState, ItemReviewView } from '../review-dto.js';
 
 /**
  * Initial arguments for a reviewer-chosen handler: a same-handler suggestion's
@@ -183,4 +184,151 @@ export function extractedContent(output: Record<string, unknown>): Array<{
     }
   }
   return content;
+}
+
+/**
+ * True while a background stage for the item is queued or running, including
+ * the server-reported gap between a completed extraction and its not yet
+ * appended interpretation. Presentation only: it drives polling, never access.
+ */
+export function reviewInFlight(view: ItemReviewView | undefined): boolean {
+  return (
+    view?.availability === 'available' &&
+    !view.entry.item.disposition &&
+    (view.entry.state === 'processing' ||
+      ['queued', 'running'].includes(view.entry.item.processingState) ||
+      !!view.instruction?.reinterpreting)
+  );
+}
+
+/**
+ * A row's triage status. `state` falls back to the listed inbox state when
+ * nothing more specific is known (a row the reviewer has not opened).
+ */
+export type TriageStatus =
+  | { kind: 'pending' }
+  | { kind: 'ready' }
+  | { kind: 'needs_review'; missing?: string[]; reason?: string }
+  | { kind: 'approval' }
+  | { kind: 'apply' }
+  | { kind: 'failed'; reason?: string }
+  | { kind: 'resolved' }
+  | { kind: 'state'; state: InboxState };
+
+/** Status from a listed row alone: it carries no generation, so no reasons. */
+export function entryStatus(entry: InboxEntry): TriageStatus {
+  if (entry.item.disposition || entry.state === 'resolved')
+    return { kind: 'resolved' };
+  if (
+    entry.state === 'processing' ||
+    ['queued', 'running'].includes(entry.item.processingState)
+  )
+    return { kind: 'pending' };
+  if (entry.state === 'failed') return { kind: 'failed' };
+  return { kind: 'state', state: entry.state };
+}
+
+/**
+ * Status from a loaded review view: what the reviewer would do next and, for
+ * a suggestion that needs review or a failed stage, a safe reason (missing
+ * argument names, a generation outcome or a failure category; never server
+ * exception text).
+ */
+export function viewStatus(view: ItemReviewView): TriageStatus {
+  if (view.availability !== 'available') return entryStatus(view.entry);
+  if (view.entry.item.disposition) return { kind: 'resolved' };
+  if (reviewInFlight(view)) return { kind: 'pending' };
+  const failure = view.instruction?.failure;
+  if (failure) return { kind: 'failed', reason: failure };
+  const states = view.reviews.actions.map((action) => action.review.state);
+  if (states.includes('waiting_review')) return { kind: 'approval' };
+  if (states.includes('authorized')) return { kind: 'apply' };
+  if (
+    ['completed', 'partially_completed', 'deferred', 'failed'].includes(
+      view.entry.state,
+    ) &&
+    states.length
+  )
+    return entryStatus(view.entry);
+  const generation = view.generation;
+  if (generation?.outcome === 'provider_error')
+    return { kind: 'failed', reason: generation.outcome };
+  if (view.analysis?.result.error)
+    return { kind: 'failed', reason: view.analysis.result.error };
+  if (generation) {
+    if (
+      generation.suggestions.some(
+        (suggestion) => suggestion.disposition === 'ready_for_review',
+      )
+    )
+      return { kind: 'ready' };
+    const missing = [
+      ...new Set(
+        generation.suggestions.flatMap(
+          (suggestion) => suggestion.missingFields,
+        ),
+      ),
+    ];
+    if (missing.length) return { kind: 'needs_review', missing };
+    return generation.suggestions.length
+      ? { kind: 'needs_review' }
+      : { kind: 'needs_review', reason: generation.outcome };
+  }
+  return entryStatus(view.entry);
+}
+
+/** Rows the queue is finished with: closed without action or fully completed. */
+export function triageTerminal(status: TriageStatus): boolean {
+  return (
+    status.kind === 'resolved' ||
+    (status.kind === 'state' && status.state === 'completed')
+  );
+}
+
+/**
+ * True when a reviewer operation left nothing for the reviewer on the item:
+ * it was closed without action, or at least one action succeeded and none is
+ * waiting for approval, waiting to be applied, executing, unknown or failed.
+ * Stale, rejected and deferred actions do not hold the item open.
+ */
+export function triageSettled(view: ItemReviewView): boolean {
+  if (view.availability !== 'available') return false;
+  if (view.entry.item.disposition) return true;
+  const states = view.reviews.actions.map((action) => action.review.state);
+  return (
+    states.includes('succeeded') &&
+    !states.some((state) =>
+      [
+        'waiting_review',
+        'authorized',
+        'executing',
+        'outcome_unknown',
+        'failed',
+      ].includes(state),
+    )
+  );
+}
+
+/**
+ * Highest observed page per evidence part, from extraction locations and
+ * proposed page groups. Only observed pages are navigable; a part without
+ * any is shown without page navigation.
+ */
+export function observedPages(view: ItemReviewView): Record<string, number> {
+  const pages: Record<string, number> = {};
+  const note = (evidenceId: string, page: number) => {
+    if (Number.isSafeInteger(page) && page > 0)
+      pages[evidenceId] = Math.max(pages[evidenceId] ?? 0, page);
+  };
+  if (view.analysis)
+    for (const segment of extractedContent(view.analysis.result.output)) {
+      if (segment.location?.kind === 'page')
+        note(segment.evidenceId, segment.location.page);
+      if (segment.location?.kind === 'pages')
+        note(segment.evidenceId, segment.location.endPage);
+    }
+  for (const split of view.generation?.splits ?? [])
+    for (const group of split.groups)
+      for (const page of group) note(split.evidenceId, page);
+  return pages;
 }
