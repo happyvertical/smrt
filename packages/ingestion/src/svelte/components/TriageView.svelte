@@ -137,18 +137,6 @@ function statusText(status: TriageStatus) {
     : base;
 }
 const rowStatus = (entry: InboxEntry) => statusText(statusOf(entry));
-/** Follow a displayed view: cache its status and patch its row in place. */
-function record(view: ItemReviewView, keep: boolean) {
-  const id = view.entry.item.id;
-  if (view.availability !== 'available') {
-    fallback(id);
-    return;
-  }
-  statuses[id] = { key: fingerprint(view.entry), status: viewStatus(view) };
-  if (inbox) rows = inbox.patch(view.entry, keep);
-  // A followed row the filter removed is no longer followed.
-  if (!displayed(id)) unwatch(id);
-}
 const displayed = (id: string) => rows.some((row) => row.item.id === id);
 // Each row's entry exactly as a page read returned it (never a patched
 // entry): the state a row falls back to.
@@ -157,27 +145,130 @@ let listedEntries = new Map<string, InboxEntry>();
 // re-applied over a page that may have been read before it.
 let followedEntries = new Map<string, InboxEntry>();
 /**
- * Forget what loaded views said about a row (a denial, a failed follow, the
- * follow cap): drop its cached status and restore the entry its page listed.
+ * Extra settled reads still owed to an item left while its pane was
+ * mid-operation (an Apply not yet answered): it keeps following while a read
+ * still shows an action authorized or executing, at most OPERATION_READS
+ * more reads.
  */
-function fallback(id: string) {
+const OPERATION_READS = 3;
+const operationReads = new Map<string, number>();
+
+// Row bookkeeping, one function per lifecycle event. Each keeps `statuses`,
+// `followedEntries`, the follow sets (`watched`, `started`, `staged`,
+// `failures`, `operationReads`), the announcement and the row together.
+
+/** Stop following an item; what its row shows is left to the caller. */
+function stopFollowing(id: string) {
+  watched = watched.filter((entry) => entry !== id);
+  started = started.filter((entry) => entry !== id);
+  failures.delete(id);
+  staged.delete(id);
+  operationReads.delete(id);
+}
+/**
+ * Forget everything loaded views said about an item: it is no longer
+ * followed, has no cached status, and (`restore`) its row returns to the
+ * entry exactly as its page read returned it.
+ */
+function forget(id: string, restore: boolean) {
+  stopFollowing(id);
   delete statuses[id];
   followedEntries.delete(id);
   const entry = listedEntries.get(id);
-  if (entry && inbox) rows = inbox.patch(entry, true);
+  if (restore && entry && inbox) rows = inbox.patch(entry, true);
 }
-function listed(
-  items: InboxEntry[],
-  hasMore: boolean,
-  page?: { entries: InboxEntry[]; appended: boolean },
-) {
-  if (page) {
-    if (!page.appended) listedEntries = new Map();
-    for (const entry of page.entries) listedEntries.set(entry.item.id, entry);
+/** Patch a row from a view; a row the filter removes is forgotten. */
+function patchRow(view: ItemReviewView, keep: boolean) {
+  const id = view.entry.item.id;
+  statuses[id] = { key: fingerprint(view.entry), status: viewStatus(view) };
+  if (inbox) rows = inbox.patch(view.entry, keep);
+  if (!displayed(id)) rowRemoved(id);
+}
+/** Event: a row left the displayed list (filter, refresh, failed list). */
+function rowRemoved(id: string) {
+  forget(id, false);
+}
+/** Event: an item opens in the pane. Its row shows the listed state until the pane's first view. */
+function opened(id: string) {
+  forget(id, false);
+}
+/**
+ * Event: the reviewer left an item. Its row takes the listed filter; an item
+ * left mid-stage, or before the pane showed the result of its latest
+ * operation, keeps following while its row is displayed.
+ */
+function left(id: string, view: ItemReviewView | undefined, busy: boolean) {
+  if (view && inbox) rows = inbox.patch(view.entry);
+  if (!displayed(id)) {
+    rowRemoved(id);
+    return;
   }
-  rows = items;
-  more = hasMore;
-  if (!page || !inbox) return;
+  const running = reviewInFlight(view);
+  if (!busy && !running) return;
+  if (watched.includes(id)) return;
+  if (running) staged.add(id);
+  if (busy) operationReads.set(id, OPERATION_READS);
+  if (view) followedEntries.set(id, view.entry);
+  watched = [...watched, id];
+  started = [...started, id];
+  // Beyond the cap the longest-followed item (the earliest started, whatever
+  // the read rotation) stops and returns to its listed entry.
+  while (started.length > WATCH_CAP) forget(started[0], true);
+  // The backoff carries on; only an idle follower starts a tick (a running
+  // tick, or one already scheduled, picks the new item up).
+  if (!following && watchTimer === undefined) schedule();
+}
+/** Event: the open pane, or a follow read, was denied (returned or thrown). */
+function denied(id: string) {
+  if (id === selected) {
+    paneView = undefined;
+    paneBusy = false;
+  }
+  forget(id, true);
+  announcement = '';
+}
+/** Event: a follow read answered for a followed item. */
+function followed(view: ItemReviewView) {
+  const id = view.entry.item.id;
+  failures.delete(id);
+  const running = reviewInFlight(view);
+  if (running) staged.add(id);
+  // A reviewer operation the pane had not answered yet (left mid-Apply) is
+  // waited for while an action is still authorized or executing.
+  const owed = operationReads.get(id) ?? 0;
+  const waiting =
+    owed > 0 &&
+    view.reviews.actions.some((action) =>
+      ['authorized', 'executing'].includes(action.review.state),
+    );
+  if (waiting) operationReads.set(id, owed - 1);
+  const finished = !running && !waiting;
+  const announce = finished && staged.has(id);
+  followedEntries.set(id, view.entry);
+  if (finished) stopFollowing(id);
+  patchRow(view, false);
+  // Announce only a background stage that was seen running and has now
+  // settled, on a row still displayed, under its listed label.
+  if (announce && displayed(id))
+    announcement = t(M['ingestion.backgroundUpdate'], {
+      label: rows.find((row) => row.item.id === id)?.label ?? view.entry.label,
+      status: statusText(viewStatus(view)),
+    });
+}
+/** Event: a follow read threw; three in a row stop following. */
+function followFailed(id: string) {
+  const count = (failures.get(id) ?? 0) + 1;
+  failures.set(id, count);
+  if (count >= MAX_WATCH_FAILURES) forget(id, true);
+}
+/** Event: a page read landed (a refresh replaces, Load more appends). */
+function pageLanded(page: { entries: InboxEntry[]; appended: boolean }) {
+  if (!page.appended) {
+    listedEntries = new Map();
+    announcement = '';
+  }
+  for (const entry of page.entries) listedEntries.set(entry.item.id, entry);
+  if (!inbox) return;
   // A page read before the pane's latest view, or before a followed item's
   // latest read, must not regress those rows.
   const open = paneView;
@@ -188,17 +279,30 @@ function listed(
     // A settled item needed this one re-application only.
     if (!watched.includes(id)) followedEntries.delete(id);
   }
-  // Rows no longer displayed are not followed.
-  for (const id of watched) if (!displayed(id)) unwatch(id);
+  for (const id of [...watched]) if (!displayed(id)) rowRemoved(id);
 }
-function paneChanged(view: ItemReviewView | undefined, denied = false) {
+/** Event: a page read failed and the list failed closed (no rows). */
+function listFailed() {
+  for (const id of [...watched]) forget(id, false);
+  followedEntries = new Map();
+  announcement = '';
+}
+function listed(
+  items: InboxEntry[],
+  hasMore: boolean,
+  page?: { entries: InboxEntry[]; appended: boolean },
+) {
+  rows = items;
+  more = hasMore;
+  if (page) pageLanded(page);
+  else listFailed();
+}
+function paneChanged(view: ItemReviewView | undefined, refused = false) {
   if (!view) {
-    if (denied) {
-      // A failed callback cleared the pane: it fails closed, so nothing it
-      // showed (status reasons included) stays on the row or is followed.
-      paneView = undefined;
-      paneBusy = false;
-      if (selected) fallback(selected);
+    // A failed callback (or a first load that failed) cleared the pane: it
+    // fails closed, so nothing it showed stays on the row or is followed.
+    if (refused) {
+      if (selected) denied(selected);
       return;
     }
     // The pane cleared its view for a reload or an operation (an instruction,
@@ -209,10 +313,14 @@ function paneChanged(view: ItemReviewView | undefined, denied = false) {
   if (view.entry.item.id !== selected) return;
   paneBusy = false;
   const snapshot = $state.snapshot(view) as ItemReviewView;
-  paneView = snapshot.availability === 'available' ? snapshot : undefined;
+  if (snapshot.availability !== 'available') {
+    denied(snapshot.entry.item.id);
+    return;
+  }
+  paneView = snapshot;
   // The open item stays listed while the reviewer works on it, even if its
   // state no longer matches the filter; it leaves when they move on.
-  record(snapshot, true);
+  patchRow(snapshot, true);
 }
 function schedule() {
   clearTimeout(watchTimer);
@@ -228,33 +336,10 @@ function schedule() {
     void follow();
   }, delay);
 }
-function watch(id: string) {
-  if (!displayed(id) || watched.includes(id)) return;
-  watched = [...watched, id];
-  started = [...started, id];
-  // Beyond the cap the longest-followed item (the earliest started, whatever
-  // the read rotation) stops and falls back.
-  while (started.length > WATCH_CAP) {
-    const dropped = started[0];
-    unwatch(dropped);
-    fallback(dropped);
-  }
-  // The backoff carries on; only an idle follower starts a tick (a running
-  // tick, or one already scheduled, picks the new item up).
-  if (!following && watchTimer === undefined) schedule();
-}
-function unwatch(id: string) {
-  watched = watched.filter((entry) => entry !== id);
-  started = started.filter((entry) => entry !== id);
-  failures.delete(id);
-  staged.delete(id);
-}
 /**
  * One watch tick: re-read up to WATCH_LIMIT followed items through the same
  * authenticated `load` the item pane uses (first review page only), one
- * after another, least recently read first, on the pane's backoff. A row
- * stops following once its stage settles, its host view is denied, three
- * reads in a row throw, or it leaves the list.
+ * after another, least recently read first, on the pane's backoff.
  */
 async function follow() {
   if (following || !alive) return;
@@ -277,34 +362,11 @@ async function followBatch() {
       const view = await host.load(id);
       if (!alive) return;
       if (!watched.includes(id)) continue;
-      failures.delete(id);
-      if (view.availability !== 'available') {
-        unwatch(id);
-        fallback(id);
-        continue;
-      }
-      const settled = !reviewInFlight(view);
-      if (!settled) staged.add(id);
-      const finished = settled && staged.has(id);
-      if (settled) unwatch(id);
-      followedEntries.set(id, view.entry);
-      record(view, false);
-      // Announce only a background stage that was seen running and has now
-      // settled, on a row still displayed, under its listed label.
-      if (finished && displayed(id))
-        announcement = t(M['ingestion.backgroundUpdate'], {
-          label:
-            rows.find((row) => row.item.id === id)?.label ?? view.entry.label,
-          status: statusText(viewStatus(view)),
-        });
+      if (view.availability !== 'available') denied(id);
+      else followed(view);
     } catch {
       if (!alive) return;
-      const count = (failures.get(id) ?? 0) + 1;
-      failures.set(id, count);
-      if (count >= MAX_WATCH_FAILURES) {
-        unwatch(id);
-        fallback(id);
-      }
+      if (watched.includes(id)) followFailed(id);
     }
   }
 }
@@ -312,27 +374,22 @@ async function followBatch() {
 async function choose(id: string | undefined, focus: boolean) {
   if (id !== selected) {
     const previous = paneView;
-    const left = selected;
-    // An item left mid-stage, or before the pane showed the result of its
-    // latest operation (an instruction just recorded), keeps following.
-    if (left && (paneBusy || reviewInFlight(previous))) {
-      if (reviewInFlight(previous)) staged.add(left);
-      watch(left);
-    }
+    const leaving_ = selected;
+    const busy = paneBusy;
     paneView = undefined;
     paneBusy = false;
-    // Leaving the item applies the listed filter to its row.
-    if (previous && previous.entry.item.id === left && inbox) {
-      rows = inbox.patch(previous.entry);
-      if (watched.includes(left)) followedEntries.set(left, previous.entry);
-    }
-    if (left && !displayed(left)) unwatch(left);
+    if (leaving_)
+      left(
+        leaving_,
+        previous?.entry.item.id === leaving_ ? previous : undefined,
+        busy,
+      );
+    if (id) opened(id);
     selected = id;
     navigation++;
     paneDirty = false;
     leaving = undefined;
     held = undefined;
-    if (id) unwatch(id);
     onselect?.(id);
   }
   done = !id;
@@ -371,17 +428,47 @@ async function keepEditing() {
   if (from?.isConnected) from.focus();
   else pane?.focus();
 }
+/**
+ * Where to continue after `current` in a list that may have changed while a
+ * page loaded: just after it when it is still listed; otherwise at the first
+ * row that followed it before and is still listed; otherwise at the first
+ * row that is new; otherwise at the end. Positions are found by id, never by
+ * an index taken before the change.
+ */
+function resume(
+  before: readonly InboxEntry[],
+  current: string | undefined,
+  list: readonly InboxEntry[],
+) {
+  const ids = list.map((row) => row.item.id);
+  const at = current ? ids.indexOf(current) : -1;
+  if (at >= 0) return at + 1;
+  const old = before.map((row) => row.item.id);
+  const from = current ? old.indexOf(current) : -1;
+  for (const id of old.slice(from + 1)) {
+    const index = ids.indexOf(id);
+    if (index >= 0) return index;
+  }
+  const known = new Set(old);
+  const fresh = ids.findIndex((id) => !known.has(id));
+  return fresh >= 0 ? fresh : ids.length;
+}
 async function move(offset: 1 | -1) {
   const ticket = navigation;
-  let list = rows;
-  const index = list.findIndex((row) => row.item.id === selected);
+  const current = selected;
+  const before = rows;
+  const index = before.findIndex((row) => row.item.id === current);
   let target =
-    index < 0 ? (offset > 0 ? list[0] : list.at(-1)) : list[index + offset];
+    index < 0
+      ? offset > 0
+        ? before[0]
+        : before.at(-1)
+      : before[index + offset];
   if (!target && offset > 0 && more && inbox) {
     const page = await inbox.more();
     // The reviewer chose something else while the page loaded.
     if (ticket !== navigation) return;
-    target = page.items[(index < 0 ? -1 : index) + 1];
+    target = page.items[index < 0 ? 0 : resume(before, current, page.items)];
   }
   if (target) await request(target.item.id);
 }
@@ -389,11 +476,10 @@ async function move(offset: 1 | -1) {
 async function advance() {
   const ticket = navigation;
   const current = selected;
-  const before = rows.findIndex((row) => row.item.id === current);
+  const before = rows;
   let list = paneView && inbox ? inbox.patch(paneView.entry) : rows;
   rows = list;
-  const start =
-    before < 0 ? 0 : list[before]?.item.id === current ? before + 1 : before;
+  let start = resume(before, current, list);
   const open = (row: InboxEntry) =>
     row.item.id !== current && !triageTerminal(statusOf(row));
   let next = list.slice(start).find(open);
@@ -420,6 +506,8 @@ async function advance() {
       unknown = page.result === 'failed' ? 'failed' : 'retry';
       break;
     }
+    // Rows may have left while the page loaded: continue by id.
+    start = resume(before, current, list);
     next = list.slice(start).find(open);
   }
   next ??= list.slice(0, start).find(open);
@@ -481,17 +569,17 @@ function keydown(event: KeyboardEvent) {
 </div>
 <p class="hint">{t(M['ingestion.keyboardHelp'])}</p>
 <p role="status" data-testid="background-update">{announcement}</p>
-{#if held}<p role="status" data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</p>{/if}
+<!-- One persistent live region whose text changes, so the notes are announced reliably. -->
+<p role="status" class="pane-note" data-testid="pane-note">{#if held}<span data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</span>{:else if done && !selected}<span data-testid="queue-done">{t(M['ingestion.queueDone'])}</span>{/if}</p>
 {#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
 {#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
-{:else if done}<p role="status" data-testid="queue-done">{t(M['ingestion.queueDone'])}</p>
-{:else}<p>{t(M['ingestion.selectItem'])}</p>{/if}
+{:else if !done}<p>{t(M['ingestion.selectItem'])}</p>{/if}
 </section>
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-.workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;color:var(--smrt-color-on-surface)}.list-pane,.item-pane{min-width:0}.item-pane{outline-offset:.25rem}.queue-nav{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding-inline:1rem}.queue-nav p,.hint{margin:0}.leave{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.75rem 1rem;border:var(--smrt-hairline)}.leave p{margin:0;flex-basis:100%}.hint{padding-inline:1rem;font-size:.875rem}[data-testid='background-update']{padding-inline:1rem;margin:0}@media(min-width:64rem){.workspace{grid-template-columns:minmax(18rem,26rem) minmax(0,1fr)}.list-pane{position:sticky;inset-block-start:0;align-self:start;max-block-size:100vh;overflow:auto}}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;color:var(--smrt-color-on-surface)}.list-pane,.item-pane{min-width:0}.item-pane{outline-offset:.25rem}.queue-nav{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding-inline:1rem}.queue-nav p,.hint{margin:0}.leave{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.75rem 1rem;border:var(--smrt-hairline)}.leave p{margin:0;flex-basis:100%}.hint{padding-inline:1rem;font-size:.875rem}[data-testid='background-update'],.pane-note{padding-inline:1rem;margin:0}@media(min-width:64rem){.workspace{grid-template-columns:minmax(18rem,26rem) minmax(0,1fr)}.list-pane{position:sticky;inset-block-start:0;align-self:start;max-block-size:100vh;overflow:auto}}
 }
 </style>

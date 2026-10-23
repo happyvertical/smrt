@@ -4,6 +4,9 @@
 `IntakeWorkspace` and `EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
 callback contract. Import styling/theme configuration from smrt-ui in the host.
 Components use smrt-ui primitives and the `ingestion.*` i18n catalog.
+Existing `IntakeInbox` hosts now keep the previous rows visible, with their
+controls disabled, while a refresh or filter change loads; any failed read
+(Load more included) still clears them.
 
 The host authenticates every request, resolves tenant/actor/confidential scope
 from its session, enforces CSRF on mutations, and constructs `IngestionService`.
@@ -398,8 +401,10 @@ model only, exactly as in `IntakeReview`.
   Next/Previous item, a row's Review button) then asks inline, in a group
   labelled by its note: "Stay on this item" takes focus and returns it to the
   field the reviewer last used; "Discard and open the other item" proceeds.
-  When an item is closed without action, input a closed item cannot take
-  (instruction, suggestion drafts, a started action) is discarded.
+  When an item is closed without action (here or by another session), input a
+  closed item cannot take
+  (instruction, suggestion and split drafts, a started action, a no-action
+  reason) is discarded.
 - **Live state.** A row's status follows the item: "Interpreting…", "Ready to
   review", "Needs review" with missing argument names or the generation
   outcome, "Awaiting approval", "Approved, not yet applied", "Failed" with a
@@ -419,14 +424,20 @@ model only, exactly as in `IntakeReview`.
   another, least recently read first (so every followed row is reached), with
   only one tick running at a time. At most **20** items are followed; beyond
   that the longest-followed one (the earliest started, whatever the read
-  rotation) stops. An item stops being followed when it settles, its view is denied,
-  three reads in a row throw, its row leaves the displayed list (a filter
-  removed it), or the cap drops it; a denial, the failure stop or the cap drops
-  its cached status and restores its entry exactly as its page read returned
-  it (never a patched entry). A denial in the open pane (a failed action or the
-  pane's own fail-closed poll) does the same and the item is not followed when
-  left. A settled stage that was seen running is announced in a polite status
-  region ("badger-po.pdf: Ready to review"), only while its row is displayed.
+  rotation) stops. An item left while its pane was mid-operation (an Apply not
+  yet answered) keeps following while a read still shows an action authorized
+  or executing, for at most **3** more reads. An item stops being followed
+  when it settles, its view is denied, three reads in a row throw, its row
+  leaves the displayed list (a filter or a refreshed page removed it), the
+  list fails closed, or the cap drops it; a denial, the failure stop or the
+  cap drops its cached status and restores its entry exactly as its page read
+  returned it (never a patched entry). Opening an item drops its cached
+  status until the pane shows a view; a denial in the open pane (a failed
+  action, the pane's own fail-closed poll, or a first load that failed) does
+  the same as a follow denial, clears the announcement, and the item is not
+  followed when left. A settled stage that was seen running is announced in a
+  polite status region ("badger-po.pdf: Ready to review"), only while its row
+  is displayed; a refreshed page or a failed list clears it.
   Other rows update on Refresh, a filter change or when opened; there is no
   streaming. While a refresh or "Load more" is pending, the displayed rows stay
   (controls disabled) and keep taking patches; when the page arrives the open
@@ -449,7 +460,12 @@ model only, exactly as in `IntakeReview`.
   reviewer moves on explicitly, through the confirmation; input typed while
   the next page loads counts too. When no open row is displayed, the advance
   appends pages of finished rows until one has an open row or no page
-  remains, at most **5** appends. The queue is never reported empty when
+  remains, at most **5** appends. After each append, the advance (like
+  J/K at the end of the list) finds its place again by id: just after the
+  item it left, or, if that row has gone, at the first row that followed it
+  and is still listed, or at the first new row, so a row that left the list
+  meanwhile never shifts it onto the wrong item. Its notes (and "nothing else
+  needs review") are written into one persistent polite status region. The queue is never reported empty when
   that is unknown: past the bound, or when an append cannot start (a refresh
   is pending) or is superseded, the item stays open with a note to try Next
   item again, which still works; when an append fails, the list has failed

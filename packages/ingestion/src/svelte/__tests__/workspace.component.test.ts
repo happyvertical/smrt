@@ -1713,6 +1713,381 @@ describe('triage workspace following bounds', () => {
   });
 });
 
+describe('triage workspace lifecycle (review round 5)', () => {
+  const current = () =>
+    document
+      .querySelector('li[aria-current="true"]')
+      ?.getAttribute('data-item-id');
+  /**
+   * Rows a, b, c with b still running a stage, listed under "Unresolved",
+   * and a next page d, e that loads only when released.
+   */
+  function pagedWithFollow(extra: Record<string, ItemReviewView[]> = {}) {
+    const running = view(
+      entry('b', 'unresolved', { processingState: 'running' }),
+    );
+    const host = backend(['a', 'b', 'c'], {
+      a: [ready('a')],
+      b: [running, running, view(entry('b', 'completed'))],
+      c: [ready('c')],
+      d: [ready('d')],
+      e: [ready('e')],
+      ...extra,
+    });
+    const hold = deferred();
+    host.list = vi.fn(async ({ cursor }) => {
+      if (cursor) {
+        await hold.promise;
+        return { items: [entry('d', 'unresolved'), entry('e', 'unresolved')] };
+      }
+      return {
+        items: [
+          entry('a', 'unresolved'),
+          entry('b', 'unresolved', { processingState: 'running' }),
+          entry('c', 'unresolved'),
+        ],
+        nextCursor: 'p2',
+      };
+    });
+    return { host, hold };
+  }
+  async function underUnresolved(host: IntakeReviewHost) {
+    await screen.findByText('Item C');
+    await fireEvent.change(screen.getByRole('combobox', { name: 'State' }), {
+      target: { value: 'unresolved' },
+    });
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await screen.findByText('Item C');
+    // Open b while its stage runs, then leave it for c: b is followed.
+    await fireEvent.click(
+      within(row('b')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() => expect(current()).toBe('b'));
+    await waitFor(() =>
+      expect(vi.mocked(host.load).mock.calls.map(([id]) => id)).toContain('b'),
+    );
+    await sleep(10);
+    await fireEvent.click(
+      within(row('c')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() => expect(current()).toBe('c'));
+  }
+
+  it('J at the last row opens the first appended row even if a followed row above left meanwhile (P1)', async () => {
+    const { host, hold } = pagedWithFollow();
+    render(IntakeWorkspace, { host, pollMs: 30 });
+    await underUnresolved(host);
+    await screen.findByRole('button', { name: 'Prepare review' });
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    // The follow read finds b completed, which leaves "Unresolved".
+    await waitFor(() => expect(row('b')).toBeNull(), { timeout: 3000 });
+    hold.resolve(undefined);
+    await waitFor(() => expect(current()).toBe('d'));
+    await sleep(30);
+    expect(current()).toBe('d');
+  });
+
+  it('advance opens the first appended row even if a followed row above left meanwhile (P1b)', async () => {
+    const { host, hold } = pagedWithFollow({
+      c: [
+        view(entry('c', 'unresolved'), {
+          reviews: { actions: [action('c', 'authorized')] },
+        }),
+        view(entry('c', 'completed'), {
+          reviews: { actions: [action('c', 'succeeded')] },
+        }),
+      ],
+    });
+    render(IntakeWorkspace, { host, pollMs: 30 });
+    await underUnresolved(host);
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await waitFor(() => expect(row('b')).toBeNull(), { timeout: 3000 });
+    hold.resolve(undefined);
+    await waitFor(() => expect(current()).toBe('d'));
+    await sleep(30);
+    expect(current()).toBe('d');
+  });
+
+  it('reopening an item whose first load is now denied drops its earlier status and restores its listed entry (P24)', async () => {
+    // The pane's view says "waiting"; the page listed the item "unresolved".
+    const needs = view(entry('a', 'waiting'), {
+      analysis: analysis('a'),
+      generation: generation([suggestion('needs_review', ['vendor'])]),
+    });
+    const host = backend(['a', 'b'], { a: [needs], b: [ready('b')] });
+    host.list = vi.fn(async () => ({
+      items: [entry('a', 'unresolved'), entry('b', 'unresolved')],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    await waitFor(() => expect(statusText('a')).toMatch(/vendor/));
+    await fireEvent.click(
+      within(row('b')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() => expect(current()).toBe('b'));
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'a') throw new Error('Denied');
+      return ready(id);
+    });
+    await fireEvent.click(
+      within(row('a')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() =>
+      expect(pane().querySelector('[role="alert"]')).toBeTruthy(),
+    );
+    await waitFor(() => expect(statusText('a')).toBe('Unresolved'));
+  });
+
+  it('a follow read that is denied clears the announcement it made', async () => {
+    const host = backend(['b', 'c'], {
+      b: [inFlight('b'), inFlight('b'), ready('b', 'waiting')],
+      c: [ready('c')],
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() =>
+      expect(screen.getByTestId('background-update').textContent).toMatch(
+        /Item B/,
+      ),
+    );
+    // The open pane is then denied: the announcement goes with it.
+    host.decide = vi.fn(async () => {
+      throw new Error('Denied');
+    });
+    host.load = vi.fn(async () =>
+      view(entry('c', 'waiting'), {
+        reviews: { actions: [action('c', 'waiting_review')] },
+      }),
+    );
+    await fireEvent.click(
+      within(pane()).getByRole('button', { name: 'Refresh' }),
+    );
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Approve' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('background-update').textContent).toBe(''),
+    );
+  });
+
+  it('input hidden because another session closed the item is not unsent (P30)', async () => {
+    const splitView = (closed: boolean) => {
+      const generated = generation([suggestion('ready_for_review')]);
+      generated.splits = [{ evidenceId: 'e', groups: [[1]], digest: 'd' }];
+      return closed
+        ? view(
+            entry('a', 'resolved', {
+              disposition: {
+                state: 'resolved',
+                at: '2026-10-23T01:00:00.000Z',
+              },
+            }),
+            { analysis: analysis('a'), generation: generated },
+          )
+        : { ...inFlight('a'), analysis: analysis('a'), generation: generated };
+    };
+    const host = backend(['a', 'b'], {
+      a: [
+        splitView(false),
+        splitView(false),
+        splitView(false),
+        splitView(true),
+      ],
+      b: [ready('b')],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a', pollMs: 40 });
+    await fireEvent.input(
+      await screen.findByRole('textbox', { name: /Logical page groups/ }),
+      { target: { value: '[[1],[2]]' } },
+    );
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Reason for no action' }),
+      { target: { value: 'Typed, then closed elsewhere' } },
+    );
+    await screen.findByTestId('disposition', {}, { timeout: 3000 });
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('b'));
+    expect(screen.queryByTestId('unsaved-leave')).toBeNull();
+  });
+
+  it('stops following when the list fails closed (P11)', async () => {
+    const host = backend(['a', 'b'], { a: [ready('a')], b: [inFlight('b')] });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 30 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.click(
+      within(row('a')).getByRole('button', { name: 'Review' }),
+    );
+    await waitFor(() => expect(current()).toBe('a'));
+    host.list = vi.fn(async () => {
+      throw new Error('Revoked');
+    });
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    await waitFor(() => expect(row('a')).toBeNull());
+    const reads = vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b');
+    await sleep(250);
+    expect(
+      vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b'),
+    ).toHaveLength(reads.length);
+  });
+
+  it('keeps following an item left mid-Apply until a read shows the apply answered', async () => {
+    const applying = view(entry('a', 'waiting'), {
+      reviews: { actions: [action('a', 'authorized')] },
+    });
+    const host = backend(['a', 'b'], {
+      a: [applying],
+      b: [ready('b')],
+    });
+    const gate = deferred();
+    let applied = false;
+    host.apply = vi.fn(async (actionId: string) => {
+      await gate.promise;
+      applied = true;
+      return { actionId, state: 'succeeded' as const };
+    });
+    const load = host.load;
+    host.load = vi.fn(async (id: string, cursor?: string) =>
+      id === 'a' && applied
+        ? view(entry('a', 'completed'), {
+            reviews: { actions: [action('a', 'succeeded')] },
+          })
+        : load(id, cursor),
+    );
+    render(IntakeWorkspace, { host, itemId: 'a', pollMs: 20 });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply approved action' }),
+    );
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('b'));
+    // A read while the apply is unanswered still shows it authorized.
+    await waitFor(() =>
+      expect(
+        vi.mocked(host.load).mock.calls.filter(([id]) => id === 'a').length,
+      ).toBeGreaterThan(1),
+    );
+    gate.resolve(undefined);
+    await waitFor(() => expect(statusText('a')).toBe('Completed'));
+  });
+
+  it('a settled entry is re-applied over one later page only', async () => {
+    let page = 0;
+    const host = backend(['b', 'c'], {
+      b: [inFlight('b'), ready('b', 'waiting')],
+      c: [ready('c')],
+    });
+    host.list = vi.fn(async () => {
+      page++;
+      return {
+        items: [
+          page === 1 ? inFlight('b').entry : entry('b', 'completed'),
+          entry('c', 'unresolved'),
+        ],
+      };
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(statusText('b')).toBe('Ready to review'));
+    const refresh = () =>
+      fireEvent.click(
+        within(screen.getByTestId('intake-inbox')).getByRole('button', {
+          name: 'Refresh',
+        }),
+      );
+    // The first later page may predate the settled read and is overlaid.
+    await refresh();
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    // A second page is not: the row shows what it lists.
+    await refresh();
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+  });
+
+  it('stops following an item a refreshed page no longer lists', async () => {
+    let listB = true;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.list = vi.fn(async () => ({
+      items: [
+        ...(listB ? [inFlight('b').entry] : []),
+        entry('c', 'unresolved'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 20 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    listB = false;
+    await fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+    await waitFor(() => expect(row('b')).toBeNull());
+    const reads = vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b');
+    await sleep(200);
+    expect(
+      vi.mocked(host.load).mock.calls.filter(([id]) => id === 'b'),
+    ).toHaveLength(reads.length);
+  });
+
+  it('writes the advance notes into one persistent live region', async () => {
+    const host = backend(['a'], {
+      a: [
+        ready('a'),
+        view(
+          entry('a', 'resolved', {
+            disposition: { state: 'resolved', at: '2026-10-23T00:00:00.000Z' },
+          }),
+        ),
+      ],
+    });
+    render(IntakeWorkspace, { host, itemId: 'a' });
+    const note = screen.getByTestId('pane-note');
+    expect(note.getAttribute('role')).toBe('status');
+    expect(note.textContent).toBe('');
+    await fireEvent.click(
+      within(
+        await screen.findByRole('group', { name: 'Handled, no action' }),
+      ).getByRole('button', { name: 'Handled, no action' }),
+    );
+    await screen.findByTestId('queue-done');
+    // The same element, now with text: the region was not inserted with it.
+    expect(screen.getByTestId('pane-note')).toBe(note);
+    expect(note.textContent).toMatch(/Nothing else/);
+  });
+
+  it('does not announce a settled stage whose row the filter removed', async () => {
+    const host = backend(['b', 'c'], {
+      b: [inFlight('b'), inFlight('b'), ready('b', 'unresolved')],
+      c: [inFlight('c')],
+    });
+    host.list = vi.fn(async ({ state }) => ({
+      items: [inFlight('b').entry, inFlight('c').entry].filter(
+        (row) => !state || row.state === state,
+      ),
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 5 });
+    await screen.findByText('Item C');
+    await fireEvent.change(screen.getByRole('combobox', { name: 'State' }), {
+      target: { value: 'processing' },
+    });
+    await waitFor(() => expect(host.list).toHaveBeenCalledTimes(2));
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    // b settles as "unresolved", which leaves the "Processing" filter.
+    await waitFor(() => expect(row('b')).toBeNull(), { timeout: 3000 });
+    await sleep(30);
+    expect(screen.getByTestId('background-update').textContent).toBe('');
+  });
+});
+
 describe('inbox paging', () => {
   it('"Load more" continues the filter the rows were listed under, not edited inputs', async () => {
     const host = backend(['a'], { a: [ready('a')] });

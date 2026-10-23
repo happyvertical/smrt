@@ -111,7 +111,8 @@ $effect(() => {
   const current = view;
   // Read too, so a denial after an operation cleared the view still reports.
   const denied = !current && error;
-  if (!current && !shown) return;
+  // A first load that failed reports its denial too.
+  if (!current && !shown && !denied) return;
   shown = true;
   untrack(() => onview?.(current, denied));
 });
@@ -162,6 +163,8 @@ $effect(() => {
     startHandler = '';
     startArgs = '';
     startReason = '';
+    splits = {};
+    resolveReason = '';
   });
 });
 $effect(() => {
