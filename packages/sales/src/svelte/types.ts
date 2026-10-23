@@ -21,6 +21,7 @@ import type {
   CommissionPayoutStatus,
   CommissionStatus,
   EarnerBalance,
+  PayoutDestination,
   PayoutMethod,
 } from '../commissions/index.js';
 import type {
@@ -372,6 +373,8 @@ export interface PayoutView {
   totalAmountCents: number;
   currency: string;
   payoutMethod: PayoutMethod;
+  /** Batch-owned descriptor; hosts must never substitute the live Earner's routing. */
+  payoutDestination?: PayoutDestination | null;
   status: CommissionPayoutStatus;
   paymentReference?: string;
   providerRef?: string;

@@ -679,6 +679,8 @@ export interface CommissionPayoutOptions extends SmrtObjectOptions {
   totalAmountCents?: number;
   currency?: string;
   payoutMethod?: PayoutMethod;
+  /** JSON routing snapshot captured at batch creation. */
+  payoutDestination?: string;
   status?: CommissionPayoutStatus;
   paymentReference?: string;
   providerRef?: string;

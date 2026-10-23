@@ -453,6 +453,11 @@ export class CommissionPayoutService {
       periodStart: input.periodStart ?? null,
       periodEnd: input.periodEnd ?? null,
       payoutMethod,
+      payoutDestination: JSON.stringify(
+        earner.getPayoutDestination()?.method === payoutMethod
+          ? earner.getPayoutDestination()
+          : {},
+      ),
       status: 'pending',
       commissionTotalCents,
       adjustmentTotalCents,
