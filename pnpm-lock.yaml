@@ -7,8 +7,8 @@ settings:
 catalogs:
   default:
     '@happyvertical/auth':
-      specifier: ^0.106.0
-      version: 0.106.0
+      specifier: ^0.106.1
+      version: 0.106.1
     '@sentry/node':
       specifier: ^10.75.0
       version: 10.75.0
@@ -24,30 +24,30 @@ overrides:
   '@happyvertical/smrt-types': workspace:*
   '@happyvertical/smrt-config': workspace:*
   '@happyvertical/smrt-core': workspace:*
-  '@happyvertical/accounting': ^0.106.0
-  '@happyvertical/ai': ^0.106.0
-  '@happyvertical/cache': ^0.106.0
-  '@happyvertical/documents': ^0.106.0
-  '@happyvertical/email': ^0.106.0
-  '@happyvertical/encryption': ^0.106.0
-  '@happyvertical/files': ^0.106.0
-  '@happyvertical/geo': ^0.106.0
-  '@happyvertical/images': ^0.106.0
-  '@happyvertical/jobs': ^0.106.0
-  '@happyvertical/payments': ^0.106.0
-  '@happyvertical/json': ^0.106.0
-  '@happyvertical/logger': ^0.106.0
-  '@happyvertical/messages': ^0.106.0
+  '@happyvertical/accounting': ^0.106.1
+  '@happyvertical/ai': ^0.106.1
+  '@happyvertical/cache': ^0.106.1
+  '@happyvertical/documents': ^0.106.1
+  '@happyvertical/email': ^0.106.1
+  '@happyvertical/encryption': ^0.106.1
+  '@happyvertical/files': ^0.106.1
+  '@happyvertical/geo': ^0.106.1
+  '@happyvertical/images': ^0.106.1
+  '@happyvertical/jobs': ^0.106.1
+  '@happyvertical/payments': ^0.106.1
+  '@happyvertical/json': ^0.106.1
+  '@happyvertical/logger': ^0.106.1
+  '@happyvertical/messages': ^0.106.1
   '@happyvertical/ocr': ^0.62.1
   '@happyvertical/pdf': ^0.65.9
-  '@happyvertical/projects': ^0.106.0
-  '@happyvertical/repos': ^0.106.0
-  '@happyvertical/secrets': ^0.106.0
-  '@happyvertical/signatures': ^0.106.0
-  '@happyvertical/speech': ^0.106.0
+  '@happyvertical/projects': ^0.106.1
+  '@happyvertical/repos': ^0.106.1
+  '@happyvertical/secrets': ^0.106.1
+  '@happyvertical/signatures': ^0.106.1
+  '@happyvertical/speech': ^0.106.1
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.106.0
-  '@happyvertical/utils': ^0.106.0
+  '@happyvertical/sql': ^0.106.1
+  '@happyvertical/utils': ^0.106.1
   '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
   minimatch@>=9.0.0 <10.0.0: 10.2.5
   minimatch@>=10.0.0 <10.2.3: 10.2.5
@@ -184,8 +184,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -227,14 +227,14 @@ importers:
   packages/agents:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -266,11 +266,11 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -337,8 +337,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -413,8 +413,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -450,8 +450,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -472,14 +472,14 @@ importers:
   packages/assets:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -496,11 +496,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
@@ -552,8 +552,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -577,8 +577,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -772,14 +772,14 @@ importers:
   packages/chat:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/animation':
         specifier: 0.5.0
         version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
-        specifier: ^0.106.0
-        version: 0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -817,11 +817,11 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/speech':
-        specifier: ^0.106.0
-        version: 0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       gsap:
         specifier: ^3.13.0
         version: 3.15.0
@@ -878,14 +878,14 @@ importers:
   packages/cli:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -914,11 +914,11 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
@@ -1000,11 +1000,11 @@ importers:
   packages/commerce:
     dependencies:
       '@happyvertical/accounting':
-        specifier: ^0.106.0
-        version: 0.106.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/payments':
-        specifier: ^0.106.0
-        version: 0.106.0(@noble/curves@2.0.1)(@noble/hashes@2.0.1)(@scure/bip32@2.0.1)
+        specifier: ^0.106.1
+        version: 0.106.1(@noble/curves@2.0.1)(@noble/hashes@2.0.1)(@scure/bip32@2.0.1)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -1039,8 +1039,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1113,23 +1113,23 @@ importers:
   packages/content:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/documents':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/geo':
-        specifier: ^0.106.0
-        version: 0.106.0(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/images':
-        specifier: ^0.106.0
-        version: 0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/ocr':
         specifier: ^0.62.1
         version: 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
@@ -1176,11 +1176,11 @@ importers:
         specifier: ^1.1.13
         version: 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       fast-xml-parser:
         specifier: ^5.11.1
         version: 5.11.1
@@ -1240,17 +1240,17 @@ importers:
   packages/core:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/json':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1261,11 +1261,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
@@ -1343,8 +1343,8 @@ importers:
   packages/education:
     dependencies:
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1364,8 +1364,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       pdf-lib:
         specifier: 1.17.1
         version: 1.17.1
@@ -1389,17 +1389,17 @@ importers:
   packages/events:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/icalendar':
         specifier: ^0.100.2
         version: 0.100.2
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1422,11 +1422,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1514,14 +1514,14 @@ importers:
   packages/facts:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1532,11 +1532,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1615,8 +1615,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1658,23 +1658,23 @@ importers:
   packages/gnode:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@types/node':
         specifier: 24.13.2
@@ -1692,8 +1692,8 @@ importers:
   packages/human-resources:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1707,8 +1707,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1741,14 +1741,14 @@ importers:
   packages/images:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/animation':
         specifier: 0.5.0
         version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
-        specifier: ^0.106.0
-        version: 0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1768,8 +1768,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       jimp:
         specifier: 'catalog:'
         version: 1.6.1(supports-color@10.2.2)
@@ -1787,8 +1787,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/kit':
         specifier: 2.69.1
         version: 2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -1820,8 +1820,8 @@ importers:
   packages/ingestion:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/ocr':
         specifier: ^0.62.1
         version: 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
@@ -1853,11 +1853,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/speech':
-        specifier: ^0.106.0
-        version: 0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -1866,8 +1866,8 @@ importers:
         version: 0.35.5(@types/node@24.13.2)
     devDependencies:
       '@happyvertical/email':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/smrt-content':
         specifier: workspace:*
         version: link:../content
@@ -1920,8 +1920,8 @@ importers:
   packages/inventory:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1932,8 +1932,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1966,11 +1966,11 @@ importers:
   packages/jobs:
     dependencies:
       '@happyvertical/jobs':
-        specifier: ^0.106.0
-        version: 0.106.0(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1987,11 +1987,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2024,11 +2024,11 @@ importers:
   packages/languages:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -2048,8 +2048,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -2104,8 +2104,8 @@ importers:
   packages/manufacturing:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2125,8 +2125,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2175,8 +2175,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -2229,8 +2229,8 @@ importers:
   packages/mcp-conformance-fixture:
     dependencies:
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -2262,8 +2262,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
@@ -2336,20 +2336,20 @@ importers:
   packages/messages:
     dependencies:
       '@happyvertical/email':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/encryption':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/messages':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2369,11 +2369,11 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-ledgers':
         specifier: workspace:*
@@ -2430,8 +2430,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2464,20 +2464,20 @@ importers:
   packages/places:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/cache':
-        specifier: ^0.106.0
-        version: 0.106.0(@opentelemetry/api@1.9.1)
+        specifier: ^0.106.1
+        version: 0.106.1(@opentelemetry/api@1.9.1)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/geo':
-        specifier: ^0.106.0
-        version: 0.106.0(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2488,11 +2488,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2516,8 +2516,8 @@ importers:
   packages/planner:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2540,8 +2540,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/speech':
-        specifier: ^0.106.0
-        version: 0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@huggingface/transformers':
         specifier: ^4.3.0
         version: 4.3.0(@types/node@24.13.2)
@@ -2745,8 +2745,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2779,8 +2779,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2804,14 +2804,14 @@ importers:
   packages/products:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2834,11 +2834,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-web
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       cors:
         specifier: ^2.8.6
         version: 2.8.6
@@ -2889,14 +2889,14 @@ importers:
   packages/profiles:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2910,11 +2910,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       '@noble/curves':
         specifier: ^2.4.0
         version: 2.4.0
@@ -2947,17 +2947,17 @@ importers:
   packages/projects:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/projects':
-        specifier: ^0.106.0
-        version: 0.106.0(typescript@6.0.3)
+        specifier: ^0.106.1
+        version: 0.106.1(typescript@6.0.3)
       '@happyvertical/repos':
-        specifier: ^0.106.0
-        version: 0.106.0(typescript@6.0.3)
+        specifier: ^0.106.1
+        version: 0.106.1(typescript@6.0.3)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -2986,11 +2986,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -3041,8 +3041,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3094,8 +3094,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -3124,8 +3124,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3179,8 +3179,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
@@ -3219,8 +3219,8 @@ importers:
   packages/sales:
     dependencies:
       '@happyvertical/signatures':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -3234,8 +3234,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3299,11 +3299,11 @@ importers:
   packages/secrets:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/secrets':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -3311,11 +3311,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3349,8 +3349,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -3378,8 +3378,8 @@ importers:
         specifier: workspace:*
         version: link:../jobs
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
@@ -3434,8 +3434,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/client':
         specifier: 2.2.0
         version: 2.2.0
@@ -3547,8 +3547,8 @@ importers:
   packages/smrt-svelte:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-languages':
         specifier: workspace:*
         version: link:../languages
@@ -3614,8 +3614,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/speech':
-        specifier: ^0.106.0
-        version: 0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -3663,8 +3663,8 @@ importers:
         version: 1.2.2
     devDependencies:
       '@happyvertical/speech':
-        specifier: ^0.106.0
-        version: 0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -3836,18 +3836,18 @@ importers:
         specifier: workspace:*
         version: link:../video
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -3882,8 +3882,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3913,8 +3913,8 @@ importers:
   packages/support:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
@@ -3943,8 +3943,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3977,14 +3977,14 @@ importers:
   packages/tags:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.106.0
-        version: 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.106.1
+        version: 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.106.0
-        version: 0.106.0(supports-color@10.2.2)
+        specifier: ^0.106.1
+        version: 0.106.1(supports-color@10.2.2)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -3992,11 +3992,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@types/node':
         specifier: 24.13.2
@@ -4081,8 +4081,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-web
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/client':
         specifier: 2.2.0
         version: 2.2.0
@@ -4123,8 +4123,8 @@ importers:
   packages/tenancy:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -4135,11 +4135,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -4187,8 +4187,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -4237,10 +4237,10 @@ importers:
     dependencies:
       '@happyvertical/auth':
         specifier: 'catalog:'
-        version: 0.106.0(typescript@6.0.3)
+        version: 0.106.1(typescript@6.0.3)
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -4263,8 +4263,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@simplewebauthn/browser':
         specifier: ^14.0.0
         version: 14.0.0
@@ -4309,8 +4309,8 @@ importers:
   packages/video:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -4333,8 +4333,8 @@ importers:
         specifier: workspace:*
         version: link:../voice
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       svelte:
         specifier: ^5.57.0
         version: 5.57.1
@@ -4343,8 +4343,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -4364,8 +4364,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@testing-library/jest-dom':
         specifier: ^7.0.1
         version: 7.0.1(@testing-library/dom@10.4.1)(vitest@4.1.10)
@@ -4416,24 +4416,24 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/speech':
-        specifier: ^0.106.0
-        version: 0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/utils':
-        specifier: ^0.106.0
-        version: 0.106.0
+        specifier: ^0.106.1
+        version: 0.106.1
       svelte:
         specifier: ^5.57.0
         version: 5.57.1
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.106.0
-        version: 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+        specifier: ^0.106.1
+        version: 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -4462,8 +4462,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.106.0
-        version: 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.106.1
+        version: 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -5575,12 +5575,12 @@ packages:
   '@gutenye/ocr-models@1.4.2':
     resolution: {integrity: sha512-y7cLEpGFOeroavopfCd/ejyZB/UeF6xdn0mBFqVHNOI5wQTv2My+/nKxvxKTtG4DVMBzt9TpOfaX7aZGbuciUw==}
 
-  '@happyvertical/accounting@0.106.0':
-    resolution: {integrity: sha512-FTxhCDx2Bpeq56oTNo5J7aogVii97ptF6XlEOi0Q4UnqxKY4oslINYDMNsuIjljxJpReYcDybTM0Tdgtc0nsNQ==}
+  '@happyvertical/accounting@0.106.1':
+    resolution: {integrity: sha512-Zd9JHuckvpoDLFP1YWzFDR0ZHMDdYa4znAHhi6jW5nHml53vhAkAlaTwNm5l4WJcP7s2A6jKfVS/t+HlHSGKQQ==}
     hasBin: true
 
-  '@happyvertical/ai@0.106.0':
-    resolution: {integrity: sha512-HNzrDjdwEDG69yxneDIM0cqUGKIe0fQ4wFVNRG8/hAXrBEA9nfj9NcTxe01sEVT6eVUogo8+OL+JC7PLz2VMOw==}
+  '@happyvertical/ai@0.106.1':
+    resolution: {integrity: sha512-5KXSY6DAmOmZzAnF1hdHl3VhtOoNNIZQMRJC2WE9w67q56Ulw6RAgHLMfEprczOkYyUPexwrPIEQawZzgxa9xg==}
     hasBin: true
     peerDependencies:
       '@mlc-ai/web-llm': '>=0.2.80'
@@ -5593,43 +5593,43 @@ packages:
     peerDependencies:
       gsap: '>=3.13.0'
 
-  '@happyvertical/auth@0.106.0':
-    resolution: {integrity: sha512-Agtb5zroTzt0OtuuuZ5H1SKK68+EmJ2H4pB40Jvjzi/SYktCSoHR/jxCNC9uY4Oys9yJDMRk0bWmvtud4nY44g==}
+  '@happyvertical/auth@0.106.1':
+    resolution: {integrity: sha512-5AzTzrE0H2omsXor9ABaAvH05mOGdiJq4Ehvi9wDLjt6zgC4fwLfhDKjRtVlYFH12bukzPXANsFW9fCo8muWzw==}
     hasBin: true
 
-  '@happyvertical/cache@0.106.0':
-    resolution: {integrity: sha512-NPjADxu5ykxlH9srnK5IDshwHTKsvMlqGdHAkHCc1OxIG1Lp6R3BR0c6q7bIzzrSSJWZQOzmfDI4Bg2WI/hGHA==}
+  '@happyvertical/cache@0.106.1':
+    resolution: {integrity: sha512-tSWwitKNY9J6SLPR0xutb0UN0ioimItXmjAvW1Ndu4Na/jwWOTdpexDhmffYqYBEappMo/EDQx4khyhpDbvSqg==}
     hasBin: true
 
-  '@happyvertical/documents@0.106.0':
-    resolution: {integrity: sha512-RktRFgfTbi8JXNCEUhReTjem3W/4J+TPhSl5YtrQWlgaBNeAop/MDI3HgkDuGSkSSqQfHLtsmTFKqwLzIJ9WRw==}
+  '@happyvertical/documents@0.106.1':
+    resolution: {integrity: sha512-CkqpI9i5bBLuzxOf4ZCZjX1cVOwg2MW5mJVs/rKT6SkHmLuvXEyNV72Vb2VJGKG8BxrYbT1ean/4YFgg72XKJQ==}
     hasBin: true
 
-  '@happyvertical/email@0.106.0':
-    resolution: {integrity: sha512-YkwO37zh9oLOh9AlOb5xPVsprX9qNaHnWmm2IYAoyt7C0fjFEkCkcZhIGbMY1AW4IR/4cffAtlWr19ooWLh5OA==}
+  '@happyvertical/email@0.106.1':
+    resolution: {integrity: sha512-2OaVq+DCf1GvNZeDmH38Qoo/Mia9PRJnmn99ZkljiwvAStl6AMOM+gDWzhcEb06z1RIEVUZqvTed+JiG1TCrng==}
     hasBin: true
 
-  '@happyvertical/encryption@0.106.0':
-    resolution: {integrity: sha512-h3JCl3ZmMHvME4ceEXF0SRtXUom0ScuE88dh6QRJPxJJBwsZzUkfRr6YUnCe15wjVH8ArDgZgRdJPhQmFUxVyA==}
+  '@happyvertical/encryption@0.106.1':
+    resolution: {integrity: sha512-gZG2xhp7J6xAfaRy8SJ4vsnRbcq5PWxwm2fNyT6dOqMDTVnSi/HDnT3NULN0jQRbwSYGqIjLYVF5EZ4AR2HrYA==}
     hasBin: true
 
-  '@happyvertical/files@0.106.0':
-    resolution: {integrity: sha512-TS7JNMvTS2kNWzOI03mCFVigObJGBWRJL/R1ATdOpx44NF6l+EuNdHKxmKe8lks1SiuxXvsHdLB+aOS1q1CJSQ==}
+  '@happyvertical/files@0.106.1':
+    resolution: {integrity: sha512-t5sYPrT6PZPa9nkbzL4hAtKmCSgEaW91xowIJKxc1uEaM4EAvxAx00qMdlD/ECeYyzYtaDqWdrRG3TY5rPj6iA==}
     hasBin: true
 
-  '@happyvertical/geo@0.106.0':
-    resolution: {integrity: sha512-U4W/mi7qC3DbGV1l0wpFpeBM6eJRLZaclpump9qUZ75wZ0oT9e5s4uyHu2X+t2gcQSvjC22veSJb1a5wBkeEaA==}
+  '@happyvertical/geo@0.106.1':
+    resolution: {integrity: sha512-/pvWR6FYDHYNA/cE03qxtWb05038MVY5qWle8s0+rae11gxAmcQZ1k0TiA3huw3wreNsXHV1bhHt4Pagy+Q2Mw==}
     hasBin: true
 
-  '@happyvertical/graphql@0.106.0':
-    resolution: {integrity: sha512-wHLOk0CIP4uZeionY+iRCGDssFrdnsTLgHGLLho63ZYbkMSgsG/7hQgSqfvhFUZS0wf3nqWs3DeX42blTM08XQ==}
+  '@happyvertical/graphql@0.106.1':
+    resolution: {integrity: sha512-et+dqVxYxJIpd+FTSATgfTwpNaSU6WzAXBKHKovQULAqwDk7Xp/oy4QjhLLEfAJiGjvzgA/3EUg4GzQNfgf9oQ==}
     hasBin: true
 
   '@happyvertical/icalendar@0.100.2':
     resolution: {integrity: sha512-yXx9aFWKf0wSGKZ7+P03+/3ymqthENFo/EJGxHiCUNGu0SgIgrJ4efZtvJgUnDOSxxHRaW/Nh3sjOoBc7zesIw==}
 
-  '@happyvertical/images@0.106.0':
-    resolution: {integrity: sha512-e1JeZRy9UjxNPdIX0YsBWmy9JpkUI4Leqid4wXd5lDTlO1cEgoF3M3AgnK6vijr+2eY0z8rGJhTzPvTo7NVL1w==}
+  '@happyvertical/images@0.106.1':
+    resolution: {integrity: sha512-2XkP3zrowWfIqgP6knefxHdSB11Bg/Z0w/k2yecSI6L1WvOVHRtIgX+PhQ042mmoQwXczABuvR9haZyVJ1QaxA==}
     hasBin: true
     peerDependencies:
       jimp: '>=1.6.1'
@@ -5640,8 +5640,8 @@ packages:
       sharp:
         optional: true
 
-  '@happyvertical/jobs@0.106.0':
-    resolution: {integrity: sha512-7GsL+l43ugfQbb35oiPox2GGFTWXsT+C9Wf0UWn4oPpfxvO/Y6OwiQok9NhyBIkErJCaZcNNuTowbWSt35oExg==}
+  '@happyvertical/jobs@0.106.1':
+    resolution: {integrity: sha512-krA0PqFqHudS9+qLNs6qMXQTfl88VB8rNyFPV7C9khXiegMo/jzlqMiqPfSfGtkDujCXTAobhQA7Hk1p/S2y2A==}
     hasBin: true
     peerDependencies:
       '@aws-sdk/client-sqs': '>=3.1034.0'
@@ -5658,11 +5658,11 @@ packages:
       bullmq:
         optional: true
 
-  '@happyvertical/json@0.106.0':
-    resolution: {integrity: sha512-bEaMXCmPLHsF2NVETPnqj0W1a/eezm6TaBbkDTdEwbxNZOMMXjalLTD5xtmd7GXX2Pug2vLNBzsIYPs7hC/6rQ==}
+  '@happyvertical/json@0.106.1':
+    resolution: {integrity: sha512-pXBPKpRnL+eWD/QsZIscjmwB+s4uJftaY2KMkU93IiXpAd+GActf7RLXYu3jeYk31FsH8vQRf73IFL0ScjslKw==}
 
-  '@happyvertical/logger@0.106.0':
-    resolution: {integrity: sha512-RTB8KEAqFU7wQTmO6T1RKBee3doVD4CXzrRE0x32xonzE8GmcfVM1Krdtlt24KgMDBORjnpFI4DZOZIII/Ccfw==}
+  '@happyvertical/logger@0.106.1':
+    resolution: {integrity: sha512-FBNYrfMJyoPn3O+3aK8AWkoM6lnZxDRexoGwai5coiTqOnsdlGYHBAHc7EErCF2nLe7D2mnahB6489JnFYIN+g==}
     hasBin: true
     peerDependencies:
       '@sentry/node': '>=10.49.0'
@@ -5670,15 +5670,15 @@ packages:
       '@sentry/node':
         optional: true
 
-  '@happyvertical/messages@0.106.0':
-    resolution: {integrity: sha512-FPVvg57kQl4fJSFZ5xn0mEHls9lWX1KD5hpm/9z8bDM7ZKIlgul+XC9UZuIl0abay+Pv9NR0Mgyqk1rFuNJehA==}
+  '@happyvertical/messages@0.106.1':
+    resolution: {integrity: sha512-lhqVLB9tmQ2TWr6hk24Vgh7qL/ZeT1ZKDleQDHBuIiw6/FSEWyCOreuUTeOkAgZ+AnfFbvGV+sJpVsyRODp1Kg==}
 
   '@happyvertical/ocr@0.62.1':
     resolution: {integrity: sha512-t3bMVUO9hUNhGoLjSvYMgvYvTea/ou4c2tuXfmYVvXbnRgnvxdwuaMQT6kMkYGhfi1nHR/8Tehl7+OrVvniDZQ==}
     engines: {node: '>=24', pnpm: '>=11.13.0'}
 
-  '@happyvertical/payments@0.106.0':
-    resolution: {integrity: sha512-eVkly3TWLIBZmQRMAGFE7oFzuy9DiSvyCF9U3iBtutowjjA5fgYuMpDROT0bsYehMB9KEMUaHeEYiNCuhXzByg==}
+  '@happyvertical/payments@0.106.1':
+    resolution: {integrity: sha512-uIGM/hBcVazGeb3bPYB8Sfl/iPpt3tlUwXnB9tL6GDx2qhJXpZ7y/6B4f1XYONVGxDGR81dTq7OHoPOkUAyEiA==}
     peerDependencies:
       '@noble/curves': ~2.0.1
       '@noble/hashes': ~2.0.1
@@ -5695,23 +5695,23 @@ packages:
     resolution: {integrity: sha512-FnyCI8N8YQeeuKUQdiiPoKkN4U4Hqgf/N+7Vw1HMAw0vmoliNGlPJBZcqzl6hX4N3ZdXYNP6pqiVHGmPiDiBhw==}
     engines: {node: '>=24', pnpm: '>=11.13.0'}
 
-  '@happyvertical/projects@0.106.0':
-    resolution: {integrity: sha512-P7JV0g1dS2UXMeP/uth6pFOTvL24VI9BHRiT3B49t6E8y1VNyhLpOj+9eLbbqTPIaSPGlCS0igI6RiNimQ5zkA==}
+  '@happyvertical/projects@0.106.1':
+    resolution: {integrity: sha512-mP0T/Llh1qFCprmbnQb5nK0YIUwkN1C4AI/P1f2vDJq3hpnKB7JVBvtiwvKeQzjS4iJ1mU3iSi2YOpKCXgDLLA==}
     hasBin: true
 
-  '@happyvertical/repos@0.106.0':
-    resolution: {integrity: sha512-u95+YcU6A53Q0xSJaIfYHbJnggnT2iI6ar43Lk1V79i16XdLXVSI/Z0E3dqqZMELr/fFCsY98QAc99cAcEANrg==}
+  '@happyvertical/repos@0.106.1':
+    resolution: {integrity: sha512-R6BRet42wde8bMA7ii5teFg8HN31jox1IIW9bD2+msrhgWTaUvGMnB77rTJMj5KE0c/F7I4QVKLXD+MtyK7xmQ==}
     hasBin: true
 
-  '@happyvertical/secrets@0.106.0':
-    resolution: {integrity: sha512-Zb6xHwXe4pDtq3LOQn2URtDTj4tcUX29YnI6srFiI2ev4xzp5tYYmJKelDp6AwzhB9ZTMQMwgd8W/4qyz+wSFQ==}
+  '@happyvertical/secrets@0.106.1':
+    resolution: {integrity: sha512-PK7rlhstvvRWMeYuliSwd05tt8as+dtXGuGxBrxu+qZR7H0NlvaUp4Xg1+LCv/sHKX7Uav+mNtWEpjX2jJ/Psw==}
     hasBin: true
 
-  '@happyvertical/signatures@0.106.0':
-    resolution: {integrity: sha512-xGs4DfaiUELR180lZp7JxCOhhTdbcsogjN9pM8FdIoLNugBwalIc7nIdcBUtCjTgKn1w6hMyJyWyvgh8rYVncA==}
+  '@happyvertical/signatures@0.106.1':
+    resolution: {integrity: sha512-yzxc0Bvx2t1O0Qc6Qf36ta6g4TwDVMkyv2Xb4lUz3uoXo9WUnW2NZwYa1II++ioYHrF6bixeCykhzLXKntv+sg==}
 
-  '@happyvertical/speech@0.106.0':
-    resolution: {integrity: sha512-Ddsr3F3yjN57gyCtc2QJZjv5DhB0nlPGG0SUhbOGpMulcsjaIIm/OG/DZxqPTOB2Eg/H0FoxsDU5NIq95IrQSQ==}
+  '@happyvertical/speech@0.106.1':
+    resolution: {integrity: sha512-3gClODwjyUtlQI+EyqWpH6og0EzBYuwKX4zSQ9w4iUlEo4M4FHqhmfTeGAsuFJPBijXwLKgnl6zYaxx4rLVnUA==}
     peerDependencies:
       '@huggingface/transformers': '>=4.0.0'
     peerDependenciesMeta:
@@ -5727,8 +5727,8 @@ packages:
       cloakbrowser:
         optional: true
 
-  '@happyvertical/sql@0.106.0':
-    resolution: {integrity: sha512-S+DafYry+AdUUQE5VEDaJsEEMbyg/09uPR5SEVcMhEOvGKV2T087vFb88Yu3R5MyP9Eo9vlnCGgb8mTw0GnMpA==}
+  '@happyvertical/sql@0.106.1':
+    resolution: {integrity: sha512-1NfiCAgjwGrEVL+9nbqzosUhHljFUprcDoJnAIBvN6IHkKIeVSPUm+raP6C2L8HtkRp0acCkeRzKMk1lMLhlcA==}
     hasBin: true
     peerDependencies:
       '@electric-sql/pglite': '>=0.5.0 <1'
@@ -5742,8 +5742,8 @@ packages:
       '@sqliteai/sqlite-vector':
         optional: true
 
-  '@happyvertical/utils@0.106.0':
-    resolution: {integrity: sha512-jc//KnAL/q/fBewH2BFBms0Plxe+VbQN54uoLT2cZ7HrynUQuEHmaMwhq0lC/xhxZHMVqMCQr41z1BRTDgT5nQ==}
+  '@happyvertical/utils@0.106.1':
+    resolution: {integrity: sha512-mFLMgwZyvpBsvOF7KYY0uxI8RR9gR66Q9yTprJhwSwPwnlw+WVoYBA058U1vaWGC59RT+M0a3KWgnwES1NGUtA==}
     hasBin: true
 
   '@hexagon/base64@1.1.28':
@@ -13479,20 +13479,20 @@ snapshots:
 
   '@gutenye/ocr-models@1.4.2': {}
 
-  '@happyvertical/accounting@0.106.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
+  '@happyvertical/accounting@0.106.1(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       intuit-oauth: 4.2.5(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
     transitivePeerDependencies:
       - debug
       - supports-color
 
-  '@happyvertical/ai@0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/ai@0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.90.0(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.1034.0
       '@google/genai': 1.50.1(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       openai: 6.34.0(ws@8.21.0)(zod@4.3.6)
     optionalDependencies:
       '@mlc-ai/web-llm': 0.2.85
@@ -13508,9 +13508,9 @@ snapshots:
     dependencies:
       gsap: 3.15.0
 
-  '@happyvertical/auth@0.106.0(typescript@6.0.3)':
+  '@happyvertical/auth@0.106.1(typescript@6.0.3)':
     dependencies:
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       jose: 6.2.12
     optionalDependencies:
       '@aws-sdk/client-cognito-identity-provider': 3.1149.0
@@ -13518,23 +13518,23 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@happyvertical/cache@0.106.0(@opentelemetry/api@1.9.1)':
+  '@happyvertical/cache@0.106.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@aws-sdk/client-s3': 3.1034.0
       '@aws-sdk/credential-providers': 3.1034.0
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       redis: 5.12.1(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
 
-  '@happyvertical/documents@0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/documents@0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
-      '@happyvertical/files': 0.106.0(supports-color@10.2.2)
+      '@happyvertical/files': 0.106.1(supports-color@10.2.2)
       '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/pdf': 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/spider': 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
     transitivePeerDependencies:
       - '@mlc-ai/web-llm'
       - '@modelcontextprotocol/sdk'
@@ -13554,10 +13554,10 @@ snapshots:
       - yauzl
       - zod
 
-  '@happyvertical/email@0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)':
+  '@happyvertical/email@0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@happyvertical/logger': 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/logger': 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+      '@happyvertical/utils': 0.106.1
       google-auth-library: 10.7.0(supports-color@10.2.2)
       googleapis: 170.1.0(supports-color@10.2.2)
       imapflow: 1.4.0
@@ -13568,10 +13568,10 @@ snapshots:
       - '@sentry/node'
       - supports-color
 
-  '@happyvertical/encryption@0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)':
+  '@happyvertical/encryption@0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)':
     dependencies:
-      '@happyvertical/logger': 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/logger': 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+      '@happyvertical/utils': 0.106.1
       '@openpgp/web-stream-tools': 0.3.1(@types/node@24.13.2)(typescript@6.0.3)
       openpgp: 6.3.0
       tweetnacl: 1.0.3
@@ -13581,21 +13581,21 @@ snapshots:
       - '@types/node'
       - typescript
 
-  '@happyvertical/files@0.106.0(supports-color@10.2.2)':
+  '@happyvertical/files@0.106.1(supports-color@10.2.2)':
     dependencies:
       '@aws-sdk/client-s3': 3.1066.0
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       google-auth-library: 9.15.1(supports-color@10.2.2)
       googleapis: 144.0.0(supports-color@10.2.2)
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  '@happyvertical/geo@0.106.0(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
+  '@happyvertical/geo@0.106.1(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@happyvertical/cache': 0.106.0(@opentelemetry/api@1.9.1)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/cache': 0.106.1(@opentelemetry/api@1.9.1)
+      '@happyvertical/utils': 0.106.1
       '@photostructure/tz-lookup': 11.7.0
     transitivePeerDependencies:
       - '@node-rs/xxhash'
@@ -13603,13 +13603,13 @@ snapshots:
       - debug
       - supports-color
 
-  '@happyvertical/graphql@0.106.0': {}
+  '@happyvertical/graphql@0.106.1': {}
 
   '@happyvertical/icalendar@0.100.2':
     dependencies:
       ical.js: 2.2.1
 
-  '@happyvertical/images@0.106.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))':
+  '@happyvertical/images@0.106.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))':
     dependencies:
       '@mediapipe/tasks-vision': 1.1.0
       '@resvg/resvg-js': 2.6.2
@@ -13618,10 +13618,10 @@ snapshots:
       jimp: 1.6.1(supports-color@10.2.2)
       sharp: 0.35.5(@types/node@24.13.2)
 
-  '@happyvertical/jobs@0.106.0(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))':
+  '@happyvertical/jobs@0.106.1(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))':
     dependencies:
-      '@happyvertical/sql': 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/sql': 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@happyvertical/utils': 0.106.1
     optionalDependencies:
       '@aws-sdk/client-sqs': 3.1038.0
       '@google-cloud/tasks': 6.2.1(supports-color@10.2.2)
@@ -13636,19 +13636,19 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/json@0.106.0': {}
+  '@happyvertical/json@0.106.1': {}
 
-  '@happyvertical/logger@0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))':
+  '@happyvertical/logger@0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))':
     dependencies:
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
     optionalDependencies:
       '@sentry/node': 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
 
-  '@happyvertical/messages@0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
+  '@happyvertical/messages@0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@happyvertical/email': 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
-      '@happyvertical/logger': 0.106.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/email': 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
+      '@happyvertical/logger': 0.106.1(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+      '@happyvertical/utils': 0.106.1
       '@slack/web-api': 7.16.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@sentry/node'
@@ -13659,8 +13659,8 @@ snapshots:
     dependencies:
       '@gutenye/ocr-common': 1.4.8
       '@gutenye/ocr-models': 1.4.2
-      '@happyvertical/ai': 0.106.0(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/ai': 0.106.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/utils': 0.106.1
       bmp-ts: 1.0.9
       onnxruntime-common: 1.30.0
       onnxruntime-node: 1.30.0
@@ -13677,7 +13677,7 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/payments@0.106.0(@noble/curves@2.0.1)(@noble/hashes@2.0.1)(@scure/bip32@2.0.1)':
+  '@happyvertical/payments@0.106.1(@noble/curves@2.0.1)(@noble/hashes@2.0.1)(@scure/bip32@2.0.1)':
     optionalDependencies:
       '@noble/curves': 2.0.1
       '@noble/hashes': 2.0.1
@@ -13686,7 +13686,7 @@ snapshots:
   '@happyvertical/pdf@0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@happyvertical/ocr': 0.62.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       '@napi-rs/canvas': 0.1.100
       marked: 18.0.7
       pdf-lib: 1.17.1
@@ -13708,25 +13708,25 @@ snapshots:
       - yauzl
       - zod
 
-  '@happyvertical/projects@0.106.0(typescript@6.0.3)':
+  '@happyvertical/projects@0.106.1(typescript@6.0.3)':
     dependencies:
-      '@happyvertical/graphql': 0.106.0
-      '@happyvertical/repos': 0.106.0(typescript@6.0.3)
+      '@happyvertical/graphql': 0.106.1
+      '@happyvertical/repos': 0.106.1(typescript@6.0.3)
     transitivePeerDependencies:
       - typescript
 
-  '@happyvertical/repos@0.106.0(typescript@6.0.3)':
+  '@happyvertical/repos@0.106.1(typescript@6.0.3)':
     dependencies:
-      '@happyvertical/graphql': 0.106.0
+      '@happyvertical/graphql': 0.106.1
       js-yaml: 4.3.2
       nostr-tools: 2.24.1(typescript@6.0.3)
     transitivePeerDependencies:
       - typescript
 
-  '@happyvertical/secrets@0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
+  '@happyvertical/secrets@0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
-      '@happyvertical/sql': 0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/sql': 0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@happyvertical/utils': 0.106.1
     transitivePeerDependencies:
       - '@electric-sql/pglite'
       - '@russellthehippo/honker-node'
@@ -13736,16 +13736,16 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/signatures@0.106.0': {}
+  '@happyvertical/signatures@0.106.1': {}
 
-  '@happyvertical/speech@0.106.0(@huggingface/transformers@4.3.0(@types/node@24.13.2))':
+  '@happyvertical/speech@0.106.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))':
     optionalDependencies:
       '@huggingface/transformers': 4.3.0(@types/node@24.13.2)
 
   '@happyvertical/spider@1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)':
     dependencies:
-      '@happyvertical/cache': 0.106.0(@opentelemetry/api@1.9.1)
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/cache': 0.106.1(@opentelemetry/api@1.9.1)
+      '@happyvertical/utils': 0.106.1
       cheerio: 1.2.0
       crawlee: 3.17.0(@types/node@24.13.2)(playwright@1.61.1)(supports-color@10.2.2)
       happy-dom: 20.10.6
@@ -13762,10 +13762,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/sql@0.106.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
+  '@happyvertical/sql@0.106.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
-      '@happyvertical/utils': 0.106.0
+      '@happyvertical/utils': 0.106.1
       '@libsql/client': 0.17.2
       pg: 8.21.0
       sqlite-vss: 0.1.2
@@ -13778,7 +13778,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/utils@0.106.0':
+  '@happyvertical/utils@0.106.1':
     dependencies:
       '@paralleldrive/cuid2': 3.3.0
       '@types/pluralize': 0.0.33
