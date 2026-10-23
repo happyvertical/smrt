@@ -268,3 +268,33 @@ test('chat refuses unsupported caller options before normalization or reservatio
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('invalid nested schema keywords fail before network or reservation', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'evaluation-schema-invalid-'));
+  const ledger = new BudgetLedger(join(root, 'ledger.sqlite'));
+  let calls = 0;
+  try {
+    const client = createBudgetedProposalChat(
+      ledger,
+      { callId: 'invalid-schema', runHash: 'f'.repeat(64) },
+      {
+        chat: async () => {
+          calls++;
+          return { content: 'unexpected' };
+        },
+      },
+    );
+    const settings = schemaOptions();
+    settings.responseSchema.properties.outcome.type = 'invalid';
+    settings.responseFormat.json_schema.schema.properties.outcome.type =
+      'invalid';
+    await expect(client.chat(messages, settings)).rejects.toThrow(
+      'Unsupported bounded proposal options',
+    );
+    expect(calls).toBe(0);
+    expect(ledger.snapshot().charged).toBe(0);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

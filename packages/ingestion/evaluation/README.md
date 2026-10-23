@@ -61,7 +61,8 @@ labels, exclusions, matching rules or partitions.
 
 The current proposal adapter admits JSON-object output or the owning SDK's
 `ingestion_proposal` JSON-schema format, including the identical `responseSchema`
-used by local adapters. The full serialized response format is counted inside the
+used by local adapters. Schemas must pass JSON Schema meta-validation before
+any reservation or transport call, including nested schema keywords. The full serialized response format is counted inside the
 unchanged 8,192-byte request ceiling; schema support does not increase the charge
 reservation. A loopback transport test checks the bound against actual SDK wire
 bytes. Nested schema and message data are captured before reservation so later

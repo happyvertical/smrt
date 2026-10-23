@@ -1,3 +1,4 @@
+import Ajv from 'ajv';
 import { runReservedCall, tokenChargeBound } from './budget.mjs';
 import { sha256 } from './corpus.mjs';
 
@@ -34,6 +35,15 @@ export function assertProviderEndpoint(baseUrl) {
     return;
   throw Error('Unpriced provider endpoint');
 }
+// Validate the JSON Schema vocabulary before any budget can be reserved.
+const schemaValidator = new Ajv({ strict: false });
+function validSchema(schema) {
+  try {
+    return schemaValidator.validateSchema(schema) === true;
+  } catch {
+    return false;
+  }
+}
 /** Only the two proposal SDK output formats; schemas are part of the wire bound. */
 function supportedResponseFormat(options) {
   const format = options.responseFormat;
@@ -61,7 +71,8 @@ function supportedResponseFormat(options) {
     schema.schema.properties &&
     typeof schema.schema.properties === 'object' &&
     !Array.isArray(schema.schema.properties) &&
-    JSON.stringify(schema.schema) === JSON.stringify(options.responseSchema)
+    JSON.stringify(schema.schema) === JSON.stringify(options.responseSchema) &&
+    validSchema(schema.schema)
   );
 }
 /** Complete text-only chat envelope guard. No decision/vision/tools/continuation route. */
