@@ -245,7 +245,8 @@ function left(id: string, view: ItemReviewView | undefined, busy: boolean) {
     return;
   }
   const running = reviewInFlight(view);
-  if (busy && !operationReads.has(id)) operationReads.set(id, OPERATION_READS);
+  // A new unanswered operation owes its own full set of reads.
+  if (busy) operationReads.set(id, OPERATION_READS);
   if (!busy && !running && !operationReads.has(id)) return;
   if (watched.includes(id)) return;
   bump(id);
@@ -272,6 +273,10 @@ function denied(id: string) {
 function followed(view: ItemReviewView, read: number) {
   const id = view.entry.item.id;
   failures.delete(id);
+  // A read older than what the row already shows (a page listed it after
+  // this read started) decides nothing: no stop, no status, no announcement.
+  // Following continues and a newer read settles it.
+  if (read < (newest.get(id)?.read ?? 0)) return;
   const running = reviewInFlight(view);
   if (running) staged.add(id);
   // A reviewer operation the pane had not answered yet (left mid-Apply) is

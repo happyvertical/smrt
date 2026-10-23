@@ -2256,8 +2256,8 @@ describe('triage workspace read freshness (review round 6)', () => {
     await waitFor(() => expect(current()).toBe('b'));
     const leftAt = reads(host, 'a');
     await sleep(300);
-    // At most the owed reads (three) plus the read that found them spent.
-    expect(reads(host, 'a') - leftAt).toBeLessThanOrEqual(4);
+    // Exactly the three owed reads, then the read that finds them spent.
+    expect(reads(host, 'a') - leftAt).toBe(4);
     const settled = reads(host, 'a');
     await sleep(100);
     expect(reads(host, 'a')).toBe(settled);
@@ -2320,6 +2320,231 @@ describe('triage workspace read freshness (review round 6)', () => {
     expect(statusText('a')).toBe('Unresolved');
     hold.resolve(undefined);
     await waitFor(() => expect(statusText('a')).toMatch(/vendor/));
+  });
+});
+
+describe('triage workspace read freshness (review round 7)', () => {
+  const current = () =>
+    document
+      .querySelector('li[aria-current="true"]')
+      ?.getAttribute('data-item-id');
+  const reads = (host: IntakeReviewHost, id: string) =>
+    vi.mocked(host.load).mock.calls.filter(([item]) => item === id).length;
+  const refresh = () =>
+    fireEvent.click(
+      within(screen.getByTestId('intake-inbox')).getByRole('button', {
+        name: 'Refresh',
+      }),
+    );
+
+  it('a follow read older than a page neither announces nor stops following (F1)', async () => {
+    let done = false;
+    let hold: { promise: Promise<void> } | undefined;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      if (hold) {
+        // Started before the page; answers "settled" after it.
+        const gate = hold;
+        hold = undefined;
+        await gate.promise;
+        return ready('b', 'waiting');
+      }
+      return done ? view(entry('b', 'completed')) : inFlight('b');
+    });
+    host.list = vi.fn(async () => ({
+      items: [
+        done ? entry('b', 'completed') : inFlight('b').entry,
+        entry('c', 'unresolved'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 200 });
+    await screen.findByTestId('reinterpreting');
+    const gate = deferred();
+    hold = gate;
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    await waitFor(() => expect(hold).toBeUndefined());
+    done = true;
+    await refresh();
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+    const before = reads(host, 'b');
+    gate.resolve(undefined);
+    await sleep(40);
+    expect(statusText('b')).toBe('Completed');
+    expect(screen.getByTestId('background-update').textContent).toBe('');
+    // Still followed: a newer read settles it.
+    await waitFor(() => expect(reads(host, 'b')).toBeGreaterThan(before), {
+      timeout: 2000,
+    });
+  });
+
+  it('the open item stays listed when an older page lands under a filter it no longer matches (P2)', async () => {
+    const host = backend(['a', 'c'], { a: [inFlight('a')], c: [ready('c')] });
+    let gate: ReturnType<typeof deferred<void>> | undefined;
+    host.list = vi.fn(async ({ state }) => {
+      const held = gate;
+      if (held) await held.promise;
+      return {
+        items: [entry('a', 'unresolved'), entry('c', 'unresolved')].filter(
+          (row) => !state || row.state === state,
+        ),
+      };
+    });
+    render(IntakeWorkspace, { host, itemId: 'a', pollMs: 20 });
+    await screen.findByText('Item C');
+    await fireEvent.change(screen.getByRole('combobox', { name: 'State' }), {
+      target: { value: 'unresolved' },
+    });
+    await waitFor(() =>
+      expect(host.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: 'unresolved' }),
+      ),
+    );
+    await sleep(30);
+    expect(row('a')).not.toBeNull();
+    const held = deferred();
+    gate = held;
+    await refresh();
+    // A pane read newer than the pending page answers first.
+    const seen = vi.mocked(host.load).mock.calls.length;
+    await waitFor(() =>
+      expect(vi.mocked(host.load).mock.calls.length).toBeGreaterThan(seen),
+    );
+    await sleep(10);
+    gate = undefined;
+    held.resolve(undefined);
+    await sleep(15);
+    expect(row('a')).not.toBeNull();
+    expect(current()).toBe('a');
+  });
+
+  it('a pane read stamped before a page that answers after it does not regress the row (P3)', async () => {
+    let done = false;
+    let hold: ReturnType<typeof deferred<void>> | undefined;
+    let armed = false;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      if (armed) {
+        armed = false;
+        const gate = deferred();
+        hold = gate;
+        await gate.promise;
+        return inFlight('b');
+      }
+      return done ? view(entry('b', 'completed')) : inFlight('b');
+    });
+    host.list = vi.fn(async () => ({
+      items: [
+        done ? entry('b', 'completed') : inFlight('b').entry,
+        entry('c', 'unresolved'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 30 });
+    await screen.findByTestId('reinterpreting');
+    armed = true;
+    await waitFor(() => expect(hold).toBeDefined());
+    done = true;
+    await refresh();
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+    hold?.resolve(undefined);
+    await sleep(5);
+    expect(statusText('b')).toBe('Completed');
+  });
+
+  it('leaving with a pane view older than a page keeps the page entry (P4)', async () => {
+    let done = false;
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      return done ? view(entry('b', 'completed')) : inFlight('b');
+    });
+    host.list = vi.fn(async () => ({
+      items: [
+        done ? entry('b', 'completed') : inFlight('b').entry,
+        entry('c', 'unresolved'),
+      ],
+    }));
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 3000 });
+    await screen.findByTestId('reinterpreting');
+    done = true;
+    await refresh();
+    await waitFor(() => expect(statusText('b')).toBe('Completed'));
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    await waitFor(() => expect(current()).toBe('c'));
+    expect(statusText('b')).toBe('Completed');
+  });
+
+  it('a second unanswered operation owes a full set of reads, not the first one’s leftovers (F2)', async () => {
+    const authorized = () =>
+      view(entry('a', 'waiting'), {
+        reviews: { actions: [action('a', 'authorized')] },
+      });
+    const host = backend(['a', 'b'], { a: [authorized()], b: [ready('b')] });
+    // Neither apply ever answers; the item stays authorized.
+    host.apply = vi.fn(() => new Promise<never>(() => {}));
+    // A slow backoff (100 ms, x1.5) leaves wide gaps between follow reads.
+    render(IntakeWorkspace, { host, itemId: 'a', pollMs: 100 });
+    const leaveMidApply = async () => {
+      await fireEvent.click(
+        await screen.findByRole('button', { name: 'Apply approved action' }),
+      );
+      await fireEvent.keyDown(document.body, { key: 'j' });
+      await waitFor(() => expect(current()).toBe('b'));
+    };
+    await leaveMidApply();
+    const firstAt = reads(host, 'a');
+    // Three owed reads spend the first debt to zero; reopen before the read
+    // that would end it, so the spent debt is still on record.
+    await waitFor(() => expect(reads(host, 'a') - firstAt).toBe(3), {
+      interval: 5,
+      timeout: 3000,
+    });
+    await fireEvent.keyDown(document.body, { key: 'k' });
+    await waitFor(() => expect(current()).toBe('a'));
+    await leaveMidApply();
+    const leftAt = reads(host, 'a');
+    // The second operation's three owed reads, then the one that ends them.
+    await waitFor(() => expect(reads(host, 'a') - leftAt).toBe(4), {
+      timeout: 5000,
+    });
+    await sleep(800);
+    expect(reads(host, 'a') - leftAt).toBe(4);
+  }, 15000);
+
+  it("a stale follow's thrown read does not count toward the new follow's failures", async () => {
+    const host = backend(['b', 'c'], { b: [inFlight('b')], c: [ready('c')] });
+    const gate = deferred();
+    // Follow reads are the reads of b while b is not open in the pane.
+    let open = true;
+    let follows = 0;
+    host.load = vi.fn(async (id: string) => {
+      if (id === 'c') return ready('c');
+      if (open) return inFlight('b');
+      follows++;
+      // The first follow read hangs, then throws for its (stale) follow.
+      if (follows === 1) await gate.promise;
+      throw new Error('Unavailable');
+    });
+    render(IntakeWorkspace, { host, itemId: 'b', pollMs: 10 });
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    open = false;
+    await waitFor(() => expect(current()).toBe('c'));
+    await waitFor(() => expect(follows).toBe(1));
+    open = true;
+    await fireEvent.click(
+      within(row('b')).getByRole('button', { name: 'Review' }),
+    );
+    await screen.findByTestId('reinterpreting');
+    await fireEvent.keyDown(document.body, { key: 'j' });
+    open = false;
+    await waitFor(() => expect(current()).toBe('c'));
+    gate.resolve(undefined);
+    await sleep(400);
+    // The new follow stops only after three throws of its own.
+    expect(follows - 1).toBe(3);
   });
 });
 
