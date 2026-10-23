@@ -185,11 +185,15 @@ keywords that common OpenAI-compatible structured-output backends reject are
 removed at schema positions, including inside handler argument schemas
 (`uniqueItems`, `contains`, `multipleOf`, `format`, `patternProperties`,
 `propertyNames`, `min`/`maxProperties`, `not`, `if`/`then`/`else`,
-`dependent*`, `unevaluated*`; the full list and reasons are in
-`src/proposal-sdk.ts`). vLLM's xgrammar, for example, answers
-`400 Unimplemented keys: ["uniqueItems"]`. This only loosens the grammar: the
-validator still enforces every constraint, including unique `alternatives` and
-`missingFields`, and the fixed instructions ask for distinct entries. When
+`dependent*`, `unevaluated*`, and the `default`/`examples` annotations; the
+full list and reasons are in `src/proposal-sdk.ts`). With `uniqueItems`, for
+example, vLLM's xgrammar feature check flags the schema, its auto mode routes
+it to llguidance, and llguidance answers
+`400 Grammar error: Unimplemented keys: ["uniqueItems"]`. This only loosens the
+grammar: the validator still enforces the constraints, including unique
+`alternatives` and `missingFields`, and the fixed instructions ask for distinct
+entries. The exception is `format`, which is advisory: the validator runs Ajv
+with `validateFormats: false`, so `format` is enforced nowhere. When
 `patternProperties` is removed, the same object's `additionalProperties` is
 removed too, so the grammar does not shrink to `{}`. There is no automatic
 `json_object` fallback. The generated schema itself uses only `anyOf`; handler
@@ -201,9 +205,12 @@ A generator call that throws ends the attempt as `provider_error` with the
 `unavailable` warning and `provenance.failure` `{category: 'unavailable',
 reason}`. The reason is value-free by construction: a provider's own text can
 quote the prompt or document, so it is never copied. The reason is built only
-from a fixed phrase, the HTTP status, the SDK error code (upper-case
-identifiers only) and, for a schema rejection, quoted tokens that are JSON
-Schema keywords. For example: `provider rejected the response schema (HTTP 400,
+from a fixed phrase and, for an SDK `AIError` only, the HTTP status (from a
+structured field, or from the exact `<status> ...` / `TypeSafe request failed
+(<status>): ...` shapes the SDK produces), the SDK error code (from the closed
+list of codes the SDK raises) and, for a schema rejection, quoted tokens that
+are JSON Schema keywords. Any other error contributes at most a structured
+numeric status. For example: `provider rejected the response schema (HTTP 400,
 code API_ERROR); unsupported response-schema keywords: uniqueItems`, or just
 `provider call failed`. It is cut at 500 characters.
 

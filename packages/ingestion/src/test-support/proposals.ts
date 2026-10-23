@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AIError } from '@happyvertical/ai';
 import { createAssetRuntime } from '@happyvertical/smrt-assets';
 import { Contents } from '@happyvertical/smrt-content';
 import type { DecisionRequest } from '@happyvertical/smrt-core';
@@ -6236,11 +6237,10 @@ export function proposalSuite(
       // What the SDK raises for vLLM's grammar rejection, plus an echo of the
       // prompt, which must never be recorded.
       calls.mockRejectedValue(
-        Object.assign(
-          new Error(
-            `400 Grammar error: Unimplemented keys: ["uniqueItems"] while compiling ${documentText}`,
-          ),
-          { code: 'API_ERROR' },
+        new AIError(
+          `400 Grammar error: Unimplemented keys: ["uniqueItems"] while compiling ${documentText}`,
+          'API_ERROR',
+          'openai',
         ),
       );
       const rejected = await generate();

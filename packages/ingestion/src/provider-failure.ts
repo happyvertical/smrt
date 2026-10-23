@@ -5,15 +5,19 @@
  * quote the invalid input back, which here is the prompt and the document
  * text. So no free text is ever copied. The reason is assembled only from:
  * - a fixed category phrase;
- * - the HTTP status, read from a numeric `status`/`statusCode` field or from a
- *   strictly anchored provider prefix (`400 ...`, or
- *   `<Provider> request failed (400): ...`); otherwise it is omitted;
- * - the SDK error `code`, only when it is an upper-case identifier;
- * - for a response-schema rejection, only quoted tokens that are members of a
- *   closed list of JSON Schema keywords (e.g. vLLM/xgrammar's
- *   `Unimplemented keys: ["uniqueItems"]`).
- * Anything else in the message is dropped.
+ * - the HTTP status, from a numeric `status`/`statusCode` field (100-599) on
+ *   any error, or parsed from the message only of an SDK `AIError`, in the two
+ *   exact shapes the SDK produces (see `sdkMessageStatus`);
+ * - the SDK error `code`, only for an `AIError` and only from the closed list
+ *   of codes the SDK raises;
+ * - for a response-schema rejection reported through an `AIError`, only
+ *   quoted tokens that are members of a closed list of JSON Schema keywords
+ *   (e.g. llguidance's `Grammar error: Unimplemented keys: ["uniqueItems"]`).
+ * Any other error contributes at most a structured status; everything else in
+ * a message is dropped.
  */
+import { AIError } from '@happyvertical/ai';
+
 export const PROVIDER_FAILURE_REASON_LIMIT = 500;
 
 /** JSON Schema (2020-12 and draft-07) keywords: the only words ever echoed. */
@@ -84,13 +88,49 @@ const SCHEMA_KEYWORDS = new Set([
 const SCHEMA_REJECTION =
   /unimplemented keys|unsupported (?:json[ -]?schema )?(?:keyword|key|feature)s?|not supported in (?:json[ -]?schema|grammar)/i;
 
+/**
+ * Error codes the `@happyvertical/ai` SDK raises on its chat path, collected
+ * from its error classes and providers. Only these are ever echoed: a code
+ * from anywhere else could be a document identifier (e.g. `INV5521`).
+ */
+const SDK_ERROR_CODES = new Set([
+  'AI_ABORTED',
+  'AI_TIMEOUT',
+  'API_ERROR',
+  'AUTH_ERROR',
+  'CONTENT_FILTERED',
+  'CONTEXT_LENGTH_EXCEEDED',
+  'INITIALIZATION_ERROR',
+  'INVALID_INPUT',
+  'INVALID_RESPONSE',
+  'MODEL_NOT_FOUND',
+  'NETWORK_ERROR',
+  'NO_CHOICES',
+  'NOT_IMPLEMENTED',
+  'NOT_SUPPORTED',
+  'RATE_LIMIT',
+  'REQUEST_ABORTED',
+  'REQUEST_TIMEOUT',
+  'TIMEOUT',
+  'UNKNOWN_ERROR',
+]);
+/** SDK codes that mean the call was cancelled or ran out of time. */
+const SDK_ABORT_CODES = new Set([
+  'AI_ABORTED',
+  'AI_TIMEOUT',
+  'REQUEST_ABORTED',
+  'REQUEST_TIMEOUT',
+  'TIMEOUT',
+]);
+
 function field(value: unknown, key: string): unknown {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)[key]
     : undefined;
 }
 
-function httpStatus(error: unknown, message: string): number | undefined {
+/** A status from a structured numeric field, on any error. */
+function structuredStatus(error: unknown): number | undefined {
   for (const key of ['status', 'statusCode']) {
     const value = field(error, key);
     if (
@@ -100,15 +140,22 @@ function httpStatus(error: unknown, message: string): number | undefined {
     )
       return value as number;
   }
-  // Only strictly anchored provider prefixes, never a number found elsewhere
-  // in the text (an echoed document can contain "Total (150)"):
-  // - the OpenAI SDK's `APIError` message: `400 Grammar error: ...`;
-  // - the SDK's TypeSafe/Laya adapters: `<Provider> request failed (400): ...`.
+  return undefined;
+}
+
+/**
+ * A status parsed from an SDK error's message, only in the two exact shapes
+ * the SDK itself produces:
+ * - the OpenAI SDK's `APIError`, mapped to `API_ERROR` with the message
+ *   `<status> <provider text>`, for error statuses only (400-599), so a
+ *   document line such as `150 items on invoice` is never a status;
+ * - the TypeSafe and Laya adapters: `TypeSafe request failed (<status>): ...`.
+ */
+function sdkMessageStatus(code: string, message: string): number | undefined {
   const match =
-    /^(\d{3}) /.exec(message) ??
-    /^[A-Za-z][A-Za-z0-9 _.-]{0,40} request failed \((\d{3})\):/.exec(message);
-  const value = match ? Number(match[1]) : undefined;
-  return value && value >= 100 && value <= 599 ? value : undefined;
+    (code === 'API_ERROR' ? /^([45]\d{2}) /.exec(message) : null) ??
+    /^(?:TypeSafe|Laya) request failed \(([1-5]\d{2})\): /.exec(message);
+  return match ? Number(match[1]) : undefined;
 }
 
 function rejectedKeywords(message: string): string[] {
@@ -121,22 +168,27 @@ function rejectedKeywords(message: string): string[] {
 
 export function providerFailureReason(error: unknown): string {
   const name = field(error, 'name');
-  if (name === 'AbortError' || name === 'TimeoutError')
-    return 'provider call aborted or timed out';
-  const cause = field(error, 'cause');
-  const messageOf = (value: unknown) => {
-    const message = field(value, 'message');
-    return typeof message === 'string' ? message : '';
-  };
-  const message = messageOf(error);
-  const status =
-    httpStatus(error, message) ?? httpStatus(cause, messageOf(cause));
-  const rawCode = field(error, 'code');
-  const code =
-    typeof rawCode === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(rawCode)
-      ? rawCode
+  // Only an SDK error's message and code are read at all; any other error
+  // contributes at most a structured status.
+  const sdk =
+    error instanceof AIError &&
+    typeof error.code === 'string' &&
+    SDK_ERROR_CODES.has(error.code)
+      ? error
       : undefined;
-  const keywords = rejectedKeywords(message);
+  if (
+    name === 'AbortError' ||
+    name === 'TimeoutError' ||
+    (sdk && SDK_ABORT_CODES.has(sdk.code))
+  )
+    return 'provider call aborted or timed out';
+  const message = sdk && typeof sdk.message === 'string' ? sdk.message : '';
+  const status =
+    structuredStatus(error) ??
+    structuredStatus(field(error, 'cause')) ??
+    (sdk ? sdkMessageStatus(sdk.code, message) : undefined);
+  const code = sdk?.code;
+  const keywords = sdk ? rejectedKeywords(message) : [];
   const category = keywords.length
     ? 'rejected the response schema'
     : status !== undefined && status >= 400 && status < 500

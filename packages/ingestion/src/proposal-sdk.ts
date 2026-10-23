@@ -36,15 +36,18 @@ const string = { type: 'string', minLength: 1, maxLength: 512 };
  * (#4260), because common OpenAI-compatible structured-output backends reject
  * them and fail the whole request:
  * - `uniqueItems`, `contains`, `minContains`, `maxContains`: vLLM's xgrammar
- *   backend answers `400 Grammar error: Unimplemented keys: ["uniqueItems"]`,
- *   and vLLM's own xgrammar feature check rejects them on arrays.
+ *   feature check (`has_xgrammar_unsupported_json_features`) flags them on
+ *   arrays, so vLLM's auto mode routes the request to llguidance, which
+ *   answers `400 Grammar error: Unimplemented keys: ["uniqueItems"]` (#4260).
  * - `multipleOf`, `minProperties`, `maxProperties`, `propertyNames`,
- *   `patternProperties`, `format`: also rejected by vLLM's xgrammar feature
- *   check (`format` additionally has only partial support in llama.cpp's
+ *   `patternProperties`, `format`: also flagged by that feature check
+ *   (`format` additionally has only partial support in llama.cpp's
  *   json-schema-to-grammar, used by Ollama).
  * - `not`, `if`/`then`/`else`, `dependentRequired`, `dependentSchemas`,
  *   `dependencies`, `unevaluatedItems`, `unevaluatedProperties`: implemented
  *   by neither xgrammar nor llama.cpp's grammar converter.
+ * - `default`, `examples`: annotations, not constraints, but vLLM's feature
+ *   check walks their values, so an object default could be flagged.
  * Kept, because those backends implement them: `type`, `enum`, `const`,
  * `anyOf`/`oneOf`/`allOf`, `items`/`prefixItems`, `minItems`/`maxItems`,
  * `minLength`/`maxLength`, `pattern`, numeric ranges, `required`,
@@ -52,8 +55,11 @@ const string = { type: 'string', minLength: 1, maxLength: 512 };
  * (`strict: false` below) accepts any of them.
  *
  * Dropping a keyword only loosens the grammar: the Ajv validator
- * (`suggestionSchema` in proposal-validation.ts) still enforces every
- * constraint, including uniqueness of `alternatives` and `missingFields`.
+ * (`suggestionSchema` and each handler's original `argsSchema` in
+ * proposal-validation.ts) still enforces the constraints, including
+ * uniqueness of `alternatives` and `missingFields`. The exception is
+ * `format`: Ajv runs with `validateFormats: false`, so `format` is advisory
+ * and enforced nowhere.
  */
 export const UNPORTABLE_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
   'uniqueItems',
@@ -75,6 +81,8 @@ export const UNPORTABLE_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
   'dependencies',
   'unevaluatedItems',
   'unevaluatedProperties',
+  'default',
+  'examples',
 ]);
 /** Keywords whose value is a map from names to subschemas. */
 const SCHEMA_MAP_KEYWORDS = new Set(['properties', '$defs', 'definitions']);

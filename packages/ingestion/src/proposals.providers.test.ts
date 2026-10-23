@@ -1,6 +1,6 @@
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { getAI } from '@happyvertical/ai';
+import { AIError, getAI } from '@happyvertical/ai';
 import { executeDecision } from '@happyvertical/smrt-core';
 import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
@@ -21,8 +21,9 @@ import { providerFailureReason } from './provider-failure.js';
  * in `vllm/v1/structured_output/backend_xgrammar.py`): `multipleOf` on numbers;
  * `uniqueItems`, `contains`, `minContains`, `maxContains` on arrays; `format`
  * on strings; `minProperties`, `maxProperties`, `propertyNames`,
- * `patternProperties` on objects. The reported failure itself (#4260) is
- * xgrammar's `Unimplemented keys: ["uniqueItems"]`.
+ * `patternProperties` on objects. When that check flags a schema, vLLM's auto
+ * mode routes it to llguidance, whose answer is the reported failure (#4260):
+ * `Grammar error: Unimplemented keys: ["uniqueItems"]`.
  */
 const XGRAMMAR_REJECTED_KEYWORDS = [
   'multipleOf',
@@ -36,6 +37,28 @@ const XGRAMMAR_REJECTED_KEYWORDS = [
   'propertyNames',
   'patternProperties',
 ];
+
+/**
+ * Every object key anywhere in the schema, walked the way vLLM's feature check
+ * walks it: through every nested object and list, including `default`,
+ * `examples`, `const`, `enum` and `contentSchema` values. The fake endpoint
+ * uses this, so an annotation value that looks like a keyword is flagged too.
+ */
+function vllmVisibleKeys(
+  value: unknown,
+  found = new Set<string>(),
+): Set<string> {
+  if (Array.isArray(value))
+    for (const entry of value) vllmVisibleKeys(entry, found);
+  else if (value && typeof value === 'object')
+    for (const [key, entry] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      found.add(key);
+      vllmVisibleKeys(entry, found);
+    }
+  return found;
+}
 
 /** Every keyword used at a schema position, walking schema structure only. */
 function schemaKeywords(
@@ -111,7 +134,14 @@ const offeredInput = {
           maxProperties: 5,
           properties: {
             lessonId: { type: 'string' },
-            dueOn: { type: 'string', format: 'date' },
+            dueOn: {
+              type: 'string',
+              format: 'date',
+              // Annotations whose values look like keywords: vLLM's check
+              // walks them, so production must drop them.
+              default: { uniqueItems: true },
+              examples: [{ format: 'date' }],
+            },
             weight: { type: 'number', multipleOf: 0.5 },
             tags: {
               type: 'array',
@@ -375,12 +405,13 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       const body = JSON.parse(Buffer.concat(chunks).toString());
       sentSchema = body.response_format?.json_schema?.schema;
       const unportable = XGRAMMAR_REJECTED_KEYWORDS.filter((keyword) =>
-        schemaKeywords(sentSchema).has(keyword),
+        vllmVisibleKeys(sentSchema).has(keyword),
       );
       response.setHeader('content-type', 'application/json');
       if (mode === 'rejected' || unportable.length) {
-        // What vLLM 0.30 answers, plus an echo of the prompt, which must
-        // never reach the recorded reason.
+        // What vLLM 0.30 answers (llguidance, after the xgrammar check routed
+        // the schema to it), plus an echo of the prompt, which must never
+        // reach the recorded reason.
         response.statusCode = 400;
         response.end(
           JSON.stringify({
@@ -465,35 +496,59 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
 
   it('reduces any provider failure to a fixed, value-free reason (#4260)', () => {
     const secret = 'Invoice for Jane Doe, account 4111 1111 1111 1111';
+    const sdk = (message: string, code = 'API_ERROR') =>
+      new AIError(message, code, 'openai');
     expect(providerFailureReason(new Error(secret))).toBe(
       'provider call failed',
     );
+    // The SDK's own message shapes, with its own codes.
     expect(
-      providerFailureReason(
-        Object.assign(new Error(`503 upstream overloaded: ${secret}`), {
-          code: 'API_ERROR',
-        }),
-      ),
+      providerFailureReason(sdk(`503 upstream overloaded: ${secret}`)),
     ).toBe('provider returned a server error (HTTP 503, code API_ERROR)');
+    expect(
+      providerFailureReason(sdk(`TypeSafe request failed (422): ${secret}`)),
+    ).toBe('provider rejected the request (HTTP 422, code API_ERROR)');
+    // The same text outside an SDK error is not parsed at all.
     expect(
       providerFailureReason(
         Object.assign(new Error(`TypeSafe request failed (422): ${secret}`), {
-          code: 'not an identifier',
+          code: 'API_ERROR',
         }),
       ),
-    ).toBe('provider rejected the request (HTTP 422)');
+    ).toBe('provider call failed');
+    // Leaks the review found: document digits or identifiers taken as a
+    // status or code.
+    expect(providerFailureReason(sdk('150 items on invoice INV-301'))).toBe(
+      'provider call failed (code API_ERROR)',
+    );
+    expect(
+      providerFailureReason(
+        Object.assign(new Error(secret), { code: 'INV5521' }),
+      ),
+    ).toBe('provider call failed');
+    expect(providerFailureReason(sdk(secret, 'INV5521'))).toBe(
+      'provider call failed',
+    );
+    // The provider prefix must start the message.
+    expect(
+      providerFailureReason(
+        sdk(`Upstream note: TypeSafe request failed (404): ${secret}`),
+      ),
+    ).toBe('provider call failed (code API_ERROR)');
+    // Keywords are named only with a schema-rejection phrase.
+    expect(
+      providerFailureReason(sdk('400 Bad request: field "format" is invalid')),
+    ).toBe('provider rejected the request (HTTP 400, code API_ERROR)');
     // Quoted words that are not schema keywords are never echoed.
     expect(
       providerFailureReason(
-        new Error(
-          `400 Unimplemented keys: ["${secret}", "uniqueItems", "Jane"]`,
-        ),
+        sdk(`400 Unimplemented keys: ["${secret}", "uniqueItems", "Jane"]`),
       ),
     ).toBe(
-      'provider rejected the response schema (HTTP 400); unsupported response-schema keywords: uniqueItems',
+      'provider rejected the response schema (HTTP 400, code API_ERROR); unsupported response-schema keywords: uniqueItems',
     );
     // A number in echoed text is never taken as a status: only a structured
-    // field or a strictly anchored provider prefix counts.
+    // field or the SDK's exact shapes count.
     for (const echoed of [
       'Total (150) for INV-301',
       'Upstream said: request failed (404): Total (150)',
@@ -510,6 +565,9 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     const abort = new Error(secret);
     abort.name = 'AbortError';
     expect(providerFailureReason(abort)).toBe(
+      'provider call aborted or timed out',
+    );
+    expect(providerFailureReason(sdk(secret, 'AI_TIMEOUT'))).toBe(
       'provider call aborted or timed out',
     );
     expect(providerFailureReason(undefined)).toBe('provider call failed');
