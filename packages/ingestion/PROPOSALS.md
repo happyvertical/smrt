@@ -156,10 +156,43 @@ Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.
 Candidate IDs must occur in the offered set, and evidence IDs in retained source
 results. Unknown enums, invented IDs, extra authority/tool/approval fields and
-malformed structures fail closed. Missing required top-level fields are retained
-as `missingFields`, with `needs_review`; values are never invented to satisfy a
+malformed structures fail closed. Missing required fields are retained as
+`missingFields`, with `needs_review`; values are never invented to satisfy a
 schema. Observed page/time/source granularity is preserved. Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
+
+When a suggestion's arguments fail the handler schema **only** on `required`
+(#4284), the suggestion is kept rather than rejecting the attempt: its
+arguments stay exactly as generated and `missingFields` names every missing
+required argument. The schema, not the model, decides what is missing. A
+declaration that matches the computed set (in any order) is kept exactly as the
+model wrote it, so an already valid reply is unchanged byte for byte and replay
+stays deterministic. A declaration that differs (unlisted misses, or listed
+fields that are present or optional) is replaced by the sorted computed set and
+the suggestion is `needs_review` even when nothing is left missing;
+`provenance.missingFieldsCorrection` then records `{suggestions, added,
+removed}` counts only, and is absent otherwise and dropped whenever the
+suggestions are discarded. A miss at the
+argument root is the bare property name; a miss inside a present nested object
+or array item is an RFC 6901 JSON Pointer relative to the arguments, such as
+`/vendor/name` or `/lines/0/sku`. An entry starting with `/` is therefore a
+pointer, so a handler should not declare a root property whose name itself
+starts with `/`. Names come from the handler schema's own `required` lists,
+never from argument values or model-chosen keys; `required` inside `allOf` or
+inside object-form `dependencies` (`{a: {required: ['b']}}`) counts like any
+other. The schema walk does not follow `$ref`: a miss directly at a property
+whose schema is a `$ref` is kept, but a miss deeper inside the referenced
+definition cannot be named from the schema and rejects (fail-safe). The attempt still rejects as before when any other
+keyword fails beside or instead of `required`: type, enum, pattern, bounds,
+`additionalProperties`, an `anyOf`/`oneOf` branch, an `if`/`then`/`else` branch
+(Ajv adds an `if` error), `not`, or array-form `dependencies` (its own keyword,
+although it names the missing property). It also rejects when a miss lies under
+a key the schema does not declare, or when more than 30 fields are missing.
+Handler schemas compile in Ajv strict mode, so draft-2019 keywords such as
+`dependentRequired` are refused at compile time. Such a suggestion is ordinary
+`needs_review` output: the decision gate can only withhold readiness, never
+grant it, `automaticActionEligible` stays false, and generated preview of
+incomplete arguments fails the handler schema (see Explicit preview below).
 
 A generated split whose groups fail that check is dropped, not the whole reply
 (#4288): the suggestions and any other splits are validated as before, the

@@ -1,3 +1,4 @@
+import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 import { intakeBindingDigest } from './execution.js';
 import type { ExtractionResult } from './extraction-types.js';
@@ -6,6 +7,8 @@ import type { GenerationOutput } from './proposal-dto.js';
 import {
   dedupeGeneratedLists,
   describeSchemaErrors,
+  missingRequiredFields,
+  PROPOSAL_MISSING_FIELDS_LIMIT,
   PROPOSAL_REASON_LIMIT,
   PROPOSAL_REASON_MAX_ERRORS,
   ProposalValidationError,
@@ -545,5 +548,427 @@ describe('generated list normalization (#4286)', () => {
     );
     const { output } = dedupeGeneratedLists(raw);
     expect(failure(output).reason).not.toContain('uniqueItems');
+  });
+});
+
+describe('required-only argument refusals (#4284)', () => {
+  const argsSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['vendorId', 'billNumber', 'total', 'vendor'],
+    properties: {
+      vendorId: { type: 'string' },
+      billNumber: { type: 'string' },
+      total: { type: 'integer' },
+      vendor: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'a/b~c'],
+        properties: { name: { type: 'string' }, 'a/b~c': { type: 'string' } },
+      },
+      lines: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['sku'],
+          properties: { sku: { type: 'string' } },
+        },
+      },
+      extra: {
+        type: 'object',
+        additionalProperties: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string' } },
+        },
+      },
+      choice: {
+        anyOf: [
+          { type: 'object', required: ['x'], properties: { x: {} } },
+          { type: 'string' },
+        ],
+      },
+    },
+  };
+  const offered: GenerationOutput['offered'] = [
+    {
+      handler: {
+        id: 'h',
+        version: '1',
+        description: 'handler',
+        kind: 'operation',
+        capability: null,
+        argsSchema,
+        references: {},
+        operation: { model: 'M', action: 'a', version: '1' },
+      },
+      candidates: [],
+    },
+  ];
+  const extraction = [
+    {
+      evidence: { id: 'e', contentHash: 'hash' },
+      configurationRevision: 'test',
+      segments: [{ location: { kind: 'source' } }],
+    },
+  ] as ExtractionResult[];
+  const reply = (
+    args: Record<string, unknown>,
+    missingFields: string[] = [],
+  ) => ({
+    outcome: 'proposals',
+    suggestions: [
+      {
+        handlerId: 'h',
+        handlerVersion: '1',
+        args,
+        evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+        alternatives: [],
+        missingFields,
+        explanation: 'x',
+      },
+    ],
+    splits: [],
+  });
+  const complete = {
+    vendorId: 'V-1',
+    billNumber: 'B-7',
+    total: 1200,
+    vendor: { name: 'Acme', 'a/b~c': 'z' },
+  };
+  const validate = (raw: unknown) =>
+    validateSuggestions(raw, offered, extraction, limits, 1);
+  const rejection = (raw: unknown) => {
+    try {
+      validate(raw);
+    } catch (error) {
+      if (error instanceof ProposalValidationError) return error;
+      throw error;
+    }
+    throw new Error('Expected validation to fail');
+  };
+
+  it('keeps undeclared missing required arguments as needs_review without inventing values', () => {
+    const { vendorId: _v, billNumber: _b, ...args } = complete;
+    const result = validate(reply(args));
+    expect(result.outcome).toBe('proposals');
+    expect(result.suggestions[0]).toMatchObject({
+      missingFields: ['billNumber', 'vendorId'],
+      disposition: 'needs_review',
+    });
+    expect(result.suggestions[0].args).toEqual(args);
+    expect(result.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 2,
+      removed: 0,
+    });
+    // A partial declaration is replaced by the sorted computed set.
+    const partial = validate(reply(args, ['vendorId']));
+    expect(partial.suggestions[0].missingFields).toEqual([
+      'billNumber',
+      'vendorId',
+    ]);
+    expect(partial.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 1,
+      removed: 0,
+    });
+  });
+  it('names a miss inside a present object or array item by escaped JSON Pointer', () => {
+    const result = validate(
+      reply({
+        ...complete,
+        vendor: {},
+        lines: [{ sku: 'a' }, {}],
+      }),
+    );
+    expect(result.suggestions[0]).toMatchObject({
+      missingFields: ['/lines/1/sku', '/vendor/a~1b~0c', '/vendor/name'],
+      disposition: 'needs_review',
+    });
+  });
+  it('is byte-identical for an already declared, exactly matching reply and deterministic otherwise', () => {
+    const { vendorId: _v, billNumber: _b, ...args } = complete;
+    const declared = reply(args, ['vendorId', 'billNumber']);
+    const before = structuredClone(declared.suggestions[0]);
+    const result = validate(declared);
+    expect(JSON.stringify(result.suggestions[0])).toBe(
+      JSON.stringify({ ...before, disposition: 'needs_review' }),
+    );
+    expect(result).not.toHaveProperty('missingFieldsCorrection');
+    // Declared in a different order is still a match, kept as declared.
+    expect(
+      validate(reply(args, ['billNumber', 'vendorId'])).suggestions[0]
+        .missingFields,
+    ).toEqual(['billNumber', 'vendorId']);
+    const valid = validate(reply(complete));
+    expect(valid.suggestions[0].disposition).toBe('ready_for_review');
+    expect(valid).not.toHaveProperty('missingFieldsCorrection');
+    expect(JSON.stringify(validate(reply(args)))).toBe(
+      JSON.stringify(validate(reply(args))),
+    );
+  });
+  it.each([
+    ['a type error beside a missing field', { vendorId: 'V', total: 'twelve' }],
+    [
+      'an extra property beside a missing field',
+      { ...complete, billNumber: undefined, secret: 'Acme 4417' },
+    ],
+    [
+      'a miss under a model-chosen key',
+      { ...complete, extra: { 'Acme 4417': {} } },
+    ],
+    ['a miss inside a union branch', { ...complete, choice: {} }],
+  ])('still rejects %s', (_name, args) => {
+    const error = rejection(
+      reply(JSON.parse(JSON.stringify(args)) as Record<string, unknown>),
+    );
+    expect(error.reason).toMatch(
+      /^Invalid handler arguments: \/suggestions\/0\/args /,
+    );
+    expect(error.reason).not.toMatch(/Acme|4417|twelve/);
+  });
+  it('corrects a declared field that is not missing and keeps the suggestion for review', () => {
+    const listed = validate(reply(complete, ['vendorId', 'memo']));
+    expect(listed.suggestions[0]).toMatchObject({
+      args: complete,
+      missingFields: [],
+      disposition: 'needs_review',
+    });
+    expect(listed.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 0,
+      removed: 2,
+    });
+    // Both directions at once, counted without names or values.
+    const { billNumber: _b, ...args } = complete;
+    const both = validate(reply(args, ['vendorId']));
+    expect(both.suggestions[0].missingFields).toEqual(['billNumber']);
+    expect(both.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 1,
+      removed: 1,
+    });
+    expect(JSON.stringify(both.missingFieldsCorrection)).not.toMatch(
+      /vendor|bill/i,
+    );
+  });
+  it.each([
+    [
+      'array-form dependencies',
+      { dependencies: { billNumber: ['total'] } },
+      { vendorId: 'V', billNumber: 'B', vendor: { name: 'n', 'a/b~c': 'z' } },
+    ],
+    [
+      'an if/then branch',
+      // Built from entries: a literal `then` key trips Biome's noThenProperty.
+      Object.fromEntries([
+        ['if', { properties: { total: {} }, required: ['total'] }],
+        ['then', { properties: { vendorId: {} }, required: ['vendorId'] }],
+      ]),
+      {
+        billNumber: 'B',
+        total: 1,
+        vendor: { name: 'n', 'a/b~c': 'z' },
+      },
+    ],
+  ])('still rejects a required-like miss from %s', (_name, extra, args) => {
+    const schema = { ...argsSchema, required: [], ...extra };
+    const own: GenerationOutput['offered'] = [
+      { ...offered[0], handler: { ...offered[0].handler, argsSchema: schema } },
+    ];
+    let error: unknown;
+    try {
+      validateSuggestions(reply(args), own, extraction, limits, 1);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ProposalValidationError);
+    expect((error as ProposalValidationError).reason).toMatch(
+      /^Invalid handler arguments: \/suggestions\/0\/args /,
+    );
+  });
+  it('treats required inside allOf as required', () => {
+    const schema = {
+      ...argsSchema,
+      allOf: [{ properties: { memo: {} }, required: ['memo'] }],
+      properties: { ...argsSchema.properties, memo: { type: 'string' } },
+    };
+    const own: GenerationOutput['offered'] = [
+      { ...offered[0], handler: { ...offered[0].handler, argsSchema: schema } },
+    ];
+    expect(
+      validateSuggestions(reply(complete), own, extraction, limits, 1)
+        .suggestions[0].missingFields,
+    ).toEqual(['memo']);
+  });
+  it('bounds the errors examined and the length of each missing field', () => {
+    const required = (count: number, name = (index: number) => `f${index}`) =>
+      Array.from({ length: count }, (_, index) => ({
+        keyword: 'required',
+        instancePath: '',
+        schemaPath: '#/required',
+        params: { missingProperty: name(index) },
+      }));
+    // Duplicates collapse to one field, but the examined count is still bounded.
+    const repeated = Array.from({ length: PROPOSAL_REASON_MAX_ERRORS }, () => ({
+      ...required(1)[0],
+    }));
+    expect(missingRequiredFields(repeated, {}, {})).toEqual(['f0']);
+    expect(
+      missingRequiredFields([...repeated, required(1)[0]], {}, {}),
+    ).toBeUndefined();
+    // A schema-declared name longer than the reply's string cap is refused,
+    // at the root and once a nested pointer grows past it.
+    expect(
+      missingRequiredFields(
+        required(1, () => 'x'.repeat(513)),
+        {},
+        {},
+      ),
+    ).toBeUndefined();
+    expect(
+      missingRequiredFields(
+        required(1, () => 'x'.repeat(512)),
+        {},
+        {},
+      ),
+    ).toEqual(['x'.repeat(512)]);
+    const long = 'y'.repeat(300);
+    const nested = {
+      type: 'object',
+      properties: { [long]: { type: 'object', properties: {} } },
+    };
+    expect(
+      missingRequiredFields(
+        [
+          {
+            keyword: 'required',
+            instancePath: `/${long}`,
+            schemaPath: '#/properties/x/required',
+            params: { missingProperty: 'z'.repeat(300) },
+          },
+        ],
+        nested,
+        { [long]: {} },
+      ),
+    ).toBeUndefined();
+  });
+  it('rejects more missing fields than the reply may declare', () => {
+    const required = Array.from({ length: 31 }, (_, index) => `f${index}`);
+    const wide = {
+      type: 'object',
+      required,
+      properties: Object.fromEntries(
+        required.map((name) => [name, { type: 'string' }]),
+      ),
+    };
+    expect(
+      missingRequiredFields(
+        required.map((missingProperty) => ({
+          keyword: 'required',
+          instancePath: '',
+          schemaPath: '#/required',
+          params: { missingProperty },
+        })),
+        wide,
+        {},
+      ),
+    ).toBeUndefined();
+    expect(
+      missingRequiredFields(
+        required.slice(0, 30).map((missingProperty) => ({
+          keyword: 'required',
+          instancePath: '',
+          schemaPath: '#/required',
+          params: { missingProperty },
+        })),
+        wide,
+        {},
+      ),
+    ).toHaveLength(PROPOSAL_MISSING_FIELDS_LIMIT);
+  });
+});
+
+describe('mismatched missingFields regression (#4284 QA)', () => {
+  // Synthetic equivalent of the QA attempts: a flat closed handler schema, all
+  // three required references absent, and a declaration naming something that
+  // is not missing. Before the correction this rejected the whole attempt.
+  const argsSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['vendorId', 'evidenceId', 'billNumber'],
+    properties: {
+      vendorId: { type: 'string', minLength: 1, maxLength: 64 },
+      evidenceId: { type: 'string', minLength: 1, maxLength: 64 },
+      billNumber: { type: 'string', minLength: 1, maxLength: 128 },
+      billDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+      totalCents: { type: 'integer', minimum: 0 },
+    },
+  };
+  const offered: GenerationOutput['offered'] = [
+    {
+      handler: {
+        id: 'bill',
+        version: '1',
+        description: 'Record a vendor bill',
+        kind: 'operation',
+        capability: null,
+        argsSchema,
+        references: {},
+        operation: { model: 'M', action: 'a', version: '1' },
+      },
+      candidates: [],
+    },
+  ];
+  const extraction = [
+    {
+      evidence: { id: 'e', contentHash: 'hash' },
+      configurationRevision: 'test',
+      segments: [{ location: { kind: 'source' } }],
+    },
+  ] as ExtractionResult[];
+  const args = { billDate: '2026-01-02', totalCents: 12345 };
+  it.each([
+    ['a present field', ['totalCents']],
+    ['an optional absent field', ['currency']],
+    ['an unknown name beside a real miss', ['vendorId', 'vendorName']],
+  ])('keeps the suggestion when the declaration names %s', (_name, declared) => {
+    const reply = {
+      outcome: 'proposals',
+      suggestions: [
+        {
+          handlerId: 'bill',
+          handlerVersion: '1',
+          args,
+          evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+          alternatives: [],
+          missingFields: declared,
+          explanation: 'x',
+        },
+      ],
+      splits: [],
+    };
+    // The exact value-free reason the earlier rule recorded for this shape.
+    const ajv = new Ajv({ strict: true, allErrors: true });
+    const check = ajv.compile(argsSchema);
+    expect(check(args)).toBe(false);
+    expect(
+      `/suggestions/0/args ${describeSchemaErrors(check.errors, argsSchema, args)}`,
+    ).toBe(
+      '/suggestions/0/args / required (missingProperty=vendorId); / required (missingProperty=evidenceId); / required (missingProperty=billNumber)',
+    );
+    const result = validateSuggestions(reply, offered, extraction, limits, 1);
+    expect(result.outcome).toBe('proposals');
+    expect(result.suggestions[0]).toMatchObject({
+      args,
+      missingFields: ['billNumber', 'evidenceId', 'vendorId'],
+      disposition: 'needs_review',
+    });
+    expect(result.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 3 - declared.filter((field) => field === 'vendorId').length,
+      removed: declared.filter((field) => field !== 'vendorId').length,
+    });
   });
 });

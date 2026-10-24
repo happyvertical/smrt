@@ -38,6 +38,13 @@ decision by that actor, never as reviewer correctness evidence; consumers that
 derive reviewer agreement must exclude `selfDecision: true` events, and nothing
 in this package turns them into automation eligibility.
 
+Generated-output validity is not a feedback signal. A suggestion kept because
+its arguments missed only required fields (#4284, PROPOSALS.md) is recorded as
+incomplete — `needs_review` with those fields in `missingFields` — not as an
+invalid reply with a `provenance.failure`. It produces no feedback record by
+itself; only the reviewer's explicit judgment or approval of the completed
+arguments does, through the paths above.
+
 ## Reviewer routing choices
 
 A `reviewer_routing` record is appended inside the owning transaction when

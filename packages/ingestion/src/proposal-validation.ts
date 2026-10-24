@@ -7,6 +7,7 @@ import type { GenerationLimits } from './proposal-contracts.js';
 import type {
   GeneratedSuggestion,
   GenerationOutput,
+  MissingFieldsCorrection,
   ProposalEvidenceReference,
 } from './proposal-dto.js';
 
@@ -162,6 +163,51 @@ export function describeSchemaErrors(
   const omitted = parts.size - shown.length + (all.length - consumed);
   if (omitted > 0) shown.push(`+${omitted} more`);
   return shown.join('; ');
+}
+/** Most missing required arguments one suggestion may carry (#4284); the reply schema's `missingFields` cap. */
+export const PROPOSAL_MISSING_FIELDS_LIMIT = 30;
+/** Longest missing-field name or path kept; the reply schema's string cap. */
+const MISSING_FIELD_LENGTH = 512;
+/**
+ * The missing required arguments when the handler schema refused *only* on
+ * `required` (#4284). A miss at the argument root is the bare property name,
+ * as the existing `missingFields` contract has it; a miss inside a present
+ * nested object or array item is an RFC 6901 JSON Pointer relative to the
+ * arguments (`/vendor/name`, `/lines/0/sku`). Returns `undefined`, so the
+ * caller rejects as before, when any other keyword failed (type, enum,
+ * bounds, additionalProperties, anyOf/oneOf, if/then/else, not, array-form
+ * dependencies — which also carries `missingProperty`...), when a
+ * path crosses a segment the schema does not own (a model-chosen key), or
+ * when the work or result exceeds its bound. Every name comes from the
+ * handler schema's own `required` list; argument values are never read.
+ */
+export function missingRequiredFields(
+  errors: ErrorObject[] | null | undefined,
+  schema: unknown,
+  instance: unknown,
+): string[] | undefined {
+  const all = errors ?? [];
+  if (!all.length || all.length > PROPOSAL_REASON_MAX_ERRORS) return undefined;
+  const missing = new Set<string>();
+  for (const error of all) {
+    const property = (error.params as Record<string, unknown>).missingProperty;
+    if (error.keyword !== 'required' || typeof property !== 'string')
+      return undefined;
+    let field = property;
+    if (error.instancePath) {
+      if (
+        schemaOwnedPath(error.instancePath, schema, instance)
+          .split('/')
+          .includes('?')
+      )
+        return undefined;
+      field = `${error.instancePath}/${property.replace(/~/g, '~0').replace(/\//g, '~1')}`;
+    }
+    if (!field || field.length > MISSING_FIELD_LENGTH) return undefined;
+    missing.add(field);
+    if (missing.size > PROPOSAL_MISSING_FIELDS_LIMIT) return undefined;
+  }
+  return [...missing];
 }
 export function record(value: unknown): IntakeValues {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -373,6 +419,7 @@ export function validateSuggestions(
   limits: GenerationLimits,
   revision: number,
 ): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> & {
+  missingFieldsCorrection?: MissingFieldsCorrection;
   splitsDropped?: NonNullable<GenerationOutput['provenance']['splitsDropped']>;
 } {
   const ajv = new Ajv({
@@ -406,6 +453,11 @@ export function validateSuggestions(
       ...candidates.map((candidate) => candidate.key),
     ]),
   );
+  const correction: MissingFieldsCorrection = {
+    suggestions: 0,
+    added: 0,
+    removed: 0,
+  };
   const suggestions = input.suggestions.map(
     (suggestion, index): GeneratedSuggestion => {
       const path = `/suggestions/${index}`;
@@ -421,25 +473,34 @@ export function validateSuggestions(
         throw new ProposalValidationError('Unoffered handler', path);
       const schema = ajv.compile(entry.handler.argsSchema);
       const valid = schema(suggestion.args);
-      const missing = (schema.errors ?? [])
-        .filter(
-          (error) => error.keyword === 'required' && error.instancePath === '',
-        )
-        .map((error) => String(error.params.missingProperty))
-        .sort();
-      if (
-        (!valid &&
-          schema.errors?.some(
-            (error) =>
-              error.keyword !== 'required' || error.instancePath !== '',
-          )) ||
-        JSON.stringify([...suggestion.missingFields].sort()) !==
-          JSON.stringify(missing)
-      )
+      // Required-only refusals keep the suggestion for a person to complete
+      // (#4284); any other refusal still rejects the attempt.
+      const missing = valid
+        ? []
+        : missingRequiredFields(
+            schema.errors,
+            entry.handler.argsSchema,
+            suggestion.args,
+          );
+      if (!missing)
         throw new ProposalValidationError(
           'Invalid handler arguments',
-          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args) || 'missingFields do not match the schema'}`,
+          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args)}`,
         );
+      // The schema, not the model, decides what is missing. A matching
+      // declaration keeps the model's order, so output that was already valid
+      // is byte-identical; a mismatch is replaced by the sorted computed set
+      // and always needs review.
+      const declared = suggestion.missingFields;
+      const added = missing.filter((field) => !declared.includes(field));
+      const removed = declared.filter((field) => !missing.includes(field));
+      const corrected = added.length > 0 || removed.length > 0;
+      const missingFields = corrected ? [...missing].sort() : [...declared];
+      if (corrected) {
+        correction.suggestions += 1;
+        correction.added += added.length;
+        correction.removed += removed.length;
+      }
       for (const [field, reference] of Object.entries(
         entry.handler.references,
       )) {
@@ -470,8 +531,9 @@ export function validateSuggestions(
         );
       return {
         ...structuredClone(suggestion),
+        missingFields,
         disposition:
-          missing.length || input.outcome !== 'proposals'
+          corrected || missingFields.length || input.outcome !== 'proposals'
             ? 'needs_review'
             : 'ready_for_review',
       };
@@ -514,6 +576,7 @@ export function validateSuggestions(
     outcome: input.outcome,
     suggestions,
     splits,
+    ...(correction.suggestions ? { missingFieldsCorrection: correction } : {}),
     ...(dropped
       ? { splitsDropped: { count: dropped, checks: ['split_groups'] } }
       : {}),

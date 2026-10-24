@@ -864,14 +864,17 @@ export class IngestionProposalService {
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
         const deduped = dedupeGeneratedLists(generated.output);
-        const { splitsDropped, ...validated } = validateSuggestions(
-          deduped.output,
-          output.offered,
-          extraction,
-          this.config.limits,
-          generation.revision,
-        );
+        const { missingFieldsCorrection, splitsDropped, ...validated } =
+          validateSuggestions(
+            deduped.output,
+            output.offered,
+            extraction,
+            this.config.limits,
+            generation.revision,
+          );
         Object.assign(output, validated);
+        if (missingFieldsCorrection)
+          output.provenance.missingFieldsCorrection = missingFieldsCorrection;
         // Count only, and only for a reply that validated; absent when zero
         // so existing digests hold.
         if (deduped.removed)
@@ -889,6 +892,7 @@ export class IngestionProposalService {
           ) {
             output.outcome = 'needs_review';
             output.suggestions = [];
+            delete output.provenance.missingFieldsCorrection;
             output.warnings.push('human_split_not_respected');
           }
         }
@@ -936,6 +940,7 @@ export class IngestionProposalService {
           reason: reason.slice(0, PROPOSAL_REASON_LIMIT),
         };
       output.outcome = 'provider_error';
+      delete output.provenance.missingFieldsCorrection;
       output.suggestions = [];
       output.splits = [];
       delete output.provenance.duplicatesRemoved;
@@ -950,6 +955,7 @@ export class IngestionProposalService {
       output.splits = [];
       output.offered = [];
       delete output.provenance.failure;
+      delete output.provenance.missingFieldsCorrection;
       delete output.provenance.duplicatesRemoved;
       delete output.provenance.splitsDropped;
       output.warnings.push('output_limit');
