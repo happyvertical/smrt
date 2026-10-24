@@ -251,7 +251,7 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain("actionMeta.scope === 'item' && !id");
     expect(source).toContain("actionMeta.scope === 'collection' && id");
     expect(source).toContain(
-      '? ObjectRegistry.getClass("Document")?.constructor',
+      'actionMeta.isStatic ? ObjectRegistry.getClass("Document") : undefined',
     );
     expect(source).toContain("parameterName === 'id'");
     expect(source).toContain("? 'actionId'");

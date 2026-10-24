@@ -802,7 +802,7 @@ describe('MCPGenerator with Custom Actions', () => {
           ([, info]) => info.constructor === MCPConformanceAgent,
         )?.[0];
         expect(handlers).toContain(
-          `ObjectRegistry.getClass(${JSON.stringify(agentKey)})?.constructor`,
+          `ObjectRegistry.getClass(${JSON.stringify(agentKey)})`,
         );
         expect(handlers).toContain('args["idempotencyKey"]');
         expect(handlers).toContain('args["actionId"]');
