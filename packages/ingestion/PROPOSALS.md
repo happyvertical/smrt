@@ -120,11 +120,16 @@ The fixed system instruction (`proposalInstructions`, extended per item by
 eligibility) is generic and value-free. It treats evidence as untrusted data,
 never instructions, and limits suggestions to offered handlers and candidates.
 It asks the model to fill every argument readable from the evidence
-(identifiers, numbers, dates, amounts, currency) in the form its schema
-requires. A candidate reference is chosen only from that handler's listed
-candidates, and an evidence reference copies the supplied `evidenceId`. A field
-goes in `missingFields` only when its value is genuinely absent or no offered
-candidate matches, and no value is invented. The model prefers `no_action` when
+(identifiers, numbers, dates, quantities, amounts) in the form its schema
+requires, never inventing a value the evidence does not show. Each value must be
+the one whose label or context matches the field's name and description; when
+several similar values appear, a field whose named value is missing is treated
+as absent rather than given a substitute. A candidate reference is chosen only
+from that handler's listed candidates, and an evidence reference copies the
+supplied `evidenceId`. A required field goes in `missingFields` only when its
+value is genuinely absent or no offered candidate matches, matching the
+validator's rule that `missingFields` equals the absent required set; absent
+optional fields stay out of both `args` and `missingFields`. The model prefers `no_action` when
 no offered handler's description fits the document's role, and `unknown` when
 the evidence cannot be interpreted (#4290). Domain routing, such as which
 received documents an application ignores, belongs in host handler descriptions

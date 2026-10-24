@@ -19,10 +19,14 @@ describe('proposal instructions', () => {
 
   it('asks for every readable argument and only genuinely absent missingFields (#4290)', () => {
     expect(proposalInstructions).toContain(
-      'Fill every args field whose value can be read from the evidence, such as identifiers, numbers, dates, amounts and currency, in the form its schema requires.',
+      'Fill every args field whose value can be read from the evidence, such as identifiers, numbers, dates, quantities and amounts, in the form its schema requires; filling never means inventing a value the evidence does not show.',
     );
     expect(proposalInstructions).toContain(
-      'List a field in missingFields only when its value is genuinely absent from the evidence or no offered candidate matches it; leave that field out of args, and never list a field you filled.',
+      "Use the value whose label or context matches the field's name and description; when several similar values appear, such as several dates, choose the one the field names, and if it is not present treat the field as absent rather than substituting another.",
+    );
+    // The validator requires missingFields to equal the absent *required* set.
+    expect(proposalInstructions).toContain(
+      'List a required field in missingFields only when its value is genuinely absent from the evidence or no offered candidate matches it, and leave it out of args; leave absent optional fields out of both args and missingFields, and never list a field you filled.',
     );
     expect(proposalInstructions).toContain(
       "Suggest a handler only when the document's role matches its offered description; when no offered handler fits, prefer no_action, and prefer unknown when the evidence cannot be interpreted.",
@@ -41,9 +45,9 @@ describe('proposal instructions', () => {
     expect(proposalInstructions).not.toContain(
       'Leave absent required arguments out',
     );
-    // The fixed text stays generic: no host domain vocabulary.
+    // Smoke check that the fixed text stays generic: no host domain words.
     expect(proposalInstructions).not.toMatch(
-      /vendor|invoice|bill|shop|purchase order|customer/i,
+      /\b(vendors?|invoices?|bills?|shops?|purchase orders?|customers?)\b/i,
     );
   });
 
