@@ -29,6 +29,10 @@ import './models/Reaction.js';
 import './models/Poll.js';
 import { PollVote } from './models/PollVote.js';
 
+// Three sequential process pairs need more than the 5s unit-test default.
+const sqliteRaceChildTimeoutMs = 15_000;
+const sqliteRaceTestTimeoutMs = 3 * sqliteRaceChildTimeoutMs + 15_000;
+
 const tenantId = '11111111-1111-4111-8111-111111111111';
 const userId = '22222222-2222-4222-8222-222222222222';
 const profileId = '33333333-3333-4333-8333-333333333333';
@@ -331,9 +335,11 @@ describe.each([
         )?.count,
       ).toBe(1);
     });
-  it('arbitrates independent sessions for unique votes/reactions and close versus vote', async () => {
+  it('arbitrates independent sessions for unique votes/reactions and close versus vote', {
+    timeout: dialect === 'sqlite' ? sqliteRaceTestTimeoutMs : undefined,
+  }, async ({ signal }) => {
     if (dialect === 'sqlite') {
-      await sqliteProcessRace();
+      await sqliteProcessRace(signal);
       return;
     }
     const dir = await mkdtemp(join(tmpdir(), 'smrt-reactions-'));
@@ -803,7 +809,7 @@ it.each([
   }
 });
 
-async function sqliteProcessRace() {
+async function sqliteProcessRace(signal: AbortSignal) {
   const dir = await mkdtemp(join(tmpdir(), 'smrt-reactions-process-'));
   const database = {
     type: 'sqlite' as const,
@@ -847,7 +853,12 @@ async function sqliteProcessRace() {
           pathToFileURL(resolve('dist/server.js')).href,
           JSON.stringify({ ...op, database, actor: options.actor }),
         ],
-        { stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: sqliteRaceChildTimeoutMs,
+          signal,
+          killSignal: 'SIGKILL',
+        },
       );
       let stderr = '';
       child.stderr.on('data', (chunk) => {
@@ -855,7 +866,7 @@ async function sqliteProcessRace() {
       });
       const done = new Promise<number | null>((yes, no) => {
         child.on('error', no);
-        child.on('exit', yes);
+        child.on('close', yes);
       });
       const ready = new Promise<void>((yes, no) => {
         child.stdout.on('data', (chunk) => {
@@ -868,23 +879,32 @@ async function sqliteProcessRace() {
       });
       return { child, done, ready, error: () => stderr };
     });
-    await Promise.all(children.map((c) => c.ready));
-    for (const c of children) c.child.stdin.end('go\n');
-    const codes = await Promise.all(children.map((c) => c.done));
-    for (const [index, code] of codes.entries()) {
-      expect([0, 1]).toContain(code);
-      if (code !== 0) {
-        const closeCanWin =
-          operations[index].operation === 'vote' &&
-          operations.some(({ operation }) => operation === 'close');
-        expect(children[index].error()).toMatch(
-          closeCanWin
-            ? /SQLITE_BUSY|Participation denied: Poll is not open\./
-            : /SQLITE_BUSY/,
-        );
+    try {
+      await Promise.all(children.map((c) => c.ready));
+      for (const c of children) c.child.stdin.end('go\n');
+      const codes = await Promise.all(children.map((c) => c.done));
+      for (const [index, code] of codes.entries()) {
+        expect([0, 1]).toContain(code);
+        if (code !== 0) {
+          const closeCanWin =
+            operations[index].operation === 'vote' &&
+            operations.some(({ operation }) => operation === 'close');
+          expect(children[index].error()).toMatch(
+            closeCanWin
+              ? /SQLITE_BUSY|Participation denied: Poll is not open\./
+              : /SQLITE_BUSY/,
+          );
+        }
       }
+      return codes;
+    } finally {
+      for (const { child } of children) {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }
+      await Promise.allSettled(children.map((c) => c.done));
     }
-    return codes;
   }
   try {
     await getTestDatabase({ db: runtime.database, classes });
