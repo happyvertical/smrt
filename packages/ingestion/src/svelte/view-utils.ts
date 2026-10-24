@@ -76,7 +76,11 @@ export function argumentsObject(value: string): Record<string, unknown> {
     throw new Error('Invalid arguments');
   return result as Record<string, unknown>;
 }
-/** Required top-level handler arguments missing from a JSON draft; unparsable drafts report none. */
+/**
+ * Required top-level handler arguments missing from a JSON draft; unparsable
+ * drafts report none. Nested misses (JSON Pointer `missingFields`) are left to
+ * the server's revalidation, which refuses with `HandlerArgumentsInvalidError`.
+ */
 export function missingRequired(
   schema: Record<string, unknown>,
   draft: string,

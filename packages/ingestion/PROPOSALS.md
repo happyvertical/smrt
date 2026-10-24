@@ -158,7 +158,8 @@ Candidate IDs must occur in the offered set, and evidence IDs in retained source
 results. Unknown enums, invented IDs, extra authority/tool/approval fields and
 malformed structures fail closed. Missing required fields are retained as
 `missingFields`, with `needs_review`; values are never invented to satisfy a
-schema. Observed page/time/source granularity is preserved.
+schema. Observed page/time/source granularity is preserved. Logical scan splits
+use `proposeDocumentSplits`; originals and hashes remain intact.
 
 When a suggestion's arguments fail the handler schema **only** on `required`
 (#4284), the suggestion is kept rather than rejecting the attempt: its
@@ -177,8 +178,11 @@ or array item is an RFC 6901 JSON Pointer relative to the arguments, such as
 `/vendor/name` or `/lines/0/sku`. An entry starting with `/` is therefore a
 pointer, so a handler should not declare a root property whose name itself
 starts with `/`. Names come from the handler schema's own `required` lists,
-never from argument values or model-chosen keys; `required` inside `allOf`
-counts like any other. The attempt still rejects as before when any other
+never from argument values or model-chosen keys; `required` inside `allOf` or
+inside object-form `dependencies` (`{a: {required: ['b']}}`) counts like any
+other. The schema walk does not follow `$ref`: a miss directly at a property
+whose schema is a `$ref` is kept, but a miss deeper inside the referenced
+definition cannot be named from the schema and rejects (fail-safe). The attempt still rejects as before when any other
 keyword fails beside or instead of `required`: type, enum, pattern, bounds,
 `additionalProperties`, an `anyOf`/`oneOf` branch, an `if`/`then`/`else` branch
 (Ajv adds an `if` error), `not`, or array-form `dependencies` (its own keyword,
@@ -188,8 +192,7 @@ Handler schemas compile in Ajv strict mode, so draft-2019 keywords such as
 `dependentRequired` are refused at compile time. Such a suggestion is ordinary
 `needs_review` output: the decision gate can only withhold readiness, never
 grant it, `automaticActionEligible` stays false, and generated preview of
-incomplete arguments fails the handler schema (see Explicit preview below). Logical scan splits
-use `proposeDocumentSplits`; originals and hashes remain intact.
+incomplete arguments fails the handler schema (see Explicit preview below).
 
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).

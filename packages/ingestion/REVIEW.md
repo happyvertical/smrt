@@ -47,8 +47,10 @@ which the published host publishes through the ordinary `previewProposal` /
 `previewPlan` with the same `ui:<index>` intention, never by rewriting the
 generation. The handler validates the human arguments again before a
 `waiting_review` action exists, approval remains a separate explicit decision,
-`ActionReview` lists required arguments missing from the current draft while
-editing, and no authority or automation eligibility is added: a failed attempt,
+`ActionReview` lists top-level required arguments missing from the current
+draft while editing (nested misses named by JSON Pointer in `missingFields` are
+not re-checked in the browser; the server's revalidation refuses them and the
+component shows that inline as `HandlerArgumentsInvalidError`), and no authority or automation eligibility is added: a failed attempt,
 an unoffered handler or a foreign stage is still refused by the host.
 `preview` throws on every failure, as before. When the handler's argument
 schema or `validate` refused the arguments being previewed (operation preview,
