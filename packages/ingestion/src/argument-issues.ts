@@ -17,7 +17,8 @@ function schemaNodes(node: unknown): SchemaNode[] {
  * Keep only path segments the schema itself names: indexes into an actual
  * array in the instance, and keys declared under `properties`. Anything else
  * (keys under `additionalProperties`/`patternProperties`, numeric keys of an
- * object, or an unknown key) is data and becomes `?`.
+ * object, or an unknown key) is data and becomes `?`. Not RFC 6901: `/` is
+ * the whole instance, and segments are not re-escaped.
  */
 export function schemaOwnedPath(
   instancePath: string,

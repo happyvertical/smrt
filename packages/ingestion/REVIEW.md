@@ -55,11 +55,18 @@ the server throws `HandlerArgumentsInvalidError` (`name` set, messages
 unchanged). An argument-schema refusal also carries `issues`: a frozen list of
 at most `HANDLER_ARGUMENT_ISSUE_LIMIT` (20) `{ path, keyword? }` entries
 (`HandlerArgumentIssue`). `path` is built only from schema-declared property
-names, `required` names and real array indexes (`/` is the whole object, `?`
-stands for a data-named key) and is cut at `HANDLER_ARGUMENT_PATH_LIMIT` (160)
-characters; `keyword` is the failing schema keyword. Argument values, Ajv
+names, `required` names and real array indexes and is cut at
+`HANDLER_ARGUMENT_PATH_LIMIT` (160)
+characters. It is deliberately not an RFC 6901 pointer at the root: `/` is the
+whole arguments object (never a key `""`), `?` stands for a data-named key, and
+segments are not `~`-escaped, matching `ProposalValidationError` reason paths.
+`keyword` is the failing schema keyword. Argument values, Ajv
 `params`/messages and handler messages are never included. A `validate`
-refusal has no `issues` (the handler contract returns only `ok`). Apply-time and
+refusal has no `issues` (the handler contract returns only `ok`). The size and
+shape preconditions checked before the schema runs (arguments over the policy
+byte limit, or a handler schema that is not a closed `type: 'object'` with
+`additionalProperties: false`) stay a plain `Error`: they fail closed as a
+denial, never as the inline refusal. Apply-time and
 external-send revalidation and result-schema checks keep a plain `Error`. The component shows an inline message and
 keeps the view and draft when `preview` either rejects with an error whose
 `name` is `HandlerArgumentsInvalidError` or resolves `{ rejected: 'invalid' }`
@@ -68,7 +75,10 @@ crosses a process boundary preserves the inline UX by keeping that name and
 `issues` (for example re-throwing an `Error` with
 `name = 'HandlerArgumentsInvalidError'` in the browser callback) or by
 returning `{ rejected: 'invalid', issues? }` for that case only, as the
-maintained fixture's `previewForReview` and `startActionForReview` do. Without either, the refusal behaves like
+maintained fixture's `previewForReview` and `startActionForReview` do. Since
+#4281 the fixture's rejection body also carries `issues` when the schema
+refused; read `rejected === 'invalid'` rather than comparing the whole body
+with strict equality. Without either, the refusal behaves like
 any other failure: the view is cleared exactly as before this change, and the
 reviewer's in-memory draft returns after an authorized refresh. Every other
 thrown preview or candidate-search failure (denied, revoked, unavailable or
