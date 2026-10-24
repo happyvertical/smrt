@@ -23,6 +23,19 @@ export {
   shortChecksum,
   verifyChecksum,
 } from './checksum.js';
+export {
+  DeploymentPhaseTracker,
+  type DeploymentReconciledContext,
+  type DeploymentReconciliation,
+  DeploymentStepError,
+  type DeploymentStepKey,
+  type DeploymentStepMode,
+  type DeploymentStepOptions,
+  type DeploymentStepRecord,
+  type DeploymentStepStatus,
+  type DeploymentStepTransaction,
+  MAX_DEPLOYMENT_CHECKPOINT_BYTES,
+} from './deployment-phase-tracker.js';
 export type { DiffOptions } from './differ.js';
 // Schema comparison
 export {
