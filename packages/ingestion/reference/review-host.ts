@@ -12,7 +12,11 @@ import {
 } from '@happyvertical/smrt-core';
 import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { IntakeValues, ReviewInput } from '../src/execution-dto.js';
+import type {
+  IntakeValues,
+  ReviewInput,
+  StartActionInput,
+} from '../src/execution-dto.js';
 import type { ExtractionRequest } from '../src/extraction-types.js';
 import type { FeedbackConfiguration } from '../src/feedback-contracts.js';
 import * as models from '../src/models.js';
@@ -24,6 +28,7 @@ import type {
   InboxState,
   ItemReviewView,
   LogicalSplitInput,
+  PreviewRejection,
   ReviewerInstructionInput,
 } from '../src/review-dto.js';
 import { createIntakeReviewHost } from '../src/review-host.js';
@@ -118,6 +123,12 @@ export interface ReferenceReviewHostOptions {
     run(service: IngestionService, lease: AnalysisLease): Promise<unknown>;
   };
   feedback?: FeedbackConfiguration;
+}
+/** The value-free correctable body for a handler's argument refusal. */
+function rejection(error: HandlerArgumentsInvalidError): PreviewRejection {
+  return error.issues
+    ? { rejected: 'invalid', issues: error.issues }
+    : { rejected: 'invalid' };
 }
 export class ReferenceReviewHost {
   constructor(
@@ -795,14 +806,31 @@ export class ReferenceReviewHost {
     scope: ReviewSession,
     input: Parameters<ReferenceReviewHost['preview']>[1],
   ): Promise<
-    | Awaited<ReturnType<ReferenceReviewHost['preview']>>
-    | { rejected: 'invalid' }
+    Awaited<ReturnType<ReferenceReviewHost['preview']>> | PreviewRejection
   > {
     try {
       return await this.preview(scope, input);
     } catch (error) {
       if (error instanceof HandlerArgumentsInvalidError)
-        return { rejected: 'invalid' };
+        return rejection(error);
+      throw error;
+    }
+  }
+  /**
+   * Review-UI transport for `startAction`, with the same mapping as
+   * `previewForReview`: only the handler's refusal of the reviewer's
+   * arguments resolves `{ rejected: 'invalid', issues? }`; access, handler
+   * unavailable, item resolved and identity conflict still throw.
+   */
+  async startActionForReview(
+    scope: ReviewSession,
+    input: StartActionInput,
+  ): Promise<void | PreviewRejection> {
+    try {
+      await (await this.service(scope)).service.startReviewerAction(input);
+    } catch (error) {
+      if (error instanceof HandlerArgumentsInvalidError)
+        return rejection(error);
       throw error;
     }
   }

@@ -176,6 +176,24 @@ export interface LogicalSplitInput {
  */
 export interface PreviewRejection {
   rejected: 'invalid';
+  /** Value-free field details from `HandlerArgumentsInvalidError.issues`, when known. */
+  issues?: readonly HandlerArgumentIssue[];
+}
+/**
+ * One field the handler's argument schema refused. `path` is a JSON Pointer
+ * into the arguments built only from schema-declared property names,
+ * `required` names and real array indexes, with segments escaped per RFC 6901
+ * (`~` as `~0`, `/` as `~1`). Two departures from RFC 6901: `/` is the whole
+ * arguments object (never a key `""`), and `?` stands for a key taken from the
+ * data. A `required` refusal appends the missing schema name to the parent's
+ * path. Relation to a suggestion's `missingFields`: a root path `/name`
+ * corresponds to the bare `missingFields` entry `name` (unescaped); nested
+ * entries are the same escaped pointer in both. `keyword` is the schema
+ * keyword that failed. Neither ever carries an argument value or message.
+ */
+export interface HandlerArgumentIssue {
+  readonly path: string;
+  readonly keyword?: string;
 }
 /** Transport-neutral callbacks. Implement on an authenticated host; props confer no permission. */
 export interface IntakeReviewHost {
@@ -222,8 +240,14 @@ export interface IntakeReviewHost {
     requestId: string;
   }): Promise<void>;
   split(input: LogicalSplitInput): Promise<void>;
-  /** Start a reviewer-chosen handler; the server previews and requires normal approval. */
-  startAction?: (input: StartActionInput) => Promise<void>;
+  /**
+   * Start a reviewer-chosen handler; the server previews and requires normal
+   * approval. Throws on every failure. A handler's refusal of the reviewer's
+   * arguments is `HandlerArgumentsInvalidError` (by `name`, optional
+   * `issues`); a transport may instead resolve `{ rejected: 'invalid' }` for
+   * that one case. Either keeps the start form and its draft inline.
+   */
+  startAction?: (input: StartActionInput) => Promise<void | PreviewRejection>;
   /** Close the item as handled without an action; terminal and distinct from reject. */
   resolve?: (input: ResolveItemInput) => Promise<void>;
   /**

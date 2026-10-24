@@ -994,6 +994,37 @@ describe('published review host projection', () => {
       f.host.preview({ ...previewInput, args: { body: 'Body' } }),
     ).rejects.toThrow('Access denied');
   });
+  it('throws the typed refusal with its field issues from startAction; other failures stay plain (#4281)', async () => {
+    const f = fixture();
+    const start = {
+      itemId: 'item',
+      handlerId: 'host:draft',
+      handlerVersion: '1',
+      args: { title: '' },
+      requestId: 'start',
+    };
+    const issues = Object.freeze([
+      Object.freeze({ path: '/title', keyword: 'minLength' }),
+    ]);
+    f.service.startReviewerAction.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler payload', issues),
+    );
+    const refused = f.host.startAction?.(start);
+    await expect(refused).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+    await expect(refused).rejects.toMatchObject({
+      name: 'HandlerArgumentsInvalidError',
+      issues: [{ path: '/title', keyword: 'minLength' }],
+    });
+    f.service.startReviewerAction.mockRejectedValueOnce(
+      new Error('Item resolved'),
+    );
+    const denied = await f.host.startAction?.(start).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(denied).not.toBeInstanceOf(HandlerArgumentsInvalidError);
+    expect((denied as Error).message).toBe('Item resolved');
+  });
   it('previews a needs_review suggestion from the generated snapshot when no arguments are supplied', async () => {
     const f = fixture();
     f.service.getCompletedAnalysis.mockResolvedValue(

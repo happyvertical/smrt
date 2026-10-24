@@ -1,12 +1,21 @@
+import type { HandlerArgumentIssue } from './review-dto.js';
+
 /**
  * The handler's argument schema or `validate` refused explicit arguments.
  * Review hosts may report this to the reviewer as a correctable rejection;
  * every other preview failure stays a denial.
+ *
+ * `issues` is present for an argument-schema refusal: a bounded, frozen list
+ * of schema-declared field paths and failing keywords, never argument values,
+ * schema parameters or handler messages. A `validate` refusal exposes no
+ * field detail (the contract returns only `ok`), so `issues` is absent.
  */
 export class HandlerArgumentsInvalidError extends Error {
-  constructor(message: string) {
+  readonly issues?: readonly HandlerArgumentIssue[];
+  constructor(message: string, issues?: readonly HandlerArgumentIssue[]) {
     super(message);
     this.name = 'HandlerArgumentsInvalidError';
+    if (issues?.length) this.issues = issues;
   }
 }
 /** The host configured neither proposals nor proposalRead; catalog reads are unavailable. */

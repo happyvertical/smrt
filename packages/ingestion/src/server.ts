@@ -3965,6 +3965,10 @@ export class IngestionService {
   }
 }
 
+export {
+  HANDLER_ARGUMENT_ISSUE_LIMIT,
+  HANDLER_ARGUMENT_PATH_LIMIT,
+} from './argument-issues.js';
 export * from './extraction.js';
 export type * from './feedback-contracts.js';
 export {
@@ -3973,6 +3977,7 @@ export {
   HandlerArgumentsInvalidError,
   ProposalsNotConfiguredError,
 } from './proposal-errors.js';
+export type { HandlerArgumentIssue } from './review-dto.js';
 export {
   createIntakeReviewHost,
   type IntakeReviewHostOptions,

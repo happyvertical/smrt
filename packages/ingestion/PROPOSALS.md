@@ -404,7 +404,10 @@ Selections must reference current persisted validated `ready_for_review` or
 `needs_review` output (#4208); a `provider_error` attempt, an unoffered handler or
 a non-interpretation stage is rejected. A `needs_review` suggestion whose
 `missingFields` are still absent fails the handler schema inside the ordinary
-preview (`Invalid handler payload`) and publishes nothing; the reviewer supplies
+preview (`HandlerArgumentsInvalidError`, `Invalid handler payload`, whose
+value-free `issues` name the missing schema fields, for example
+`{ path: '/title', keyword: 'required' }`; see REVIEW.md) and publishes
+nothing; the reviewer supplies
 the missing values through the explicit human path (`previewProposal` /
 `previewPlan`, as the published review host does for `preview({args})`), and the
 handler's `validate` and `preview` run again on the completed arguments.

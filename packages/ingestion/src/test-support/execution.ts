@@ -1000,6 +1000,8 @@ export function executionSuite(
       await expect(schema).rejects.toMatchObject({
         name: 'HandlerArgumentsInvalidError',
         message: 'Invalid handler payload',
+        // Value-free field details, identical to the start-action path (#4281).
+        issues: [{ path: '/body', keyword: 'required' }],
       });
       // Operation `validate` refusal.
       const refusedAction = await service.createAction(
