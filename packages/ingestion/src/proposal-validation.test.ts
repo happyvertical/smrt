@@ -40,9 +40,46 @@ describe('proposal validator reasons', () => {
     { groups: [[1, 1]] },
     { groups: [[9]] },
     { groups: [[2, 1]] },
-  ])('reports invalid split groups without echoing generated data ($groups)', ({
+  ])('drops an invalid split, keeps the rest and names only the check ($groups) (#4288)', ({
     groups,
   }) => {
+    const pages = (id: string) => ({
+      evidence: { id, contentHash: 'hash' },
+      configurationRevision: 'test',
+      segments: [1, 2].map((page) => ({ location: { kind: 'page', page } })),
+    });
+    const extraction = [pages('e'), pages('f')] as ExtractionResult[];
+    const validate = (splits: unknown[]) =>
+      validateSuggestions(
+        { outcome: 'needs_review', suggestions: [], splits },
+        [],
+        extraction,
+        limits,
+        1,
+      );
+    const kept = validate([{ evidenceId: 'f', groups: [[1], [2]] }]);
+    expect(kept).not.toHaveProperty('splitsDropped');
+    const mixed = validate([
+      { evidenceId: 'e', groups },
+      { evidenceId: 'f', groups: [[1], [2]] },
+    ]);
+    // The valid split is untouched, digest included.
+    expect(mixed.splits).toEqual(kept.splits);
+    expect(mixed.splitsDropped).toEqual({ count: 1, checks: ['split_groups'] });
+    const none = validate([{ evidenceId: 'e', groups }]);
+    expect(none.splits).toEqual([]);
+    expect(none.splitsDropped).toEqual({ count: 1, checks: ['split_groups'] });
+    expect(JSON.stringify(none)).not.toMatch(/"e"|\[\[/);
+  });
+
+  it('still rejects a split for unknown or repeated evidence (#4288)', () => {
+    expect(
+      failure({
+        outcome: 'needs_review',
+        suggestions: [],
+        splits: [{ evidenceId: 'missing', groups: [[1]] }],
+      }).reason,
+    ).toBe('Invalid split source: /splits/0');
     const extraction = [
       {
         evidence: { id: 'e', contentHash: 'hash' },
@@ -50,25 +87,54 @@ describe('proposal validator reasons', () => {
         segments: [1, 2].map((page) => ({ location: { kind: 'page', page } })),
       },
     ] as ExtractionResult[];
-    try {
+    // The repeat rule holds even when the first split on that evidence was dropped.
+    for (const first of [
+      [[1], [2]],
+      [[1], [1]],
+    ])
+      expect(() =>
+        validateSuggestions(
+          {
+            outcome: 'needs_review',
+            suggestions: [],
+            splits: [
+              { evidenceId: 'e', groups: first },
+              { evidenceId: 'e', groups: [[1, 2]] },
+            ],
+          },
+          [],
+          extraction,
+          limits,
+          1,
+        ),
+      ).toThrow(
+        expect.objectContaining({
+          reason: 'Invalid split source: /splits/1',
+        }),
+      );
+  });
+
+  it('lets a non-group split error propagate instead of dropping the split (#4288 review)', () => {
+    const extraction = [
+      {
+        evidence: { id: 'e', contentHash: 'hash' },
+        configurationRevision: 'test',
+        segments: [{ location: { kind: 'page', page: 1 } }],
+      },
+    ] as ExtractionResult[];
+    expect(() =>
       validateSuggestions(
         {
           outcome: 'needs_review',
           suggestions: [],
-          splits: [{ evidenceId: 'e', groups }],
+          splits: [{ evidenceId: 'e', groups: [[1]] }],
         },
         [],
         extraction,
         limits,
-        1,
-      );
-      throw new Error('Expected invalid split');
-    } catch (error) {
-      expect(error).toBeInstanceOf(ProposalValidationError);
-      expect((error as ProposalValidationError).reason).toBe(
-        'Invalid split groups: /splits/0/groups',
-      );
-    }
+        0,
+      ),
+    ).toThrow(expect.objectContaining({ reason: 'Invalid split: /splits/0' }));
   });
 
   it.each([
