@@ -889,8 +889,16 @@ async function sqliteProcessRace(signal: AbortSignal) {
       const codes = await Promise.all(children.map((c) => c.done));
       for (const [index, code] of codes.entries()) {
         expect([0, 1]).toContain(code);
-        if (code !== 0)
-          expect(children[index].error()).toContain('SQLITE_BUSY');
+        if (code !== 0) {
+          const closeCanWin =
+            operations[index].operation === 'vote' &&
+            operations.some(({ operation }) => operation === 'close');
+          expect(children[index].error()).toMatch(
+            closeCanWin
+              ? /SQLITE_BUSY|Participation denied: Poll is not open\./
+              : /SQLITE_BUSY/,
+          );
+        }
       }
       return codes;
     } finally {
