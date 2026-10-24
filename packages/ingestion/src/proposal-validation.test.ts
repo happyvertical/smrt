@@ -1288,6 +1288,21 @@ describe('invented candidate targets (#4289)', () => {
       rejection(reply(suggestion({ ...complete, vendorId: value }))).reason,
     ).toBe('Unoffered target: /suggestions/0/args/vendorId');
   });
+  it.each([
+    'V"X-4289',
+    'V\\X-4289',
+  ])('still rejects an escapable invented target (%s) echoed in the explanation', (value) => {
+    // The kept output is serialized JSON, so the guard must look for the
+    // escaped form; a raw substring search would miss this echo.
+    const error = rejection(
+      reply(
+        suggestion({ ...complete, vendorId: value }, [], {
+          explanation: `Pay ${value} now.`,
+        }),
+      ),
+    );
+    expect(error.reason).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
   it('replaces a declaration that names the invented target with the computed set', () => {
     const result = validate(
       reply(suggestion({ ...complete, vendorId: INVENTED }, [INVENTED])),

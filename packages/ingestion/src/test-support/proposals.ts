@@ -6902,7 +6902,18 @@ export function proposalSuite(
             handlerVersion: '1',
             args: { ...input.output.suggestions[0].args, contentId },
           });
-        await expect(preview(randomUUID())).rejects.toThrow();
+        // Reviewer preview revalidates the chosen target in the handler: an
+        // ID that does not exist, or a real document outside the caller's
+        // tenant, is refused as unavailable before anything is recorded.
+        await expect(preview(randomUUID())).rejects.toThrow(
+          /^Target unavailable$/,
+        );
+        await expect(
+          preview(String((await document('Foreign', randomUUID())).id)),
+        ).rejects.toThrow(/^Target unavailable$/);
+        expect(
+          (await db.query('SELECT id FROM intake_proposals')).rows,
+        ).toHaveLength(0);
         const review = await preview(String(offered.id));
         expect(review.state).toBe('waiting_review');
         await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
@@ -6952,7 +6963,18 @@ export function proposalSuite(
             handlerVersion: '1',
             args: { ...input.output.suggestions[0].args, contentId },
           });
-        await expect(preview(randomUUID())).rejects.toThrow();
+        // Reviewer preview revalidates the chosen target in the handler: an
+        // ID that does not exist, or a real document outside the caller's
+        // tenant, is refused as unavailable before anything is recorded.
+        await expect(preview(randomUUID())).rejects.toThrow(
+          /^Target unavailable$/,
+        );
+        await expect(
+          preview(String((await document('Foreign', randomUUID())).id)),
+        ).rejects.toThrow(/^Target unavailable$/);
+        expect(
+          (await db.query('SELECT id FROM intake_proposals')).rows,
+        ).toHaveLength(0);
         const review = await preview(String(offered.id));
         expect(review.state).toBe('waiting_review');
         await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
