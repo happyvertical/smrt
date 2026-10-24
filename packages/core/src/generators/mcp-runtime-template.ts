@@ -317,10 +317,13 @@ ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: pr
 ${indent}    ai: aiConfig
 ${indent}  });
 
+${indent}  const classInfo = actionMeta.isStatic ? ObjectRegistry.getClass(${JSON.stringify(lookup)}) : undefined;
+${indent}  const staticTarget = [classInfo?.constructor, classInfo?.collectionConstructor]
+${indent}    .find((receiver) => typeof receiver?.[actionMeta.methodName || ${JSON.stringify(action)}] === 'function');
 ${indent}  const target = actionMeta.scope === 'item'
 ${indent}    ? await collection.get(id)
 ${indent}    : actionMeta.isStatic
-${indent}      ? ObjectRegistry.getClass(${JSON.stringify(lookup)})?.constructor
+${indent}      ? staticTarget
 ${indent}      : collection;
 ${indent}  if (!target) {
 ${indent}    throw new Error(actionMeta.scope === 'item' ? 'Object not found' : 'Custom action target not found');

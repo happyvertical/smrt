@@ -2069,10 +2069,20 @@ export class MCPGenerator {
         }
       } else if (metadata.isStatic && objectName) {
         const classInfo = ObjectRegistry.getClass(objectName);
+        // Manifest-backed collection entries retain a stub model constructor;
+        // generated registration binds their executable collection separately.
+        // Keep model statics first when both receivers define the action.
+        const classConstructor = [
+          classInfo?.constructor,
+          classInfo?.collectionConstructor,
+        ].find(
+          (receiver) =>
+            typeof (
+              receiver as unknown as Record<string, unknown> | undefined
+            )?.[methodName] === 'function',
+        );
         const classMethod = (
-          classInfo?.constructor as unknown as
-            | Record<string, unknown>
-            | undefined
+          classConstructor as unknown as Record<string, unknown> | undefined
         )?.[methodName];
         if (typeof classMethod !== 'function') {
           throw new Error(
@@ -2080,7 +2090,7 @@ export class MCPGenerator {
           );
         }
         const result = await (classMethod as InstanceCallable).call(
-          classInfo?.constructor,
+          classConstructor,
           ...methodArgs,
         );
         const failure = normalizeCustomActionFailure(result);
@@ -2703,10 +2713,13 @@ ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: pr
 ${indent}    ai: aiConfig
 ${indent}  });
 
+${indent}  const classInfo = ${metadata.isStatic} ? ObjectRegistry.getClass(${JSON.stringify(registeredName)}) : undefined;
+${indent}  const staticTarget = [classInfo?.constructor, classInfo?.collectionConstructor]
+${indent}    .find((receiver) => typeof receiver?.[${JSON.stringify(methodName)}] === 'function');
 ${indent}  const target = ${JSON.stringify(metadata.scope)} === 'item'
 ${indent}    ? await collection.get(id)
 ${indent}    : ${metadata.isStatic}
-${indent}      ? ObjectRegistry.getClass(${JSON.stringify(registeredName)})?.constructor
+${indent}      ? staticTarget
 ${indent}      : collection;
 ${indent}  if (!target) {
 ${indent}    throw new Error(${JSON.stringify(
