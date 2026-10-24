@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.26
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - normalize generated proposal lists and invalid splits (#4294) (ingestion)
+- @happyvertical/smrt-config@0.57.26
+  - @happyvertical/smrt-scanner@0.57.26
+  - @happyvertical/smrt-types@0.57.26
+
 ## 0.57.25
 
 ### Patch Changes
