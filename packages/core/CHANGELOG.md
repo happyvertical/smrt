@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.57.27
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - fill evidence-grounded proposal arguments (#4304) (ingestion)
+  - compile analytics context with the SSR renderer (#4303) (ui)
+  - keep invalid reviewer arguments correctable (#4301) (ingestion)
+  - retain required-only argument refusals for review (#4300) (ingestion)
+- @happyvertical/smrt-config@0.57.27
+  - @happyvertical/smrt-scanner@0.57.27
+  - @happyvertical/smrt-types@0.57.27
+
 ## 0.57.26
 
 ### Patch Changes
