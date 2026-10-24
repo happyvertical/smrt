@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'acorn';
@@ -412,6 +418,189 @@ function collectMissingRelativeRuntimeImports(packageRoot, runtimeEntryFiles) {
   return missing;
 }
 
+/** Inspect each exported runtime closure, never infer Svelte from its package. */
+function verifySvelteExportConditions(
+  packageRoot,
+  packageJson,
+  archiveEntries,
+) {
+  const display = (path) => relative(packageRoot, path);
+  const reachesSvelte = (entryPath) => {
+    const pending = [entryPath];
+    const seen = new Set();
+    let marker;
+    while (pending.length) {
+      const filePath = pending.pop();
+      if (seen.has(filePath)) continue;
+      seen.add(filePath);
+      if (
+        !isWithinPackageRoot(packageRoot, filePath) ||
+        !existsSync(filePath) ||
+        !statSync(filePath).isFile()
+      ) {
+        fail(
+          `Svelte export inspection cannot read packed target ${display(filePath)}`,
+        );
+      }
+      if (filePath.endsWith('.svelte')) {
+        marker ??= display(filePath);
+        continue;
+      }
+      if (!/\.[cm]?js$/.test(filePath)) continue;
+      let program;
+      try {
+        program = parse(readFileSync(filePath, 'utf8'), {
+          ecmaVersion: 'latest',
+          sourceType: 'module',
+        });
+      } catch (error) {
+        fail(
+          `Svelte export inspection cannot parse packed JavaScript ${display(filePath)}: ${error.message}`,
+        );
+      }
+      // Only static runtime edges. JS has no type-only imports; .d.ts targets
+      // and component script types never enter this parser.
+      for (const statement of program.body) {
+        if (
+          ![
+            'ImportDeclaration',
+            'ExportNamedDeclaration',
+            'ExportAllDeclaration',
+          ].includes(statement.type)
+        )
+          continue;
+        const specifier = statement.source?.value;
+        if (typeof specifier !== 'string') continue;
+        if (specifier === 'svelte' || specifier.startsWith('svelte/')) {
+          marker ??= `${display(filePath)} -> ${specifier}`;
+        }
+        if (!specifier.startsWith('.')) continue;
+        const target = resolve(
+          dirname(filePath),
+          specifier.replace(/[?#].*$/, ''),
+        );
+        if (!isWithinPackageRoot(packageRoot, target)) {
+          fail(
+            `Svelte export inspection found an escaping packed import: ${display(filePath)} -> ${specifier}`,
+          );
+        }
+        // Require exact emitted targets for explicit extensions. Do not silently
+        // substitute a neighbouring .js for a missing .mjs or component.
+        const resolved = /\.[^/]+$/.test(target)
+          ? target
+          : findExistingPackageCandidate(
+              packageRoot,
+              target,
+              resolveRuntimeCandidates,
+            );
+        if (
+          !resolved ||
+          !existsSync(resolved) ||
+          !statSync(resolved).isFile()
+        ) {
+          fail(
+            `Svelte export inspection missing packed import target: ${display(filePath)} -> ${specifier}`,
+          );
+        }
+        if (isRuntimeSourceFile(resolved)) pending.push(resolved);
+      }
+    }
+    return marker;
+  };
+  const packedTargets = (value) => {
+    const pattern = new RegExp(
+      `^${escapeRegex(`package/${value.slice(2)}`).replaceAll('*', '.*')}$`,
+    );
+    return value.includes('*')
+      ? [...archiveEntries]
+          .filter((entry) => pattern.test(entry) && !entry.endsWith('/'))
+          .map((entry) => entry.slice(8))
+      : [value.slice(2)];
+  };
+  const validatedConditions = new WeakSet();
+  const validateSvelteTargets = (value, subpath) => {
+    if (value === null) return 0;
+    if (typeof value === 'string') {
+      if (!value.startsWith('./'))
+        fail(`Export ${subpath} has a non-relative svelte target: ${value}`);
+      const targets = packedTargets(value);
+      if (
+        !targets.length ||
+        targets.some((target) => !isRuntimeSourceFile(target))
+      )
+        fail(`Export ${subpath} has no usable packed svelte target: ${value}`);
+      for (const target of targets) reachesSvelte(resolve(packageRoot, target));
+      return targets.length;
+    }
+    const children = Array.isArray(value)
+      ? value
+      : value && typeof value === 'object'
+        ? Object.entries(value)
+            .filter(([key]) => key !== 'types' && !key.startsWith('types@'))
+            .map(([, child]) => child)
+        : [];
+    return children.reduce(
+      (count, child) => count + validateSvelteTargets(child, subpath),
+      0,
+    );
+  };
+  const inspect = (value, subpath, scopes = []) => {
+    if (typeof value === 'string') {
+      if (!value.startsWith('./'))
+        fail(
+          `Export ${subpath} must name a package-relative packed target: ${value}`,
+        );
+      const targets = packedTargets(value);
+      for (const target of targets) {
+        if (!isRuntimeSourceFile(target)) continue;
+        const marker = reachesSvelte(resolve(packageRoot, target));
+        if (!marker) continue;
+        const effective = scopes.find(
+          ({ conditions }) =>
+            conditions.svelte !== undefined && conditions.svelte !== null,
+        );
+        if (!effective) {
+          fail(
+            `Export ${subpath} (${value}) reaches Svelte runtime via ${marker}; add an effective "svelte" condition with a packaged runtime target before fallback runtime conditions (types first)`,
+          );
+        }
+        const keys = Object.keys(effective.conditions);
+        const svelteIndex = keys.indexOf('svelte');
+        if (
+          (keys.includes('types') && keys[0] !== 'types') ||
+          keys.slice(0, svelteIndex).some((key) => key !== 'types')
+        ) {
+          fail(
+            `Export ${subpath} (${value}) has unusable condition order; put types first, then svelte before import/default and other runtime conditions`,
+          );
+        }
+        // Svelte-aware bundlers may consume raw source while other consumers
+        // use a separate compiled entry. Presence, order and packaged targets
+        // are statically checkable; API equivalence needs consumer tests.
+        if (!validatedConditions.has(effective.conditions)) {
+          if (!validateSvelteTargets(effective.conditions.svelte, subpath))
+            fail(`Export ${subpath} has no effective packed svelte target`);
+          validatedConditions.add(effective.conditions);
+        }
+      }
+      return;
+    }
+    if (value === null) return;
+    if (Array.isArray(value)) {
+      for (const child of value) inspect(child, subpath, scopes);
+      return;
+    }
+    if (!value || typeof value !== 'object')
+      fail(`Invalid export map for ${subpath}`);
+    for (const [condition, child] of Object.entries(value)) {
+      if (condition === 'types' || condition.startsWith('types@')) continue;
+      if (condition.startsWith('.')) inspect(child, condition, []);
+      else inspect(child, subpath, [{ conditions: value }, ...scopes]);
+    }
+  };
+  if (packageJson.exports !== undefined) inspect(packageJson.exports, '.');
+}
+
 function collectMissingTypeImports(packageRoot, typeEntryFiles) {
   const missing = [];
   const importPattern =
@@ -547,6 +736,10 @@ try {
 
   run('tar', ['-xf', tarballPath, '-C', tempDir]);
   const packageRoot = join(tempDir, 'package');
+  const packedPackageJson = JSON.parse(
+    readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+  );
+  verifySvelteExportConditions(packageRoot, packedPackageJson, archiveEntries);
   const runtimeEntryFiles = collectPackageEntryFiles(
     packageRoot,
     runtimePaths,

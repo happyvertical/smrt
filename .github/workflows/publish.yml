@@ -14,6 +14,11 @@ name: Publish
 on:
   workflow_call:  # Called by standard workflows
     inputs:
+      checkout_ref:
+        description: 'Exact source snapshot reserved by Batched Release'
+        required: false
+        type: string
+        default: ''
       deploy-docs:
         description: 'Whether to deploy documentation after publishing'
         required: false
@@ -42,6 +47,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  CHECKOUT_REF: ${{ inputs.checkout_ref || github.sha }}
+  RELEASE_SOURCE_SHA: ${{ inputs.checkout_ref || github.sha }}
+  CI_RELEASE_WINDOW_ENABLED: ${{ vars.CI_RELEASE_WINDOW_ENABLED }}
   PUBLISH_PACK_SHARD_COUNT: '2'
   # Releases are published to, and recorded against, our own registry; npmjs
   # is a best-effort mirror (#3002). An expired npmjs token, a hold on the npm
@@ -88,8 +96,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Verify reserved release snapshot
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
+        run: |
+          test "$PUBLISH_MODE" = artifacts || { echo 'Release windows require the verified artifact publisher'; exit 1; }
+          node scripts/release-admission.mjs assert-window
 
       # The release needs the primary registry's credential, not npmjs's:
       # fail here, in seconds, rather than after the build and validation.
@@ -251,7 +270,7 @@ jobs:
         if: steps.prepare.outputs.should_publish == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: publish-release-version-patch
+          name: publish-release-version-patch-${{ github.run_id }}-${{ github.run_attempt }}
           # Keep the exact recovery patch long enough to reconcile an npm
           # publish that succeeds before a later Git ref update fails.
           retention-days: 30
@@ -262,8 +281,8 @@ jobs:
         if: steps.prepare.outputs.should_publish == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: publish-release-workspace
-          retention-days: 1
+          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
           if-no-files-found: error
           path: publish-release-workspace.tar
 
@@ -289,12 +308,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
 
       - name: Restore versioned workspace and build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-workspace
+          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-artifacts
 
       - name: Extract versioned workspace and build outputs
@@ -323,8 +343,8 @@ jobs:
       - name: Upload verified package artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: publish-release-pack-${{ matrix.shard-index }}
-          retention-days: 1
+          name: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard-index }}
+          retention-days: 30
           if-no-files-found: error
           path: publish-pack-output/
 
@@ -352,12 +372,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           persist-credentials: false
 
       - name: Restore versioned workspace and build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-workspace
+          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-artifacts
 
       - name: Extract versioned workspace and build outputs
@@ -366,7 +387,7 @@ jobs:
       - name: Download verified package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: publish-release-pack-*
+          pattern: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: ${{ runner.temp }}/release-packs
           merge-multiple: true
 
@@ -417,6 +438,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
           # push-release-refs supplies the release App credential explicitly.
           # Persisting checkout auth can send duplicate Authorization headers.
@@ -426,7 +448,7 @@ jobs:
       - name: Download release version patch
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-version-patch
+          name: publish-release-version-patch-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-artifacts
 
       - name: Apply version patch
@@ -435,7 +457,7 @@ jobs:
       - name: Restore versioned workspace and build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-workspace
+          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-artifacts
 
       - name: Extract versioned workspace and build outputs
@@ -444,7 +466,7 @@ jobs:
       - name: Download verified package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: publish-release-pack-*
+          pattern: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: publish-pack-output
           merge-multiple: true
 
@@ -524,16 +546,23 @@ jobs:
       # doing so would strand a registry release that the collision guard cannot
       # safely reconstruct on a later run.
       - name: Recheck merge queue before publication
-        if: steps.guard.outputs.already-recorded != 'true'
+        if: steps.guard.outputs.already-recorded != 'true' && vars.CI_RELEASE_WINDOW_ENABLED != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/check-merge-queue-idle.mjs
 
-      - name: Publish validated release
+      - name: Recheck reserved snapshot before publication
+        if: steps.guard.outputs.already-recorded != 'true' && vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+        run: node scripts/release-admission.mjs assert-window
+
+      - name: Prepare exact release commit
         if: steps.guard.outputs.already-recorded != 'true'
         env:
           CI: true
-          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -557,6 +586,38 @@ jobs:
           # makes the release irreversible. This catches credential and remote
           # ref failures without updating either main or the release tag.
           RELEASE_PUSH_DRY_RUN=true node scripts/push-release-refs.mjs
+
+          if [ "$CI_RELEASE_WINDOW_ENABLED" = true ]; then
+            git bundle create release-candidate.bundle HEAD "^$RELEASE_SOURCE_SHA"
+          fi
+
+      - name: Preserve exact release commit for recovery
+        if: steps.guard.outputs.already-recorded != 'true' && vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-candidate.bundle
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish validated release
+        if: steps.guard.outputs.already-recorded != 'true'
+        env:
+          CI: true
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_BASE_BRANCH: main
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
+        run: |
+          # Persist the irreversible-phase boundary before the first registry
+          # write. Failure after this point retains the fence for recovery.
+          if [ "$CI_RELEASE_WINDOW_ENABLED" = true ]; then
+            node scripts/release-admission.mjs begin-publishing --artifact-dir publish-pack-output
+          fi
 
           if [ "$PUBLISH_MODE" = "artifacts" ]; then
             node scripts/publish-validated-artifacts.mjs publish-pack-output
@@ -583,6 +644,12 @@ jobs:
           # path-conditional credentials installed by actions/checkout do not
           # match the repository's real gitdir even though public fetches work.
           node scripts/push-release-refs.mjs
+
+          # Reopen only after independently confirming the exact primary
+          # artifacts and source-bound release refs. npmjs remains a mirror.
+          if [ "$CI_RELEASE_WINDOW_ENABLED" = true ]; then
+            node scripts/release-admission.mjs complete --artifact-dir publish-pack-output
+          fi
 
       # Deliberately not gated on `already-recorded` and not part of the step
       # above: `already-recorded` only tracks the tag push and npm publishes,
@@ -648,6 +715,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           persist-credentials: false
 
       - name: Setup Environment
@@ -693,6 +761,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment

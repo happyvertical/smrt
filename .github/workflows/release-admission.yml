@@ -1,0 +1,154 @@
+name: Release Admission
+
+on:
+  workflow_run:
+    workflows: ['Pull Request Validation', 'Batched Release']
+    types: [completed]
+  # Actions may coalesce pending workflow_run events. Scheduled reconciliation
+  # polls the exact owning run and current PR/queue heads to recover dropped events.
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Reconcile, bootstrap state, or recover an owned release/status grant'
+        type: choice
+        options: [reconcile, init, recover, ack-grant]
+        default: reconcile
+      owner-run-id:
+        description: 'Original Batched Release run ID (recover only)'
+        type: string
+      owner-run-attempt:
+        description: 'Original owning attempt, never the recovery executor attempt'
+        type: string
+      grant-sha:
+        description: 'Exact SHA with an unsettled status grant (ack-grant only)'
+        type: string
+      grant-id:
+        description: 'Exact saved status grant nonce (ack-grant only)'
+        type: string
+      writer-run-id:
+        description: 'Original Release Admission status writer run (ack-grant only)'
+        type: string
+      writer-run-attempt:
+        description: 'Original status writer attempt (ack-grant only)'
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: release-admission-controller
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((vars.CI_RELEASE_WINDOW_ENABLED == 'true' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.command == 'recover')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.command == 'init'))
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted default branch only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+      - name: Generate release App token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        id: app
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+      # App 2315871 needs statuses:write in addition to contents:write.
+      # Bind the required context to that App and protect the state ref before enabling.
+      # No event-head checkout, package install, or artifact execution occurs here.
+      - name: Reconcile authenticated event
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          MANUAL_COMMAND: ${{ inputs.command }}
+          GRANT_SHA: ${{ inputs.grant-sha }}
+          GRANT_ID: ${{ inputs.grant-id }}
+          WRITER_RUN_ID: ${{ inputs.writer-run-id }}
+          WRITER_RUN_ATTEMPT: ${{ inputs.writer-run-attempt }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            if [ "$SOURCE_WORKFLOW" = 'Pull Request Validation' ]; then
+              if [ "$SOURCE_CONCLUSION" = success ]; then
+                node scripts/release-admission.mjs admit --run-id "$SOURCE_RUN_ID"
+              fi
+            elif [ "$SOURCE_WORKFLOW" = 'Batched Release' ]; then
+              node scripts/release-admission.mjs finish-run --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT"
+            fi
+          elif [ "$EVENT_NAME" = workflow_dispatch ] && [ "$MANUAL_COMMAND" = init ]; then
+            node scripts/release-admission.mjs init
+          elif [ "$EVENT_NAME" = workflow_dispatch ] && [ "$MANUAL_COMMAND" = ack-grant ]; then
+            node scripts/release-admission.mjs ack-grant \
+              --sha "$GRANT_SHA" --grant-id "$GRANT_ID" \
+              --writer-run-id "$WRITER_RUN_ID" --writer-run-attempt "$WRITER_RUN_ATTEMPT"
+          fi
+          node scripts/release-admission.mjs reconcile
+
+  recover:
+    name: Recover Exact Published Candidate
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      vars.CI_RELEASE_WINDOW_ENABLED == 'true' &&
+      github.event_name == 'workflow_dispatch' && inputs.command == 'recover'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 45
+    env:
+      RELEASE_PRIMARY_REGISTRY: 'https://npm.happyvertical.com/'
+    steps:
+      - name: Checkout trusted recovery code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+      - name: Generate recovery App token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        id: app
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+      - name: Authenticate only to the reviewed primary registry
+        env:
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$PRIMARY_TOKEN"
+          node --input-type=module -e "import { primaryRegistry } from './scripts/release-registry.mjs'; primaryRegistry();"
+          rc="$RUNNER_TEMP/recovery-npmrc"
+          umask 077
+          printf '//npm.happyvertical.com/:_authToken=%s\n' "$PRIMARY_TOKEN" > "$rc"
+          echo "NPM_CONFIG_USERCONFIG=$rc" >> "$GITHUB_ENV"
+          NPM_CONFIG_USERCONFIG="$rc" npm whoami --registry "$RELEASE_PRIMARY_REGISTRY" "--@happyvertical:registry=$RELEASE_PRIMARY_REGISTRY"
+      - name: Resume original artifacts without rebuilding or taking ownership
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+          OWNER_RUN_ID: ${{ inputs.owner-run-id }}
+          OWNER_RUN_ATTEMPT: ${{ inputs.owner-run-attempt }}
+        run: node scripts/recover-release.mjs --owner-run-id "$OWNER_RUN_ID" --owner-run-attempt "$OWNER_RUN_ATTEMPT"
