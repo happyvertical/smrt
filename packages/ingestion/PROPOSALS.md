@@ -174,12 +174,18 @@ removed}` counts only, and is absent otherwise and dropped whenever the
 suggestions are discarded. A miss at the
 argument root is the bare property name; a miss inside a present nested object
 or array item is an RFC 6901 JSON Pointer relative to the arguments, such as
-`/vendor/name` or `/lines/0/sku`. Names come from the handler schema's own
-`required` lists, never from argument values or model-chosen keys. The attempt
-still rejects as before when any other keyword fails beside or instead of
-`required` (type, enum, pattern, bounds, `additionalProperties`, a union or
-conditional branch), when a miss lies under a key the schema does not declare,
-or when more than 30 fields are missing. Such a suggestion is ordinary
+`/vendor/name` or `/lines/0/sku`. An entry starting with `/` is therefore a
+pointer, so a handler should not declare a root property whose name itself
+starts with `/`. Names come from the handler schema's own `required` lists,
+never from argument values or model-chosen keys; `required` inside `allOf`
+counts like any other. The attempt still rejects as before when any other
+keyword fails beside or instead of `required`: type, enum, pattern, bounds,
+`additionalProperties`, an `anyOf`/`oneOf` branch, an `if`/`then`/`else` branch
+(Ajv adds an `if` error), `not`, or array-form `dependencies` (its own keyword,
+although it names the missing property). It also rejects when a miss lies under
+a key the schema does not declare, or when more than 30 fields are missing.
+Handler schemas compile in Ajv strict mode, so draft-2019 keywords such as
+`dependentRequired` are refused at compile time. Such a suggestion is ordinary
 `needs_review` output: the decision gate can only withhold readiness, never
 grant it, `automaticActionEligible` stays false, and generated preview of
 incomplete arguments fails the handler schema (see Explicit preview below). Logical scan splits

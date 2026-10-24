@@ -175,7 +175,8 @@ const MISSING_FIELD_LENGTH = 512;
  * nested object or array item is an RFC 6901 JSON Pointer relative to the
  * arguments (`/vendor/name`, `/lines/0/sku`). Returns `undefined`, so the
  * caller rejects as before, when any other keyword failed (type, enum,
- * bounds, additionalProperties, a union or conditional branch...), when a
+ * bounds, additionalProperties, anyOf/oneOf, if/then/else, not, array-form
+ * dependencies — which also carries `missingProperty`...), when a
  * path crosses a segment the schema does not own (a model-chosen key), or
  * when the work or result exceeds its bound. Every name comes from the
  * handler schema's own `required` list; argument values are never read.
