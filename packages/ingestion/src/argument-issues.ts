@@ -13,17 +13,23 @@ function schemaNodes(node: unknown): SchemaNode[] {
   );
   return [current, ...nested];
 }
+/** RFC 6901 segment escaping: `~` becomes `~0`, then `/` becomes `~1`. */
+function escapeSegment(segment: string): string {
+  return segment.replace(/~/g, '~0').replace(/\//g, '~1');
+}
 /**
  * Keep only path segments the schema itself names: indexes into an actual
  * array in the instance, and keys declared under `properties`. Anything else
  * (keys under `additionalProperties`/`patternProperties`, numeric keys of an
- * object, or an unknown key) is data and becomes `?`. Not RFC 6901: `/` is
- * the whole instance, and segments are not re-escaped.
+ * object, or an unknown key) is data and becomes `?`. `/` is the whole
+ * instance. With `escaped`, kept segments are RFC 6901-escaped (`~0`, `~1`);
+ * without it (the `ProposalValidationError` reason format) they are not.
  */
 export function schemaOwnedPath(
   instancePath: string,
   schema: unknown,
   instance?: unknown,
+  escaped = false,
 ): string {
   if (!instancePath) return '/';
   let nodes = schemaNodes(schema);
@@ -71,7 +77,7 @@ export function schemaOwnedPath(
       );
     }
   }
-  return `/${kept.join('/')}`;
+  return `/${kept.map((segment) => (escaped && segment !== '?' ? escapeSegment(segment) : segment)).join('/')}`;
 }
 
 /** Most field details one `HandlerArgumentsInvalidError` carries. */
@@ -83,8 +89,8 @@ const ERRORS_EXAMINED = 200;
 const KEYWORD = /^[A-Za-z$][A-Za-z0-9_$-]{0,63}$/;
 
 /**
- * Value-free field details for an argument-schema refusal: schema-owned paths
- * (see `schemaOwnedPath`) and the failing schema keyword. A `required` failure
+ * Value-free field details for an argument-schema refusal: RFC 6901-escaped
+ * schema-owned paths (see `schemaOwnedPath`) and the failing schema keyword. A `required` failure
  * names the schema-declared missing property; no other Ajv `params`, message,
  * or instance value is ever read into the result. Bounded and frozen.
  */
@@ -107,15 +113,16 @@ export function handlerArgumentIssues(
     const error = all[index];
     let path = paths.get(error.instancePath);
     if (path === undefined) {
-      path = schemaOwnedPath(error.instancePath, schema, instance);
+      path = schemaOwnedPath(error.instancePath, schema, instance, true);
       paths.set(error.instancePath, path);
     }
     const missing = (error.params as Record<string, unknown>).missingProperty;
     if (error.keyword === 'required' && typeof missing === 'string')
       // `required` lists schema-authored names only, never instance keys.
-      path = `${path === '/' ? '' : path}/${missing}`;
+      path = `${path === '/' ? '' : path}/${escapeSegment(missing)}`;
     if (path.length > HANDLER_ARGUMENT_PATH_LIMIT)
-      path = path.slice(0, HANDLER_ARGUMENT_PATH_LIMIT);
+      // Never leave half of a `~0`/`~1` escape at the cut.
+      path = path.slice(0, HANDLER_ARGUMENT_PATH_LIMIT).replace(/~$/, '');
     const keyword = KEYWORD.test(error.keyword) ? error.keyword : undefined;
     const key = `${path}\u0000${keyword ?? ''}`;
     if (seen.has(key)) continue;

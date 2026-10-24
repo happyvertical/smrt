@@ -925,7 +925,8 @@ test('reviewer starts a chosen handler through preview and approval, and closes 
   await expect(startRefusal).toContainText(
     'did not pass the handler validation',
   );
-  await expect(startRefusal.getByRole('listitem')).toHaveText(['/title']);
+  // A root issue `/title` shows as `title`, like the missing-information list.
+  await expect(startRefusal.getByRole('listitem')).toHaveText(['title']);
   await expect(args).toHaveValue(invalidDraft);
   expect(
     (await (await page.request.get(`/api/load?itemId=${itemId}`)).json())

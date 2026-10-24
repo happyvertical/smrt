@@ -180,13 +180,16 @@ export interface PreviewRejection {
   issues?: readonly HandlerArgumentIssue[];
 }
 /**
- * One field the handler's argument schema refused. `path` is a slash-separated
- * path into the arguments built only from schema-declared property names,
- * `required` names and real array indexes. It is not an RFC 6901 pointer:
- * `/` is the whole arguments object (never a key `""`), `?` stands for a key
- * taken from the data, and segments are not `~`-escaped. This matches the
- * paths in `ProposalValidationError` reasons. `keyword` is the schema keyword
- * that failed. Neither ever carries an argument value or message.
+ * One field the handler's argument schema refused. `path` is a JSON Pointer
+ * into the arguments built only from schema-declared property names,
+ * `required` names and real array indexes, with segments escaped per RFC 6901
+ * (`~` as `~0`, `/` as `~1`). Two departures from RFC 6901: `/` is the whole
+ * arguments object (never a key `""`), and `?` stands for a key taken from the
+ * data. A `required` refusal appends the missing schema name to the parent's
+ * path. Relation to a suggestion's `missingFields`: a root path `/name`
+ * corresponds to the bare `missingFields` entry `name` (unescaped); nested
+ * entries are the same escaped pointer in both. `keyword` is the schema
+ * keyword that failed. Neither ever carries an argument value or message.
  */
 export interface HandlerArgumentIssue {
   readonly path: string;

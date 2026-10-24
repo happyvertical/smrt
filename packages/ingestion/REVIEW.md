@@ -57,9 +57,16 @@ at most `HANDLER_ARGUMENT_ISSUE_LIMIT` (20) `{ path, keyword? }` entries
 (`HandlerArgumentIssue`). `path` is built only from schema-declared property
 names, `required` names and real array indexes and is cut at
 `HANDLER_ARGUMENT_PATH_LIMIT` (160)
-characters. It is deliberately not an RFC 6901 pointer at the root: `/` is the
-whole arguments object (never a key `""`), `?` stands for a data-named key, and
-segments are not `~`-escaped, matching `ProposalValidationError` reason paths.
+characters (never splitting a `~0`/`~1` escape). Segments are escaped per RFC
+6901 (`~` as `~0`, `/` as `~1`), with two departures: `/` is the whole
+arguments object (never a key `""`), and `?` stands for a data-named key. A
+`required` refusal appends the missing schema name to the parent's path. The
+format relates to a suggestion's `missingFields` as follows: a root path
+`/name` is the bare `missingFields` entry `name` (unescaped), and a nested
+entry is the same escaped pointer in both (for example `/vendor/a~1b~0c`).
+The bundled view shows a root issue without its leading `/`, so its refused
+fields read like the missing-information list. `ProposalValidationError`
+reasons share the schema-owned segment rule but stay unescaped.
 `keyword` is the failing schema keyword. Argument values, Ajv
 `params`/messages and handler messages are never included. A `validate`
 refusal has no `issues` (the handler contract returns only `ok`). The size and

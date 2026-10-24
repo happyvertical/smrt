@@ -2369,7 +2369,7 @@ describe('intake review host boundary', () => {
       within(refusal)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
-    ).toEqual(['/title']);
+    ).toEqual(['title']);
     startDraftKept(typed);
     expect(callbacks.load).toHaveBeenCalledTimes(1);
     // A corrected retry publishes normally and clears the inline refusal.
@@ -2398,6 +2398,33 @@ describe('intake review host boundary', () => {
     expect(refusal.textContent).not.toContain('Fields to check');
     startDraftKept(typed);
     expect(callbacks.load).toHaveBeenCalledTimes(1);
+  });
+  it('bounds the refused-field list and shows root paths like missing fields (#4281)', async () => {
+    const callbacks = host(catalogView());
+    const typed = JSON.stringify({ title: '', body: 'Acme' });
+    callbacks.startAction = vi.fn(async () => ({
+      rejected: 'invalid' as const,
+      issues: [
+        { path: '/' },
+        { path: '/a~1b~0c' },
+        { path: '/vendor/a~1b~0c' },
+        { path: `/${'x'.repeat(160)}` },
+        { path: '' },
+        ...Array.from({ length: 25 }, (_, index) => ({ path: `/f${index}` })),
+      ],
+    }));
+    await startWith(callbacks, typed);
+    const refusal = await screen.findByTestId('start-rejected');
+    const shown = within(refusal)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    // Only the first 20 entries are read; a 161-character or empty path is dropped.
+    expect(shown).toEqual([
+      '/',
+      'a/b~c',
+      '/vendor/a~1b~0c',
+      ...Array.from({ length: 15 }, (_, index) => `f${index}`),
+    ]);
   });
   it('sends one start while the previous start is pending (#4281)', async () => {
     const callbacks = host(catalogView());

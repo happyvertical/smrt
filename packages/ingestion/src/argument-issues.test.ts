@@ -4,6 +4,7 @@ import {
   describeArgumentRefusal,
   handlerArgumentIssues,
 } from './argument-issues.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 
 function error(instancePath: string, keyword = 'type'): ErrorObject {
   return { instancePath, keyword, schemaPath: '#', params: {} };
@@ -136,6 +137,63 @@ describe('value-free handler argument issues (#4281)', () => {
     expect(long.path).toHaveLength(160);
     expect(long.path).toBe(`/${'a'.repeat(159)}`);
     expect(long).not.toHaveProperty('keyword');
+  });
+  it('escapes schema-owned segments per RFC 6901 and keeps ? and the root /', () => {
+    const escaped = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['a/b'],
+      properties: {
+        'a/b': { type: 'string' },
+        vendor: {
+          type: 'object',
+          required: ['x~y'],
+          properties: {
+            'a/b~c': { type: 'string' },
+            'x~y': { type: 'string' },
+          },
+          additionalProperties: { type: 'string' },
+        },
+      },
+    };
+    expect(
+      describeArgumentRefusal(escaped, {
+        vendor: { 'a/b~c': 7, 'data/key~1': 7 },
+        'extra/key': 1,
+      }),
+    ).toEqual([
+      { path: '/a~1b', keyword: 'required' },
+      { path: '/', keyword: 'additionalProperties' },
+      { path: '/vendor/x~0y', keyword: 'required' },
+      { path: '/vendor/?', keyword: 'type' },
+      { path: '/vendor/a~1b~0c', keyword: 'type' },
+    ]);
+  });
+  it('cuts a 161-character path to 160 without splitting an escape', () => {
+    const key = 'a'.repeat(160);
+    const deep = { type: 'object', properties: { [key]: { type: 'string' } } };
+    const [cut] = handlerArgumentIssues([error(`/${key}`)], deep, {});
+    expect(`/${key}`).toHaveLength(161);
+    expect(cut.path).toBe(`/${'a'.repeat(159)}`);
+    const tilde = `${'a'.repeat(158)}~`;
+    const escapedDeep = {
+      type: 'object',
+      properties: { [tilde]: { type: 'string' } },
+    };
+    const [split] = handlerArgumentIssues(
+      [error(`/${tilde.replace('~', '~0')}`)],
+      escapedDeep,
+      {},
+    );
+    // `/` + 158 `a` + `~0` is 161 characters; the cut drops the lone `~`.
+    expect(split.path).toBe(`/${'a'.repeat(158)}`);
+  });
+  it('omits issues on the error when none are known', () => {
+    expect(new HandlerArgumentsInvalidError('x').issues).toBeUndefined();
+    expect(new HandlerArgumentsInvalidError('x', []).issues).toBeUndefined();
+    expect(
+      new HandlerArgumentsInvalidError('x', [{ path: '/title' }]).issues,
+    ).toEqual([{ path: '/title' }]);
   });
   it('returns no issues when the arguments are valid or the schema cannot compile', () => {
     expect(describeArgumentRefusal(schema, { title: 'Fine' })).toEqual([]);
