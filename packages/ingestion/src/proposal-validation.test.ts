@@ -1,3 +1,4 @@
+import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 import { intakeBindingDigest } from './execution.js';
 import type { ExtractionResult } from './extraction-types.js';
@@ -6,6 +7,8 @@ import type { GenerationOutput } from './proposal-dto.js';
 import {
   dedupeGeneratedLists,
   describeSchemaErrors,
+  missingRequiredFields,
+  PROPOSAL_MISSING_FIELDS_LIMIT,
   PROPOSAL_REASON_LIMIT,
   PROPOSAL_REASON_MAX_ERRORS,
   ProposalValidationError,
