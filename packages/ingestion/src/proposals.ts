@@ -865,14 +865,18 @@ export class IngestionProposalService {
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
         const deduped = dedupeGeneratedLists(generated.output);
-        const { missingFieldsCorrection, splitsDropped, ...validated } =
-          validateSuggestions(
-            deduped.output,
-            output.offered,
-            extraction,
-            this.config.limits,
-            generation.revision,
-          );
+        const {
+          missingFieldsCorrection,
+          splitsDropped,
+          unofferedTargetsDropped,
+          ...validated
+        } = validateSuggestions(
+          deduped.output,
+          output.offered,
+          extraction,
+          this.config.limits,
+          generation.revision,
+        );
         Object.assign(output, validated);
         if (missingFieldsCorrection)
           output.provenance.missingFieldsCorrection = missingFieldsCorrection;
@@ -881,6 +885,8 @@ export class IngestionProposalService {
         if (deduped.removed)
           output.provenance.duplicatesRemoved = deduped.removed;
         if (splitsDropped) output.provenance.splitsDropped = splitsDropped;
+        if (unofferedTargetsDropped)
+          output.provenance.unofferedTargetsDropped = unofferedTargetsDropped;
         if (humanCorrection) {
           const correction = record(humanCorrection);
           if (
@@ -894,6 +900,7 @@ export class IngestionProposalService {
             output.outcome = 'needs_review';
             output.suggestions = [];
             delete output.provenance.missingFieldsCorrection;
+            delete output.provenance.unofferedTargetsDropped;
             output.warnings.push('human_split_not_respected');
           }
         }
@@ -946,6 +953,7 @@ export class IngestionProposalService {
       output.splits = [];
       delete output.provenance.duplicatesRemoved;
       delete output.provenance.splitsDropped;
+      delete output.provenance.unofferedTargetsDropped;
       output.warnings.push(failure);
     }
     if (bytes(publication()) > maxBytes) {
@@ -959,6 +967,7 @@ export class IngestionProposalService {
       delete output.provenance.missingFieldsCorrection;
       delete output.provenance.duplicatesRemoved;
       delete output.provenance.splitsDropped;
+      delete output.provenance.unofferedTargetsDropped;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');

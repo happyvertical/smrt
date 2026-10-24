@@ -972,3 +972,341 @@ describe('mismatched missingFields regression (#4284 QA)', () => {
     });
   });
 });
+
+describe('invented candidate targets (#4289)', () => {
+  // The QA shape: an offered handler whose candidate field holds an ID that
+  // is not among the offered candidates.
+  const INVENTED = 'V-INVENTED-0042';
+  const argsSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['vendorId', 'evidenceId', 'billNumber'],
+    properties: {
+      vendorId: { type: 'string', minLength: 1, maxLength: 64 },
+      projectId: { type: 'string', minLength: 1, maxLength: 64 },
+      evidenceId: { type: 'string', minLength: 1, maxLength: 64 },
+      billNumber: { type: 'string', minLength: 1, maxLength: 128 },
+      totalCents: { type: 'integer', minimum: 0 },
+    },
+  };
+  const handler = {
+    id: 'bill',
+    version: '1',
+    description: 'Record a vendor bill',
+    kind: 'operation' as const,
+    capability: null,
+    argsSchema,
+    references: {
+      vendorId: { kind: 'candidate' as const, model: 'Vendor' },
+      projectId: { kind: 'candidate' as const, model: 'Project' },
+      evidenceId: { kind: 'evidence' as const },
+    },
+    operation: { model: 'M', action: 'a', version: '1' },
+  };
+  const candidates = [
+    {
+      key: 'Vendor:v1@r1',
+      model: 'Vendor',
+      id: 'v1',
+      revision: 'r1',
+      label: 'Acme',
+    },
+    {
+      key: 'Project:p1@r1',
+      model: 'Project',
+      id: 'p1',
+      revision: 'r1',
+      label: 'Roof',
+    },
+  ];
+  const offered: GenerationOutput['offered'] = [{ handler, candidates }];
+  const extraction = [
+    {
+      evidence: { id: 'e', contentHash: 'hash' },
+      configurationRevision: 'test',
+      segments: [{ location: { kind: 'source' } }],
+    },
+  ] as ExtractionResult[];
+  const complete = {
+    vendorId: 'v1',
+    projectId: 'p1',
+    evidenceId: 'e',
+    billNumber: 'B-7',
+    totalCents: 1200,
+  };
+  const suggestion = (
+    args: Record<string, unknown>,
+    missingFields: string[] = [],
+    extra: Record<string, unknown> = {},
+  ) => ({
+    handlerId: 'bill',
+    handlerVersion: '1',
+    args,
+    evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+    alternatives: [],
+    missingFields,
+    explanation: 'Bill from the retained text.',
+    ...extra,
+  });
+  const reply = (...suggestions: ReturnType<typeof suggestion>[]) => ({
+    outcome: 'proposals',
+    suggestions,
+    splits: [],
+  });
+  const validate = (raw: unknown, own = offered) =>
+    validateSuggestions(raw, own, extraction, limits, 1);
+  const rejection = (raw: unknown, own = offered) => {
+    try {
+      validate(raw, own);
+    } catch (error) {
+      if (error instanceof ProposalValidationError) return error;
+      throw error;
+    }
+    throw new Error('Expected validation to fail');
+  };
+
+  it('drops an invented required target, marks it missing and keeps the suggestion for review', () => {
+    const raw = reply(suggestion({ ...complete, vendorId: INVENTED }));
+    const result = validate(raw);
+    expect(result.outcome).toBe('proposals');
+    expect(result.suggestions[0]).toMatchObject({
+      missingFields: ['vendorId'],
+      disposition: 'needs_review',
+    });
+    const { vendorId: _v, ...kept } = complete;
+    expect(result.suggestions[0].args).toEqual(kept);
+    expect(result.suggestions[0].args).not.toHaveProperty('vendorId');
+    expect(result.unofferedTargetsDropped).toEqual({
+      suggestions: 1,
+      fields: 1,
+    });
+    expect(result.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 1,
+      removed: 0,
+    });
+    expect(JSON.stringify(result)).not.toContain(INVENTED);
+    // The model's reply is not mutated.
+    expect(raw.suggestions[0].args.vendorId).toBe(INVENTED);
+  });
+  it('drops an invented optional target and still keeps the suggestion for review', () => {
+    const result = validate(
+      reply(suggestion({ ...complete, projectId: INVENTED })),
+    );
+    expect(result.suggestions[0]).toMatchObject({
+      missingFields: [],
+      disposition: 'needs_review',
+    });
+    expect(result.suggestions[0].args).not.toHaveProperty('projectId');
+    expect(result.unofferedTargetsDropped).toEqual({
+      suggestions: 1,
+      fields: 1,
+    });
+    // The declaration matched what is missing, so nothing was corrected.
+    expect(result).not.toHaveProperty('missingFieldsCorrection');
+    expect(JSON.stringify(result)).not.toContain(INVENTED);
+  });
+  it('combines an invented target with a required miss and counts across suggestions', () => {
+    const { billNumber: _b, ...args } = complete;
+    const result = validate(
+      reply(
+        suggestion(
+          { ...args, vendorId: INVENTED, projectId: `${INVENTED}-P` },
+          ['billNumber'],
+        ),
+        suggestion({ ...complete, vendorId: `${INVENTED}-2` }),
+        suggestion(complete),
+      ),
+    );
+    expect(result.suggestions[0]).toMatchObject({
+      missingFields: ['billNumber', 'vendorId'],
+      disposition: 'needs_review',
+    });
+    expect(result.suggestions[1]).toMatchObject({
+      missingFields: ['vendorId'],
+      disposition: 'needs_review',
+    });
+    expect(result.suggestions[2].disposition).toBe('ready_for_review');
+    expect(result.unofferedTargetsDropped).toEqual({
+      suggestions: 2,
+      fields: 3,
+    });
+    expect(JSON.stringify(result.unofferedTargetsDropped)).not.toMatch(
+      /vendor|project|V-|v1|p1/i,
+    );
+    expect(JSON.stringify(result)).not.toContain(INVENTED);
+  });
+  it('is byte-identical for offered targets and deterministic for dropped ones', () => {
+    const valid = reply(suggestion(complete));
+    const before = structuredClone(valid.suggestions[0]);
+    const result = validate(valid);
+    expect(JSON.stringify(result.suggestions[0])).toBe(
+      JSON.stringify({ ...before, disposition: 'ready_for_review' }),
+    );
+    expect(result).not.toHaveProperty('unofferedTargetsDropped');
+    const invented = reply(suggestion({ ...complete, vendorId: INVENTED }));
+    expect(JSON.stringify(validate(invented))).toBe(
+      JSON.stringify(validate(structuredClone(invented))),
+    );
+    // Key order of the kept arguments follows the reply.
+    expect(Object.keys(validate(invented).suggestions[0].args)).toEqual([
+      'projectId',
+      'evidenceId',
+      'billNumber',
+      'totalCents',
+    ]);
+  });
+  it('accepts a candidate of the wrong model as invented, never as the offered target', () => {
+    const { projectId: _p, ...args } = complete;
+    const result = validate(reply(suggestion({ ...args, vendorId: 'p1' })));
+    expect(result.suggestions[0].args).not.toHaveProperty('vendorId');
+    expect(result.suggestions[0].missingFields).toEqual(['vendorId']);
+  });
+  it.each([
+    [
+      'an unoffered handler',
+      reply({
+        ...suggestion({ ...complete, vendorId: INVENTED }),
+        handlerId: 'evil',
+      }),
+      'Unoffered handler: /suggestions/0',
+    ],
+    [
+      'an unoffered alternative',
+      reply(
+        suggestion({ ...complete, vendorId: INVENTED }, [], {
+          alternatives: ['Vendor:invented@r1'],
+        }),
+      ),
+      'Unoffered handler: /suggestions/0',
+    ],
+    [
+      'unknown argument evidence',
+      reply(
+        suggestion({ ...complete, vendorId: INVENTED, evidenceId: 'nope' }),
+      ),
+      'Unknown evidence: /suggestions/0/args/evidenceId',
+    ],
+    [
+      'an unknown evidence reference',
+      reply(
+        suggestion({ ...complete, vendorId: INVENTED }, [], {
+          evidence: [{ evidenceId: 'nope', location: { kind: 'source' } }],
+        }),
+      ),
+      'Unknown evidence location: /suggestions/0/evidence/0',
+    ],
+  ])('still rejects an invented target beside %s', (_name, raw, reason) => {
+    expect(rejection(raw).reason).toBe(reason);
+  });
+  it.each([
+    ['a type error', { ...complete, vendorId: INVENTED, totalCents: 'twelve' }],
+    ['an extra property', { ...complete, vendorId: INVENTED, memo: 'x' }],
+    ['a non-string target', { ...complete, vendorId: 4417 }],
+  ])('still rejects an invented target beside %s', (_name, args) => {
+    const error = rejection(reply(suggestion(args)));
+    expect(error.reason).toMatch(
+      /^(Invalid handler arguments|Unoffered target): \/suggestions\/0\/args/,
+    );
+    expect(error.reason).not.toMatch(/INVENTED|twelve|4417/);
+  });
+  it('still rejects a target field the schema does not declare', () => {
+    const open = {
+      ...argsSchema,
+      additionalProperties: true,
+    };
+    const own: GenerationOutput['offered'] = [
+      {
+        handler: {
+          ...handler,
+          argsSchema: open,
+          references: {
+            ...handler.references,
+            siteId: { kind: 'candidate', model: 'Site' },
+          },
+        },
+        candidates,
+      },
+    ];
+    expect(
+      rejection(reply(suggestion({ ...complete, siteId: INVENTED })), own)
+        .reason,
+    ).toBe('Unoffered target: /suggestions/0/args/siteId');
+  });
+  it('still rejects a non-string target the schema accepts', () => {
+    const own: GenerationOutput['offered'] = [
+      {
+        handler: {
+          ...handler,
+          argsSchema: {
+            ...argsSchema,
+            properties: { ...argsSchema.properties, vendorId: {} },
+          },
+        },
+        candidates,
+      },
+    ];
+    expect(
+      rejection(reply(suggestion({ ...complete, vendorId: { id: 4417 } })), own)
+        .reason,
+    ).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
+  it('still rejects when dropping the target exposes another refusal', () => {
+    const own: GenerationOutput['offered'] = [
+      {
+        handler: {
+          ...handler,
+          argsSchema: { ...argsSchema, required: [], minProperties: 5 },
+        },
+        candidates,
+      },
+    ];
+    expect(
+      rejection(reply(suggestion({ ...complete, vendorId: INVENTED })), own)
+        .reason,
+    ).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
+  it('still rejects when the invented target is echoed in the explanation', () => {
+    const error = rejection(
+      reply(
+        suggestion({ ...complete, vendorId: INVENTED }, [], {
+          explanation: `Pay ${INVENTED} now.`,
+        }),
+      ),
+    );
+    expect(error.reason).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
+  it('replaces a declaration that names the invented target with the computed set', () => {
+    const result = validate(
+      reply(suggestion({ ...complete, vendorId: INVENTED }, [INVENTED])),
+    );
+    expect(result.suggestions[0].missingFields).toEqual(['vendorId']);
+    expect(result.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 1,
+      removed: 1,
+    });
+    expect(JSON.stringify(result)).not.toContain(INVENTED);
+  });
+  it('still rejects when the invented target is echoed in another argument or suggestion', () => {
+    expect(
+      rejection(
+        reply(
+          suggestion({
+            ...complete,
+            vendorId: INVENTED,
+            billNumber: `#${INVENTED}`,
+          }),
+        ),
+      ).reason,
+    ).toBe('Unoffered target: /suggestions/0/args/vendorId');
+    expect(
+      rejection(
+        reply(
+          suggestion({ ...complete, vendorId: INVENTED }),
+          suggestion({ ...complete, billNumber: INVENTED }),
+        ),
+      ).reason,
+    ).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
+});
