@@ -2399,6 +2399,35 @@ describe('intake review host boundary', () => {
     startDraftKept(typed);
     expect(callbacks.load).toHaveBeenCalledTimes(1);
   });
+  it('sends one start while the previous start is pending (#4281)', async () => {
+    const callbacks = host(catalogView());
+    let finish: (() => void) | undefined;
+    callbacks.startAction = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const picker = await screen.findByRole('combobox', { name: 'Handler' });
+    await fireEvent.change(picker, { target: { value: 'host:draft@1' } });
+    await fireEvent.input(
+      await screen.findByRole('textbox', { name: 'Initial arguments (JSON)' }),
+      { target: { value: JSON.stringify({ title: 'T', body: 'B' }) } },
+    );
+    const start = screen.getByRole('button', { name: 'Start action' });
+    // Both clicks land before the disabled attribute renders; the Button
+    // reads its live `disabled={pending || ...}` prop and drops the second.
+    void fireEvent.click(start);
+    void fireEvent.click(start);
+    await waitFor(() =>
+      expect((start as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(callbacks.startAction).toHaveBeenCalledTimes(1);
+    finish?.();
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    expect(callbacks.startAction).toHaveBeenCalledTimes(1);
+  });
   it('still fails closed when startAction throws any other error (#4281)', async () => {
     const callbacks = host(catalogView());
     callbacks.startAction = vi.fn(async () => {

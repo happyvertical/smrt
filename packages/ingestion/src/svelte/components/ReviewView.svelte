@@ -628,7 +628,7 @@ function refusedFields(issues: unknown): string[] {
 }
 async function startAction() {
   const entry = startEntry;
-  if (!entry || !view?.analysis || !host.startAction || pending) return;
+  if (!entry || !view?.analysis || !host.startAction) return;
   let args: Record<string, unknown>;
   startRejected = false;
   startIssues = [];
