@@ -1,7 +1,7 @@
 import Ajv, { type ErrorObject } from 'ajv';
 import { intakeBindingDigest } from './execution.js';
 import type { IntakeValues } from './execution-dto.js';
-import { proposeDocumentSplits } from './extraction.js';
+import { proposeDocumentSplits, SplitGroupError } from './extraction.js';
 import type { ExtractionResult } from './extraction-types.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type {
@@ -372,7 +372,9 @@ export function validateSuggestions(
   extraction: ExtractionResult[],
   limits: GenerationLimits,
   revision: number,
-): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> {
+): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> & {
+  splitsDropped?: NonNullable<GenerationOutput['provenance']['splitsDropped']>;
+} {
   const ajv = new Ajv({
     strict: true,
     allErrors: true,
@@ -476,7 +478,8 @@ export function validateSuggestions(
     },
   );
   const seen = new Set<string>();
-  const splits = input.splits.map((split, index) => {
+  let dropped = 0;
+  const splits = input.splits.flatMap((split, index) => {
     const source = extraction.find(
       (entry) => entry.evidence.id === split.evidenceId,
     );
@@ -489,19 +492,32 @@ export function validateSuggestions(
     let result: ReturnType<typeof proposeDocumentSplits>;
     try {
       result = proposeDocumentSplits(source, revision, split.groups);
-    } catch {
-      throw new ProposalValidationError(
-        'Invalid split groups',
-        `/splits/${index}/groups`,
-      );
+    } catch (error) {
+      // Drop only a split that fails the group check; suggestions and other
+      // splits stand (#4288). An empty group cannot reach here (the schema's
+      // minItems rejects it first). Anything else, such as an invalid
+      // revision, is not the model's and still fails the attempt.
+      if (!(error instanceof SplitGroupError))
+        throw new ProposalValidationError('Invalid split', `/splits/${index}`);
+      dropped++;
+      return [];
     }
-    return {
-      evidenceId: split.evidenceId,
-      groups: structuredClone(split.groups),
-      digest: result.digest,
-    };
+    return [
+      {
+        evidenceId: split.evidenceId,
+        groups: structuredClone(split.groups),
+        digest: result.digest,
+      },
+    ];
   });
-  return { outcome: input.outcome, suggestions, splits };
+  return {
+    outcome: input.outcome,
+    suggestions,
+    splits,
+    ...(dropped
+      ? { splitsDropped: { count: dropped, checks: ['split_groups'] } }
+      : {}),
+  };
 }
 function assertEvidenceReference(
   reference: ProposalEvidenceReference,

@@ -161,6 +161,19 @@ as `missingFields`, with `needs_review`; values are never invented to satisfy a
 schema. Observed page/time/source granularity is preserved. Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
 
+A generated split whose groups fail that check is dropped, not the whole reply
+(#4288): the suggestions and any other splits are validated as before, the
+dropped split is never published or applied, and `provenance.splitsDropped`
+records `{count, checks: ['split_groups']}`, never pages or evidence ids. Any
+other split error still fails the attempt. If every split is dropped, the reply
+has no split; a reviewer can still split through `reviseLogicalSplit`, and a
+recorded split correction the reply no longer matches ends as
+`human_split_not_respected`. A split for unknown or repeated evidence is still
+rejected, even when the earlier split on that evidence was dropped. Like
+`duplicatesRemoved`, `splitsDropped` is kept only on a published, validated
+reply. Stored output is never re-validated, so earlier attempts and their
+digests replay unchanged.
+
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
 The reason lists schema-owned paths, keywords and schema constants, for example

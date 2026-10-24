@@ -864,20 +864,19 @@ export class IngestionProposalService {
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
         const deduped = dedupeGeneratedLists(generated.output);
-        Object.assign(
-          output,
-          validateSuggestions(
-            deduped.output,
-            output.offered,
-            extraction,
-            this.config.limits,
-            generation.revision,
-          ),
+        const { splitsDropped, ...validated } = validateSuggestions(
+          deduped.output,
+          output.offered,
+          extraction,
+          this.config.limits,
+          generation.revision,
         );
+        Object.assign(output, validated);
         // Count only, and only for a reply that validated; absent when zero
         // so existing digests hold.
         if (deduped.removed)
           output.provenance.duplicatesRemoved = deduped.removed;
+        if (splitsDropped) output.provenance.splitsDropped = splitsDropped;
         if (humanCorrection) {
           const correction = record(humanCorrection);
           if (
@@ -940,6 +939,7 @@ export class IngestionProposalService {
       output.suggestions = [];
       output.splits = [];
       delete output.provenance.duplicatesRemoved;
+      delete output.provenance.splitsDropped;
       output.warnings.push(failure);
     }
     if (bytes(publication()) > maxBytes) {
@@ -951,6 +951,7 @@ export class IngestionProposalService {
       output.offered = [];
       delete output.provenance.failure;
       delete output.provenance.duplicatesRemoved;
+      delete output.provenance.splitsDropped;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');

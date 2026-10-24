@@ -113,6 +113,11 @@ export interface GenerationOutput {
      */
     duplicatesRemoved?: number;
     /**
+     * Split proposals dropped because they failed a fixed check, named here
+     * (#4288); never page numbers or evidence ids. Absent when none were.
+     */
+    splitsDropped?: { count: number; checks: string[] };
+    /**
      * Bounded, value-free reason for a failed stage, next to its warning
      * category: JSON paths, schema keywords and constants, never document text.
      */
