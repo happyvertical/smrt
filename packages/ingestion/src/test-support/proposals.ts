@@ -5696,6 +5696,80 @@ export function proposalSuite(
         original,
       );
     });
+    it('ends a split correction as human_split_not_respected when the matching generated split is dropped (#4288 review)', async () => {
+      const input = await generate(await source(100000, true));
+      const evidence = await service.getEvidence(input.itemId);
+      const revised = await service.reviseLogicalSplit({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        evidenceId: evidence[0].id,
+        groups: [[1], [2]],
+        requestId: 'dropped-split',
+      });
+      const lease = await service.claimAnalysis(
+        input.itemId,
+        revised.revision,
+        'extractor',
+      );
+      if (!lease) throw new Error('lease required');
+      await extractAnalysis(
+        service,
+        lease,
+        {
+          extract: (request) =>
+            extractWithProviders(request, {
+              pdf: {
+                identity: fixtureIdentity,
+                client: pdfFixture(
+                  ['Document one', 'Document two'],
+                  new Uint8Array(),
+                ),
+              },
+            }),
+        },
+        { configurationRevision: '1', limits: extractionLimits },
+      );
+      calls.mockImplementation(async (candidate) => ({
+        completion: 'complete',
+        output: {
+          outcome: 'proposals',
+          suggestions: [
+            {
+              handlerId: CREATE,
+              handlerVersion: '1',
+              args: { title: 'Split', body: 'Body' },
+              evidence: [
+                {
+                  evidenceId: candidate.evidence[0].evidenceId,
+                  location: candidate.evidence[0].segments[0].location,
+                },
+              ],
+              alternatives: [],
+              missingFields: [],
+              explanation: 'Split from retained text.',
+            },
+          ],
+          // The corrected split's pages, but an invalid group (repeated page).
+          splits: [{ evidenceId: evidence[0].id, groups: [[1], [1, 2]] }],
+        },
+      }));
+      const next = await generation({
+        itemId: input.itemId,
+        attemptId: lease.attemptId,
+        lease,
+      });
+      await service.generateProposals(next.lease);
+      const result = await output(next.lease);
+      expect(result.outcome).toBe('needs_review');
+      expect(result.suggestions).toEqual([]);
+      expect(result.splits).toEqual([]);
+      expect(result.warnings).toContain('human_split_not_respected');
+      expect(result.provenance.splitsDropped).toEqual({
+        count: 1,
+        checks: ['split_groups'],
+      });
+    });
     function chooseCreate(
       args: Record<string, unknown> = { title: 'Draft', body: 'Body' },
     ) {
@@ -6153,6 +6227,145 @@ export function proposalSuite(
         args: { ...input.output.suggestions[0].args, title: 'Human title' },
       });
       expect(review.state).toBe('waiting_review');
+    });
+    it('drops repeated alternatives and missingFields before validation and records the count (#4286)', async () => {
+      chooseCreate();
+      const clean = await generate();
+      // Replay shape is unchanged when nothing was removed.
+      expect(clean.output.provenance).not.toHaveProperty('duplicatesRemoved');
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const value = response.output as {
+          suggestions: Array<{
+            args: Record<string, unknown>;
+            alternatives: string[];
+            missingFields: string[];
+          }>;
+        };
+        delete value.suggestions[0].args.title;
+        value.suggestions[0].missingFields = ['title', 'title', 'title'];
+        value.suggestions[0].alternatives = [`${CREATE}@1`, `${CREATE}@1`];
+        return response;
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.suggestions[0]).toMatchObject({
+        missingFields: ['title'],
+        alternatives: [`${CREATE}@1`],
+        disposition: 'needs_review',
+      });
+      expect(input.output.provenance.duplicatesRemoved).toBe(3);
+      expect(input.output.provenance.failure).toBeUndefined();
+      const published = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).result;
+      // The stored digest covers the normalized form, not the raw reply.
+      expect(
+        (
+          await db.query(
+            'SELECT output_digest FROM intake_analysis_attempts WHERE id=?',
+            [input.lease.attemptId],
+          )
+        ).rows[0].output_digest,
+      ).toBe(intakeBindingDigest(published));
+    });
+    it('records duplicatesRemoved and splitsDropped only for a published, validated reply (#4286/#4288 review)', async () => {
+      const duplicate = (unoffered: boolean) => {
+        chooseCreate();
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          const value = response.output as {
+            suggestions: Array<{ handlerId: string; alternatives: string[] }>;
+            splits: Array<{ evidenceId: string; groups: number[][] }>;
+          };
+          const [suggestion] = value.suggestions;
+          suggestion.alternatives = [`${CREATE}@1`, `${CREATE}@1`];
+          if (unoffered) suggestion.handlerId = 'unoffered';
+          value.splits = [
+            { evidenceId: args[0].evidence[0].evidenceId, groups: [[9]] },
+          ];
+          return response;
+        });
+      };
+      duplicate(true);
+      const rejected = await generate();
+      expect(rejected.output.outcome).toBe('provider_error');
+      expect(rejected.output.provenance.failure?.reason).toContain(
+        'Unoffered handler',
+      );
+      expect(rejected.output.provenance).not.toHaveProperty(
+        'duplicatesRemoved',
+      );
+      duplicate(false);
+      const measured = await generate();
+      expect(measured.output.provenance.duplicatesRemoved).toBe(1);
+      expect(measured.output.provenance.splitsDropped?.count).toBe(1);
+      const published = (
+        await service.getCompletedAnalysis(
+          measured.itemId,
+          measured.lease.attemptId,
+        )
+      ).result;
+      const maxOutputBytes = configuration.limits.maxOutputBytes;
+      configuration.limits.maxOutputBytes =
+        Buffer.byteLength(JSON.stringify(published)) - 1;
+      const limited = await generate();
+      expect(limited.output.warnings).toContain('output_limit');
+      expect(limited.output.suggestions).toEqual([]);
+      expect(limited.output.provenance).not.toHaveProperty('duplicatesRemoved');
+      expect(limited.output.provenance).not.toHaveProperty('splitsDropped');
+      // A malformed decision-gate answer after validation clears both counts.
+      configuration.limits.maxOutputBytes = maxOutputBytes;
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async () => ({}) as never,
+        },
+      };
+      const gated = await generate();
+      expect(gated.output.outcome).toBe('provider_error');
+      expect(gated.output.warnings).toContain('malformed_output');
+      expect(gated.output.provenance).not.toHaveProperty('duplicatesRemoved');
+      expect(gated.output.provenance).not.toHaveProperty('splitsDropped');
+    });
+    it('drops an invalid split and keeps the suggestions instead of failing the attempt (#4288)', async () => {
+      chooseCreate();
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const value = response.output as {
+          splits: Array<{ evidenceId: string; groups: number[][] }>;
+        };
+        value.splits = [
+          { evidenceId: args[0].evidence[0].evidenceId, groups: [[9], [7]] },
+        ];
+        return response;
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.suggestions).toHaveLength(1);
+      expect(input.output.suggestions[0].disposition).toBe('ready_for_review');
+      // Never published, so never applied.
+      expect(input.output.splits).toEqual([]);
+      expect(input.output.provenance.splitsDropped).toEqual({
+        count: 1,
+        checks: ['split_groups'],
+      });
+      expect(input.output.provenance.failure).toBeUndefined();
+      const published = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).result;
+      expect(
+        (
+          await db.query(
+            'SELECT output_digest FROM intake_analysis_attempts WHERE id=?',
+            [input.lease.attemptId],
+          )
+        ).rows[0].output_digest,
+      ).toBe(intakeBindingDigest(published));
     });
     it.each([
       'unknown',

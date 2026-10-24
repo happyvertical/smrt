@@ -161,6 +161,19 @@ as `missingFields`, with `needs_review`; values are never invented to satisfy a
 schema. Observed page/time/source granularity is preserved. Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
 
+A generated split whose groups fail that check is dropped, not the whole reply
+(#4288): the suggestions and any other splits are validated as before, the
+dropped split is never published or applied, and `provenance.splitsDropped`
+records `{count, checks: ['split_groups']}`, never pages or evidence ids. Any
+other split error still fails the attempt. If every split is dropped, the reply
+has no split; a reviewer can still split through `reviseLogicalSplit`, and a
+recorded split correction the reply no longer matches ends as
+`human_split_not_respected`. A split for unknown or repeated evidence is still
+rejected, even when the earlier split on that evidence was dropped. Like
+`duplicatesRemoved`, `splitsDropped` is kept only on a published, validated
+reply. Stored output is never re-validated, so earlier attempts and their
+digests replay unchanged.
+
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
 The reason lists schema-owned paths, keywords and schema constants, for example
@@ -193,7 +206,15 @@ it to llguidance, and llguidance answers
 grammar: the validator still enforces the constraints, including unique
 `alternatives` and `missingFields`, and the fixed instructions ask for distinct
 entries. The exception is `format`, which is advisory: the validator runs Ajv
-with `validateFormats: false`, so `format` is enforced nowhere. When
+with `validateFormats: false`, so `format` is enforced nowhere. Because a model
+can still repeat an entry, fresh generator output is normalized first (#4286):
+within each suggestion, repeated `alternatives` and `missingFields` entries
+(equal by canonical JSON) are dropped, keeping the first. Nothing else is
+rewritten, and `uniqueItems` still applies to the result. The count, never the
+values, is recorded as `provenance.duplicatesRemoved`, present only when
+non-zero and only on a published, validated reply. The published output, and so
+its digest, is the normalized form. Stored attempts are read and replayed as
+persisted; they are never renormalized. When
 `patternProperties` is removed, the same object's `additionalProperties` is
 removed too, so the grammar does not shrink to `{}`. The `contentSchema` annotation is omitted as well, so nested unsupported
 constraints cannot leak through an unvisited schema position. A backend may

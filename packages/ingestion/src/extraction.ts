@@ -437,6 +437,12 @@ export async function extractAnalysis(
   return service.completeAnalysis(lease, publication());
 }
 
+/**
+ * A split's page groups failed the group check (empty, unknown or repeated
+ * page, unordered). Generated splits that fail it are dropped (#4288); the
+ * message is a fixed phrase, never page numbers.
+ */
+export class SplitGroupError extends Error {}
 /** Side-effect-free, versioned split proposal. Original evidence is not replaced. */
 export function proposeDocumentSplits(
   result: ExtractionResult,
@@ -452,14 +458,14 @@ export function proposeDocumentSplits(
   );
   const seen = new Set<number>();
   for (const group of groups) {
-    if (!group.length) throw new Error('Empty split');
+    if (!group.length) throw new SplitGroupError('Empty split');
     for (const page of group) {
       if (!Number.isSafeInteger(page) || !available.has(page) || seen.has(page))
-        throw new Error('Invalid split page');
+        throw new SplitGroupError('Invalid split page');
       seen.add(page);
     }
     if (group.some((page, index) => index > 0 && page <= group[index - 1]))
-      throw new Error('Unordered split');
+      throw new SplitGroupError('Unordered split');
   }
   const proposal = {
     revision,
