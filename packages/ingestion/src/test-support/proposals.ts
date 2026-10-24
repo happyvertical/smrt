@@ -6332,6 +6332,97 @@ export function proposalSuite(
         (await db.query('SELECT id FROM intake_actions')).rows,
       ).toHaveLength(0);
     });
+    describe('missingFields correction note on discarded suggestions (#4284)', () => {
+      // Complete arguments with a wrong declaration: always a correction.
+      function mismatch() {
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          (
+            response.output as {
+              suggestions: Array<{ missingFields: string[] }>;
+            }
+          ).suggestions[0].missingFields = ['title'];
+          return response;
+        });
+      }
+      it('records the note when the suggestions are published', async () => {
+        chooseCreate();
+        mismatch();
+        const input = await generate();
+        expect(input.output.provenance.missingFieldsCorrection).toEqual({
+          suggestions: 1,
+          added: 0,
+          removed: 1,
+        });
+      });
+      it('drops the note when a later stage fails the attempt', async () => {
+        chooseCreate();
+        mismatch();
+        configuration.decision = {
+          identity,
+          client: {
+            getCapabilities: async () => ({ decisions: true }),
+            decide: async () => ({
+              answers: {},
+              provenance: {
+                provider: identity.provider,
+                model: identity.model,
+              },
+              usage: {},
+            }),
+          },
+        };
+        const input = await generate();
+        expect(input.output.outcome).toBe('provider_error');
+        expect(input.output.suggestions).toEqual([]);
+        expect(input.output.provenance).not.toHaveProperty(
+          'missingFieldsCorrection',
+        );
+      });
+      it('drops the note in the output-limit fallback', async () => {
+        chooseCreate();
+        mismatch();
+        const measured = await generate();
+        expect(
+          measured.output.provenance.missingFieldsCorrection,
+        ).toBeDefined();
+        const published = (
+          await service.getCompletedAnalysis(
+            measured.itemId,
+            measured.lease.attemptId,
+          )
+        ).result;
+        configuration.limits.maxOutputBytes =
+          Buffer.byteLength(JSON.stringify(published)) - 30;
+        const limited = await generate();
+        expect(limited.output.warnings).toContain('output_limit');
+        expect(limited.output.suggestions).toEqual([]);
+        expect(limited.output.provenance).not.toHaveProperty(
+          'missingFieldsCorrection',
+        );
+      });
+      it('drops the note when a human split is not respected', async () => {
+        chooseCreate();
+        const input = await generate(await source(100000, true));
+        const evidence = await service.getEvidence(input.itemId);
+        const split = await service.reviseLogicalSplit({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          evidenceId: evidence[0].id,
+          groups: [[1], [2]],
+          requestId: 'split-4284',
+        });
+        const next = await reextractPDF(input.itemId, split.revision);
+        mismatch();
+        await service.generateProposals(next.lease);
+        const result = await output(next.lease);
+        expect(result.warnings).toContain('human_split_not_respected');
+        expect(result.suggestions).toEqual([]);
+        expect(result.provenance).not.toHaveProperty('missingFieldsCorrection');
+      });
+    });
     it('still rejects a missing required argument beside any other argument error (#4284)', async () => {
       chooseCreate();
       const original = calls.getMockImplementation()!;

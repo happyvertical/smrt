@@ -562,6 +562,107 @@ describe('required-only argument refusals (#4284)', () => {
       /vendor|bill/i,
     );
   });
+  it.each([
+    [
+      'array-form dependencies',
+      { dependencies: { billNumber: ['total'] } },
+      { vendorId: 'V', billNumber: 'B', vendor: { name: 'n', 'a/b~c': 'z' } },
+    ],
+    [
+      'an if/then branch',
+      // Built from entries: a literal `then` key trips Biome's noThenProperty.
+      Object.fromEntries([
+        ['if', { properties: { total: {} }, required: ['total'] }],
+        ['then', { properties: { vendorId: {} }, required: ['vendorId'] }],
+      ]),
+      {
+        billNumber: 'B',
+        total: 1,
+        vendor: { name: 'n', 'a/b~c': 'z' },
+      },
+    ],
+  ])('still rejects a required-like miss from %s', (_name, extra, args) => {
+    const schema = { ...argsSchema, required: [], ...extra };
+    const own: GenerationOutput['offered'] = [
+      { ...offered[0], handler: { ...offered[0].handler, argsSchema: schema } },
+    ];
+    let error: unknown;
+    try {
+      validateSuggestions(reply(args), own, extraction, limits, 1);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ProposalValidationError);
+    expect((error as ProposalValidationError).reason).toMatch(
+      /^Invalid handler arguments: \/suggestions\/0\/args /,
+    );
+  });
+  it('treats required inside allOf as required', () => {
+    const schema = {
+      ...argsSchema,
+      allOf: [{ properties: { memo: {} }, required: ['memo'] }],
+      properties: { ...argsSchema.properties, memo: { type: 'string' } },
+    };
+    const own: GenerationOutput['offered'] = [
+      { ...offered[0], handler: { ...offered[0].handler, argsSchema: schema } },
+    ];
+    expect(
+      validateSuggestions(reply(complete), own, extraction, limits, 1)
+        .suggestions[0].missingFields,
+    ).toEqual(['memo']);
+  });
+  it('bounds the errors examined and the length of each missing field', () => {
+    const required = (count: number, name = (index: number) => `f${index}`) =>
+      Array.from({ length: count }, (_, index) => ({
+        keyword: 'required',
+        instancePath: '',
+        schemaPath: '#/required',
+        params: { missingProperty: name(index) },
+      }));
+    // Duplicates collapse to one field, but the examined count is still bounded.
+    const repeated = Array.from({ length: PROPOSAL_REASON_MAX_ERRORS }, () => ({
+      ...required(1)[0],
+    }));
+    expect(missingRequiredFields(repeated, {}, {})).toEqual(['f0']);
+    expect(
+      missingRequiredFields([...repeated, required(1)[0]], {}, {}),
+    ).toBeUndefined();
+    // A schema-declared name longer than the reply's string cap is refused,
+    // at the root and once a nested pointer grows past it.
+    expect(
+      missingRequiredFields(
+        required(1, () => 'x'.repeat(513)),
+        {},
+        {},
+      ),
+    ).toBeUndefined();
+    expect(
+      missingRequiredFields(
+        required(1, () => 'x'.repeat(512)),
+        {},
+        {},
+      ),
+    ).toEqual(['x'.repeat(512)]);
+    const long = 'y'.repeat(300);
+    const nested = {
+      type: 'object',
+      properties: { [long]: { type: 'object', properties: {} } },
+    };
+    expect(
+      missingRequiredFields(
+        [
+          {
+            keyword: 'required',
+            instancePath: `/${long}`,
+            schemaPath: '#/properties/x/required',
+            params: { missingProperty: 'z'.repeat(300) },
+          },
+        ],
+        nested,
+        { [long]: {} },
+      ),
+    ).toBeUndefined();
+  });
   it('rejects more missing fields than the reply may declare', () => {
     const required = Array.from({ length: 31 }, (_, index) => `f${index}`);
     const wide = {
