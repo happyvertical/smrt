@@ -53,6 +53,7 @@ function fixture(current: unknown) {
     previewProposal: vi.fn(async () => ({ state: 'waiting_review' })),
     previewPlan: vi.fn(async () => ({ steps: [] })),
     previewGeneratedProposals: vi.fn(async () => []),
+    startReviewerAction: vi.fn(async () => ({ state: 'waiting_review' })),
   };
   const host = Object.create(
     ReferenceReviewHost.prototype,
@@ -113,6 +114,45 @@ describe('reference review host preview with human arguments', () => {
     await expect(f.host.preview(scope, input)).rejects.toBeInstanceOf(
       HandlerArgumentsInvalidError,
     );
+  });
+  it('maps only argument refusals of a reviewer-started action to the typed rejection with issues (#4281)', async () => {
+    const f = fixture(analysis('interpret', 'proposals', offered));
+    const start = {
+      itemId: 'item',
+      handlerId: 'draft',
+      handlerVersion: '1',
+      args: { title: '' },
+      requestId: 'start',
+    };
+    await expect(
+      f.host.startActionForReview(scope, start),
+    ).resolves.toBeUndefined();
+    expect(f.service.startReviewerAction).toHaveBeenCalledWith(start);
+    f.service.startReviewerAction.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler payload', [
+        { path: '/title', keyword: 'minLength' },
+      ]),
+    );
+    await expect(f.host.startActionForReview(scope, start)).resolves.toEqual({
+      rejected: 'invalid',
+      issues: [{ path: '/title', keyword: 'minLength' }],
+    });
+    f.service.startReviewerAction.mockRejectedValueOnce(
+      new HandlerArgumentsInvalidError('Invalid handler arguments'),
+    );
+    await expect(f.host.startActionForReview(scope, start)).resolves.toEqual({
+      rejected: 'invalid',
+    });
+    for (const reason of [
+      'Handler unavailable',
+      'Item resolved',
+      'Action identity conflict',
+    ]) {
+      f.service.startReviewerAction.mockRejectedValueOnce(new Error(reason));
+      await expect(f.host.startActionForReview(scope, start)).rejects.toThrow(
+        reason,
+      );
+    }
   });
   it.each([
     ['a failed attempt', analysis('interpret', 'provider_error', offered)],

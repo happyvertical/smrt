@@ -1,4 +1,8 @@
-import type { IntakeReviewHost } from '../../src/review-dto.js';
+import type {
+  HandlerArgumentIssue,
+  IntakeReviewHost,
+  PreviewRejection,
+} from '../../src/review-dto.js';
 
 let csrf = '';
 export async function login(username = 'owner') {
@@ -28,6 +32,24 @@ async function call(path: string, input?: unknown) {
 }
 export async function session() {
   csrf = (await call('session')).csrf;
+}
+/** Forward only the typed handler rejection and its bounded field paths. */
+function rejection(result: unknown): PreviewRejection | undefined {
+  const body = result as { rejected?: unknown; issues?: unknown } | null;
+  if (body?.rejected !== 'invalid') return undefined;
+  const issues = Array.isArray(body.issues)
+    ? body.issues
+        .slice(0, 20)
+        .filter(
+          (issue): issue is HandlerArgumentIssue =>
+            typeof issue?.path === 'string' &&
+            (issue.keyword === undefined || typeof issue.keyword === 'string'),
+        )
+        .map(({ path, keyword }) => (keyword ? { path, keyword } : { path }))
+    : [];
+  return issues.length
+    ? { rejected: 'invalid', issues }
+    : { rejected: 'invalid' };
 }
 export const host: IntakeReviewHost = {
   list: (input) =>
@@ -65,13 +87,7 @@ export const host: IntakeReviewHost = {
     if (!response.ok) throw new Error('Upload unavailable');
     return response.json();
   },
-  preview: async (input) => {
-    // Forward only the typed handler rejection; any other body is discarded.
-    const result = await call('preview', input);
-    return result && result.rejected === 'invalid'
-      ? { rejected: 'invalid' as const }
-      : undefined;
-  },
+  preview: async (input) => rejection(await call('preview', input)),
   decide: (input) => call('decide', input),
   apply: (actionId) => call('apply', { actionId }),
   candidates: (input) => call('candidates', input),
@@ -81,6 +97,6 @@ export const host: IntakeReviewHost = {
   editPlan: (input) => call('editPlan', input),
   feedback: (input) => call('feedback', input),
   editAction: (input) => call('editAction', input),
-  startAction: (input) => call('startAction', input),
+  startAction: async (input) => rejection(await call('startAction', input)),
   resolve: (input) => call('resolve', input),
 };

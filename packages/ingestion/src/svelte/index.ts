@@ -1,6 +1,7 @@
 export type {
   Assignment,
   EvidenceView,
+  HandlerArgumentIssue,
   InboxEntry,
   InboxEvidence,
   InboxState,
