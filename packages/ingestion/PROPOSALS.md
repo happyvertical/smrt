@@ -186,7 +186,8 @@ Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.
 Candidate IDs must occur in the offered set, and evidence IDs in retained source
 results. Unknown enums, invented IDs, extra authority/tool/approval fields and
-malformed structures fail closed. Missing required fields are retained as
+malformed structures fail closed (an invented candidate target alone is dropped
+for review instead, see below). Missing required fields are retained as
 `missingFields`, with `needs_review`; values are never invented to satisfy a
 schema. Observed page/time/source granularity is preserved. Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
@@ -236,6 +237,24 @@ rejected, even when the earlier split on that evidence was dropped. Like
 `duplicatesRemoved`, `splitsDropped` is kept only on a published, validated
 reply. Stored output is never re-validated, so earlier attempts and their
 digests replay unchanged.
+
+An invented target — a value in an offered handler's candidate reference field
+that is not among the offered candidates for that field's model — no longer
+rejects the attempt (#4289). The validator drops the key from the arguments
+(no placeholder) and revalidates what remains through the required-only path
+above: a dropped required field becomes a computed `missingFields` entry, a
+dropped optional field is simply absent, and either way the suggestion is
+`needs_review` for the reviewer to choose an offered target.
+`provenance.unofferedTargetsDropped` records `{suggestions, fields}` counts
+only, never IDs, labels or field names; it is absent when nothing was dropped
+and removed whenever the suggestions are discarded. A dropped value never
+reaches the review screen, a preview, feedback or the published output. The
+attempt still rejects as before for an unoffered handler or alternative,
+unknown evidence (argument or reference), a non-string target, a target field
+the handler schema does not declare in `properties`, any other argument error,
+a drop that exposes a refusal other than `required`, or when the dropped value
+also appears anywhere else in the kept suggestions or splits (an echo in an
+explanation or another argument would survive as a usable copy).
 
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
