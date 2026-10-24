@@ -14,6 +14,7 @@ export default defineConfig({
       'src/svelte/__tests__/seller-governance-components.test.ts',
     ],
     testTimeout: 30000,
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
   },

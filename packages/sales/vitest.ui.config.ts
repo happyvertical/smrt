@@ -9,6 +9,7 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/svelte/__tests__/lead-components.test.ts', 'src/svelte/__tests__/seller-governance-components.test.ts'],
     testTimeout: 30000,
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
   },
