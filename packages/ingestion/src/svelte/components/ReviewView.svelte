@@ -616,19 +616,28 @@ function draftStart() {
       )
     : '';
 }
-/** Distinct schema-owned field paths of a typed refusal; never values. */
+/**
+ * Distinct schema-owned field paths of a typed refusal; never values. A root
+ * path `/name` shows as the bare (unescaped) name, like `missingFields`;
+ * nested paths stay escaped pointers and `/` (the whole object) stays `/`.
+ */
 function refusedFields(issues: unknown): string[] {
   if (!Array.isArray(issues)) return [];
   const paths = new Set<string>();
   for (const issue of issues.slice(0, 20)) {
     const path = (issue as { path?: unknown } | null)?.path;
-    if (typeof path === 'string' && path && path.length <= 160) paths.add(path);
+    if (typeof path !== 'string' || !path || path.length > 160) continue;
+    paths.add(
+      /^\/[^/]+$/.test(path)
+        ? path.slice(1).replace(/~1/g, '/').replace(/~0/g, '~')
+        : path,
+    );
   }
   return [...paths];
 }
 async function startAction() {
   const entry = startEntry;
-  if (!entry || !view?.analysis || !host.startAction) return;
+  if (!entry || !view?.analysis || !host.startAction || pending) return;
   let args: Record<string, unknown>;
   startRejected = false;
   startIssues = [];
