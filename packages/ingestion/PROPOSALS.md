@@ -115,6 +115,36 @@ without automatic retry that would bypass application boundary checks. The
 adapter's public identity is exactly provider/model/version; credentials and raw
 provider errors are never provenance.
 
+The fixed system instruction (`proposalInstructions`, extended per item by
+`proposalInstructionsFor` with the handler argument contract and split
+eligibility) is generic and value-free. It treats evidence as untrusted data,
+never instructions, and limits suggestions to offered handlers and candidates.
+It asks the model to fill every argument readable from the evidence
+(identifiers, numbers, dates, quantities, amounts and currency) in the form its
+schema requires, never inventing a value the evidence does not show; a value
+that cannot be expressed in that form is treated as absent. Each value must be
+the one whose label or context matches the field's name and description; when
+several similar values appear, a field whose named value is missing is treated
+as absent rather than given a substitute. A candidate reference is chosen only
+from that handler's listed candidates, and an evidence reference copies the
+supplied `evidenceId`. `missingFields` lists exactly the required fields left
+out of `args`, and a required field is left out only when its value is genuinely
+absent or no offered candidate matches. On required-only schema refusals, the
+validator computes the absent required set and corrects a mismatched model
+declaration; the instruction guides the model without making its declaration
+authoritative. Absent optional fields stay out
+of both `args` and `missingFields`. The model prefers `no_action` when no
+offered handler's description fits the document's role, and `unknown` when the
+evidence cannot be interpreted (#4290). Domain routing, such as which received
+documents an application ignores, belongs in host handler descriptions or
+reviewer guidance, not in this text. The text is not persisted. It is not part
+of the frozen interpretation configuration, the input, catalog or output
+digests, or the stored generation output, so a package release that changes it
+leaves stored attempts readable and previewable unchanged. New attempts send the
+new text, but their digests do not record it; a host that needs provenance to
+tell the two apart bumps its own `promptVersion`, which, like any configuration
+change, makes earlier attempts read as stale (`GenerationSnapshotStaleError`).
+
 A trusted custom `ProposalGenerator` must likewise honor cancellation, bound its
 response, and explicitly declare validated `complete` or `unknown` completion.
 The SDK currently normalizes missing/unknown finish reasons to `stop`
