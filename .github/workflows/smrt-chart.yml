@@ -1,0 +1,136 @@
+name: SMRT chart
+
+on:
+  pull_request:
+    paths:
+      - 'charts/smrt-app/**'
+      - 'scripts/deployment/**'
+      - 'scripts/deployment-*.mjs'
+      - '.github/workflows/smrt-chart.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the reviewed chart from main to GHCR'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smrt-chart-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+      - name: Install verified Helm
+        run: |
+          node scripts/deployment-toolchain.mjs helm "$RUNNER_TEMP/smrt-bin"
+          echo "$RUNNER_TEMP/smrt-bin" >> "$GITHUB_PATH"
+      - name: Deployment contracts
+        run: node --test scripts/deployment-*.test.mjs
+      - name: Lint, render and package
+        run: |
+          for fixture in charts/smrt-app/fixtures/*.json; do
+            helm lint --strict charts/smrt-app --values "$fixture"
+            helm template smrt-fixture charts/smrt-app --values "$fixture" > "$RUNNER_TEMP/$(basename "$fixture").yaml"
+          done
+          helm package charts/smrt-app --destination "$RUNNER_TEMP"
+
+  exercise:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SMRT_DEPLOYMENT_EXERCISE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'false'
+          setup-playwright: 'false'
+      - name: Install verified test tools
+        run: |
+          for tool in helm kind kubectl; do
+            node scripts/deployment-toolchain.mjs "$tool" "$RUNNER_TEMP/smrt-bin"
+          done
+          echo "$RUNNER_TEMP/smrt-bin" >> "$GITHUB_PATH"
+          echo "KUBECONFIG=$RUNNER_TEMP/smrt-chart-kubeconfig" >> "$GITHUB_ENV"
+      - name: Create disposable cluster and install pinned Flux
+        run: |
+          kind create cluster --name smrt-chart-ci --kubeconfig "$KUBECONFIG" --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 120s
+          curl -fsSL https://github.com/fluxcd/flux2/releases/download/v2.9.6/install.yaml -o "$RUNNER_TEMP/flux-install.yaml"
+          printf '%s\n' "9c1fda7e401429531ed1478f67ba06b3edff6513b75da7ee47bde9f1c4d4251c  $RUNNER_TEMP/flux-install.yaml" | sha256sum --check
+          kubectl apply -f "$RUNNER_TEMP/flux-install.yaml"
+          kubectl -n flux-system rollout status deployment/source-controller --timeout=180s
+          kubectl -n flux-system rollout status deployment/helm-controller --timeout=180s
+      - name: Exercise maintenance and recovery
+        run: |
+          set +e
+          node scripts/deployment-exercise.mjs > "$RUNNER_TEMP/smrt-chart-exercise.log" 2>&1
+          result=$?
+          if [ "$result" -ne 0 ]; then tail -80 "$RUNNER_TEMP/smrt-chart-exercise.log"; else grep '^\[exercise\]' "$RUNNER_TEMP/smrt-chart-exercise.log"; fi
+          exit "$result"
+      - name: Retain exercise evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: smrt-chart-exercise
+          path: ${{ runner.temp }}/smrt-chart-exercise.log
+          if-no-files-found: ignore
+      - name: Delete disposable cluster
+        if: always()
+        run: |
+          kind delete cluster --name smrt-chart-ci
+          rm -f "$KUBECONFIG"
+
+  publish:
+    needs: [validate, exercise]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: smrt-chart-publication
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'false'
+          setup-playwright: 'false'
+      - name: Install verified Helm
+        run: |
+          node scripts/deployment-toolchain.mjs helm "$RUNNER_TEMP/smrt-bin"
+          echo "$RUNNER_TEMP/smrt-bin" >> "$GITHUB_PATH"
+      - name: Publish immutable chart version
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(awk '/^version:/ {print $2}' charts/smrt-app/Chart.yaml)
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          # Failed lookups are not absence proof. Registry tag inventory must
+          # succeed before deciding whether this version may be published.
+          packages=$(GH_TOKEN="$GHCR_TOKEN" gh api --paginate '/orgs/happyvertical/packages?package_type=container&per_page=100' --jq '.[].name')
+          tags=''
+          if printf '%s\n' "$packages" | grep -Fxq 'charts/smrt-app'; then
+            tags=$(GH_TOKEN="$GHCR_TOKEN" gh api --paginate '/orgs/happyvertical/packages/container/charts%2Fsmrt-app/versions?per_page=100' --jq '.[].metadata.container.tags[]')
+          fi
+          if printf '%s\n' "$tags" | grep -Fxq "$version"; then
+            echo 'Chart version already exists; bump Chart.yaml before publication.' >&2
+            exit 1
+          fi
+          helm package charts/smrt-app --destination "$RUNNER_TEMP"
+          helm push "$RUNNER_TEMP/smrt-app-$version.tgz" oci://ghcr.io/happyvertical/charts
