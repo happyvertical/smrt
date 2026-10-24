@@ -6911,6 +6911,7 @@ export function proposalSuite(
         ).toHaveLength(0);
       });
       it('drops an invented optional target and still needs review', async () => {
+        const offered = await document('Offered destination');
         handlers[1].argsSchema = {
           ...handlers[1].argsSchema,
           required: ['evidenceId'],
@@ -6934,6 +6935,30 @@ export function proposalSuite(
         );
         expect(input.output.automaticActionEligible).toBe(false);
         expect(await storedRows()).not.toContain(INVENTED);
+        // A reviewer who supplies a target goes through full revalidation:
+        // an unoffered one is refused, an offered one previews for review.
+        const actionId = await service.createAction(input.itemId, 'human', {
+          origin: 'generated-proposal',
+          intentionKey: 'human',
+        });
+        const preview = (contentId: string) =>
+          service.previewProposal({
+            itemId: input.itemId,
+            actionId,
+            attemptId: input.lease.attemptId,
+            expectedRevision: 0,
+            requestId: randomUUID(),
+            handlerId: ATTACH,
+            handlerVersion: '1',
+            args: { ...input.output.suggestions[0].args, contentId },
+          });
+        await expect(preview(randomUUID())).rejects.toThrow();
+        const review = await preview(String(offered.id));
+        expect(review.state).toBe('waiting_review');
+        await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
+        expect(
+          (await db.query('SELECT id FROM intake_executions')).rows,
+        ).toHaveLength(0);
       });
       it('keeps an invented target beside a required miss for review', async () => {
         invent((suggestion) => {

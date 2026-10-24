@@ -1276,6 +1276,18 @@ describe('invented candidate targets (#4289)', () => {
     );
     expect(error.reason).toBe('Unoffered target: /suggestions/0/args/vendorId');
   });
+  it.each([
+    '1',
+    'a',
+    'e',
+  ])('fails closed on a short or common invented target (%s) that the kept output happens to contain', (value) => {
+    // The guard matches the exact (JSON-escaped) value anywhere in the kept
+    // suggestions and splits, keys included, so a value that is also ordinary
+    // text there rejects the attempt rather than being dropped.
+    expect(
+      rejection(reply(suggestion({ ...complete, vendorId: value }))).reason,
+    ).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
   it('replaces a declaration that names the invented target with the computed set', () => {
     const result = validate(
       reply(suggestion({ ...complete, vendorId: INVENTED }, [INVENTED])),

@@ -247,14 +247,24 @@ dropped optional field is simply absent, and either way the suggestion is
 `needs_review` for the reviewer to choose an offered target.
 `provenance.unofferedTargetsDropped` records `{suggestions, fields}` counts
 only, never IDs, labels or field names; it is absent when nothing was dropped
-and removed whenever the suggestions are discarded. A dropped value never
-reaches the review screen, a preview, feedback or the published output. The
-attempt still rejects as before for an unoffered handler or alternative,
-unknown evidence (argument or reference), a non-string target, a target field
-the handler schema does not declare in `properties`, any other argument error,
-a drop that exposes a refusal other than `required`, or when the dropped value
-also appears anywhere else in the kept suggestions or splits (an echo in an
-explanation or another argument would survive as a usable copy).
+and removed whenever the suggestions are discarded. Every candidate field that
+stays in the arguments has been checked against the offered set, so no
+unoffered value survives as a target. The attempt still rejects as before for
+an unoffered handler or alternative, unknown evidence (argument or reference),
+a non-string target, a target field the handler schema does not declare in
+`properties`, any other argument error, or a drop that exposes a refusal other
+than `required`.
+
+The exact dropped value is also searched for in the kept suggestions and splits
+(JSON-escaped, keys included); an exact echo, such as the ID repeated in an
+explanation or another argument, rejects the attempt. This guard fails closed
+on short or common values: a dropped `"1"` or `"a"` almost always occurs
+somewhere else in the output, so such a reply rejects rather than being kept.
+It is an exact-match check, not a general leak filter: a case variant, a
+reformatted copy or a fragment of the ID in free text (an explanation or a
+text argument) is not detected and may reach the reviewer as ordinary model
+prose. Free text is never a target and never authority; only the checked
+candidate fields are.
 
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
