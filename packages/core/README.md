@@ -187,8 +187,12 @@ Apps using Vite 7 with Planner/browser AI workers can add
 to their root `plugins` array. It also composes the existing worker plugin
 factory, including async plugin options, so no separate worker configuration
 is required. It replaces only Vite 7's exact known backtracking asset URL
-prefilter with a literal substring filter; Vite's asset parsing, ID exclusions,
-resolution and rewriting remain unchanged. Vite 8 and unknown filter shapes
+prefilter with a literal substring filter. A bounded iterative walk of the
+bundler's parsed AST skips comment/string-only `import.meta.url` matches, which
+can otherwise overflow Vite's tokenizer on large escaped bundles. Every real
+`import.meta` expression, parse failure, or exhausted walk budget delegates to
+Vite's original handler with its original context and arguments. Vite's asset
+parsing, ID exclusions, resolution and rewriting remain unchanged. Vite 8 and unknown filter shapes
 are left untouched. This compatibility helper can be removed after moving
 the consuming app to a Vite release with a safe prefilter. The version is
 loaded lazily during configuration; the resolved hook changes filters
