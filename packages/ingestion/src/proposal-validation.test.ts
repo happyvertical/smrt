@@ -1,3 +1,4 @@
+import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 import type { ExtractionResult } from './extraction-types.js';
 import type { GenerationLimits } from './proposal-contracts.js';
@@ -594,5 +595,88 @@ describe('required-only argument refusals (#4284)', () => {
         {},
       ),
     ).toHaveLength(PROPOSAL_MISSING_FIELDS_LIMIT);
+  });
+});
+
+describe('mismatched missingFields regression (#4284 QA)', () => {
+  // Synthetic equivalent of the QA attempts: a flat closed handler schema, all
+  // three required references absent, and a declaration naming something that
+  // is not missing. Before the correction this rejected the whole attempt.
+  const argsSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['vendorId', 'evidenceId', 'billNumber'],
+    properties: {
+      vendorId: { type: 'string', minLength: 1, maxLength: 64 },
+      evidenceId: { type: 'string', minLength: 1, maxLength: 64 },
+      billNumber: { type: 'string', minLength: 1, maxLength: 128 },
+      billDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+      totalCents: { type: 'integer', minimum: 0 },
+    },
+  };
+  const offered: GenerationOutput['offered'] = [
+    {
+      handler: {
+        id: 'bill',
+        version: '1',
+        description: 'Record a vendor bill',
+        kind: 'operation',
+        capability: null,
+        argsSchema,
+        references: {},
+        operation: { model: 'M', action: 'a', version: '1' },
+      },
+      candidates: [],
+    },
+  ];
+  const extraction = [
+    {
+      evidence: { id: 'e', contentHash: 'hash' },
+      configurationRevision: 'test',
+      segments: [{ location: { kind: 'source' } }],
+    },
+  ] as ExtractionResult[];
+  const args = { billDate: '2026-01-02', totalCents: 12345 };
+  it.each([
+    ['a present field', ['totalCents']],
+    ['an optional absent field', ['currency']],
+    ['an unknown name beside a real miss', ['vendorId', 'vendorName']],
+  ])('keeps the suggestion when the declaration names %s', (_name, declared) => {
+    const reply = {
+      outcome: 'proposals',
+      suggestions: [
+        {
+          handlerId: 'bill',
+          handlerVersion: '1',
+          args,
+          evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+          alternatives: [],
+          missingFields: declared,
+          explanation: 'x',
+        },
+      ],
+      splits: [],
+    };
+    // The exact value-free reason the earlier rule recorded for this shape.
+    const ajv = new Ajv({ strict: true, allErrors: true });
+    const check = ajv.compile(argsSchema);
+    expect(check(args)).toBe(false);
+    expect(
+      `/suggestions/0/args ${describeSchemaErrors(check.errors, argsSchema, args)}`,
+    ).toBe(
+      '/suggestions/0/args / required (missingProperty=vendorId); / required (missingProperty=evidenceId); / required (missingProperty=billNumber)',
+    );
+    const result = validateSuggestions(reply, offered, extraction, limits, 1);
+    expect(result.outcome).toBe('proposals');
+    expect(result.suggestions[0]).toMatchObject({
+      args,
+      missingFields: ['billNumber', 'evidenceId', 'vendorId'],
+      disposition: 'needs_review',
+    });
+    expect(result.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 3 - declared.filter((field) => field === 'vendorId').length,
+      removed: declared.filter((field) => field !== 'vendorId').length,
+    });
   });
 });
