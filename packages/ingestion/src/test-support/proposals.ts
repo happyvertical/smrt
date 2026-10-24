@@ -38,6 +38,7 @@ import type {
 } from '../proposal-contracts.js';
 import { proposalReadConfiguration } from '../proposal-contracts.js';
 import type { GenerationOutput } from '../proposal-dto.js';
+import { HandlerArgumentsInvalidError } from '../proposal-errors.js';
 import {
   proposalInstructionsFor,
   reviewerGuidanceInstructions,
@@ -6153,6 +6154,167 @@ export function proposalSuite(
         args: { ...input.output.suggestions[0].args, title: 'Human title' },
       });
       expect(review.state).toBe('waiting_review');
+    });
+    it('keeps a suggestion missing only undeclared required arguments for review, never automation (#4284)', async () => {
+      chooseCreate();
+      // A decision client that would clear every readiness check: it must not
+      // promote an incomplete suggestion.
+      configuration.decision = {
+        identity,
+        client: {
+          getCapabilities: async () => ({ decisions: true }),
+          decide: async (raw) => {
+            const request = raw as DecisionRequest;
+            const answers: Record<string, unknown> = {};
+            for (const [key, question] of Object.entries(request.questions)) {
+              if (question.type === 'predicate')
+                answers[key] = { type: 'predicate', probability: 0.99 };
+              else if (question.type === 'score')
+                answers[key] = {
+                  type: 'score',
+                  score: 0,
+                  confidence: 1,
+                  levels: question.criteria,
+                  probabilities: { '0': 1, '1': 0, '2': 0 },
+                };
+              else {
+                const choices = Object.keys(question.criteria);
+                answers[key] = {
+                  type: 'choice',
+                  choice: `${CREATE}@1`,
+                  confidence: 1,
+                  probabilities: Object.fromEntries(
+                    choices.map((choice) => [
+                      choice,
+                      choice === `${CREATE}@1` ? 1 : 0,
+                    ]),
+                  ),
+                };
+              }
+            }
+            return {
+              answers,
+              provenance: {
+                provider: identity.provider,
+                model: identity.model,
+              },
+              usage: {},
+            };
+          },
+        },
+      };
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const value = response.output as {
+          suggestions: Array<{
+            args: Record<string, unknown>;
+            missingFields: string[];
+          }>;
+        };
+        // The model omits a required argument without declaring it.
+        delete value.suggestions[0].args.title;
+        value.suggestions[0].missingFields = [];
+        return response;
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.warnings).not.toContain('malformed_output');
+      expect(input.output.provenance.failure).toBeUndefined();
+      expect(input.output.provenance.decision.configured).toBe(true);
+      expect(input.output.automaticActionEligible).toBe(false);
+      expect(input.output.suggestions[0]).toMatchObject({
+        missingFields: ['title'],
+        disposition: 'needs_review',
+      });
+      expect(input.output.suggestions[0].args).not.toHaveProperty('title');
+      // Replay: the immutable snapshot reads back unchanged.
+      expect(await output(input.lease)).toEqual(input.output);
+      // The generated arguments alone never preview, persist or execute.
+      const generated = () =>
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'incomplete',
+              expectedRevision: 0,
+              requestId: randomUUID(),
+            },
+          ],
+        });
+      await expect(generated()).rejects.toBeInstanceOf(
+        HandlerArgumentsInvalidError,
+      );
+      expect(
+        (await db.query('SELECT id FROM intake_proposals')).rows,
+      ).toHaveLength(0);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
+      ).toHaveLength(0);
+      // The reviewer completes the arguments through the explicit preview;
+      // the completed arguments are validated in full.
+      const actionId = await service.createAction(input.itemId, 'human', {
+        origin: 'generated-proposal',
+        intentionKey: 'human',
+      });
+      const preview = (args: Record<string, unknown>) =>
+        service.previewProposal({
+          itemId: input.itemId,
+          actionId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: 0,
+          requestId: randomUUID(),
+          handlerId: CREATE,
+          handlerVersion: '1',
+          args,
+        });
+      await expect(
+        preview({ ...input.output.suggestions[0].args, title: 7 }),
+      ).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+      const handler = handlers.find(
+        (entry) => entry.id === CREATE,
+      ) as OperationHandler;
+      const validate = handler.validate;
+      handler.validate = async () => ({ ok: false });
+      await expect(
+        preview({ ...input.output.suggestions[0].args, title: 'Human title' }),
+      ).rejects.toBeInstanceOf(HandlerArgumentsInvalidError);
+      handler.validate = validate;
+      const review = await preview({
+        ...input.output.suggestions[0].args,
+        title: 'Human title',
+      });
+      expect(review.state).toBe('waiting_review');
+      await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
+      expect(
+        (await db.query('SELECT id FROM intake_executions')).rows,
+      ).toHaveLength(0);
+    });
+    it('still rejects a missing required argument beside any other argument error (#4284)', async () => {
+      chooseCreate();
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const value = response.output as {
+          suggestions: Array<{ args: Record<string, unknown> }>;
+        };
+        delete value.suggestions[0].args.title;
+        value.suggestions[0].args.body = 4417;
+        return response;
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('provider_error');
+      expect(input.output.suggestions).toEqual([]);
+      expect(input.output.warnings).toContain('malformed_output');
+      expect(input.output.provenance.failure?.reason).toMatch(
+        /required \(missingProperty=title\).*type \(type=string\)|type \(type=string\).*required \(missingProperty=title\)/,
+      );
+      expect(input.output.provenance.failure?.reason).not.toContain('4417');
+      expect((await db.query('SELECT id FROM intake_actions')).rows).toEqual(
+        [],
+      );
     });
     it.each([
       'unknown',

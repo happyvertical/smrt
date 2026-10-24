@@ -35,7 +35,9 @@ Plan membership contains the exact parent args/version so edits call
 `previewPlan`, not per-step correction. An item may have more review pages; the
 host must aggregate state across pages when projecting a production inbox state.
 
-A `needs_review` suggestion is completable, not only rejectable (#4208). The
+A `needs_review` suggestion is completable, not only rejectable (#4208). That
+includes a suggestion kept because its arguments missed only required fields
+(#4284); nested misses appear as JSON Pointers such as `/vendor/name`. The
 component shows its `missingFields`, an editable `Suggested arguments (JSON)`
 draft prefilled from the generated arguments, and the candidate picker for
 declared candidate fields; Prepare review stays disabled while required fields

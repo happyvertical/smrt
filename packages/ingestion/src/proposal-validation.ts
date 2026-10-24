@@ -163,6 +163,50 @@ export function describeSchemaErrors(
   if (omitted > 0) shown.push(`+${omitted} more`);
   return shown.join('; ');
 }
+/** Most missing required arguments one suggestion may carry (#4284); the reply schema's `missingFields` cap. */
+export const PROPOSAL_MISSING_FIELDS_LIMIT = 30;
+/** Longest missing-field name or path kept; the reply schema's string cap. */
+const MISSING_FIELD_LENGTH = 512;
+/**
+ * The missing required arguments when the handler schema refused *only* on
+ * `required` (#4284). A miss at the argument root is the bare property name,
+ * as the existing `missingFields` contract has it; a miss inside a present
+ * nested object or array item is an RFC 6901 JSON Pointer relative to the
+ * arguments (`/vendor/name`, `/lines/0/sku`). Returns `undefined`, so the
+ * caller rejects as before, when any other keyword failed (type, enum,
+ * bounds, additionalProperties, a union or conditional branch...), when a
+ * path crosses a segment the schema does not own (a model-chosen key), or
+ * when the work or result exceeds its bound. Every name comes from the
+ * handler schema's own `required` list; argument values are never read.
+ */
+export function missingRequiredFields(
+  errors: ErrorObject[] | null | undefined,
+  schema: unknown,
+  instance: unknown,
+): string[] | undefined {
+  const all = errors ?? [];
+  if (!all.length || all.length > PROPOSAL_REASON_MAX_ERRORS) return undefined;
+  const missing = new Set<string>();
+  for (const error of all) {
+    const property = (error.params as Record<string, unknown>).missingProperty;
+    if (error.keyword !== 'required' || typeof property !== 'string')
+      return undefined;
+    let field = property;
+    if (error.instancePath) {
+      if (
+        schemaOwnedPath(error.instancePath, schema, instance)
+          .split('/')
+          .includes('?')
+      )
+        return undefined;
+      field = `${error.instancePath}/${property.replace(/~/g, '~0').replace(/\//g, '~1')}`;
+    }
+    if (!field || field.length > MISSING_FIELD_LENGTH) return undefined;
+    missing.add(field);
+    if (missing.size > PROPOSAL_MISSING_FIELDS_LIMIT) return undefined;
+  }
+  return [...missing];
+}
 export function record(value: unknown): IntakeValues {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Invalid proposal object');
@@ -369,25 +413,32 @@ export function validateSuggestions(
         throw new ProposalValidationError('Unoffered handler', path);
       const schema = ajv.compile(entry.handler.argsSchema);
       const valid = schema(suggestion.args);
-      const missing = (schema.errors ?? [])
-        .filter(
-          (error) => error.keyword === 'required' && error.instancePath === '',
-        )
-        .map((error) => String(error.params.missingProperty))
-        .sort();
+      // Required-only refusals keep the suggestion for a person to complete
+      // (#4284); any other refusal, or a declared field that is not actually
+      // missing, still rejects the attempt.
+      const missing = valid
+        ? []
+        : missingRequiredFields(
+            schema.errors,
+            entry.handler.argsSchema,
+            suggestion.args,
+          );
       if (
-        (!valid &&
-          schema.errors?.some(
-            (error) =>
-              error.keyword !== 'required' || error.instancePath !== '',
-          )) ||
-        JSON.stringify([...suggestion.missingFields].sort()) !==
-          JSON.stringify(missing)
+        !missing ||
+        suggestion.missingFields.some((field) => !missing.includes(field))
       )
         throw new ProposalValidationError(
           'Invalid handler arguments',
           `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args) || 'missingFields do not match the schema'}`,
         );
+      // Declared entries keep the model's order, so output that was already
+      // valid is byte-identical; undeclared misses follow in sorted order.
+      const missingFields = [
+        ...suggestion.missingFields,
+        ...missing
+          .filter((field) => !suggestion.missingFields.includes(field))
+          .sort(),
+      ];
       for (const [field, reference] of Object.entries(
         entry.handler.references,
       )) {
@@ -418,8 +469,9 @@ export function validateSuggestions(
         );
       return {
         ...structuredClone(suggestion),
+        missingFields,
         disposition:
-          missing.length || input.outcome !== 'proposals'
+          missingFields.length || input.outcome !== 'proposals'
             ? 'needs_review'
             : 'ready_for_review',
       };

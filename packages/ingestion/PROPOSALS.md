@@ -156,9 +156,28 @@ Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.
 Candidate IDs must occur in the offered set, and evidence IDs in retained source
 results. Unknown enums, invented IDs, extra authority/tool/approval fields and
-malformed structures fail closed. Missing required top-level fields are retained
-as `missingFields`, with `needs_review`; values are never invented to satisfy a
-schema. Observed page/time/source granularity is preserved. Logical scan splits
+malformed structures fail closed. Missing required fields are retained as
+`missingFields`, with `needs_review`; values are never invented to satisfy a
+schema. Observed page/time/source granularity is preserved.
+
+When a suggestion's arguments fail the handler schema **only** on `required`
+(#4284), the suggestion is kept rather than rejecting the attempt, whether or
+not the model declared the misses: its arguments stay exactly as generated and
+`missingFields` names every missing required argument. Declared entries keep
+the model's order and undeclared misses follow sorted, so an already valid
+reply is unchanged byte for byte and replay stays deterministic. A miss at the
+argument root is the bare property name; a miss inside a present nested object
+or array item is an RFC 6901 JSON Pointer relative to the arguments, such as
+`/vendor/name` or `/lines/0/sku`. Names come from the handler schema's own
+`required` lists, never from argument values or model-chosen keys. The attempt
+still rejects as before when any other keyword fails beside or instead of
+`required` (type, enum, pattern, bounds, `additionalProperties`, a union or
+conditional branch), when a miss lies under a key the schema does not declare,
+when a declared `missingFields` entry is not actually missing, or when more than
+30 fields are missing. Such a suggestion is ordinary `needs_review` output: the
+decision gate can only withhold readiness, never grant it, `automaticActionEligible`
+stays false, and generated preview of the incomplete arguments fails the handler
+schema (see Explicit preview below). Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
 
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
