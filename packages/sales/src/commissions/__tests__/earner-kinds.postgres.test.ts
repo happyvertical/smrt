@@ -17,6 +17,8 @@ import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EarnerCollection } from '../collections/EarnerCollection.js';
 import '../models/Earner.js';
+import { CommissionPayoutCollection } from '../collections/CommissionPayoutCollection.js';
+import '../models/CommissionPayout.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const TABLE = 'earners';
@@ -87,6 +89,59 @@ for (const { engine, enabled } of [
         vi.restoreAllMocks();
         await cleanup?.();
         cleanup = undefined;
+      });
+
+      it('adds payout routing snapshot to existing commission payouts without live-earner backfill', async () => {
+        const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+        vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+          earners: schemas.earners,
+          commission_payouts: schemas.commission_payouts,
+        });
+        const opened = await openDb(engine);
+        cleanup = opened.cleanup;
+        const active = opened.db;
+        const migrate = () =>
+          migrateSmrtSchemas({
+            db: active,
+            packageName: '@happyvertical/smrt-sales',
+            name: `sales_4148_${randomUUID().slice(0, 8)}`,
+            ...(engine === 'postgres'
+              ? { engineHint: 'postgres' as const, useConcurrentIndexes: false }
+              : {}),
+          });
+        await migrate();
+        const earners = await EarnerCollection.create({ db: active });
+        const earner = await earners.create({});
+        earner.setPayoutDestination({
+          method: 'stripe_connect',
+          connectedAccountId: 'acct_today',
+        });
+        await earner.save();
+        await active.query(
+          'ALTER TABLE commission_payouts DROP COLUMN payout_destination',
+        );
+        const id = randomUUID();
+        await active.query(
+          `INSERT INTO commission_payouts (id, slug, context, earner_id, idempotency_key, payout_method, status) VALUES (?, ?, '', ?, ?, 'stripe_connect', 'pending')`,
+          id,
+          id,
+          earner.id,
+          id,
+        );
+        const result = await migrate();
+        expect(result.applied).toBe(true);
+        expect(result.hasManualDrift).toBe(false);
+        expect(result.statements.join('\n')).toMatch(/payout_destination/);
+        expect((await migrate()).applied).toBe(false);
+        const payouts = await CommissionPayoutCollection.create({ db: active });
+        const legacy = await payouts.get({ id });
+        expect(legacy?.getPayoutDestination()).toBeNull();
+        expect(
+          (await earners.get({ id: earner.id! }))?.getPayoutDestination(),
+        ).toEqual({
+          method: 'stripe_connect',
+          connectedAccountId: 'acct_today',
+        });
       });
 
       it('adds kind and payoutDestination to a populated legacy table', async () => {

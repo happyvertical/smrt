@@ -1,11 +1,51 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { highlightControl } from '../control-dom.js';
+import { paintControlSpotlight } from '../control-spotlight.js';
 
 afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+it('observes animation cancellation without swallowing unexpected failures', () => {
+  vi.useFakeTimers();
+  const node = document.createElement('button');
+  document.body.append(node);
+  vi.spyOn(node, 'getBoundingClientRect').mockReturnValue(
+    new DOMRect(10, 10, 20, 20),
+  );
+  const createElement = document.createElement.bind(document);
+  const failures = [
+    new window.DOMException('cancelled', 'AbortError'),
+    new Error('unexpected animation failure'),
+    { name: 'AbortError' },
+  ];
+  const observed: unknown[] = [];
+  vi.spyOn(document, 'createElement').mockImplementation((name, options) => {
+    const element = createElement(name, options);
+    Object.defineProperty(element, 'animate', {
+      value: () => ({
+        cancel: vi.fn(),
+        finished: {
+          catch: (onRejected: (error: unknown) => void) => {
+            for (const error of failures) {
+              try {
+                onRejected(error);
+              } catch (propagated) {
+                observed.push(propagated);
+              }
+            }
+            return Promise.resolve();
+          },
+        },
+      }),
+    });
+    return element;
+  });
+  const cleanup = paintControlSpotlight(node, { dismissLabel: 'Dismiss' });
+  expect(observed).toEqual(failures.slice(1));
+  cleanup();
 });
 it('keeps outline compatibility and idempotent cleanup', () => {
   const node = document.createElement('button');

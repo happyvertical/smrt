@@ -4,12 +4,24 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  type AuditContext,
+  SmrtCollection,
+  type SmrtCreateInput,
+} from '@happyvertical/smrt-core';
 import { CommissionPayout } from '../models/CommissionPayout.js';
 import type { CommissionPayoutStatus } from '../types.js';
 
 export class CommissionPayoutCollection extends SmrtCollection<CommissionPayout> {
   static readonly _itemClass = CommissionPayout;
+
+  /** Persist the first routing snapshot atomically; a duplicate key must not upsert it. */
+  override async create(
+    options: SmrtCreateInput<CommissionPayout>,
+    context?: Partial<AuditContext>,
+  ): Promise<CommissionPayout> {
+    return super.create({ ...options, _insertOnly: true }, context);
+  }
 
   /** All payout batches for an earner, newest first. */
   async findByEarner(earnerId: string): Promise<CommissionPayout[]> {
