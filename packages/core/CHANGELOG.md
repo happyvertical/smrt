@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.24
+
+### Patch Changes
+
+- ### Features
+  
+  - freeze payout routing and repair dependency audit gates (#4266) (sales)
+  
+  ### Bug Fixes
+  
+  - apply Vite asset filters before transform setup (#4275) (core)
+- @happyvertical/smrt-config@0.57.24
+  - @happyvertical/smrt-scanner@0.57.24
+  - @happyvertical/smrt-types@0.57.24
+
 ## 0.57.23
 
 ### Patch Changes
