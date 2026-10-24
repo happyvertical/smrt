@@ -96,6 +96,13 @@ export interface ProposalConfiguration extends DecisionSettings {
   /** Absent means the normal unconfigured decision path, never fake probability. */
   decision?: { client: DecisionClient; identity: ProviderIdentity };
   limits: GenerationLimits;
+  /**
+   * Opt-in, bounded, redacted capture of the model output on a failed
+   * interpretation attempt (#4285). Off when absent. Not public read
+   * configuration: it never enters frozen configuration, digests or
+   * `proposalReadConfiguration`. See PROPOSALS.md.
+   */
+  failureCapture?: import('./failure-capture.js').FailureCaptureConfiguration;
 }
 /** Credential-free configuration for validating persisted proposal snapshots. */
 export interface ProposalReadConfiguration extends DecisionSettings {

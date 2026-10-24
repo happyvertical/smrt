@@ -18,12 +18,18 @@ import {
 } from './execution.js';
 import type { HandlerContext, IntakeHandler } from './execution-contracts.js';
 import {
+  completeWithFailureCapture,
   type DiscoveryGate,
   discoveryTransaction,
   generationSnapshotRead,
   type TransactionRunner,
 } from './execution-internal.js';
 import { type ExtractionResult, providerIdentity } from './extraction-types.js';
+import {
+  assertFailureCapture,
+  prepareFailureCapture,
+  type StoredFailureCapture,
+} from './failure-capture.js';
 import {
   FeedbackRetrievalDeniedError,
   IntakeFeedbackService,
@@ -38,6 +44,7 @@ import { proposalReadConfiguration } from './proposal-contracts.js';
 import type {
   CandidatePage,
   CompletedAnalysisSnapshot,
+  FailedAttemptCaptureSource,
   GeneratedPreview,
   GeneratedSuggestion,
   GenerationOutput,
@@ -59,7 +66,10 @@ import {
   text,
   validateSuggestions,
 } from './proposal-validation.js';
-import { providerFailureReason } from './provider-failure.js';
+import {
+  providerFailureReason,
+  rawProviderOutput,
+} from './provider-failure.js';
 import type { ReviewerInstruction } from './review-dto.js';
 import { reviewerInstructionView } from './reviewer-instruction.js';
 import type {
@@ -68,6 +78,11 @@ import type {
   IngestionService,
 } from './server.js';
 
+export {
+  FAILURE_CAPTURE_DEFAULT_MAX_BYTES,
+  FAILURE_CAPTURE_MAX_BYTES,
+  type FailureCaptureConfiguration,
+} from './failure-capture.js';
 export type * from './proposal-contracts.js';
 export type {
   ProposalConfiguration,
@@ -168,6 +183,10 @@ export class IngestionProposalService {
     text(this.config.version);
     text(this.config.promptVersion);
     assertProposalLimits(this.config.limits);
+    if ('failureCapture' in config) {
+      assertFailureCapture(config.failureCapture);
+      this.failureCapture = config.failureCapture;
+    }
     if ('identity' in config.generator)
       this.generator = {
         identity: this.identity,
@@ -216,6 +235,7 @@ export class IngestionProposalService {
     };
   }
   private readonly config: ProposalReadConfiguration;
+  private readonly failureCapture?: ProposalConfiguration['failureCapture'];
   private generation(): ProposalConfiguration['generator'] {
     if (!this.generator)
       throw new Error('Intake proposal generation is not configured');
@@ -677,6 +697,12 @@ export class IngestionProposalService {
       automaticActionEligible: false,
     };
     let failure: IntakeFailure | undefined;
+    // What the model sent, kept only while it could explain a failure; read
+    // by the opt-in capture alone (#4285), never by the recorded reason.
+    let captureCandidate:
+      | { source: FailedAttemptCaptureSource; text: () => string }
+      | undefined;
+    let capture: StoredFailureCapture | undefined;
     const publication = (): AnalysisOutput => ({
       status: failure ? 'partial' : 'completed',
       provider: 'smrt-ingestion-proposals',
@@ -843,6 +869,9 @@ export class IngestionProposalService {
               maxOutputBytes: maxBytes,
             });
           } catch (error) {
+            const raw = rawProviderOutput(error);
+            if (raw !== undefined)
+              captureCandidate = { source: 'raw_response', text: () => raw };
             // Value-free by construction: status, SDK code and allowlisted
             // schema keyword names only, never the provider's free text (#4260).
             throw new StageFailure('unavailable', providerFailureReason(error));
@@ -854,6 +883,10 @@ export class IngestionProposalService {
           output.offered,
           output.provenance.feedback,
         );
+        captureCandidate = {
+          source: 'generated_output',
+          text: () => JSON.stringify(generated.output),
+        };
         if (!['complete', 'unknown'].includes(generated.completion))
           throw new StageFailure(
             'malformed_output',
@@ -872,6 +905,8 @@ export class IngestionProposalService {
             generation.revision,
           ),
         );
+        // Validated: later failures (decision, authority) are not the model's output.
+        captureCandidate = undefined;
         if (humanCorrection) {
           const correction = record(humanCorrection);
           if (
@@ -915,8 +950,16 @@ export class IngestionProposalService {
         }
       }
     } catch (error) {
+      const candidate = captureCandidate;
+      captureCandidate = undefined;
       // Recheck authority before recording an error; revoked workers cannot publish.
       await this.live(lease, expected.catalogDigest);
+      if (candidate)
+        capture = await prepareFailureCapture(this.failureCapture, candidate, {
+          inputBytes: this.config.limits.maxOutputBytes,
+          timeoutMs: this.config.limits.timeoutMs,
+          now: this.options.now?.() ?? new Date(),
+        });
       failure =
         error instanceof StageFailure ? error.category : 'malformed_output';
       // Carry only fixed/value-free reasons; unknown errors may quote anything.
@@ -953,7 +996,11 @@ export class IngestionProposalService {
       output.offered,
       output.provenance.feedback,
     );
-    return this.service.completeAnalysis(lease, publication());
+    return this.service[completeWithFailureCapture](
+      lease,
+      publication(),
+      failure ? capture : undefined,
+    );
   }
   private async decide(
     lease: AnalysisLease,

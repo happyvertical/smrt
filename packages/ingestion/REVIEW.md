@@ -105,6 +105,12 @@ Changing it or itemId destroys the old view and fences late callback results.
 Denied refresh clears prior originals, candidates, arguments and results.
 Missing confidence is unavailable; page/time links exist only for observed
 locations. Provider errors and unresolved/partial results remain review states.
+A host that enabled `proposals.failureCapture` may fetch a failed attempt's
+redacted model output with `getFailedAttemptCapture(itemId, attemptId?)`. It
+requires current reviewer authority for that item and fails closed otherwise;
+`load`, inbox rows and review pages never include it, so a host shows it only
+behind its own explicit diagnostic action (see
+[PROPOSALS.md](PROPOSALS.md#failed-attempt-capture-opt-in-4285)).
 
 ## Submitter-scoped decisions
 

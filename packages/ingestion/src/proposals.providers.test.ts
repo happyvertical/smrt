@@ -13,7 +13,11 @@ import {
   proposalResponseSchema,
   UNPORTABLE_SCHEMA_KEYWORDS,
 } from './proposal-sdk.js';
-import { providerFailureReason } from './provider-failure.js';
+import {
+  ProposalResponseError,
+  providerFailureReason,
+  rawProviderOutput,
+} from './provider-failure.js';
 
 /**
  * Keywords the fake vLLM endpoint rejects, kept independent of the production
@@ -756,8 +760,9 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     const secret = 'Invoice for Jane Doe, account 4111 1111 1111 1111';
     const sdk = (message: string, code = 'API_ERROR') =>
       new AIError(message, code, 'openai');
+    // A non-SDK error names only its code-defined class (#4285).
     expect(providerFailureReason(new Error(secret))).toBe(
-      'provider call failed',
+      'provider call failed (class Error)',
     );
     // The SDK's own message shapes, with its own codes.
     expect(
@@ -773,7 +778,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
           code: 'API_ERROR',
         }),
       ),
-    ).toBe('provider call failed');
+    ).toBe('provider call failed (class Error)');
     // Leaks the review found: document digits or identifiers taken as a
     // status or code.
     expect(providerFailureReason(sdk('150 items on invoice INV-301'))).toBe(
@@ -783,9 +788,9 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       providerFailureReason(
         Object.assign(new Error(secret), { code: 'INV5521' }),
       ),
-    ).toBe('provider call failed');
+    ).toBe('provider call failed (class Error)');
     expect(providerFailureReason(sdk(secret, 'INV5521'))).toBe(
-      'provider call failed',
+      'provider call failed (class AIError)',
     );
     // The provider prefix must start the message.
     expect(
@@ -813,20 +818,20 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       'Total 150 due',
     ])
       expect(providerFailureReason(new Error(echoed))).toBe(
-        'provider call failed',
+        'provider call failed (class Error)',
       );
     expect(
       providerFailureReason(
         Object.assign(new Error('Total (150) for INV-301'), { status: 429 }),
       ),
-    ).toBe('provider rejected the request (HTTP 429)');
+    ).toBe('provider rejected the request (HTTP 429, class Error)');
     const abort = new Error(secret);
     abort.name = 'AbortError';
     expect(providerFailureReason(abort)).toBe(
-      'provider call aborted or timed out',
+      'provider call aborted or timed out (class Error, name AbortError)',
     );
     expect(providerFailureReason(sdk(secret, 'AI_TIMEOUT'))).toBe(
-      'provider call aborted or timed out',
+      'provider call aborted or timed out (code AI_TIMEOUT)',
     );
     expect(providerFailureReason(undefined)).toBe('provider call failed');
     expect(providerFailureReason(`a string with ${secret}`)).toBe(
@@ -834,6 +839,265 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     );
   });
 
+  it('gives every formerly bare provider failure a value-free reason (#4285)', () => {
+    const secret = 'Invoice for Jane Doe, account 4111 1111 1111 1111';
+    const reason = (error: unknown) => {
+      const text = providerFailureReason(error);
+      expect(text).not.toContain('Jane');
+      expect(text).not.toContain('4111');
+      expect(text.length).toBeLessThanOrEqual(500);
+      return text;
+    };
+    // Node fetch: TypeError('fetch failed') with the socket error as cause.
+    const refused = new TypeError(`fetch failed ${secret}`, {
+      cause: Object.assign(new Error(`connect ECONNREFUSED ${secret}`), {
+        code: 'ECONNREFUSED',
+        errno: -111,
+      }),
+    });
+    expect(reason(refused)).toBe(
+      'provider call failed (class TypeError, network ECONNREFUSED)',
+    );
+    const reset = new TypeError('fetch failed', {
+      cause: Object.assign(new Error(secret), { code: 'ECONNRESET' }),
+    });
+    expect(reason(reset)).toBe(
+      'provider call failed (class TypeError, network ECONNRESET)',
+    );
+    // undici's own error classes and codes, two causes deep.
+    class SocketError extends Error {
+      code = 'UND_ERR_SOCKET';
+    }
+    expect(
+      reason(
+        new TypeError('fetch failed', {
+          cause: new Error(secret, { cause: new SocketError(secret) }),
+        }),
+      ),
+    ).toBe('provider call failed (class TypeError, network UND_ERR_SOCKET)');
+    class HeadersTimeoutError extends Error {
+      code = 'UND_ERR_HEADERS_TIMEOUT';
+    }
+    expect(
+      reason(
+        new TypeError('fetch failed', { cause: new HeadersTimeoutError() }),
+      ),
+    ).toBe(
+      'provider call aborted or timed out (class TypeError, network UND_ERR_HEADERS_TIMEOUT)',
+    );
+    // happy-eyeballs: an AggregateError of per-address failures.
+    expect(
+      reason(
+        new TypeError('fetch failed', {
+          cause: new AggregateError(
+            [Object.assign(new Error(secret), { code: 'ETIMEDOUT' })],
+            secret,
+          ),
+        }),
+      ),
+    ).toBe(
+      'provider call aborted or timed out (class TypeError, network ETIMEDOUT)',
+    );
+    // A code outside the closed list is never echoed.
+    expect(
+      reason(
+        new TypeError('fetch failed', {
+          cause: Object.assign(new Error(secret), { code: 'INV5521' }),
+        }),
+      ),
+    ).toBe('provider call failed (class TypeError)');
+    // AbortSignal.timeout() and AbortController.abort() DOMExceptions.
+    expect(reason(new DOMException(secret, 'TimeoutError'))).toBe(
+      'provider call aborted or timed out (class DOMException, name TimeoutError)',
+    );
+    expect(reason(new DOMException(secret, 'AbortError'))).toBe(
+      'provider call aborted or timed out (class DOMException, name AbortError)',
+    );
+    // An abort reported as a cause.
+    expect(
+      reason(new Error(secret, { cause: new DOMException('', 'AbortError') })),
+    ).toBe('provider call aborted or timed out (class Error, name AbortError)');
+    // A non-JSON body parsed by a custom generator, and other built-ins.
+    expect(reason(new SyntaxError(`Unexpected token ${secret}`))).toBe(
+      'provider call failed (class SyntaxError)',
+    );
+    expect(reason(new RangeError(secret))).toBe(
+      'provider call failed (class RangeError)',
+    );
+    // A structured status on a non-SDK error, with its class.
+    expect(reason(Object.assign(new Error(secret), { statusCode: 502 }))).toBe(
+      'provider returned a server error (HTTP 502, class Error)',
+    );
+    // The class name is code-defined: a settable `name` or a lower-case or
+    // non-error class contributes nothing.
+    const renamed = new Error(secret);
+    renamed.name = secret;
+    expect(reason(renamed)).toBe('provider call failed (class Error)');
+    class lowercaseError extends Error {}
+    expect(reason(new lowercaseError(secret))).toBe('provider call failed');
+    expect(reason({ message: secret })).toBe('provider call failed');
+    expect(reason(Object.create(null))).toBe('provider call failed');
+    // The OpenAI SDK maps its connection errors to AIError API_ERROR without a
+    // cause; only its exact fixed messages are recognised.
+    const sdk = (message: string, code = 'API_ERROR') =>
+      new AIError(message, code, 'openai');
+    expect(reason(sdk('Connection error.'))).toBe(
+      'provider call failed (code API_ERROR, transport connection error)',
+    );
+    expect(reason(sdk('Request timed out.'))).toBe(
+      'provider call aborted or timed out (code API_ERROR, transport timeout)',
+    );
+    expect(reason(sdk('Request was aborted.'))).toBe(
+      'provider call aborted or timed out (code API_ERROR, transport aborted)',
+    );
+    expect(reason(sdk('(no status code or body)'))).toBe(
+      'provider call failed (code API_ERROR, transport no status or body)',
+    );
+    // An empty error body still carries the status (`<status> status code (no body)`).
+    expect(reason(sdk('503 status code (no body)'))).toBe(
+      'provider returned a server error (HTTP 503, code API_ERROR)',
+    );
+    expect(reason(sdk(`Connection error. ${secret}`))).toBe(
+      'provider call failed (code API_ERROR)',
+    );
+    expect(reason(sdk('constructor'))).toBe(
+      'provider call failed (code API_ERROR)',
+    );
+    // The SDK adapter's own response refusals.
+    expect(
+      reason(new ProposalResponseError('finish_reason', secret, 'length')),
+    ).toBe('provider response incomplete (finish reason length)');
+    expect(
+      reason(new ProposalResponseError('finish_reason', secret, secret)),
+    ).toBe('provider response incomplete (finish reason other)');
+    for (const [problem, expected] of [
+      ['truncated', 'provider response incomplete (truncated)'],
+      ['tool_calls', 'provider response contained tool calls'],
+      ['unexpected_model', 'provider response came from an unexpected model'],
+      ['no_text_content', 'provider response had no text content'],
+      ['empty_content', 'provider response was empty'],
+      ['output_limit', 'provider response exceeded the output limit'],
+      ['invalid_json', 'provider response was not valid JSON'],
+    ] as const)
+      expect(reason(new ProposalResponseError(problem, secret))).toBe(expected);
+    // A forged problem is not trusted.
+    expect(
+      reason(new ProposalResponseError(secret as 'truncated', secret)),
+    ).toBe('provider call failed (class ProposalResponseError)');
+  });
+  it.each([
+    [
+      'length',
+      'not json',
+      'provider response incomplete (finish reason length)',
+    ],
+    ['stop', '', 'provider response was empty'],
+    ['stop', '   ', 'provider response was empty'],
+    [
+      'stop',
+      'Here is the invoice for Jane Doe',
+      'provider response was not valid JSON',
+    ],
+    [
+      'content_filter',
+      '{}',
+      'provider response incomplete (finish reason content_filter)',
+    ],
+  ] as const)('names the SDK adapter refusal of a %s reply %j (#4285)', async (finish, content, expected) => {
+    const server = createServer(async (request, response) => {
+      for await (const _chunk of request) {
+        // drain
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          id: 'chatcmpl-fixture',
+          object: 'chat.completion',
+          created: 0,
+          model: identity.model,
+          choices: [
+            {
+              index: 0,
+              finish_reason: finish,
+              message: { role: 'assistant', content },
+            },
+          ],
+        }),
+      );
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('Listen failed');
+    try {
+      const client = await getAI({
+        type: 'openai',
+        apiKey: 'local-fixture-only',
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        defaultModel: identity.model,
+      });
+      const generator = createSDKProposalGenerator(client, identity, {
+        maxTokens: 100,
+        timeoutMs: 2000,
+      });
+      const error = await generator
+        .generate(input, {
+          signal: new AbortController().signal,
+          maxOutputBytes: 10000,
+        })
+        .then(
+          () => {
+            throw new Error('Expected a refusal');
+          },
+          (rejection: unknown) => rejection,
+        );
+      expect(error).toBeInstanceOf(ProposalResponseError);
+      expect(providerFailureReason(error)).toBe(expected);
+      // The raw reply is held off the error, for the opt-in capture only.
+      expect(rawProviderOutput(error)).toBe(content);
+      expect(JSON.stringify(error)).not.toContain('Jane');
+      expect(Object.values(error as object)).not.toContain(content || '\u0000');
+      expect(String(error)).not.toContain('Jane');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+  it('names a refused connection through the actual SDK (#4285)', async () => {
+    const server = createServer(() => {});
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('Listen failed');
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const client = await getAI({
+      type: 'openai',
+      apiKey: 'local-fixture-only',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      defaultModel: identity.model,
+      maxRetries: 0,
+    } as Parameters<typeof getAI>[0]);
+    const generator = createSDKProposalGenerator(client, identity, {
+      maxTokens: 100,
+      timeoutMs: 2000,
+    });
+    const error = await generator
+      .generate(input, {
+        signal: new AbortController().signal,
+        maxOutputBytes: 10000,
+      })
+      .then(
+        () => {
+          throw new Error('Expected a connection failure');
+        },
+        (rejection: unknown) => rejection,
+      );
+    expect(providerFailureReason(error)).toBe(
+      'provider call failed (code API_ERROR, transport connection error)',
+    );
+  });
   it('caps schema-keyword diagnostics without copying the provider suffix (#4260)', () => {
     const keywords = [
       'additionalItems',

@@ -10,6 +10,11 @@ import type {
   ProposalGenerator,
 } from './proposal-contracts.js';
 import { safeUsage } from './proposal-validation.js';
+import {
+  attachRawProviderOutput,
+  ProposalResponseError,
+  type ProposalResponseProblem,
+} from './provider-failure.js';
 
 function escapesRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -476,20 +481,39 @@ export function createSDKProposalGenerator(
           continueOnLength: false,
         },
       );
-      if (
-        response.finishReason !== 'stop' ||
-        response.truncated ||
-        response.toolCalls?.length ||
-        !acceptsResponseModel(identity, response.model)
-      )
-        throw new Error('Incomplete or unexpected proposal response');
-      if (
-        typeof response.content !== 'string' ||
-        Buffer.byteLength(response.content) > options.maxOutputBytes
-      )
-        throw new Error('Proposal output limit');
+      // Each refusal names a fixed problem so the recorded reason is not a
+      // bare "provider call failed" (#4285). The raw reply travels beside the
+      // error, off the object, for the opt-in failed-attempt capture only.
+      const refusal = (
+        problem: ProposalResponseProblem,
+        message: string,
+        finishReason?: unknown,
+      ) =>
+        attachRawProviderOutput(
+          new ProposalResponseError(problem, message, finishReason),
+          response.content,
+        );
+      const incomplete = 'Incomplete or unexpected proposal response';
+      if (response.finishReason !== 'stop')
+        throw refusal('finish_reason', incomplete, response.finishReason);
+      if (response.truncated) throw refusal('truncated', incomplete);
+      if (response.toolCalls?.length) throw refusal('tool_calls', incomplete);
+      if (!acceptsResponseModel(identity, response.model))
+        throw refusal('unexpected_model', incomplete);
+      if (typeof response.content !== 'string')
+        throw refusal('no_text_content', 'Proposal output limit');
+      if (Buffer.byteLength(response.content) > options.maxOutputBytes)
+        throw refusal('output_limit', 'Proposal output limit');
+      if (!response.content.trim())
+        throw refusal('empty_content', 'Proposal response was empty');
+      let output: unknown;
+      try {
+        output = JSON.parse(response.content);
+      } catch {
+        throw refusal('invalid_json', 'Proposal response was not valid JSON');
+      }
       return {
-        output: JSON.parse(response.content),
+        output,
         // The SDK normalizes absent/unknown finish reasons to stop.
         completion: 'unknown',
         usage: safeUsage(response.usage),

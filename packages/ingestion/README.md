@@ -259,6 +259,15 @@ and `maxSuggestions` are each capped at 20; `timeoutMs` is capped at 2147483647.
 Invalid limits are rejected when constructing `IngestionService`, before receipt
 or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.
 
+`proposals.failureCapture` (`{ enabled, maxBytes?, redact? }`) is off by
+default. When `enabled: true`, a failed interpretation attempt keeps the model
+output (or the parsed output that failed validation) for diagnosis: cut to
+`maxBytes` (default 16384, at most 65536 UTF-8 bytes) after the optional host
+`redact` hook, stored beside the attempt result (not digested), readable only
+through the reviewer-authorized `getFailedAttemptCapture(itemId, attemptId?)`
+and removed with the item. Invalid settings are rejected at construction. See
+[PROPOSALS.md](PROPOSALS.md#failed-attempt-capture-opt-in-4285).
+
 ## Trusted internal sources
 
 A host with a trusted internal source, such as chat messages recorded in
