@@ -62,6 +62,18 @@ export interface GeneratedSuggestion {
   explanation: string;
   disposition: 'ready_for_review' | 'needs_review';
 }
+/**
+ * Value-free record that the validator replaced model-declared `missingFields`
+ * with the schema's computed set (#4284): counts only, never field names.
+ */
+export interface MissingFieldsCorrection {
+  /** Suggestions whose declaration was replaced. */
+  suggestions: number;
+  /** Missing fields the model did not declare. */
+  added: number;
+  /** Declared fields that were not actually missing. */
+  removed: number;
+}
 export interface GenerationOutput {
   version: 1;
   outcome:
@@ -112,6 +124,8 @@ export interface GenerationOutput {
      * category: JSON paths, schema keywords and constants, never document text.
      */
     failure?: { category: string; reason: string };
+    /** Present only when a declaration was corrected; absent output is unchanged. */
+    missingFieldsCorrection?: MissingFieldsCorrection;
   };
   automaticActionEligible: false;
 }

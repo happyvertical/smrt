@@ -6117,6 +6117,10 @@ export function proposalSuite(
         disposition: 'needs_review',
       });
       expect(input.output.suggestions[0].args).not.toHaveProperty('title');
+      // A matching declaration is not a correction (#4284).
+      expect(input.output.provenance).not.toHaveProperty(
+        'missingFieldsCorrection',
+      );
       // The generated arguments alone fail the handler schema; the reviewer
       // completes them through the explicit human preview path (#4208).
       await expect(
@@ -6228,6 +6232,11 @@ export function proposalSuite(
         disposition: 'needs_review',
       });
       expect(input.output.suggestions[0].args).not.toHaveProperty('title');
+      expect(input.output.provenance.missingFieldsCorrection).toEqual({
+        suggestions: 1,
+        added: 1,
+        removed: 0,
+      });
       // Replay: the immutable snapshot reads back unchanged.
       expect(await output(input.lease)).toEqual(input.output);
       // The generated arguments alone never preview, persist or execute.
@@ -6290,6 +6299,37 @@ export function proposalSuite(
       await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
       expect(
         (await db.query('SELECT id FROM intake_executions')).rows,
+      ).toHaveLength(0);
+    });
+    it('replaces a mismatched missingFields declaration and keeps the suggestion for review (#4284)', async () => {
+      chooseCreate();
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const value = response.output as {
+          suggestions: Array<{ missingFields: string[] }>;
+        };
+        // Complete arguments, but the model still lists a field as missing.
+        value.suggestions[0].missingFields = ['title'];
+        return response;
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.provenance.failure).toBeUndefined();
+      expect(input.output.suggestions[0]).toMatchObject({
+        missingFields: [],
+        disposition: 'needs_review',
+      });
+      expect(input.output.suggestions[0].args).toHaveProperty('title');
+      expect(input.output.provenance.missingFieldsCorrection).toEqual({
+        suggestions: 1,
+        added: 0,
+        removed: 1,
+      });
+      expect(input.output.automaticActionEligible).toBe(false);
+      expect(await output(input.lease)).toEqual(input.output);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
       ).toHaveLength(0);
     });
     it('still rejects a missing required argument beside any other argument error (#4284)', async () => {

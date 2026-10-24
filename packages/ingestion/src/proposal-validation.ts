@@ -7,6 +7,7 @@ import type { GenerationLimits } from './proposal-contracts.js';
 import type {
   GeneratedSuggestion,
   GenerationOutput,
+  MissingFieldsCorrection,
   ProposalEvidenceReference,
 } from './proposal-dto.js';
 
@@ -366,7 +367,9 @@ export function validateSuggestions(
   extraction: ExtractionResult[],
   limits: GenerationLimits,
   revision: number,
-): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> {
+): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> & {
+  missingFieldsCorrection?: MissingFieldsCorrection;
+} {
   const ajv = new Ajv({
     strict: true,
     allErrors: true,
@@ -398,6 +401,11 @@ export function validateSuggestions(
       ...candidates.map((candidate) => candidate.key),
     ]),
   );
+  const correction: MissingFieldsCorrection = {
+    suggestions: 0,
+    added: 0,
+    removed: 0,
+  };
   const suggestions = input.suggestions.map(
     (suggestion, index): GeneratedSuggestion => {
       const path = `/suggestions/${index}`;
@@ -414,8 +422,7 @@ export function validateSuggestions(
       const schema = ajv.compile(entry.handler.argsSchema);
       const valid = schema(suggestion.args);
       // Required-only refusals keep the suggestion for a person to complete
-      // (#4284); any other refusal, or a declared field that is not actually
-      // missing, still rejects the attempt.
+      // (#4284); any other refusal still rejects the attempt.
       const missing = valid
         ? []
         : missingRequiredFields(
@@ -423,22 +430,25 @@ export function validateSuggestions(
             entry.handler.argsSchema,
             suggestion.args,
           );
-      if (
-        !missing ||
-        suggestion.missingFields.some((field) => !missing.includes(field))
-      )
+      if (!missing)
         throw new ProposalValidationError(
           'Invalid handler arguments',
-          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args) || 'missingFields do not match the schema'}`,
+          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args)}`,
         );
-      // Declared entries keep the model's order, so output that was already
-      // valid is byte-identical; undeclared misses follow in sorted order.
-      const missingFields = [
-        ...suggestion.missingFields,
-        ...missing
-          .filter((field) => !suggestion.missingFields.includes(field))
-          .sort(),
-      ];
+      // The schema, not the model, decides what is missing. A matching
+      // declaration keeps the model's order, so output that was already valid
+      // is byte-identical; a mismatch is replaced by the sorted computed set
+      // and always needs review.
+      const declared = suggestion.missingFields;
+      const added = missing.filter((field) => !declared.includes(field));
+      const removed = declared.filter((field) => !missing.includes(field));
+      const corrected = added.length > 0 || removed.length > 0;
+      const missingFields = corrected ? [...missing].sort() : [...declared];
+      if (corrected) {
+        correction.suggestions += 1;
+        correction.added += added.length;
+        correction.removed += removed.length;
+      }
       for (const [field, reference] of Object.entries(
         entry.handler.references,
       )) {
@@ -471,7 +481,7 @@ export function validateSuggestions(
         ...structuredClone(suggestion),
         missingFields,
         disposition:
-          missingFields.length || input.outcome !== 'proposals'
+          corrected || missingFields.length || input.outcome !== 'proposals'
             ? 'needs_review'
             : 'ready_for_review',
       };
@@ -503,7 +513,12 @@ export function validateSuggestions(
       digest: result.digest,
     };
   });
-  return { outcome: input.outcome, suggestions, splits };
+  return {
+    outcome: input.outcome,
+    suggestions,
+    splits,
+    ...(correction.suggestions ? { missingFieldsCorrection: correction } : {}),
+  };
 }
 function assertEvidenceReference(
   reference: ProposalEvidenceReference,

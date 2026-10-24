@@ -862,16 +862,16 @@ export class IngestionProposalService {
         if (generated.completion === 'unknown')
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
-        Object.assign(
-          output,
-          validateSuggestions(
-            generated.output,
-            output.offered,
-            extraction,
-            this.config.limits,
-            generation.revision,
-          ),
+        const { missingFieldsCorrection, ...validated } = validateSuggestions(
+          generated.output,
+          output.offered,
+          extraction,
+          this.config.limits,
+          generation.revision,
         );
+        Object.assign(output, validated);
+        if (missingFieldsCorrection)
+          output.provenance.missingFieldsCorrection = missingFieldsCorrection;
         if (humanCorrection) {
           const correction = record(humanCorrection);
           if (
@@ -884,6 +884,7 @@ export class IngestionProposalService {
           ) {
             output.outcome = 'needs_review';
             output.suggestions = [];
+            delete output.provenance.missingFieldsCorrection;
             output.warnings.push('human_split_not_respected');
           }
         }
@@ -931,6 +932,7 @@ export class IngestionProposalService {
           reason: reason.slice(0, PROPOSAL_REASON_LIMIT),
         };
       output.outcome = 'provider_error';
+      delete output.provenance.missingFieldsCorrection;
       output.suggestions = [];
       output.splits = [];
       output.warnings.push(failure);
@@ -943,6 +945,7 @@ export class IngestionProposalService {
       output.splits = [];
       output.offered = [];
       delete output.provenance.failure;
+      delete output.provenance.missingFieldsCorrection;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');

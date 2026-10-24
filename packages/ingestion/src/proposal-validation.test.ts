@@ -465,10 +465,22 @@ describe('required-only argument refusals (#4284)', () => {
       disposition: 'needs_review',
     });
     expect(result.suggestions[0].args).toEqual(args);
-    // Declared entries keep their order; only undeclared misses are appended.
-    expect(
-      validate(reply(args, ['vendorId'])).suggestions[0].missingFields,
-    ).toEqual(['vendorId', 'billNumber']);
+    expect(result.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 2,
+      removed: 0,
+    });
+    // A partial declaration is replaced by the sorted computed set.
+    const partial = validate(reply(args, ['vendorId']));
+    expect(partial.suggestions[0].missingFields).toEqual([
+      'billNumber',
+      'vendorId',
+    ]);
+    expect(partial.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 1,
+      removed: 0,
+    });
   });
   it('names a miss inside a present object or array item by escaped JSON Pointer', () => {
     const result = validate(
@@ -491,6 +503,15 @@ describe('required-only argument refusals (#4284)', () => {
     expect(JSON.stringify(result.suggestions[0])).toBe(
       JSON.stringify({ ...before, disposition: 'needs_review' }),
     );
+    expect(result).not.toHaveProperty('missingFieldsCorrection');
+    // Declared in a different order is still a match, kept as declared.
+    expect(
+      validate(reply(args, ['billNumber', 'vendorId'])).suggestions[0]
+        .missingFields,
+    ).toEqual(['billNumber', 'vendorId']);
+    const valid = validate(reply(complete));
+    expect(valid.suggestions[0].disposition).toBe('ready_for_review');
+    expect(valid).not.toHaveProperty('missingFieldsCorrection');
     expect(JSON.stringify(validate(reply(args)))).toBe(
       JSON.stringify(validate(reply(args))),
     );
@@ -515,9 +536,29 @@ describe('required-only argument refusals (#4284)', () => {
     );
     expect(error.reason).not.toMatch(/Acme|4417|twelve/);
   });
-  it('still rejects a declared field that is not missing', () => {
-    expect(rejection(reply(complete, ['vendorId'])).reason).toBe(
-      'Invalid handler arguments: /suggestions/0/args missingFields do not match the schema',
+  it('corrects a declared field that is not missing and keeps the suggestion for review', () => {
+    const listed = validate(reply(complete, ['vendorId', 'memo']));
+    expect(listed.suggestions[0]).toMatchObject({
+      args: complete,
+      missingFields: [],
+      disposition: 'needs_review',
+    });
+    expect(listed.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 0,
+      removed: 2,
+    });
+    // Both directions at once, counted without names or values.
+    const { billNumber: _b, ...args } = complete;
+    const both = validate(reply(args, ['vendorId']));
+    expect(both.suggestions[0].missingFields).toEqual(['billNumber']);
+    expect(both.missingFieldsCorrection).toEqual({
+      suggestions: 1,
+      added: 1,
+      removed: 1,
+    });
+    expect(JSON.stringify(both.missingFieldsCorrection)).not.toMatch(
+      /vendor|bill/i,
     );
   });
   it('rejects more missing fields than the reply may declare', () => {
