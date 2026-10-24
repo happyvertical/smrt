@@ -410,12 +410,51 @@ export class InheritanceResolver {
           positions.set(field.name, allFields.length);
           allFields.push(field);
         } else {
-          allFields[position] = field;
+          allFields[position] = this.mergeSTIFieldOverride(
+            allFields[position],
+            field,
+          );
         }
       }
     }
 
     return allFields;
+  }
+
+  /**
+   * Merge a descendant's redeclared STI field with the entry it replaces.
+   *
+   * Leaf-wins: the descendant's own declaration (its initializer, type
+   * annotation, decorators, optionality) always takes precedence — a
+   * redeclaration that carries its own options keeps them. But a bare
+   * `override fieldName = value` redeclaration (no type annotation, no
+   * decorators) carries no metadata source of its own, so everything the
+   * declaring ancestor attached — an enum type annotation, a
+   * `@field({ description })` decorator — would otherwise be dropped from
+   * the merged raw field and, with it, from the converted manifest. Fill
+   * that missing metadata in from the ancestor entry being replaced so a
+   * grandchild's bare override keeps the inherited field's `enum` and
+   * `description` (#4005).
+   *
+   * @param ancestor - The previously merged (nearest declaring ancestor)
+   *   field entry being replaced.
+   * @param descendant - The descendant's own redeclaration, which wins.
+   * @returns The descendant's field with missing `typeAnnotation` and
+   *   `decorators` filled from the ancestor.
+   */
+  private mergeSTIFieldOverride(
+    ancestor: RawFieldDefinition,
+    descendant: RawFieldDefinition,
+  ): RawFieldDefinition {
+    return {
+      ...descendant,
+      ...(descendant.typeAnnotation === null && ancestor.typeAnnotation !== null
+        ? { typeAnnotation: ancestor.typeAnnotation }
+        : {}),
+      ...(descendant.decorators.length === 0 && ancestor.decorators.length > 0
+        ? { decorators: ancestor.decorators }
+        : {}),
+    };
   }
 
   /**
