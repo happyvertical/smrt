@@ -1018,10 +1018,14 @@ export class IngestionProposalService {
       output.offered,
       output.provenance.feedback,
     );
+    // Without a capture, publish through the public completeAnalysis exactly
+    // as before, so hosts and tests that wrap it still observe generation.
+    if (!failure || !capture)
+      return this.service.completeAnalysis(lease, publication());
     return this.service[completeWithFailureCapture](
       lease,
       publication(),
-      failure ? capture : undefined,
+      capture,
     );
   }
   private async decide(
