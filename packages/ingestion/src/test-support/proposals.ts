@@ -26,7 +26,10 @@ import type {
   OperationHandler,
   PlanHandler,
 } from '../execution-contracts.js';
-import { completeWithFailureCapture } from '../execution-internal.js';
+import {
+  analysisLeaseRemaining,
+  completeWithFailureCapture,
+} from '../execution-internal.js';
 import { createSDKExtractionAdapter, extractAnalysis } from '../extraction.js';
 import { extractWithProviders } from '../extraction-providers.js';
 import { IntakeFeedbackService } from '../feedback.js';
@@ -1088,6 +1091,128 @@ export function proposalSuite(
         expect(capture?.status).toBe('redaction_failed');
         expect(capture).not.toHaveProperty('text');
         expect(await allRows()).not.toContain(retained);
+      });
+      it('stores no capture when the decision fails after validation', async () => {
+        configuration.failureCapture = { enabled: true, redact };
+        chooseCreate({ title: retained, body: 'Body' });
+        configuration.decision = {
+          identity,
+          client: {
+            getCapabilities: async () => ({ decisions: true }),
+            decide: async () => {
+              throw new Error('decision unavailable');
+            },
+          },
+        };
+        const failed = await generate();
+        expect(failed.output.outcome).toBe('provider_error');
+        expect(
+          (await attemptData(failed.lease.attemptId)).failureCapture,
+        ).toBeUndefined();
+        expect(
+          await service.getFailedAttemptCapture(
+            failed.itemId,
+            failed.lease.attemptId,
+          ),
+        ).toBeNull();
+      });
+      it('copies the validated settings so a later host mutation cannot widen them', async () => {
+        const host = { enabled: true, maxBytes: 64, redact };
+        configuration.failureCapture = host;
+        calls.mockImplementation(async () => {
+          // Mutated after the service validated and copied it.
+          host.maxBytes = 65536;
+          return hostile();
+        });
+        const failed = await generate();
+        const capture = await service.getFailedAttemptCapture(
+          failed.itemId,
+          failed.lease.attemptId,
+        );
+        expect(capture).toMatchObject({ maxBytes: 64, truncated: true });
+        expect(Buffer.byteLength(capture?.text ?? '')).toBeLessThanOrEqual(64);
+        // Nor switch capture on mid-generation.
+        const off = { enabled: false };
+        configuration.failureCapture = off;
+        calls.mockImplementation(async () => {
+          off.enabled = true;
+          return hostile();
+        });
+        const disabled = await generate();
+        expect(
+          await service.getFailedAttemptCapture(
+            disabled.itemId,
+            disabled.lease.attemptId,
+          ),
+        ).toBeNull();
+      });
+      it('reports lease time only for the exact running lease', async () => {
+        const running = await generation();
+        const remaining = (lease: AnalysisLease) =>
+          service[analysisLeaseRemaining](lease);
+        expect(await remaining(running.lease)).toBe(10000);
+        expect(await remaining({ ...running.lease, token: randomUUID() })).toBe(
+          0,
+        );
+        expect(
+          await remaining({ ...running.lease, fence: running.lease.fence + 1 }),
+        ).toBe(0);
+        expect(
+          await remaining({ ...running.lease, attemptId: randomUUID() }),
+        ).toBe(0);
+        clock = new Date(clock.getTime() + 10001);
+        expect(await remaining(running.lease)).toBe(0);
+        clock = new Date(clock.getTime() - 10001);
+        allowed = false;
+        await expect(remaining(running.lease)).rejects.toThrow();
+        allowed = true;
+        calls.mockResolvedValue(hostile());
+        await service.generateProposals(running.lease);
+        // Completed: no longer running.
+        expect(await remaining(running.lease)).toBe(0);
+      });
+      it('rechecks authority before the redaction hook sees any text', async () => {
+        let hookCalls = 0;
+        configuration.failureCapture = {
+          enabled: true,
+          redact: ({ text }) => {
+            hookCalls++;
+            return text;
+          },
+        };
+        calls.mockImplementation(async () => {
+          allowed = false;
+          throw attachRawProviderOutput(
+            new ProposalResponseError('invalid_json', 'refused'),
+            retained,
+          );
+        });
+        const pending = await generation();
+        await expect(
+          service.generateProposals(pending.lease),
+        ).rejects.toThrow();
+        expect(hookCalls).toBe(0);
+        allowed = true;
+        expect(await allRows()).not.toContain(retained);
+      });
+      it('never reaches the review host load or inbox rows', async () => {
+        configuration.failureCapture = { enabled: true, redact };
+        calls.mockResolvedValue(hostile());
+        const failed = await generate();
+        expect(
+          (await service.getFailedAttemptCapture(failed.itemId))?.text,
+        ).toContain(retained);
+        const host = createIntakeReviewHost(service, {
+          upload: async () => ({ itemId: failed.itemId }),
+          assignment: async () => ({ assigneeId: null, version: 0 }),
+          assign: async () => {},
+          evidence: async (part) => ({ label: part.partId }),
+        });
+        const view = await host.load(failed.itemId);
+        const rows = await host.list({});
+        expect(rows.items.map((row) => row.item.id)).toContain(failed.itemId);
+        for (const surface of [view, rows])
+          expect(JSON.stringify(surface)).not.toContain(retained);
       });
     });
     it('reads and previews completed proposals without a generation client', async () => {

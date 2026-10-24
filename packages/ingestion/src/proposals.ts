@@ -184,9 +184,18 @@ export class IngestionProposalService {
     text(this.config.version);
     text(this.config.promptVersion);
     assertProposalLimits(this.config.limits);
-    if ('failureCapture' in config) {
-      assertFailureCapture(config.failureCapture);
-      this.failureCapture = config.failureCapture;
+    if ('failureCapture' in config) assertFailureCapture(config.failureCapture);
+    if ('failureCapture' in config && config.failureCapture) {
+      const capture = config.failureCapture;
+      // Copy the validated fields: a host mutating its object later cannot
+      // widen the cap or switch capture on for a running generation.
+      this.failureCapture = Object.freeze({
+        enabled: capture.enabled,
+        ...(capture.maxBytes === undefined
+          ? {}
+          : { maxBytes: capture.maxBytes }),
+        ...(capture.redact ? { redact: capture.redact.bind(capture) } : {}),
+      });
     }
     if ('identity' in config.generator)
       this.generator = {

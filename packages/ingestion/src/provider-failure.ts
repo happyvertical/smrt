@@ -384,8 +384,9 @@ export function providerFailureReason(error: unknown): string {
     structuredStatus(error) ??
     structuredStatus(field(error, 'cause')) ??
     (sdk ? sdkMessageStatus(sdk.code, message) : undefined);
-  // An HTTP status is a response the provider gave: an abort or timeout seen
-  // only in the cause chain never hides it.
+  // An HTTP status is a response the provider gave: an abort name or network
+  // timeout code on a non-SDK error (top level or cause chain) never hides it.
+  // Only the SDK's own abort codes and exact transport messages win over it.
   if (
     (sdk && SDK_ABORT_CODES.has(sdk.code)) ||
     transport === 'timeout' ||

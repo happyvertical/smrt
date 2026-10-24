@@ -251,8 +251,9 @@ from a fixed phrase and:
   `UND_ERR_*`, TLS certificate codes, ...) read from the error, up to three
   `cause` levels and an `AggregateError`'s entries, and a structured numeric
   status. A timeout or abort is named as one, except that a structured HTTP
-  status always wins over an abort or network timeout seen only in the cause
-  chain, and an SDK error's abort is read from its code alone.
+  status always wins over an abort name or network timeout code on a non-SDK
+  error, whether on the error itself or in its cause chain. An SDK error's
+  abort is read only from its code or exact transport message.
 
 For example: `provider rejected the response schema (HTTP 400, code API_ERROR);
 unsupported response-schema keywords: uniqueItems`,
@@ -299,7 +300,8 @@ failed interpretation attempt (`provider_error`) keeps one of:
 Errors without model output (transport, timeouts, authority, decision
 failures) capture nothing. Successful attempts never store a capture.
 
-The text, cut to the generation `maxOutputBytes`, goes through the optional
+The text, cut to the larger of the generation `maxOutputBytes` and
+`maxBytes`, goes through the optional
 `redact` hook, and the result is cut to `maxBytes` without splitting a
 character (`truncated: true` when either cut applied). NUL and unpaired
 surrogates are stored as U+FFFD so PostgreSQL JSON accepts the record. When

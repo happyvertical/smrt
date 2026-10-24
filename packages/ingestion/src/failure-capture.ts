@@ -28,8 +28,8 @@ export interface FailureCaptureConfiguration {
    */
   maxBytes?: number;
   /**
-   * Optional host redaction. It receives the text (cut to the configured
-   * generation `maxOutputBytes`) and returns the text to store. When it
+   * Optional host redaction. It receives the text (cut to the larger of the
+   * generation `maxOutputBytes` and `maxBytes`) and returns the text to store. When it
    * throws, returns a non-string or exceeds the generation timeout, nothing is
    * stored except `status: 'redaction_failed'`; the attempt's own failure is
    * recorded as usual. The hook gets at most half of the analysis lease left

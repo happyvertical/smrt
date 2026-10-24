@@ -898,6 +898,20 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     ).toBe(
       'provider call aborted or timed out (class TypeError, network ETIMEDOUT)',
     );
+    // Nor an off-list code on an AggregateError entry (#4285 review).
+    expect(
+      reason(
+        new TypeError('fetch failed', {
+          cause: new AggregateError(
+            [
+              Object.assign(new Error(secret), { code: 'INV5521' }),
+              Object.assign(new Error(secret), { code: secret }),
+            ],
+            secret,
+          ),
+        }),
+      ),
+    ).toBe('provider call failed (class TypeError)');
     // A code outside the closed list is never echoed.
     expect(
       reason(
