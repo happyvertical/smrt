@@ -371,19 +371,28 @@ export function providerFailureReason(error: unknown): string {
   const foreign = !sdk;
   const cls = foreign ? className(error) : undefined;
   const network = networkCode(error);
-  const aborted = abortName(error);
+  // An SDK error names its own abort/timeout by code; a cause-chain abort name
+  // is read only for errors outside the SDK vocabulary.
+  const aborted = foreign ? abortName(error) : undefined;
   const facts = [
     ...(cls ? [`class ${cls}`] : []),
-    ...(foreign && aborted ? [`name ${aborted}`] : []),
+    ...(aborted ? [`name ${aborted}`] : []),
     ...(network ? [`network ${network}`] : []),
     ...(transport ? [`transport ${transport}`] : []),
   ];
+  const status =
+    structuredStatus(error) ??
+    structuredStatus(field(error, 'cause')) ??
+    (sdk ? sdkMessageStatus(sdk.code, message) : undefined);
+  // An HTTP status is a response the provider gave: an abort or timeout seen
+  // only in the cause chain never hides it.
   if (
-    aborted ||
     (sdk && SDK_ABORT_CODES.has(sdk.code)) ||
     transport === 'timeout' ||
     transport === 'aborted' ||
-    (network && NETWORK_TIMEOUT_CODES.has(network))
+    (status === undefined &&
+      (aborted !== undefined ||
+        (network !== undefined && NETWORK_TIMEOUT_CODES.has(network))))
   ) {
     const details = [...(sdk ? [`code ${sdk.code}`] : []), ...facts];
     return `provider call aborted or timed out${details.length ? ` (${details.join(', ')})` : ''}`.slice(
@@ -391,10 +400,6 @@ export function providerFailureReason(error: unknown): string {
       PROVIDER_FAILURE_REASON_LIMIT,
     );
   }
-  const status =
-    structuredStatus(error) ??
-    structuredStatus(field(error, 'cause')) ??
-    (sdk ? sdkMessageStatus(sdk.code, message) : undefined);
   const code = sdk?.code;
   const keywords = sdk ? rejectedKeywords(message) : [];
   const category = keywords.length

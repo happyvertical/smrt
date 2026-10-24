@@ -27,6 +27,7 @@ import type {
   ReceiptResult,
 } from './dto.js';
 import {
+  analysisLeaseRemaining,
   completeWithFailureCapture,
   generationSnapshotRead,
   listReadGate,
@@ -3391,6 +3392,30 @@ export class IngestionService {
     capture: StoredFailureCapture | undefined,
   ): Promise<boolean> {
     return this.publishAnalysis(lease, output, capture);
+  }
+  /** Package-internal: time left on this exact running lease, for bounded host hooks. */
+  async [analysisLeaseRemaining](lease: AnalysisLease): Promise<number> {
+    return this.tx(async (db) => {
+      await this.item(lease.itemId, 'process', db);
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND analysis_id=? AND item_id=?',
+        [lease.attemptId, lease.analysisId, lease.itemId],
+      );
+      if (
+        !attempt ||
+        attempt.state !== 'running' ||
+        attempt.lease_token !== lease.token ||
+        Number(attempt.fence) !== lease.fence ||
+        !attempt.lease_until
+      )
+        return 0;
+      return Math.max(
+        0,
+        persistedDate(attempt.lease_until).getTime() - this.now().getTime(),
+      );
+    });
   }
   private async publishAnalysis(
     lease: AnalysisLease,

@@ -250,7 +250,9 @@ from a fixed phrase and:
   (`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`,
   `UND_ERR_*`, TLS certificate codes, ...) read from the error, up to three
   `cause` levels and an `AggregateError`'s entries, and a structured numeric
-  status. A timeout or abort is named as one.
+  status. A timeout or abort is named as one, except that a structured HTTP
+  status always wins over an abort or network timeout seen only in the cause
+  chain, and an SDK error's abort is read from its code alone.
 
 For example: `provider rejected the response schema (HTTP 400, code API_ERROR);
 unsupported response-schema keywords: uniqueItems`,
@@ -301,8 +303,12 @@ The text, cut to the generation `maxOutputBytes`, goes through the optional
 `redact` hook, and the result is cut to `maxBytes` without splitting a
 character (`truncated: true` when either cut applied). NUL and unpaired
 surrogates are stored as U+FFFD so PostgreSQL JSON accepts the record. When
-the hook throws, returns a non-string or runs past the generation `timeoutMs`,
-nothing but `status: 'redaction_failed'` is stored; the hook's error is
+the hook throws, returns a non-string or runs past its time budget, nothing but
+`status: 'redaction_failed'` is stored. The budget is the generation
+`timeoutMs`, cut to half of the analysis lease still left when the hook starts
+(no time left: the hook is not called). The hook runs after the authority
+recheck, and the second recheck plus publication keep the rest of the lease, so
+a slow hook cannot cost the attempt its failure record; the hook's error is
 discarded, and the attempt's own failure and reason are recorded as usual.
 Capture problems never replace the real failure.
 
@@ -324,9 +330,10 @@ scope; every denial, expiry, cancellation or foreign item fails closed before
 the row is read. It is never part of a list DTO, inbox row, review page,
 log line, checkpoint name, telemetry or error message.
 
-**Retention and deletion.** It follows the item: expiry, retention sweeps and
-deletion propagation empty attempt `data`, which removes the capture with the
-rest of the payload.
+**Retention and deletion.** It follows the item. There is no separate delete
+API: `expire`, `sweepRetention` and the `repairDeletions` retry of an
+interrupted propagation all empty attempt `data`, which removes the capture
+with the rest of the payload; a revoked item is unreadable before that.
 
 `createSDKProposalDecisionClient(client)` adapts an existing SDK client’s optional
 capability without changing its errors or protocol. Optional `decision` uses public core `executeDecision` and the existing SDK

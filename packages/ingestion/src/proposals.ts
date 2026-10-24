@@ -18,6 +18,7 @@ import {
 } from './execution.js';
 import type { HandlerContext, IntakeHandler } from './execution-contracts.js';
 import {
+  analysisLeaseRemaining,
   completeWithFailureCapture,
   type DiscoveryGate,
   discoveryTransaction,
@@ -954,10 +955,22 @@ export class IngestionProposalService {
       captureCandidate = undefined;
       // Recheck authority before recording an error; revoked workers cannot publish.
       await this.live(lease, expected.catalogDigest);
-      if (candidate)
+      if (candidate && this.failureCapture?.enabled === true)
         capture = await prepareFailureCapture(this.failureCapture, candidate, {
           inputBytes: this.config.limits.maxOutputBytes,
-          timeoutMs: this.config.limits.timeoutMs,
+          // The hook may use at most half of the lease still left, so the
+          // later authority recheck and publication keep the other half: a
+          // slow hook can never cost the failed attempt its record.
+          timeoutMs: this.failureCapture.redact
+            ? Math.min(
+                this.config.limits.timeoutMs,
+                Math.floor(
+                  (await this.service[analysisLeaseRemaining](lease).catch(
+                    () => 0,
+                  )) / 2,
+                ),
+              )
+            : this.config.limits.timeoutMs,
           now: this.options.now?.() ?? new Date(),
         });
       failure =
