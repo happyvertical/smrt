@@ -52,6 +52,7 @@ import {
 } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import {
+  dedupeGeneratedLists,
   PROPOSAL_REASON_LIMIT,
   ProposalValidationError,
   record,
@@ -862,16 +863,21 @@ export class IngestionProposalService {
         if (generated.completion === 'unknown')
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
+        const deduped = dedupeGeneratedLists(generated.output);
         Object.assign(
           output,
           validateSuggestions(
-            generated.output,
+            deduped.output,
             output.offered,
             extraction,
             this.config.limits,
             generation.revision,
           ),
         );
+        // Count only, and only for a reply that validated; absent when zero
+        // so existing digests hold.
+        if (deduped.removed)
+          output.provenance.duplicatesRemoved = deduped.removed;
         if (humanCorrection) {
           const correction = record(humanCorrection);
           if (
@@ -933,6 +939,7 @@ export class IngestionProposalService {
       output.outcome = 'provider_error';
       output.suggestions = [];
       output.splits = [];
+      delete output.provenance.duplicatesRemoved;
       output.warnings.push(failure);
     }
     if (bytes(publication()) > maxBytes) {
@@ -943,6 +950,7 @@ export class IngestionProposalService {
       output.splits = [];
       output.offered = [];
       delete output.provenance.failure;
+      delete output.provenance.duplicatesRemoved;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');

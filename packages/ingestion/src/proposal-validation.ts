@@ -316,6 +316,56 @@ export function suggestionSchema(limits: GenerationLimits) {
     },
   };
 }
+/**
+ * Drop repeated `alternatives` and `missingFields` entries (by canonical JSON,
+ * keeping the first) from fresh generator output before validation (#4286).
+ * The provider grammar no longer carries `uniqueItems` (#4260), so a model can
+ * repeat an entry; the validator still enforces `uniqueItems` on the result.
+ * Only these two suggestion-level lists are touched; anything malformed or
+ * non-JSON is left for the validator to reject. The input is not mutated.
+ */
+export function dedupeGeneratedLists(raw: unknown): {
+  output: unknown;
+  removed: number;
+} {
+  const suggestions = (raw as { suggestions?: unknown } | null)?.suggestions;
+  if (!raw || typeof raw !== 'object' || !Array.isArray(suggestions))
+    return { output: raw, removed: 0 };
+  let removed = 0;
+  const unique = (list: unknown[]) => {
+    const seen = new Set<string>();
+    const kept = list.filter((item) => {
+      let key: string;
+      try {
+        key = intakeBindingDigest(item);
+      } catch {
+        return true;
+      }
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    removed += list.length - kept.length;
+    return kept;
+  };
+  const output = {
+    ...raw,
+    suggestions: suggestions.map((suggestion: unknown) => {
+      if (
+        !suggestion ||
+        typeof suggestion !== 'object' ||
+        Array.isArray(suggestion)
+      )
+        return suggestion;
+      const entry = { ...(suggestion as Record<string, unknown>) };
+      for (const field of ['alternatives', 'missingFields'])
+        if (Array.isArray(entry[field]))
+          entry[field] = unique(entry[field] as unknown[]);
+      return entry;
+    }),
+  };
+  return { output, removed };
+}
 export function validateSuggestions(
   raw: unknown,
   offered: GenerationOutput['offered'],
