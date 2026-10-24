@@ -43,7 +43,9 @@ overrides:
   # only named exports, all of which minimatch 10 still provides.
   'minimatch@>=9.0.0 <10.0.0': 10.2.5
   'minimatch@>=10.0.0 <10.2.3': 10.2.5
-  'undici@>=7.0.0 <7.29.1': 7.29.1
+  # GHSA-xjj6-f33q-929c: prevent orphaned-stream errors on hostile responses.
+  'undici@>=7.18.0 <7.30.1': 7.30.1
+  'undici@>=8.0.0 <8.12.2': 8.12.2
   'nodemailer@<=10.0.5': 10.0.6
   'tar@>=7.0.0 <7.5.21': 7.5.22
   # protobufjs 6.x reaches the graph through the optional, deprecated
