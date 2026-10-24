@@ -42,12 +42,14 @@ import {
   listReadGate,
   type TransactionRunner,
 } from './execution-internal.js';
+import { storedFailureCapture } from './failure-capture.js';
 import {
   type FeedbackActionContext,
   feedbackActionTransaction,
   feedbackDiscoveryContext,
 } from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
+import type { FailedAttemptCapture } from './proposal-dto.js';
 import { HandlerArgumentsInvalidError } from './proposal-errors.js';
 import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
@@ -3110,6 +3112,52 @@ export class IntakeExecutionService {
       await this.reviewerAccess(db, item);
       const row = await this.disposition(db, String(item.id));
       return row ? this.dispositionDTO(row) : undefined;
+    });
+  }
+  /**
+   * A failed attempt's opt-in diagnostic capture (#4285) under the current
+   * reviewer authority for this item, inside the caller's tenant and
+   * confidential scope; every denial fails closed before the row is read.
+   */
+  async getFailedAttemptCapture(
+    itemId: string,
+    attemptId?: string,
+  ): Promise<FailedAttemptCapture | null> {
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId);
+      await this.reviewerAccess(db, item);
+      let id = attemptId;
+      if (id === undefined) {
+        const [analysis] = await this.rows(
+          db,
+          'intake_analyses',
+          'item_id=? AND revision=?',
+          [item.id, item.analysis_revision],
+        );
+        if (!analysis?.current_attempt_id)
+          throw new Error('Analysis unavailable');
+        id = String(analysis.current_attempt_id);
+      }
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND item_id=?',
+        [id, item.id],
+      );
+      if (!attempt) throw new Error('Analysis unavailable');
+      const capture = storedFailureCapture(object(attempt.data).failureCapture);
+      if (!capture || !attempt.safe_error) return null;
+      return {
+        itemId: String(item.id),
+        attemptId: String(attempt.id),
+        source: capture.source,
+        status: capture.status,
+        ...(capture.status === 'captured' ? { text: capture.text } : {}),
+        truncated: capture.truncated,
+        redacted: capture.redacted,
+        maxBytes: capture.maxBytes,
+        capturedAt: capture.capturedAt,
+      };
     });
   }
   /** Close an item as handled without an action. Terminal; replay returns the same disposition. */

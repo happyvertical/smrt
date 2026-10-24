@@ -314,14 +314,103 @@ A generator call that throws ends the attempt as `provider_error` with the
 `unavailable` warning and `provenance.failure` `{category: 'unavailable',
 reason}`. The reason is value-free by construction: a provider's own text can
 quote the prompt or document, so it is never copied. The reason is built only
-from a fixed phrase and, for an SDK `AIError` only, the HTTP status (from a
-structured field, or from the exact `<status> ...` / `TypeSafe request failed
-(<status>): ...` shapes the SDK produces), the SDK error code (from the closed
-list of codes the SDK raises) and, for a schema rejection, quoted tokens that
-are JSON Schema keywords. Any other error contributes at most a structured
-numeric status. For example: `provider rejected the response schema (HTTP 400,
-code API_ERROR); unsupported response-schema keywords: uniqueItems`, or just
-`provider call failed`. It is cut at 500 characters.
+from a fixed phrase and:
+
+- for an SDK `AIError` only, the HTTP status (from a structured field, or from
+  the exact `<status> ...` / `TypeSafe request failed (<status>): ...` shapes
+  the SDK produces), the SDK error code (from the closed list of codes the SDK
+  raises), for a schema rejection the quoted tokens that are JSON Schema
+  keywords, and the OpenAI SDK's exact fixed transport messages
+  (`Connection error.`, `Request timed out.`, `Request was aborted.`,
+  `(no status code or body)`), which its `mapError` keeps without a cause;
+- for the SDK adapter's own refusal of a reply it did receive, a fixed problem:
+  finish reason other than `stop` (named from the closed list `stop`, `length`,
+  `tool_calls`, `content_filter`, otherwise `other`), truncation, tool calls,
+  an unexpected response model, no text content, an empty reply, a reply over
+  the output limit, or a reply that is not valid JSON (#4285);
+- for any other error (#4285), the code-defined constructor name (an
+  identifier ending in `Error` or `Exception`; never the settable `name`),
+  an `AbortError`/`TimeoutError` name, a network `code` from a closed list
+  (`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`,
+  `UND_ERR_*`, TLS certificate codes, ...) read from the error, up to three
+  `cause` levels and an `AggregateError`'s entries, and a structured numeric
+  status. A timeout or abort is named as one.
+
+For example: `provider rejected the response schema (HTTP 400, code API_ERROR);
+unsupported response-schema keywords: uniqueItems`,
+`provider response incomplete (finish reason length)`,
+`provider call failed (class TypeError, network ECONNREFUSED)`,
+`provider call aborted or timed out (class DOMException, name TimeoutError)`, or
+`provider call failed (class Error)`. It is cut at 500 characters.
+
+**Why some failures were a bare `provider call failed` (#4285).** The SDK
+adapter's own response checks threw plain `Error`s (finish reason not `stop`,
+e.g. `length` when the reply reached `maxTokens`; truncation; tool calls; an
+unexpected response model; non-text or oversized content) and `JSON.parse`
+threw a `SyntaxError` for an empty or non-JSON reply. The reason deliberately
+reads nothing from a non-SDK error, so all of these collapsed into the fixed
+phrase. Transport failures through the OpenAI SDK already carried
+`code API_ERROR`. The adapter now raises `ProposalResponseError` with a fixed
+problem, and other non-SDK errors contribute the transport facts above. The
+category is unchanged (`unavailable`).
+
+### Failed-attempt capture (opt-in, #4285)
+
+The value-free reason cannot show what the model actually sent. A host that
+needs that for diagnosis can opt in to keeping it:
+
+```ts
+proposals: {
+  // ...
+  failureCapture: {
+    enabled: true,      // required; absent or false keeps capture off
+    maxBytes: 16384,    // default 16384, at most 65536 (UTF-8 bytes, after redaction)
+    redact: ({ text, source }) => hostRedaction(text), // optional
+  },
+},
+```
+
+`ProposalConfiguration.failureCapture` is **off by default**. When enabled, a
+failed interpretation attempt (`provider_error`) keeps one of:
+
+- `raw_response`: the reply text the SDK adapter refused (for example invalid
+  JSON or a `length` finish), or
+- `generated_output`: the generator's parsed output, as JSON, that failed
+  validation, the declared-completion check or the output limit.
+
+Errors without model output (transport, timeouts, authority, decision
+failures) capture nothing. Successful attempts never store a capture.
+
+The text, cut to the generation `maxOutputBytes`, goes through the optional
+`redact` hook, and the result is cut to `maxBytes` without splitting a
+character (`truncated: true` when either cut applied). NUL and unpaired
+surrogates are stored as U+FFFD so PostgreSQL JSON accepts the record. When
+the hook throws, returns a non-string or runs past the generation `timeoutMs`,
+nothing but `status: 'redaction_failed'` is stored; the hook's error is
+discarded, and the attempt's own failure and reason are recorded as usual.
+Capture problems never replace the real failure.
+
+**Where it lives.** In the attempt row's `data` JSON, as `failureCapture`
+beside the result fields, never inside `result`: it needs no migration, is not
+part of `output_digest` or any configuration digest, never appears in
+`getCompletedAnalysis` or any other snapshot, and is not public read
+configuration (`proposalReadConfiguration` omits it, so read-only hosts still
+match). Proposal digests, replay and frozen generation configuration are
+unchanged by enabling it.
+
+**Reading it back.** Only
+`IngestionService.getFailedAttemptCapture(itemId, attemptId?)` returns it
+(`FailedAttemptCapture` from `/dto`, or `null` when nothing was stored). The
+attempt defaults to the item's current analysis attempt. It requires the
+execution catalog and the current **reviewer** authority for that item (the
+same gate as `getItemDisposition`) inside the caller's tenant and confidential
+scope; every denial, expiry, cancellation or foreign item fails closed before
+the row is read. It is never part of a list DTO, inbox row, review page,
+log line, checkpoint name, telemetry or error message.
+
+**Retention and deletion.** It follows the item: expiry, retention sweeps and
+deletion propagation empty attempt `data`, which removes the capture with the
+rest of the payload.
 
 `createSDKProposalDecisionClient(client)` adapts an existing SDK client’s optional
 capability without changing its errors or protocol. Optional `decision` uses public core `executeDecision` and the existing SDK
