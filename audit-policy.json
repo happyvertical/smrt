@@ -20,77 +20,42 @@
       "ghsa": "GHSA-p7fg-763f-g4gf",
       "package": "@anthropic-ai/sdk",
       "severity": "moderate",
-      "presentVersions": ["0.90.0"],
+      "presentVersions": [
+        "0.90.0"
+      ],
       "firstPatchedVersion": "0.91.1",
       "reachability": "prod",
-      "introducedVia": "@happyvertical/ai@0.84.0 -> @anthropic-ai/sdk",
-      "exploitability": "Affects BetaLocalFilesystemMemoryTool, which creates memory files with Node default modes (0o666/0o777). Verified unused: no SMRT package references BetaLocalFilesystemMemoryTool or any local-filesystem memory tool, so the vulnerable code path is not constructed. Impact would require a consumer to instantiate that beta tool directly.",
-      "decision": "Not overridable here without pinning a dependency owned by @happyvertical/ai. Overriding a 0.x SDK minor underneath a package that compiled against 0.90 risks a runtime API mismatch for every AI-using SMRT package.",
-      "remediation": "Upstream: release @happyvertical/ai with @anthropic-ai/sdk >=0.91.1, then raise the catalog pin here.",
+      "introducedVia": "@happyvertical/ai@0.106.0 -> @anthropic-ai/sdk@0.90.0; npm latest AI 0.107.0 also pins SDK 0.90.0 (rechecked 2026-10-24).",
+      "exploitability": "The optional BetaLocalFilesystemMemoryTool persists files with unsafe default modes. Fresh searches of SMRT source and installed AI distribution found no import or construction of this helper or beta/tools/memory; the provider constructs ordinary Anthropic clients. Exposure requires a downstream consumer separately constructing the optional helper. Advisory: https://github.com/anthropics/anthropic-sdk-typescript/security/advisories/GHSA-p7fg-763f-g4gf",
+      "decision": "Retain non-suppressed acceptance for the unconstructed optional tool rather than force an unvalidated 0.x SDK minor beneath the owning published AI package. An override is technically possible, but its provider compatibility has not been validated; the patched SDK already exists, so recheck in 30 days.",
+      "remediation": "Request an @happyvertical/ai release adopting SDK >=0.91.1, then raise the catalog pin. Latest owner metadata: https://registry.npmjs.org/@happyvertical%2fai/latest . Reassess reachability and owner update by 2026-11-23.",
       "suppressed": false,
-      "recheckBy": "2026-10-23"
+      "recheckBy": "2026-11-23"
     },
     {
       "ghsa": "GHSA-w5hq-g745-h8pq",
       "package": "uuid",
       "severity": "moderate",
-      "presentVersions": ["8.3.2", "9.0.1"],
+      "presentVersions": [
+        "8.3.2",
+        "9.0.1"
+      ],
       "firstPatchedVersion": "11.1.1",
       "reachability": "prod",
-      "introducedVia": "@happyvertical/files -> google-auth-library -> gaxios -> uuid",
-      "exploitability": "Only v3()/v5()/v6() are affected, and only when the caller passes an undersized output buffer or large offset. Verified not reachable: gaxios calls uuid.v4 exclusively, which already throws RangeError on out-of-range writes.",
-      "decision": "Reaching the patched line means forcing uuid 8.x/9.x consumers across two majors (9 -> 11 drops the CommonJS default export), which would break google-auth-library's import form for no security gain on an unreachable path.",
-      "remediation": "Clears itself when google-auth-library/gaxios move to uuid >=11. Recheck rather than force.",
+      "introducedVia": "Runtime parents bull@4.16.5 -> uuid@8.3.2; gaxios@6.7.1 and googleapis-common@7.2.0 -> uuid@9.0.1 (rechecked installed sources 2026-10-24).",
+      "exploitability": "Only v3/v5/v6 with caller-provided undersized output buffers or large offsets are affected. All installed vulnerable parent calls are zero-argument v4(): bull queue/timer-manager, gaxios request IDs, and googleapis-common multipart boundaries. No affected function or caller buffer/offset is constructed on these edges. Advisory: https://github.com/uuidjs/uuid/security/advisories/GHSA-w5hq-g745-h8pq",
+      "decision": "Retain non-suppressed acceptance for verified v4-only usage instead of crossing several owning packages' declared major ranges without validating their contracts. Patched uuid 11.1.1 does support named v4 through CommonJS; an override is plausible, not inherently incompatible. Bull latest still requires ^8.3.0, so newer Google packages alone do not clear the graph. Recheck in 30 days.",
+      "remediation": "Prefer owner dependency updates, then adopt them here; otherwise validate a targeted uuid >=11.1.1 override across all three parents. Modern gaxios 8/google-auth-library 11 remove their uuid edges but cross additional parent majors. Metadata: https://registry.npmjs.org/uuid/11.1.1 and https://registry.npmjs.org/bull/latest . Reassess by 2026-11-23.",
       "suppressed": false,
-      "recheckBy": "2026-10-23"
-    },
-    {
-      "ghsa": "GHSA-8988-4f7v-96qf",
-      "package": "@opentelemetry/core",
-      "severity": "moderate",
-      "presentVersions": ["2.7.0"],
-      "firstPatchedVersion": "2.8.0",
-      "reachability": "prod",
-      "introducedVia": "@happyvertical/logger -> @sentry/node -> @opentelemetry/sdk-trace-base -> @opentelemetry/core",
-      "exploitability": "W3CBaggagePropagator.extract() does not bound inbound `baggage` header size. Requires an attacker-supplied inbound baggage header to reach a service with Sentry/OTel HTTP instrumentation active. SMRT does not configure baggage propagation itself; exposure depends on the consumer enabling Sentry tracing on a public endpoint.",
-      "decision": "OpenTelemetry packages are versioned as a matched suite. Forcing @opentelemetry/core alone ahead of the sdk-trace-base/instrumentation versions that @sentry/node pins is a known source of runtime breakage, and the whole suite is owned upstream by @happyvertical/logger.",
-      "remediation": "Upstream: @happyvertical/logger picks up a @sentry/node release built on @opentelemetry/core >=2.8.0.",
-      "suppressed": false,
-      "recheckBy": "2026-10-23"
-    },
-    {
-      "ghsa": "GHSA-frvp-7c67-39w9",
-      "package": "@hono/node-server",
-      "severity": "moderate",
-      "presentVersions": ["1.19.14"],
-      "firstPatchedVersion": "2.0.5",
-      "reachability": "prod",
-      "introducedVia": "@happyvertical/ai -> @google/genai -> @modelcontextprotocol/sdk -> @hono/node-server",
-      "exploitability": "Path traversal in `serve-static` via encoded backslash (%5C), and only on Windows hosts. Verified not reachable: no SMRT package uses hono's serveStatic; the MCP SDK uses @hono/node-server for JSON transport, not static file serving.",
-      "decision": "The patched line is a major bump (1.x -> 2.x) inside @modelcontextprotocol/sdk's dependency range. Forcing it would put the MCP transport on an unvetted major to fix a path that is not constructed.",
-      "remediation": "Clears when @modelcontextprotocol/sdk adopts @hono/node-server 2.x.",
-      "suppressed": false,
-      "recheckBy": "2026-10-23"
-    },
-    {
-      "ghsa": "GHSA-pxg6-pf52-xh8x",
-      "package": "cookie",
-      "severity": "low",
-      "presentVersions": ["0.6.0"],
-      "firstPatchedVersion": "0.7.0",
-      "reachability": "dev-only",
-      "introducedVia": "packages/assets -> @sveltejs/adapter-auto -> @sveltejs/kit -> cookie",
-      "exploitability": "Out-of-bounds characters in a cookie name/path/domain can inject additional cookie attributes. Requires attacker-controlled cookie NAMES, not values. Reached only through a dev-time adapter dependency, so it is absent from the published runtime graph.",
-      "decision": "Left to @sveltejs/kit's own pin. Forcing cookie across a minor underneath SvelteKit's SSR cookie handling carries more regression risk than a dev-only low warrants.",
-      "remediation": "Clears when @sveltejs/adapter-auto's kit pin moves to cookie >=0.7.0.",
-      "suppressed": false,
-      "recheckBy": "2026-10-23"
+      "recheckBy": "2026-11-23"
     },
     {
       "ghsa": "GHSA-vfj7-8cjw-p6xm",
       "package": "braces",
       "severity": "high",
-      "presentVersions": ["3.0.3"],
+      "presentVersions": [
+        "3.0.3"
+      ],
       "firstPatchedVersion": null,
       "reachability": "prod",
       "introducedVia": "fast-glob@3.3.3 -> micromatch@4.0.8 -> braces. Declared as a prod dependency by @happyvertical/smrt-cli, smrt-core, smrt-scanner, smrt-playground and smrt-workbench (and reached through smrt-scanner by its dependents such as smrt-dev-mcp); devDependency only of ads, agents, analytics, chat, commerce, events, ledgers, places, profiles, projects, properties, sites and users.",
@@ -104,7 +69,9 @@
       "ghsa": "GHSA-ch52-4w7c-c8xp",
       "package": "http-cache-semantics",
       "severity": "high",
-      "presentVersions": ["4.2.0"],
+      "presentVersions": [
+        "4.2.0"
+      ],
       "firstPatchedVersion": null,
       "reachability": "prod",
       "introducedVia": "@happyvertical/smrt-content -> @happyvertical/documents / @happyvertical/spider -> crawlee -> got-scraping -> got -> cacheable-request -> http-cache-semantics. No SMRT package depends on got, cacheable-request or http-cache-semantics directly.",
