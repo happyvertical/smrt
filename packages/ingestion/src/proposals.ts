@@ -52,6 +52,7 @@ import {
 } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import {
+  dedupeGeneratedLists,
   PROPOSAL_REASON_LIMIT,
   ProposalValidationError,
   record,
@@ -862,16 +863,23 @@ export class IngestionProposalService {
         if (generated.completion === 'unknown')
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
-        const { missingFieldsCorrection, ...validated } = validateSuggestions(
-          generated.output,
-          output.offered,
-          extraction,
-          this.config.limits,
-          generation.revision,
-        );
+        const deduped = dedupeGeneratedLists(generated.output);
+        const { missingFieldsCorrection, splitsDropped, ...validated } =
+          validateSuggestions(
+            deduped.output,
+            output.offered,
+            extraction,
+            this.config.limits,
+            generation.revision,
+          );
         Object.assign(output, validated);
         if (missingFieldsCorrection)
           output.provenance.missingFieldsCorrection = missingFieldsCorrection;
+        // Count only, and only for a reply that validated; absent when zero
+        // so existing digests hold.
+        if (deduped.removed)
+          output.provenance.duplicatesRemoved = deduped.removed;
+        if (splitsDropped) output.provenance.splitsDropped = splitsDropped;
         if (humanCorrection) {
           const correction = record(humanCorrection);
           if (
@@ -935,6 +943,8 @@ export class IngestionProposalService {
       delete output.provenance.missingFieldsCorrection;
       output.suggestions = [];
       output.splits = [];
+      delete output.provenance.duplicatesRemoved;
+      delete output.provenance.splitsDropped;
       output.warnings.push(failure);
     }
     if (bytes(publication()) > maxBytes) {
@@ -946,6 +956,8 @@ export class IngestionProposalService {
       output.offered = [];
       delete output.provenance.failure;
       delete output.provenance.missingFieldsCorrection;
+      delete output.provenance.duplicatesRemoved;
+      delete output.provenance.splitsDropped;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');
