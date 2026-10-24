@@ -50,16 +50,25 @@ editing, and no authority or automation eligibility is added: a failed attempt,
 an unoffered handler or a foreign stage is still refused by the host.
 `preview` throws on every failure, as before. When the handler's argument
 schema or `validate` refused the arguments being previewed (operation preview,
-which also carries corrections, or plan preview), the server throws
-`HandlerArgumentsInvalidError` (`name` set, messages unchanged). Apply-time and
+which also carries corrections, a reviewer-started action, or plan preview),
+the server throws `HandlerArgumentsInvalidError` (`name` set, messages
+unchanged). An argument-schema refusal also carries `issues`: a frozen list of
+at most `HANDLER_ARGUMENT_ISSUE_LIMIT` (20) `{ path, keyword? }` entries
+(`HandlerArgumentIssue`). `path` is built only from schema-declared property
+names, `required` names and real array indexes (`/` is the whole object, `?`
+stands for a data-named key) and is cut at `HANDLER_ARGUMENT_PATH_LIMIT` (160)
+characters; `keyword` is the failing schema keyword. Argument values, Ajv
+`params`/messages and handler messages are never included. A `validate`
+refusal has no `issues` (the handler contract returns only `ok`). Apply-time and
 external-send revalidation and result-schema checks keep a plain `Error`. The component shows an inline message and
 keeps the view and draft when `preview` either rejects with an error whose
 `name` is `HandlerArgumentsInvalidError` or resolves `{ rejected: 'invalid' }`
-(`PreviewRejection`). A transport that crosses a process boundary preserves
-the inline UX by keeping that name (for example re-throwing an `Error` with
+(`PreviewRejection`, optionally with the same `issues`). A transport that
+crosses a process boundary preserves the inline UX by keeping that name and
+`issues` (for example re-throwing an `Error` with
 `name = 'HandlerArgumentsInvalidError'` in the browser callback) or by
-returning `{ rejected: 'invalid' }` for that case only, as the maintained
-fixture's `previewForReview` does. Without either, the refusal behaves like
+returning `{ rejected: 'invalid', issues? }` for that case only, as the
+maintained fixture's `previewForReview` and `startActionForReview` do. Without either, the refusal behaves like
 any other failure: the view is cleared exactly as before this change, and the
 reviewer's in-memory draft returns after an authorized refresh. Every other
 thrown preview or candidate-search failure (denied, revoked, unavailable or
@@ -346,8 +355,17 @@ needs the reviewer grant and keeps its handler fixed, so only its arguments can
 be corrected),
 runs the handler's normal `validate`/`preview`, publishes a `waiting_review`
 revision and requires the same explicit approval and apply as a generated
-proposal. Replays with the same request return the same review; changed arguments
-or reason conflict. Such actions are never automation-eligible: `authorizeAutomatic`
+proposal. The reviewer typed these arguments, so a handler argument-schema or
+`validate` refusal throws `HandlerArgumentsInvalidError` with the value-free
+`issues` described above, and the rolled-back transaction leaves no action row
+(#4281). Every other refusal (input shape, access, handler unavailable, item
+resolved, identity or request conflict, normalization mismatch) stays a plain
+denial. `startAction` follows the `preview` contract: it throws, or a transport
+may resolve `{ rejected: 'invalid', issues? }` for that one case. The component
+keeps the start form, handler, arguments and reason, shows an inline refusal and
+lists any field paths; any other failure clears the view as before. Replays
+with the same request return the same review; changed arguments or reason
+conflict. Such actions are never automation-eligible: `authorizeAutomatic`
 refuses them regardless of policy opt-ins. The UI pre-fills arguments only from a
 same-handler suggestion (for example a `needs_review` one) and a single original's
 evidence references, lists the required fields still missing, and submits exactly

@@ -172,6 +172,8 @@ $effect(() => {
     startHandler = '';
     startArgs = '';
     startReason = '';
+    startRejected = false;
+    startIssues = [];
     splits = {};
     resolveReason = '';
   });
@@ -575,6 +577,10 @@ let startHandler = $state(''),
   startArgs = $state(''),
   startReason = $state(''),
   startInvalid = $state(false),
+  // The handler refused the reviewer's arguments: the form and draft stay;
+  // `startIssues` holds the bounded, value-free field paths when known.
+  startRejected = $state(false),
+  startIssues = $state<string[]>([]),
   resolveReason = $state('');
 const startEntry = $derived.by((): ProposalCatalogEntry | undefined =>
   view?.catalog?.find(
@@ -593,6 +599,8 @@ const startMissing = $derived.by((): string[] => {
 });
 function draftStart() {
   startInvalid = false;
+  startRejected = false;
+  startIssues = [];
   const entry = view?.catalog?.find(
     (candidate) => `${candidate.id}@${candidate.version}` === startHandler,
   );
@@ -608,16 +616,29 @@ function draftStart() {
       )
     : '';
 }
-function startAction() {
+/** Distinct schema-owned field paths of a typed refusal; never values. */
+function refusedFields(issues: unknown): string[] {
+  if (!Array.isArray(issues)) return [];
+  const paths = new Set<string>();
+  for (const issue of issues.slice(0, 20)) {
+    const path = (issue as { path?: unknown } | null)?.path;
+    if (typeof path === 'string' && path && path.length <= 160) paths.add(path);
+  }
+  return [...paths];
+}
+async function startAction() {
   const entry = startEntry;
-  if (!entry || !view?.analysis || !host.startAction) return;
+  if (!entry || !view?.analysis || !host.startAction || pending) return;
   let args: Record<string, unknown>;
+  startRejected = false;
+  startIssues = [];
   try {
     args = argumentsObject(startArgs);
   } catch {
     startInvalid = true;
     return;
   }
+  startInvalid = false;
   const input = {
     itemId,
     handlerId: entry.id,
@@ -627,12 +648,40 @@ function startAction() {
     ...(startReason ? { reason: startReason } : {}),
   };
   const start = host.startAction;
-  void run(async () => {
-    await start(input);
-    startHandler = '';
-    startArgs = '';
-    startReason = '';
-  });
+  // Like `preview`: only the handler's refusal of the arguments (a resolved
+  // `{ rejected: 'invalid' }` or a thrown `HandlerArgumentsInvalidError`)
+  // keeps the view, form and draft inline. Anything else fails closed.
+  const ticket = ++epoch;
+  clearTimeout(poll);
+  pending = true;
+  error = false;
+  let refusal: unknown;
+  try {
+    const outcome = await start(input);
+    if (!alive || ticket !== epoch) return;
+    if (outcome?.rejected === 'invalid') refusal = outcome;
+  } catch (caught) {
+    if (!alive || ticket !== epoch) return;
+    if (
+      (caught as { name?: unknown } | null)?.name !==
+      'HandlerArgumentsInvalidError'
+    ) {
+      deny();
+      return;
+    }
+    refusal = caught;
+  }
+  if (refusal) {
+    startRejected = true;
+    startIssues = refusedFields((refusal as { issues?: unknown }).issues);
+    pending = false;
+    schedulePoll(ticket);
+    return;
+  }
+  startHandler = '';
+  startArgs = '';
+  startReason = '';
+  await load();
 }
 function resolve() {
   if (!host.resolve) return;
@@ -801,6 +850,7 @@ onMount(() => {
 <Input aria-label={t(M['ingestion.reason'])} bind:value={startReason} />
 <p>{t(M['ingestion.startHelp'])}</p>
 {#if startInvalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
+{#if startRejected}<div role="alert" data-testid="start-rejected"><p>{t(M['ingestion.startRejected'])}</p>{#if startIssues.length}<p>{t(M['ingestion.refusedFields'])}</p><ul>{#each startIssues as field (field)}<li><code>{field}</code></li>{/each}</ul>{/if}</div>{/if}
 <Button disabled={pending || !view.analysis} onclick={startAction}>{t(M['ingestion.start'])}</Button>
 {/if}
 </fieldset>

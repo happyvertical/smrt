@@ -302,7 +302,7 @@ export default defineConfig({
                 result = await service.recordFeedback(input);
                 break;
               case 'startAction':
-                result = await service.startReviewerAction(input);
+                result = await app.startActionForReview(scope, input);
                 break;
               case 'resolve':
                 result = await service.resolveItem(input);

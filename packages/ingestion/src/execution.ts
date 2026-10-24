@@ -11,6 +11,7 @@ import type { JobExecutionContext } from '@happyvertical/smrt-jobs';
 import { resolvePlaybook } from '@happyvertical/smrt-playbooks';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
+import { describeArgumentRefusal } from './argument-issues.js';
 import type {
   IntakeItemDTO,
   ItemDisposition,
@@ -389,8 +390,9 @@ export class IntakeExecutionService {
   }
   /**
    * `arguments` marks arguments being previewed (operation preview, which
-   * also carries corrections, and plan preview): only their schema refusal is
-   * the correctable `HandlerArgumentsInvalidError`. Apply-time and
+   * also carries corrections, reviewer-started actions and plan preview):
+   * only their schema refusal is the correctable
+   * `HandlerArgumentsInvalidError`, with value-free field `issues`. Apply-time and
    * external-send revalidation and result-schema checks keep the plain error.
    */
   private validate(
@@ -407,7 +409,10 @@ export class IntakeExecutionService {
       throw new Error('Invalid handler payload');
     if (!this.ajv.compile(schema)(value))
       throw arguments_
-        ? new HandlerArgumentsInvalidError('Invalid handler payload')
+        ? new HandlerArgumentsInvalidError(
+            'Invalid handler payload',
+            describeArgumentRefusal(schema, value),
+          )
         : new Error('Invalid handler payload');
   }
   /**
@@ -1330,9 +1335,11 @@ export class IntakeExecutionService {
     });
   }
   /**
-   * `reviewed` marks arguments a reviewer is previewing or correcting: only
-   * then is a refusal the typed `HandlerArgumentsInvalidError`. Apply-time
-   * verification and plan step expansion keep the plain error.
+   * `reviewed` marks arguments a reviewer is previewing, correcting or
+   * starting a chosen handler with: only then is an argument-schema or
+   * `validate` refusal the typed `HandlerArgumentsInvalidError`. Every other
+   * refusal here stays a plain denial; apply-time verification and plan step
+   * expansion keep the plain error.
    */
   private async buildBinding(
     db: DatabaseInterface,
@@ -3087,7 +3094,9 @@ export class IntakeExecutionService {
         handlerVersion: handler.version,
         args: frozen.args,
       };
-      const binding = await this.buildBinding(db, item, preview);
+      // The reviewer typed these arguments: a schema or `validate` refusal is
+      // correctable inline. The transaction rolls back the new action row.
+      const binding = await this.buildBinding(db, item, preview, true);
       // The routing choice becomes feedback only once the reviewer approves it.
       return this.publish(db, item, preview, binding);
     });

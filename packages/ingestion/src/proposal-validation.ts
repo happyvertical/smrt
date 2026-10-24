@@ -1,4 +1,5 @@
 import Ajv, { type ErrorObject } from 'ajv';
+import { schemaOwnedPath } from './argument-issues.js';
 import { intakeBindingDigest } from './execution.js';
 import type { IntakeValues } from './execution-dto.js';
 import { proposeDocumentSplits } from './extraction.js';
@@ -9,6 +10,8 @@ import type {
   GenerationOutput,
   ProposalEvidenceReference,
 } from './proposal-dto.js';
+
+export { schemaOwnedPath } from './argument-issues.js';
 
 /** Longest persisted reason; the rest is cut so the publication envelope stays bounded. */
 export const PROPOSAL_REASON_LIMIT = 1000;
@@ -26,77 +29,6 @@ export class ProposalValidationError extends Error {
       PROPOSAL_REASON_LIMIT,
     );
   }
-}
-type SchemaNode = Record<string, unknown>;
-/** Every object node an instance at this position may be validated against. */
-function schemaNodes(node: unknown): SchemaNode[] {
-  if (!node || typeof node !== 'object' || Array.isArray(node)) return [];
-  const current = node as SchemaNode;
-  const nested = ['oneOf', 'anyOf', 'allOf'].flatMap((keyword) =>
-    Array.isArray(current[keyword])
-      ? (current[keyword] as unknown[]).flatMap(schemaNodes)
-      : [],
-  );
-  return [current, ...nested];
-}
-/**
- * Keep only path segments the schema itself names: indexes into an actual
- * array in the instance, and keys declared under `properties`. Anything else
- * (keys under `additionalProperties`/`patternProperties`, numeric keys of an
- * object, or an unknown key) is data and becomes `?`.
- */
-export function schemaOwnedPath(
-  instancePath: string,
-  schema: unknown,
-  instance?: unknown,
-): string {
-  if (!instancePath) return '/';
-  let nodes = schemaNodes(schema);
-  let value: unknown = instance;
-  const segments = instancePath.split('/').slice(1);
-  const kept: string[] = [];
-  for (const raw of segments) {
-    const segment = raw.replace(/~1/g, '/').replace(/~0/g, '~');
-    // An index is schema-owned only when the parent value really is an array;
-    // the schema alone cannot tell an index from a numeric data key when a
-    // union allows both shapes.
-    if (/^\d+$/.test(segment) && Array.isArray(value)) {
-      kept.push(segment);
-      value = value[Number(segment)];
-      nodes = nodes.flatMap((node) =>
-        node.type === 'array' || node.items !== undefined
-          ? schemaNodes(node.items)
-          : [],
-      );
-      continue;
-    }
-    value =
-      value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)[segment]
-        : undefined;
-    const owners = nodes.filter((node) => {
-      const properties = node.properties;
-      return (
-        !!properties &&
-        typeof properties === 'object' &&
-        Object.hasOwn(properties as object, segment)
-      );
-    });
-    if (owners.length) {
-      kept.push(segment);
-      nodes = owners.flatMap((node) =>
-        schemaNodes((node.properties as SchemaNode)[segment]),
-      );
-    } else {
-      kept.push('?');
-      nodes = nodes.flatMap((node) =>
-        typeof node.additionalProperties === 'object'
-          ? schemaNodes(node.additionalProperties)
-          : [],
-      );
-    }
-  }
-  return `/${kept.join('/')}`;
 }
 /**
  * Summarize Ajv errors by schema-owned path, keyword and schema-owned params.

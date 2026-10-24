@@ -210,7 +210,10 @@ Reviewers can start any offered handler for an item (`startReviewerAction`) or
 close it as handled without action (`resolveItem`); the published host adapter
 wires both as `startAction`/`resolve` and exposes the offered `catalog`. Hosts
 with their own transport add the two POST operations behind the same session,
-CSRF and reviewer checks as `decide`. The `intake_dispositions` table requires
+CSRF and reviewer checks as `decide`, and map a thrown
+`HandlerArgumentsInvalidError` (name and value-free `issues`) from `startAction`
+exactly as they do for `preview` so the form stays inline (see
+[REVIEW.md](REVIEW.md)). The `intake_dispositions` table requires
 a manifest migration before upgrading.
 
 ## Recipe preview

@@ -7,6 +7,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
+import { describeArgumentRefusal } from './argument-issues.js';
 import type {
   AnalysisOutput,
   IntakeEvidenceDTO,
@@ -1521,7 +1522,10 @@ export class IngestionProposalService {
           validateFormats: false,
         });
         if (!validator.validate(entry.handler.argsSchema, shared.args))
-          throw new HandlerArgumentsInvalidError('Invalid handler payload');
+          throw new HandlerArgumentsInvalidError(
+            'Invalid handler payload',
+            describeArgumentRefusal(entry.handler.argsSchema, shared.args),
+          );
         const actionId = await this.service.createAction(
           input.itemId,
           selection.intentionKey,

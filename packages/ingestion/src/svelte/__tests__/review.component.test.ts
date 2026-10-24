@@ -2311,6 +2311,108 @@ describe('intake review host boundary', () => {
     expect(callbacks.resolve).not.toHaveBeenCalled();
     await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
   });
+  async function startWith(callbacks: IntakeReviewHost, typed: string) {
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const picker = await screen.findByRole('combobox', { name: 'Handler' });
+    await fireEvent.change(picker, { target: { value: 'host:draft@1' } });
+    const editor = await screen.findByRole('textbox', {
+      name: 'Initial arguments (JSON)',
+    });
+    await fireEvent.input(editor, { target: { value: typed } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Reason' }), {
+      target: { value: 'Customer PO' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Start action' }));
+  }
+  function startDraftKept(typed: string) {
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Initial arguments (JSON)',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(typed);
+    expect(
+      (screen.getByRole('combobox', { name: 'Handler' }) as HTMLSelectElement)
+        .value,
+    ).toBe('host:draft@1');
+    expect(
+      (screen.getByRole('textbox', { name: 'Reason' }) as HTMLInputElement)
+        .value,
+    ).toBe('Customer PO');
+    expect(screen.getByTestId('evidence-viewer')).toBeTruthy();
+  }
+  it('keeps the start form and draft inline when the handler refuses the arguments (#4281)', async () => {
+    const callbacks = host(catalogView());
+    const typed = JSON.stringify({ title: '', body: 'Acme' });
+    callbacks.startAction = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Invalid handler payload'), {
+          name: 'HandlerArgumentsInvalidError',
+          issues: [
+            { path: '/title', keyword: 'minLength' },
+            { path: '/title', keyword: 'pattern' },
+            { path: 7 },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    await startWith(callbacks, typed);
+    const refusal = await screen.findByTestId('start-rejected');
+    expect(refusal.getAttribute('role')).toBe('alert');
+    expect(refusal.textContent).toContain(
+      'did not pass the handler validation',
+    );
+    expect(refusal.textContent).toContain('Fields to check');
+    expect(
+      within(refusal)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['/title']);
+    startDraftKept(typed);
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+    // A corrected retry publishes normally and clears the inline refusal.
+    const corrected = JSON.stringify({ title: 'Customer PO 17', body: 'Acme' });
+    await fireEvent.input(
+      screen.getByRole('textbox', { name: 'Initial arguments (JSON)' }),
+      { target: { value: corrected } },
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Start action' }));
+    await waitFor(() => expect(callbacks.load).toHaveBeenCalledTimes(2));
+    expect(callbacks.startAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        args: { title: 'Customer PO 17', body: 'Acme' },
+      }),
+    );
+    expect(screen.queryByTestId('start-rejected')).toBeNull();
+  });
+  it('treats a resolved { rejected: invalid } from startAction as the same inline refusal (#4281)', async () => {
+    const callbacks = host(catalogView());
+    const typed = JSON.stringify({ title: '', body: 'Acme' });
+    callbacks.startAction = vi.fn(async () => ({
+      rejected: 'invalid' as const,
+    }));
+    await startWith(callbacks, typed);
+    const refusal = await screen.findByTestId('start-rejected');
+    expect(refusal.textContent).not.toContain('Fields to check');
+    startDraftKept(typed);
+    expect(callbacks.load).toHaveBeenCalledTimes(1);
+  });
+  it('still fails closed when startAction throws any other error (#4281)', async () => {
+    const callbacks = host(catalogView());
+    callbacks.startAction = vi.fn(async () => {
+      throw Object.assign(new Error('Item resolved'), {
+        issues: [{ path: '/title' }],
+      });
+    });
+    await startWith(callbacks, JSON.stringify({ title: 'T', body: 'B' }));
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'This view is unavailable',
+    );
+    expect(screen.queryByTestId('start-rejected')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Handler' })).toBeNull();
+  });
   it('closes an item as handled without action from review and inbox with an optional reason', async () => {
     const view = catalogView();
     const callbacks = host(view);

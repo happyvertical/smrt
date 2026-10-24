@@ -269,7 +269,11 @@ test('a reviewer completes a needs_review suggestion through the ordinary previe
     },
   });
   expect(incomplete.status()).toBe(200);
-  expect(await incomplete.json()).toEqual({ rejected: 'invalid' });
+  // Only value-free, schema-owned field details accompany it (#4281).
+  expect(await incomplete.json()).toEqual({
+    rejected: 'invalid',
+    issues: [{ path: '/title', keyword: 'required' }],
+  });
   // Only the action identity exists (created before preview, as on main);
   // no proposal, binding or arguments were published.
   const afterRefusal = (
@@ -895,12 +899,41 @@ test('reviewer starts a chosen handler through preview and approval, and closes 
   });
   // Pre-filled from the same-handler suggestion, then changed by the reviewer.
   await expect(args).toHaveValue(/Reviewed intake draft/);
-  await args.fill(
-    JSON.stringify({ title: 'Customer PO 17', body: 'Acme purchase order' }),
-  );
   await review
     .getByRole('textbox', { name: 'Reason', exact: true })
     .fill('Customer PO, not a vendor bill');
+  // The handler schema refuses the reviewer's arguments: the transport
+  // reports the correctable rejection and the form keeps the draft (#4281).
+  const invalidDraft = JSON.stringify({
+    title: '',
+    body: 'Acme purchase order',
+  });
+  await args.fill(invalidDraft);
+  const refusedStart = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/startAction') &&
+      response.request().method() === 'POST',
+  );
+  await review.getByRole('button', { name: 'Start action' }).click();
+  const refusedResponse = await refusedStart;
+  expect(refusedResponse.status()).toBe(200);
+  expect(await refusedResponse.json()).toEqual({
+    rejected: 'invalid',
+    issues: [{ path: '/title', keyword: 'minLength' }],
+  });
+  const startRefusal = review.getByTestId('start-rejected');
+  await expect(startRefusal).toContainText(
+    'did not pass the handler validation',
+  );
+  await expect(startRefusal.getByRole('listitem')).toHaveText(['/title']);
+  await expect(args).toHaveValue(invalidDraft);
+  expect(
+    (await (await page.request.get(`/api/load?itemId=${itemId}`)).json())
+      .reviews.actions,
+  ).toHaveLength(0);
+  await args.fill(
+    JSON.stringify({ title: 'Customer PO 17', body: 'Acme purchase order' }),
+  );
   const started = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/startAction') &&

@@ -48,6 +48,7 @@ import {
   createIntakeReviewHost,
   GenerationSnapshotStaleError,
   GenerationSourceStaleError,
+  HandlerArgumentsInvalidError,
   type IngestionOptions,
   IngestionService,
   ReviewerInstructionStaleError,
@@ -8377,6 +8378,134 @@ export function proposalSuite(
           handlerVersion: '2',
         }),
       ).rejects.toThrow('Handler unavailable');
+    });
+    it('refuses invalid reviewer-chosen arguments with the typed, value-free HandlerArgumentsInvalidError (#4281)', async () => {
+      const extraction = await source(
+        100000,
+        false,
+        'Customer purchase order 17 received from Acme',
+      );
+      const input = {
+        itemId: extraction.itemId,
+        handlerId: CREATE,
+        handlerVersion: '1',
+        args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+        requestId: 'start-invalid-4281',
+      };
+      const refusal = (args: Record<string, unknown>, extra = {}) =>
+        service.startReviewerAction({ ...input, ...extra, args }).then(
+          () => {
+            throw new Error('Expected a refusal');
+          },
+          (error: unknown) => error,
+        );
+      // Schema refusal: a constraint on a declared field.
+      const short = await refusal({ title: '', body: 'Acme purchase order' });
+      expect(short).toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect(short).toMatchObject({
+        name: 'HandlerArgumentsInvalidError',
+        message: 'Invalid handler payload',
+        issues: [{ path: '/title', keyword: 'minLength' }],
+      });
+      // Every error is collected; `required` names the schema-declared field.
+      const missing = (await refusal({})) as HandlerArgumentsInvalidError;
+      expect(missing).toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect(missing.issues).toEqual([
+        { path: '/title', keyword: 'required' },
+        { path: '/body', keyword: 'required' },
+      ]);
+      expect(Object.isFrozen(missing.issues)).toBe(true);
+      // Document- or reviewer-derived keys and values never appear.
+      const secret = 'Acme account 4417002231';
+      const leaked = (await refusal({
+        title: secret,
+        body: 7,
+        [secret]: secret,
+      })) as HandlerArgumentsInvalidError;
+      expect(leaked).toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect(leaked.issues).toEqual([
+        { path: '/', keyword: 'additionalProperties' },
+        { path: '/body', keyword: 'type' },
+      ]);
+      for (const surface of [
+        leaked.message,
+        JSON.stringify(leaked),
+        JSON.stringify(leaked.issues),
+      ]) {
+        expect(surface).not.toContain('Acme');
+        expect(surface).not.toContain('4417002231');
+      }
+      // Handler `validate` refusal: typed, with no field detail to expose.
+      const accepting = handlers[0].validate;
+      handlers[0].validate = async () => ({ ok: false });
+      const validated = await refusal(input.args);
+      handlers[0].validate = accepting;
+      expect(validated).toBeInstanceOf(HandlerArgumentsInvalidError);
+      expect(validated).toMatchObject({ message: 'Invalid handler arguments' });
+      expect(
+        (validated as HandlerArgumentsInvalidError).issues,
+      ).toBeUndefined();
+      // Every other refusal stays a plain denial.
+      const plain = async (
+        attempt: Promise<unknown>,
+        message: string | RegExp,
+      ) => {
+        const error = await attempt.then(
+          () => undefined,
+          (caught: unknown) => caught,
+        );
+        expect(error).toBeInstanceOf(Error);
+        expect(error).not.toBeInstanceOf(HandlerArgumentsInvalidError);
+        expect((error as Error).message).toMatch(message);
+      };
+      await plain(
+        service.startReviewerAction({
+          ...input,
+          args: [] as unknown as Record<string, unknown>,
+        }),
+        'Invalid reviewer action',
+      );
+      await plain(
+        service.startReviewerAction({ ...input, handlerId: 'missing:handler' }),
+        'Handler unavailable',
+      );
+      reviewerAllowed = false;
+      await plain(service.startReviewerAction(input), /./);
+      reviewerAllowed = true;
+      // Nothing was persisted by any refusal.
+      for (const table of ['intake_actions', 'intake_proposals'])
+        expect((await db.query(`SELECT id FROM ${table}`)).rows).toHaveLength(
+          0,
+        );
+      const review = await service.startReviewerAction(input);
+      expect(review.state).toBe('waiting_review');
+      await plain(
+        service.startReviewerAction({
+          ...input,
+          reason: 'A different routing reason',
+        }),
+        'Action identity conflict',
+      );
+      await plain(
+        service.startReviewerAction({
+          ...input,
+          args: { ...input.args, title: 'Changed' },
+        }),
+        'Proposal request conflict',
+      );
+      await service.resolveItem({
+        itemId: extraction.itemId,
+        disposition: 'resolve_no_action',
+        requestId: 'resolve-after-4281',
+      });
+      await plain(
+        service.startReviewerAction({
+          ...input,
+          requestId: 'start-after-resolve-4281',
+          args: {},
+        }),
+        'Item resolved',
+      );
     });
     it('reviewer closes an item as handled without action: terminal, distinct from reject, and visible as a queue state', async () => {
       chooseCreate();

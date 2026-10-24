@@ -491,6 +491,9 @@ export function createIntakeReviewHost(
       const result = await service.reviseLogicalSplit(input);
       await options.onSplit?.(input.itemId, result.revision);
     },
+    // Throws on every failure, like `preview`: a handler's refusal of the
+    // reviewer's arguments is `HandlerArgumentsInvalidError` (name and
+    // `issues` preserved in process) so the component keeps the draft inline.
     async startAction(input) {
       await service.startReviewerAction(input);
     },

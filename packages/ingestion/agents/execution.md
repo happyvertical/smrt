@@ -84,8 +84,10 @@ refuses plan handlers and resolved items, binds the current analysis revision's
 completed/partial attempt, inserts an action keyed `reviewer:<requestId>` with
 `data.origin = 'reviewer-selected'`, and reuses `buildBinding`/`publish`: schema
 validation, `validate`, `preview`, exact normalized arguments, target locks,
-evidence pins and the request ledger behave exactly as for `previewProposal`.
-Replays re-preview against the original revision and return the same review.
+evidence pins and the request ledger behave exactly as for `previewProposal`,
+including the typed `HandlerArgumentsInvalidError` (with value-free `issues`)
+for an argument-schema or `validate` refusal of the reviewer's arguments;
+every other refusal stays a plain `Error` (#4281). Replays re-preview against the original revision and return the same review.
 Approval, apply, retention, redaction and reconciliation are unchanged.
 `authorizeAutomatic` refuses `reviewer-selected` actions and resolved items;
 human routing is never machine authority.

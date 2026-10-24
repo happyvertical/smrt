@@ -252,6 +252,19 @@ on both databases (U, P):
 Commands: package `pnpm test`, `pnpm test:postgres`, `pnpm test:components`,
 `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`; root lint/format/knowledge/audit.
 
+### #4281 typed refusal for reviewer-chosen start arguments
+
+No schema, migration or authority change. `startAction` publishes reviewer
+arguments through `buildBinding(..., reviewed = true)`; `HandlerArgumentsInvalidError`
+gains optional value-free `issues` on every path that throws it.
+
+| Behavior/invariant | Positive | Negative/failure | Level |
+|---|---|---|---|
+| Typed start refusal | schema refusals (`minLength`, every `required` field, `type`, `additionalProperties`) and a `validate` refusal on `startReviewerAction` throw `HandlerArgumentsInvalidError`; schema refusals carry frozen `issues`, `validate` carries none; a corrected start then publishes | input shape, missing handler, denied reviewer, action identity and request conflicts and a resolved item stay plain `Error`; no action/proposal row survives any refusal | U, P (`src/test-support/proposals.ts`) |
+| Value-free, bounded issues | schema-owned paths, `required` names, real array indexes and allowlisted keywords; preview schema refusals carry the same issues (`src/test-support/execution.ts`) | data-named keys become `?`; document text, account numbers and argument values never appear in the message, JSON or issues; count capped at 20, paths at 160 characters, unsafe keywords dropped; uncompilable schema yields none | U (`src/argument-issues.test.ts`) |
+| Host transport | the published host rethrows the typed error with `name` and `issues`; the fixture's `startActionForReview` resolves `{ rejected: 'invalid', issues? }` | handler unavailable, item resolved and identity conflict still throw | U (`review-host.test.ts`, `reference-review-host.test.ts`) |
+| Start form inline | a thrown typed error or a resolved rejection keeps the view, handler, arguments and reason, shows the refusal and distinct field paths, and a corrected retry succeeds; the browser fixture shows `/title` for an empty title and publishes nothing | any other thrown error (even one carrying `issues`) still clears the view | components, E |
+
 ### #4215 single-page triage workspace
 
 UI composition only: no host callback, model, migration or server authority
