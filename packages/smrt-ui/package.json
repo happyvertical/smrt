@@ -145,6 +145,7 @@
     },
     "./analytics": {
       "types": "./dist/analytics/index.d.ts",
+      "svelte": "./dist/analytics/index.js",
       "import": "./dist/analytics/index.js",
       "default": "./dist/analytics/index.js"
     }
