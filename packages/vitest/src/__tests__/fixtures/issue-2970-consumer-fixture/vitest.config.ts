@@ -92,6 +92,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.spec.ts'],
     testTimeout: 30000,
+    hookTimeout: 30000,
     pool: 'forks',
     fileParallelism: false,
   },

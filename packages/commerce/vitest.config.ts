@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     testTimeout: 30000,
+    hookTimeout: 30000,
     // Run test files sequentially to avoid SQLite locking issues
     fileParallelism: false,
     // Use single-threaded pool to avoid database contention
