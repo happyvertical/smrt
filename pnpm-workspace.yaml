@@ -30,6 +30,10 @@ overrides:
   '@happyvertical/signatures': ^0.106.0
   '@happyvertical/speech': ^0.106.0
   '@happyvertical/spider': ^1.1.13
+  # Temporary runtime major upgrade for GHSA-834v-8h66-3h79; published Spider
+  # still requests vulnerable happy-dom 20.x. Remove after an upstream release:
+  # https://github.com/happyvertical/spider/issues/103
+  '@happyvertical/spider>happy-dom@>=17.0.0 <=21.0.3': 21.0.4
   '@happyvertical/sql': ^0.106.0
   '@happyvertical/utils': ^0.106.0
   '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
