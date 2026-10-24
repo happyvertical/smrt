@@ -6154,6 +6154,89 @@ export function proposalSuite(
       });
       expect(review.state).toBe('waiting_review');
     });
+    it('drops repeated alternatives and missingFields before validation and records the count (#4286)', async () => {
+      chooseCreate();
+      const clean = await generate();
+      // Replay shape is unchanged when nothing was removed.
+      expect(clean.output.provenance).not.toHaveProperty('duplicatesRemoved');
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const value = response.output as {
+          suggestions: Array<{
+            args: Record<string, unknown>;
+            alternatives: string[];
+            missingFields: string[];
+          }>;
+        };
+        delete value.suggestions[0].args.title;
+        value.suggestions[0].missingFields = ['title', 'title', 'title'];
+        value.suggestions[0].alternatives = [`${CREATE}@1`, `${CREATE}@1`];
+        return response;
+      });
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.suggestions[0]).toMatchObject({
+        missingFields: ['title'],
+        alternatives: [`${CREATE}@1`],
+        disposition: 'needs_review',
+      });
+      expect(input.output.provenance.duplicatesRemoved).toBe(3);
+      expect(input.output.provenance.failure).toBeUndefined();
+      const published = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).result;
+      // The stored digest covers the normalized form, not the raw reply.
+      expect(
+        (
+          await db.query(
+            'SELECT output_digest FROM intake_analysis_attempts WHERE id=?',
+            [input.lease.attemptId],
+          )
+        ).rows[0].output_digest,
+      ).toBe(intakeBindingDigest(published));
+    });
+    it('records duplicatesRemoved only for a published, validated reply (#4286 review)', async () => {
+      const duplicate = (unoffered: boolean) => {
+        chooseCreate();
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          const [suggestion] = (
+            response.output as {
+              suggestions: Array<{ handlerId: string; alternatives: string[] }>;
+            }
+          ).suggestions;
+          suggestion.alternatives = [`${CREATE}@1`, `${CREATE}@1`];
+          if (unoffered) suggestion.handlerId = 'unoffered';
+          return response;
+        });
+      };
+      duplicate(true);
+      const rejected = await generate();
+      expect(rejected.output.outcome).toBe('provider_error');
+      expect(rejected.output.provenance.failure?.reason).toContain(
+        'Unoffered handler',
+      );
+      expect(rejected.output.provenance).not.toHaveProperty(
+        'duplicatesRemoved',
+      );
+      duplicate(false);
+      const measured = await generate();
+      expect(measured.output.provenance.duplicatesRemoved).toBe(1);
+      const published = (
+        await service.getCompletedAnalysis(
+          measured.itemId,
+          measured.lease.attemptId,
+        )
+      ).result;
+      configuration.limits.maxOutputBytes =
+        Buffer.byteLength(JSON.stringify(published)) - 1;
+      const limited = await generate();
+      expect(limited.output.warnings).toContain('output_limit');
+      expect(limited.output.suggestions).toEqual([]);
+      expect(limited.output.provenance).not.toHaveProperty('duplicatesRemoved');
+    });
     it.each([
       'unknown',
       'no_action',

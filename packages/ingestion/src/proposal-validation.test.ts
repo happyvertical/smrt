@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { intakeBindingDigest } from './execution.js';
 import type { ExtractionResult } from './extraction-types.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type { GenerationOutput } from './proposal-dto.js';
 import {
+  dedupeGeneratedLists,
   describeSchemaErrors,
   PROPOSAL_REASON_LIMIT,
   PROPOSAL_REASON_MAX_ERRORS,
@@ -354,5 +356,128 @@ describe('proposal validator reasons', () => {
       splits: [],
     });
     expect(error.reason).toBe('Unoffered handler: /suggestions/0');
+  });
+});
+
+describe('generated list normalization (#4286)', () => {
+  const suggestion = (alternatives: unknown[], missingFields: unknown[]) => ({
+    handlerId: 'h',
+    handlerVersion: '1',
+    args: {},
+    evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+    alternatives,
+    missingFields,
+    explanation: '',
+  });
+
+  it('drops repeats keeping the first occurrence and counts them', () => {
+    const raw = {
+      outcome: 'proposals',
+      suggestions: [
+        suggestion(['b', 'a', 'b', 'a', 'c'], ['x', 'x']),
+        suggestion(['a'], ['y', 'z', 'y']),
+      ],
+      splits: [],
+    };
+    const before = structuredClone(raw);
+    const { output, removed } = dedupeGeneratedLists(raw);
+    expect(removed).toBe(4);
+    expect(output).toEqual({
+      ...raw,
+      suggestions: [
+        suggestion(['b', 'a', 'c'], ['x']),
+        suggestion(['a'], ['y', 'z']),
+      ],
+    });
+    // The generator's reply is not mutated.
+    expect(raw).toEqual(before);
+  });
+
+  it('keeps non-identical entries and only exact canonical duplicates go', () => {
+    const raw = {
+      outcome: 'proposals',
+      suggestions: [
+        suggestion(
+          ['a', 'A', 'a ', { k: 1, j: 2 }, { j: 2, k: 1 }, { j: 2, k: 2 }],
+          ['title', 'Title'],
+        ),
+      ],
+      splits: [],
+    };
+    const { output, removed } = dedupeGeneratedLists(raw);
+    expect(removed).toBe(1);
+    expect((output as typeof raw).suggestions[0].alternatives).toEqual([
+      'a',
+      'A',
+      'a ',
+      { k: 1, j: 2 },
+      { j: 2, k: 2 },
+    ]);
+    expect((output as typeof raw).suggestions[0].missingFields).toEqual([
+      'title',
+      'Title',
+    ]);
+  });
+
+  it('leaves only these two lists alone otherwise and passes malformed input through', () => {
+    const raw = {
+      outcome: 'proposals',
+      suggestions: [
+        {
+          ...suggestion([], []),
+          evidence: [
+            { evidenceId: 'e', location: { kind: 'source' } },
+            { evidenceId: 'e', location: { kind: 'source' } },
+          ],
+        },
+        null,
+        ['a', 'a'],
+        { alternatives: 'a' },
+      ],
+      splits: [{ evidenceId: 'e', groups: [[1], [1]] }],
+    };
+    const { output, removed } = dedupeGeneratedLists(raw);
+    expect(removed).toBe(0);
+    expect(output).toEqual(raw);
+    for (const value of [null, 'x', [], { suggestions: 'x' }])
+      expect(dedupeGeneratedLists(value)).toEqual({
+        output: value,
+        removed: 0,
+      });
+  });
+
+  it('normalizes deterministically, so the digest is stable', () => {
+    const raw = () => ({
+      outcome: 'proposals',
+      suggestions: [suggestion(['b', 'a', 'b'], ['x', 'x'])],
+      splits: [],
+    });
+    const first = intakeBindingDigest(dedupeGeneratedLists(raw()).output);
+    expect(intakeBindingDigest(dedupeGeneratedLists(raw()).output)).toBe(first);
+    expect(
+      intakeBindingDigest(
+        dedupeGeneratedLists(dedupeGeneratedLists(raw()).output).output,
+      ),
+    ).toBe(first);
+    expect(first).toBe(
+      intakeBindingDigest({
+        outcome: 'proposals',
+        suggestions: [suggestion(['b', 'a'], ['x'])],
+        splits: [],
+      }),
+    );
+  });
+
+  it('yields output the validator accepts where the raw reply fails uniqueItems', () => {
+    const raw = {
+      outcome: 'needs_review',
+      suggestions: [suggestion([], ['same', 'same'])],
+      splits: [],
+    };
+    expect(failure(raw).reason).toContain(
+      '/suggestions/0/missingFields uniqueItems',
+    );
+    const { output } = dedupeGeneratedLists(raw);
+    expect(failure(output).reason).not.toContain('uniqueItems');
   });
 });
