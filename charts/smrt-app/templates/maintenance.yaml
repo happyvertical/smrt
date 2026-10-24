@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-maintenance
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+data:
+  default.conf: |
+    server {
+      listen {{ .Values.maintenance.port }};
+      location = /ready { return 200 'ready'; }
+      location / {
+        add_header X-Smrt-Release {{ .Values.release.id }} always;
+        add_header X-Smrt-Sequence {{ .Values.release.sequence }} always;
+        return 503 {{ .Values.maintenance.http.body | quote }};
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-maintenance
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}, smrt.happyvertical.com/component: maintenance}
+  template:
+    metadata:
+      labels:
+{{ include "smrt.labels" . | indent 8 }}
+        smrt.happyvertical.com/component: maintenance
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: maintenance
+          image: {{ .Values.maintenance.image | quote }}
+          command: {{ .Values.maintenance.command | toJson }}
+          ports: [{name: http, containerPort: {{ .Values.maintenance.port }}}]
+          readinessProbe: {httpGet: {path: /ready, port: http}}
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          volumeMounts: [{name: config, mountPath: /etc/nginx/conf.d, readOnly: true}]
+      volumes:
+        - name: config
+          configMap: {name: {{ .Release.Name }}-maintenance}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-maintenance
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name | quote }}, smrt.happyvertical.com/component: maintenance}
+  ports: [{name: http, port: {{ .Values.maintenance.port }}, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- with .Values.ingress.tlsSecretName }}
+  tls: [{hosts: [{{ $.Values.ingress.host | quote }}], secretName: {{ . }} }]
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                {{- if eq .Values.release.phase "active" }}
+                {{- $web := dict }}
+                {{- range $name, $w := .Values.target.workloads }}
+                  {{- if eq $w.role "web" }}{{ $_ := set $web "name" $name }}{{ $_ := set $web "port" $w.service.port }}{{ end }}
+                {{- end }}
+                name: {{ .Release.Name }}-{{ required "target needs a web workload with service" $web.name }}
+                port: {number: {{ $web.port }}}
+                {{- else }}
+                name: {{ .Release.Name }}-maintenance
+                port: {number: {{ .Values.maintenance.port }}}
+                {{- end }}

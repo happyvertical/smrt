@@ -1,0 +1,44 @@
+{{- $resources := list }}
+{{- $secrets := list }}
+{{- $known := dict }}
+{{- $root := . }}
+{{- range $runtime := list .Values.current .Values.target }}
+{{- if $runtime }}
+{{- range $name, $w := $runtime.workloads }}
+{{- $kind := "Deployment" }}{{ $api := "apps/v1" }}
+{{- if $w.schedule }}{{ $kind = "CronJob" }}{{ $api = "batch/v1" }}{{ end }}
+{{- $key := printf "%s/%s" $kind $name }}
+{{- if not (hasKey $known $key) }}
+{{- $resources = append $resources (dict "apiVersion" $api "kind" $kind "name" (printf "%s-%s" $root.Release.Name $name)) }}
+{{- $_ := set $known $key true }}
+{{- end }}
+{{- if $w.service }}
+{{- $key = printf "Service/%s" $name }}
+{{- if not (hasKey $known $key) }}
+{{- $resources = append $resources (dict "apiVersion" "v1" "kind" "Service" "name" (printf "%s-%s" $root.Release.Name $name)) }}
+{{- $_ := set $known $key true }}
+{{- end }}
+{{- end }}
+{{- range $w.env }}{{ $secrets = append $secrets (dict "name" .valueFrom.secretKeyRef.name "key" .valueFrom.secretKeyRef.key "usage" "runtime" "immutable" true) }}{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range .Values.target.migration.env }}{{ $secrets = append $secrets (dict "name" .valueFrom.secretKeyRef.name "key" .valueFrom.secretKeyRef.key "usage" "migration" "immutable" true) }}{{ end }}
+{{- with .Values.bindings.database }}{{ $secrets = append $secrets (dict "name" .secretName "key" .secretKey "usage" "database" "immutable" true) }}{{ end }}
+{{- range .Values.bindings.privateBuckets }}{{ $secrets = append $secrets (dict "name" .secretName "key" .secretKey "usage" "bucket" "immutable" true) }}{{ end }}
+{{- with .Values.ingress.tlsSecretName }}{{ $secrets = append $secrets (dict "name" . "usage" "tls" "immutable" true) }}{{ end }}
+{{- range $kind := list "Deployment" "Service" "ConfigMap" }}
+{{- $api := "v1" }}{{ if eq $kind "Deployment" }}{{ $api = "apps/v1" }}{{ end }}
+{{- $resources = append $resources (dict "apiVersion" $api "kind" $kind "name" (printf "%s-maintenance" $root.Release.Name)) }}
+{{- end }}
+{{- $resources = append $resources (dict "apiVersion" "v1" "kind" "ConfigMap" "name" (printf "%s-inventory" .Release.Name)) }}
+{{- $resources = append $resources (dict "apiVersion" "networking.k8s.io/v1" "kind" "Ingress" "name" .Release.Name) }}
+{{- $resources = append $resources (dict "apiVersion" "batch/v1" "kind" "Job" "name" (printf "%s-migration-%s-%v" .Release.Name .Values.release.id .Values.release.attempt)) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-inventory
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+data:
+  inventory.json: {{ dict "version" 1 "resources" $resources "secrets" $secrets "requirements" (dict "rbac" (list (dict "apiGroup" "apps" "resource" "deployments" "verbs" (list "get" "list" "watch" "create" "patch" "update" "delete")) (dict "apiGroup" "batch" "resource" "jobs" "verbs" (list "get" "list" "watch" "create" "delete")) (dict "apiGroup" "batch" "resource" "cronjobs" "verbs" (list "get" "list" "watch" "create" "patch" "update" "delete")) (dict "apiGroup" "" "resource" "pods" "verbs" (list "get" "list" "watch")) (dict "apiGroup" "" "resource" "secrets" "verbs" (list "get")) (dict "apiGroup" "" "resource" "services" "verbs" (list "get" "create" "patch" "update" "delete")) (dict "apiGroup" "" "resource" "configmaps" "verbs" (list "get" "create" "patch" "update" "delete")) (dict "apiGroup" "networking.k8s.io" "resource" "ingresses" "verbs" (list "get" "create" "patch" "update" "delete"))) "helmStorage" (dict "namespace" .Release.Namespace "resource" "secrets" "namePattern" (printf "sh.helm.release.v1.%s.v*" .Release.Name) "verbs" (list "get" "list" "watch" "create" "update" "patch" "delete")) "admission" (list "server-side dry-run of every phase under the Flux Helm controller identity" "immutable versioned Secret references" "protected phase writes" "no external autoscaler or unmanaged writer")) | toJson | quote }}
