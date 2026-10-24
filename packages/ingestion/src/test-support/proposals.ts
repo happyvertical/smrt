@@ -26,6 +26,7 @@ import type {
   OperationHandler,
   PlanHandler,
 } from '../execution-contracts.js';
+import { completeWithFailureCapture } from '../execution-internal.js';
 import { createSDKExtractionAdapter, extractAnalysis } from '../extraction.js';
 import { extractWithProviders } from '../extraction-providers.js';
 import { IntakeFeedbackService } from '../feedback.js';
@@ -944,21 +945,150 @@ export function proposalSuite(
         ).rejects.toThrow('Intake execution is not configured');
         expect((await read())?.status).toBe('captured');
       });
-      it('is removed with the item by expiry and deletion propagation', async () => {
+      it.each([
+        'expire',
+        'interrupted-repair',
+        'retention-sweep',
+      ] as const)('is removed with the item by deletion propagation (%s)', async (mode) => {
         configuration.failureCapture = { enabled: true, redact };
         calls.mockResolvedValue(hostile());
         const failed = await generate();
         expect(await allRows()).toContain(retained);
-        await service.expire(failed.itemId);
+        if (mode === 'expire') await service.expire(failed.itemId);
+        else if (mode === 'retention-sweep') {
+          clock = new Date(clock.getTime() + 1000001);
+          expect(await service.sweepRetention()).toBe(1);
+        } else {
+          // Propagation interrupted after revocation: the payload is still
+          // there but no longer readable, and the repair removes it.
+          options.checkpoint = async (boundary) => {
+            if (boundary === 'deleted') throw new Error('interrupted');
+          };
+          try {
+            await expect(service.expire(failed.itemId)).rejects.toThrow(
+              'interrupted',
+            );
+          } finally {
+            delete options.checkpoint;
+          }
+          expect(await allRows()).toContain(retained);
+          await expect(
+            service.getFailedAttemptCapture(
+              failed.itemId,
+              failed.lease.attemptId,
+            ),
+          ).rejects.toThrow();
+          expect(await service.repairDeletions()).toBe(1);
+        }
         await expect(
           service.getFailedAttemptCapture(
             failed.itemId,
             failed.lease.attemptId,
           ),
         ).rejects.toThrow();
+        expect(await attemptData(failed.lease.attemptId)).toEqual({});
+        expect(await allRows()).not.toContain(retained);
+        expect(await allRows()).not.toContain('failureCapture');
+      });
+      it('fails closed for a cancelled item', async () => {
+        configuration.failureCapture = { enabled: true, redact };
+        calls.mockResolvedValue(hostile());
+        const failed = await generate();
+        expect(
+          (await service.getFailedAttemptCapture(failed.itemId))?.status,
+        ).toBe('captured');
+        await service.cancel(failed.itemId);
+        await expect(
+          service.getFailedAttemptCapture(
+            failed.itemId,
+            failed.lease.attemptId,
+          ),
+        ).rejects.toThrow();
+      });
+      it('stores a capture only beside a failed output at the publication boundary', async () => {
+        const capture = {
+          version: 1 as const,
+          source: 'generated_output' as const,
+          status: 'captured' as const,
+          text: retained,
+          truncated: false,
+          redacted: false,
+          maxBytes: 16384,
+          capturedAt: clock.toISOString(),
+        };
+        const base = {
+          provider: 'smrt-ingestion-proposals',
+          model: identity.model,
+          version: '1',
+          output: {},
+          usage: {},
+        };
+        const succeeded = await generation();
+        expect(
+          await service[completeWithFailureCapture](
+            succeeded.lease,
+            { ...base, status: 'completed' },
+            capture,
+          ),
+        ).toBe(true);
+        expect(
+          (await attemptData(succeeded.lease.attemptId)).failureCapture,
+        ).toBeUndefined();
+        // A malformed record is refused even beside a failure.
+        const malformed = await generation();
+        await service[completeWithFailureCapture](
+          malformed.lease,
+          { ...base, status: 'partial', error: 'malformed_output' },
+          { ...capture, status: 'other' } as unknown as typeof capture,
+        );
+        expect(
+          (await attemptData(malformed.lease.attemptId)).failureCapture,
+        ).toBeUndefined();
+        const failed = await generation();
+        await service[completeWithFailureCapture](
+          failed.lease,
+          { ...base, status: 'partial', error: 'malformed_output' },
+          capture,
+        );
         expect(
           (await attemptData(failed.lease.attemptId)).failureCapture,
-        ).toBeUndefined();
+        ).toEqual(capture);
+        expect(
+          (await service.getFailedAttemptCapture(failed.itemId))?.text,
+        ).toBe(retained);
+        // The read also refuses a record on an attempt without a failure.
+        await db.query(
+          "UPDATE intake_analysis_attempts SET safe_error='' WHERE id=?",
+          failed.lease.attemptId,
+        );
+        expect(await service.getFailedAttemptCapture(failed.itemId)).toBeNull();
+      });
+      it('bounds the redaction hook by the lease left, keeping the failed-attempt record', async () => {
+        let hookCalls = 0;
+        configuration.failureCapture = {
+          enabled: true,
+          redact: async ({ text }) => {
+            hookCalls++;
+            return text;
+          },
+        };
+        // The receipt lease is 10000 ms; leave 1 ms when the hook would start.
+        calls.mockImplementation(async () => {
+          clock = new Date(clock.getTime() + 9999);
+          return hostile();
+        });
+        const failed = await generate();
+        expect(failed.output.outcome).toBe('provider_error');
+        expect(failed.output.provenance.failure?.category).toBe(
+          'malformed_output',
+        );
+        expect(hookCalls).toBe(0);
+        const capture = await service.getFailedAttemptCapture(
+          failed.itemId,
+          failed.lease.attemptId,
+        );
+        expect(capture?.status).toBe('redaction_failed');
+        expect(capture).not.toHaveProperty('text');
         expect(await allRows()).not.toContain(retained);
       });
     });

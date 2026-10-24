@@ -10,6 +10,10 @@ export const generationSnapshotRead = Symbol(
 export const completeWithFailureCapture = Symbol(
   'ingestion.completeWithFailureCapture',
 );
+/** Milliseconds left on a live analysis lease, 0 when it is no longer live (#4285). */
+export const analysisLeaseRemaining = Symbol(
+  'ingestion.analysisLeaseRemaining',
+);
 /** The read-only list gate the service applies per (item, handler); not public. */
 export const listReadGate = Symbol('ingestion.listReadGate');
 export type TransactionRunner<T> = (

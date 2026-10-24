@@ -32,7 +32,9 @@ export interface FailureCaptureConfiguration {
    * generation `maxOutputBytes`) and returns the text to store. When it
    * throws, returns a non-string or exceeds the generation timeout, nothing is
    * stored except `status: 'redaction_failed'`; the attempt's own failure is
-   * recorded as usual.
+   * recorded as usual. The hook gets at most half of the analysis lease left
+   * when it starts (never more than `timeoutMs`), so the authority recheck and
+   * publication that follow it keep the rest.
    */
   redact?(input: {
     text: string;
@@ -121,6 +123,9 @@ export async function prepareFailureCapture(
   const input = truncateUtf8(raw, Math.max(bounds.inputBytes, maxBytes));
   let text = input.text;
   const hook = config.redact;
+  // No time left to redact: store nothing rather than unredacted text.
+  if (hook && bounds.timeoutMs < 1)
+    return { ...base, status: 'redaction_failed', truncated: false };
   if (hook) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {

@@ -980,6 +980,49 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       ['invalid_json', 'provider response was not valid JSON'],
     ] as const)
       expect(reason(new ProposalResponseError(problem, secret))).toBe(expected);
+    // An HTTP status is a provider answer: a cause-chain abort or network
+    // timeout never hides it, and an SDK error's cause-chain abort name is
+    // not read at all (#4285 review).
+    expect(
+      reason(new AIError('503 upstream overloaded', 'API_ERROR', 'openai')),
+    ).toBe('provider returned a server error (HTTP 503, code API_ERROR)');
+    const sdkWithAbortCause = new AIError(
+      `503 ${secret}`,
+      'API_ERROR',
+      'openai',
+    );
+    Object.assign(sdkWithAbortCause, {
+      cause: new DOMException(secret, 'AbortError'),
+    });
+    expect(reason(sdkWithAbortCause)).toBe(
+      'provider returned a server error (HTTP 503, code API_ERROR)',
+    );
+    expect(
+      reason(
+        Object.assign(
+          new Error(secret, { cause: new DOMException('', 'AbortError') }),
+          { status: 502 },
+        ),
+      ),
+    ).toBe(
+      'provider returned a server error (HTTP 502, class Error, name AbortError)',
+    );
+    expect(
+      reason(
+        Object.assign(
+          new TypeError(secret, {
+            cause: Object.assign(new Error(secret), { code: 'ETIMEDOUT' }),
+          }),
+          { statusCode: 504 },
+        ),
+      ),
+    ).toBe(
+      'provider returned a server error (HTTP 504, class TypeError, network ETIMEDOUT)',
+    );
+    // The SDK's own abort codes still name an abort.
+    expect(reason(sdk(secret, 'REQUEST_TIMEOUT'))).toBe(
+      'provider call aborted or timed out (code REQUEST_TIMEOUT)',
+    );
     // A forged problem is not trusted.
     expect(
       reason(new ProposalResponseError(secret as 'truncated', secret)),
