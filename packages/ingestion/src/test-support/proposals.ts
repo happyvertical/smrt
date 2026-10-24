@@ -6119,20 +6119,26 @@ export function proposalSuite(
       expect(input.output.suggestions[0].args).not.toHaveProperty('title');
       // The generated arguments alone fail the handler schema; the reviewer
       // completes them through the explicit human preview path (#4208).
-      await expect(
-        service.previewGeneratedProposals({
-          itemId: input.itemId,
-          attemptId: input.lease.attemptId,
-          selections: [
-            {
-              index: 0,
-              intentionKey: 'incomplete',
-              expectedRevision: 0,
-              requestId: 'incomplete',
-            },
-          ],
-        }),
-      ).rejects.toThrow('Invalid handler payload');
+      const incomplete = service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'incomplete',
+            expectedRevision: 0,
+            requestId: 'incomplete',
+          },
+        ],
+      });
+      await expect(incomplete).rejects.toBeInstanceOf(
+        HandlerArgumentsInvalidError,
+      );
+      // Value-free field details name only the missing schema field (#4281).
+      await expect(incomplete).rejects.toMatchObject({
+        message: 'Invalid handler payload',
+        issues: [{ path: '/title', keyword: 'required' }],
+      });
       expect(
         (await db.query('SELECT id FROM intake_proposals')).rows,
       ).toHaveLength(0);

@@ -1,10 +1,13 @@
+import type { ErrorObject } from 'ajv';
 import { describe, expect, it } from 'vitest';
 import {
   describeArgumentRefusal,
-  HANDLER_ARGUMENT_ISSUE_LIMIT,
-  HANDLER_ARGUMENT_PATH_LIMIT,
   handlerArgumentIssues,
 } from './argument-issues.js';
+
+function error(instancePath: string, keyword = 'type'): ErrorObject {
+  return { instancePath, keyword, schemaPath: '#', params: {} };
+}
 
 describe('value-free handler argument issues (#4281)', () => {
   const schema = {
@@ -28,6 +31,7 @@ describe('value-free handler argument issues (#4281)', () => {
       items: [1, secret],
       [secret]: secret,
     });
+    // `/` is the whole arguments object, not RFC 6901's key "".
     expect(issues).toEqual([
       { path: '/', keyword: 'additionalProperties' },
       { path: '/title', keyword: 'type' },
@@ -38,34 +42,99 @@ describe('value-free handler argument issues (#4281)', () => {
     expect(Object.isFrozen(issues)).toBe(true);
     expect(issues.every(Object.isFrozen)).toBe(true);
   });
-  it('bounds the issue count and path length and drops unsafe keywords', () => {
-    const errors = Array.from({ length: 500 }, (_, index) => ({
-      instancePath: `/items/${index}`,
-      keyword: 'type',
-      schemaPath: '#/properties/items/items/type',
-      params: { type: 'integer' },
-    }));
-    const instance = { items: Array.from({ length: 500 }, () => 'x') };
-    expect(handlerArgumentIssues(errors, schema, instance)).toHaveLength(
-      HANDLER_ARGUMENT_ISSUE_LIMIT,
-    );
-    const deep = {
+  it('names a missing required field under the root without a double slash', () => {
+    expect(describeArgumentRefusal(schema, {})).toEqual([
+      { path: '/title', keyword: 'required' },
+    ]);
+  });
+  it('treats inherited names such as toString and constructor as data keys', () => {
+    // `Object.hasOwn`, not `in`: prototype names are not declared properties.
+    expect(
+      describeArgumentRefusal(schema, {
+        title: 'Fine',
+        lines: { toString: 'x', constructor: 'y', __proto__: 'z' },
+      }),
+    ).toEqual([{ path: '/lines/?', keyword: 'type' }]);
+    expect(
+      handlerArgumentIssues(
+        [error('/toString'), error('/constructor/0')],
+        schema,
+        { toString: 1, constructor: [1] },
+      ),
+    ).toEqual([
+      { path: '/?', keyword: 'type' },
+      // A real array index under a data key stays; the key itself is hidden.
+      { path: '/?/0', keyword: 'type' },
+    ]);
+  });
+  it('keeps a numeric segment only when the instance really holds an array there', () => {
+    const union = {
       type: 'object',
-      properties: { ['a'.repeat(400)]: { type: 'string' } },
-    };
-    const [long] = handlerArgumentIssues(
-      [
-        {
-          instancePath: `/${'a'.repeat(400)}`,
-          keyword: 'type ignored; DROP',
-          schemaPath: '#',
-          params: {},
+      properties: {
+        items: {
+          anyOf: [
+            { type: 'array', items: { type: 'integer' } },
+            { type: 'object', additionalProperties: { type: 'integer' } },
+          ],
         },
-      ],
+      },
+    };
+    expect(
+      handlerArgumentIssues([error('/items/4417002231')], union, {
+        items: { '4417002231': 'x' },
+      }),
+    ).toEqual([{ path: '/items/?', keyword: 'type' }]);
+    expect(
+      handlerArgumentIssues([error('/items/0')], union, { items: ['x'] }),
+    ).toEqual([{ path: '/items/0', keyword: 'type' }]);
+  });
+  it('dedupes by path and keyword', () => {
+    expect(
+      handlerArgumentIssues(
+        [
+          error('/title'),
+          error('/title'),
+          error('/title', 'minLength'),
+          error('/title', 'type'),
+        ],
+        schema,
+        { title: 7 },
+      ),
+    ).toEqual([
+      { path: '/title', keyword: 'type' },
+      { path: '/title', keyword: 'minLength' },
+    ]);
+  });
+  it('returns exactly 20 issues at most', () => {
+    const instance = { items: Array.from({ length: 500 }, () => 'x') };
+    const errors = instance.items.map((_, index) => error(`/items/${index}`));
+    const issues = handlerArgumentIssues(errors, schema, instance);
+    expect(issues).toHaveLength(20);
+    expect(issues.at(-1)).toEqual({ path: '/items/19', keyword: 'type' });
+  });
+  it('examines at most 200 Ajv errors, duplicates included', () => {
+    const instance = { items: Array.from({ length: 300 }, () => 'x') };
+    // 199 duplicates, then distinct errors at positions 200 and 201.
+    const errors = [
+      ...Array.from({ length: 199 }, () => error('/items/0')),
+      error('/items/1'),
+      error('/items/2'),
+    ];
+    expect(handlerArgumentIssues(errors, schema, instance)).toEqual([
+      { path: '/items/0', keyword: 'type' },
+      { path: '/items/1', keyword: 'type' },
+    ]);
+  });
+  it('cuts paths at exactly 160 characters and drops unsafe keywords', () => {
+    const key = 'a'.repeat(400);
+    const deep = { type: 'object', properties: { [key]: { type: 'string' } } };
+    const [long] = handlerArgumentIssues(
+      [error(`/${key}`, 'type ignored; DROP')],
       deep,
       {},
     );
-    expect(long.path).toHaveLength(HANDLER_ARGUMENT_PATH_LIMIT);
+    expect(long.path).toHaveLength(160);
+    expect(long.path).toBe(`/${'a'.repeat(159)}`);
     expect(long).not.toHaveProperty('keyword');
   });
   it('returns no issues when the arguments are valid or the schema cannot compile', () => {
