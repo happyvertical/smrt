@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.25
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - guard comment-only asset URL tokenizer inputs (#4292) (core)
+- @happyvertical/smrt-config@0.57.25
+  - @happyvertical/smrt-scanner@0.57.25
+  - @happyvertical/smrt-types@0.57.25
+
 ## 0.57.24
 
 ### Patch Changes
