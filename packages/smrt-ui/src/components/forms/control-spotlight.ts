@@ -138,6 +138,14 @@ export function paintControlSpotlight(
               },
             )
           : undefined;
+      // Cancellation rejects finished; observe it before dismiss or direction change.
+      void bob?.finished.catch((error: unknown) => {
+        if (
+          !(error instanceof view.DOMException && error.name === 'AbortError')
+        ) {
+          throw error;
+        }
+      });
     }
     // Track movement caused by scrolling, resizing or surrounding layout. No
     // animation/interpolation is applied, including under reduced motion.

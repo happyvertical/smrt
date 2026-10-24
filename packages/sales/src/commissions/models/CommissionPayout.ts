@@ -41,11 +41,15 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type {
-  CommissionPayoutOptions,
-  CommissionPayoutStatus,
-  PayoutMethod,
+import {
+  type CommissionPayoutOptions,
+  type CommissionPayoutStatus,
+  PAYOUT_METHODS,
+  PAYOUT_METHODS_REQUIRING_DESTINATION,
+  type PayoutDestination,
+  type PayoutMethod,
 } from '../types.js';
+import { validatePayoutDestination } from './Earner.js';
 
 /**
  * Legal status transitions, keyed by the prior persisted status.
@@ -126,6 +130,14 @@ export class CommissionPayout extends SmrtObject {
   payoutMethod: PayoutMethod = 'bank_transfer';
 
   /**
+   * Routing descriptor captured at batch creation, never the live Earner's
+   * preference. Routing is immutable after the first save, including pending
+   * and failed/reset batches; reject and create a new batch to change it.
+   * Legacy/manual methods have no typed descriptor (`{}`).
+   */
+  payoutDestination: string = '{}';
+
+  /**
    * Lifecycle status — see the class doc. Mutate via {@link approve} /
    * {@link markProcessing} / {@link complete} / {@link fail} /
    * {@link resetFromFailed}.
@@ -202,6 +214,8 @@ export class CommissionPayout extends SmrtObject {
     if (options.currency !== undefined) this.currency = options.currency;
     if (options.payoutMethod !== undefined)
       this.payoutMethod = options.payoutMethod;
+    if (options.payoutDestination !== undefined)
+      this.payoutDestination = options.payoutDestination;
     if (options.status !== undefined) this.status = options.status;
     if (options.paymentReference !== undefined)
       this.paymentReference = options.paymentReference;
@@ -277,6 +291,7 @@ export class CommissionPayout extends SmrtObject {
           `non-positive total (${this.totalAmountCents} cents)`,
       );
     }
+    this.validateRouting(true);
     this.status = 'approved';
   }
 
@@ -370,6 +385,18 @@ export class CommissionPayout extends SmrtObject {
     this.paidAt = null;
   }
 
+  /** Read the batch's validated routing snapshot, never a live Earner. */
+  getPayoutDestination(): PayoutDestination | null {
+    return this.validateRouting(false);
+  }
+
+  /** Set a descriptor before first persistence; save enforces routing freeze. */
+  setPayoutDestination(destination: PayoutDestination | null): void {
+    if (destination) validatePayoutDestination(destination);
+    this.payoutDestination = JSON.stringify(destination ?? {});
+    if (destination) this.payoutMethod = destination.method;
+  }
+
   // -------- Metadata helpers --------
 
   /** Parse {@link metadata}; returns `{}` on empty/invalid JSON. */
@@ -407,7 +434,14 @@ export class CommissionPayout extends SmrtObject {
    */
   override async save(): Promise<this> {
     this.validateTotals();
+    await this.assertRoutingUnchanged();
     const prior = await this.resolvePriorStatus();
+    // Legacy typed batches have no historical route to backfill. Keep
+    // administrative saves/restamping possible while refusing payment progress.
+    this.validateRouting(
+      prior !== this.status &&
+        ['approved', 'processing', 'completed'].includes(this.status),
+    );
     this.assertStatusTransition(prior);
     if (this.status === 'completed' && !this.paymentReference) {
       throw new Error(
@@ -417,6 +451,78 @@ export class CommissionPayout extends SmrtObject {
     const result = (await super.save()) as this;
     loadedPayoutStatus.set(this, this.status);
     return result;
+  }
+
+  private validateRouting(
+    requireDestination: boolean,
+  ): PayoutDestination | null {
+    const label = `CommissionPayout ${this.id ?? '<new>'}`;
+    if (!(PAYOUT_METHODS as readonly string[]).includes(this.payoutMethod)) {
+      throw new Error(`${label}: unknown payoutMethod '${this.payoutMethod}'`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(this.payoutDestination);
+    } catch {
+      throw new Error(`${label}: payoutDestination must be valid JSON`);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${label}: payoutDestination must be a JSON object`);
+    }
+    if (Object.keys(parsed).length > 0) {
+      validatePayoutDestination(parsed as PayoutDestination);
+      const destination = parsed as PayoutDestination;
+      if (destination.method !== this.payoutMethod) {
+        throw new Error(
+          `${label}: payoutDestination method does not match payoutMethod`,
+        );
+      }
+      return destination;
+    }
+    if (
+      requireDestination &&
+      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
+        this.payoutMethod,
+      )
+    ) {
+      throw new Error(
+        `${label}: ${this.payoutMethod} requires a payoutDestination snapshot; reject and recreate the batch`,
+      );
+    }
+    return null;
+  }
+
+  /** Authoritative read also closes blind-id and natural-key upsert doors. */
+  private async assertRoutingUnchanged(): Promise<void> {
+    const { rows } = await this.db.query(
+      `SELECT CAST(id AS VARCHAR) AS id, payout_method, payout_destination FROM ${this.tableName} WHERE id = ? OR idempotency_key = ?`,
+      this.id ?? null,
+      this.idempotencyKey || null,
+    );
+    for (const row of rows) {
+      if (row.id !== this.id) {
+        throw new Error(
+          'CommissionPayout: existing batch routing is immutable; reuse its idempotency key through the payout service',
+        );
+      }
+      // Existing rows migrated without a descriptor intentionally stay empty;
+      // never infer historical routing from today's mutable Earner preference.
+      const priorDestination = String(row.payout_destination ?? '{}');
+      const canonical = (raw: string) => {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        return JSON.stringify(
+          Object.entries(parsed).sort(([a], [b]) => a.localeCompare(b)),
+        );
+      };
+      if (
+        row.payout_method !== this.payoutMethod ||
+        canonical(priorDestination) !== canonical(this.payoutDestination)
+      ) {
+        throw new Error(
+          'CommissionPayout: routing is immutable; reject and recreate the batch',
+        );
+      }
+    }
   }
 
   /** Throws when the totals invariant doesn't hold. */

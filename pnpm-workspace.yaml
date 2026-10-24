@@ -30,6 +30,10 @@ overrides:
   '@happyvertical/signatures': ^0.106.0
   '@happyvertical/speech': ^0.106.0
   '@happyvertical/spider': ^1.1.13
+  # Temporary runtime major upgrade for GHSA-834v-8h66-3h79; published Spider
+  # still requests vulnerable happy-dom 20.x. Remove after an upstream release:
+  # https://github.com/happyvertical/spider/issues/103
+  '@happyvertical/spider>happy-dom@>=17.0.0 <=21.0.3': 21.0.4
   '@happyvertical/sql': ^0.106.0
   '@happyvertical/utils': ^0.106.0
   '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
@@ -39,7 +43,9 @@ overrides:
   # only named exports, all of which minimatch 10 still provides.
   'minimatch@>=9.0.0 <10.0.0': 10.2.5
   'minimatch@>=10.0.0 <10.2.3': 10.2.5
-  'undici@>=7.0.0 <7.29.1': 7.29.1
+  # GHSA-xjj6-f33q-929c: prevent orphaned-stream errors on hostile responses.
+  'undici@>=7.18.0 <7.30.1': 7.30.1
+  'undici@>=8.0.0 <8.12.2': 8.12.2
   'nodemailer@<=10.0.5': 10.0.6
   'tar@>=7.0.0 <7.5.21': 7.5.22
   # protobufjs 6.x reaches the graph through the optional, deprecated
@@ -58,7 +64,8 @@ overrides:
   'linkify-it@<=5.0.1': 5.0.2
   'shell-quote@>=1.1.0 <1.11.0': 1.12.0
   'hono@>=4.0.0 <4.12.25': 4.12.27
-  '@hono/node-server@>=1.0.0 <1.19.10': 1.19.14
+  '@hono/node-server@>=1.0.0 <1.19.15': 1.19.15
+  'cookie@<0.7.0': 0.7.2
   'express-rate-limit@>=8.2.0 <8.2.2': 8.5.2
   # 0.6.0 cleared the earlier advisory but is itself affected by
   # GHSA-7q85-xj36-vmfc (uncontrolled memory allocation); 0.6.1 is the fix.
@@ -92,7 +99,7 @@ overrides:
   # never published, so the selector cannot resolve to it. 14.3.0 is the current
   # 14.x release carrying the fix.
   'markdown-it@<14.1.2': 14.3.0
-  'body-parser@<2.3.0': 2.3.0
+  'body-parser@<2.4.0': 2.4.0
   # sharp <0.35.5 inherits four libvips CVEs. Its consumers here declare older
   # ranges (@gutenye/ocr-node ^0.33.3, @huggingface/transformers ^0.34.5,
   # @xenova/transformers ^0.32.0); 0.35.x keeps the decode/resize/metadata API
@@ -224,7 +231,6 @@ catalog:
   '@sentry/node': ^10.75.0
   bull: ^4.16.5
   bullmq: ^6.3.8
-  jimp: ^1.6.1
   sharp: ^0.35.5
 
 allowBuilds:

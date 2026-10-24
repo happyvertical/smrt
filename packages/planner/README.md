@@ -252,6 +252,10 @@ Run with `pnpm --filter @happyvertical/smrt-planner <script>`.
 | `test:live-preview-browser` | Drive the live preview against the dev server in Chromium |
 | `test:package -- <tarball>` | Install and exercise an already packed tarball as an isolated consumer |
 
+The Node/DOM tests use patched Happy DOM 21. The security regression exercises
+valid modules and rejects an invalid import binding that previously executed a
+Node-host initializer (GHSA-834v-8h66-3h79).
+
 Lint and formatting are the monorepo's root `pnpm lint`. The package is
 released by the monorepo's batched release with every other smrt package (see
 the root `CHANGESETS.md`); it is never published on its own.

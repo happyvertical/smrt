@@ -453,6 +453,11 @@ export class CommissionPayoutService {
       periodStart: input.periodStart ?? null,
       periodEnd: input.periodEnd ?? null,
       payoutMethod,
+      payoutDestination: JSON.stringify(
+        earner.getPayoutDestination()?.method === payoutMethod
+          ? earner.getPayoutDestination()
+          : {},
+      ),
       status: 'pending',
       commissionTotalCents,
       adjustmentTotalCents,
@@ -460,14 +465,10 @@ export class CommissionPayoutService {
       idempotencyKey,
     });
 
-    // Adopt the PERSISTED row for the idempotency key before claiming
-    // anything: two workers racing past the earlier lookup both reach the
-    // natural-key upsert, and the loser's in-memory instance carries an id
-    // the database no longer holds. Claiming with that orphaned id would
-    // stamp rows onto a payout that doesn't exist — so both workers
-    // converge on whichever row actually won the key.
-    const payout =
-      (await this.deps.payouts.findByIdempotencyKey(idempotencyKey)) ?? minted;
+    // Creation is a strict insert: a concurrent same-key creator gets a
+    // unique-constraint error before claiming members or overwriting routing.
+    // Retrying the request reads the persisted winner through the earlier lookup.
+    const payout = minted;
 
     // Claim the gathered rows conditionally and reconcile the stored
     // totals from what was VERIFIABLY claimed — a row grabbed by another
@@ -659,6 +660,20 @@ export class CommissionPayoutService {
     if (!paymentReference) {
       throw new Error(
         `CommissionPayout ${payout.id ?? '<new>'}: complete() requires a paymentReference`,
+      );
+    }
+
+    // Refuse unroutable batches before the deliberately retryable member
+    // writes below: a legacy missing snapshot must not mark anything paid.
+    const destination = payout.getPayoutDestination();
+    if (
+      (PAYOUT_METHODS_REQUIRING_DESTINATION as readonly string[]).includes(
+        payout.payoutMethod,
+      ) &&
+      !destination
+    ) {
+      throw new Error(
+        `CommissionPayout ${payout.id ?? '<new>'}: ${payout.payoutMethod} requires a payoutDestination snapshot; reject and recreate the batch`,
       );
     }
 
@@ -1292,7 +1307,7 @@ export class CommissionPayoutService {
     if (ids.length === 0) return counts;
     const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
     const res = await db.query(
-      `SELECT payout_id, COUNT(*) AS row_count FROM ${table} WHERE payout_id IN (${placeholders}) GROUP BY payout_id`,
+      `SELECT CAST(payout_id AS VARCHAR) AS payout_id, COUNT(*) AS row_count FROM ${table} WHERE payout_id IN (${placeholders}) GROUP BY payout_id`,
       ...ids,
     );
     const rows = Array.isArray(res)

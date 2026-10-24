@@ -163,6 +163,23 @@ connected account id or the public receiving address, and an active earner
 using either method must have one. The package records where money should
 go and never calls a payment provider.
 
+`CommissionPayoutService.createPayoutBatch()` captures the typed destination on
+`CommissionPayout.payoutDestination`. Executors and approval screens must read
+`payout.getPayoutDestination()` from the batch, never the current Earner.
+The batch's method and destination are immutable from its first save, including
+pending batches and failed batches reset for retry. Earner preference changes,
+idempotent replay and interrupted membership repair never refresh routing.
+Reject the batch through `transitionPayoutForSource` and create a new batch with
+a new idempotency key to use another destination. This also preserves the route
+that was reviewed before approval; no payment provider is called here.
+
+Run the normal manifest migration before adopting the new field. Existing
+Stripe Connect/crypto batches without a recorded descriptor remain readable,
+but cannot be approved or advanced toward payment. Reject and recreate them;
+never backfill a historical route from today's Earner. Manual methods continue
+to use an empty descriptor. Unknown/malformed descriptors and extra fields
+(including credentials) are rejected.
+
 ## Core model
 
 - **Roles are separate from money.** `SalesRepresentative` and `Referrer` are

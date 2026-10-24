@@ -404,7 +404,7 @@ export class Commission extends SmrtObject {
     if (!this.dedupeKey) return;
     try {
       const res = await this.db.query(
-        `SELECT id FROM ${this.tableName} WHERE dedupe_key = $1`,
+        `SELECT CAST(id AS VARCHAR) AS id FROM ${this.tableName} WHERE dedupe_key = $1`,
         this.dedupeKey,
       );
       const rows = Array.isArray(res)
