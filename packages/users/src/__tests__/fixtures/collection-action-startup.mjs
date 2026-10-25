@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -18,7 +19,7 @@ const pkg = '@fixture/startup4171';
 const inheritedNamespace = process.argv.includes('--inherited-namespace');
 const modelVisible = process.argv.includes('--model-visible');
 const collectionPath = inheritedNamespace ? 'domainboot4171' : 'facadeboot4171';
-const root = mkdtempSync(join(process.env.CI_TEST_TMPDIR || process.env.TMPDIR, 'startup4171-'));
+const root = mkdtempSync(join(process.env.CI_TEST_TMPDIR || tmpdir(), 'startup4171-'));
 let actual;
 try {
   mkdirSync(join(root, 'src/lib/objects'), { recursive: true });
