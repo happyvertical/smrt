@@ -78,7 +78,7 @@ Previously `Sku` shipped in `@happyvertical/smrt-inventory` under table `invento
 
 **Upgrade procedure** (works on SQLite + Postgres; does NOT rely on `CREATE TABLE AS` which strips constraints):
 
-1. **Boot the new version once** so the framework's lazy `syncSchema` creates `product_skus` with the right PRIMARY KEY, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes derived from the `Sku` model.
+1. **Run the reviewed application schema migration under the migration identity before runtime startup** to create `product_skus` with the right PRIMARY KEY, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes derived from the `Sku` model. Runtime [verifies existing tables](https://github.com/happyvertical/smrt/blob/main/packages/core/src/schema/table-verifier.ts); it does not create application schema.
 
 2. **Idempotently copy rows**:
 
