@@ -469,3 +469,11 @@ an item identity under its package nor steal the item's existing package when
 its collection decorator merges configuration. Registration and generated
 factory selection share one identity resolver; never install global aliases to
 repair an inferred or bundled class name.
+
+Every collection hosting a generated REST action receives its exact constructor
+binding even with `cli: false` or omitted CLI configuration. This runtime-only
+binding does not add discovery metadata: named HTTP CLI resources keep their
+existing explicit-include eligibility. Constructor-only qualified receivers keep
+their own collection-cache identity while resolving backing item metadata, so
+ordinary model factories cannot reuse a different resource receiver. Neither
+CLI nor MCP discovery gains a resource or default CRUD surface from this binding.

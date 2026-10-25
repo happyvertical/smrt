@@ -2033,7 +2033,7 @@ async function generateRegistrationFile(
 
       if (
         isCollectionManifestClass(manifest, objectDef) &&
-        !isCollectionActionResource(manifest, objectDef)
+        !hasGeneratedCollectionActions(manifest, objectDef)
       ) {
         packageEntry.hasCollectionImport = true;
       } else {
@@ -2084,7 +2084,7 @@ async function generateRegistrationFile(
 
     if (
       isCollectionManifestClass(manifest, objectDef) &&
-      !isCollectionActionResource(manifest, objectDef)
+      !hasGeneratedCollectionActions(manifest, objectDef)
     ) {
       localSideEffectImports.add(importPath);
       continue;
@@ -2306,7 +2306,7 @@ async function generateRegistrationFile(
   const collectionRegistrations = Object.entries(manifest.objects)
     .filter(
       ([, objectDef]) =>
-        isCollectionActionResource(manifest, objectDef) &&
+        hasGeneratedCollectionActions(manifest, objectDef) &&
         (!consumerOwnsExternalRegistration ||
           isLocalObject(projectRoot, objectDef)),
     )
@@ -2347,11 +2347,12 @@ ${
     ? `
 // Metadata only: collection constructors were installed by their decorators.
 ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}));
-// Preserve exact runtime identity alongside discovery metadata, without initialization.
-${collectionRegistrations}
 `
     : ''
-}`;
+}
+// Bind every generated REST action receiver, independently of discovery eligibility.
+${collectionRegistrations}
+`;
 
   // Create directory if it doesn't exist
   if (!existsSync(configDir)) {
@@ -2360,6 +2361,17 @@ ${collectionRegistrations}
 
   writeFileSync(registrationFilePath, registrationContent, 'utf-8');
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
+}
+
+/** REST action receivers need a live binding even when CLI discovery is closed. */
+function hasGeneratedCollectionActions(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  return (
+    isCollectionManifestClass(manifest, objectDef) &&
+    resolveApiActionSet(objectDef, manifest).size > 0
+  );
 }
 
 /** Named HTTP CLI collection actions need metadata and a live receiver binding. */
@@ -2392,7 +2404,7 @@ function buildRegistrationBindings(
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
     if (
       isCollectionManifestClass(manifest, objectDef) &&
-      !isCollectionActionResource(manifest, objectDef)
+      !hasGeneratedCollectionActions(manifest, objectDef)
     )
       continue;
     const simpleName = extractSimpleClassName(manifestKey);

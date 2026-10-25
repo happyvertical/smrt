@@ -973,7 +973,16 @@ describe('generated SvelteKit helper runtime', () => {
     expect(JSON.stringify(contexts[0])).not.toContain('forged');
   });
 
-  it('initializes the exact cross-package collection resource without rebuilding its item namespace (#4320)', async () => {
+  it.each([
+    {
+      label: 'named HTTP CLI',
+      cli: { include: ['inspect', 'peek', 'submit'] },
+    },
+    { label: 'REST only with CLI disabled', cli: false as const },
+    { label: 'REST only with CLI omitted', cli: undefined },
+  ])('initializes the exact cross-package collection resource without rebuilding its item namespace (#4320): $label', async ({
+    cli,
+  }) => {
     const restore = snapshotObjectRegistryState();
     const itemKey = '@fixture/model4320:RouteItem4320';
     const resourceKey = '@fixture/resource4320:RouteResource4320';
@@ -1023,7 +1032,7 @@ describe('generated SvelteKit helper runtime', () => {
             submit: { method: 'POST' },
           },
         },
-        cli: { include: ['inspect', 'peek', 'submit'] },
+        cli,
       })(RouteResource4320);
       expect(
         ObjectRegistry.getClassByConstructor(RouteItem4320)?.qualifiedName,
@@ -1040,6 +1049,13 @@ describe('generated SvelteKit helper runtime', () => {
         slug: 'owned',
         context: '',
       });
+      const { MCPGenerator } = await import('../generators/mcp.js');
+      const resourceTools = async () =>
+        (await new MCPGenerator({ classNames: [resourceKey] }).generateTools())
+          .map((tool) => tool.name)
+          .filter((name) => name.startsWith('routeresource4320_'))
+          .sort();
+      const previousResourceTools = await resourceTools();
       state.__smrt4320Core = await import('../index.js');
       state.__smrt4320Constructors = {
         RouteItem4320,
@@ -1125,7 +1141,7 @@ describe('generated SvelteKit helper runtime', () => {
                   submit: { method: 'POST' },
                 },
               },
-              cli: { include: ['inspect', 'peek', 'submit'] },
+              cli,
             },
           },
         },
@@ -1165,6 +1181,10 @@ describe('generated SvelteKit helper runtime', () => {
         result: { count: 1, receiver: 'RouteResource4320' },
       });
       expect(state.__smrt4320FactoryKeys).toEqual([resourceKey]);
+      if (!cli) {
+        expect(ObjectRegistry.getClass(resourceKey)).toBeUndefined();
+        expect(await resourceTools()).toEqual(previousResourceTools);
+      }
       const [actual] =
         state.__smrt4320Instances as SmrtCollection<SmrtObject>[];
       expect(actual).toBeInstanceOf(RouteResource4320);
@@ -1226,6 +1246,9 @@ describe('generated SvelteKit helper runtime', () => {
         '00000000-0000-4000-8000-000000004320',
       );
       expect((state.__smrt4320FactoryKeys as string[]).at(-1)).toBe(itemKey);
+      const instances =
+        state.__smrt4320Instances as SmrtCollection<SmrtObject>[];
+      expect(instances.at(-1)).not.toBe(actual);
     } finally {
       await db?.close?.();
       restore();
