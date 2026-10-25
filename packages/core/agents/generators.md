@@ -477,3 +477,9 @@ existing explicit-include eligibility. Constructor-only qualified receivers keep
 their own collection-cache identity while resolving backing item metadata, so
 ordinary model factories cannot reuse a different resource receiver. Neither
 CLI nor MCP discovery gains a resource or default CRUD surface from this binding.
+
+When consumer registration owns external packages (`smrtDependencies`), its
+`.smrt/register.js` binds external REST action receivers using the resolved
+canonical/provider-context export. The SvelteKit registration module continues
+to delegate external imports there; external bindings also add no discovery
+metadata and do not depend on CLI inclusion.

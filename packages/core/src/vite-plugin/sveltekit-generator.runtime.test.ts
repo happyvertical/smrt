@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -14,6 +15,7 @@ import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
@@ -980,9 +982,23 @@ describe('generated SvelteKit helper runtime', () => {
     },
     { label: 'REST only with CLI disabled', cli: false as const },
     { label: 'REST only with CLI omitted', cli: undefined },
+    {
+      label: 'external named HTTP CLI',
+      cli: { include: ['inspect', 'peek', 'submit'] },
+      external: true,
+    },
+    {
+      label: 'external REST with CLI disabled',
+      cli: false as const,
+      external: true,
+    },
+    { label: 'external REST with CLI omitted', cli: undefined, external: true },
   ])('initializes the exact cross-package collection resource without rebuilding its item namespace (#4320): $label', async ({
     cli,
+    ...fixture
   }) => {
+    const external = 'external' in fixture && fixture.external;
+    clearManifestCache();
     const restore = snapshotObjectRegistryState();
     const itemKey = '@fixture/model4320:RouteItem4320';
     const resourceKey = '@fixture/resource4320:RouteResource4320';
@@ -1146,6 +1162,62 @@ describe('generated SvelteKit helper runtime', () => {
           },
         },
       };
+      if (external) {
+        const modelDir = join(projectRoot, 'node_modules/@fixture/model4320');
+        const resourceDir = join(
+          projectRoot,
+          'node_modules/@fixture/resource4320',
+        );
+        for (const [name, directory, exports] of [
+          ['@fixture/model4320', modelDir, 'RouteItem4320, ItemCollection4320'],
+          ['@fixture/resource4320', resourceDir, 'RouteResource4320'],
+        ]) {
+          mkdirSync(join(directory, 'dist'), { recursive: true });
+          writeFileSync(
+            join(directory, 'package.json'),
+            JSON.stringify({
+              name,
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './index.js' },
+            }),
+          );
+          writeFileSync(
+            join(directory, 'index.js'),
+            `export const { ${exports} } = globalThis.__smrt4320Constructors;`,
+          );
+        }
+        manifest.packageName = '@test/generated-helper-app';
+        manifest.smrtDependencies = ['@fixture/resource4320'];
+        for (const [key, definition] of Object.entries(manifest.objects)) {
+          definition.filePath = join(
+            key === resourceKey ? resourceDir : modelDir,
+            'index.js',
+          );
+        }
+        writeFileSync(
+          join(resourceDir, 'dist/manifest.json'),
+          JSON.stringify({
+            ...manifest,
+            packageName: '@fixture/resource4320',
+          }),
+        );
+        const { smrtConsumer } = await import('../consumer-plugin/index.js');
+        const consumer = smrtConsumer({
+          packages: ['@fixture/resource4320'],
+          projectRoot,
+          generateTypes: false,
+          disableScanning: true,
+        });
+        const hook = consumer.buildStart;
+        if (!hook) throw new Error('Consumer buildStart missing');
+        const handler = typeof hook === 'function' ? hook : hook.handler;
+        await handler.call(
+          {} as ThisParameterType<typeof handler>,
+          {} as Parameters<typeof handler>[0],
+        );
+        expect(existsSync(join(projectRoot, '.smrt/register.js'))).toBe(true);
+      }
       await generateSvelteKitRoutes(projectRoot, manifest, {
         configFileName: 'smrt.ts',
         configPath: 'src/lib/server',
@@ -1252,6 +1324,7 @@ describe('generated SvelteKit helper runtime', () => {
     } finally {
       await db?.close?.();
       restore();
+      clearManifestCache();
       for (const key of Object.keys(state))
         if (key.startsWith('__smrt4320')) delete state[key];
     }

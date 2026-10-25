@@ -25,6 +25,7 @@ import type { SmrtPluginApi } from '../vite-plugin/index.js';
 import {
   clearGeneratedSvelteKitRouteFiles,
   reconcileSvelteKitRouteGitignore,
+  resolveApiActionSet,
   type SvelteKitOptions,
 } from '../vite-plugin/sveltekit-generator.js';
 import { canonicalSvelteKitPath } from '../vite-plugin/sveltekit-path.js';
@@ -2018,6 +2019,18 @@ async function generateRegistrationFile(
     importedEntryCount++;
 
     if (isCollectionClass(def)) {
+      // Consumer registration owns external import provenance. Bind REST
+      // receivers here without adding object/discovery metadata.
+      if (
+        resolveApiActionSet(
+          def as unknown as SmartObjectDefinition,
+          manifest as unknown as SmartObjectManifest,
+        ).size > 0
+      ) {
+        registrations.push(
+          `if (${exportBinding}) ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${exportBinding});`,
+        );
+      }
       continue;
     }
 
