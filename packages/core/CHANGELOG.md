@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.29
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - retain STI metadata and repair validation harnesses (#4204) (scanner)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.107.0 (#4280) (deps)
+- @happyvertical/smrt-config@0.57.29
+  - @happyvertical/smrt-scanner@0.57.29
+  - @happyvertical/smrt-types@0.57.29
+
 ## 0.57.28
 
 ### Patch Changes
