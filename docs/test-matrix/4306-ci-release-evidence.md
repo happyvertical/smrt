@@ -93,40 +93,35 @@ database coverage and ordinary-role PostgreSQL execution.
 
 ## Evidence status
 
-Implementation validation on 2026-10-24:
+Implementation validation on 2026-10-25 at `ff5bec434` (main includes
+SDK 0.107.0):
 
-- Control-plane suite: 423 passing tests; workflow syntax validation passed.
-- Build: 80 tasks passed. Root type checking: 157 tasks passed.
-- All 48 registered package export verifiers passed. Packed analytics HTTP
-  rendering passed on Vite 7 and 8; the broken-export comparison failed as expected.
-- Generated-declaration cache fixtures passed; all 80 producer hashes matched
-  the quiescent post-build graph.
-- Reactions' approved vote/close race-test correction passed all 27 package
-  tests, type checking, Svelte checking and build; it changes no production code.
-- Root lint, format, strict knowledge, audit policy and the existing Node-root
-  gate passed. The Node-root gate retains its existing products allow-list.
-- Full root tests remain unresolved: local runs hit the injected 10-second
-  manifest-setup hook deadline; the subsequent cluster run completed 101/109
-  Turbo tasks before the reactions SQLite process-race test exceeded its
-  five-second unit-test budget. Complete failure logs were retained.
-- The owner approved including #4310 and #4311 as separate attributed commits
-  with explicit scope exceptions. #4310 gives the three-phase SQLite race a
-  60-second integration budget with 15-second child deadlines and guaranteed
-  reaping. #4311 pairs hooks with already-declared test budgets, as required by
-  `TESTING_STANDARD.md`; it changes no selection, retries, pools or assertions.
-  Integrated full validation and independent review remain required.
-- The subsequent root run completed 115/121 Turbo tasks before app-runtime's
-  two unmapped-`/tmp` lease cases failed custody preflight: their application
-  data also lived under the mocked foreign-owned `/tmp`. The test-only repair
-  gives those two fixtures a home-owned parent and preserves runtime custody,
-  serialization, and legacy-lease assertions. The full targeted file passed
-  (76 passed, 3 skipped), package typechecking and source Biome checks passed,
-  and no home fixture remained after teardown. This check deliberately retained
-  ambient `tmpdir() === '/tmp'`; the documented owned-scratch profile in
-  `TESTING_STANDARD.md` avoids the original fixture collision and explains the
-  other session's passing run. Both repaired cases also passed with all four
-  documented scratch variables set to a fresh user-owned directory, which was
-  removed after the run. Integrated root validation is still required.
+- Frozen install, build (80/80 tasks), and root typecheck (157/157 tasks) passed.
+- Full `pnpm test` passed: 157/157 Turbo tasks, 81 cached, followed by the root
+  script checks; exit 0. Elapsed Turbo time was 1h 1m 33.689s.
+- All eleven CI/export gates passed: packed analytics HTTP rendering on Vite
+  7 and 8, the control suite, all 48 package export verifiers, webhooks Svelte
+  and browser checks, lint, format, strict knowledge, audit policy, Node-root
+  loading, and the pre-push hooks. The Node-root gate retains its existing
+  products allow-list; it does not establish products SSR support.
+- Validation used the documented private scratch directory and system Chromium.
+  The bundled-browser attempt failed on missing host `libgbm.so.1`; the
+  documented system-browser run passed. Both records were retained.
+- The packed-export negative comparison produced actual HTTP 500 responses in
+  both Vite versions when the Svelte condition was removed. Cache fixtures and
+  the quiescent 80-producer hash comparison passed before subsequent test-only
+  repairs and upstream integration; their source behavior is unchanged.
+- Earlier failures remain in the evidence record: shared hook/race budgets,
+  missing users fixture temp-directory fallback, app-runtime ownership fixture
+  isolation, and CLI Vitest discovering a Node-runner test. None count as
+  successful validation. The shared budget/cleanup fixes are now on main.
+- The app-runtime repair preserves custody and lease assertions (76 targeted
+  cases passed, three platform skips). CLI Node-runner tests now live beside
+  the root verifier and remain required by the control suite; all 1,480 CLI
+  tests passed after relocation, with 67 existing skips.
+
+The independent release/security review is the next gate. This evidence update
+changes documentation only; runtime and test sources match the validated commit.
 
 Baseline measured; after timings pending. No optimization or reuse decision is
 considered validated merely because its unit tests pass. Exact-revision review,
