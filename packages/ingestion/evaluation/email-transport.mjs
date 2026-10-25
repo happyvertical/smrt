@@ -3,6 +3,7 @@
  * raw RFC822 and real EmailAccount produces the retained intake snapshot.
  */
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { mock } from 'node:test';
@@ -14,7 +15,7 @@ if (!rawPath || !outputPath)
 const raw = readFileSync(rawPath);
 const sdkRequire = createRequire(import.meta.resolve('@happyvertical/email'));
 const calls = [];
-class ImapFlow {
+class ImapFlow extends EventEmitter {
   async mailboxOpen() {
     return { exists: 1, uidValidity: 7 };
   }
