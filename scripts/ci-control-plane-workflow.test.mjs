@@ -45,7 +45,7 @@ test('control-plane tests use the trusted test-suite admission and installed pro
   const root = JSON.parse(
     readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
   );
-  assert.equal(root.scripts['test:ci-scripts'], 'node --test scripts/*.test.mjs packages/cli/scripts/verify-package-types-exports.test.mjs');
+  assert.equal(root.scripts['test:ci-scripts'], 'node --test scripts/*.test.mjs');
 });
 
 test('Required CI rejects a failed, cancelled, skipped or absent control-plane result', () => {

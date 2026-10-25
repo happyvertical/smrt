@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-const wrapper = fileURLToPath(new URL('../../../scripts/verify-package-types-exports.js', import.meta.url));
+const wrapper = fileURLToPath(new URL('./verify-package-types-exports.js', import.meta.url));
 function verify(exports, files, { packedExports = exports } = {}) {
   const fixture = mkdtempSync(join(tmpdir(), 'smrt-svelte-export-'));
   try {
