@@ -191,6 +191,7 @@ export class DeploymentPhaseTracker {
             verified.checkpoint === undefined
               ? context.checkpoint
               : verified.checkpoint;
+          context.checkpoint = checkpoint;
           if (verified.outcome !== 'complete') throw repairRequired();
         }
         await context.assertActive();

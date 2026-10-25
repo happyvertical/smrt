@@ -229,6 +229,50 @@ describe.skipIf(!url)('durable deployment phases (real PostgreSQL)', () => {
       cursor: 2,
     });
   });
+  it.each([
+    'needs-repair',
+    'safe-to-resume',
+  ] as const)('retains the post-apply %s checkpoint for the next reconciliation', async (outcome) => {
+    const step = options(`post-apply-${outcome}`);
+    let inspections = 0;
+    const apply = vi.fn(async () => {});
+    await expect(
+      tracker.runReconciledStep({
+        ...step,
+        inspect: async () => {
+          inspections++;
+          return inspections === 1
+            ? { outcome: 'safe-to-resume', checkpoint: { cursor: 0 } }
+            : {
+                outcome,
+                checkpoint: { cursor: 10, operationId: 'external-1' },
+              };
+        },
+        apply,
+      }),
+    ).rejects.toMatchObject({ code: 'NEEDS_REPAIR' });
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(await tracker.getStepStatus(step)).toMatchObject({
+      status: 'needs-repair',
+      checkpoint: { cursor: 10, operationId: 'external-1' },
+    });
+    await new DeploymentPhaseTracker(second).runReconciledStep({
+      ...step,
+      inspect: async (context) => {
+        expect(context.checkpoint).toEqual({
+          cursor: 10,
+          operationId: 'external-1',
+        });
+        return { outcome: 'complete' };
+      },
+      apply,
+    });
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(await tracker.getStepStatus(step)).toMatchObject({
+      status: 'complete',
+      checkpoint: { cursor: 10, operationId: 'external-1' },
+    });
+  });
   it('persists a checkpoint at the exact serialized UTF-8 byte limit', async () => {
     const step = options('checkpoint-limit');
     const checkpoint = 'x'.repeat(MAX_DEPLOYMENT_CHECKPOINT_BYTES - 2);

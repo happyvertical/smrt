@@ -57,7 +57,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           node-version: '26.12.1'
-          install-deps: 'false'
+          install-deps: 'true'
           setup-playwright: 'false'
       - name: Install verified test tools
         run: |
