@@ -74,6 +74,16 @@ export interface MissingFieldsCorrection {
   /** Declared fields that were not actually missing. */
   removed: number;
 }
+/**
+ * Value-free record that the validator dropped invented targets from offered
+ * candidate fields (#4289): counts only, never IDs, labels or field names.
+ */
+export interface UnofferedTargetsDropped {
+  /** Suggestions that had at least one target dropped. */
+  suggestions: number;
+  /** Candidate fields whose unoffered value was dropped. */
+  fields: number;
+}
 export interface GenerationOutput {
   version: 1;
   outcome:
@@ -136,6 +146,8 @@ export interface GenerationOutput {
     failure?: { category: string; reason: string };
     /** Present only when a declaration was corrected; absent output is unchanged. */
     missingFieldsCorrection?: MissingFieldsCorrection;
+    /** Present only when an invented target was dropped; absent output is unchanged. */
+    unofferedTargetsDropped?: UnofferedTargetsDropped;
   };
   automaticActionEligible: false;
 }
