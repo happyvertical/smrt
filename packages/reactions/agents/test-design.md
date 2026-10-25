@@ -35,3 +35,5 @@ Package validation commands: `pnpm --filter @happyvertical/smrt-reactions test`,
 ## Concurrent reaction quota regression
 
 Independent PostgreSQL pools synchronize their public transaction SELECT results so both observe absence before competing. With a fixed clock and maxActions=2, identical retries must yield one reaction and exactly one reserved unit; another kind consumes the remaining unit, and a third is denied without adding a row or unit. A second scenario reauthorizes to denial after initial allowance, asserting no reaction, bucket or committed reaction change-feed effect; rate denial also leaves the candidate row absent and prior quota unchanged. SQLite process contention and same-process invalidation/recovery remain required regressions.
+
+Cancellation cleanup observes operation errors separately from process closure: an AbortError can precede `close`, so the helper always awaits each owned child's close-only promise before removing its database directory. A live-child abort probe verifies both ready children close before directory removal and leaves no surviving children or unhandled rejections.

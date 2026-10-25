@@ -26,6 +26,9 @@ export default defineConfig({
           name: 'dom',
           include: ['tests/**/*.dom.test.ts'],
           environment: 'happy-dom',
+          // Full-shell mount/reset/remount scenarios use an integration budget.
+          testTimeout: 30000,
+          hookTimeout: 30000,
         },
       },
     ],

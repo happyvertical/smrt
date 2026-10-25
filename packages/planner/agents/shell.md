@@ -74,9 +74,7 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `@foreignKey` relations), each file headed with what it replaces.
   `overlay.ts` applies the widget and relation hints to the catalog on load so
   consumers read `field.ui.widget` and `field.related` where the manifest will
-  put them, and lends an STI leaf the enumeration its ancestor declares
-  (smrt 0.56's Contract leaves lost `contractType`'s, smrt#4005); published
-  values always win. Enum values, `displayLabelField`
+  put them; published values always win. Enum values, `displayLabelField`
   (`model.display`) and `RelationInput` (`@happyvertical/smrt-svelte/forms`) are
   published and read directly. Delete a stand-in when its issue ships.
 - `src/lib/fields/`: `renderer.ts` picks the input per field (pure, tested);
