@@ -65,6 +65,8 @@ database coverage and ordinary-role PostgreSQL execution.
 | A delayed green status cannot escape its release window | Every PR/group status grant is acknowledged before drain revocation and freeze | Delayed POST, duplicate callback, reused SHA and unknown write remain fenced; explicit acknowledgement rejects forged or absent App evidence | Exclusive CAS grant plus independently verified terminated writer and nonce-bearing status | GitHub status and workflow-attempt API | `node --test scripts/release-admission.test.mjs scripts/release-admission-state.test.mjs` |
 | Partial release resumes original content | Original completed attempt, verified bundle and packs, idempotent primary publication | Running owner, substituted/expired ZIP, unsafe extraction, wrong parent/ref/version rejected before writes | Immutable bound artifacts and isolated Git worktree; no candidate scripts | GitHub artifact service and primary npm registry | `node --test scripts/recover-release.test.mjs` |
 | Packaged analytics renders over HTTP | Correct Svelte export returns successful HTTP | Broken export reproduces server failure | Built consumer process; DB N/A | Vite 7/8, Svelte SSR, published package exports | Existing `packages/core/src/consumer-plugin/analytics-context-packed-ssr.test.ts` |
+| SQLite process races retain assertions and bound child lifetime (#4310) | Three process-pair phases finish within the scoped integration budget | A stalled child is terminated within 15 seconds; cancellation and failures reap owned children | Independent uncached SQLite runtimes; unchanged transaction assertions | Node child processes and Vitest cancellation | Reactions package tests, controlled contention and stalled-child probes |
+| Hook budgets match declared test budgets (#4311) | All 33 affected effective Vitest project contexts have matching budgets | Non-inherited root settings cannot stand in for child-project budgets; unaffected analytics projects stay unchanged | Vitest configuration resolution; no DB transaction | Shared manifest-registration setup | Effective configuration proof plus types, mobile-contract and web suites |
 
 ## Reuse and scope constraints
 
@@ -103,8 +105,15 @@ Implementation validation on 2026-10-24:
 - Root lint, format, strict knowledge, audit policy and the existing Node-root
   gate passed. The Node-root gate retains its existing products allow-list.
 - Full root tests remain unresolved: local runs hit the injected 10-second
-  manifest-setup hook deadline under workstation load, including with bounded
-  file workers. No timeout, hook, test or required gate was disabled.
+  manifest-setup hook deadline; the subsequent cluster run completed 101/109
+  Turbo tasks before the reactions SQLite process-race test exceeded its
+  five-second unit-test budget. Complete failure logs were retained.
+- The owner approved including #4310 and #4311 as separate attributed commits
+  with explicit scope exceptions. #4310 gives the three-phase SQLite race a
+  60-second integration budget with 15-second child deadlines and guaranteed
+  reaping. #4311 pairs hooks with already-declared test budgets, as required by
+  `TESTING_STANDARD.md`; it changes no selection, retries, pools or assertions.
+  Integrated full validation and independent review remain required.
 
 Baseline measured; after timings pending. No optimization or reuse decision is
 considered validated merely because its unit tests pass. Exact-revision review,
