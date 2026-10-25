@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.30
+
+### Patch Changes
+
+- ### Features
+  
+  - add redacted failed-attempt diagnostics (#4323) (ingestion)
+  
+  ### Bug Fixes
+  
+  - preserve consumer and REST resource identities and redact approval faults (#4322)
+- @happyvertical/smrt-config@0.57.30
+  - @happyvertical/smrt-scanner@0.57.30
+  - @happyvertical/smrt-types@0.57.30
+
 ## 0.57.29
 
 ### Patch Changes
