@@ -147,6 +147,25 @@ such as `MessagingSettingsService`.
 | `SmrtCollectionQueryScope` | Trusted, server-derived scope conditions for the generic adapter |
 | `SmrtCollectionDataSurfaceAction` | Declarative row/bulk action catalog entry surfaced via `metadata.actionCatalog` |
 
+### Summary Discovery
+
+`createDataSurfaceTools({ surfaces, discoverDetail: 'summary' })` makes
+`data.discover` return one small entry per readable surface — `id`, `label`
+(falling back to the id), the first line of `description` bounded to 160
+characters with an ellipsis, and an optional `rowCountHint` — instead of the
+full field, metadata, `supports`, and `limits` descriptor. The model then calls
+`data.inspect` for one surface's fields and operators. The default,
+`discoverDetail: 'full'`, is unchanged; catalog filtering, permissions, the
+`discover` audit entry, failures, `data.inspect`, and `data.query` behave the
+same in both modes.
+
+`DataSurfaceDefinition.rowCountHint` (also accepted by
+`createSmrtCollectionDataSurfaceDefinition()` and report definitions) is a
+host-supplied size hint: a non-negative safe integer or a single-line label of
+at most 32 characters such as `"~2k"`. It is never computed by querying;
+invalid values are omitted (see `normalizeDataSurfaceRowCountHint()`) without
+failing discovery, and valid ones also appear in full descriptors.
+
 ### Report Data-Surface Tools
 
 `createReportDataSurfaceTools()` combines the generic read-only data-surface

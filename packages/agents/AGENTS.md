@@ -185,6 +185,15 @@ authenticated/delegated principal and detailed server-side error. Hidden field
 request failures also use a stable public error. Tool arguments never contain
 principal or tenant authority.
 
+`discoverDetail: 'summary'` (#4329; default `'full'`, byte-identical) makes
+`data.discover` return only `id`, `label`, a first-line `description` bounded
+to 160 chars, and `rowCountHint`, with a discover tool description pointing to
+`data.inspect`. The catalog/RBAC gates, including identity-field denial, run
+the same in both modes; inspect and query are unaffected.
+`DataSurfaceDefinition.rowCountHint` is host-supplied and never queried:
+`normalizeDataSurfaceRowCountHint()` accepts a non-negative safe integer or a
+trimmed single-line label of at most 32 chars, and omits anything else.
+
 ## Playbook Preflight (issue #2590)
 
 `createPlaybookPreflightTool()` produces the `playbooks.preflight`

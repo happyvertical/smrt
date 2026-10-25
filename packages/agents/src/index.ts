@@ -110,6 +110,7 @@ export {
   DataSurfaceDeadlineError,
   type DataSurfaceDefinition,
   DataSurfaceDeniedError,
+  type DataSurfaceDiscoverDetail,
   type DataSurfaceExecutionContext,
   type DataSurfaceExecutor,
   type DataSurfaceExecutorResult,
@@ -121,10 +122,15 @@ export {
   DataSurfaceQueryError,
   DataSurfaceRequestError,
   DataSurfaceResultOrderError,
+  type DataSurfaceRowCountHint,
   type DataSurfaceSchema,
+  type DataSurfaceSummary,
   type DataSurfaceToolsOptions,
   DEFAULT_DATA_SURFACE_DEADLINE_MS,
   MAX_DATA_SURFACE_DEADLINE_MS,
+  MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS,
+  MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS,
+  normalizeDataSurfaceRowCountHint,
 } from './data-surface.js';
 // Principal delegation for agent orchestration (#1892): the immutable-principal,
 // bounded-depth delegation envelope.

@@ -41,6 +41,36 @@ export const DATA_QUERY_FUNCTION_NAME = 'data-query';
 export const DEFAULT_DATA_SURFACE_DEADLINE_MS = 5_000;
 export const MAX_DATA_SURFACE_DEADLINE_MS = 30_000;
 
+/** Longest summary-mode `description`, in characters, including the ellipsis. */
+export const MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS = 160;
+/** Longest accepted string `rowCountHint` label, in characters. */
+export const MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS = 32;
+
+/**
+ * How much `data.discover` returns per surface (#4329).
+ *
+ * - `full` (default): the complete descriptor `data.inspect` returns.
+ * - `summary`: `id`, `label`, a one-line `description`, and `rowCountHint`
+ *   only; the model calls `data.inspect` for fields, operators, and limits.
+ */
+export type DataSurfaceDiscoverDetail = 'full' | 'summary';
+
+/**
+ * Host-supplied size hint shown at discovery: a non-negative safe integer, or
+ * a short single-line label such as `"~2k"` or `"1k-10k"` of at most
+ * {@link MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS} characters. It is never
+ * computed by querying the surface, so it reveals only what the host chooses.
+ */
+export type DataSurfaceRowCountHint = number | string;
+
+/** Summary-mode `data.discover` entry. */
+export interface DataSurfaceSummary {
+  id: string;
+  label: string;
+  description?: string;
+  rowCountHint?: DataSurfaceRowCountHint;
+}
+
 /** Declarative, non-authoritative metadata that a server-owned catalog may expose. */
 export type DataSurfaceMetadataValue =
   | string
@@ -82,6 +112,11 @@ export interface DataSurfaceDefinition {
   description?: string;
   /** Safe catalog metadata, returned only after the read gate succeeds. */
   metadata?: DataSurfaceMetadata;
+  /**
+   * Optional host-supplied size hint, returned by discovery and inspection
+   * after the read gate succeeds. Invalid values are omitted, never fatal.
+   */
+  rowCountHint?: DataSurfaceRowCountHint;
   schema: DataSurfaceSchema;
   /** Optional surface-specific executor. */
   execute?: DataSurfaceExecutor;
@@ -155,6 +190,12 @@ export interface DataSurfaceToolsOptions {
   deadlineMs?: number;
   /** Receives detailed server-side failures; never surfaced to the model. */
   onFailure?: DataSurfaceFailureSink;
+  /**
+   * Per-surface detail of `data.discover`. Defaults to `'full'`; `'summary'`
+   * returns {@link DataSurfaceSummary} entries for two-step discovery with
+   * `data.inspect`. Permissions, audit, and failures are identical in both.
+   */
+  discoverDetail?: DataSurfaceDiscoverDetail;
 }
 
 export interface DataSurfaceFailureEntry {
@@ -444,6 +485,62 @@ function visibleSchema(
   return normalizeDataQuerySchema(coreSchema({ ...schema, fields }));
 }
 
+/**
+ * Validate a host-supplied row-count hint: a non-negative safe integer, or a
+ * trimmed single-line label of 1-32 characters. Anything else is `undefined`.
+ */
+export function normalizeDataSurfaceRowCountHint(
+  value: unknown,
+): DataSurfaceRowCountHint | undefined {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+  const label = value.trim();
+  if (
+    label.length === 0 ||
+    Array.from(label).length > MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS ||
+    /\p{Cc}/u.test(label)
+  ) {
+    return undefined;
+  }
+  return label;
+}
+
+function rowCountHintEntry(surface: DataSurfaceDefinition): {
+  rowCountHint?: DataSurfaceRowCountHint;
+} {
+  const rowCountHint = normalizeDataSurfaceRowCountHint(surface.rowCountHint);
+  return rowCountHint === undefined ? {} : { rowCountHint };
+}
+
+/** First line of a description, bounded with an ellipsis when cut. */
+function summaryDescription(description: unknown): string | undefined {
+  if (typeof description !== 'string') return undefined;
+  const line = (
+    description.split(/\r\n|[\r\n\u2028\u2029]/, 1)[0] ?? ''
+  ).trim();
+  if (line.length === 0) return undefined;
+  const characters = Array.from(line);
+  if (characters.length <= MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS) {
+    return line;
+  }
+  return `${characters
+    .slice(0, MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS - 1)
+    .join('')
+    .trimEnd()}\u2026`;
+}
+
+function summary(surface: DataSurfaceDefinition): DataSurfaceSummary {
+  const description = summaryDescription(surface.description);
+  return {
+    id: surface.id,
+    label: surface.label ?? surface.id,
+    ...(description ? { description } : {}),
+    ...rowCountHintEntry(surface),
+  };
+}
+
 function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
   const metadataByFieldId = new Map(
     surface.schema.fields.map((field) => [field.id, field.metadata]),
@@ -452,6 +549,7 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
     id: surface.id,
     label: surface.label ?? surface.id,
     ...(surface.description ? { description: surface.description } : {}),
+    ...rowCountHintEntry(surface),
     ...(surface.metadata ? { metadata: surface.metadata } : {}),
     collection: surface.collection,
     identityField: schema.identityField,
@@ -1131,6 +1229,12 @@ const DATA_QUERY_TOOL_DESCRIPTION =
   '"sort":[{"field":"updated_at","direction":"desc"}],"page":{"kind":"offset","offset":0,"limit":10}}. ' +
   'An invalid request fails with a message naming what was wrong and what is allowed.';
 
+const DATA_DISCOVER_FULL_TOOL_DESCRIPTION =
+  'List data surfaces and their safe, readable fields.';
+const DATA_DISCOVER_SUMMARY_TOOL_DESCRIPTION =
+  'List the data surfaces you can read (id, label, short description). ' +
+  "Call data.inspect for a surface's fields and operators before querying.";
+
 function tool(
   slug: string,
   functionName: string,
@@ -1186,16 +1290,21 @@ export function createDataSurfaceTools(
     }
   };
 
+  const summaryDiscovery = options.discoverDetail === 'summary';
   const discover = tool(
     DATA_DISCOVER_TOOL_SLUG,
     DATA_DISCOVER_FUNCTION_NAME,
-    'List data surfaces and their safe, readable fields.',
+    summaryDiscovery
+      ? DATA_DISCOVER_SUMMARY_TOOL_DESCRIPTION
+      : DATA_DISCOVER_FULL_TOOL_DESCRIPTION,
     { type: 'object', properties: {}, additionalProperties: false },
     async ({ run }) => {
       run.assertToolAllowed(DATA_DISCOVER_TOOL_SLUG);
       const entries = await catalog(run, 'discover');
       await audit({ action: 'discover' }, run);
-      return entries.map(({ surface, schema }) => descriptor(surface, schema));
+      return entries.map(({ surface, schema }) =>
+        summaryDiscovery ? summary(surface) : descriptor(surface, schema),
+      );
     },
   );
 
