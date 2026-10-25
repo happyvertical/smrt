@@ -1,0 +1,41 @@
+{{- if eq .Values.release.phase "migrate" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migration-{{ .Values.release.id }}-{{ .Values.release.attempt }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        smrt.happyvertical.com/release: {{ .Values.release.id | quote }}
+        smrt.happyvertical.com/attempt: {{ .Values.release.attempt | quote }}
+        smrt.happyvertical.com/runtime: {{ .Values.target.migration | toJson | sha256sum | trunc 63 | quote }}
+        smrt.happyvertical.com/component: migration
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      terminationGracePeriodSeconds: {{ .Values.target.migration.terminationGracePeriodSeconds }}
+      containers:
+        - name: migration
+          image: {{ .Values.target.migration.image | quote }}
+          command: {{ .Values.target.migration.command | toJson }}
+          env:
+            - name: SMRT_RELEASE_ID
+              value: {{ .Values.release.id | quote }}
+            - name: SMRT_RELEASE_ATTEMPT
+              value: {{ .Values.release.attempt | quote }}
+            - name: SMRT_APP_NAME
+              value: {{ .Values.app.name | quote }}
+            - name: SMRT_APP_ENVIRONMENT
+              value: {{ .Values.app.environment | quote }}
+            {{- range .Values.target.migration.env }}
+            - {{ . | toJson }}
+            {{- end }}
+          resources: {{ .Values.target.migration.resources | toJson }}
+{{- end }}

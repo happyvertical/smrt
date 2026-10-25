@@ -1,0 +1,43 @@
+# Platform-owned example. Replace the app/environment names, chart pin and
+# complete values from the reviewed application config before reconciliation.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: smrt-app
+  namespace: example-production
+spec:
+  interval: 5m
+  url: oci://ghcr.io/happyvertical/charts/smrt-app
+  ref:
+    # Set the OCI manifest digest emitted by the reviewed 0.1.0 publication.
+    # This placeholder intentionally cannot pull an existing chart.
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: example
+  namespace: example-production
+spec:
+  interval: 1m
+  timeout: 5m
+  serviceAccountName: example-reconciler
+  targetNamespace: example-production
+  releaseName: example
+  driftDetection:
+    mode: enabled
+  chartRef:
+    kind: OCIRepository
+    name: smrt-app
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  # The runner uses a complete HelmRelease JSON file with inline spec.values.
+  # Do not use valuesFrom: mutable indirect values invalidate phase identity.
+  # Insert the reviewed complete values here; empty values deliberately fail.
+  values: {}

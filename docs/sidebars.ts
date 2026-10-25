@@ -12,6 +12,8 @@ const sidebars: SidebarsConfig = {
         { type: 'doc', id: 'commerce-money' },
         { type: 'doc', id: 'data-compartmentalization' },
         { type: 'doc', id: 'data-surface-conformance' },
+        { type: 'doc', id: 'deployment' },
+        { type: 'doc', id: 'deployment-test-matrix' },
         { type: 'doc', id: 'dispatch' },
         { type: 'doc', id: 'field-policies' },
         { type: 'doc', id: 'form-retry' },

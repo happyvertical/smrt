@@ -274,6 +274,12 @@ launcher or a small wrapper script with an absolute Node path.
 
 ## Validation
 
+`src/mcp-conformance.spec.ts` runs the production HTTP handler and official
+client against an isolated consumer workspace with model manifests and docs.
+It checks protocol behavior and resource freshness with the official deadline;
+it does not measure large-monorepo indexing latency. Broader discovery coverage
+remains in the knowledge tests. See the [protocol fixture contract](agents/protocol-conformance.md).
+
 Run package `test`, `typecheck`, and `build`, then
 `pnpm --filter @happyvertical/smrt-dev-mcp verify:pack`. The packaging gate packs
 MCP/scanner/types, installs only their production dependencies into a fresh

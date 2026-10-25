@@ -1,0 +1,74 @@
+{{- $root := . }}
+{{- $runtime := .Values.current }}
+{{- if has .Values.release.phase (list "verify" "active") }}{{ $runtime = .Values.target }}{{ end }}
+{{- if $runtime }}
+{{- range $name, $w := $runtime.workloads }}
+{{- $resource := printf "%s-%s" $root.Release.Name $name }}
+---
+{{- if $w.schedule }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $resource }}
+  labels:
+{{ include "smrt.labels" $root | indent 4 }}
+spec:
+  schedule: {{ $w.schedule | quote }}
+  suspend: {{ ne $root.Values.release.phase "active" }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+{{ include "smrt.runtimeLabels" (dict "root" $root "workload" $w) | indent 8 }}
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+{{ include "smrt.runtimeLabels" (dict "root" $root "workload" $w) | indent 12 }}
+            smrt.happyvertical.com/workload: {{ $name }}
+            smrt.happyvertical.com/writer: {{ $w.writer | quote }}
+        spec:
+          restartPolicy: Never
+{{ include "smrt.pod" (dict "workload" $w) | indent 10 }}
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $resource }}
+  labels:
+{{ include "smrt.labels" $root | indent 4 }}
+spec:
+  replicas: {{ if has $root.Values.release.phase (list "stopped" "migrate") }}0{{ else }}{{ $w.replicas }}{{ end }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+      smrt.happyvertical.com/workload: {{ $name }}
+  template:
+    metadata:
+      labels:
+{{ include "smrt.runtimeLabels" (dict "root" $root "workload" $w) | indent 8 }}
+        smrt.happyvertical.com/workload: {{ $name }}
+        smrt.happyvertical.com/writer: {{ $w.writer | quote }}
+    spec:
+{{ include "smrt.pod" (dict "workload" $w) | indent 6 }}
+{{- end }}
+{{- with $w.service }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $resource }}
+  labels:
+{{ include "smrt.labels" $root | indent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+    smrt.happyvertical.com/workload: {{ $name }}
+  ports: [{name: http, port: {{ .port }}, targetPort: http}]
+{{- end }}
+{{- end }}
+{{- end }}

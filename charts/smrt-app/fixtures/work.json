@@ -1,0 +1,289 @@
+{
+  "release": {
+    "id": "release-001",
+    "phase": "maintenance",
+    "sequence": 0,
+    "attempt": 1
+  },
+  "app": {
+    "name": "work",
+    "environment": "test"
+  },
+  "current": {
+    "workloads": {
+      "web": {
+        "role": "web",
+        "writer": true,
+        "image": "ghcr.io/example/work-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "build"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 2,
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/health",
+            "port": 3000
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "port": 3000,
+        "service": {
+          "port": 3000
+        },
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/live",
+            "port": 3000
+          }
+        }
+      },
+      "runner": {
+        "role": "background",
+        "writer": true,
+        "image": "ghcr.io/example/work-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "dist/index.js"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90
+      }
+    },
+    "migration": {
+      "image": "ghcr.io/example/work-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": [
+        "node",
+        "scripts/release-migrate.mjs"
+      ],
+      "env": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "app-migration-v1",
+              "key": "uri"
+            }
+          }
+        }
+      ],
+      "guard": "smrt-release-v1",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      },
+      "terminationGracePeriodSeconds": 300
+    }
+  },
+  "target": {
+    "workloads": {
+      "web": {
+        "role": "web",
+        "writer": true,
+        "image": "ghcr.io/example/work-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "build"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 2,
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/health",
+            "port": 3000
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "port": 3000,
+        "service": {
+          "port": 3000
+        },
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/live",
+            "port": 3000
+          }
+        }
+      },
+      "runner": {
+        "role": "background",
+        "writer": true,
+        "image": "ghcr.io/example/work-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "dist/index.js"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90
+      }
+    },
+    "migration": {
+      "image": "ghcr.io/example/work-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": [
+        "node",
+        "scripts/release-migrate.mjs"
+      ],
+      "env": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "app-migration-v1",
+              "key": "uri"
+            }
+          }
+        }
+      ],
+      "guard": "smrt-release-v1",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      },
+      "terminationGracePeriodSeconds": 300
+    }
+  },
+  "maintenance": {
+    "image": "docker.io/library/nginx@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "command": [
+      "nginx",
+      "-g",
+      "daemon off;"
+    ],
+    "port": 8080,
+    "http": {
+      "path": "/",
+      "status": 503,
+      "body": "Maintenance"
+    }
+  },
+  "bindings": {
+    "database": {
+      "secretName": "app-runtime-v1",
+      "secretKey": "uri"
+    },
+    "privateBuckets": [
+      {
+        "name": "assets",
+        "secretName": "app-assets-v1",
+        "secretKey": "config"
+      }
+    ]
+  },
+  "ingress": {
+    "host": "work.example.invalid",
+    "className": "nginx"
+  }
+}

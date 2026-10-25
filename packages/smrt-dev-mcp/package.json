@@ -33,6 +33,7 @@
     "README.md",
     "dist",
     "AGENTS.md",
+    "agents",
     "plugin.json",
     "mcp.json",
     "skills",
