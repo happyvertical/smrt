@@ -695,6 +695,69 @@ export function proposalSuite(
           ).toBeNull();
         expect(await allRows()).not.toContain(retained);
       });
+      it.each([
+        'raw_response',
+        'generated_output',
+      ] as const)('retains no %s text without a redactor and preserves the failure', async (source) => {
+        const logged: string[] = [];
+        const boundaries: string[] = [];
+        options.checkpoint = async (boundary) => {
+          boundaries.push(boundary);
+        };
+        const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(
+          (method) =>
+            vi.spyOn(console, method).mockImplementation((...args) => {
+              logged.push(args.map(String).join(' '));
+            }),
+        );
+        try {
+          if (source === 'raw_response')
+            calls.mockRejectedValue(
+              attachRawProviderOutput(
+                new ProposalResponseError('invalid_json', 'refused'),
+                `${name} ${retained}`,
+              ),
+            );
+          else calls.mockResolvedValue(hostile());
+          const baseline = await generate();
+          configuration.failureCapture = { enabled: true };
+          const failed = await generate();
+          expect(failed.output.outcome).toBe('provider_error');
+          expect(failed.output.provenance.failure).toEqual(
+            baseline.output.provenance.failure,
+          );
+          const capture = await service.getFailedAttemptCapture(
+            failed.itemId,
+            failed.lease.attemptId,
+          );
+          expect(capture).toMatchObject({
+            source,
+            status: 'redaction_failed',
+            redacted: false,
+          });
+          expect(capture).not.toHaveProperty('text');
+          const host = createIntakeReviewHost(service, {
+            upload: async () => ({ itemId: failed.itemId }),
+            assignment: async () => ({ assigneeId: null, version: 0 }),
+            assign: async () => {},
+            evidence: async (part) => ({ label: part.partId }),
+          });
+          for (const surface of [
+            await service.listItems(),
+            await service.listItemsPage({ limit: 100 }),
+            await service.getCompletedAnalysis(failed.itemId),
+            await host.load(failed.itemId),
+            await host.list({}),
+          ])
+            expect(JSON.stringify(surface)).not.toContain(retained);
+          expect(await allRows()).not.toContain(retained);
+        } finally {
+          for (const spy of spies) spy.mockRestore();
+          delete options.checkpoint;
+        }
+        expect(logged.join('\n')).not.toContain(retained);
+        expect(boundaries.join('\n')).not.toContain(retained);
+      });
       it('captures bounded redacted output only on failed attempts, outside the digest', async () => {
         configuration.failureCapture = { enabled: true, maxBytes: 64, redact };
         calls.mockResolvedValue(hostile());
@@ -1015,7 +1078,7 @@ export function proposalSuite(
           status: 'captured' as const,
           text: retained,
           truncated: false,
-          redacted: false,
+          redacted: true,
           maxBytes: 16384,
           capturedAt: clock.toISOString(),
         };
@@ -1047,6 +1110,15 @@ export function proposalSuite(
         expect(
           (await attemptData(malformed.lease.attemptId)).failureCapture,
         ).toBeUndefined();
+        const unredacted = await generation();
+        await service[completeWithFailureCapture](
+          unredacted.lease,
+          { ...base, status: 'partial', error: 'malformed_output' },
+          { ...capture, redacted: false },
+        );
+        expect(
+          (await attemptData(unredacted.lease.attemptId)).failureCapture,
+        ).toBeUndefined();
         const failed = await generation();
         await service[completeWithFailureCapture](
           failed.lease,
@@ -1059,6 +1131,20 @@ export function proposalSuite(
         expect(
           (await service.getFailedAttemptCapture(failed.itemId))?.text,
         ).toBe(retained);
+        const data = await attemptData(failed.lease.attemptId);
+        data.failureCapture = { ...capture, redacted: false };
+        await db.query(
+          'UPDATE intake_analysis_attempts SET data=? WHERE id=?',
+          JSON.stringify(data),
+          failed.lease.attemptId,
+        );
+        expect(await service.getFailedAttemptCapture(failed.itemId)).toBeNull();
+        data.failureCapture = capture;
+        await db.query(
+          'UPDATE intake_analysis_attempts SET data=? WHERE id=?',
+          JSON.stringify(data),
+          failed.lease.attemptId,
+        );
         // The read also refuses a record on an attempt without a failure.
         await db.query(
           "UPDATE intake_analysis_attempts SET safe_error='' WHERE id=?",

@@ -263,13 +263,16 @@ Invalid limits are rejected when constructing `IngestionService`, before receipt
 or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.
 
 `proposals.failureCapture` (`{ enabled, maxBytes?, redact? }`) is off by
-default. When `enabled: true`, a failed interpretation attempt keeps the model
-output (or the parsed output that failed validation) for diagnosis: cut to
-`maxBytes` (default 16384, at most 65536 UTF-8 bytes) after the optional host
+default. With `enabled: true` and a host `redact` hook, a failed interpretation
+attempt keeps the model output (or the parsed output that failed validation)
+for diagnosis: cut to
+`maxBytes` (default 16384, at most 65536 UTF-8 bytes) after the host
 `redact` hook, stored beside the attempt result (not digested), readable only
 through the reviewer-authorized `getFailedAttemptCapture(itemId, attemptId?)`
-and removed with the item. Invalid settings are rejected at construction. See
-[PROPOSALS.md](PROPOSALS.md#failed-attempt-capture-opt-in-4285).
+and removed with the item. A missing or failed hook stores only
+`redaction_failed` metadata, never text. Hosts own the semantic redaction policy;
+no built-in sanitizer is supplied. Invalid settings are rejected at construction.
+See [PROPOSALS.md](PROPOSALS.md#failed-attempt-capture-opt-in-4285).
 
 ## Trusted internal sources
 

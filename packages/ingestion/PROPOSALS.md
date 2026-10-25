@@ -368,13 +368,14 @@ proposals: {
   failureCapture: {
     enabled: true,      // required; absent or false keeps capture off
     maxBytes: 16384,    // default 16384, at most 65536 (UTF-8 bytes, after redaction)
-    redact: ({ text, source }) => hostRedaction(text), // optional
+    redact: ({ text, source }) => hostRedaction(text), // required to retain text
   },
 },
 ```
 
-`ProposalConfiguration.failureCapture` is **off by default**. When enabled, a
-failed interpretation attempt (`provider_error`) keeps one of:
+`ProposalConfiguration.failureCapture` is **off by default**. When enabled with
+a host `redact` hook, a failed interpretation attempt (`provider_error`) keeps
+one of:
 
 - `raw_response`: the reply text the SDK adapter refused (for example invalid
   JSON or a `length` finish), or
@@ -384,19 +385,23 @@ failed interpretation attempt (`provider_error`) keeps one of:
 Errors without model output (transport, timeouts, authority, decision
 failures) capture nothing. Successful attempts never store a capture.
 
+Without a `redact` hook, only `status: 'redaction_failed'` metadata is stored,
+with `redacted: false` and no text; the candidate text is not materialized.
+There is no built-in sanitizer. Hosts own the hook's semantic redaction policy;
+the service cannot verify that the returned text removes every document secret.
+
 The text, cut to the larger of the generation `maxOutputBytes` and
-`maxBytes`, goes through the optional
-`redact` hook, and the result is cut to `maxBytes` without splitting a
-character (`truncated: true` when either cut applied). NUL and unpaired
-surrogates are stored as U+FFFD so PostgreSQL JSON accepts the record. When
-the hook throws, returns a non-string or runs past its time budget, nothing but
-`status: 'redaction_failed'` is stored. The budget is the generation
+`maxBytes`, goes through the host `redact` hook, and the result is cut to
+`maxBytes` without splitting a character (`truncated: true` when either cut
+applied). NUL and unpaired surrogates are stored as U+FFFD so PostgreSQL JSON accepts the record. When
+the hook throws, returns a non-string or exceeds its asynchronous wait budget,
+only `status: 'redaction_failed'` is stored. The budget is the generation
 `timeoutMs`, cut to half of the analysis lease still left when the hook starts
 (no time left: the hook is not called). The hook runs after the authority
-recheck, and the second recheck plus publication keep the rest of the lease, so
-a slow hook cannot cost the attempt its failure record; the hook's error is
-discarded, and the attempt's own failure and reason are recorded as usual.
-Capture problems never replace the real failure.
+recheck, reserving the rest of the lease for the second recheck and publication.
+This timer cannot preempt synchronous work or cancel the hook. Hosts must use
+bounded, nonblocking redactors. Missing or failed redaction does not replace the
+attempt's real failure or value-free reason; hook errors are discarded.
 
 **Where it lives.** In the attempt row's `data` JSON, as `failureCapture`
 beside the result fields, never inside `result`: it needs no migration, is not
@@ -415,6 +420,9 @@ same gate as `getItemDisposition`) inside the caller's tenant and confidential
 scope; every denial, expiry, cancellation or foreign item fails closed before
 the row is read. It is never part of a list DTO, inbox row, review page,
 log line, checkpoint name, telemetry or error message.
+Publication and reads also reject a persisted `captured` record with
+`redacted: false`; capture text must be marked as processed by a configured
+host hook.
 
 **Retention and deletion.** It follows the item. There is no separate delete
 API: `expire`, `sweepRetention` and the `repairDeletions` retry of an

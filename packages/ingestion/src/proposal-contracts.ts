@@ -98,7 +98,8 @@ export interface ProposalConfiguration extends DecisionSettings {
   limits: GenerationLimits;
   /**
    * Opt-in, bounded, redacted capture of the model output on a failed
-   * interpretation attempt (#4285). Off when absent. Not public read
+   * interpretation attempt (#4285). Text requires a host redactor; absent or
+   * failed redaction retains no text. Off when absent. Not public read
    * configuration: it never enters frozen configuration, digests or
    * `proposalReadConfiguration`. See PROPOSALS.md.
    */

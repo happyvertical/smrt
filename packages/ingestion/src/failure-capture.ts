@@ -28,13 +28,14 @@ export interface FailureCaptureConfiguration {
    */
   maxBytes?: number;
   /**
-   * Optional host redaction. It receives the text (cut to the larger of the
-   * generation `maxOutputBytes` and `maxBytes`) and returns the text to store. When it
-   * throws, returns a non-string or exceeds the generation timeout, nothing is
-   * stored except `status: 'redaction_failed'`; the attempt's own failure is
-   * recorded as usual. The hook gets at most half of the analysis lease left
-   * when it starts (never more than `timeoutMs`), so the authority recheck and
-   * publication that follow it keep the rest.
+   * Host redaction is required to retain text. A missing hook stores only
+   * `status: 'redaction_failed'`, without materializing the candidate text.
+   * The hook receives text cut to the larger of `maxOutputBytes` and `maxBytes`.
+   * Throwing, returning a non-string or exceeding the asynchronous wait budget
+   * also stores only that marker; the attempt's real failure is preserved.
+   * The wait budget is at most half the remaining lease and `timeoutMs`.
+   * It cannot preempt synchronous work or cancel the hook: hosts must provide
+   * bounded, nonblocking redaction and own its semantic redaction policy.
    */
   redact?(input: {
     text: string;
@@ -106,6 +107,18 @@ export async function prepareFailureCapture(
 ): Promise<StoredFailureCapture | undefined> {
   if (config?.enabled !== true) return undefined;
   const maxBytes = config.maxBytes ?? FAILURE_CAPTURE_DEFAULT_MAX_BYTES;
+  const hook = config.redact;
+  const base = {
+    version: 1 as const,
+    source: candidate.source,
+    redacted: !!hook,
+    maxBytes,
+    capturedAt: bounds.now.toISOString(),
+  };
+  // A hook is a prerequisite for retaining text, not a built-in sanitizer.
+  // Do not even materialize raw output without it or an asynchronous budget.
+  if (!hook || bounds.timeoutMs < 1)
+    return { ...base, status: 'redaction_failed', truncated: false };
   let raw: string;
   try {
     raw = candidate.text();
@@ -113,41 +126,28 @@ export async function prepareFailureCapture(
     return undefined;
   }
   if (typeof raw !== 'string' || !raw.length) return undefined;
-  const base = {
-    version: 1 as const,
-    source: candidate.source,
-    redacted: !!config.redact,
-    maxBytes,
-    capturedAt: bounds.now.toISOString(),
-  };
   const input = truncateUtf8(raw, Math.max(bounds.inputBytes, maxBytes));
   let text = input.text;
-  const hook = config.redact;
-  // No time left to redact: store nothing rather than unredacted text.
-  if (hook && bounds.timeoutMs < 1)
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const redacted = await Promise.race([
+      Promise.resolve().then(() =>
+        hook.call(config, { text: input.text, source: candidate.source }),
+      ),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('timeout')),
+          bounds.timeoutMs,
+        );
+      }),
+    ]);
+    if (typeof redacted !== 'string') throw new Error('invalid');
+    text = redacted;
+  } catch {
+    // The hook's error may itself quote the text: it is never kept.
     return { ...base, status: 'redaction_failed', truncated: false };
-  if (hook) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const redacted = await Promise.race([
-        Promise.resolve().then(() =>
-          hook.call(config, { text: input.text, source: candidate.source }),
-        ),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('timeout')),
-            bounds.timeoutMs,
-          );
-        }),
-      ]);
-      if (typeof redacted !== 'string') throw new Error('invalid');
-      text = redacted;
-    } catch {
-      // The hook's error may itself quote the text: it is never kept.
-      return { ...base, status: 'redaction_failed', truncated: false };
-    } finally {
-      clearTimeout(timer);
-    }
+  } finally {
+    clearTimeout(timer);
   }
   const stored = truncateUtf8(storable(text), maxBytes);
   return {
@@ -174,7 +174,7 @@ export function storedFailureCapture(
     !Number.isSafeInteger(record.maxBytes) ||
     typeof record.capturedAt !== 'string' ||
     (record.status === 'captured'
-      ? typeof record.text !== 'string'
+      ? typeof record.text !== 'string' || record.redacted !== true
       : record.text !== undefined)
   )
     return undefined;

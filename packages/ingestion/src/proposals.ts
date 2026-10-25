@@ -977,9 +977,9 @@ export class IngestionProposalService {
       if (candidate && this.failureCapture?.enabled === true)
         capture = await prepareFailureCapture(this.failureCapture, candidate, {
           inputBytes: this.config.limits.maxOutputBytes,
-          // The hook may use at most half of the lease still left, so the
-          // later authority recheck and publication keep the other half: a
-          // slow hook can never cost the failed attempt its record.
+          // Reserve half the lease for the later recheck/publication while
+          // awaiting the host hook. Timers cannot preempt synchronous host
+          // code; redactors must perform bounded, nonblocking work.
           timeoutMs: this.failureCapture.redact
             ? Math.min(
                 this.config.limits.timeoutMs,

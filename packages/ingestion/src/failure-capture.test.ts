@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   FAILURE_CAPTURE_DEFAULT_MAX_BYTES,
   prepareFailureCapture,
+  storedFailureCapture,
   truncateUtf8,
 } from './failure-capture.js';
 
@@ -57,6 +58,7 @@ describe('failed-attempt capture bounds (#4285)', () => {
   });
   it('is off unless enabled, skips empty text and defaults its cap', async () => {
     const candidate = { source: 'raw_response' as const, text: () => 'body' };
+    const redact = ({ text }: { text: string }) => text;
     expect(await prepareFailureCapture(undefined, candidate, bounds)).toBe(
       undefined,
     );
@@ -65,19 +67,56 @@ describe('failed-attempt capture bounds (#4285)', () => {
     ).toBe(undefined);
     expect(
       await prepareFailureCapture(
-        { enabled: true },
+        { enabled: true, redact },
         { source: 'raw_response', text: () => '' },
         bounds,
       ),
     ).toBe(undefined);
     expect(
-      await prepareFailureCapture({ enabled: true }, candidate, bounds),
+      await prepareFailureCapture({ enabled: true, redact }, candidate, bounds),
     ).toMatchObject({
       status: 'captured',
       text: 'body',
-      redacted: false,
+      redacted: true,
       maxBytes: FAILURE_CAPTURE_DEFAULT_MAX_BYTES,
     });
+  });
+  it.each([
+    'raw_response',
+    'generated_output',
+  ] as const)('does not materialize %s without a redactor', async (source) => {
+    const text = vi.fn(() => 'confidential model output');
+    const capture = await prepareFailureCapture(
+      { enabled: true },
+      { source, text },
+      bounds,
+    );
+    expect(capture).toEqual({
+      version: 1,
+      source,
+      status: 'redaction_failed',
+      truncated: false,
+      redacted: false,
+      maxBytes: FAILURE_CAPTURE_DEFAULT_MAX_BYTES,
+      capturedAt: now.toISOString(),
+    });
+    expect(text).not.toHaveBeenCalled();
+  });
+  it('rejects unredacted persisted capture text', () => {
+    const capture = {
+      version: 1,
+      source: 'raw_response',
+      status: 'captured',
+      text: 'host-redacted output',
+      truncated: false,
+      redacted: true,
+      maxBytes: 16384,
+      capturedAt: now.toISOString(),
+    };
+    expect(storedFailureCapture(capture)).toEqual(capture);
+    expect(
+      storedFailureCapture({ ...capture, redacted: false }),
+    ).toBeUndefined();
   });
   it('never calls the hook without time left and never throws', async () => {
     const redact = vi.fn(({ text }: { text: string }) => text);
@@ -91,7 +130,7 @@ describe('failed-attempt capture bounds (#4285)', () => {
     expect(redact).not.toHaveBeenCalled();
     expect(
       await prepareFailureCapture(
-        { enabled: true },
+        { enabled: true, redact },
         {
           source: 'generated_output',
           text: () => {

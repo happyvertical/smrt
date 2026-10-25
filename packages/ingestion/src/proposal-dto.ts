@@ -174,13 +174,13 @@ export interface FailedAttemptCapture {
   itemId: string;
   attemptId: string;
   source: FailedAttemptCaptureSource;
-  /** `redaction_failed`: the host hook failed, so no text was stored. */
+  /** `redaction_failed`: the host hook was missing or failed; no text stored. */
   status: FailedAttemptCaptureStatus;
   /** Redacted, bounded text; present only when `status` is `captured`. */
   text?: string;
   /** The text was cut at `maxBytes` (or at the generation output bound). */
   truncated: boolean;
-  /** A host redaction hook was configured for this capture. */
+  /** A hook was configured; the host owns its semantic redaction policy. */
   redacted: boolean;
   maxBytes: number;
   capturedAt: string;
