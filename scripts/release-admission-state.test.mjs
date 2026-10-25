@@ -150,7 +150,7 @@ test('bounded timeout before publication can reopen while retaining unresolved a
   const timeout = { type: 'timeout', owner, nowMs: 1100 };
   const reopened = transition(state, timeout);
   assert.equal(reopened.phase, 'open');
-  assert.deepEqual(reopened.admitted, [{ sha: group, disposition: 'pending', grant: null }]);
+  assert.deepEqual(reopened.admitted, [{ sha: group, disposition: 'pending', grant: null, windowGrantId: null }]);
   assert.equal(transition(reopened, timeout), reopened);
   assert.equal(transition(qualifying(), { type: 'abort', owner }).phase, 'open');
   rejects(qualifying(), { ...publish, nowMs: 1100 }, 'window-expired');
@@ -314,7 +314,7 @@ test('a close that loses the CAS race refreshes and retains the newly admitted S
   ]);
   const state = (await store.read()).state;
   assert.equal(state.phase, 'draining');
-  assert.deepEqual(state.admitted, [{ sha: replacement, disposition: 'pending', grant: null }]);
+  assert.deepEqual(state.admitted, [{ sha: replacement, disposition: 'pending', grant: null, windowGrantId: null }]);
 });
 
 test('CAS conflicts are bounded and missing state is never initialized implicitly', async () => {
@@ -358,4 +358,29 @@ test('status grant reservation is exclusive, owner-bound and blocks resolution u
   state = transition(state, { type: 'finishGrant', sha: group, grant });
   state = transition(state, observe());
   assert.equal(transition(state, freeze).phase, 'qualifying');
+});
+
+test('window acknowledgement identity is CAS-bound, legacy-safe and cleared at both boundaries', () => {
+  const grant = { id: 'a'.repeat(32), runId: 100, runAttempt: 1, validationRunId: 200 };
+  let state = transition(createReleaseAdmissionState({ repository }), { type: 'reserveGrant', sha: group, grant });
+  assert.equal(state.admitted[0].windowGrantId, grant.id);
+  state = transition(state, { type: 'finishGrant', sha: group, grant });
+  assert.equal(state.admitted[0].windowGrantId, grant.id);
+  const newer = { ...grant, id: 'b'.repeat(32) };
+  // A reservation that observed no acknowledgement cannot replace one that won a concurrent CAS.
+  assert.equal(transition(state, { type: 'reserveGrant', sha: group, grant: newer, observedWindowGrantId: null }), state);
+  state = transition(state, { type: 'reserveGrant', sha: group, grant: newer, observedWindowGrantId: grant.id });
+  rejects(state, { type: 'cancelGrant', sha: group, grant }, 'status-grant-owner-mismatch');
+  const closed = transition(state, close);
+  assert.equal(closed.admitted[0].windowGrantId, null);
+  const reopened = transition(closed, { type: 'abort', owner });
+  const finished = transition(reopened, { type: 'finishGrant', sha: group, grant: newer });
+  assert.equal(finished.admitted[0].windowGrantId, null);
+  const cancelled = transition(state, { type: 'cancelGrant', sha: group, grant: newer });
+  assert.equal(cancelled.admitted[0].grant, null);
+  assert.equal(cancelled.admitted[0].windowGrantId, null);
+  const legacy = structuredClone(state); delete legacy.admitted[0].windowGrantId;
+  validateReleaseAdmissionState(legacy);
+  assert.deepEqual(transition(legacy, { type: 'finishGrant', sha: group, grant: newer }).admitted[0],
+    { sha: group, disposition: 'pending', grant: null });
 });

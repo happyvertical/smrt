@@ -127,3 +127,35 @@ Baseline measured; after timings pending. No optimization or reuse decision is
 considered validated merely because its unit tests pass. Exact-revision review,
 documented repository validation, and representative live CI evidence remain
 required before declaring #4306 complete.
+
+## Accepted admission review fixes: test design
+
+| Behavior/invariant | Reachable trigger | Positive case | Negative/failure case | Actor/context | Executor/transaction | Runtime | External edge | Level/command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| One acknowledged grant per unchanged head and open window | Repeated PR/group reconciliation | Live validation plus latest authenticated App success reuses the saved nonce | Newer pending, wrong App/context/nonce, close/reopen, or legacy missing window identity requires fresh admission | Trusted controller and release App; unrelated writers cannot authenticate a grant | Protected Git-state CAS; reservation retries cannot replace a newly acknowledged nonce | Node | GitHub reverse-chronological status inventory and quota | Controller/state tests; `node --test scripts/release-admission*.test.mjs` |
+| Status write failure retains exactly the required fence | POST fails after reservation | Definitive HTTP 4xx rejection cancels only its exact grant | Network, redirect, 5xx and malformed success remain unsettled; failed pending revocation never freezes | Release App writer; terminated exact writer for manual acknowledgement | Exact-grant CAS; close/reopen clears reuse identity but retains unknown writes | Node | GitHub status POST response and independent writer/status evidence | Forge/controller/state tests; owning command above |
+| Uninterrupted drain observes concurrent acknowledgement | close polls while green POST settles | Same invocation refreshes and revokes before freeze | Owner/attempt/phase changes stop the old closer before status writes | Exact Batched Release owner | Fresh protected state read per poll; owner-checked CAS | Node | Delayed status acknowledgement and queue refs | Controller test; owning command above |
+| Retry does not consume redundant pending statuses | Closed callback or drain retry | Latest authenticated identical pending status is reused | Different status, unauthenticated writer or failed revocation cannot count as success | Release App/context/SHA | Read-only status inventory before POST; unknown failure remains fail closed | Node | GitHub status quota | Controller tests; owning command above |
+
+These are targeted regressions for the accepted blockers; no SQL dialect or
+browser execution is involved because this protocol uses GitHub/Git CAS only.
+
+Accepted-fix evidence on 2026-10-25, based on `d3d9a3b44e01` plus the
+uncommitted admission review patch:
+
+- The final nine selected regression cases all fail against the original
+  implementation copied from `d3d9a3b44` (exit 1), including repeated PR/group
+  reconciliation, acknowledgement during uninterrupted drain, owner replacement,
+  stale reservation races, window boundaries and definitive rejection cleanup.
+- `node --test scripts/release-admission*.test.mjs`: **80 passed**, zero failures.
+- `pnpm test:ci-scripts`: **437 passed** in eight suites, zero failures/skips,
+  exit 0. `git diff --check` passed.
+- These commands used Node 26.10.0 / pnpm 11.25.0, CPU affinity 0–3 at nice 10,
+  scratch `/home/will/Work/tmp/smrt-4306-review` for `TMPDIR`, `TMP`, `TEMP` and
+  `CI_TEST_TMPDIR`, and the documented system Chromium executable
+  `/run/current-system/sw/bin/chromium`. No builds, containers, registry/GitHub
+  writes, or heavy root/package suites were run for this targeted follow-up.
+- Local logs: `/tmp/smrt-4306-admission-final-baseline.log`,
+  `/tmp/smrt-4306-admission-after.log`, and
+  `/tmp/smrt-4306-ci-scripts-review-fixes.log`. Independent exact-patch review
+  remains the next gate; these local checks do not replace rollout evidence.

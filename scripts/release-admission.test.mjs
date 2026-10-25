@@ -35,6 +35,7 @@ function fixture() {
     ['actions/runs/30/artifacts', recoveryArtifacts.map((artifact) => ({ ...artifact, expired: false, workflow_run: { id: 30 } }))],
     [`git/commits/${group}`, { sha: group, parents: [{ sha: snapshot }] }],
     [`compare/${group}...${snapshot}`, { status: 'ahead' }],
+    [`commits/${group}/statuses`, []],
     ...rules.map((rule) => [`rulesets/${rule.id}`, structuredClone(rule)]),
   ]);
   const store = {
@@ -49,7 +50,14 @@ function fixture() {
     async list(path) { if (path === 'rulesets') return structuredClone(rules); checkResponse(path); return structuredClone(responses.get(path)); },
     async main() { return { protected: true, commit: { sha: mainSha } }; },
     async groups() { return structuredClone(refs); },
-    async status(head, status) { events.push(`status:${status}`); assert.equal(head, group); },
+    async status(head, status, description) {
+      events.push(`status:${status}`); assert.equal(head, group);
+      const statuses = responses.get(`commits/${head}/statuses`);
+      const result = { id: (statuses[0]?.id ?? 0) + 1, context: CONTEXT, state: status, description,
+        creator: { id: 244849939, login: 'have-release-bot[bot]', type: 'Bot' },
+        url: `https://api.github.com/repos/${REPOSITORY}/statuses/${head}` };
+      statuses.unshift(result); return structuredClone(result);
+    },
   };
   function checkResponse(path) { assert.ok(responses.has(path), `Unexpected request ${path}`); }
   const controller = createController({ store, forge, grantOwner: { runId: 300, runAttempt: 1 }, now: () => 100, sleep: async () => { throw new Error('must not wait'); } });
@@ -392,7 +400,7 @@ test('disappear then freeze revokes green before same queue SHA reappears', asyn
   f.events.length = 0;
   await f.controller.admit(20);
   await f.controller.admit(20);
-  assert.deepEqual(f.events, ['status:pending', 'status:pending']);
+  assert.deepEqual(f.events, ['status:pending']);
   assert.equal(f.state.phase, 'qualifying');
 });
 
@@ -406,7 +414,7 @@ test('duplicate validation completion after publishing/recovery cannot regrant d
   f.state = transition(f.state, { type: 'abort', owner });
   await f.controller.admit(20);
   assert.equal(f.state.phase, 'recovery');
-  assert.deepEqual(f.events, ['status:pending', 'status:pending']);
+  assert.deepEqual(f.events, ['status:pending']);
 });
 
 test('failed drained-head status revocation prevents resolution and snapshot freeze', async () => {
@@ -559,4 +567,194 @@ test('ack-grant rejects missing/forged evidence, live writers and mismatched sav
     await assert.rejects(f.controller.ackGrant(options), /evidence missing|writer must|identity mismatch/);
     assert.deepEqual(f.state.admitted[0].grant, grant);
   }
+});
+
+test('repeated PR and group reconciliation reuses one acknowledged window status', async () => {
+  for (const isPr of [false, true]) {
+    const f = fixture(); if (isPr) makePr(f);
+    f.responses.set('pulls?state=open&base=main', isPr ? [f.responses.get('pulls/5')] : []);
+    f.responses.set(`actions/workflows/on-pull-request.yml/runs?head_sha=${group}&status=success`, [f.responses.get('actions/runs/20')]);
+    await f.controller.reconcile();
+    const revision = f.state.revision;
+    for (let index = 0; index < 4; index++) await f.controller.reconcile();
+    assert.equal(f.events.filter((event) => event === 'status:success').length, 1);
+    assert.equal(f.state.revision, revision);
+    assert.match(f.state.admitted[0].windowGrantId, /^[a-f0-9]{32}$/);
+  }
+});
+
+test('latest authenticated pending overrides historical grant success and pending retries dedupe', async () => {
+  const f = fixture(); await f.controller.admit(20);
+  const oldId = f.state.admitted[0].windowGrantId;
+  await f.forge.status(group, 'pending', 'Release window closed; awaiting admission');
+  await f.controller.admit(20);
+  assert.notEqual(f.state.admitted[0].windowGrantId, oldId);
+  f.state = transition(f.state, { type: 'close', owner, nowMs: 100, timeoutMs: 1000 });
+  f.state = transition(f.state, { type: 'observeGroup', owner, facts: { authenticated: true, repository: REPOSITORY, sha: group, refExists: false, disposition: 'deleted' } });
+  f.events.length = 0;
+  await f.controller.admit(20); await f.controller.admit(20);
+  assert.deepEqual(f.events, ['status:pending']);
+});
+
+test('one uninterrupted close observes a delayed grant acknowledgement', async () => {
+  const f = fixture();
+  let releasePost; let entered;
+  const posting = new Promise((resolve) => { entered = resolve; });
+  const original = f.forge.status;
+  f.forge.status = async (...args) => {
+    if (args[1] === 'success') { entered(); await new Promise((resolve) => { releasePost = resolve; }); }
+    return original(...args);
+  };
+  const admission = f.controller.admit(20); await posting; f.refs = [];
+  let polls = 0;
+  const closer = createController({ store: f.store, forge: f.forge, now: () => 100,
+    sleep: async () => { assert.equal(++polls, 1, 'drain failed to refresh acknowledged grant'); releasePost(); await admission; } });
+  await closer.close(owner);
+  assert.equal(f.state.phase, 'qualifying');
+  assert.ok(f.events.indexOf('status:success') < f.events.indexOf('status:pending'));
+});
+
+test('old close stops when its owner changes during a grant poll', async () => {
+  const f = fixture();
+  f.forge.status = async () => { throw new Error('unknown'); };
+  await assert.rejects(f.controller.admit(20), /unknown/); f.refs = [];
+  let polls = 0;
+  const closer = createController({ store: f.store, forge: f.forge, now: () => 100,
+    sleep: async () => {
+      assert.equal(++polls, 1, 'unexpected extra poll');
+      f.state = transition(f.state, { type: 'abort', owner });
+      f.state = transition(f.state, { type: 'close', owner: { ...owner, runAttempt: 2 }, nowMs: 100, timeoutMs: 1000 });
+    } });
+  await assert.rejects(closer.close(owner), /owner/);
+  assert.equal(f.state.owner.runAttempt, 2);
+});
+
+test('late old-window grant finish and manual acknowledgement cannot seed reopened window reuse', async () => {
+  for (const manual of [false, true]) {
+    const { f, grant, options } = await strandedGrant();
+    assert.equal(f.state.admitted[0].windowGrantId, grant.id);
+    f.state = transition(f.state, { type: 'close', owner, nowMs: 100, timeoutMs: 1000 });
+    f.state = transition(f.state, { type: 'abort', owner });
+    if (manual) await f.controller.ackGrant(options);
+    else f.state = transition(f.state, { type: 'finishGrant', sha: group, grant });
+    assert.equal(f.state.admitted[0].windowGrantId, null);
+  }
+});
+
+test('definitive status rejection cancels exact grant while ambiguous POST remains fenced', async () => {
+  for (const status of [403, 422, 408, 500, 302, 'network', 'malformed']) {
+    const f = fixture();
+    const api = createForge({ readToken: 'read', writeToken: 'app', fetchImpl: async () => {
+      if (status === 'network') throw new Error('network unknown');
+      return { ok: status === 'malformed', status: status === 'malformed' ? 201 : status,
+        json: async () => ({}) };
+    } });
+    f.forge.status = api.status;
+    await assert.rejects(f.controller.admit(20));
+    assert.equal(f.state.admitted[0].grant === null, [403, 422].includes(status), String(status));
+    if ([403, 422].includes(status)) assert.equal(f.state.admitted[0].windowGrantId, null);
+  }
+});
+
+test('reservation losing to concurrent completed acknowledgement never posts its own nonce', async () => {
+  const f = fixture();
+  const original = f.store.compareAndSwap;
+  let raced = false;
+  const winner = { id: 'e'.repeat(32), runId: 301, runAttempt: 1, validationRunId: 20 };
+  f.store.compareAndSwap = async (revision, next) => {
+    if (!raced) {
+      raced = true;
+      f.state = transition(f.state, { type: 'reserveGrant', sha: group, grant: winner });
+      await f.forge.status(group, 'success', `Validated admission grant ${winner.id}`);
+      f.state = transition(f.state, { type: 'finishGrant', sha: group, grant: winner });
+      return false;
+    }
+    return original(revision, next);
+  };
+  await f.controller.admit(20);
+  assert.equal(f.events.filter((event) => event === 'status:success').length, 1);
+  assert.equal(f.state.admitted[0].windowGrantId, winner.id);
+  assert.equal(f.state.admitted[0].grant, null);
+});
+
+test('reuse requires live validation and exact latest App status identity', async () => {
+  for (const mutate of [
+    (f) => { f.responses.get(`commits/${group}/statuses`)[0].creator.id = 15368; },
+    (f) => { f.responses.get(`commits/${group}/statuses`)[0].context = 'Required CI'; },
+    (f) => { f.responses.get(`commits/${group}/statuses`)[0].description = `Validated admission grant ${'f'.repeat(32)}`; },
+    (f) => { f.responses.get(`commits/${group}/statuses`)[0].url = `https://api.github.com/repos/${REPOSITORY}/statuses/${snapshot}`; },
+    (f) => { f.responses.set(`commits/${group}/statuses`, []); },
+    (f) => { delete f.state.admitted[0].windowGrantId; },
+  ]) {
+    const f = fixture(); await f.controller.admit(20); mutate(f);
+    await f.controller.admit(20);
+    assert.equal(f.events.filter((event) => event === 'status:success').length, 2);
+  }
+  const f = fixture(); await f.controller.admit(20);
+  const initial = f.forge.groups; let reads = 0;
+  f.forge.groups = async () => ++reads === 1 ? initial() : [];
+  await assert.rejects(f.controller.admit(20), /Stale/);
+  assert.equal(f.events.filter((event) => event === 'status:success').length, 1);
+});
+
+test('reopen requires a fresh nonce even when previous successful status is unchanged', async () => {
+  const f = fixture(); await f.controller.admit(20);
+  const before = f.state.admitted[0].windowGrantId;
+  f.state = transition(f.state, { type: 'close', owner, nowMs: 100, timeoutMs: 1000 });
+  f.state = transition(f.state, { type: 'abort', owner });
+  await f.controller.admit(20);
+  assert.notEqual(f.state.admitted[0].windowGrantId, before);
+  assert.equal(f.events.filter((event) => event === 'status:success').length, 2);
+});
+
+test('manual acknowledgement of historical success cannot bypass later pending revocation', async () => {
+  const { f, options } = await strandedGrant();
+  // Append a newer pending status using this fixture's actual inventory.
+  f.responses.get(`commits/${group}/statuses`).unshift({
+    ...f.responses.get(`commits/${group}/statuses`)[0], id: 91, state: 'pending', description: 'revoked',
+  });
+  await f.controller.ackGrant(options);
+  let posts = 0;
+  f.forge.status = async () => { posts++; };
+  await f.controller.admit(20);
+  assert.equal(posts, 1);
+  assert.notEqual(f.state.admitted[0].windowGrantId, options.grantId);
+});
+
+test('exhausted status quota still blocks drain when pending revocation is rejected', async () => {
+  const f = fixture(); await f.controller.admit(20); f.refs = [];
+  f.forge.status = createForge({ readToken: 'read', writeToken: 'app', fetchImpl: async () => ({ ok: false, status: 422 }) }).status;
+  await assert.rejects(f.controller.close(owner), /422/);
+  assert.equal(f.state.phase, 'draining');
+  assert.equal(f.state.admitted[0].disposition, 'pending');
+  assert.equal(f.state.snapshotSha, null);
+});
+
+test('definitive rejection cleanup cannot clear a different concurrent reservation', async () => {
+  const f = fixture();
+  let originalGrant;
+  f.forge.status = async () => {
+    originalGrant = structuredClone(f.state.admitted[0].grant);
+    f.state = transition(f.state, { type: 'cancelGrant', sha: group, grant: originalGrant });
+    f.state = transition(f.state, { type: 'reserveGrant', sha: group, grant: { ...originalGrant, id: 'f'.repeat(32) } });
+    throw Object.assign(new Error('rejected'), { statusWriteRejected: true });
+  };
+  await assert.rejects(f.controller.admit(20), /status-grant-owner-mismatch/);
+  assert.equal(f.state.admitted[0].grant.id, 'f'.repeat(32));
+});
+
+test('definitive rejection crossing close clears its exact fence without restoring window identity', async () => {
+  const f = fixture();
+  const original = f.forge.status;
+  f.forge.status = async () => {
+    f.state = transition(f.state, { type: 'close', owner, nowMs: 100, timeoutMs: 1000 });
+    throw Object.assign(new Error('quota rejected'), { statusWriteRejected: true });
+  };
+  await assert.rejects(f.controller.admit(20), /quota rejected/);
+  assert.equal(f.state.phase, 'draining');
+  assert.equal(f.state.admitted[0].grant, null);
+  assert.equal(f.state.admitted[0].windowGrantId, null);
+  f.forge.status = original; f.refs = [];
+  await f.controller.close(owner);
+  assert.equal(f.state.phase, 'qualifying');
 });

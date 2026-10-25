@@ -87,7 +87,13 @@ export function validateReleaseAdmissionState(state) {
     new Set(state.requiredRegistries).size === state.requiredRegistries.length, 'invalid-registries');
   requireFact(phases.includes(state.phase), 'invalid-phase');
   requireFact(Array.isArray(state.admitted) && state.admitted.length <= MAX_ADMITTED_GROUPS, 'invalid-admitted-list');
-  requireFact(state.admitted.every((group) => plain(group) && Object.keys(group).length === 3 && sha(group.sha) && validGrant(group.grant) &&
+  // Version 1 states written before window acknowledgements have three fields.
+  // Missing identity means no reusable acknowledgement, never an inferred one.
+  requireFact(state.admitted.every((group) => plain(group) &&
+    (Object.keys(group).length === 3 || (Object.keys(group).length === 4 && Object.hasOwn(group, 'windowGrantId') &&
+      (group.windowGrantId === null || (typeof group.windowGrantId === 'string' && /^[a-f0-9]{32}$/.test(group.windowGrantId))))) &&
+    sha(group.sha) && validGrant(group.grant) &&
+    (group.windowGrantId == null || (state.phase === 'open' && (group.grant === null || group.grant.id === group.windowGrantId))) &&
     (group.disposition === 'pending' || group.grant === null) &&
     ['pending', 'merged', 'deleted'].includes(group.disposition)) &&
     new Set(state.admitted.map((group) => group.sha)).size === state.admitted.length, 'invalid-admitted-group');
@@ -127,7 +133,8 @@ function authentic(state, facts) {
 
 function reopen(state, outcome = 'aborted') {
   return {
-    ...state, phase: 'open', admitted: state.admitted.filter((group) => group.disposition === 'pending'),
+    ...state, phase: 'open', admitted: state.admitted.filter((group) => group.disposition === 'pending')
+      .map((group) => ({ ...group, windowGrantId: null })),
     owner: null, deadlineMs: null, snapshotSha: null, release: null,
     lastWindow: { owner: state.owner, deadlineMs: state.deadlineMs, outcome },
   };
@@ -166,19 +173,27 @@ export function transitionReleaseAdmission(state, operation) {
       let group = next.admitted.find((entry) => entry.sha === operation.sha);
       if (!group) {
         requireFact(state.admitted.length < MAX_ADMITTED_GROUPS, 'admission-capacity');
-        group = { sha: operation.sha, disposition: 'pending', grant: null };
+        group = { sha: operation.sha, disposition: 'pending', grant: null, windowGrantId: null };
         next.admitted.push(group);
       }
       requireFact(group.disposition === 'pending', 'admission-closed');
       requireFact(group.grant === null || same(group.grant, operation.grant), 'status-grant-unsettled');
+      // A concurrent writer may have completed since this caller observed the
+      // window. Only a caller that observed the exact acknowledgement may replace it.
+      if ((group.windowGrantId ?? null) !== (operation.observedWindowGrantId ?? null)) return state;
       group.grant = { ...operation.grant };
+      group.windowGrantId = operation.grant.id;
       break;
     }
-    case 'finishGrant': {
+    case 'finishGrant':
+    case 'cancelGrant': {
       requireFact(sha(operation.sha) && operation.grant !== null && validGrant(operation.grant), 'invalid-status-grant');
       const group = next.admitted.find((entry) => entry.sha === operation.sha);
       requireFact(group && group.disposition === 'pending' && same(group.grant, operation.grant), 'status-grant-owner-mismatch');
       group.grant = null;
+      // A close/reopen or a legacy grant has no current-window identity. A late
+      // acknowledgement must never restore one; only reservation establishes it.
+      if (operation.type === 'cancelGrant') group.windowGrantId = null;
       break;
     }
     case 'close': {
@@ -190,6 +205,7 @@ export function transitionReleaseAdmission(state, operation) {
       requireFact(integer(operation.nowMs) && integer(operation.timeoutMs) && operation.timeoutMs > 0 &&
         operation.timeoutMs <= MAX_WINDOW_MS && integer(operation.nowMs + operation.timeoutMs), 'invalid-window');
       next.phase = 'draining';
+      next.admitted = next.admitted.map((group) => ({ ...group, windowGrantId: null }));
       next.owner = { runId: operation.owner.runId, runAttempt: operation.owner.runAttempt };
       next.deadlineMs = operation.nowMs + operation.timeoutMs;
       break;

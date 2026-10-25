@@ -16,6 +16,10 @@ const grantDescription = (id) => `Validated admission grant ${id}`;
 const WORKFLOW = '.github/workflows/on-pull-request.yml';
 const check = (condition, code) => { if (!condition) throw new Error(code); };
 const sha = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+const appStatus = (status, head) => Number.isSafeInteger(status?.id) && status.id > 0 &&
+  status.context === CONTEXT && status.creator?.id === RELEASE_APP_BOT_ID &&
+  status.creator.login === 'have-release-bot[bot]' && status.creator.type === 'Bot' &&
+  status.url === `https://api.github.com/repos/${REPOSITORY}/statuses/${head}`;
 
 export function createForge({ readToken, writeToken, fetchImpl = fetch }) {
   check(readToken && writeToken && readToken !== writeToken, 'Separate GITHUB_TOKEN and RELEASE_GITHUB_TOKEN are required');
@@ -29,10 +33,15 @@ export function createForge({ readToken, writeToken, fetchImpl = fetch }) {
     });
     if (missing && response.status === 404) return null;
     if (!response.ok) {
+      const rejected = (message) => Object.assign(new Error(message), {
+        // A received 4xx rejection can settle this POST, except request timeout.
+        // Transport errors, redirects and 5xx also leave the outcome unknown.
+        statusWriteRejected: method === 'POST' && path.startsWith('statuses/') && response.status >= 400 && response.status < 500 && response.status !== 408,
+      });
       if (method === 'POST' && path.startsWith('statuses/') && [403, 404].includes(response.status)) {
-        throw new Error('Release App requires statuses:write (App 2315871); do not substitute the Actions token');
+        throw rejected('Release App requires statuses:write (App 2315871); do not substitute the Actions token');
       }
-      throw new Error(`GitHub request rejected (${response.status})`);
+      throw rejected(`GitHub request rejected (${response.status})`);
     }
     return response.json();
   }
@@ -53,9 +62,13 @@ export function createForge({ readToken, writeToken, fetchImpl = fetch }) {
     request, list,
     main: () => request('branches/main'),
     groups: () => list('git/matching-refs/heads/gh-readonly-queue/main/'),
-    status: (head, state, description) => request(`statuses/${head}`, {
-      method: 'POST', body: { state, context: CONTEXT, description },
-    }),
+    status: async (head, state, description) => {
+      const result = await request(`statuses/${head}`, {
+        method: 'POST', body: { state, context: CONTEXT, description },
+      });
+      check(appStatus(result, head) && result.state === state && result.description === description, 'Status POST acknowledgement malformed; result unknown');
+      return result;
+    },
   };
 }
 
@@ -73,15 +86,37 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     return ref;
   }
   async function grantGreen(head, validationRunId, revalidate) {
+    const existing = (await state()).admitted.find((entry) => entry.sha === head);
+    const observedWindowGrantId = existing?.windowGrantId ?? null;
+    if (existing?.grant === null && observedWindowGrantId !== null) {
+      await revalidate();
+      const latest = await latestAppStatus(head);
+      if (latest?.state === 'success' && latest.description === grantDescription(observedWindowGrantId)) return state();
+    }
     const grant = { id: randomBytes(16).toString('hex'), runId: grantOwner.runId, runAttempt: grantOwner.runAttempt, validationRunId };
-    await update({ type: 'reserveGrant', sha: head, grant });
+    const reserved = await update({ type: 'reserveGrant', sha: head, grant, observedWindowGrantId });
+    if (reserved.admitted.find((entry) => entry.sha === head)?.grant?.id !== grant.id) return reserved;
     try { await revalidate(); } catch (error) {
       // No POST was attempted, so releasing this reservation is safe.
-      await update({ type: 'finishGrant', sha: head, grant });
+      await update({ type: 'cancelGrant', sha: head, grant });
       throw error;
     }
-    await forge.status(head, 'success', grantDescription(grant.id));
+    try { await forge.status(head, 'success', grantDescription(grant.id)); } catch (error) {
+      if (error.statusWriteRejected === true) await update({ type: 'cancelGrant', sha: head, grant });
+      throw error;
+    }
     return update({ type: 'finishGrant', sha: head, grant });
+  }
+  async function latestAppStatus(head) {
+    const statuses = await forge.list(`commits/${head}/statuses`);
+    // Only the latest relevant authenticated status represents current state;
+    // finding a historical matching success would ignore a later revocation.
+    return statuses.filter((status) => appStatus(status, head)).sort((left, right) => right.id - left.id)[0];
+  }
+  async function pending(head, description) {
+    const latest = await latestAppStatus(head);
+    if (latest?.state === 'pending' && latest.description === description) return;
+    await forge.status(head, 'pending', description);
   }
   async function admit(runId) {
     check(Number.isSafeInteger(runId) && runId > 0, 'Invalid source run ID');
@@ -97,7 +132,7 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
         // Preserve already admitted work while draining, but never issue a new
         // green POST from a closed window that can race with drain revocation.
         if (current.phase === 'draining' && existing?.disposition === 'pending') return current;
-        await forge.status(run.head_sha, 'pending', 'Release window closed; awaiting admission');
+        await pending(run.head_sha, 'Release window closed; awaiting admission');
         return current;
       }
       return grantGreen(run.head_sha, run.id, () => liveGroup(run));
@@ -110,7 +145,7 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     check(pr.state === 'open' && pr.base?.ref === 'main' && pr.base?.repo?.full_name === REPOSITORY && pr.head?.repo?.full_name === REPOSITORY && pr.head.sha === run.head_sha, 'Stale, forked or unverifiable PR validation head');
     const current = await state();
     if (current.phase !== 'open') {
-      await forge.status(run.head_sha, 'pending', 'Release window closed; awaiting admission');
+      await pending(run.head_sha, 'Release window closed; awaiting admission');
       return current;
     }
     return grantGreen(run.head_sha, run.id, async () => {
@@ -141,6 +176,9 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     let current = await update({ type: 'close', owner, nowMs: now(), timeoutMs: timeoutMinutes * 60_000 });
     const drainDeadline = Math.min(current.deadlineMs, now() + drainMinutes * 60_000);
     while (current.phase === 'draining') {
+      current = await state();
+      check(current.owner?.runId === owner.runId && current.owner?.runAttempt === owner.runAttempt, 'Release window owner mismatch during drain');
+      if (current.phase !== 'draining') break;
       const groups = await forge.groups();
       const main = await forge.main();
       check(main.protected === true, 'Protected main required');
@@ -151,7 +189,7 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
         if (!refExists) {
           // Squash queue commits need not survive in main's ancestry. The live
           // ref's disappearance resolves this admission without stale Git lookup.
-          await forge.status(group.sha, 'pending', 'Queue admission drained; a new window must revalidate this head');
+          await pending(group.sha, 'Queue admission drained; a new window must revalidate this head');
           disposition = 'deleted';
         }
         current = await update({ type: 'observeGroup', owner, facts: { authenticated: true, repository: REPOSITORY, sha: group.sha, refExists, disposition } });

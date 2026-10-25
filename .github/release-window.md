@@ -126,6 +126,14 @@ executes no candidate artifacts when deciding admission.
 PR heads: a PR head can reuse a former synthetic queue commit. Each status write
 first reserves an exclusive grant containing its nonce, controller run/attempt
 and validation run, then acknowledges that grant only after the POST returns.
+The per-head `windowGrantId` records that nonce separately from the in-flight
+`grant`. Repeated admission of an unchanged head reuses its acknowledgement only
+after live validation and verification that the latest authenticated release
+App status for this SHA/context is that exact nonce-bearing success. Historical
+success cannot override a newer pending status. Concurrent reservations that
+observe an older acknowledgement cannot replace a newly completed one or post
+another success. Closed-window and drain retries also reuse an identical latest
+App pending status instead of repeatedly consuming the SHA/context status quota.
 Closing atomically records the owning Batched Release run ID/attempt and this
 finite SHA inventory, then enters `draining`. New PR/group grants wait without
 extending the inventory. Existing queue refs must disappear; absent queue heads
@@ -136,6 +144,15 @@ An in-flight grant prevents resolution and freezing even if its queue ref has
 disappeared. This orders delayed green writes before drain revocation; a state
 read alone cannot order a remote status POST. A lost acknowledgement remains
 visible and blocks the drain rather than being silently cleared on timeout.
+Each drain poll refreshes durable state and checks its exact owner/phase, so an
+acknowledgement can unblock the same uninterrupted drain invocation. Closing and
+reopening both clear `windowGrantId`; a late writer or manual acknowledgement
+may settle its saved grant but cannot establish reuse in a later window.
+
+Persisted schema-version 1 entries without `windowGrantId` remain readable and
+retain any unsettled grant. Missing identity means no reusable acknowledgement;
+the next validated admission must reserve a fresh nonce. No inferred success or
+automatic clearing of an existing grant is part of this compatibility path.
 
 The current workflow allows **90 minutes total before publication** and
 **30 minutes to drain**. Once every admitted queue ref has disappeared,
@@ -186,6 +203,16 @@ terminated writer independently and requires the exact nonce-bearing success
 status from release App bot **244849939**, with the expected repository/SHA
 URL and `Release Admission` context. It then acknowledges the saved grant
 through CAS; it never reposts green or changes ownership.
+
+A directly observed HTTP 4xx rejection of a success POST, excluding request
+timeout (408), cancels only that request's exact saved grant and clears its
+reuse identity. This includes quota
+rejection (422) and missing permission (403); the command still fails and the
+underlying quota/permission problem still needs correction. Request timeouts,
+network failures, redirects, 5xx responses and malformed success acknowledgements leave the grant
+unsettled because the write outcome is unknown. If an already exhausted SHA
+cannot accept the pending revocation needed to drain, the window stays blocked;
+the controller never treats rejection as successful revocation.
 
 If that success was never recorded, its origin cannot be verified, or the
 writer is still active, acknowledgement is refused. Keep the grant intact:
