@@ -9,6 +9,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { AIClient } from '@happyvertical/ai';
+import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
@@ -17,6 +19,9 @@ import { ObjectRegistry, smrt } from '../registry.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
+
+// Canonical instance injection prevents provider/env/file configuration fallback.
+const fixtureAi = { embed: async () => [] } as unknown as AIClient;
 
 function createManifest(
   projectRoot: string,
@@ -229,7 +234,7 @@ describe('generated SvelteKit helper runtime', () => {
   const originalScopedDbGetter = globalThis.__smrtGetRequestScopedDatabase;
   let projectRoot = '';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -255,11 +260,29 @@ describe('generated SvelteKit helper runtime', () => {
     );
     writeWorkspaceCoreShim(projectRoot);
     writeWorkspaceTenancyShim(projectRoot);
+    const fixtureConfig = join(projectRoot, 'smrt.config.json');
+    writeFileSync(
+      fixtureConfig,
+      JSON.stringify({
+        ai: {
+          provider: 'openai',
+          apiKeyEnv: 'SMRT_AI_API_KEY',
+          baseUrl: 'http://127.0.0.1:9',
+          model: 'fixture-model',
+        },
+      }),
+    );
+    await loadConfig({
+      configPath: fixtureConfig,
+      searchParents: false,
+      cache: false,
+    });
     initializeGitRepository(projectRoot);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    clearCache();
 
     if (originalScopedDbGetter) {
       globalThis.__smrtGetRequestScopedDatabase = originalScopedDbGetter;
@@ -950,6 +973,267 @@ describe('generated SvelteKit helper runtime', () => {
     expect(JSON.stringify(contexts[0])).not.toContain('forged');
   });
 
+  it('initializes the exact cross-package collection resource without rebuilding its item namespace (#4320)', async () => {
+    const restore = snapshotObjectRegistryState();
+    const itemKey = '@fixture/model4320:RouteItem4320';
+    const resourceKey = '@fixture/resource4320:RouteResource4320';
+    class RouteItem4320 extends SmrtObject {}
+    class DecoyItem4320 extends SmrtObject {}
+    Object.defineProperty(DecoyItem4320, 'name', { value: 'RouteItem4320' });
+    class ItemCollection4320 extends SmrtCollection<RouteItem4320> {
+      static readonly _itemClass = RouteItem4320;
+    }
+    class RouteResource4320 extends ItemCollection4320 {
+      async inspect() {
+        return { count: await this.count(), receiver: this.constructor.name };
+      }
+      static async peek() {
+        return { receiver: this.name };
+      }
+      async submit() {
+        return { count: await this.count() };
+      }
+    }
+    let db:
+      | Awaited<
+          ReturnType<typeof import('../testing/database.js')['getTestDatabase']>
+        >
+      | undefined;
+    const state = globalThis as Record<string, unknown>;
+    try {
+      smrt({
+        packageName: '@fixture/model4320',
+        tableName: 'route_items_4320',
+        collection: 'routeitems4320',
+        api: { include: ['list', 'get'] },
+      })(RouteItem4320);
+      smrt({
+        packageName: '@fixture/decoy4320',
+        tableName: 'decoy_items_4320',
+        api: false,
+      })(DecoyItem4320);
+      smrt({
+        packageName: '@fixture/resource4320',
+        collection: 'routeresources4320',
+        api: {
+          include: ['inspect', 'peek', 'submit'],
+          routes: {
+            inspect: { method: 'GET' },
+            peek: { method: 'GET' },
+            submit: { method: 'POST' },
+          },
+        },
+        cli: { include: ['inspect', 'peek', 'submit'] },
+      })(RouteResource4320);
+      expect(
+        ObjectRegistry.getClassByConstructor(RouteItem4320)?.qualifiedName,
+      ).toBe(itemKey);
+      expect(
+        ObjectRegistry.getClassByConstructor(DecoyItem4320)
+          ?.collectionConstructor,
+      ).toBeUndefined();
+      ObjectRegistry.registerCollection(itemKey, ItemCollection4320);
+      const { getTestDatabase } = await import('../testing/database.js');
+      db = await getTestDatabase({ classes: [itemKey] });
+      await db.insert('route_items_4320', {
+        id: '00000000-0000-4000-8000-000000004320',
+        slug: 'owned',
+        context: '',
+      });
+      state.__smrt4320Core = await import('../index.js');
+      state.__smrt4320Constructors = {
+        RouteItem4320,
+        RouteResource4320,
+        ItemCollection4320,
+      };
+      state.__smrt4320Db = db;
+      state.__smrt4320Ai = fixtureAi;
+      state.__smrt4320FactoryKeys = [];
+      state.__smrt4320Instances = [];
+      // The emitted module receives the actual core exports and registry, not
+      // a mocked factory. It must construct and initialize against this DB.
+      writeFileSync(
+        join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
+        `export const { ObjectRegistry, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied } = globalThis.__smrt4320Core;`,
+      );
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      writeFileSync(
+        objectFilePath,
+        'export const { RouteItem4320, RouteResource4320, ItemCollection4320 } = globalThis.__smrt4320Constructors;',
+      );
+      const method = (name: string, isStatic = false) => ({
+        name,
+        isStatic,
+        isPublic: true,
+        async: true,
+        returnType: 'Promise<unknown>',
+        parameters: [],
+      });
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/resource4320',
+        objects: {
+          [itemKey]: {
+            className: 'RouteItem4320',
+            name: 'RouteItem4320',
+            qualifiedName: itemKey,
+            packageName: '@fixture/model4320',
+            collection: 'routeitems4320',
+            fields: {},
+            methods: {},
+            filePath: objectFilePath,
+            decoratorConfig: {
+              tableName: 'route_items_4320',
+              api: { include: ['list', 'get'] },
+            },
+          },
+          '@fixture/model4320:ItemCollection4320': {
+            className: 'ItemCollection4320',
+            name: 'ItemCollection4320',
+            qualifiedName: '@fixture/model4320:ItemCollection4320',
+            packageName: '@fixture/model4320',
+            collection: 'routeitems4320',
+            extends: 'SmrtCollection',
+            extendsTypeArg: itemKey,
+            fields: {},
+            methods: {},
+            filePath: objectFilePath,
+            decoratorConfig: { api: false },
+          },
+          [resourceKey]: {
+            className: 'RouteResource4320',
+            name: 'RouteResource4320',
+            qualifiedName: resourceKey,
+            packageName: '@fixture/resource4320',
+            collection: 'routeresources4320',
+            extends: 'ItemCollection4320',
+            extendsQualified: '@fixture/model4320:ItemCollection4320',
+            fields: {},
+            methods: {
+              inspect: method('inspect'),
+              peek: method('peek', true),
+              submit: method('submit'),
+            },
+            filePath: objectFilePath,
+            decoratorConfig: {
+              api: {
+                include: ['inspect', 'peek', 'submit'],
+                routes: {
+                  inspect: { method: 'GET' },
+                  peek: { method: 'GET' },
+                  submit: { method: 'POST' },
+                },
+              },
+              cli: { include: ['inspect', 'peek', 'submit'] },
+            },
+          },
+        },
+      };
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      writeFileSync(
+        join(projectRoot, 'src/lib/server/smrt.ts'),
+        `import {ObjectRegistry} from '@happyvertical/smrt-core'; export const runtime = { classOptions(){ return {db:globalThis.__smrt4320Db,ai:globalThis.__smrt4320Ai}; }, async getCollection(name){ globalThis.__smrt4320FactoryKeys.push(name); const value = await ObjectRegistry.getCollection(name,{db:globalThis.__smrt4320Db,ai:globalThis.__smrt4320Ai}); globalThis.__smrt4320Instances.push(value); return value; } };`,
+      );
+      const inspect = await bundleGeneratedRoute(
+        'src/routes/api/routeresources4320/inspect/+server.ts',
+        'cross-package-inspect.mjs',
+      );
+      const request = (path: string, method = 'GET') =>
+        new Request(`http://localhost/api/${path}`, { method });
+      await expect(
+        inspect.GET({
+          locals: {},
+          request: request('routeresources4320/inspect'),
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(state.__smrt4320FactoryKeys).toEqual([]);
+      const response = await inspect.GET({
+        locals: { user: { id: 'human' } },
+        request: request('routeresources4320/inspect'),
+      });
+      expect(response.status, JSON.stringify(state.__smrt4320FactoryKeys)).toBe(
+        200,
+      );
+      expect(await response.json()).toMatchObject({
+        result: { count: 1, receiver: 'RouteResource4320' },
+      });
+      expect(state.__smrt4320FactoryKeys).toEqual([resourceKey]);
+      const [actual] =
+        state.__smrt4320Instances as SmrtCollection<SmrtObject>[];
+      expect(actual).toBeInstanceOf(RouteResource4320);
+      expect(actual.db).toBe(db);
+      expect(actual.tableName).toBe('route_items_4320');
+      expect(
+        ObjectRegistry.getClassByConstructor(RouteItem4320)?.qualifiedName,
+      ).toBe(itemKey);
+      expect(
+        ObjectRegistry.getClass('@fixture/resource4320:RouteItem4320'),
+      ).toBeUndefined();
+      const peek = await bundleGeneratedRoute(
+        'src/routes/api/routeresources4320/peek/+server.ts',
+        'cross-package-peek.mjs',
+      );
+      expect(
+        await (
+          await peek.GET({
+            locals: { user: { id: 'service' } },
+            request: request('routeresources4320/peek'),
+          })
+        ).json(),
+      ).toMatchObject({ result: { receiver: 'RouteResource4320' } });
+      const submit = await bundleGeneratedRoute(
+        'src/routes/api/routeresources4320/submit/+server.ts',
+        'cross-package-submit.mjs',
+      );
+      await expect(
+        submit.POST({
+          locals: {
+            user: { id: 'actor' },
+            permissions: ['routeresources4320.submit'],
+          },
+          request: request('routeresources4320/submit', 'POST'),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(
+        (
+          await submit.POST({
+            locals: {
+              user: { id: 'actor' },
+              permissions: ['routeitems4320.submit'],
+            },
+            request: request('routeresources4320/submit', 'POST'),
+          })
+        ).status,
+      ).toBe(200);
+      const ordinary = await bundleGeneratedRoute(
+        'src/routes/api/routeitems4320/+server.ts',
+        'ordinary-model4320.mjs',
+      );
+      const listed = await ordinary.GET({
+        locals: { user: { id: 'human' } },
+        request: request('routeitems4320'),
+        url: new URL('http://localhost/api/routeitems4320'),
+      });
+      expect(listed.status).toBe(200);
+      expect(JSON.stringify(await listed.json())).toContain(
+        '00000000-0000-4000-8000-000000004320',
+      );
+      expect((state.__smrt4320FactoryKeys as string[]).at(-1)).toBe(itemKey);
+    } finally {
+      await db?.close?.();
+      restore();
+      for (const key of Object.keys(state))
+        if (key.startsWith('__smrt4320')) delete state[key];
+    }
+  });
+
   it('executes an explicitly named collection action through its real registered constructor and item authority', async () => {
     const restore = snapshotObjectRegistryState();
     class ActionItem4171 extends SmrtObject {}
@@ -986,6 +1270,7 @@ describe('generated SvelteKit helper runtime', () => {
       expect(key).toBe('@fixture/collection-actions:ActionItem4171');
       const actual = await ObjectRegistry.getCollection(key, {
         db: { type: 'sqlite', url: ':memory:' },
+        ai: fixtureAi,
       });
       (globalThis as Record<string, unknown>).__smrt4171Constructors = {
         ActionItem4171,
@@ -1055,7 +1340,12 @@ describe('generated SvelteKit helper runtime', () => {
       ).__smrtGeneratedCollectionResolver = (
         name: string,
         options: Parameters<typeof ObjectRegistry.getCollection>[1],
-      ) => ObjectRegistry.getCollection(name, { ...options, db: actual.db });
+      ) =>
+        ObjectRegistry.getCollection(name, {
+          ...options,
+          db: actual.db,
+          ai: fixtureAi,
+        });
       const route = await bundleGeneratedRoute(
         'src/routes/api/actionfacades/submit/+server.ts',
         'collection-action.mjs',
@@ -1109,11 +1399,11 @@ describe('generated SvelteKit helper runtime', () => {
         }),
       });
       expect(failed.status).toBe(409);
-      expect(
-        (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls,
-      ).toEqual([
-        [key, expect.any(Object)],
-        [key, expect.any(Object)],
+      const helperCalls = (globalThis as Record<string, unknown>)
+        .__smrtGeneratedHelperCalls as Array<[string, unknown]>;
+      expect(helperCalls.map(([name]) => name)).toEqual([
+        '@test/generated-helper-app:ActionFacade4171',
+        '@test/generated-helper-app:ActionFacade4171',
       ]);
     } finally {
       restore();

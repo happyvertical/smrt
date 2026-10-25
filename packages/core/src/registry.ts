@@ -4592,6 +4592,11 @@ export function smrt(config: SmartObjectConfig = {}) {
               ?.tableName || tableName;
         ObjectRegistry.register(itemClass, {
           ...config,
+          // The collection may belong to a different package. Its config must
+          // not move an already-registered item out of its declaring package.
+          packageName:
+            ObjectRegistry.getClassByConstructor(itemClass)?.packageName ??
+            config.packageName,
           tableName: itemTableName,
         });
 

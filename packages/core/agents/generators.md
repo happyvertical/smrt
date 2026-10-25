@@ -457,3 +457,15 @@ model-level validation, and regenerate RLS policies when adopting a changed
 binding.
 
 Custom actions retain the `{ action, result }` response envelope.
+
+## Collection-hosted REST factory identity (#4320)
+
+Generated collection custom-action handlers resolve their executable collection
+using the declaring resource's exact qualified registration key. Keep that
+factory key separate from the item model's qualified type/policy metadata:
+item collection slugs still govern permissions, and ordinary model routes keep
+their own factory lookup. A resource in another package must neither rebuild
+an item identity under its package nor steal the item's existing package when
+its collection decorator merges configuration. Registration and generated
+factory selection share one identity resolver; never install global aliases to
+repair an inferred or bundled class name.

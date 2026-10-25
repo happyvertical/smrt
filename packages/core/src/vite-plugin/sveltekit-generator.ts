@@ -215,6 +215,28 @@ function getRegistrationPackageName(
   return objectDef.packageName;
 }
 
+/** Use the same exact identity for collection registration and route factories. */
+function collectionResourceRegistryKey(
+  projectRoot: string,
+  className: string,
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): string {
+  const packageName = getRegistrationPackageName(
+    manifest,
+    objectDef,
+    isLocalObject(projectRoot, objectDef),
+  );
+  return (
+    objectDef.qualifiedName ||
+    (className.includes(':')
+      ? className
+      : packageName
+        ? `${packageName}:${extractSimpleClassName(className)}`
+        : className)
+  );
+}
+
 function toSingleQuotedStringLiteral(value: string): string {
   const jsonLiteral = JSON.stringify(value);
   const jsonContent = jsonLiteral.slice(1, -1).replaceAll("'", "\\'");
@@ -2289,16 +2311,12 @@ async function generateRegistrationFile(
           isLocalObject(projectRoot, objectDef)),
     )
     .map(([className, objectDef]) => {
-      const packageName = getRegistrationPackageName(
-        manifest,
+      const qualifiedName = collectionResourceRegistryKey(
+        projectRoot,
+        className,
         objectDef,
-        isLocalObject(projectRoot, objectDef),
+        manifest,
       );
-      const qualifiedName =
-        objectDef.qualifiedName ||
-        (packageName
-          ? `${packageName}:${extractSimpleClassName(className)}`
-          : className);
       const bindingName =
         registrationBindings.get(className) ||
         extractSimpleClassName(className);
@@ -3918,6 +3936,14 @@ function generateActionRouteTemplate(
           objectDef.decoratorConfig,
           spec.actionName,
         )?.action,
+        spec.hostType === 'collection'
+          ? collectionResourceRegistryKey(
+              projectRoot,
+              spec.hostClassName,
+              objectDef,
+              semanticManifest,
+            )
+          : undefined,
       ),
     )
     .join('\n');
@@ -3952,6 +3978,7 @@ function generateActionRouteHandler(
   lookupTypeName: string,
   hostTypeName: string,
   permissionAction?: string,
+  collectionRegistryKey = lookupClassName,
 ): string {
   const successResponse = `  return json({
     action: '${actionName}',
@@ -4009,9 +4036,9 @@ function generateActionRouteHandler(
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
   const publicJsonOptions = getPublicJsonOptions(locals);
-${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
+${generateCollectionLoad(collectionRegistryKey, { typeName: lookupTypeName })}
   const typedCollection = collection as unknown as ${hostTypeName};
-${generateCollectionNotRegisteredError(lookupClassName)}
+${generateCollectionNotRegisteredError(collectionRegistryKey)}
 ${staticTargetLoad}
 
 ${optionsLoad}${scopedOptions.source}  let result: unknown;
