@@ -4588,14 +4588,30 @@ function compactKnowledgePackage(pkg: KnowledgePackage) {
   };
 }
 
-/** Plain top-level names (`app`, `/app`, `app/`) listed in a package .gitignore. */
+/**
+ * Plain top-level names (`app`, `/app`, `app/`) a package .gitignore ignores.
+ * Lines apply in order, so a later `!name` un-ignores `name`, as in git. Other
+ * patterns, `.`/`..`, and dot-names are never treated as build outputs. An
+ * absent or unreadable .gitignore ignores nothing.
+ */
 function gitignoredTopLevelEntries(directory: string): Set<string> {
-  const path = join(directory, '.gitignore');
-  if (!existsSync(path)) return new Set();
-  return new Set(
-    readFileSync(path, 'utf8')
-      .split(/\r?\n/)
-      .map((line) => line.trim().replace(/^\/|\/$/g, ''))
-      .filter((line) => /^[\w.-]+$/.test(line)),
-  );
+  let text: string;
+  try {
+    text = readFileSync(join(directory, '.gitignore'), 'utf8');
+  } catch {
+    return new Set();
+  }
+  const ignored = new Set<string>();
+  for (const rawLine of text.split(/\r?\n/)) {
+    // Git ignores unescaped trailing spaces; leading ones are significant.
+    const line = rawLine.replace(/[ \t]+$/, '');
+    const negated = line.startsWith('!');
+    const name = (negated ? line.slice(1) : line)
+      .replace(/^\//, '')
+      .replace(/\/$/, '');
+    if (!/^\w[\w.-]*$/.test(name)) continue;
+    if (negated) ignored.delete(name);
+    else ignored.add(name);
+  }
+  return ignored;
 }
