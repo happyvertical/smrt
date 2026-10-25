@@ -329,10 +329,11 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
   };
   mutate({ doc, all, config, source });
   const command = async (name, args) => {
-    if (name === 'helm')
-      return args.includes('template')
-        ? 'rendered'
-        : JSON.stringify(doc.spec.values);
+    if (name === 'helm') {
+      if (args.includes('template')) return 'rendered';
+      config.fixtureAfterHelmValues?.();
+      return JSON.stringify(doc.spec.values);
+    }
     if (args.includes('create'))
       return JSON.stringify({ items: all.filter((o) => o.kind === 'Ingress') });
     if (args.includes('ocirepository'))
@@ -348,6 +349,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
     throw new Error('Unexpected tool operation');
   };
   const request = async (url) => {
+    config.fixtureDuringRequest?.();
     if (config.fixtureRequestError) throw new Error(config.fixtureRequestError);
     return new Response('healthy', {
       status:
@@ -1009,7 +1011,7 @@ test('documented CLI plan, apply-or-resume, status and recover dispatch through 
           phasesChecked.push(doc.spec.values.release.phase);
           return { bindings: 'unit-versions' };
         },
-        observe: async (doc) => evidence(doc),
+        observe: async (doc, revision) => ({ ...evidence(doc), revision }),
         cas: async (_, next) => {
           stored = next;
           writes++;
@@ -1570,4 +1572,106 @@ test('active recovery preserves target, then stopped requires repair before any 
     ],
     undefined,
   );
+});
+
+test('new release publication requires the exact accepted healthy predecessor', async (t) => {
+  const current = document('active');
+  const planned = planRelease(current, runtime, 'release-2');
+  for (const change of [
+    { accepted: false },
+    { proven: false },
+    { identity: 'other-runtime' },
+    { revision: 'other-revision' },
+  ]) {
+    await t.test(JSON.stringify(change), async () => {
+      await assert.rejects(
+        applyOrResume({}, {
+          read: async () => ({ document: current, revision: 'abc' }),
+          observe: async (doc, revision) => {
+            assert.equal(doc, current);
+            assert.equal(revision, 'abc');
+            return { ...evidence(doc), ...change };
+          },
+          preflight: async () => assert.fail('invalid predecessor must not preflight'),
+          cas: async () => assert.fail('invalid predecessor must not publish'),
+        }, { planned }),
+        /accepted healthy predecessor/,
+      );
+    });
+  }
+  let publications = 0;
+  await applyOrResume({}, {
+    read: async () => ({ document: current, revision: 'abc' }),
+    observe: async () => evidence(current),
+    preflight: async () => ({}),
+    cas: async (_, candidate) => {
+      publications++;
+      assert.equal(candidate.spec.values.release.phase, 'maintenance');
+      assert.deepEqual(candidate.spec.values.current, current.spec.values.target);
+    },
+  }, { planned });
+  assert.equal(publications, 1);
+});
+
+test('acknowledgement lost during phase proof cannot authorize recovery publication', async (t) => {
+  for (const phase of ['active', 'verify']) {
+    for (const boundary of ['after-initial-ack', 'healthy-http', 'failed-http']) {
+      await t.test(`${phase}: ${boundary}`, async () => {
+        const live = liveFixture(phase, ({ config, source }) => {
+          const moveSource = () => {
+            source.status.artifact.revision = 'main@sha1:moved';
+          };
+          if (boundary === 'after-initial-ack')
+            config.fixtureAfterHelmValues = moveSource;
+          else config.fixtureDuringRequest = moveSource;
+        }, boundary === 'failed-http' ? 500 : undefined);
+        await assert.rejects(
+          applyOrResume({}, {
+            ...live.adapter,
+            read: async () => ({ document: live.doc, revision: 'abc' }),
+            preflight: async () => assert.fail('lost acknowledgement must not preflight'),
+            cas: async () => assert.fail('lost acknowledgement must not publish'),
+          }, { recovery: phase === 'verify' }),
+          /exact Git revision/,
+          `${phase}: ${boundary}`,
+        );
+      });
+    }
+  }
+});
+
+test('live predecessor health gates new plans while existing recovery remains available', async (t) => {
+  for (const scenario of ['healthy', 'unhealthy', 'unaccepted']) {
+    await t.test(scenario, async () => {
+      const live = liveFixture('active', ({ source }) => {
+        if (scenario === 'unaccepted')
+          source.status.artifact.revision = 'main@sha1:stale';
+      }, scenario === 'unhealthy' ? 500 : 200);
+      const planned = planRelease(live.doc, runtime, 'release-2');
+      const publications = [];
+      const adapter = {
+        ...live.adapter,
+        read: async () => ({ document: live.doc, revision: 'abc' }),
+        preflight: async () => ({}),
+        cas: async (_, candidate) => publications.push(candidate),
+      };
+      if (scenario === 'healthy') {
+        await applyOrResume({}, adapter, { planned });
+        assert.equal(publications.length, 1);
+        assert.equal(publications[0].spec.values.release.id, 'release-2');
+      } else {
+        await assert.rejects(
+          applyOrResume({}, adapter, { planned }),
+          scenario === 'unhealthy' ? /accepted healthy predecessor/ : /exact Git revision/,
+        );
+        assert.equal(publications.length, 0);
+        if (scenario === 'unhealthy') {
+          await applyOrResume({}, adapter);
+          assert.equal(publications.length, 1);
+          assert.equal(publications[0].spec.values.release.id, 'release-1');
+          assert.equal(publications[0].spec.values.release.phase, 'maintenance');
+        }
+      }
+    });
+  }
 });

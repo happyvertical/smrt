@@ -266,6 +266,14 @@ export async function applyOrResume(
     );
     if (current) {
       const expected = planRelease(current, v.target, v.release.id);
+      const predecessor = await adapter.observe(current, snapshot.revision);
+      demand(
+        predecessor.accepted === true &&
+          predecessor.proven === true &&
+          predecessor.identity === identity(current) &&
+          predecessor.revision === snapshot.revision,
+        'New release requires an exact accepted healthy predecessor',
+      );
       demand(
         identity(expected) === identity(planned),
         'Plan does not preserve the complete current runtime',

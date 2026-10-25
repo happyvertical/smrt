@@ -681,9 +681,8 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         );
     }
   }
-  async function observe(document, revision, options = {}) {
+  async function provePhase(document, revision, options = {}) {
     const v = validate(document);
-    await acknowledge(document, revision, options);
     let failedMigration;
     const before = await bindings(document);
     demand(
@@ -940,7 +939,6 @@ export function createLiveAdapter(config, command = run, request = fetch) {
       before === (await bindings(document)),
       'Secret versions changed during observation',
     );
-    await acknowledge(document, revision, options);
     return {
       ...(failedMigration ? { failedMigration } : {}),
       accepted: true,
@@ -1032,13 +1030,13 @@ export function createLiveAdapter(config, command = run, request = fetch) {
     preflight,
     cas,
     observe: async (document, revision, options = {}) => {
-      if (options.allowFailedMigration)
-        return observe(document, revision, options);
-      await acknowledge(document, revision);
+      await acknowledge(document, revision, options);
+      let result;
       try {
-        return await observe(document, revision);
+        result = await provePhase(document, revision, options);
       } catch (error) {
-        return {
+        if (options.allowFailedMigration) throw error;
+        result = {
           accepted: true,
           proven: false,
           identity: identity(document),
@@ -1053,6 +1051,9 @@ export function createLiveAdapter(config, command = run, request = fetch) {
               : 'UNKNOWN_PROOF_FAILURE',
         };
       }
+      // Health failures can authorize recovery only while this exact phase is accepted.
+      await acknowledge(document, revision, options);
+      return result;
     },
   };
 }
