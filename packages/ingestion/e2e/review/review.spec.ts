@@ -752,6 +752,12 @@ test('same local file reselection starts a new upload while chooser cancellation
   const input = page.locator('input[type=file]');
   const picker = page.getByText('Choose intake files', { exact: true });
   const upload = page.getByRole('button', { name: 'Upload', exact: true });
+  async function uploadAndWait() {
+    const response = page.waitForResponse('**/api/upload');
+    await upload.click();
+    expect((await response).ok()).toBe(true);
+    await (await response).json();
+  }
   async function choose() {
     const chooser = page.waitForEvent('filechooser');
     await picker.click();
@@ -781,7 +787,7 @@ test('same local file reselection starts a new upload while chooser cancellation
 
   // Exact same path, name and bytes, selected through Chromium's native picker.
   await choose();
-  await upload.click();
+  await uploadAndWait();
   await expect.poll(() => requests.length).toBe(3);
   expect(requests[2].key).not.toBe(originalKey);
   await expect(page.getByTestId('intake-review')).toBeVisible();
@@ -797,7 +803,7 @@ test('same local file reselection starts a new upload while chooser cancellation
   ).toBe(1);
   await choose();
   await expect(upload).toBeEnabled();
-  await upload.click();
+  await uploadAndWait();
   await expect.poll(() => receipts.length).toBe(2);
   await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
     'aria-busy',

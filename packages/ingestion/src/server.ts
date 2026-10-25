@@ -26,9 +26,19 @@ import type {
   OwnProposalsInput,
   ReceiptResult,
 } from './dto.js';
-import { generationSnapshotRead, listReadGate } from './execution-internal.js';
+import {
+  analysisLeaseRemaining,
+  completeWithFailureCapture,
+  generationSnapshotRead,
+  listReadGate,
+} from './execution-internal.js';
 import { extractAnalysis } from './extraction.js';
 import { extractWithProviders } from './extraction-providers.js';
+import {
+  assertFailureCapture,
+  type StoredFailureCapture,
+  storedFailureCapture,
+} from './failure-capture.js';
 
 import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
@@ -548,7 +558,10 @@ export class IngestionService {
   private readonly cursorKey?: Buffer;
   private readonly dispatchTarget: IntakeDispatchTarget;
   constructor(private readonly options: IngestionOptions) {
-    if (options.proposals) assertProposalLimits(options.proposals.limits);
+    if (options.proposals) {
+      assertProposalLimits(options.proposals.limits);
+      assertFailureCapture(options.proposals.failureCapture);
+    }
     if (options.proposalRead) {
       assertProposalLimits(options.proposalRead.limits);
       if (
@@ -643,6 +656,15 @@ export class IngestionService {
   /** Reviewer and reason of a resolved item; requires reviewer authority. */
   async getItemDisposition(itemId: string) {
     return (await this.execution()).getItemDisposition(itemId);
+  }
+  /**
+   * The opt-in diagnostic capture of a failed interpretation attempt (#4285),
+   * or `null` when none was stored. Requires current reviewer authority for
+   * the item; denial, expiry and foreign scope fail closed. The attempt
+   * defaults to the item's current analysis attempt.
+   */
+  async getFailedAttemptCapture(itemId: string, attemptId?: string) {
+    return (await this.execution()).getFailedAttemptCapture(itemId, attemptId);
   }
   async previewPlan(input: PreviewPlanInput) {
     return (await this.execution()).previewPlan(input);
@@ -3361,6 +3383,45 @@ export class IngestionService {
     lease: AnalysisLease,
     output: AnalysisOutput,
   ): Promise<boolean> {
+    return this.publishAnalysis(lease, output);
+  }
+  /** Package-internal: generation publishes a failed attempt with its capture. */
+  async [completeWithFailureCapture](
+    lease: AnalysisLease,
+    output: AnalysisOutput,
+    capture: StoredFailureCapture | undefined,
+  ): Promise<boolean> {
+    return this.publishAnalysis(lease, output, capture);
+  }
+  /** Package-internal: time left on this exact running lease, for bounded host hooks. */
+  async [analysisLeaseRemaining](lease: AnalysisLease): Promise<number> {
+    return this.tx(async (db) => {
+      await this.item(lease.itemId, 'process', db);
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND analysis_id=? AND item_id=?',
+        [lease.attemptId, lease.analysisId, lease.itemId],
+      );
+      if (
+        !attempt ||
+        attempt.state !== 'running' ||
+        attempt.lease_token !== lease.token ||
+        Number(attempt.fence) !== lease.fence ||
+        !attempt.lease_until
+      )
+        return 0;
+      return Math.max(
+        0,
+        persistedDate(attempt.lease_until).getTime() - this.now().getTime(),
+      );
+    });
+  }
+  private async publishAnalysis(
+    lease: AnalysisLease,
+    output: AnalysisOutput,
+    capture?: StoredFailureCapture,
+  ): Promise<boolean> {
     if (
       !['completed', 'partial', 'failed', 'needs_attention'].includes(
         output.status,
@@ -3422,6 +3483,11 @@ export class IngestionService {
         ...object(attempt.data),
         ...output,
         completedAt: this.now().toISOString(),
+        // Beside the result, never in it: not digested, not in any snapshot,
+        // and only for a failed attempt (#4285). Deletion empties `data`.
+        ...(capture && output.error && storedFailureCapture(capture)
+          ? { failureCapture: capture }
+          : {}),
       };
       await db.query(
         'UPDATE intake_analysis_attempts SET state=?,output_digest=?,safe_error=?,confidence=?,data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
@@ -3970,6 +4036,11 @@ export {
   HANDLER_ARGUMENT_PATH_LIMIT,
 } from './argument-issues.js';
 export * from './extraction.js';
+export {
+  FAILURE_CAPTURE_DEFAULT_MAX_BYTES,
+  FAILURE_CAPTURE_MAX_BYTES,
+  type FailureCaptureConfiguration,
+} from './failure-capture.js';
 export type * from './feedback-contracts.js';
 export {
   GenerationSnapshotStaleError,
