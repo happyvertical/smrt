@@ -171,10 +171,15 @@ export function storedFailureCapture(
     !['captured', 'redaction_failed'].includes(String(record.status)) ||
     typeof record.truncated !== 'boolean' ||
     typeof record.redacted !== 'boolean' ||
+    typeof record.maxBytes !== 'number' ||
     !Number.isSafeInteger(record.maxBytes) ||
+    record.maxBytes < 1 ||
+    record.maxBytes > FAILURE_CAPTURE_MAX_BYTES ||
     typeof record.capturedAt !== 'string' ||
     (record.status === 'captured'
-      ? typeof record.text !== 'string' || record.redacted !== true
+      ? typeof record.text !== 'string' ||
+        record.redacted !== true ||
+        Buffer.byteLength(record.text, 'utf8') > record.maxBytes
       : record.text !== undefined)
   )
     return undefined;

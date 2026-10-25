@@ -422,7 +422,8 @@ the row is read. It is never part of a list DTO, inbox row, review page,
 log line, checkpoint name, telemetry or error message.
 Publication and reads also reject a persisted `captured` record with
 `redacted: false`; capture text must be marked as processed by a configured
-host hook.
+host hook. Persisted caps must remain within 1–65536 bytes, and captured text
+must fit its declared UTF-8 byte cap; malformed records fail closed.
 
 **Retention and deletion.** It follows the item. There is no separate delete
 API: `expire`, `sweepRetention` and the `repairDeletions` retry of an

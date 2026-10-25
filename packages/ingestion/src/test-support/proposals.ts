@@ -1152,6 +1152,51 @@ export function proposalSuite(
         );
         expect(await service.getFailedAttemptCapture(failed.itemId)).toBeNull();
       });
+      it.each([
+        ['zero cap', { maxBytes: 0 }],
+        ['negative cap', { maxBytes: -1 }],
+        ['above-ceiling cap', { maxBytes: 65_537 }],
+        ['text over cap', { maxBytes: 1, text: 'xx' }],
+        ['UTF-8 bytes over cap', { maxBytes: 2, text: '€' }],
+        ['text over ceiling', { maxBytes: 65_536, text: 'x'.repeat(65_537) }],
+      ] as const)('rejects %s at capture publication and persisted read', async (_name, invalid) => {
+        const capture = {
+          version: 1 as const,
+          source: 'generated_output' as const,
+          status: 'captured' as const,
+          text: retained,
+          truncated: false,
+          redacted: true,
+          capturedAt: clock.toISOString(),
+          ...invalid,
+        };
+        const failed = await generation();
+        expect(
+          await service[completeWithFailureCapture](
+            failed.lease,
+            {
+              provider: 'smrt-ingestion-proposals',
+              model: identity.model,
+              version: '1',
+              output: {},
+              usage: {},
+              status: 'partial',
+              error: 'malformed_output',
+            },
+            capture,
+          ),
+        ).toBe(true);
+        const data = await attemptData(failed.lease.attemptId);
+        expect(data.failureCapture).toBeUndefined();
+        expect(await service.getFailedAttemptCapture(failed.itemId)).toBeNull();
+        data.failureCapture = capture;
+        await db.query(
+          'UPDATE intake_analysis_attempts SET data=? WHERE id=?',
+          JSON.stringify(data),
+          failed.lease.attemptId,
+        );
+        expect(await service.getFailedAttemptCapture(failed.itemId)).toBeNull();
+      });
       it('bounds the redaction hook by the lease left, keeping the failed-attempt record', async () => {
         let hookCalls = 0;
         configuration.failureCapture = {

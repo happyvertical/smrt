@@ -118,6 +118,53 @@ describe('failed-attempt capture bounds (#4285)', () => {
       storedFailureCapture({ ...capture, redacted: false }),
     ).toBeUndefined();
   });
+  it.each([
+    -1,
+    0,
+    1.5,
+    65_537,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])('rejects persisted capture cap %s for either status', (maxBytes) => {
+    const capture = {
+      version: 1,
+      source: 'generated_output',
+      status: 'captured',
+      text: 'x',
+      truncated: false,
+      redacted: true,
+      maxBytes,
+      capturedAt: now.toISOString(),
+    };
+    expect(storedFailureCapture(capture)).toBeUndefined();
+    expect(
+      storedFailureCapture({
+        ...capture,
+        status: 'redaction_failed',
+        text: undefined,
+      }),
+    ).toBeUndefined();
+  });
+  it.each([
+    ['ASCII', 'a', 1],
+    ['three-byte character', '€', 3],
+    ['four-byte character', '😀', 4],
+    ['maximum cap', 'x'.repeat(65_536), 65_536],
+  ] as const)('enforces the exact UTF-8 boundary for %s', (_name, text, maxBytes) => {
+    const capture = {
+      version: 1,
+      source: 'generated_output',
+      status: 'captured',
+      text,
+      truncated: false,
+      redacted: true,
+      maxBytes,
+      capturedAt: now.toISOString(),
+    };
+    expect(storedFailureCapture(capture)).toEqual(capture);
+    expect(
+      storedFailureCapture({ ...capture, text: `${text}x` }),
+    ).toBeUndefined();
+  });
   it('never calls the hook without time left and never throws', async () => {
     const redact = vi.fn(({ text }: { text: string }) => text);
     expect(
