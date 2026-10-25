@@ -398,10 +398,12 @@ function closedResponseSchema(input: GenerativeProposalInput) {
           maxItems: 30,
           items: string,
         },
-        // Last, so a reply cut at the token limit has already emitted the
-        // arguments (#4331): xgrammar (any_order false, vLLM's default) and
-        // llguidance emit properties in this `properties` order. The bound
-        // equals the validator's, keeping the #4261 superset invariant.
+        // Pinned last (#4331), so explanation prose cannot precede the
+        // arguments: xgrammar (any_order false, vLLM's default) and
+        // llguidance emit properties in this `properties` order. A reply cut
+        // at the token limit is still refused below and never salvaged; the
+        // bound and the instruction are what keep replies under the limit.
+        // The bound equals the validator's (#4261 superset invariant).
         explanation: { type: 'string', maxLength: PROPOSAL_EXPLANATION_LIMIT },
       },
     };

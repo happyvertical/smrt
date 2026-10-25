@@ -312,9 +312,9 @@ export const PROPOSAL_EXPLANATION_LIMIT = 300;
 /**
  * Cut each over-long suggestion `explanation` in fresh generator output to
  * {@link PROPOSAL_EXPLANATION_LIMIT} code points, ending in an ellipsis, so a
- * verbose explanation never rejects the attempt (#4331). A grammar backend
- * already enforces the bound while decoding; this covers providers that ignore
- * the schema. Only string explanations are touched; anything else is left for
+ * verbose explanation never fails validation (#4331); the raw output-size
+ * checks still run first. A grammar backend already enforces the bound while
+ * decoding; this covers providers that ignore the schema. Only string explanations are touched; anything else is left for
  * the validator. The input is not mutated, and stored output is never re-cut.
  */
 export function boundGeneratedExplanations(raw: unknown): {

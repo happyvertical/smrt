@@ -1400,6 +1400,11 @@ describe('bounded generated explanations (#4331)', () => {
       /^This document is a request\. Wait, the rules say/,
     );
     expect(cutLong as string).toMatch(/\S\u2026$/);
+    // Code point 299 is a space: trailing whitespace goes before the ellipsis.
+    const spaced = `${'c'.repeat(PROPOSAL_EXPLANATION_LIMIT - 2)}   ${'d'.repeat(10)}`;
+    expect(
+      explanations(boundGeneratedExplanations(reply(spaced)).output),
+    ).toEqual([`${'c'.repeat(PROPOSAL_EXPLANATION_LIMIT - 2)}\u2026`]);
     // The generator's reply is not mutated, and the result validates.
     expect(raw).toEqual(before);
     expect(
