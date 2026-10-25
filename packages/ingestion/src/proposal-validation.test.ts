@@ -5,14 +5,17 @@ import type { ExtractionResult } from './extraction-types.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type { GenerationOutput } from './proposal-dto.js';
 import {
+  boundGeneratedExplanations,
   dedupeGeneratedLists,
   describeSchemaErrors,
   missingRequiredFields,
+  PROPOSAL_EXPLANATION_LIMIT,
   PROPOSAL_MISSING_FIELDS_LIMIT,
   PROPOSAL_REASON_LIMIT,
   PROPOSAL_REASON_MAX_ERRORS,
   ProposalValidationError,
   schemaOwnedPath,
+  suggestionSchema,
   validateSuggestions,
 } from './proposal-validation.js';
 
@@ -1335,5 +1338,92 @@ describe('invented candidate targets (#4289)', () => {
         ),
       ).reason,
     ).toBe('Unoffered target: /suggestions/0/args/vendorId');
+  });
+});
+
+describe('bounded generated explanations (#4331)', () => {
+  const reply = (...explanations: unknown[]) => ({
+    outcome: 'needs_review',
+    suggestions: explanations.map((explanation) => ({
+      handlerId: 'h',
+      handlerVersion: '1',
+      args: {},
+      evidence: [{ evidenceId: 'e', location: { kind: 'source' } }],
+      alternatives: [],
+      missingFields: [],
+      explanation,
+    })),
+    splits: [],
+  });
+  const points = (value: unknown) => Array.from(value as string).length;
+  const explanations = (output: unknown) =>
+    (
+      output as { suggestions: Array<{ explanation: unknown }> }
+    ).suggestions.map(({ explanation }) => explanation);
+
+  it('bounds the validator at the shared limit', () => {
+    expect(PROPOSAL_EXPLANATION_LIMIT).toBe(300);
+    const items = suggestionSchema(limits).properties.suggestions.items;
+    expect(items.properties.explanation).toEqual({
+      type: 'string',
+      maxLength: PROPOSAL_EXPLANATION_LIMIT,
+    });
+    const ajv = new Ajv({ strict: true, validateFormats: false });
+    const check = ajv.compile(suggestionSchema(limits));
+    expect(check(reply('x'.repeat(PROPOSAL_EXPLANATION_LIMIT)))).toBe(true);
+    expect(check(reply('x'.repeat(PROPOSAL_EXPLANATION_LIMIT + 1)))).toBe(
+      false,
+    );
+  });
+
+  it('cuts only over-long explanations, on a code-point boundary, and counts them', () => {
+    const atLimit = 'a'.repeat(PROPOSAL_EXPLANATION_LIMIT);
+    // A surrogate pair straddles the cut: it must stay whole or go whole.
+    const astral = `${'b'.repeat(PROPOSAL_EXPLANATION_LIMIT - 2)}\u{1F600}\u{1F600}\u{1F600}`;
+    const long = `This document is a request. Wait, ${'the rules say '.repeat(60)}`;
+    const raw = reply('Short.', atLimit, astral, long);
+    const before = structuredClone(raw);
+    const { output, truncated } = boundGeneratedExplanations(raw);
+    expect(truncated).toBe(2);
+    const [short, kept, cutAstral, cutLong] = explanations(output);
+    expect(short).toBe('Short.');
+    expect(kept).toBe(atLimit);
+    expect(points(cutAstral)).toBe(PROPOSAL_EXPLANATION_LIMIT);
+    expect(cutAstral).toBe(
+      `${'b'.repeat(PROPOSAL_EXPLANATION_LIMIT - 2)}\u{1F600}\u2026`,
+    );
+    expect(cutAstral as string).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/,
+    );
+    expect(points(cutLong)).toBeLessThanOrEqual(PROPOSAL_EXPLANATION_LIMIT);
+    expect(cutLong as string).toMatch(
+      /^This document is a request\. Wait, the rules say/,
+    );
+    expect(cutLong as string).toMatch(/\S\u2026$/);
+    // The generator's reply is not mutated, and the result validates.
+    expect(raw).toEqual(before);
+    expect(
+      new Ajv({ strict: true, validateFormats: false }).validate(
+        suggestionSchema(limits),
+        output,
+      ),
+    ).toBe(true);
+    // Idempotent: a bounded reply is left alone.
+    expect(boundGeneratedExplanations(output)).toEqual({
+      output,
+      truncated: 0,
+    });
+  });
+
+  it('passes non-string explanations and malformed input through for the validator', () => {
+    const raw = reply(42, null, undefined);
+    const { output, truncated } = boundGeneratedExplanations(raw);
+    expect(truncated).toBe(0);
+    expect(output).toEqual(raw);
+    for (const value of [null, 'x', [], { suggestions: 'x' }])
+      expect(boundGeneratedExplanations(value)).toEqual({
+        output: value,
+        truncated: 0,
+      });
   });
 });

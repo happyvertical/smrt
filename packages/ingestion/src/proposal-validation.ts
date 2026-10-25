@@ -265,7 +265,10 @@ export function suggestionSchema(limits: GenerationLimits) {
               maxItems: 30,
               items: string,
             },
-            explanation: { type: 'string', maxLength: 2000 },
+            explanation: {
+              type: 'string',
+              maxLength: PROPOSAL_EXPLANATION_LIMIT,
+            },
           },
         },
       },
@@ -294,6 +297,60 @@ export function suggestionSchema(limits: GenerationLimits) {
       },
     },
   };
+}
+/**
+ * Upper bound, in code points, on a suggestion's `explanation` (#4331). The
+ * fixed instructions ask for one or two plain sentences stating what the
+ * document is and why the handler fits; two such sentences run about 150-250
+ * characters, so 300 leaves headroom without letting a model spend its output
+ * budget on deliberation (roughly 75-100 tokens at most, against thousands
+ * for the arguments). The provider grammar and this validator use the same
+ * value, so the provider copy still accepts a superset of the validator
+ * (#4261); fresh output is cut to it first ({@link boundGeneratedExplanations}).
+ */
+export const PROPOSAL_EXPLANATION_LIMIT = 300;
+/**
+ * Cut each over-long suggestion `explanation` in fresh generator output to
+ * {@link PROPOSAL_EXPLANATION_LIMIT} code points, ending in an ellipsis, so a
+ * verbose explanation never rejects the attempt (#4331). A grammar backend
+ * already enforces the bound while decoding; this covers providers that ignore
+ * the schema. Only string explanations are touched; anything else is left for
+ * the validator. The input is not mutated, and stored output is never re-cut.
+ */
+export function boundGeneratedExplanations(raw: unknown): {
+  output: unknown;
+  truncated: number;
+} {
+  const suggestions = (raw as { suggestions?: unknown } | null)?.suggestions;
+  if (!raw || typeof raw !== 'object' || !Array.isArray(suggestions))
+    return { output: raw, truncated: 0 };
+  let truncated = 0;
+  const output = {
+    ...raw,
+    suggestions: suggestions.map((suggestion: unknown) => {
+      if (
+        !suggestion ||
+        typeof suggestion !== 'object' ||
+        Array.isArray(suggestion)
+      )
+        return suggestion;
+      const { explanation } = suggestion as { explanation?: unknown };
+      if (typeof explanation !== 'string') return suggestion;
+      // Code points, as Ajv's maxLength and the grammar count them; never
+      // split a surrogate pair.
+      const points = Array.from(explanation);
+      if (points.length <= PROPOSAL_EXPLANATION_LIMIT) return suggestion;
+      truncated += 1;
+      return {
+        ...(suggestion as Record<string, unknown>),
+        explanation: `${points
+          .slice(0, PROPOSAL_EXPLANATION_LIMIT - 1)
+          .join('')
+          .trimEnd()}\u2026`,
+      };
+    }),
+  };
+  return { output, truncated };
 }
 /**
  * Drop repeated `alternatives` and `missingFields` entries (by canonical JSON,

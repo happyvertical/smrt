@@ -7151,6 +7151,66 @@ export function proposalSuite(
       expect(gated.output.provenance).not.toHaveProperty('duplicatesRemoved');
       expect(gated.output.provenance).not.toHaveProperty('splitsDropped');
     });
+    it('cuts an over-long explanation instead of rejecting and records only the count (#4331)', async () => {
+      const verbose = (unoffered: boolean) => {
+        chooseCreate();
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          const value = response.output as {
+            suggestions: Array<{ handlerId: string; explanation: string }>;
+          };
+          value.suggestions[0].explanation = `Request form. Wait, ${'the rules say '.repeat(30)}`;
+          if (unoffered) value.suggestions[0].handlerId = 'unoffered';
+          return response;
+        });
+      };
+      chooseCreate();
+      const clean = await generate();
+      expect(clean.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+      verbose(false);
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.provenance.failure).toBeUndefined();
+      expect(input.output.provenance.explanationsTruncated).toBe(1);
+      const [suggestion] = input.output.suggestions;
+      expect(Array.from(suggestion.explanation).length).toBeLessThanOrEqual(
+        300,
+      );
+      expect(suggestion.explanation).toMatch(/^Request form\. Wait, /);
+      expect(suggestion.explanation.endsWith('\u2026')).toBe(true);
+      const published = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).result;
+      // The stored digest covers the bounded form; replay reads it as stored.
+      expect(
+        (
+          await db.query(
+            'SELECT output_digest FROM intake_analysis_attempts WHERE id=?',
+            [input.lease.attemptId],
+          )
+        ).rows[0].output_digest,
+      ).toBe(intakeBindingDigest(published));
+      // Discarded suggestions take the count with them.
+      verbose(true);
+      const rejected = await generate();
+      expect(rejected.output.outcome).toBe('provider_error');
+      expect(rejected.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+      verbose(false);
+      const maxOutputBytes = configuration.limits.maxOutputBytes;
+      configuration.limits.maxOutputBytes =
+        Buffer.byteLength(JSON.stringify(published)) - 1;
+      const limited = await generate();
+      configuration.limits.maxOutputBytes = maxOutputBytes;
+      expect(limited.output.warnings).toContain('output_limit');
+      expect(limited.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+    });
     it('drops an invalid split and keeps the suggestions instead of failing the attempt (#4288)', async () => {
       chooseCreate();
       const original = calls.getMockImplementation()!;

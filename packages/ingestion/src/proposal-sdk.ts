@@ -9,7 +9,10 @@ import type {
   GenerativeProposalInput,
   ProposalGenerator,
 } from './proposal-contracts.js';
-import { safeUsage } from './proposal-validation.js';
+import {
+  PROPOSAL_EXPLANATION_LIMIT,
+  safeUsage,
+} from './proposal-validation.js';
 import {
   attachRawProviderOutput,
   ProposalResponseError,
@@ -395,7 +398,11 @@ function closedResponseSchema(input: GenerativeProposalInput) {
           maxItems: 30,
           items: string,
         },
-        explanation: { type: 'string', maxLength: 2000 },
+        // Last, so a reply cut at the token limit has already emitted the
+        // arguments (#4331): xgrammar (any_order false, vLLM's default) and
+        // llguidance emit properties in this `properties` order. The bound
+        // equals the validator's, keeping the #4261 superset invariant.
+        explanation: { type: 'string', maxLength: PROPOSAL_EXPLANATION_LIMIT },
       },
     };
   });
