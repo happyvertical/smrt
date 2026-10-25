@@ -67,6 +67,7 @@ database coverage and ordinary-role PostgreSQL execution.
 | Packaged analytics renders over HTTP | Correct Svelte export returns successful HTTP | Broken export reproduces server failure | Built consumer process; DB N/A | Vite 7/8, Svelte SSR, published package exports | Existing `packages/core/src/consumer-plugin/analytics-context-packed-ssr.test.ts` |
 | SQLite process races retain assertions and bound child lifetime (#4310) | Three process-pair phases finish within the scoped integration budget | A stalled child is terminated within 15 seconds; cancellation must await actual child closure before removing its database directory | Independent uncached SQLite runtimes; unchanged transaction assertions | Node child processes and Vitest cancellation | Reactions package tests, controlled contention, stalled-child and live-child abort-order probes |
 | Hook budgets match declared test budgets (#4311) | All 33 affected effective Vitest project contexts have matching budgets | Non-inherited root settings cannot stand in for child-project budgets; unaffected analytics projects stay unchanged | Vitest configuration resolution; no DB transaction | Shared manifest-registration setup | Effective configuration proof plus types, mobile-contract and web suites |
+| Unmapped legacy-lease ancestry is isolated from application data (#3877 fixture repair) | Home-owned application fixtures serialize initialization and wait for a live legacy lease while `/tmp` reads as uid 65534 | Ambient `/tmp` fixtures previously failed application custody preflight before reaching lease assertions; ownership rejection remains unchanged | Independent SQLite initializer/legacy-holder processes; existing lease assertions retained | Mocked filesystem ownership; home fixture and legacy lease teardown | `pnpm --filter @happyvertical/smrt-app-runtime test src/local-runtime.test.ts`: 76 passed, 3 skipped with ambient `/tmp`; package typecheck passed |
 
 ## Reuse and scope constraints
 
@@ -114,6 +115,18 @@ Implementation validation on 2026-10-24:
   reaping. #4311 pairs hooks with already-declared test budgets, as required by
   `TESTING_STANDARD.md`; it changes no selection, retries, pools or assertions.
   Integrated full validation and independent review remain required.
+- The subsequent root run completed 115/121 Turbo tasks before app-runtime's
+  two unmapped-`/tmp` lease cases failed custody preflight: their application
+  data also lived under the mocked foreign-owned `/tmp`. The test-only repair
+  gives those two fixtures a home-owned parent and preserves runtime custody,
+  serialization, and legacy-lease assertions. The full targeted file passed
+  (76 passed, 3 skipped), package typechecking and source Biome checks passed,
+  and no home fixture remained after teardown. This check deliberately retained
+  ambient `tmpdir() === '/tmp'`; the documented owned-scratch profile in
+  `TESTING_STANDARD.md` avoids the original fixture collision and explains the
+  other session's passing run. Both repaired cases also passed with all four
+  documented scratch variables set to a fresh user-owned directory, which was
+  removed after the run. Integrated root validation is still required.
 
 Baseline measured; after timings pending. No optimization or reuse decision is
 considered validated merely because its unit tests pass. Exact-revision review,
