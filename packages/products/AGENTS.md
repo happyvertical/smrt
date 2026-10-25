@@ -121,6 +121,7 @@ If you had per-colorway / per-variant images attached via `ProductAsset` rows po
 ## Gotchas
 
 - **`ProductVariant` and `Sku` are NOT Product STI subtypes** — they each have their own table (`product_variants`, `product_skus`) because their shapes don't fit the Product schema. Don't try to query them via `ProductCollection`.
+- **Workspace install lifecycle**: `scripts/prepare.mjs` distinguishes unbuilt prerequisites from build errors; `pnpm test` runs real pnpm lifecycle fixtures before Vitest. See [install lifecycle and test contract](agents/install-lifecycle.md).
 - **`npm run build` emits the published library surface directly**: package consumers read model, collection, and helper exports from `dist/lib`. Cross-package imports from this package should target `/models` or `/collections` subpaths (not the main entry) when the consumer isn't a vite app — the main entry pulls in vite virtual modules.
 - **Use `npm run build:all` only when you need standalone or federation bundles** in addition to the library output
 - **Constructor must explicitly assign all properties**: `Object.assign` doesn't work reliably with decorators

@@ -13,7 +13,9 @@
     "dist/app",
     "dist/federation",
     "dist/lib",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents",
+    "scripts/prepare.mjs"
   ],
   "exports": {
     ".": {
@@ -112,13 +114,13 @@
     "start:federation": "node dist/federation/main.js",
     "preview": "vite preview",
     "prepack": "node ../../scripts/prepack-package.js",
-    "test": "vitest run",
+    "test": "node --test scripts/prepare.test.mjs && vitest run",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/price-field.postgres.test.ts",
     "test:watch": "vitest",
     "test:code-split": "node scripts/check-web-engine-code-split.mjs",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "clean": "rm -rf dist src/lib/types/smrt-generated",
-    "prepare": "if test -f ../core/dist/vite-plugin/index.js; then npm run build; else echo 'Skipping products build (smrt vite-plugin not available yet)'; fi"
+    "prepare": "node scripts/prepare.mjs"
   },
   "keywords": [
     "smrt",
