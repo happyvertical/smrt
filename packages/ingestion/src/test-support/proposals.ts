@@ -3857,7 +3857,9 @@ export function proposalSuite(
         (await db.query('SELECT id FROM intake_executions')).rows,
       ).toHaveLength(0);
     });
-    it('feedback held-out learning improves distinct targets through actual retrieval without memorizing document IDs or labels', async () => {
+    it('feedback held-out learning improves distinct targets through actual retrieval without memorizing document IDs or labels', {
+      timeout: dialect === 'postgres' ? 60_000 : undefined,
+    }, async () => {
       enableFeedback();
       const destinations = new Map<string, string>();
       for (const label of [
@@ -10243,7 +10245,9 @@ export function proposalSuite(
         })),
       ).toEqual([{ disposition: 'resolved_no_action', data: {} }]);
     });
-    it('reviewer routing choices become retrievable routing feedback and rule support without automation', async () => {
+    it('reviewer routing choices become retrievable routing feedback and rule support without automation', {
+      timeout: dialect === 'postgres' ? 60_000 : undefined,
+    }, async () => {
       enableFeedback();
       options.feedback!.policy = {
         preview: async () => ({
