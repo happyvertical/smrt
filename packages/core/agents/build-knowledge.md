@@ -121,6 +121,14 @@ that declares `svelte` anyway only loses an optional context import.
 Transitive-only object modules are loaded through `importSmrtDependency()`
 from their provider's context, which needs no root import.
 
+Selective SSR compilation compares a JavaScript barrel's `svelte` export target
+against the package instance visible from its actual importer. pnpm may install
+the same version in multiple peer contexts; the app-root package directory is
+not the identity of a transitive import. Read that importer's installed export
+map and root together, preserving exact target matching. Plain server entries
+remain external; do not fix peer-context resolution by deduplicating app
+packages or bundling every server export (#4318).
+
 Not covered by contract: a package whose root is a Svelte entry AND whose
 `@smrt()` objects are exported only from that root. The object loop must then
 import the root (it is the only module exporting the constructors) — statically

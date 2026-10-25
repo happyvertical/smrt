@@ -6,6 +6,14 @@ export const discoveryTransaction = Symbol('ingestion.discoveryTransaction');
 export const generationSnapshotRead = Symbol(
   'ingestion.generationSnapshotRead',
 );
+/** Publication that may also store a failed attempt's opt-in capture (#4285). */
+export const completeWithFailureCapture = Symbol(
+  'ingestion.completeWithFailureCapture',
+);
+/** Milliseconds left on a live analysis lease, 0 when it is no longer live (#4285). */
+export const analysisLeaseRemaining = Symbol(
+  'ingestion.analysisLeaseRemaining',
+);
 /** The read-only list gate the service applies per (item, handler); not public. */
 export const listReadGate = Symbol('ingestion.listReadGate');
 export type TransactionRunner<T> = (

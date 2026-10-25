@@ -215,6 +215,28 @@ function getRegistrationPackageName(
   return objectDef.packageName;
 }
 
+/** Use the same exact identity for collection registration and route factories. */
+function collectionResourceRegistryKey(
+  projectRoot: string,
+  className: string,
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): string {
+  const packageName = getRegistrationPackageName(
+    manifest,
+    objectDef,
+    isLocalObject(projectRoot, objectDef),
+  );
+  return (
+    objectDef.qualifiedName ||
+    (className.includes(':')
+      ? className
+      : packageName
+        ? `${packageName}:${extractSimpleClassName(className)}`
+        : className)
+  );
+}
+
 function toSingleQuotedStringLiteral(value: string): string {
   const jsonLiteral = JSON.stringify(value);
   const jsonContent = jsonLiteral.slice(1, -1).replaceAll("'", "\\'");
@@ -2011,7 +2033,7 @@ async function generateRegistrationFile(
 
       if (
         isCollectionManifestClass(manifest, objectDef) &&
-        !isCollectionActionResource(manifest, objectDef)
+        !hasGeneratedCollectionActions(manifest, objectDef)
       ) {
         packageEntry.hasCollectionImport = true;
       } else {
@@ -2062,7 +2084,7 @@ async function generateRegistrationFile(
 
     if (
       isCollectionManifestClass(manifest, objectDef) &&
-      !isCollectionActionResource(manifest, objectDef)
+      !hasGeneratedCollectionActions(manifest, objectDef)
     ) {
       localSideEffectImports.add(importPath);
       continue;
@@ -2284,21 +2306,17 @@ async function generateRegistrationFile(
   const collectionRegistrations = Object.entries(manifest.objects)
     .filter(
       ([, objectDef]) =>
-        isCollectionActionResource(manifest, objectDef) &&
+        hasGeneratedCollectionActions(manifest, objectDef) &&
         (!consumerOwnsExternalRegistration ||
           isLocalObject(projectRoot, objectDef)),
     )
     .map(([className, objectDef]) => {
-      const packageName = getRegistrationPackageName(
-        manifest,
+      const qualifiedName = collectionResourceRegistryKey(
+        projectRoot,
+        className,
         objectDef,
-        isLocalObject(projectRoot, objectDef),
+        manifest,
       );
-      const qualifiedName =
-        objectDef.qualifiedName ||
-        (packageName
-          ? `${packageName}:${extractSimpleClassName(className)}`
-          : className);
       const bindingName =
         registrationBindings.get(className) ||
         extractSimpleClassName(className);
@@ -2329,11 +2347,12 @@ ${
     ? `
 // Metadata only: collection constructors were installed by their decorators.
 ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}));
-// Preserve exact runtime identity alongside discovery metadata, without initialization.
-${collectionRegistrations}
 `
     : ''
-}`;
+}
+// Bind every generated REST action receiver, independently of discovery eligibility.
+${collectionRegistrations}
+`;
 
   // Create directory if it doesn't exist
   if (!existsSync(configDir)) {
@@ -2342,6 +2361,17 @@ ${collectionRegistrations}
 
   writeFileSync(registrationFilePath, registrationContent, 'utf-8');
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
+}
+
+/** REST action receivers need a live binding even when CLI discovery is closed. */
+function hasGeneratedCollectionActions(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  return (
+    isCollectionManifestClass(manifest, objectDef) &&
+    resolveApiActionSet(objectDef, manifest).size > 0
+  );
 }
 
 /** Named HTTP CLI collection actions need metadata and a live receiver binding. */
@@ -2374,7 +2404,7 @@ function buildRegistrationBindings(
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
     if (
       isCollectionManifestClass(manifest, objectDef) &&
-      !isCollectionActionResource(manifest, objectDef)
+      !hasGeneratedCollectionActions(manifest, objectDef)
     )
       continue;
     const simpleName = extractSimpleClassName(manifestKey);
@@ -3918,6 +3948,14 @@ function generateActionRouteTemplate(
           objectDef.decoratorConfig,
           spec.actionName,
         )?.action,
+        spec.hostType === 'collection'
+          ? collectionResourceRegistryKey(
+              projectRoot,
+              spec.hostClassName,
+              objectDef,
+              semanticManifest,
+            )
+          : undefined,
       ),
     )
     .join('\n');
@@ -3952,6 +3990,7 @@ function generateActionRouteHandler(
   lookupTypeName: string,
   hostTypeName: string,
   permissionAction?: string,
+  collectionRegistryKey = lookupClassName,
 ): string {
   const successResponse = `  return json({
     action: '${actionName}',
@@ -4009,9 +4048,9 @@ function generateActionRouteHandler(
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
   const publicJsonOptions = getPublicJsonOptions(locals);
-${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
+${generateCollectionLoad(collectionRegistryKey, { typeName: lookupTypeName })}
   const typedCollection = collection as unknown as ${hostTypeName};
-${generateCollectionNotRegisteredError(lookupClassName)}
+${generateCollectionNotRegisteredError(collectionRegistryKey)}
 ${staticTargetLoad}
 
 ${optionsLoad}${scopedOptions.source}  let result: unknown;

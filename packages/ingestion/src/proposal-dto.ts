@@ -170,3 +170,30 @@ export type GeneratedPreview =
 export interface GenerationAnalysisOutput {
   proposals: GenerationOutput;
 }
+/** What a failed-attempt capture holds (#4285). */
+export type FailedAttemptCaptureSource =
+  /** The provider's reply text, refused by the SDK adapter (e.g. invalid JSON). */
+  | 'raw_response'
+  /** The generator's parsed output that failed validation or a limit, as JSON. */
+  | 'generated_output';
+export type FailedAttemptCaptureStatus = 'captured' | 'redaction_failed';
+/**
+ * Opt-in diagnostic capture of a failed interpretation attempt. It contains
+ * document-derived model output: read it only through the reviewer-authorized
+ * `getFailedAttemptCapture`, and never put it in lists, logs or telemetry.
+ */
+export interface FailedAttemptCapture {
+  itemId: string;
+  attemptId: string;
+  source: FailedAttemptCaptureSource;
+  /** `redaction_failed`: the host hook was missing or failed; no text stored. */
+  status: FailedAttemptCaptureStatus;
+  /** Redacted, bounded text; present only when `status` is `captured`. */
+  text?: string;
+  /** The text was cut at `maxBytes` (or at the generation output bound). */
+  truncated: boolean;
+  /** A hook was configured; the host owns its semantic redaction policy. */
+  redacted: boolean;
+  maxBytes: number;
+  capturedAt: string;
+}
