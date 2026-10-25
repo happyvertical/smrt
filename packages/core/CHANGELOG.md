@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.28
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - resolve MCP static collection action receivers (#4309) (core)
+- @happyvertical/smrt-config@0.57.28
+  - @happyvertical/smrt-scanner@0.57.28
+  - @happyvertical/smrt-types@0.57.28
+
 ## 0.57.27
 
 ### Patch Changes

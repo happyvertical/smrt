@@ -328,6 +328,13 @@ namespaces. Typed CLI actions may use standard flag names such as `limit`,
 `offset`, `where`, and `format` without those values being stripped as CRUD
 flags.
 
+MCP static dispatch resolves the exact qualified registry entry's model
+constructor first, then its registered `collectionConstructor`. Manifest-backed
+collection resources can retain a stub model constructor after generated
+`registerCollection()` binds the live class; invoke the static method with the
+selected constructor as `this`. Receiver resolution does not add tool exposure
+or permit an item-scoped method to run without its ID.
+
 Custom actions may return an explicit, domain-neutral failure object with
 `ok: false`, `code`, and `message` plus optional `status`, `details`,
 `retryable`, and `correlationId`. `normalizeCustomActionFailure()` redacts it;
