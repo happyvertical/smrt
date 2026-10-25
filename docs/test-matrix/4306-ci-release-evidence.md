@@ -159,3 +159,49 @@ uncommitted admission review patch:
   `/tmp/smrt-4306-admission-after.log`, and
   `/tmp/smrt-4306-ci-scripts-review-fixes.log`. Independent exact-patch review
   remains the next gate; these local checks do not replace rollout evidence.
+
+
+## Producer artifact retry identity (PR #4324 review)
+
+| Behavior/invariant | Reachable trigger | Positive case | Negative/failure case | Actor/context | Executor/transaction | Runtime | External edge | Level/command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Consumers use successful producer IDs across retries | Re-run failed Planner or publisher after preparation and packs succeeded | Attempt-2 consumer selects exact attempt-1 workspace, patch and both pack IDs | Missing or malformed producer IDs never admit publication; consumers cannot fall back to names or wildcards | Same trusted workflow run, default flag-off mode | Immutable Actions uploads; no replacement or overwrite | Node 26, Bash | Actions preserved `needs` outputs and exact artifact downloads | Workflow replay and aggregate shell; `node --test scripts/release-producer-retries.test.mjs scripts/release-window-workflow.test.mjs` |
+| Partial pack retry retains independent identities | Only pack 1 failed before downstream jobs | Pack 1 attempt 2 plus pack 2 attempt 1, both using original prepared workspace | Failed, cancelled, skipped or absent results; missing/malformed ID/digest/attempt; duplicate IDs or future attempts fail closed | Separate pack jobs and result aggregate | Distinct producer outputs avoid matrix output collisions | Node 26, Bash | Actions partial rerun semantics | Workflow expression replay and executed aggregate shell; owning command above |
+| Window retry cannot change reserved ownership or publication inventory | Flag enabled during a consumer/pack rerun | Original owner/attempt/source qualifies before original deadline | Attempt mix rejected; early assertion rejects wrong owner/source/phase/deadline and post-publication execution routes to original-owner recovery | Actions read credential; Planner has no App secret or write permission | Read-only forge rejects every non-GET before fetch; existing Git CAS and recovery schema unchanged | Node 26; SQL/browser N/A because protocol uses GitHub/Git | GitHub GET rules/state; immutable recovery artifact IDs/digests | Read-only adapter, window/controller and recovery tests; `node --test scripts/release-admission*.test.mjs scripts/recover-release.test.mjs scripts/release-producer-retries.test.mjs scripts/release-window-workflow.test.mjs` |
+| No-release preparation remains a valid outcome | Version unchanged | Successful explicit `should-publish=false` needs no artifacts | Missing preparation decision cannot pass | Trusted preparation plus aggregate | Read-only result gate; no publication | Node 26, Bash | GitHub skipped-job results | Executed aggregate shell; owning retry command above |
+
+The new consumer replay fails against the original `b9b9cae50` workflow because
+consumer attempt 2 requests `publish-release-workspace-30-2`, while the successful
+producer uploaded `publish-release-workspace-30-1`. The read-only adapter test
+also fails before its implementation, because the old adapter requires an App
+write token even for a qualification assertion. Exact-recovery tests continue
+to require original-owner artifacts; producer digest outputs are metadata, not
+a new claim of hard archive-digest enforcement.
+
+Validation on 2026-10-25 against `b9b9cae50` plus this uncommitted patch:
+
+- Both producer/consumer behavioral regressions fail against the original
+  workflow (two expected failures). The read-only adapter case separately
+  fails against its original constructor.
+- Owning workflow, admission state/store/controller and exact-recovery tests:
+  **106 passed**, no failures or skips.
+- `pnpm test:ci-scripts`: **446 passed** in eight suites, no failures or skips.
+- Full pre-push checks (`pnpm exec lefthook run pre-push --force`): all
+  **17 jobs passed**, including strict knowledge, pinned Biome, standards and
+  every workflow's actionlint/yamllint. `--force` executes these checks even
+  before the parent commits this patch; the initial invocation without it
+  skipped because no unpushed files existed and is not validation evidence.
+- Final owning/control commands use Node 26.10.0 / pnpm 11.25.0, affinity 0–3,
+  nice 10, scratch `/home/will/Work/tmp/smrt-4306-artifact-retries`, and the
+  documented system Chromium executable. Initial narrow runs used the already
+  installed Node 26.12.1; no toolchain changes, builds, containers, registry
+  publication or GitHub mutations were required.
+- Logs: `/tmp/smrt-4306-artifact-consumer-baseline.log`,
+  `/tmp/smrt-4306-artifact-readonly-baseline.log`,
+  `/tmp/smrt-4306-artifact-retries-owning.log`,
+  `/tmp/smrt-4306-artifact-ci-scripts.log`, and
+  `/tmp/smrt-4306-artifact-pre-push.log`.
+
+Live GitHub partial-rerun evidence remains pending; workflow expression replay
+and executed gate scripts do not establish post-activation latency or live
+Actions scheduling behavior.

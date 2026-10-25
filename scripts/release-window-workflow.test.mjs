@@ -94,9 +94,12 @@ test('callbacks and manual recovery preserve the original source attempt', () =>
 });
 
 test('immutable per-attempt packs and Git bundle survive thirty days before publication begins', () => {
-  const packs = step(publish, 'Upload verified package artifacts');
-  assert.match(packs, /name: publish-release-pack-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ matrix\.shard-index \}\}/);
-  assert.match(packs, /retention-days: 30/);
+  for (const shard of [1, 2]) {
+    const packs = step(job(publish, `pack-release-${shard}`), 'Upload verified package artifacts');
+    assert.ok(packs.includes(`name: publish-release-pack-\${{ github.run_id }}-\${{ github.run_attempt }}-${shard}`));
+    assert.match(packs, /retention-days: 30/);
+    assert.doesNotMatch(packs, /overwrite:/);
+  }
   const publisher = job(publish, 'publish-release');
   const prepare = step(publisher, 'Prepare exact release commit');
   assert.match(prepare, /git bundle create release-candidate\.bundle HEAD "\^\$RELEASE_SOURCE_SHA"/);

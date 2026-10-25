@@ -21,9 +21,10 @@ const appStatus = (status, head) => Number.isSafeInteger(status?.id) && status.i
   status.creator.login === 'have-release-bot[bot]' && status.creator.type === 'Bot' &&
   status.url === `https://api.github.com/repos/${REPOSITORY}/statuses/${head}`;
 
-export function createForge({ readToken, writeToken, fetchImpl = fetch }) {
-  check(readToken && writeToken && readToken !== writeToken, 'Separate GITHUB_TOKEN and RELEASE_GITHUB_TOKEN are required');
+export function createForge({ readToken, writeToken, readOnly = false, fetchImpl = fetch }) {
+  check(readToken && (readOnly || (writeToken && readToken !== writeToken)), 'Separate GITHUB_TOKEN and RELEASE_GITHUB_TOKEN are required');
   async function request(path, { method = 'GET', body, missing = false } = {}) {
+    check(!readOnly || method === 'GET', 'Read-only release assertion cannot mutate GitHub');
     const response = await fetchImpl(`https://api.github.com/repos/${REPOSITORY}/${path}`, {
       method, redirect: 'error', headers: {
         Authorization: `Bearer ${method === 'GET' ? readToken : writeToken}`,
@@ -345,9 +346,12 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     options[args[i].slice(2)] = args[i + 1];
   }
   const owner = { runId: Number(options['owner-run-id'] ?? env.GITHUB_RUN_ID), runAttempt: Number(options['owner-run-attempt'] ?? env.GITHUB_RUN_ATTEMPT) };
+  // Qualification checks use only the Actions read credential. They neither
+  // require nor receive the release App credential used by state/status writers.
+  const readOnly = command === 'assert-window';
   const controller = createController({
-    store: createReleaseAdmissionStore({ repository: REPOSITORY, token: env.RELEASE_GITHUB_TOKEN }),
-    forge: createForge({ readToken: env.GITHUB_TOKEN, writeToken: env.RELEASE_GITHUB_TOKEN }),
+    store: createReleaseAdmissionStore({ repository: REPOSITORY, token: readOnly ? env.GITHUB_TOKEN : env.RELEASE_GITHUB_TOKEN }),
+    forge: createForge({ readToken: env.GITHUB_TOKEN, writeToken: readOnly ? undefined : env.RELEASE_GITHUB_TOKEN, readOnly }),
   });
   let result;
   if (command === 'init') result = await controller.init();

@@ -161,6 +161,28 @@ authenticated protected `main` is frozen as `snapshotSha`, and the window enters
 checkout, pack shard and Planner qualification. Queue wait time counts against
 the protocol deadline even when a job has not started.
 
+Ordinary failed-job retries with the flag **off** reuse the successful
+preparation's exact workspace and version-patch artifact IDs. The two explicit
+pack producers expose separate upload IDs, digests and producer attempts; the
+aggregate requires both successful results and complete, distinct identities.
+Planner and publishing download those exact IDs, including when only one pack
+reruns on attempt 2 while its sibling remains successful on attempt 1. Artifact
+names retain their producer attempt; consumers never derive names from their
+own attempt, use a wildcard, select a latest artifact or overwrite an upload.
+Digest outputs record producer identity; their presence alone does not prove
+content verification. Existing packed-manifest/tarball verification still gates
+publication.
+
+With the flag **on**, this ordinary retry behavior does not transfer window
+ownership. Before downloading artifacts, each pack, Planner and publisher
+asserts the original run/attempt, frozen source, qualifying phase and deadline.
+These assertions use the Actions read credential, and the forge adapter rejects
+all mutations in this mode; Planner receives no App credential or write
+permission. The aggregate also rejects producer attempts that differ from its
+reserved attempt. A rerun that changes the owning attempt must stop; after
+publication has begun, use the explicit original-owner recovery below. Qualification
+remains subject to the original deadline.
+
 `releaseCommitSha` is a different, newly versioned commit whose sole parent is
 `snapshotSha`. It is created locally before npm publication. Before entering
 `publishing`, the workflow uploads its Git bundle and binds the original run's

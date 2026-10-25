@@ -505,6 +505,17 @@ merge-group Publish Dry Run runs the same gate on its versioned archive and
 tarballs (#4061), so a failure that depends on the release environment (a
 restored archive with no dev build, an unpublished version, no credentials)
 ejects the merge group instead of blocking the next release.
+The two `pack-release-1` and `pack-release-2` jobs each expose their own
+immutable upload ID, digest and attempt. `validate-release-shards` requires both
+successful results and complete, distinct artifact identities before Planner or
+publishing can proceed. All downloads use producer IDs, so with the window flag
+off, retrying only a failed consumer reuses successful attempt-1 uploads, and
+retrying one failed pack preserves its successful sibling's upload. No wildcard,
+latest-artifact selection or overwrite is used. With the window flag on, early
+read-only assertions retain the original owner, source, phase and deadline;
+changed-attempt retries cannot take over, and publication recovery follows the
+[original-owner procedure](release-window.md#reconciliation-and-recovery).
+
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
@@ -528,8 +539,9 @@ commit must not fill in the remaining packages under that same version: the
 artifacts would come from different source trees. Keep the npm collision guard,
 apply the interrupted run's exact generated version patch to reserve that
 version in Git, and let the next merge publish the complete package set at a new
-version. The version patch is retained for 30 days so this recovery remains
-available after the short-lived build and package artifacts expire.
+version. The version patch, workspace and pack artifacts are retained for
+30 days. With the release-window flag on, use the original-owner recovery
+procedure instead; never generate a replacement candidate or clear its fence.
 
 Documentation installs as an isolated workspace under `docs/`. Its pnpm build
 policy explicitly allows the `core-js` and `sharp` install scripts required by

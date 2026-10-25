@@ -84,6 +84,11 @@ jobs:
       previous-version: ${{ steps.prepare.outputs.previous_version }}
       should-publish: ${{ steps.prepare.outputs.should_publish }}
       version: ${{ steps.prepare.outputs.version }}
+      run-attempt: ${{ github.run_attempt }}
+      patch-artifact-id: ${{ steps.upload-patch.outputs.artifact-id }}
+      patch-artifact-digest: ${{ steps.upload-patch.outputs.artifact-digest }}
+      workspace-artifact-id: ${{ steps.upload-workspace.outputs.artifact-id }}
+      workspace-artifact-digest: ${{ steps.upload-workspace.outputs.artifact-digest }}
 
     steps:
       - name: Generate token from GitHub App
@@ -104,7 +109,6 @@ jobs:
         if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
         run: |
           test "$PUBLISH_MODE" = artifacts || { echo 'Release windows require the verified artifact publisher'; exit 1; }
@@ -267,6 +271,7 @@ jobs:
           tar -cf publish-release-workspace.tar -T publish-release-workspace-files
 
       - name: Upload release version patch
+        id: upload-patch
         if: steps.prepare.outputs.should_publish == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -278,6 +283,7 @@ jobs:
           path: release-version.patch
 
       - name: Upload versioned workspace and build outputs
+        id: upload-workspace
         if: steps.prepare.outputs.should_publish == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -286,7 +292,8 @@ jobs:
           if-no-files-found: error
           path: publish-release-workspace.tar
 
-  validate-release-shards:
+  pack-release-1:
+    name: Validate Release Pack 1/2
     needs: prepare-release
     if: |
       github.ref == 'refs/heads/main' &&
@@ -294,15 +301,10 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        include:
-          - shard-index: 1
-            shard-label: 1/2
-          - shard-index: 2
-            shard-label: 2/2
+    outputs:
+      artifact-id: ${{ steps.upload-packs.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload-packs.outputs.artifact-digest }}
+      run-attempt: ${{ github.run_attempt }}
 
     steps:
       - name: Checkout repository
@@ -311,10 +313,23 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
 
+      # Read-only assertion: retries cannot take over a reserved attempt or
+      # replay publication after its irreversible boundary; use recovery there.
+      - name: Verify reserved release snapshot
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-admission.mjs assert-window
+
+      - name: Require exact workspace artifact
+        env:
+          WORKSPACE_ID: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
+        run: '[[ "$WORKSPACE_ID" =~ ^[1-9][0-9]*$ ]]'
+
       - name: Restore versioned workspace and build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
           path: release-artifacts
 
       - name: Extract versioned workspace and build outputs
@@ -336,17 +351,161 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
-          PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
+          PUBLISH_PACK_SHARD_INDEX: 1
           PUBLISH_PACK_OUTPUT_DIR: publish-pack-output
         run: node scripts/validate-publish-packages.js
 
       - name: Upload verified package artifacts
+        id: upload-packs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard-index }}
+          name: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-1
           retention-days: 30
           if-no-files-found: error
           path: publish-pack-output/
+
+  pack-release-2:
+    name: Validate Release Pack 2/2
+    needs: prepare-release
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.prepare-release.outputs.should-publish == 'true'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      artifact-id: ${{ steps.upload-packs.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload-packs.outputs.artifact-digest }}
+      run-attempt: ${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      # Read-only assertion: retries cannot take over a reserved attempt or
+      # replay publication after its irreversible boundary; use recovery there.
+      - name: Verify reserved release snapshot
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-admission.mjs assert-window
+
+      - name: Require exact workspace artifact
+        env:
+          WORKSPACE_ID: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
+        run: '[[ "$WORKSPACE_ID" =~ ^[1-9][0-9]*$ ]]'
+
+      - name: Restore versioned workspace and build outputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
+          path: release-artifacts
+
+      - name: Extract versioned workspace and build outputs
+        run: tar -xf release-artifacts/publish-release-workspace.tar
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate publish pack shard
+        env:
+          CI: true
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
+          PUBLISH_PACK_SHARD_INDEX: 2
+          PUBLISH_PACK_OUTPUT_DIR: publish-pack-output
+        run: node scripts/validate-publish-packages.js
+
+      - name: Upload verified package artifacts
+        id: upload-packs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-2
+          retention-days: 30
+          if-no-files-found: error
+          path: publish-pack-output/
+
+  # Distinct jobs preserve each successful producer's outputs on partial
+  # reruns. Matrix outputs can overwrite one another and cannot identify both.
+  validate-release-shards:
+    needs: [prepare-release, pack-release-1, pack-release-2]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pack-1-artifact-id: ${{ steps.identity.outputs.pack-1-artifact-id }}
+      pack-1-artifact-digest: ${{ steps.identity.outputs.pack-1-artifact-digest }}
+      pack-1-run-attempt: ${{ steps.identity.outputs.pack-1-run-attempt }}
+      pack-2-artifact-id: ${{ steps.identity.outputs.pack-2-artifact-id }}
+      pack-2-artifact-digest: ${{ steps.identity.outputs.pack-2-artifact-digest }}
+      pack-2-run-attempt: ${{ steps.identity.outputs.pack-2-run-attempt }}
+    steps:
+      - name: Require exact successful release producers
+        id: identity
+        env:
+          PREPARE_RESULT: ${{ needs.prepare-release.result }}
+          SHOULD_PUBLISH: ${{ needs.prepare-release.outputs.should-publish }}
+          PACK_1_RESULT: ${{ needs.pack-release-1.result }}
+          PACK_2_RESULT: ${{ needs.pack-release-2.result }}
+          CURRENT_ATTEMPT: ${{ github.run_attempt }}
+          WINDOW_ENABLED: ${{ vars.CI_RELEASE_WINDOW_ENABLED }}
+          PREPARE_ATTEMPT: ${{ needs.prepare-release.outputs.run-attempt }}
+          PATCH_ID: ${{ needs.prepare-release.outputs.patch-artifact-id }}
+          PATCH_DIGEST: ${{ needs.prepare-release.outputs.patch-artifact-digest }}
+          WORKSPACE_ID: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
+          WORKSPACE_DIGEST: ${{ needs.prepare-release.outputs.workspace-artifact-digest }}
+          PACK_1_ID: ${{ needs.pack-release-1.outputs.artifact-id }}
+          PACK_1_DIGEST: ${{ needs.pack-release-1.outputs.artifact-digest }}
+          PACK_1_ATTEMPT: ${{ needs.pack-release-1.outputs.run-attempt }}
+          PACK_2_ID: ${{ needs.pack-release-2.outputs.artifact-id }}
+          PACK_2_DIGEST: ${{ needs.pack-release-2.outputs.artifact-digest }}
+          PACK_2_ATTEMPT: ${{ needs.pack-release-2.outputs.run-attempt }}
+        run: |
+          if [ "$PREPARE_RESULT" = success ] && [ "$SHOULD_PUBLISH" = false ]; then
+            echo 'No version changes; no release artifacts required'; exit 0
+          fi
+          test "$SHOULD_PUBLISH" = true || { echo 'Missing release preparation decision'; exit 1; }
+          test "$PREPARE_RESULT" = success && test "$PACK_1_RESULT" = success && test "$PACK_2_RESULT" = success || {
+            echo 'Every release producer must succeed; failed, cancelled or skipped jobs cannot publish'; exit 1;
+          }
+          ids=("$PATCH_ID" "$WORKSPACE_ID" "$PACK_1_ID" "$PACK_2_ID")
+          declare -A seen=()
+          for id in "${ids[@]}"; do
+            [[ "$id" =~ ^[1-9][0-9]*$ ]] && [[ -z "${seen[$id]:-}" ]] || {
+              echo 'Missing, invalid or duplicate release artifact ID'; exit 1;
+            }
+            seen[$id]=1
+          done
+          for digest in "$PATCH_DIGEST" "$WORKSPACE_DIGEST" "$PACK_1_DIGEST" "$PACK_2_DIGEST"; do
+            [[ "$digest" =~ ^(sha256:)?[a-f0-9]{64}$ ]] || { echo 'Missing or invalid artifact digest'; exit 1; }
+          done
+          for attempt in "$PREPARE_ATTEMPT" "$PACK_1_ATTEMPT" "$PACK_2_ATTEMPT"; do
+            if ! [[ "$attempt" =~ ^[1-9][0-9]{0,8}$ ]] || (( attempt > CURRENT_ATTEMPT )); then
+              echo 'Missing or invalid producer attempt'; exit 1
+            fi
+            if [ "$WINDOW_ENABLED" = true ] && [ "$attempt" != "$CURRENT_ATTEMPT" ]; then
+              echo 'Reserved release attempts cannot take over earlier artifacts; use original-owner recovery'; exit 1
+            fi
+          done
+          {
+            echo "pack-1-artifact-id=$PACK_1_ID"
+            echo "pack-1-artifact-digest=$PACK_1_DIGEST"
+            echo "pack-1-run-attempt=$PACK_1_ATTEMPT"
+            echo "pack-2-artifact-id=$PACK_2_ID"
+            echo "pack-2-artifact-digest=$PACK_2_DIGEST"
+            echo "pack-2-run-attempt=$PACK_2_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
 
   # Final planner gate (#4056), after the release tarballs exist and before
   # anything is published: the planner's browser suites, its packed tarball
@@ -375,10 +534,18 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
           persist-credentials: false
 
+      # Read-only assertion: retries cannot take over a reserved attempt or
+      # replay publication after its irreversible boundary; use recovery there.
+      - name: Verify reserved release snapshot
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-admission.mjs assert-window
+
       - name: Restore versioned workspace and build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
           path: release-artifacts
 
       - name: Extract versioned workspace and build outputs
@@ -387,7 +554,9 @@ jobs:
       - name: Download verified package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-*
+          artifact-ids: >-
+            ${{ needs.validate-release-shards.outputs.pack-1-artifact-id }},
+            ${{ needs.validate-release-shards.outputs.pack-2-artifact-id }}
           path: ${{ runner.temp }}/release-packs
           merge-multiple: true
 
@@ -445,10 +614,18 @@ jobs:
           persist-credentials: false
           token: ${{ steps.generate_token.outputs.token }}
 
+      # Read-only assertion: retries cannot take over a reserved attempt or
+      # replay publication after its irreversible boundary; use recovery there.
+      - name: Verify reserved release snapshot
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-admission.mjs assert-window
+
       - name: Download release version patch
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-version-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.prepare-release.outputs.patch-artifact-id }}
           path: release-artifacts
 
       - name: Apply version patch
@@ -457,7 +634,7 @@ jobs:
       - name: Restore versioned workspace and build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: publish-release-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
           path: release-artifacts
 
       - name: Extract versioned workspace and build outputs
@@ -466,7 +643,9 @@ jobs:
       - name: Download verified package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: publish-release-pack-${{ github.run_id }}-${{ github.run_attempt }}-*
+          artifact-ids: >-
+            ${{ needs.validate-release-shards.outputs.pack-1-artifact-id }},
+            ${{ needs.validate-release-shards.outputs.pack-2-artifact-id }}
           path: publish-pack-output
           merge-multiple: true
 
@@ -555,7 +734,6 @@ jobs:
         if: steps.guard.outputs.already-recorded != 'true' && vars.CI_RELEASE_WINDOW_ENABLED == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
         run: node scripts/release-admission.mjs assert-window
 
       - name: Prepare exact release commit

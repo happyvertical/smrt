@@ -758,3 +758,20 @@ test('definitive rejection crossing close clears its exact fence without restori
   await f.controller.close(owner);
   assert.equal(f.state.phase, 'qualifying');
 });
+
+test('read-only window assertions need no App token and cannot send any mutation', async () => {
+  const calls = [];
+  const forge = createForge({ readToken: 'actions-read-only', readOnly: true, fetchImpl: async (_url, options) => {
+    calls.push(options);
+    return { ok: true, status: 200, json: async () => ({ protected: true, commit: { sha: snapshot } }) };
+  } });
+  await forge.main();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.Authorization, 'Bearer actions-read-only');
+  for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
+    await assert.rejects(forge.request('statuses/head', { method, body: {} }), /Read-only/);
+  }
+  await assert.rejects(forge.status(snapshot, 'success', 'forbidden'), /Read-only/);
+  assert.equal(calls.length, 1, 'no mutation reaches the network');
+  assert.throws(() => createForge({ readToken: 'actions-read-only' }), /Separate/);
+});
