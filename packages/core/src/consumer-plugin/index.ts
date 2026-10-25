@@ -25,6 +25,7 @@ import type { SmrtPluginApi } from '../vite-plugin/index.js';
 import {
   clearGeneratedSvelteKitRouteFiles,
   reconcileSvelteKitRouteGitignore,
+  resolveApiActionSet,
   type SvelteKitOptions,
 } from '../vite-plugin/sveltekit-generator.js';
 import { canonicalSvelteKitPath } from '../vite-plugin/sveltekit-path.js';
@@ -1194,13 +1195,31 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           });
           const compile =
             resolved?.id.endsWith('.svelte') || resolved?.id.endsWith('.css');
-          const compileSvelteBarrel = resolvesToSvelteCondition(
-            packageName,
-            selectivePackage.packageJson,
-            selectivePackage.packageRoot,
-            id,
-            resolved?.id,
-          );
+          // pnpm can install the same package in multiple peer contexts.
+          // Compare against the export map/root visible to this importer,
+          // rather than a different instance discovered from the app root.
+          const importerPath = importer?.split('?')[0];
+          const packageJsonPath =
+            importerPath && path.isAbsolute(importerPath)
+              ? findInstalledPackageJson(
+                  packageName,
+                  path.dirname(importerPath),
+                )
+              : undefined;
+          const packageJson = packageJsonPath
+            ? readInstalledPackageJson(packageJsonPath)
+            : selectivePackage.packageJson;
+          const compileSvelteBarrel =
+            packageJson &&
+            resolvesToSvelteCondition(
+              packageName,
+              packageJson,
+              packageJsonPath
+                ? path.dirname(packageJsonPath)
+                : selectivePackage.packageRoot,
+              id,
+              resolved?.id,
+            );
           if (!compile && !compileSvelteBarrel) return { id, external: true };
           break;
         }
@@ -2000,6 +2019,18 @@ async function generateRegistrationFile(
     importedEntryCount++;
 
     if (isCollectionClass(def)) {
+      // Consumer registration owns external import provenance. Bind REST
+      // receivers here without adding object/discovery metadata.
+      if (
+        resolveApiActionSet(
+          def as unknown as SmartObjectDefinition,
+          manifest as unknown as SmartObjectManifest,
+        ).size > 0
+      ) {
+        registrations.push(
+          `if (${exportBinding}) ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${exportBinding});`,
+        );
+      }
       continue;
     }
 

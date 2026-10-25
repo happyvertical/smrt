@@ -30,3 +30,16 @@ Run documented users build, typecheck (including Svelte), test, test:postgres an
 verify:pack gates. PostgreSQL runs use the canonical disposable-database wrapper.
 Root knowledge checks follow all producers. No new dialect is introduced; the
 terminal auth regression suite declares SQLite and PostgreSQL coverage.
+
+## Mounted approval error projection (#4319)
+
+`mountTerminalLoginPage().approve` exposes only the explicitly public
+`TerminalAuthError` refusal message (400) and `TerminalAuthRateLimitError`
+message (429). Unexpected service initialization or approval failures return
+500 with `Unable to approve terminal login.`; never reflect their message or
+log the raw exception, which can contain database connection credentials.
+Authentication/input gates, the resolved user/tenant context, and successful
+approval remain unchanged. `terminal-approval-errors.test.ts` proves both
+service failure points using synthetic private data, preserves typed refusals,
+and checks unauthenticated and missing-code denials before service access.
+This projection changes no database or approval transaction behavior.

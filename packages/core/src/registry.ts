@@ -2509,6 +2509,10 @@ export class ObjectRegistry {
       collectionConstructor = ObjectRegistry.collections.get(className);
     }
 
+    // Constructor-only qualified resources have their own receiver identity;
+    // their backing item metadata must not collapse the collection cache key.
+    const qualifiedReceiver =
+      !registered && !!collectionConstructor && className.includes(':');
     if (!registered && collectionConstructor) {
       const itemClass = (
         collectionConstructor as unknown as {
@@ -2522,8 +2526,9 @@ export class ObjectRegistry {
       }
     }
 
-    const canonicalName =
-      registered?.qualifiedName || registered?.name || className;
+    const canonicalName = qualifiedReceiver
+      ? className
+      : registered?.qualifiedName || registered?.name || className;
 
     return {
       canonicalName,
@@ -4592,6 +4597,11 @@ export function smrt(config: SmartObjectConfig = {}) {
               ?.tableName || tableName;
         ObjectRegistry.register(itemClass, {
           ...config,
+          // The collection may belong to a different package. Its config must
+          // not move an already-registered item out of its declaring package.
+          packageName:
+            ObjectRegistry.getClassByConstructor(itemClass)?.packageName ??
+            config.packageName,
           tableName: itemTableName,
         });
 

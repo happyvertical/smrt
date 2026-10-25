@@ -1277,7 +1277,7 @@ export interface TerminalLoginApproveSuccess {
   userCode: string;
 }
 
-/** Shape returned by the approve action on failure (HTTP 4xx). */
+/** Shape returned by the approve action on failure (HTTP 4xx or 5xx). */
 export interface TerminalLoginApproveFailure {
   status: number;
   error: string;
@@ -1405,16 +1405,15 @@ export function mountTerminalLoginPage(
             data: { status: 429, error: error.message, userCode },
           };
         }
-        const message =
-          error instanceof TerminalAuthError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'Unable to approve terminal login.';
+        const expected = error instanceof TerminalAuthError;
+        const status = expected ? 400 : 500;
+        const message = expected
+          ? error.message
+          : 'Unable to approve terminal login.';
         return {
           type: 'failure',
-          status: 400,
-          data: { status: 400, error: message, userCode },
+          status,
+          data: { status, error: message, userCode },
         };
       }
     },

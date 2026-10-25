@@ -457,3 +457,29 @@ model-level validation, and regenerate RLS policies when adopting a changed
 binding.
 
 Custom actions retain the `{ action, result }` response envelope.
+
+## Collection-hosted REST factory identity (#4320)
+
+Generated collection custom-action handlers resolve their executable collection
+using the declaring resource's exact qualified registration key. Keep that
+factory key separate from the item model's qualified type/policy metadata:
+item collection slugs still govern permissions, and ordinary model routes keep
+their own factory lookup. A resource in another package must neither rebuild
+an item identity under its package nor steal the item's existing package when
+its collection decorator merges configuration. Registration and generated
+factory selection share one identity resolver; never install global aliases to
+repair an inferred or bundled class name.
+
+Every collection hosting a generated REST action receives its exact constructor
+binding even with `cli: false` or omitted CLI configuration. This runtime-only
+binding does not add discovery metadata: named HTTP CLI resources keep their
+existing explicit-include eligibility. Constructor-only qualified receivers keep
+their own collection-cache identity while resolving backing item metadata, so
+ordinary model factories cannot reuse a different resource receiver. Neither
+CLI nor MCP discovery gains a resource or default CRUD surface from this binding.
+
+When consumer registration owns external packages (`smrtDependencies`), its
+`.smrt/register.js` binds external REST action receivers using the resolved
+canonical/provider-context export. The SvelteKit registration module continues
+to delegate external imports there; external bindings also add no discovery
+metadata and do not depend on CLI inclusion.

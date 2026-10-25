@@ -595,7 +595,11 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(route).toBeDefined();
       const content = route?.[1] as string;
-      expectGetCollectionCall(content, 'Widget', 'Widget');
+      expectGetCollectionCall(
+        content,
+        '@test/sveltekit:SpecialWidgetCollection',
+        'Widget',
+      );
       expect(content).not.toContain("getCollection('SpecialWidget')");
       // The inherited collection's write action is gated on the resolved
       // item's collection, matching the permission catalog (#2977).
@@ -718,8 +722,8 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(route).toBeDefined();
       const content = route?.[1] as string;
-      expect(content).toContain("    'Widget',");
-      expect(content).not.toContain("'WidgetCollection'");
+      expectGetCollectionCall(content, 'WidgetCollection');
+      expect(content).not.toContain("    'Widget',");
     });
 
     it('should skip config generation when file already exists', async () => {
@@ -3182,7 +3186,11 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(findByTokenRoute).toBeDefined();
       const findByTokenContent = findByTokenRoute?.[1] as string;
-      expectGetCollectionCall(findByTokenContent, 'Invitation', 'Invitation');
+      expectGetCollectionCall(
+        findByTokenContent,
+        'InvitationCollection',
+        'Invitation',
+      );
       expect(findByTokenContent).toMatch(
         /await (?:typedCollection|collection)\.findByToken\(options(?:\["token"\]|\.token)\)/,
       );
