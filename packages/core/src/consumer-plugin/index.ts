@@ -1194,13 +1194,31 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           });
           const compile =
             resolved?.id.endsWith('.svelte') || resolved?.id.endsWith('.css');
-          const compileSvelteBarrel = resolvesToSvelteCondition(
-            packageName,
-            selectivePackage.packageJson,
-            selectivePackage.packageRoot,
-            id,
-            resolved?.id,
-          );
+          // pnpm can install the same package in multiple peer contexts.
+          // Compare against the export map/root visible to this importer,
+          // rather than a different instance discovered from the app root.
+          const importerPath = importer?.split('?')[0];
+          const packageJsonPath =
+            importerPath && path.isAbsolute(importerPath)
+              ? findInstalledPackageJson(
+                  packageName,
+                  path.dirname(importerPath),
+                )
+              : undefined;
+          const packageJson = packageJsonPath
+            ? readInstalledPackageJson(packageJsonPath)
+            : selectivePackage.packageJson;
+          const compileSvelteBarrel =
+            packageJson &&
+            resolvesToSvelteCondition(
+              packageName,
+              packageJson,
+              packageJsonPath
+                ? path.dirname(packageJsonPath)
+                : selectivePackage.packageRoot,
+              id,
+              resolved?.id,
+            );
           if (!compile && !compileSvelteBarrel) return { id, external: true };
           break;
         }
