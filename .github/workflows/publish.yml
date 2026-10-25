@@ -476,15 +476,15 @@ jobs:
             echo 'No version changes; no release artifacts required'; exit 0
           fi
           test "$SHOULD_PUBLISH" = true || { echo 'Missing release preparation decision'; exit 1; }
-          test "$PREPARE_RESULT" = success && test "$PACK_1_RESULT" = success && test "$PACK_2_RESULT" = success || {
-            echo 'Every release producer must succeed; failed, cancelled or skipped jobs cannot publish'; exit 1;
-          }
+          if [ "$PREPARE_RESULT" != success ] || [ "$PACK_1_RESULT" != success ] || [ "$PACK_2_RESULT" != success ]; then
+            echo 'Every release producer must succeed; failed, cancelled or skipped jobs cannot publish'; exit 1
+          fi
           ids=("$PATCH_ID" "$WORKSPACE_ID" "$PACK_1_ID" "$PACK_2_ID")
           declare -A seen=()
           for id in "${ids[@]}"; do
-            [[ "$id" =~ ^[1-9][0-9]*$ ]] && [[ -z "${seen[$id]:-}" ]] || {
-              echo 'Missing, invalid or duplicate release artifact ID'; exit 1;
-            }
+            if ! [[ "$id" =~ ^[1-9][0-9]*$ ]] || [[ -n "${seen[$id]:-}" ]]; then
+              echo 'Missing, invalid or duplicate release artifact ID'; exit 1
+            fi
             seen[$id]=1
           done
           for digest in "$PATCH_DIGEST" "$WORKSPACE_DIGEST" "$PACK_1_DIGEST" "$PACK_2_DIGEST"; do
