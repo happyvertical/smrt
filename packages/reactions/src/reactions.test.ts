@@ -864,6 +864,10 @@ async function sqliteProcessRace(signal: AbortSignal) {
       child.stderr.on('data', (chunk) => {
         stderr += String(chunk);
       });
+      // Abort errors can settle done before the owned process closes.
+      const closed = new Promise<void>((yes) => {
+        child.once('close', () => yes());
+      });
       const done = new Promise<number | null>((yes, no) => {
         child.on('error', no);
         child.on('close', yes);
@@ -877,7 +881,7 @@ async function sqliteProcessRace(signal: AbortSignal) {
           no(new Error(`Race child exited before ready (${code}): ${stderr}`)),
         );
       });
-      return { child, done, ready, error: () => stderr };
+      return { child, done, closed, ready, error: () => stderr };
     });
     try {
       await Promise.all(children.map((c) => c.ready));
@@ -904,6 +908,7 @@ async function sqliteProcessRace(signal: AbortSignal) {
         }
       }
       await Promise.allSettled(children.map((c) => c.done));
+      await Promise.all(children.map((c) => c.closed));
     }
   }
   try {
