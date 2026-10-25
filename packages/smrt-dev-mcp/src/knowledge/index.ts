@@ -854,11 +854,15 @@ export async function checkKnowledgeFreshnessFromIndex(
       });
     }
 
+    // Like `dist`, a `files` entry the package's own .gitignore names is a
+    // build output, absent on a clean checkout until the package is built.
+    const ignoredOutputs = gitignoredTopLevelEntries(pkg.directory);
     for (const entry of pkg.files) {
       if (
         entry === 'dist' ||
         entry.startsWith('dist/') ||
-        entry.includes('*')
+        entry.includes('*') ||
+        ignoredOutputs.has(entry.replace(/^\.?\/|\/$/g, ''))
       ) {
         continue;
       }
@@ -4582,4 +4586,16 @@ function compactKnowledgePackage(pkg: KnowledgePackage) {
     ),
     mcpToolCount: pkg.mcpTools.length,
   };
+}
+
+/** Plain top-level names (`app`, `/app`, `app/`) listed in a package .gitignore. */
+function gitignoredTopLevelEntries(directory: string): Set<string> {
+  const path = join(directory, '.gitignore');
+  if (!existsSync(path)) return new Set();
+  return new Set(
+    readFileSync(path, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^\/|\/$/g, ''))
+      .filter((line) => /^[\w.-]+$/.test(line)),
+  );
 }

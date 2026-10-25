@@ -870,6 +870,25 @@ describe('SMRT knowledge index', () => {
     ]);
   });
 
+  it('treats a gitignored package files entry as an unbuilt output', async () => {
+    const pkgPath = join(rootDir, 'packages', 'demo', 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+    pkg.files = [...pkg.files, 'app', 'missing-source'];
+    await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+    await writeFile(
+      join(rootDir, 'packages', 'demo', '.gitignore'),
+      '# build output\n/app/\n!keep\n',
+    );
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+    const missing = result.issues
+      .filter((issue) => issue.code === 'package-files-entry-missing')
+      .map((issue) => issue.message);
+    expect(missing).toEqual([
+      'package.json files entry "missing-source" does not exist',
+    ]);
+  });
+
   it('checks staged files when changed mode is enabled', async () => {
     execFileSync('git', ['init'], { cwd: rootDir });
     await writeFile(
