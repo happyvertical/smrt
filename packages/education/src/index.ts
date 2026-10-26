@@ -236,4 +236,7 @@ export {
 } from './submissions.js';
 export * from './workbook-contracts.js';
 export * from './workbook-models.js';
+export * from './workbook-photo-contracts.js';
+export * from './workbook-photo-models.js';
+export { WorkbookPhotoService } from './workbook-photo-service.js';
 export { WorkbookService } from './workbook-service.js';

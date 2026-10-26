@@ -175,154 +175,167 @@ export class WorkbookService extends SubmissionService {
       pageLabel: string;
     },
   ): Promise<WorkbookActivityView> {
-    return this.composeMutation(async (service) => {
-      await service.requireActor(request, 'education.learner.plan');
-      await service.serialize(request);
-      for (const [label, value] of Object.entries({
-        workbookKey: request.workbookKey,
-        title: request.title,
-        pageKey: request.pageKey,
-        pageLabel: request.pageLabel,
-      }))
-        nonempty(value, label);
-      if (
-        request.edition !== undefined &&
-        (typeof request.edition !== 'string' || request.edition.length > 200)
-      )
-        throw new Error('Invalid edition');
-      const books = await WorkbookCollection.create({ db: service.db });
-      let book = await books.get(
-        {
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          workbookKey: request.workbookKey,
-        },
-        { cache: false },
-      );
-      if (
-        book &&
-        (book.title !== request.title ||
-          book.edition !== (request.edition ?? ''))
-      )
-        throw new Error('Workbook key already names another title or edition');
-      book ??= await books.create({
-        _insertOnly: true,
-        slug: `workbook-${digest([request.tenantId, request.learnerId, request.workbookKey])}`,
+    return this.composeMutation((service) =>
+      service.resolveWorkbookActivityInScope(request, 'education.learner.plan'),
+    );
+  }
+  /** Owning intake extension: caller validates evidence before upload-authorized creation. */
+  protected async resolveWorkbookActivityInScope(
+    request: LearnerRequest & {
+      workbookKey: string;
+      title: string;
+      edition?: string;
+      pageKey: string;
+      pageLabel: string;
+    },
+    action: 'education.learner.plan' | 'education.learner.submit',
+  ): Promise<WorkbookActivityView> {
+    const service = this;
+    await service.requireActor(request, action);
+    await service.serialize(request);
+    for (const [label, value] of Object.entries({
+      workbookKey: request.workbookKey,
+      title: request.title,
+      pageKey: request.pageKey,
+      pageLabel: request.pageLabel,
+    }))
+      nonempty(value, label);
+    if (
+      request.edition !== undefined &&
+      (typeof request.edition !== 'string' || request.edition.length > 200)
+    )
+      throw new Error('Invalid edition');
+    const books = await WorkbookCollection.create({ db: service.db });
+    let book = await books.get(
+      {
         tenantId: request.tenantId,
         learnerId: request.learnerId,
         workbookKey: request.workbookKey,
-        title: request.title,
-        edition: request.edition ?? '',
-      });
-      const activities = await WorkbookActivityCollection.create({
-        db: service.db,
-      });
-      const existing = await activities.get(
-        {
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          workbookId: String(book.id),
-          pageKey: request.pageKey,
-        },
-        { cache: false },
-      );
-      if (existing) {
-        if (existing.pageLabel !== request.pageLabel)
-          throw new Error('Page key already names another activity');
-        return service.activityView(existing, book);
-      }
-      // One private enrollment per family learner/workbook, with explicit pages.
-      const siblings = await activities.list({
-        where: {
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          workbookId: String(book.id),
-        },
-        limit: 1,
-      });
-      let enrollmentId: string;
-      let sectionId: string;
-      if (siblings[0]) {
-        const enrollment = await service.requireEnrollment(
-          { ...request, enrollmentId: siblings[0].enrollmentId },
-          'education.learner.plan',
-        );
-        const lesson = await (
-          await WorksheetCollection.create({ db: service.db })
-        ).get(
-          { id: siblings[0].lessonId, tenantId: request.tenantId },
-          { cache: false },
-        );
-        if (!lesson) throw new LearnerAuthorizationError();
-        enrollmentId = String(enrollment.id);
-        sectionId = lesson.sectionId;
-      } else {
-        const course = await (
-          await CourseCollection.create({ db: service.db })
-        ).create({
-          _insertOnly: true,
-          slug: `workbook-${book.id}`,
-          tenantId: request.tenantId,
-          title: request.title,
-          licenseKind: 'personal-use-copy',
-          sourceKey: 'physical-workbook',
-          sourceRef: String(book.id),
-          modality: 'printable',
-        });
-        const section = await (
-          await CourseSectionCollection.create({ db: service.db })
-        ).create({
-          _insertOnly: true,
-          slug: `workbook-pages-${book.id}`,
-          tenantId: request.tenantId,
-          courseId: String(course.id),
-          title: 'Workbook pages',
-        });
-        const curriculum = await (
-          await CurriculumCollection.create({ db: service.db })
-        ).create({
-          _insertOnly: true,
-          slug: `workbook-plan-${book.id}`,
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          title: request.title,
-        });
-        const enrollment = await (
-          await EnrollmentCollection.create({ db: service.db })
-        ).create({
-          _insertOnly: true,
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          curriculumId: String(curriculum.id),
-          courseId: String(course.id),
-          status: 'active',
-        });
-        enrollmentId = String(enrollment.id);
-        sectionId = String(section.id);
-      }
-      const lesson = await (
-        await WorksheetCollection.create({ db: service.db })
-      ).create({
-        _insertOnly: true,
-        slug: `workbook-page-${digest([book.id, request.pageKey])}`,
-        tenantId: request.tenantId,
-        sectionId,
-        title: request.pageLabel,
-        completionRule: 'submit',
-      });
-      const row = await activities.create({
-        _insertOnly: true,
-        slug: `workbook-activity-${digest([book.id, request.pageKey])}`,
+      },
+      { cache: false },
+    );
+    if (
+      book &&
+      (book.title !== request.title || book.edition !== (request.edition ?? ''))
+    )
+      throw new Error('Workbook key already names another title or edition');
+    book ??= await books.create({
+      _insertOnly: true,
+      slug: `workbook-${digest([request.tenantId, request.learnerId, request.workbookKey])}`,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      workbookKey: request.workbookKey,
+      title: request.title,
+      edition: request.edition ?? '',
+    });
+    const activities = await WorkbookActivityCollection.create({
+      db: service.db,
+    });
+    const existing = await activities.get(
+      {
         tenantId: request.tenantId,
         learnerId: request.learnerId,
         workbookId: String(book.id),
-        enrollmentId,
-        lessonId: String(lesson.id),
         pageKey: request.pageKey,
-        pageLabel: request.pageLabel,
-      });
-      return service.activityView(row, book);
+      },
+      { cache: false },
+    );
+    if (existing) {
+      if (existing.pageLabel !== request.pageLabel)
+        throw new Error('Page key already names another activity');
+      return service.activityView(existing, book);
+    }
+    // One private enrollment per family learner/workbook, with explicit pages.
+    const siblings = await activities.list({
+      where: {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        workbookId: String(book.id),
+      },
+      limit: 1,
     });
+    let enrollmentId: string;
+    let sectionId: string;
+    if (siblings[0]) {
+      const enrollment = await service.requireEnrollment(
+        { ...request, enrollmentId: siblings[0].enrollmentId },
+        action,
+      );
+      const lesson = await (
+        await WorksheetCollection.create({ db: service.db })
+      ).get(
+        { id: siblings[0].lessonId, tenantId: request.tenantId },
+        { cache: false },
+      );
+      if (!lesson) throw new LearnerAuthorizationError();
+      enrollmentId = String(enrollment.id);
+      sectionId = lesson.sectionId;
+    } else {
+      const course = await (
+        await CourseCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        slug: `workbook-${book.id}`,
+        tenantId: request.tenantId,
+        title: request.title,
+        licenseKind: 'personal-use-copy',
+        sourceKey: 'physical-workbook',
+        sourceRef: String(book.id),
+        modality: 'printable',
+      });
+      const section = await (
+        await CourseSectionCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        slug: `workbook-pages-${book.id}`,
+        tenantId: request.tenantId,
+        courseId: String(course.id),
+        title: 'Workbook pages',
+      });
+      const curriculum = await (
+        await CurriculumCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        slug: `workbook-plan-${book.id}`,
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        title: request.title,
+      });
+      const enrollment = await (
+        await EnrollmentCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        curriculumId: String(curriculum.id),
+        courseId: String(course.id),
+        status: 'active',
+      });
+      enrollmentId = String(enrollment.id);
+      sectionId = String(section.id);
+    }
+    const lesson = await (
+      await WorksheetCollection.create({ db: service.db })
+    ).create({
+      _insertOnly: true,
+      slug: `workbook-page-${digest([book.id, request.pageKey])}`,
+      tenantId: request.tenantId,
+      sectionId,
+      title: request.pageLabel,
+      completionRule: 'submit',
+    });
+    const row = await activities.create({
+      _insertOnly: true,
+      slug: `workbook-activity-${digest([book.id, request.pageKey])}`,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      workbookId: String(book.id),
+      enrollmentId,
+      lessonId: String(lesson.id),
+      pageKey: request.pageKey,
+      pageLabel: request.pageLabel,
+    });
+    return service.activityView(row, book);
   }
   async listWorkbookActivities(
     request: LearnerRequest,
@@ -976,9 +989,13 @@ export class WorkbookService extends SubmissionService {
           revisionId: request.revisionId,
         },
       });
+      const photo = await service.workbookPhotoSource(request, {
+        submissionId: attempt.submissionId,
+      });
       if (
         !revision ||
-        (attempt.reviewRequired && !releases.length) ||
+        ((attempt.reviewRequired || photo.guardianOrigin) &&
+          !releases.length) ||
         (revision.kind !== 'ai' && !releases.length)
       )
         throw new LearnerAuthorizationError();
@@ -1085,11 +1102,14 @@ export class WorkbookService extends SubmissionService {
           attemptId: String(attempt.id),
         },
       });
+      const photo = await this.workbookPhotoSource(request, {
+        submissionId: attempt.submissionId,
+      });
       const visible = revisions.filter(
         (r) =>
           !own ||
           releases.some((rel) => rel.revisionId === r.id) ||
-          (!attempt.reviewRequired && r.kind === 'ai'),
+          (!photo.guardianOrigin && !attempt.reviewRequired && r.kind === 'ai'),
       );
       const deliveries = await (
         await WorkbookFeedbackDeliveryCollection.create({ db: this.db })

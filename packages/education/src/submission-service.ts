@@ -66,6 +66,10 @@ export type SubmissionView = Readonly<{
   previousSubmissionId: string | null;
   intakeItemId: string | null;
   pages: ReadonlyArray<{ assetId: string; sortOrder: number }>;
+  /** Guardian-origin photo work remains private until explicit feedback release. */
+  awaitingParentRelease?: boolean;
+  /** Effective source privacy: every derived revision needs explicit release. */
+  sourceRequiresParentRelease?: boolean;
   grade: null | {
     id: string;
     graderKind: Grade['graderKind'];
@@ -150,7 +154,7 @@ export class SubmissionService extends LearnerService {
     if (failures.length)
       throw new SubmissionStorageCleanupError(failures, cause);
   }
-  private assets(): Promise<AssetRuntime> {
+  protected assets(): Promise<AssetRuntime> {
     this.runtime ??= createAssetRuntime({
       db: this.db,
       storage: this.options.storage,
@@ -158,7 +162,7 @@ export class SubmissionService extends LearnerService {
     });
     return this.runtime;
   }
-  private async storePage(
+  protected async storePage(
     request: LearnerRequest,
     profileId: string,
     page: SubmissionPage,
@@ -208,7 +212,7 @@ export class SubmissionService extends LearnerService {
       },
     );
   }
-  private validatePages(pages: readonly SubmissionPage[]): void {
+  protected validatePages(pages: readonly SubmissionPage[]): void {
     if (!Array.isArray(pages) || !pages.length || pages.length > 100)
       throw new Error('Capture requires one to 100 pages');
     for (const page of pages) {
@@ -297,6 +301,63 @@ export class SubmissionService extends LearnerService {
       throw new LearnerAuthorizationError();
     return { row, progress };
   }
+  /** Persisted origin/release evidence, shared by base submission and workbook
+   * projections. Call only after normal actor/resource authorization. Old hosts
+   * without photo tables preserve ordinary submission behavior. */
+  protected async workbookPhotoSource(
+    request: Pick<LearnerRequest, 'tenantId' | 'learnerId'>,
+    selector: { intakeItemId?: string | null; submissionId?: string },
+  ): Promise<{ guardianOrigin: boolean; released: boolean }> {
+    const ordinary = { guardianOrigin: false, released: false };
+    if (!(await this.db.tableExists('workbook_photo_intakes'))) return ordinary;
+    let submission = selector.submissionId
+      ? await this.db.get('submissions', {
+          id: selector.submissionId,
+          tenant_id: request.tenantId,
+          learner_id: request.learnerId,
+        })
+      : null;
+    const itemId = selector.intakeItemId ?? submission?.intake_item_id;
+    if (!itemId) return ordinary;
+    if (submission && submission.intake_item_id !== itemId)
+      throw new LearnerAuthorizationError();
+    const photo = await this.db.get('workbook_photo_intakes', {
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      item_id: itemId,
+    });
+    if (!photo) return ordinary;
+    const learner = await this.db.get('learners', {
+      id: request.learnerId,
+      tenant_id: request.tenantId,
+    });
+    if (!learner) throw new LearnerAuthorizationError();
+    if (photo.actor_user_id === learner.user_id) return ordinary;
+    const withheld = { guardianOrigin: true, released: false };
+    submission ??= await this.db.get('submissions', {
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      intake_item_id: itemId,
+    });
+    if (
+      !submission ||
+      !(await this.db.tableExists('workbook_attempts')) ||
+      !(await this.db.tableExists('workbook_feedback_releases'))
+    )
+      return withheld;
+    const attempt = await this.db.get('workbook_attempts', {
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      submission_id: submission.id,
+    });
+    if (!attempt) return withheld;
+    const release = await this.db.get('workbook_feedback_releases', {
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      attempt_id: attempt.id,
+    });
+    return { guardianOrigin: true, released: !!release };
+  }
   private async view(
     row: Submission,
     actorUserId: string,
@@ -335,6 +396,14 @@ export class SubmissionService extends LearnerService {
         String(b.id).localeCompare(String(a.id)),
     );
     const grade = grades[0];
+    const photo = await this.workbookPhotoSource(
+      { tenantId: row.tenantId, learnerId: row.learnerId },
+      { intakeItemId: row.intakeItemId, submissionId: String(row.id) },
+    );
+    const awaitingParentRelease =
+      learner.user_id === actorUserId &&
+      photo.guardianOrigin &&
+      !photo.released;
     const withheld =
       learner.user_id === actorUserId &&
       Boolean(
@@ -348,15 +417,20 @@ export class SubmissionService extends LearnerService {
       learnerId: row.learnerId,
       lessonId: row.lessonId,
       progressId: row.progressId,
-      status: withheld && row.status === 'graded' ? 'captured' : row.status,
+      status:
+        awaitingParentRelease || (withheld && row.status === 'graded')
+          ? 'captured'
+          : row.status,
       submittedAt: row.submittedAt,
-      notes: row.notes,
+      notes: awaitingParentRelease ? '' : row.notes,
       kind: row.kind,
       previousSubmissionId: row.previousSubmissionId,
       intakeItemId: row.intakeItemId,
-      pages,
+      pages: awaitingParentRelease ? [] : pages,
+      ...(awaitingParentRelease ? { awaitingParentRelease: true } : {}),
+      ...(photo.guardianOrigin ? { sourceRequiresParentRelease: true } : {}),
       grade:
-        grade && !withheld
+        grade && !withheld && !awaitingParentRelease
           ? {
               id: String(grade.id),
               graderKind: grade.graderKind,
@@ -850,6 +924,20 @@ export class SubmissionService extends LearnerService {
       request,
       'education.learner.read',
     );
+    const learnerRow = await this.requireActor(
+      request,
+      'education.learner.read',
+    );
+    const photo = await this.workbookPhotoSource(request, {
+      intakeItemId: row.intakeItemId,
+      submissionId: String(row.id),
+    });
+    if (
+      learnerRow.userId === request.actorUserId &&
+      photo.guardianOrigin &&
+      !photo.released
+    )
+      throw new LearnerAuthorizationError();
     const link = await (
       await SubmissionAssetCollection.create({ db: this.db })
     ).get(

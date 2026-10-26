@@ -1052,3 +1052,13 @@ export async function preserveWorkbookIntakeAnalysis(input: {
     throw error;
   }
 }
+
+export {
+  preserveWorkbookPhotoIdentification,
+  processWorkbookPhotoAnalysis,
+  receiveWorkbookPhotoIntake,
+  retainWorkbookPhotoReceipt,
+  WORKBOOK_PHOTO_HANDLER,
+  workbookPhotoIntakeHandlers,
+  workbookPhotoIntakeTargetResolver,
+} from './workbook-photo-ingestion.js';

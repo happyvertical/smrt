@@ -30,7 +30,9 @@ Validation: `pnpm --filter @happyvertical/smrt-education test`,
 
 Physical workbook capture, immutable assessment/feedback history and descriptive
 evidence use [WorkbookService](agents/workbook-service.md). Keep provisional
-sharing separate from guardian Grade authority.
+sharing separate from guardian Grade authority. Photo-first receipt/context
+capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
+never create learning evidence, and blank exercises need explicit work intent.
 
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
