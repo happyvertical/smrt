@@ -47,10 +47,13 @@ value-free: they name the accepted shape, never the model's values.
   tool call with malformed arguments is answered in the transcript and never
   suspends the turn.
 - **Manifest `read`.** Accepts only `id` (string), `where` (object of
-  equality filters), `limit` (integer >= 1) and `offset` (integer >= 0); a
-  stray key such as `filter`, or a mistyped value, fails with
-  `TOOL_ARGUMENTS_INVALID` instead of listing every row. The offered schema
-  says `additionalProperties: false`.
+  equality filters), `limit` (integer >= 1) and `offset` (integer >= 0). This
+  is stricter than before, where these were dropped or defaulted silently:
+  an unknown key such as `filter`, a numeric `id`, a non-object `where`, and
+  a fractional, zero or string `limit` (or a negative or fractional `offset`)
+  now fail with a retryable `invalid_request` (`TOOL_ARGUMENTS_INVALID`)
+  instead of listing every row. The offered schema says
+  `additionalProperties: false` with `integer` `limit`/`offset` minimums.
 - **`data.query`** (`@happyvertical/smrt-agents`). With a `request` object,
   the only other top-level key allowed is `surfaceId`; a sibling such as
   `filter` fails with `DataSurfaceRequestError` reason

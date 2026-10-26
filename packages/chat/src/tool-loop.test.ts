@@ -1131,6 +1131,78 @@ describe('runToolLoop', () => {
     ).toEqual(['open']);
   });
 
+  it('pins the read argument bounds: limit >= 1, offset >= 0, integers only (#4378)', async () => {
+    await grant('tool_loop_notes.read');
+    const cases: Array<[Record<string, unknown>, boolean, string?]> = [
+      [{ limit: 1 }, true],
+      [{ offset: 0 }, true],
+      [{ limit: 0 }, false, 'limit must be an integer of at least 1'],
+      [{ offset: -1 }, false, 'offset must be an integer of at least 0'],
+      [{ limit: 2.5 }, false, 'limit must be an integer of at least 1'],
+      [{ offset: 1.5 }, false, 'offset must be an integer of at least 0'],
+      [{ id: 7 }, false, 'id must be a string'],
+      [{ unknownKey: true }, false, 'accepts only id, where, limit and offset'],
+    ];
+    let call = 0;
+    const ai = makeAI((_m, options) =>
+      call < cases.length && toolsOffered(options)
+        ? toolCall(
+            'tool_loop_notes.read',
+            (cases[call++] as [Record<string, unknown>])[0],
+          )
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'q' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      maxSteps: cases.length + 1,
+      audit: () => {},
+    });
+    expect(result.invocations).toHaveLength(cases.length);
+    cases.forEach(([, ok, message], index) => {
+      const invocation = result.invocations[index];
+      expect(invocation?.ok).toBe(ok);
+      if (!ok) {
+        expect(invocation?.error).toBe('invalid_request');
+        expect(
+          String((invocation?.observation as { error: string }).error),
+        ).toContain(message);
+      }
+    });
+  });
+
+  it('offers the read tool a closed schema with integer limit/offset bounds (#4378)', () => {
+    const [read] = tools(['tool_loop_notes.read']);
+    const parameters = manifestToolToAITool(read as ManifestTool).function
+      .parameters as {
+      additionalProperties?: unknown;
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(parameters.additionalProperties).toBe(false);
+    expect(Object.keys(parameters.properties).sort()).toEqual([
+      'id',
+      'limit',
+      'offset',
+      'where',
+    ]);
+    expect(parameters.properties.limit).toEqual({
+      type: 'integer',
+      minimum: 1,
+    });
+    expect(parameters.properties.offset).toEqual({
+      type: 'integer',
+      minimum: 0,
+    });
+    expect(parameters.properties.where?.type).toBe('object');
+  });
+
   describe('end-to-end permission enforcement (catalog assert, RLS off)', () => {
     it('executes a permitted operation and denies an un-permitted one', async () => {
       await grant('tool_loop_notes.create');
