@@ -18,6 +18,78 @@
   that call only and never enters the returned `messages` transcript, so
   stored conversations and continuations are unchanged.
 
+## Blank answers and timeouts (#4379)
+
+- **Retry once, within budget.** A final round with blank content and no
+  usable tool calls (none made, or discarded on a no-tools round) is retried
+  once without tools, with `TOOL_LOOP_ANSWER_NOW_INSTRUCTION` appended to
+  that call only, and `emptyRetried: true`. The retry is skipped when the
+  token budget (`maxTotalTokens`) or `deadline` is already spent: the turn
+  goes straight to `empty`. The forced final call itself is one uncapped
+  call, so a spent budget still gets one answer attempt; only the retry is
+  budget-gated. Each blank round emits an `empty_round` step event (no model
+  text; `retry` says whether a retry follows). `runAssistantTurn` does not
+  show it as a dock step.
+- **Report.** Still blank: `stoppedReason: 'empty'`, `content: ''`. A model
+  call that throws a timeout (`AI_TIMEOUT`, `TIMEOUT`, `REQUEST_TIMEOUT`,
+  `TimeoutError`, or an `AbortError` the caller's signal did not cause) ends
+  `stoppedReason: 'timeout'` instead of failing or passing as an empty
+  success; other errors still throw. When the final round was the forced
+  no-tools call, `capReason` (`max_steps` | `budget`) keeps that cause
+  alongside `empty`/`timeout`.
+- **Quiet stream ends (older SDKs).** SDKs <= 0.108.0 can end a timed-out
+  stream quietly: no text, no tool calls, no finish reason. That shape is a
+  suspected timeout only for an AI boundary that has already reported a
+  finish reason in this process (so its absence is anomalous), and only when
+  the retry ends the same way; then the turn is `timeout`. A boundary that
+  never reports finish reasons, or a blank reply that has one, is `empty`.
+  The "has reported" flag is kept per AI client object for the process
+  lifetime, so one client that routes to providers with and without finish
+  reasons can mislabel an `empty` turn as `timeout` (or the reverse).
+- **Timeouts are configurable, not derived.** `requestTimeoutMs` is
+  forwarded as the per-call `timeout` (default: the provider's 120 s). It is
+  not derived from `deadline`/`maxTurnMs`: those only stop new tool rounds
+  and gate the retry.
+- **Fallback text.** Both callers store `resolveTurnReply(result,
+  fallback)`: the content trimmed at its outer edges only (both paths
+  alike; persona replies were stored untrimmed before), or
+  `emptyAnswerFallback` / `DEFAULT_EMPTY_ANSWER_FALLBACK` when blank.
+  `runPersonaConversationTurn` returns it as `reply` (plus `replyFallback`);
+  voice and the chat stream use it. `runAssistantTurn` replaces its old
+  `'Done.'`. The plain chat-stream path retries a blank stream once, then
+  sends the fallback, or `CHAT_STREAM_TIMEOUT_ERROR` only under the
+  quiet-end rule above.
+- **Stored metadata.** Every authored assistant reply carries
+  `replyMetadataFor(result, reply)`: `metadata.stoppedReason` (enum),
+  `metadata.capReason` when set, and `metadata.fallback` (`empty` |
+  `timeout`) when the content is the fallback. Hosts read the stop reason
+  from `turn.result.stoppedReason` (persona), `AssistantTurnResult` / the
+  `done` event's `stoppedReason` and `capReason` (assistant), or the stored
+  message's metadata. `isFallbackReply(message)` tells a fallback apart; the
+  assistant route's and voice's history builders skip fallback replies so
+  they are never replayed to the model as answers. The chat-stream paths
+  (plain and persona) take history from the browser, which sends no
+  metadata, so they recognise an assistant message whose text exactly
+  equals the configured or default fallback text. All three replay the
+  fixed `FALLBACK_HISTORY_PLACEHOLDER` in its place rather than dropping
+  it: a drop would leave two user messages in a row, which strict chat
+  templates (Gemma, Anthropic) reject. Hosts should hide feedback
+  controls (thumbs, corrections) on a message where `isFallbackReply` is
+  true: there is no model answer to rate.
+- **Dock.** The `done` event's `capReason` reaches the dock, which offers
+  Continue for a capped turn even when it ended `empty` or `timeout`.
+- **Reasoning.** `AIResponse.reasoning` (newer SDKs, sdk#1459) is read
+  defensively, capped at `MAX_TOOL_LOOP_REASONING_CHARS` code points, passed
+  to `onReasoning` (forwarded by both callers; a throw is ignored) and
+  returned as `result.reasoning` (the retry's, else the first round's).
+  Reasoning can quote documents and tool results: send it only to logs with
+  the same protection as the conversation. It is never persisted and never
+  the answer unless the host opts in with `answerFromReasoning` — which
+  stores raw chain-of-thought as the reply (`contentFromReasoning: true`).
+- **Budgets on the persona path.** `runPersonaConversationTurn` forwards
+  `maxTotalTokens`, `deadline`, `toolChoice` and `requestTimeoutMs`
+  (`runAssistantTurn` exposes them as `maxTurnTokens`/`maxTurnMs`).
+
 ## Observation bounds
 
 - A server tool observation is serialized and capped at

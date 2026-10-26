@@ -99,7 +99,11 @@ export type AssistantTurnStopReason =
   /** The turn's token or time budget ran out (`maxTurnTokens`/`maxTurnMs`). */
   | 'budget'
   | 'no_tools'
-  | 'cancelled';
+  | 'cancelled'
+  /** The model returned no answer, even after one retry; the reply is the fallback (#4379). */
+  | 'empty'
+  /** A model call timed out; the reply is the fallback (#4379). */
+  | 'timeout';
 
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =
@@ -112,7 +116,16 @@ export type AssistantTurnEvent<M = Record<string, unknown>> =
       continuationId: string;
       calls: AssistantClientToolCall[];
     }
-  | { type: 'done'; message?: M; stoppedReason: AssistantTurnStopReason }
+  | {
+      type: 'done';
+      message?: M;
+      stoppedReason: AssistantTurnStopReason;
+      /**
+       * Why tools were withdrawn on the final round, kept when the turn then
+       * ends `empty` or `timeout` (#4379).
+       */
+      capReason?: 'max_steps' | 'budget';
+    }
   | {
       type: 'error';
       /**

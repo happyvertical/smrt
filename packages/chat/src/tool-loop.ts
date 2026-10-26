@@ -173,6 +173,14 @@ export interface ToolFailureRecord {
  *   the deadline ({@link ToolLoopOptions.deadline}) ran out before
  *   `maxSteps`; like `max_steps`, the last round is offered no tools, so the
  *   model answers with what it has.
+ * - `empty`: the final round had blank content and no tool calls, and one
+ *   retry without tools (with {@link TOOL_LOOP_ANSWER_NOW_INSTRUCTION}) was
+ *   blank too (#4379). `content` is `''`; callers store a fallback.
+ * - `timeout`: a model call timed out (an `AI_TIMEOUT`-style error, or a
+ *   provider-side abort the caller did not request), or — older SDKs that end
+ *   a timed-out stream quietly — a streamed final round and its retry both
+ *   ended with no content, no tool calls and no finish reason. `content` is
+ *   `''`; callers store a fallback.
  */
 export type ToolLoopStopReason =
   | 'stop'
@@ -180,7 +188,12 @@ export type ToolLoopStopReason =
   | 'budget'
   | 'no_tools'
   | 'client_tools'
-  | 'cancelled';
+  | 'cancelled'
+  | 'empty'
+  | 'timeout';
+
+/** Why the loop withdrew tools for its final round. */
+export type ToolLoopCapReason = 'max_steps' | 'budget';
 
 /**
  * The effect a browser-executed tool declares. Mirrors smrt-web's
@@ -234,6 +247,20 @@ export type ToolLoopStepEvent =
       ok: boolean;
       rejected: boolean;
       error?: string;
+    }
+  | {
+      /**
+       * A round ended with blank content and no tool calls (#4379). `retry`
+       * says whether the loop retries it once without tools. Carries no model
+       * text: `hasReasoning` only says the response held reasoning.
+       */
+      type: 'empty_round';
+      step: number;
+      retry: boolean;
+      finishReason?: string;
+      hasReasoning: boolean;
+      /** Streamed, and no finish reason: the shape of a quiet SDK timeout. */
+      suspectedTimeout: boolean;
     };
 
 /** Token usage for one model round, reported to {@link ToolLoopOptions.onUsage}. */
@@ -263,6 +290,23 @@ export interface ToolLoopResult {
    * Empty otherwise.
    */
   pendingClientToolCalls: PendingClientToolCall[];
+  /** True when a blank final round was retried once without tools (#4379). */
+  emptyRetried?: boolean;
+  /**
+   * Set when the final round was the forced no-tools call: why tools were
+   * withdrawn. Kept when the turn then ends `empty` or `timeout` (#4379).
+   */
+  capReason?: ToolLoopCapReason;
+  /**
+   * The final response's reasoning text, when the AI boundary reports one
+   * (`AIResponse.reasoning`, newer SDKs), capped at
+   * {@link MAX_TOOL_LOOP_REASONING_CHARS}. For host logging only: smrt never
+   * persists it, and it is never `content` unless the host opted in with
+   * {@link ToolLoopOptions.answerFromReasoning}.
+   */
+  reasoning?: string;
+  /** True when `content` came from `reasoning` (host opt-in only). */
+  contentFromReasoning?: boolean;
 }
 
 /** Context handed to a custom {@link ToolLoopOptions.executeTool} implementation. */
@@ -352,6 +396,28 @@ export interface ToolLoopOptions {
   deadline?: number;
   /** Clock for {@link deadline} (tests). Default `Date.now`. */
   now?: () => number;
+  /**
+   * Per-model-call timeout in ms, forwarded to the AI boundary as `timeout`
+   * (#4379). Unset: the provider default (120 s in `@happyvertical/ai`). It is
+   * deliberately not derived from {@link deadline}: the deadline only stops
+   * new tool rounds, and cutting the final answer short at it would turn a
+   * late answer into none. A timed-out call ends the turn with
+   * `stoppedReason: 'timeout'`.
+   */
+  requestTimeoutMs?: number;
+  /**
+   * Host opt-in (#4379): when the final round and its retry are both blank
+   * but the response carried reasoning text, return that (capped) reasoning
+   * as `content`, with `contentFromReasoning: true`. Default false — reasoning
+   * is never an answer, nor persisted, without this.
+   */
+  answerFromReasoning?: boolean;
+  /**
+   * Called with each round's reasoning text (capped at
+   * {@link MAX_TOOL_LOOP_REASONING_CHARS}) when the AI boundary reports one,
+   * for host logging. Never persisted by the loop; a throw is ignored.
+   */
+  onReasoning?: (reasoning: string, step: number) => void;
   /**
    * Cancels the turn. Checked before every model round and every tool call,
    * and forwarded to the AI boundary. An aborted loop returns
@@ -964,6 +1030,9 @@ export async function runToolLoop(
     initialTokens = 0,
     deadline,
     now = Date.now,
+    requestTimeoutMs,
+    answerFromReasoning = false,
+    onReasoning,
     signal,
     onStep,
     onUsage,
@@ -1062,13 +1131,88 @@ export async function runToolLoop(
         totalTokens,
         pendingClientToolCalls: [],
       });
+      const timedOut = (
+        emptyRetried: boolean,
+        capReason?: ToolLoopCapReason,
+      ): ToolLoopResult => ({
+        content: '',
+        steps: executedRounds,
+        stoppedReason: 'timeout',
+        invocations,
+        messages: working,
+        totalTokens,
+        pendingClientToolCalls: [],
+        ...(emptyRetried ? { emptyRetried } : {}),
+        ...(capReason ? { capReason } : {}),
+      });
+      /** The token budget or the deadline has run out. */
+      const budgetExhausted = (): boolean =>
+        (maxTotalTokens !== undefined &&
+          initialTokens + totalTokens >= maxTotalTokens) ||
+        (deadline !== undefined && now() >= deadline);
+
+      /**
+       * One model call. A caller abort is `cancelled`; a provider timeout
+       * (#4379) is `timeout` rather than an empty success; anything else
+       * still throws.
+       */
+      const callModel = async (
+        callMessages: LoopMessage[],
+        withTools: boolean,
+      ): Promise<AIResponse | 'cancelled' | 'timeout'> => {
+        let result: AIResponse;
+        try {
+          result = await ai.chat(callMessages, {
+            model,
+            temperature,
+            maxTokens,
+            tools: withTools ? aiTools : undefined,
+            toolChoice: withTools ? toolChoice : 'none',
+            ...(requestTimeoutMs !== undefined
+              ? { timeout: requestTimeoutMs }
+              : {}),
+            // Live token streaming (#1936). Best-effort: providers that don't
+            // stream ignore these and still resolve the full response below.
+            ...(onToken ? { stream: true, onProgress: onToken } : {}),
+            ...(signal ? { signal } : {}),
+          });
+        } catch (error) {
+          // An abort surfaces from the provider as its own error type; report
+          // it as a cancellation rather than a failure.
+          if (signal?.aborted) return 'cancelled';
+          if (isModelTimeoutError(error)) return 'timeout';
+          throw error;
+        }
+        totalTokens += result.usage?.totalTokens ?? 0;
+        if (result.usage && onUsage) {
+          try {
+            onUsage({
+              promptTokens: result.usage.promptTokens ?? 0,
+              completionTokens: result.usage.completionTokens ?? 0,
+              totalTokens: result.usage.totalTokens ?? 0,
+              ...(result.model || model
+                ? { model: result.model ?? model }
+                : {}),
+            });
+          } catch {
+            // Attribution is telemetry; it never fails the turn.
+          }
+        }
+        noteFinishReason(ai, result.finishReason);
+        const reasoning = reasoningOf(result);
+        if (reasoning && onReasoning) {
+          try {
+            onReasoning(reasoning, executedRounds);
+          } catch {
+            // Logging only; it never fails the turn.
+          }
+        }
+        return result;
+      };
 
       for (;;) {
         if (signal?.aborted) return cancelled();
-        const budgetSpent =
-          (maxTotalTokens !== undefined &&
-            initialTokens + totalTokens >= maxTotalTokens) ||
-          (deadline !== undefined && now() >= deadline);
+        const budgetSpent = budgetExhausted();
         const offerTools =
           aiTools.length > 0 && executedRounds < maxSteps && !budgetSpent;
         onStep?.({ type: 'round', step: executedRounds });
@@ -1081,57 +1225,119 @@ export async function runToolLoop(
         const roundMessages: LoopMessage[] = forcedFinal
           ? [...working, answerNowMessage()]
           : working;
-        try {
-          response = await ai.chat(roundMessages, {
-            model,
-            temperature,
-            maxTokens,
-            tools: offerTools ? aiTools : undefined,
-            toolChoice: offerTools ? toolChoice : 'none',
-            // Live token streaming (#1936). Best-effort: providers that don't
-            // stream ignore these and still resolve the full response below.
-            ...(onToken ? { stream: true, onProgress: onToken } : {}),
-            ...(signal ? { signal } : {}),
-          });
-        } catch (error) {
-          // An abort surfaces from the provider as its own error type; report
-          // it as a cancellation rather than a failure.
-          if (signal?.aborted) return cancelled();
-          throw error;
+        const outcome = await callModel(roundMessages, offerTools);
+        if (outcome === 'cancelled') return cancelled();
+        if (outcome === 'timeout') {
+          return timedOut(
+            false,
+            forcedFinal
+              ? executedRounds >= maxSteps
+                ? 'max_steps'
+                : 'budget'
+              : undefined,
+          );
         }
-        totalTokens += response.usage?.totalTokens ?? 0;
-        if (response.usage && onUsage) {
-          try {
-            onUsage({
-              promptTokens: response.usage.promptTokens ?? 0,
-              completionTokens: response.usage.completionTokens ?? 0,
-              totalTokens: response.usage.totalTokens ?? 0,
-              ...(response.model || model
-                ? { model: response.model ?? model }
-                : {}),
-            });
-          } catch {
-            // Attribution is telemetry; it never fails the turn.
-          }
-        }
+        response = outcome;
 
         const toolCalls = offerTools ? (response.toolCalls ?? []) : [];
         if (toolCalls.length === 0) {
+          const stoppedReason: ToolLoopStopReason =
+            aiTools.length === 0
+              ? 'no_tools'
+              : offerTools
+                ? 'stop'
+                : executedRounds >= maxSteps
+                  ? 'max_steps'
+                  : 'budget';
+          // Why tools were withdrawn on this final round, kept even when the
+          // turn then ends `empty`/`timeout` (#4379).
+          const capReason: ToolLoopCapReason | undefined = forcedFinal
+            ? executedRounds >= maxSteps
+              ? 'max_steps'
+              : 'budget'
+            : undefined;
+          const first = response;
+          let final = first;
+          let emptyRetried = false;
+          const streamed = Boolean(onToken);
+          const firstSuspect = isSuspectedQuietTimeout(ai, first, streamed);
+          if (isBlank(first)) {
+            // A blank final answer is never accepted silently (#4379): retry
+            // once without tools, with the answer-now instruction (sent on
+            // that call only, never stored in the transcript) — unless the
+            // token budget or deadline is already spent, which no retry may
+            // overrun.
+            const retry = !budgetExhausted();
+            onStep?.({
+              type: 'empty_round',
+              step: executedRounds,
+              retry,
+              ...(first.finishReason
+                ? { finishReason: first.finishReason }
+                : {}),
+              hasReasoning: reasoningOf(first) !== undefined,
+              suspectedTimeout: firstSuspect,
+            });
+            if (retry) {
+              emptyRetried = true;
+              if (signal?.aborted) return cancelled();
+              const outcome = await callModel(
+                [...working, answerNowMessage()],
+                false,
+              );
+              if (outcome === 'cancelled') return cancelled();
+              if (outcome === 'timeout') return timedOut(true, capReason);
+              final = outcome;
+              if (isBlank(final)) {
+                onStep?.({
+                  type: 'empty_round',
+                  step: executedRounds,
+                  retry: false,
+                  ...(final.finishReason
+                    ? { finishReason: final.finishReason }
+                    : {}),
+                  hasReasoning: reasoningOf(final) !== undefined,
+                  suspectedTimeout: isSuspectedQuietTimeout(
+                    ai,
+                    final,
+                    streamed,
+                  ),
+                });
+              }
+            }
+          }
+          // The retry's reasoning, else the first round's (#4379).
+          const reasoning = reasoningOf(final) ?? reasoningOf(first);
+          let content = final.content ?? '';
+          let finalReason: ToolLoopStopReason = stoppedReason;
+          let contentFromReasoning = false;
+          if (isBlank(final)) {
+            if (answerFromReasoning && reasoning) {
+              content = reasoning;
+              contentFromReasoning = true;
+            } else {
+              content = '';
+              // Timeout only when every attempt had the quiet-timeout shape.
+              finalReason =
+                firstSuspect &&
+                (final === first ||
+                  isSuspectedQuietTimeout(ai, final, streamed))
+                  ? 'timeout'
+                  : 'empty';
+            }
+          }
           return {
-            content: response.content ?? '',
+            content,
             steps: executedRounds,
-            stoppedReason:
-              aiTools.length === 0
-                ? 'no_tools'
-                : offerTools
-                  ? 'stop'
-                  : executedRounds >= maxSteps
-                    ? 'max_steps'
-                    : 'budget',
+            stoppedReason: finalReason,
             invocations,
             messages: working,
             totalTokens,
             pendingClientToolCalls: [],
+            ...(emptyRetried ? { emptyRetried } : {}),
+            ...(capReason ? { capReason } : {}),
+            ...(reasoning ? { reasoning } : {}),
+            ...(contentFromReasoning ? { contentFromReasoning } : {}),
           };
         }
 
@@ -1404,6 +1610,211 @@ export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
 
 function answerNowMessage(): LoopMessage {
   return { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION };
+}
+
+/**
+ * Default text both callers store when a turn ends with no answer (#4379):
+ * `stoppedReason` `empty` or `timeout`, or any otherwise blank final content.
+ * Replaces the old `''` (persona path) and `'Done.'` (assistant path). Hosts
+ * override it with `emptyAnswerFallback`.
+ */
+export const DEFAULT_EMPTY_ANSWER_FALLBACK =
+  "I couldn't produce an answer to that. Please try again, or rephrase the question.";
+
+/** Why a stored reply is the fallback text rather than a model answer. */
+export type FallbackReplyReason = 'empty' | 'timeout';
+
+/**
+ * Metadata key marking a stored assistant message whose content is the
+ * fallback, not a model answer (#4379): `metadata.fallback` is a
+ * {@link FallbackReplyReason}. History builders skip such messages so the
+ * fallback is never replayed to the model as a prior answer.
+ */
+export const FALLBACK_REPLY_METADATA_KEY = 'fallback';
+
+/** The reply a turn stores, and whether it is the fallback. */
+export interface TurnReply {
+  /** Trimmed model content, or the fallback text. Never blank. */
+  content: string;
+  /** Set when `content` is the fallback. */
+  fallback?: FallbackReplyReason;
+}
+
+/**
+ * The reply to store for a loop result (#4379): the model content, trimmed
+ * (both callers trim alike), or the fallback when it is blank. The fallback
+ * reason is `timeout` for a timed-out turn, else `empty`.
+ */
+export function resolveTurnReply(
+  result: { content: string; stoppedReason?: ToolLoopStopReason },
+  fallback: string = DEFAULT_EMPTY_ANSWER_FALLBACK,
+): TurnReply {
+  const content = result.content.trim();
+  if (content) return { content };
+  return {
+    content: fallback.trim() || DEFAULT_EMPTY_ANSWER_FALLBACK,
+    fallback: result.stoppedReason === 'timeout' ? 'timeout' : 'empty',
+  };
+}
+
+/** The stored reply text for a loop result (see {@link resolveTurnReply}). */
+export function replyContentFor(
+  result: { content: string; stoppedReason?: ToolLoopStopReason },
+  fallback?: string,
+): string {
+  return resolveTurnReply(result, fallback).content;
+}
+
+const STOP_REASONS: ReadonlySet<string> = new Set<ToolLoopStopReason>([
+  'stop',
+  'max_steps',
+  'budget',
+  'no_tools',
+  'client_tools',
+  'cancelled',
+  'empty',
+  'timeout',
+]);
+
+/**
+ * Metadata stored on every authored assistant reply (#4379): the turn's
+ * `stoppedReason`, its `capReason` when the final round was forced, and the
+ * `fallback` marker when the content is the fallback. Enum values only —
+ * never model text — so it is bounded.
+ */
+export function replyMetadataFor(
+  result: { stoppedReason?: string; capReason?: string },
+  reply: TurnReply,
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  if (result.stoppedReason && STOP_REASONS.has(result.stoppedReason)) {
+    metadata.stoppedReason = result.stoppedReason;
+  }
+  if (result.capReason === 'max_steps' || result.capReason === 'budget') {
+    metadata.capReason = result.capReason;
+  }
+  if (reply.fallback) metadata[FALLBACK_REPLY_METADATA_KEY] = reply.fallback;
+  return metadata;
+}
+
+/**
+ * What a history builder replays in place of a stored fallback reply
+ * (#4379). Dropping the reply would leave two user messages in a row, which
+ * strict chat templates (Gemma, Anthropic) reject; this fixed marker keeps
+ * the roles alternating and says plainly that no answer was given, so it is
+ * never mistaken for a real prior answer.
+ */
+export const FALLBACK_HISTORY_PLACEHOLDER =
+  '(No answer was given to this message.)';
+
+/**
+ * Whether a stored chat message is a fallback reply (#4379). Accepts a
+ * `ChatMessage` (its `getMetadata()`), or a raw metadata object or JSON string.
+ */
+export function isFallbackReply(message: {
+  getMetadata?: () => Record<string, unknown>;
+  metadata?: unknown;
+}): boolean {
+  let metadata: unknown;
+  try {
+    metadata =
+      typeof message.getMetadata === 'function'
+        ? message.getMetadata()
+        : typeof message.metadata === 'string'
+          ? JSON.parse(message.metadata)
+          : message.metadata;
+  } catch {
+    return false;
+  }
+  if (!metadata || typeof metadata !== 'object') return false;
+  const value = (metadata as Record<string, unknown>)[
+    FALLBACK_REPLY_METADATA_KEY
+  ];
+  return value === 'empty' || value === 'timeout';
+}
+
+/** Cap on reasoning text surfaced by {@link runToolLoop} (#4379). */
+export const MAX_TOOL_LOOP_REASONING_CHARS = 4_000;
+
+/**
+ * The response's reasoning text, read defensively: `AIResponse.reasoning`
+ * exists only in newer `@happyvertical/ai` releases (sdk#1459). Capped at
+ * {@link MAX_TOOL_LOOP_REASONING_CHARS} code points (never splitting a
+ * surrogate pair).
+ */
+function reasoningOf(response: AIResponse): string | undefined {
+  const raw = (response as { reasoning?: unknown }).reasoning;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  return capCodePoints(trimmed, MAX_TOOL_LOOP_REASONING_CHARS);
+}
+
+/** The first `max` code points of `value`; bounded work for any input size. */
+function capCodePoints(value: string, max: number): string {
+  if (value.length <= max) return value;
+  // A code point is at most two UTF-16 units, so this prefix is enough.
+  return Array.from(value.slice(0, max * 2))
+    .slice(0, max)
+    .join('');
+}
+
+/**
+ * Blank content on a round with no usable tool calls (none were made, or
+ * they were discarded because no tools were offered): nothing to show.
+ */
+function isBlank(response: AIResponse): boolean {
+  return (response.content ?? '').trim() === '';
+}
+
+/**
+ * AI boundaries that have reported a finish reason in this process. Only for
+ * such a boundary is a missing finish reason a signal: it shows the SDK
+ * populates `finishReason`, so a blank, reason-less reply is the shape of a
+ * stream an older SDK (<= 0.108.0) ended quietly on timeout. A boundary that
+ * never reports one gives no such signal, and its blank reply is just blank.
+ */
+const finishReasonReporters = new WeakSet<object>();
+
+/** Record that `ai` populates finish reasons (see {@link finishReasonReporters}). */
+export function noteFinishReason(ai: object, reason: unknown): void {
+  if (typeof reason === 'string' && reason) finishReasonReporters.add(ai);
+}
+
+/** Whether `ai` has reported a finish reason before. */
+export function reportsFinishReason(ai: object): boolean {
+  return finishReasonReporters.has(ai);
+}
+
+function isSuspectedQuietTimeout(
+  ai: object,
+  response: AIResponse,
+  streamed: boolean,
+): boolean {
+  return (
+    streamed &&
+    isBlank(response) &&
+    (response.toolCalls?.length ?? 0) === 0 &&
+    !response.finishReason &&
+    reportsFinishReason(ai)
+  );
+}
+
+const TIMEOUT_ERROR_CODES = new Set([
+  'AI_TIMEOUT',
+  'TIMEOUT',
+  'REQUEST_TIMEOUT',
+]);
+
+/**
+ * A model call that failed by timing out. Checked only after a caller abort
+ * was ruled out, so an `AbortError` here is the provider's own timeout signal.
+ */
+function isModelTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, name } = error as { code?: unknown; name?: unknown };
+  if (typeof code === 'string' && TIMEOUT_ERROR_CODES.has(code)) return true;
+  return name === 'TimeoutError' || name === 'AbortError';
 }
 
 /** Max browser tools accepted on one turn. */

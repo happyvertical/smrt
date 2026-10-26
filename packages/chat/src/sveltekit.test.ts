@@ -48,6 +48,10 @@ import {
   type MountAssistantRoutesOptions,
   mountAssistantRoutes,
 } from './sveltekit.js';
+import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  FALLBACK_HISTORY_PLACEHOLDER,
+} from './tool-loop.js';
 
 const ORIGIN = 'http://app.test';
 
@@ -642,6 +646,36 @@ describe('mountAssistantRoutes', () => {
         ['user', 'What next?'],
         ['assistant', 'Here is the plan.'],
         ['user', 'And then?'],
+      ]);
+    });
+
+    it('never replays a stored fallback reply as history (#4379)', async () => {
+      // Turn 1: blank, and its retry blank -> the fallback is stored.
+      const ai = scriptedAI([text(''), text(''), text('Four.')]);
+      const routes = mount({ ai });
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'How many?',
+          clientRequestId: 'f-1',
+        }),
+      );
+      const stored = await listMessages(routes, threadId);
+      expect(stored.map((m) => [m.role, m.content])).toEqual([
+        ['user', 'How many?'],
+        ['assistant', DEFAULT_EMPTY_ANSWER_FALLBACK],
+      ]);
+      await events(
+        await send(routes, threadId, {
+          content: 'Try again',
+          clientRequestId: 'f-2',
+        }),
+      );
+      // The fallback is not replayed; a marker keeps roles alternating.
+      expect(ai.seen[2].map((m) => [m.role, m.content])).toEqual([
+        ['user', 'How many?'],
+        ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
+        ['user', 'Try again'],
       ]);
     });
 

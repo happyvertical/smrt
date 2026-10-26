@@ -54,9 +54,12 @@ import {
   DEFAULT_MAX_STEPS,
   type ManifestTool,
   type PendingClientToolCall,
+  replyMetadataFor,
+  resolveTurnReply,
   runToolLoop,
   type ToolFailureRecord,
   type ToolInvocation,
+  type ToolLoopOptions,
   type ToolLoopResult,
   type ToolLoopUsage,
   toolFailureRecord,
@@ -395,6 +398,29 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ChatOptions['toolChoice'];
+  /**
+   * Per-model-call timeout in ms (forwarded as `requestTimeoutMs`, #4379).
+   * Unset: the provider default. A timed-out call ends the turn with
+   * `stoppedReason: 'timeout'` and the fallback reply.
+   */
+  requestTimeoutMs?: number;
+  /**
+   * Reply stored when the turn produced no answer (#4379; `stoppedReason`
+   * `empty` or `timeout`, or blank content). Default
+   * `DEFAULT_EMPTY_ANSWER_FALLBACK`. Replaces the old `'Done.'`.
+   */
+  emptyAnswerFallback?: string;
+  /**
+   * Host opt-in: answer from the model's reasoning text when the final round
+   * and its retry are blank (forwarded, see `ToolLoopOptions`). Default false.
+   */
+  answerFromReasoning?: boolean;
+  /**
+   * Reasoning-text sink (forwarded, see `ToolLoopOptions.onReasoning`).
+   * Reasoning can quote documents and tool results: send it only to logs
+   * with the same protection as the conversation itself.
+   */
+  onReasoning?: ToolLoopOptions['onReasoning'];
   /** Cancels the turn (e.g. the request's own abort signal). */
   signal?: AbortSignal;
   /** Per-round token usage, for the host's usage attribution. */
@@ -440,6 +466,8 @@ export interface AssistantTurnState {
 /** What {@link runAssistantTurn} returns when its generator completes. */
 export interface AssistantTurnResult {
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
+  /** Why tools were withdrawn on the final round, when they were (#4379). */
+  capReason?: 'max_steps' | 'budget';
   content: string;
   loop?: ToolLoopResult;
   /** The turn's origin message (from the continuation on a resume). */
@@ -774,6 +802,11 @@ async function runTurn<M>(
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     toolChoice: options.toolChoice,
+    ...(options.requestTimeoutMs !== undefined
+      ? { requestTimeoutMs: options.requestTimeoutMs }
+      : {}),
+    ...(options.answerFromReasoning ? { answerFromReasoning: true } : {}),
+    ...(options.onReasoning ? { onReasoning: options.onReasoning } : {}),
     signal: options.signal,
     onUsage: options.onUsage,
     permissions: options.permissions,
@@ -785,6 +818,9 @@ async function runTurn<M>(
       if (text) emit({ type: 'token', text });
     },
     onStep: (event) => {
+      // A blank round is retried inside the loop (#4379); it is not a step
+      // the dock shows.
+      if (event.type === 'empty_round') return;
       if (event.type === 'round') {
         if (event.step > initialSteps) {
           emit({ type: 'step', step: { kind: 'thinking', step: event.step } });
@@ -952,7 +988,11 @@ async function runTurn<M>(
     };
   }
 
-  const content = loop.content.trim() || 'Done.';
+  // Never store `''` or a content-free 'Done.' (#4379). A fallback reply is
+  // marked `metadata.fallback` so it is never replayed as a model answer.
+  const reply = resolveTurnReply(loop, options.emptyAnswerFallback);
+  const content = reply.content;
+  const replyMetadata = replyMetadataFor(loop, reply);
   let finalMessage: M | undefined;
   if (author && sendAgentReply) {
     const message = await sendAgentReply(author.chatService, {
@@ -962,6 +1002,7 @@ async function runTurn<M>(
       replyToMessageId: originMessageId ?? null,
       kind: 'assistant',
       content,
+      metadata: replyMetadata,
     });
     finalMessage = serialize(message);
     emit({ type: 'message', message: finalMessage });
@@ -971,10 +1012,12 @@ async function runTurn<M>(
     type: 'done',
     ...(finalMessage ? { message: finalMessage } : {}),
     stoppedReason: loop.stoppedReason,
+    ...(loop.capReason ? { capReason: loop.capReason } : {}),
   });
   emit(status({ state: 'done', label: 'Done' }));
   return {
     stoppedReason: loop.stoppedReason,
+    ...(loop.capReason ? { capReason: loop.capReason } : {}),
     content,
     loop,
     ...(originMessageId ? { originMessageId } : {}),

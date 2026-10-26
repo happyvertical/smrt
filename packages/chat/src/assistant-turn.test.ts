@@ -43,8 +43,11 @@ import { ChatService } from './services/index.js';
 import {
   appendClientToolResults,
   type ClientToolDefinition,
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  isFallbackReply,
   runToolLoop,
   sanitizeClientToolDeclarations,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolInvocation,
 } from './tool-loop.js';
 
@@ -572,9 +575,10 @@ describe('assistant turn', () => {
     it('ends with budget once the turn token budget is spent, across resumes', async () => {
       const store = createMemoryContinuationStore();
       // Each tool round reports 12 tokens; the budget allows one round.
+      // The resumed leg's forced final call answers. (A blank one is not
+      // retried past a spent budget: see the #4379 tests.)
       const ai = scriptedAI([
         calls(['smrt_ui_list_form_controls', {}, 'r1']),
-        calls(['smrt_ui_list_form_controls', {}, 'r2']),
         text('Here is what I found so far.'),
       ]);
       const first = await collect(
@@ -999,6 +1003,132 @@ describe('assistant turn', () => {
       expect(done.message).toMatchObject({
         content: 'Here you go.',
         role: 'assistant',
+      });
+      const metadata = (done.message as { metadata?: unknown }).metadata;
+      expect(
+        typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
+      ).toEqual({ stoppedReason: 'stop' });
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        false,
+      );
+    });
+  });
+
+  describe('blank answers and timeouts (#4379)', () => {
+    async function authored(
+      rounds: Round[],
+      extra: Record<string, unknown> = {},
+    ) {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const ai = scriptedAI(rounds);
+      const events = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'how many articles?',
+          extraTools: [readTool([])],
+          author: {
+            chatService,
+            agentSessionId: session.id as string,
+            tenantId,
+          },
+          ...extra,
+        }),
+      );
+      const done = events.find((e) => e.type === 'done') as Extract<
+        AssistantTurnEvent,
+        { type: 'done' }
+      >;
+      return { ai, events, done };
+    }
+
+    it('retries a blank answer and stores the fallback instead of Done.', async () => {
+      const { ai, events, done } = await authored([
+        calls(['data-discover', {}]),
+        text(''),
+      ]);
+      expect(ai.seen).toHaveLength(3);
+      expect(ai.seen[2]?.at(-1)?.content).toBe(
+        TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+      );
+      expect(done.stoppedReason).toBe('empty');
+      expect(done.message).toMatchObject({
+        content: DEFAULT_EMPTY_ANSWER_FALLBACK,
+        role: 'assistant',
+      });
+      // Marked as a fallback, not a model answer.
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
+      expect(
+        events.some(
+          (e) =>
+            e.type === 'message' &&
+            (e.message as { content?: string }).content === 'Done.',
+        ),
+      ).toBe(false);
+      // The retry is internal: no extra step reaches the dock.
+      expect(
+        events.filter((e) => e.type === 'step').map((e) => e.step.kind),
+      ).toEqual(['tool_call', 'tool_result', 'thinking']);
+    });
+
+    it('stores a configured fallback on a timeout and forwards requestTimeoutMs', async () => {
+      const timeouts: Array<number | undefined> = [];
+      const { done } = await authored(
+        [
+          (_m, options) => {
+            timeouts.push((options as { timeout?: number }).timeout);
+            throw Object.assign(new Error('Request timed out'), {
+              code: 'AI_TIMEOUT',
+            });
+          },
+        ],
+        { requestTimeoutMs: 5_000, emptyAnswerFallback: 'Took too long.' },
+      );
+      expect(timeouts).toEqual([5_000]);
+      expect(done.stoppedReason).toBe('timeout');
+      expect(done.message).toMatchObject({ content: 'Took too long.' });
+      expect((done.message as { metadata?: unknown }).metadata).toBeDefined();
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
+    });
+
+    it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {
+      const quiet: Round = () => ({ content: '' });
+      // The tool round's finishReason shows the SDK populates finish reasons.
+      const { done } = await authored([
+        calls(['data-discover', {}]),
+        quiet,
+        quiet,
+      ]);
+      expect(done.stoppedReason).toBe('timeout');
+      expect(done.message).toMatchObject({
+        content: DEFAULT_EMPTY_ANSWER_FALLBACK,
+      });
+    });
+
+    it('keeps a reasoning-only reply out of the stored answer', async () => {
+      const reasoningOnly: Round = () =>
+        ({
+          content: '',
+          finishReason: 'stop',
+          reasoning: 'Private chain of thought: 7.',
+        }) as AIResponse;
+      const { done } = await authored([reasoningOnly]);
+      expect(done.stoppedReason).toBe('empty');
+      expect(done.message).toMatchObject({
+        content: DEFAULT_EMPTY_ANSWER_FALLBACK,
       });
     });
   });

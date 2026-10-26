@@ -695,6 +695,9 @@ export async function readAssistantTurnResult<W = Record<string, unknown>>(
       options.onEvent({
         type: 'done',
         stoppedReason: event.stoppedReason,
+        // Why tools were withdrawn, kept when the turn then ended `empty`
+        // or `timeout` (#4379): the dock still offers Continue.
+        ...(event.capReason ? { capReason: event.capReason } : {}),
         ...(event.message
           ? { message: options.mapMessage(event.message) }
           : {}),
