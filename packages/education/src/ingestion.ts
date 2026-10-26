@@ -91,8 +91,16 @@ import type {
   SubmissionPage,
   SubmissionService,
 } from './submission-service.js';
+import {
+  validateWorkbookAssessment,
+  WORKBOOK_MATH_VOCABULARY,
+  type WorkbookAssessment,
+} from './workbook-contracts.js';
+import { WorkbookService } from './workbook-service.js';
 
 export type EducationIntakeCaptureRequest = LearnerRequest & {
+  workbookActivityId?: string;
+  assistance?: import('./workbook-contracts.js').WorkbookAssistance;
   enrollmentId: string;
   lessonId: string;
   itemId: string;
@@ -172,6 +180,23 @@ export async function captureEducationIntake(input: {
       previousSubmissionId: request.previousSubmissionId,
     },
   };
+  if (request.workbookActivityId) {
+    if (
+      !(submissions instanceof WorkbookService) ||
+      request.kind !== 'completed_work'
+    )
+      throw new Error(
+        'Workbook intake requires WorkbookService completed work',
+      );
+    const attempt = await submissions.captureWorkbookWork({
+      ...request,
+      activityId: request.workbookActivityId,
+      intakeItemId: request.itemId,
+      requestKey: capture.requestKey,
+      pages,
+    });
+    return attempt.submission;
+  }
   if (request.kind === 'blank_reference')
     return submissions.captureBlankReference({
       ...capture,
@@ -223,6 +248,8 @@ export function educationIntakeHandlers(input: {
   request: LearnerRequest & { enrollmentId: string };
   /** After capture, bind a new grading stage to this exact immutable attempt. */
   submissionId?: string;
+  workbookActivityId?: string;
+  workbookVocabulary?: WorkbookAssessment['vocabulary'];
 }): OperationHandler[] {
   const { submissions, request } = input;
   const bound = async <T>(
@@ -367,21 +394,29 @@ export function educationIntakeHandlers(input: {
     await context.assertTarget(SUBMISSION, submissionId);
     return submission;
   };
+  const workbook = input.workbookActivityId;
+  if (workbook && !(submissions instanceof WorkbookService))
+    throw new Error('Workbook handler requires WorkbookService');
+  const vocabulary = input.workbookVocabulary ?? WORKBOOK_MATH_VOCABULARY;
   handlers.push({
     id: '@happyvertical/smrt-education:review-submission',
     version: '1',
-    description:
-      'Suggest marks and feedback for this captured attempt. Only a current authorized guardian decision may apply a grade.',
+    description: workbook
+      ? 'Assess each visible question on this physical workbook page. Use stable question IDs from printed number plus occurrence/subpart (q1:a); preserve those IDs for corrections. Cite original evidence IDs with normalized source rectangles. Unanswered/illegible/missing-context/not-present is unassessed with null points, never incorrect. Concepts are suggestions from the supplied vocabulary only. Guardian review is required for authority.'
+      : 'Suggest marks and feedback for this captured attempt. Only a current authorized guardian decision may apply a grade.',
     operation: { model: GRADE, action: 'create', version: '1' },
     capability: { effect: 'write', idempotent: false, openWorld: false },
     argsSchema: {
       type: 'object',
       additionalProperties: false,
-      required: ['submissionId', 'score', 'feedback'],
+      required: workbook
+        ? ['submissionId', 'score', 'feedback', 'questions']
+        : ['submissionId', 'score', 'feedback'],
       properties: {
         submissionId: idSchema,
         score: { type: ['number', 'null'], minimum: 0, maximum: 1 },
         feedback: { type: 'string', maxLength: 10000 },
+        ...(workbook ? { questions: workbookQuestionsSchema(vocabulary) } : {}),
       },
     },
     resultSchema: {
@@ -396,13 +431,34 @@ export function educationIntakeHandlers(input: {
       references: { submissionId: { kind: 'candidate', model: SUBMISSION } },
       candidates: async (_query, context) => {
         const submission = await current(context);
+        let workbookContext = '';
+        if (workbook) {
+          workbookContext = await bound(context, async (service) => {
+            const workbooks = service as WorkbookService;
+            const currentAttempt =
+              await workbooks.getWorkbookAttemptBySubmission({
+                ...request,
+                submissionId,
+              });
+            if (!currentAttempt || currentAttempt.activityId !== workbook)
+              throw new Error('Workbook assignment unavailable');
+            const questions = await workbooks.getWorkbookQuestionIdentity({
+              ...request,
+              activityId: workbook,
+              submissionId,
+            });
+            return questions.length
+              ? ` Preserve this exact question ID and prompt set; emit absent questions unassessed/not_present: ${JSON.stringify(questions).slice(0, 20000)}`
+              : ' Use printed question number plus occurrence/subpart as stable ID; never use answer text as identity.';
+          });
+        }
         return {
           items: [
             {
               model: SUBMISSION,
               id: submission.id,
               revision: `attempt:${submission.id}:${submission.status}`,
-              label: 'Current captured attempt (guardian review required)',
+              label: `Current captured attempt (guardian review required).${workbookContext}`,
             },
           ],
           hasMore: false,
@@ -436,6 +492,37 @@ export function educationIntakeHandlers(input: {
       kind: 'database',
       apply: async (args, context) => {
         await requireSubmission(args, context);
+        if (workbook) {
+          await bound(context, async (service) => {
+            const workbooks = service as WorkbookService;
+            const timeline = await workbooks.getWorkbookTimeline({
+              ...request,
+              activityId: workbook,
+            });
+            const attempt = timeline.attempts.find(
+              (entry) => entry.submissionId === submissionId,
+            );
+            const proposal = attempt?.revisions.find(
+              (revision) =>
+                revision.kind === 'ai' &&
+                revision.assessment.provenance.proposalDigest ===
+                  workbookProposalDigest(args),
+            );
+            if (!proposal)
+              throw new Error(
+                'Workbook analysis must be preserved before guardian apply',
+              );
+            await workbooks.reviewWorkbookAssessment({
+              ...request,
+              activityId: workbook,
+              submissionId,
+              revisionId: proposal.id,
+              expectedHeadId: null,
+              requestKey: `ingestion-review:${proposal.id}`,
+            });
+          });
+          return { submissionId };
+        }
         await bound(context, (service) =>
           service.applyReviewedSubmission({
             ...request,
@@ -506,4 +593,267 @@ export function educationIntakeTargetResolver(input: {
       throw new Error('Education target changed');
     return { revision: current };
   };
+}
+
+function workbookProposalDigest(value: unknown): string {
+  // Canonical object keys permit DTO/JSON roundtrips without changing identity.
+  const canonical = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(canonical)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.entries(v)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, x]) => [k, canonical(x)]),
+          )
+        : v;
+  return createHash('sha256')
+    .update(JSON.stringify(canonical(value)))
+    .digest('hex');
+}
+
+function workbookQuestionsSchema(vocabulary: WorkbookAssessment['vocabulary']) {
+  return {
+    type: 'array',
+    minItems: 1,
+    maxItems: 200,
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'id',
+        'prompt',
+        'answer',
+        'result',
+        'reason',
+        'feedback',
+        'points',
+        'possiblePoints',
+        'anchors',
+        'conceptIds',
+        'markingCertainty',
+        'mappingCertainty',
+        'evidenceLimitations',
+      ],
+      properties: {
+        id: { type: 'string', minLength: 1, maxLength: 200 },
+        prompt: { type: 'string', maxLength: 10000 },
+        answer: { type: 'string', maxLength: 10000 },
+        result: {
+          type: 'string',
+          enum: ['correct', 'incorrect', 'partially_correct', 'unassessed'],
+        },
+        reason: {
+          type: 'string',
+          enum: [
+            'none',
+            'unanswered',
+            'illegible',
+            'missing_context',
+            'unsupported',
+            'not_present',
+          ],
+        },
+        feedback: { type: 'string', maxLength: 10000 },
+        points: { type: ['number', 'null'], minimum: 0 },
+        possiblePoints: { type: ['number', 'null'], minimum: 0 },
+        markingCertainty: {
+          type: 'string',
+          enum: ['clear', 'uncertain', 'unknown'],
+        },
+        mappingCertainty: {
+          type: 'string',
+          enum: ['clear', 'uncertain', 'unknown'],
+        },
+        evidenceLimitations: {
+          type: 'array',
+          maxItems: 20,
+          items: { type: 'string', maxLength: 500 },
+        },
+        conceptIds: {
+          type: 'array',
+          maxItems: 10,
+          items: { type: 'string', enum: vocabulary.concepts.map((c) => c.id) },
+        },
+        anchors: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['evidenceId', 'page', 'rect'],
+            properties: {
+              evidenceId: idSchema,
+              page: { type: 'integer', minimum: 1 },
+              rect: {
+                type: 'array',
+                minItems: 4,
+                maxItems: 4,
+                items: { type: 'number', minimum: 0, maximum: 1 },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+/** Transfer completed question proposals before ingestion retention cleanup.
+ * Education rows and originals remain readable without any ingestion receipt.
+ * A queued/failed/non-interpretation stage creates no educational assessment.
+ */
+export async function preserveWorkbookIntakeAnalysis(input: {
+  ingestion: IngestionService;
+  workbooks: WorkbookService;
+  request: LearnerRequest & { enrollmentId: string };
+  activityId: string;
+  submissionId: string;
+  workbookVocabulary?: WorkbookAssessment['vocabulary'];
+}): Promise<void> {
+  const { ingestion, workbooks, request, activityId, submissionId } = input;
+  const attempt = await workbooks.getWorkbookAttemptBySubmission({
+    ...request,
+    submissionId,
+  });
+  if (
+    !attempt ||
+    attempt.activityId !== activityId ||
+    !attempt.submission.intakeItemId
+  )
+    throw new Error('Workbook intake binding unavailable');
+  const itemId = attempt.submission.intakeItemId;
+  let snapshot: Awaited<ReturnType<IngestionService['getCompletedAnalysis']>>;
+  try {
+    snapshot = await ingestion.getCompletedAnalysis(itemId);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Analysis unavailable')
+      return;
+    throw error;
+  }
+  if (
+    snapshot.configuration.stage !== 'interpret' ||
+    !['completed', 'partial'].includes(snapshot.result.status)
+  )
+    return;
+  const output = snapshot.result.output as unknown as {
+    proposals?: import('@happyvertical/smrt-ingestion').GenerationOutput;
+  };
+  const generation = output.proposals;
+  if (
+    !generation ||
+    generation.version !== 1 ||
+    !Array.isArray(generation.suggestions)
+  )
+    throw new Error('Malformed workbook generation');
+  if (!['proposals', 'needs_review'].includes(generation.outcome)) return;
+  const suggestions = generation.suggestions.filter(
+    (s) => s.handlerId === '@happyvertical/smrt-education:review-submission',
+  );
+  if (!suggestions.length) return;
+  if (suggestions.length !== 1)
+    throw new Error('Ambiguous workbook analysis proposals');
+  const suggestion = suggestions[0];
+  if (
+    suggestion.args.submissionId !== submissionId ||
+    !Array.isArray(suggestion.args.questions) ||
+    suggestion.missingFields.length
+  )
+    throw new Error('Incomplete workbook question proposal');
+  const offered = generation.offered.find(
+    (entry) => entry.handler.id === suggestion.handlerId,
+  );
+  if (
+    !offered ||
+    !(
+      offered.handler.argsSchema.properties as
+        | Record<string, unknown>
+        | undefined
+    )?.questions
+  )
+    throw new Error('Generation did not use workbook question contract');
+  const sources = await workbooks.getWorkbookSourceAnchors({
+    ...request,
+    activityId,
+    submissionId,
+  });
+  const originals = snapshot.evidence
+    .filter((e) => e.parentEvidenceId === null)
+    .sort((a, b) => a.partId.localeCompare(b.partId));
+  if (
+    originals.length !== sources.length ||
+    originals.some((e, i) => e.contentHash !== sources[i].sha256)
+  )
+    throw new Error('Workbook retained source mismatch');
+  const questions = suggestion.args.questions.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('Invalid workbook question');
+    const q = value as Record<string, unknown>;
+    if (!Array.isArray(q.anchors))
+      throw new Error('Missing workbook source anchors');
+    const anchors = q.anchors.map((value) => {
+      const anchor = value as {
+        evidenceId: string;
+        page: number;
+        rect: [number, number, number, number];
+      };
+      const index = originals.findIndex((e) => e.id === anchor.evidenceId);
+      if (index < 0) throw new Error('Question must cite a captured original');
+      return {
+        assetId: sources[index].assetId,
+        sha256: sources[index].sha256,
+        page: anchor.page,
+        rect: anchor.rect,
+      };
+    });
+    return {
+      ...q,
+      anchors,
+    } as unknown as WorkbookAssessment['questions'][number];
+  });
+  // Vocabulary is host catalog configuration, never free-text AI labels.
+  const questionSchema = (
+    offered.handler.argsSchema.properties as Record<string, unknown>
+  ).questions as {
+    items: { properties: { conceptIds: { items: { enum: string[] } } } };
+  };
+  const conceptSchema = questionSchema.items.properties.conceptIds.items.enum;
+  const curated = input.workbookVocabulary ?? WORKBOOK_MATH_VOCABULARY;
+  if (
+    JSON.stringify(conceptSchema) !==
+    JSON.stringify(curated.concepts.map((c) => c.id))
+  )
+    throw new Error(
+      'Unsupported workbook vocabulary; configure matching preservation vocabulary',
+    );
+  const assessment: WorkbookAssessment = {
+    version: 1,
+    feedback: suggestion.args.feedback as string,
+    questions,
+    vocabulary: structuredClone(curated),
+    provenance: {
+      provider: generation.provenance.generative.provider,
+      model:
+        generation.provenance.generativeResponseModel ??
+        generation.provenance.generative.model,
+      configurationVersion: generation.provenance.configurationVersion,
+      rubricVersion: generation.provenance.promptVersion,
+      inputHash: snapshot.inputDigest,
+      analysisId: snapshot.attemptId,
+      proposalDigest: workbookProposalDigest(suggestion.args),
+      providerVersion: generation.provenance.generative.version,
+      sourceAnalysis: generation.source,
+      catalogDigest: generation.provenance.catalogDigest,
+      policyVersions: generation.provenance.policyVersions,
+    },
+  };
+  validateWorkbookAssessment(assessment);
+  await workbooks.recordWorkbookAnalysis({
+    ...request,
+    activityId,
+    submissionId,
+    requestKey: `ingestion:${snapshot.attemptId}`,
+    assessment,
+  });
 }

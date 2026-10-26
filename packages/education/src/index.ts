@@ -233,3 +233,6 @@ export {
   SubmissionAsset,
   SubmissionIntakeBinding,
 } from './submissions.js';
+export * from './workbook-contracts.js';
+export * from './workbook-models.js';
+export { WorkbookService } from './workbook-service.js';

@@ -144,6 +144,8 @@ export class LearnerService {
     | undefined;
   private writeFailure: { error: unknown } | undefined;
   private writeTail: Promise<void> = Promise.resolve();
+  private compositeTail: Promise<void> = Promise.resolve();
+  private composingMutation = false;
   private postgres: boolean;
   /** A trusted host transaction; capture/storage is forbidden on this scope. */
   protected executorBorrowed = false;
@@ -179,6 +181,7 @@ export class LearnerService {
           // committing. A swallowed mutation failure still aborts the unit.
           if (service.transactionState === 'active')
             service.transactionState = 'draining';
+          await service.compositeTail;
           await service.writeTail;
           if (service.writeFailure) throw service.writeFailure.error;
           return result;
@@ -186,6 +189,7 @@ export class LearnerService {
           // Queued operations must not begin after failure; an operation already
           // running must settle before rollback can release its database handle.
           service.transactionState = 'aborting';
+          await service.compositeTail;
           await service.writeTail;
           throw error;
         } finally {
@@ -215,6 +219,7 @@ export class LearnerService {
     try {
       const result = await operation(service);
       service.transactionState = 'draining';
+      await service.compositeTail;
       await service.writeTail;
       if (service.writeFailure) throw service.writeFailure.error;
       return result;
@@ -240,9 +245,53 @@ export class LearnerService {
 
   // Concurrent calls on one connection must observe earlier writes in that same
   // transaction. Cross-transaction arbitration still uses database row locks.
+  /** Serialize a composite domain mutation which calls ordinary queued writes.
+   * The separate queue avoids waiting on the same queue from inside itself;
+   * both queues share abort/commit draining and poison-on-failure semantics.
+   * Composite operations must not call other composite mutations.
+   */
+  protected composeMutation<T>(
+    operation: (service: this) => Promise<T>,
+  ): Promise<T> {
+    if (!this.transactionState)
+      return this.withTransaction((service) =>
+        service.composeMutation(operation),
+      );
+    if (this.transactionState !== 'active')
+      return Promise.reject(new Error('Learner transaction scope is closed'));
+    const result = this.compositeTail.then(async () => {
+      if (
+        this.transactionState === 'aborting' ||
+        this.transactionState === 'closed'
+      )
+        throw (
+          this.writeFailure?.error ??
+          new Error('Learner transaction scope is closed')
+        );
+      this.composingMutation = true;
+      try {
+        return await operation(this);
+      } catch (error) {
+        this.writeFailure ??= { error };
+        this.transactionState = 'aborting';
+        throw error;
+      } finally {
+        this.composingMutation = false;
+      }
+    });
+    this.compositeTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   protected mutate<T>(operation: (service: this) => Promise<T>): Promise<T> {
     if (!this.transactionState) return this.withTransaction(operation);
-    if (this.transactionState !== 'active')
+    if (
+      this.transactionState !== 'active' &&
+      !(this.transactionState === 'draining' && this.composingMutation)
+    )
       return Promise.reject(new Error('Learner transaction scope is closed'));
     const result = this.writeTail.then(async () => {
       if (

@@ -27,6 +27,10 @@ files after rollback; never expose source URIs or accept learner grade patches.
 Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.
 
+Physical workbook capture, immutable assessment/feedback history and descriptive
+evidence use [WorkbookService](agents/workbook-service.md). Keep provisional
+sharing separate from guardian Grade authority.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.
