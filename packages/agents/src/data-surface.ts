@@ -963,9 +963,41 @@ async function bounded<T>(
  * `normalizeDataQueryRequest` against the visible schema. A flat call (the
  * request's keys beside `surfaceId`, no `request` object) is accepted too.
  */
+/** Request-grammar keys a model sometimes misplaces next to `request`. */
+const DATA_QUERY_REQUEST_KEYS = [
+  'mode',
+  'projection',
+  'filter',
+  'sort',
+  'page',
+  'facets',
+  'version',
+  'requestId',
+] as const;
+
 function requestFromArgs(args: Record<string, unknown>): unknown {
   let raw: unknown;
   if (Object.hasOwn(args, 'request')) {
+    // `data.query` takes exactly {surfaceId, request} (#4378): a `filter`
+    // beside `request` used to be dropped silently, so a filtered count
+    // counted every row. Name only the fixed grammar keys that were
+    // misplaced — never the model's own keys or values.
+    const stray = Object.keys(args).filter(
+      (key) => key !== 'surfaceId' && key !== 'request',
+    );
+    if (stray.length > 0) {
+      const misplaced = DATA_QUERY_REQUEST_KEYS.filter((key) =>
+        stray.includes(key),
+      );
+      throw new DataSurfaceRequestError(
+        'data.query accepts only surfaceId and request at the top level' +
+          (misplaced.length > 0
+            ? `; move ${misplaced.join(', ')} inside request.`
+            : '; put every query option inside request.') +
+          ` ${DATA_QUERY_REQUEST_SHAPE_HINT}`,
+        'DATA_QUERY_ARGUMENTS_UNEXPECTED',
+      );
+    }
     raw = args.request;
   } else {
     const { surfaceId: _surfaceId, ...rest } = args;

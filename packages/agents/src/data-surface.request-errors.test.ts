@@ -170,6 +170,45 @@ describe('data.query envelope defaults', () => {
 });
 
 describe('data.query request errors', () => {
+  it('rejects a filter placed beside request instead of dropping it (#4378)', async () => {
+    const execute = vi.fn(async () => ({
+      rows: [],
+      total: { kind: 'exact' as const, value: 10 },
+    }));
+    const error = await requestError(
+      queryTool({ execute })({
+        surfaceId: 'records',
+        request: { mode: 'count' },
+        filter: {
+          kind: 'condition',
+          field: 'status',
+          operator: 'eq',
+          value: 'open-secret-value',
+        },
+      }),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe('DATA_QUERY_ARGUMENTS_UNEXPECTED');
+    expect(error.message).toContain('move filter inside request');
+    // Value-free: the model's argument values never come back.
+    expect(error.message).not.toContain('open-secret-value');
+  });
+
+  it('rejects an unknown sibling key without echoing its name', async () => {
+    const error = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { mode: 'count' },
+        whereClauseXyz: 'status = open',
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_ARGUMENTS_UNEXPECTED');
+    expect(error.message).toContain('put every query option inside request');
+    expect(error.message).not.toContain('whereClauseXyz');
+    expect(error.message).not.toContain('status = open');
+  });
+
   it('names the filterable fields for an unknown or hidden filter field, never the hidden ones', async () => {
     for (const field of ['published_at', 'secret', 'restricted']) {
       const error = await requestError(

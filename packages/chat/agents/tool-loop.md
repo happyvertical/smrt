@@ -32,6 +32,29 @@
 - A tool returning `undefined` observes `null`; an unserializable result
   observes `{"error":"unserializable_result"}` instead of throwing.
 
+## Argument hygiene (#4378)
+
+Arguments the model sends are never dropped silently; each case below is an
+`invalid_request` observation the model can correct and retry. Messages are
+value-free: they name the accepted shape, never the model's values.
+
+- **Malformed JSON.** Raw arguments that do not parse to a JSON object
+  (malformed JSON, an array, a scalar) fail with code
+  `TOOL_ARGUMENTS_MALFORMED`; the tool does not run and the invocation's
+  `args` is `{}`. Blank or `null` arguments are a no-argument call. A browser
+  tool call with malformed arguments is answered in the transcript and never
+  suspends the turn.
+- **Manifest `read`.** Accepts only `id` (string), `where` (object of
+  equality filters), `limit` (integer >= 1) and `offset` (integer >= 0); a
+  stray key such as `filter`, or a mistyped value, fails with
+  `TOOL_ARGUMENTS_INVALID` instead of listing every row. The offered schema
+  says `additionalProperties: false`.
+- **`data.query`** (`@happyvertical/smrt-agents`). With a `request` object,
+  the only other top-level key allowed is `surfaceId`; a sibling such as
+  `filter` fails with `DataSurfaceRequestError` reason
+  `DATA_QUERY_ARGUMENTS_UNEXPECTED`, naming only misplaced grammar keys. The
+  flat form (request keys beside `surfaceId`, no `request`) still works.
+
 ## Tool errors
 
 A thrown tool error is classified by `classifyToolError`: permission denials

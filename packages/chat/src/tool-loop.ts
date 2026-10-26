@@ -106,7 +106,10 @@ export interface ManifestTool {
 export interface ToolInvocation {
   /** The tool name the model asked for. */
   slug: string;
-  /** Parsed arguments (best-effort JSON parse of the model's raw arguments). */
+  /**
+   * Parsed arguments. `{}` when the raw arguments were not a JSON object; the
+   * call then failed `invalid_request` without running.
+   */
   args: Record<string, unknown>;
   /** Whether the operation executed successfully. */
   ok: boolean;
@@ -362,18 +365,93 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Best-effort parse of the model's raw tool-call arguments (a JSON string).
- * A non-object or malformed payload yields `{}` so a bad-argument call still
- * flows through the permission gate rather than throwing before it.
+ * Parse the model's raw tool-call arguments (a JSON string).
+ *
+ * Absent, blank, or `null` arguments are an empty object (a no-argument call).
+ * Anything else that is not a JSON object — malformed JSON, an array, a
+ * scalar — is `null`: the loop answers it with an `invalid_request`
+ * observation instead of running the tool with silently dropped arguments
+ * (#4378).
  */
-function parseToolArguments(raw: string | undefined): Record<string, unknown> {
-  if (!raw) {
+function parseToolArguments(
+  raw: string | undefined,
+): Record<string, unknown> | null {
+  if (raw === undefined || raw === null || raw.trim() === '') {
     return {};
   }
+  let parsed: unknown;
   try {
-    return asRecord(JSON.parse(raw));
+    parsed = JSON.parse(raw);
   } catch {
-    return {};
+    return null;
+  }
+  if (parsed === null) return {};
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
+}
+
+/** Error code for tool arguments that are not a JSON object. */
+const TOOL_ARGUMENTS_MALFORMED = 'TOOL_ARGUMENTS_MALFORMED';
+/** Error code for tool arguments the tool does not accept. */
+const TOOL_ARGUMENTS_INVALID = 'TOOL_ARGUMENTS_INVALID';
+
+/**
+ * The value-free error for unparseable arguments: it never echoes the raw
+ * payload back to the model.
+ */
+function malformedArgumentsError(): ValidationError {
+  return new ValidationError(
+    'The tool-call arguments were not a valid JSON object, so the tool did not run. ' +
+      'Send the arguments as one JSON object, for example {"field": "value"}.',
+    TOOL_ARGUMENTS_MALFORMED,
+  );
+}
+
+const READ_ARGUMENT_KEYS = new Set(['id', 'where', 'limit', 'offset']);
+
+/**
+ * Validate a manifest `read` call's arguments (#4378). A stray key (a
+ * `filter` next to `where`) or a mistyped `where`/`id`/`limit`/`offset` used
+ * to be dropped silently, turning a filtered question into "every row". The
+ * message names only the accepted shape, never the model's values or keys.
+ */
+function assertReadArguments(slug: string, args: Record<string, unknown>) {
+  const problems: string[] = [];
+  if (Object.keys(args).some((key) => !READ_ARGUMENT_KEYS.has(key))) {
+    problems.push('it accepts only id, where, limit and offset');
+  }
+  const present = (key: string) =>
+    Object.hasOwn(args, key) && args[key] !== undefined && args[key] !== null;
+  if (present('id') && typeof args.id !== 'string') {
+    problems.push('id must be a string');
+  }
+  if (
+    present('where') &&
+    (typeof args.where !== 'object' || Array.isArray(args.where))
+  ) {
+    problems.push(
+      'where must be an object of equality filters like {"status": "open"}',
+    );
+  }
+  for (const [key, min] of [
+    ['limit', 1],
+    ['offset', 0],
+  ] as const) {
+    const value = args[key];
+    if (
+      present(key) &&
+      (typeof value !== 'number' || !Number.isInteger(value) || value < min)
+    ) {
+      problems.push(`${key} must be an integer of at least ${min}`);
+    }
+  }
+  if (problems.length > 0) {
+    throw new ValidationError(
+      `'${slug}' arguments were rejected: ${problems.join('; ')}. ` +
+        'Put equality filters inside where.',
+      TOOL_ARGUMENTS_INVALID,
+    );
   }
 }
 
@@ -555,11 +633,13 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
           },
           where: {
             type: 'object',
-            description: 'Equality filters for a list.',
+            description:
+              'Equality filters for a list, e.g. {"status": "open"}. The only way to filter.',
           },
-          limit: { type: 'number' },
-          offset: { type: 'number' },
+          limit: { type: 'integer', minimum: 1 },
+          offset: { type: 'integer', minimum: 0 },
         },
+        additionalProperties: false,
       };
     case 'create':
       return { type: 'object', properties: fieldProps() };
@@ -734,6 +814,7 @@ export async function invokeManifestTool(
 
   switch (tool.action) {
     case 'read': {
+      assertReadArguments(tool.slug, args);
       const id = typeof args.id === 'string' ? args.id : undefined;
       if (id) {
         const item = await collection.get(id);
@@ -1003,12 +1084,29 @@ export async function runToolLoop(
         const pendingClient: PendingClientToolCall[] = [];
         for (const call of toolCalls) {
           const requestedName = call.function.name;
-          const args = parseToolArguments(call.function.arguments);
+          const parsedArgs = parseToolArguments(call.function.arguments);
+          const args = parsedArgs ?? {};
           const tool = offered.get(requestedName);
           // An extra (non-manifest) tool only when no manifest tool matched.
           const extraTool = tool ? undefined : offeredExtra.get(requestedName);
           const clientTool =
             tool || extraTool ? undefined : offeredClient.get(requestedName);
+          if (clientTool && parsedArgs === null) {
+            // Never hand the browser a call whose arguments were dropped:
+            // answer it here so the model can resend valid JSON (#4378).
+            working.push({
+              role: 'tool',
+              name: requestedName,
+              tool_call_id: call.id,
+              content: JSON.stringify(
+                toolErrorObservation(
+                  malformedArgumentsError(),
+                  'invalid_request',
+                ),
+              ),
+            });
+            continue;
+          }
           if (clientTool) {
             // Runs in the browser: record it and keep going with the round's
             // server calls. The observation is appended on resume.
@@ -1065,6 +1163,19 @@ export async function runToolLoop(
                 error: `Tool '${slug}' is not permitted for this persona.`,
               },
               error: 'not_permitted',
+            };
+          } else if (parsedArgs === null) {
+            // Malformed arguments (#4378): never run the tool with `{}`.
+            invocation = {
+              slug,
+              args,
+              ok: false,
+              rejected: false,
+              observation: toolErrorObservation(
+                malformedArgumentsError(),
+                'invalid_request',
+              ),
+              error: 'invalid_request',
             };
           } else {
             try {

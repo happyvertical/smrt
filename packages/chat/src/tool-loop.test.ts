@@ -895,6 +895,168 @@ describe('runToolLoop', () => {
     expect(contents).toEqual(['{"count":2}', 'null']);
   });
 
+  function rawToolCall(name: string, rawArguments: string): AIResponse {
+    return {
+      content: '',
+      finishReason: 'tool_calls',
+      toolCalls: [
+        {
+          id: `tc_${Math.random().toString(36).slice(2)}`,
+          type: 'function',
+          function: { name, arguments: rawArguments },
+        },
+      ],
+    };
+  }
+
+  it('answers malformed tool-argument JSON with invalid_request, never running the tool (#4378)', async () => {
+    const executeTool = vi.fn(async () => ({ rows: 'all of them' }));
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? rawToolCall('tool_loop_notes.read', '{"where": {"state": "open-xyz"')
+        : textResponse('retrying'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'open notes?' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool,
+      audit: () => {},
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.invocations[0]).toMatchObject({
+      ok: false,
+      rejected: false,
+      error: 'invalid_request',
+      observation: {
+        kind: 'invalid_request',
+        code: 'TOOL_ARGUMENTS_MALFORMED',
+      },
+    });
+    const content = String(
+      result.messages.find((m) => m.role === 'tool')?.content,
+    );
+    expect(content).toContain('not a valid JSON object');
+    expect(content).not.toContain('open-xyz');
+  });
+
+  it('rejects non-object argument JSON but treats blank or null as no arguments', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const raws = ['[1,2]', '"text"', '', 'null'];
+    const ai = makeAI((_m, options, call) =>
+      call < raws.length && toolsOffered(options)
+        ? rawToolCall('tool_loop_notes.read', raws[call] as string)
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'x' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async (ctx) => {
+        seen.push(ctx.args);
+        return { ok: true };
+      },
+      audit: () => {},
+    });
+    expect(result.invocations.map((i) => i.error ?? 'ok')).toEqual([
+      'invalid_request',
+      'invalid_request',
+      'ok',
+      'ok',
+    ]);
+    expect(seen).toEqual([{}, {}]);
+  });
+
+  it('answers a browser tool call with malformed arguments instead of suspending (#4378)', async () => {
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? rawToolCall('page_fill', '{not json')
+        : textResponse('fixed'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'fill it' }],
+      tools: [],
+      clientTools: [
+        {
+          name: 'page_fill',
+          description: 'Fill the form',
+          inputSchema: { type: 'object' },
+          effect: 'write',
+        },
+      ],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('stop');
+    expect(result.pendingClientToolCalls).toEqual([]);
+    expect(
+      String(result.messages.find((m) => m.role === 'tool')?.content),
+    ).toContain('TOOL_ARGUMENTS_MALFORMED');
+  });
+
+  it('rejects a stray filter or a non-object where on the manifest read tool (#4378)', async () => {
+    await grant('tool_loop_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    for (const state of ['open', 'closed']) {
+      await (await notes.create({ tenantId, title: state, state })).save();
+    }
+    const bad: Array<Record<string, unknown>> = [
+      { filter: { state: 'open-value-1' } },
+      { where: 'state = open-value-2' },
+      { where: ['open-value-3'] },
+      { limit: '10' },
+      { id: 42 },
+    ];
+    const good = { where: { state: 'open' } };
+    const ai = makeAI((_m, options, call) =>
+      call <= bad.length && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', bad[call] ?? good)
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'open notes' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      maxSteps: 10,
+      audit: () => {},
+    });
+    const failed = result.invocations.slice(0, bad.length);
+    for (const invocation of failed) {
+      expect(invocation).toMatchObject({
+        ok: false,
+        rejected: false,
+        error: 'invalid_request',
+        observation: { code: 'TOOL_ARGUMENTS_INVALID' },
+      });
+      expect(JSON.stringify(invocation.observation)).not.toMatch(
+        /open-value|"filter"|\b42\b/,
+      );
+    }
+    expect(
+      String((failed[0]?.observation as { error: string }).error),
+    ).toContain('accepts only id, where, limit and offset');
+    expect(
+      String((failed[1]?.observation as { error: string }).error),
+    ).toContain('where must be an object');
+    const ok = result.invocations[bad.length];
+    expect(ok?.ok).toBe(true);
+    expect(
+      (ok?.observation as Array<{ state: string }>).map((row) => row.state),
+    ).toEqual(['open']);
+  });
+
   describe('end-to-end permission enforcement (catalog assert, RLS off)', () => {
     it('executes a permitted operation and denies an un-permitted one', async () => {
       await grant('tool_loop_notes.create');
