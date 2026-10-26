@@ -191,15 +191,21 @@ lifted; two different ids are `DATA_QUERY_SURFACE_ID_CONFLICT`, none is
 `DATA_QUERY_SURFACE_ID_REQUIRED` (400s, not denials). Every request error ends with a one-line valid example for
 the surface (placeholders only, no caller values).
 Refusals (#4387): a surface visible for a lesser action (`discover`/`inspect`)
-but not the requested one, or with no executor, gets
-`DataSurfaceActionDeniedError` naming the action and that visible id; an
-invisible surface keeps the generic `DataSurfaceDeniedError`. A function
-catalog receives `{ action }` so hosts can vary it per action. Every refusal
-goes to `onDenied` (action, visible surface id only, principal, value-free
-`reason`: `not_visible` | `action_not_permitted` | `no_executor`) and the
-audit sink (`denied: true`). `onDenied` is separate from `onFailure` because a
-denial is an authorization outcome, not a server error; sink throws are
-ignored. Hidden fields still get `DATA_QUERY_FIELD_NOT_ALLOWED`.
+but not the requested one gets `DataSurfaceActionDeniedError` naming the action
+and that visible id; an invisible surface keeps the generic
+`DataSurfaceDeniedError`. A function catalog receives `{ action }`; lesser
+catalogs are evaluated (once each per call, a throw reported to `onFailure`)
+only when the function declares that second parameter, since a static or
+one-argument catalog is the same for every action. Allow-list refusals and
+surface denials go to `onDenied` (action, visible surface id only, principal,
+`reason`: `not_visible` | `action_not_permitted` | `tool_not_allowed`) and to
+the audit sink as an entry with `denied: true` and the same `action` value as
+a call — audit consumers must branch on `denied` (a distinct action value was
+rejected as non-additive for exhaustive consumers). `onDenied` is separate
+from `onFailure`: a denial is an authorization outcome, not a server error;
+sink throws are ignored. Request errors (including hidden fields, which get
+`DATA_QUERY_FIELD_NOT_ALLOWED`) are not denials; a visible surface with no
+executor is a configuration failure (`onFailure`, `DataSurfaceQueryError`).
 
 ## Playbook Preflight (issue #2590)
 
