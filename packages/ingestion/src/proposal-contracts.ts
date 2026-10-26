@@ -104,6 +104,37 @@ export interface ProposalConfiguration extends DecisionSettings {
    * `proposalReadConfiguration`. See PROPOSALS.md.
    */
   failureCapture?: import('./failure-capture.js').FailureCaptureConfiguration;
+  /**
+   * Optional host checks on each validated suggestion (trusted, server-only).
+   * Runs after validation and before the decision gate, with a copy of the
+   * suggestion, its handler and the retained evidence text. The result can
+   * only hold the suggestion at `needs_review` and record bounded, value-free
+   * annotations; it can never upgrade a disposition or change args. A throw,
+   * timeout or malformed result holds the suggestion with a fixed reason code.
+   * Not public read configuration: it never enters frozen configuration or
+   * digests. See PROPOSALS.md.
+   */
+  reviewSuggestion?: (
+    input: SuggestionReviewInput,
+  ) =>
+    | HostSuggestionReviewResult
+    | undefined
+    | Promise<HostSuggestionReviewResult | undefined>;
+}
+/** A copy of what the host may inspect; mutating it changes nothing. */
+export interface SuggestionReviewInput {
+  suggestion: import('./proposal-dto.js').GeneratedSuggestion;
+  handler: ProposalCatalogEntry;
+  evidence: GenerativeProposalInput['evidence'];
+}
+/** Host result: bounded codes and argument field names only. */
+export interface HostSuggestionReviewResult {
+  /** Hold the suggestion at `needs_review`. */
+  hold?: boolean;
+  /** Up to 8 codes matching `^[a-z][a-z0-9_.-]{0,47}$`; never document values. */
+  reasons?: string[];
+  /** Argument names declared in the handler's `argsSchema` that the host filled itself. */
+  prefilled?: string[];
 }
 /** Credential-free configuration for validating persisted proposal snapshots. */
 export interface ProposalReadConfiguration extends DecisionSettings {

@@ -7475,6 +7475,135 @@ export function proposalSuite(
         [],
       );
     });
+    describe('host suggestion review hook', () => {
+      it('is absent by default: no annotation, no provenance entry', async () => {
+        chooseCreate();
+        const input = await generate();
+        expect(input.output.suggestions[0].disposition).toBe(
+          'ready_for_review',
+        );
+        expect(input.output.suggestions[0]).not.toHaveProperty('hostReview');
+        expect(input.output.provenance).not.toHaveProperty('hostReview');
+      });
+      it('holds at needs_review and records value-free annotations, replayable', async () => {
+        chooseCreate();
+        const seen = vi.fn();
+        configuration.reviewSuggestion = async ({
+          suggestion,
+          handler,
+          evidence,
+        }) => {
+          seen({ handler: handler.id, text: !!evidence[0].segments[0].text });
+          suggestion.args.title = 'mutated copy';
+          return {
+            hold: true,
+            reasons: ['total_not_in_text'],
+            prefilled: ['title'],
+          };
+        };
+        const input = await generate();
+        expect(seen).toHaveBeenCalledWith({ handler: CREATE, text: true });
+        expect(input.output.outcome).toBe('needs_review');
+        expect(input.output.suggestions[0]).toMatchObject({
+          disposition: 'needs_review',
+          args: { title: 'Draft', body: 'Body' },
+          hostReview: {
+            held: true,
+            reasons: ['total_not_in_text'],
+            prefilled: ['title'],
+          },
+        });
+        expect(input.output.provenance.hostReview).toEqual({
+          annotated: 1,
+          held: 1,
+        });
+        expect(await output(input.lease)).toEqual(input.output);
+        expect(input.output.automaticActionEligible).toBe(false);
+      });
+      it('annotates without holding and never upgrades a needs_review suggestion', async () => {
+        chooseCreate();
+        configuration.reviewSuggestion = () => ({ prefilled: ['body'] });
+        const annotated = await generate();
+        expect(annotated.output.suggestions[0].disposition).toBe(
+          'ready_for_review',
+        );
+        expect(annotated.output.suggestions[0].hostReview).toEqual({
+          held: false,
+          reasons: [],
+          prefilled: ['body'],
+        });
+        expect(annotated.output.provenance.hostReview).toEqual({
+          annotated: 1,
+          held: 0,
+        });
+        chooseCreate({ body: 'Body' });
+        const originalCalls = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await originalCalls(...args);
+          const value = response.output as {
+            suggestions: Array<{ missingFields: string[] }>;
+          };
+          value.suggestions[0].missingFields = ['title'];
+          return response;
+        });
+        configuration.reviewSuggestion = () => ({ hold: false });
+        const missing = await generate();
+        expect(missing.output.suggestions[0].disposition).toBe('needs_review');
+        expect(missing.output.suggestions[0]).not.toHaveProperty('hostReview');
+      });
+      it.each([
+        [
+          'a throw',
+          () => {
+            throw new Error('document text SECRET-4400');
+          },
+          'host_review_failed',
+        ],
+        [
+          'a rejection',
+          async () => Promise.reject(new Error('x')),
+          'host_review_failed',
+        ],
+        ['an unknown key', () => ({ note: 'Draft' }), 'host_review_invalid'],
+        [
+          'a non-argument field',
+          () => ({ prefilled: ['nope'] }),
+          'host_review_invalid',
+        ],
+        [
+          'free text reason',
+          () => ({ reasons: ['Not the invoice date'] }),
+          'host_review_invalid',
+        ],
+        [
+          'too many reasons',
+          () => ({ reasons: Array.from({ length: 9 }, (_, i) => `r${i}`) }),
+          'host_review_invalid',
+        ],
+        [
+          'a reason echoing an argument value',
+          () => ({ reasons: ['bad_draft_value'] }),
+          'host_review_invalid',
+        ],
+        ['a non-boolean hold', () => ({ hold: 'yes' }), 'host_review_invalid'],
+      ] as const)('holds with a fixed code on %s', async (_label, hook, code) => {
+        chooseCreate();
+        configuration.reviewSuggestion = hook as never;
+        const input = await generate();
+        expect(input.output.suggestions[0]).toMatchObject({
+          disposition: 'needs_review',
+          hostReview: { held: true, reasons: [code], prefilled: [] },
+        });
+        expect(JSON.stringify(input.output)).not.toContain('SECRET-4400');
+      });
+      it('does not enter the frozen configuration or read configuration', async () => {
+        chooseCreate();
+        configuration.reviewSuggestion = () => ({ hold: true });
+        expect(
+          JSON.stringify(proposalReadConfiguration(configuration)),
+        ).not.toContain('reviewSuggestion');
+      });
+    });
     describe('invented candidate targets (#4289)', () => {
       const INVENTED = 'ffffffff-4289-4289-8289-invented0042';
       // ATTACH with the model's invented document ID in its required

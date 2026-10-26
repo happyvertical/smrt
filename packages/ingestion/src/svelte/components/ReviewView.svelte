@@ -821,6 +821,7 @@ onMount(() => {
 {#each generation.warnings as warning}<p>{warning}</p>{/each}
 {#each generation.suggestions as suggestion,index}
 <article><h3>{suggestion.handlerId}</h3><p>{suggestion.explanation}</p><pre>{JSON.stringify(suggestion.args,null,2)}</pre>
+{#if suggestion.hostReview}<p data-testid="host-review">{t(M['ingestion.hostChecked'], { summary: [suggestion.hostReview.held ? t(M['ingestion.hostHeld']) : '', suggestion.hostReview.prefilled.length ? t(M['ingestion.hostFilled'], { fields: suggestion.hostReview.prefilled.join(', ') }) : '', suggestion.hostReview.reasons.length ? t(M['ingestion.hostReasons'], { reasons: suggestion.hostReview.reasons.join(', ') }) : ''].filter(Boolean).join('; ') })}</p>{/if}
 {#if suggestion.alternatives.length}<h4>{t(M['ingestion.alternatives'])}</h4><ul>{#each suggestion.alternatives as alternative}<li>{alternative}</li>{/each}</ul>{/if}
 {#if suggestion.missingFields.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each suggestion.missingFields as missing}<li>{missing}</li>{/each}</ul>{/if}
 <ul>{#each suggestion.evidence as reference}{@const url = locationUrl(reference.evidenceId,reference.location)}<li>{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(reference.location)}</Button>{:else}{locationLabel(reference.location)}{/if}</li>{/each}</ul>
