@@ -72,6 +72,11 @@ export interface AgentReplyParams {
    * turn). Validated to the same room/tenant like `threadId`.
    */
   replyToMessageId?: string | null;
+  /**
+   * Message metadata, set by the trusted runtime only (e.g. the #4383 tool
+   * status on a failed call's row).
+   */
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -1178,6 +1183,7 @@ export class ChatService {
       agentSessionId: params.agentSessionId,
       replyToMessageId: params.replyToMessageId ?? null,
       toolCallData: params.toolCallData ?? null,
+      ...(params.metadata ? { metadata: params.metadata } : {}),
     });
   }
 

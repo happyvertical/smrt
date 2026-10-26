@@ -55,9 +55,11 @@ import {
   type ManifestTool,
   type PendingClientToolCall,
   runToolLoop,
+  type ToolFailureRecord,
   type ToolInvocation,
   type ToolLoopResult,
   type ToolLoopUsage,
+  toolFailureRecord,
 } from './tool-loop.js';
 
 /** How long a suspended turn waits for the browser's results. */
@@ -294,12 +296,42 @@ export interface AssistantTurnAuthor {
   tenantId: string;
   threadId?: string | null;
   /**
-   * Maps a server tool invocation to a persisted message, or `null` to keep
-   * it out of the conversation (the default for every invocation). The
-   * message's `toolCallData` tool name must be on the session's
-   * `allowedTools` — `sendAgentReply`'s gate is unchanged.
+   * Maps a SUCCESSFUL server tool invocation to a persisted message, or
+   * `null` to keep it out of the conversation (the default for successful
+   * calls). Failed calls go through {@link authorFailedInvocation}, which
+   * persists them by default (#4383, a behaviour change: before, nothing was
+   * persisted for a failed call). The message's `toolCallData` tool name
+   * must be on the session's `allowedTools` — `sendAgentReply`'s gate is
+   * unchanged.
    */
   authorInvocation?: (invocation: ToolInvocation) => AuthoredToolReply | null;
+  /**
+   * Maps a FAILED, rejected or denied server tool invocation to a persisted
+   * message (#4383). Default: a `tool_result` row with the exact text the
+   * model was shown and `toolCallData`/`metadata` carrying the tool status
+   * and a value-free error code. Return `null` to keep one out. A call to a
+   * tool the session does not allow-list is refused by `sendAgentReply`'s
+   * gate and is reported to the audit sink only.
+   */
+  authorFailedInvocation?: (
+    invocation: ToolInvocation,
+  ) => AuthoredToolReply | null;
+}
+
+/** The default persisted row for a failed server tool call (#4383). */
+function defaultFailedInvocationReply(
+  failure: ToolFailureRecord,
+): AuthoredToolReply {
+  return {
+    content: failure.shown,
+    messageType: 'tool_result',
+    toolCallData: {
+      name: failure.name,
+      args: failure.args,
+      status: failure.status,
+      errorCode: failure.errorCode,
+    },
+  };
 }
 
 /** Options for {@link runAssistantTurn}. */
@@ -799,8 +831,16 @@ async function runTurn<M>(
       });
     },
     onInvocation: async (invocation) => {
-      if (!author || !sendAgentReply || !invocation.ok) return;
-      const reply = author.authorInvocation?.(invocation);
+      if (!author || !sendAgentReply) return;
+      const failure = toolFailureRecord(invocation);
+      // A deduped repeat of a failed call (#4382) has no failure record and
+      // is not a success either: keep it out of `authorInvocation`.
+      if (!invocation.ok && !failure) return;
+      const reply = failure
+        ? author.authorFailedInvocation
+          ? author.authorFailedInvocation(invocation)
+          : defaultFailedInvocationReply(failure)
+        : author.authorInvocation?.(invocation);
       if (!reply) return;
       try {
         const message = await sendAgentReply(author.chatService, {
@@ -812,9 +852,21 @@ async function runTurn<M>(
           content: reply.content,
           messageType: reply.messageType ?? 'tool_result',
           toolCallData: reply.toolCallData ?? null,
+          ...(failure
+            ? {
+                metadata: {
+                  toolStatus: failure.status,
+                  errorKind: failure.errorKind,
+                  errorCode: failure.errorCode,
+                },
+              }
+            : {}),
         });
         emit({ type: 'message', message: serialize(message) });
       } catch (error) {
+        // A failed call's diagnostic row is best-effort (the session gate
+        // refuses an unoffered tool's name): never a dock step (#4383).
+        if (failure) return;
         // The tool ran; only its transcript entry failed. Keep the turn going
         // and say so in the step log rather than failing the whole reply.
         emit({

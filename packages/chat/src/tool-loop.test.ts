@@ -21,6 +21,10 @@ import type {
   AIResponse,
   ChatOptions,
 } from '@happyvertical/ai';
+import type {
+  PrincipalAuditEntry,
+  PrincipalTool,
+} from '@happyvertical/smrt-agents';
 import {
   field,
   ObjectRegistry,
@@ -39,12 +43,24 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  appendClientToolResults,
   buildManifestToolCatalog,
   classifyToolError,
+  MAX_CLIENT_TOOL_RESULT_CHARS,
+  MAX_DEDUPED_CALLS_PER_TURN,
+  MAX_SERVER_TOOL_OBSERVATION_CHARS,
+  MAX_TOOL_FAILURE_ARGS_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   runToolLoop,
+  SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
+  TOOL_CALL_DEDUPED_NOTE,
+  TOOL_CALL_DEDUPED_REJECTED_NOTE,
+  TOOL_EXECUTION_ERROR_HINT,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
+  toolFailureAuditMetadata,
+  toolFailureRecord,
 } from './tool-loop.js';
 
 // A real, dispatchable manifest object the loop can operate. Defined in a
@@ -266,6 +282,22 @@ describe('buildManifestToolCatalog (offer gate)', () => {
     // they are not writable through the generated CRUD policy.
     expect(parameters.properties.calculatedTotal).toBeUndefined();
     expect(parameters.properties.internalScore).toBeUndefined();
+  });
+});
+
+describe('appendClientToolResults truncation', () => {
+  it('cuts a browser result on a code-point boundary (#4378)', () => {
+    const result = `${'x'.repeat(MAX_CLIENT_TOOL_RESULT_CHARS - 1)}\u{1F600}tail`;
+    const [message] = appendClientToolResults(
+      [],
+      [{ id: 'c1', name: 'page_read', args: {}, effect: 'read' }],
+      [{ id: 'c1', ok: true, result }],
+    );
+    const kept = (JSON.parse(String(message?.content)) as { result: string })
+      .result;
+    expect(kept.endsWith('… [truncated]')).toBe(true);
+    const body = kept.slice(0, -'… [truncated]'.length);
+    expect(body).toBe('x'.repeat(MAX_CLIENT_TOOL_RESULT_CHARS - 1));
   });
 });
 
@@ -638,10 +670,84 @@ describe('runToolLoop', () => {
     }
   });
 
+  it('bounds a failed call record and keeps only stable codes (#4383)', () => {
+    const big = toolFailureRecord({
+      slug: 'x.read',
+      args: { q: 'y'.repeat(MAX_TOOL_FAILURE_ARGS_CHARS) },
+      ok: false,
+      rejected: false,
+      observation: { error: 'bad', code: 'lower case not stable' },
+      error: 'invalid_request',
+      modelContent: '{"error":"bad"}',
+    });
+    expect(big).toEqual({
+      name: 'x.read',
+      args: { truncated: true },
+      argsChars: JSON.stringify({ q: 'y'.repeat(MAX_TOOL_FAILURE_ARGS_CHARS) })
+        .length,
+      status: 'error',
+      errorKind: 'invalid_request',
+      errorCode: 'invalid_request',
+      shown: '{"error":"bad"}',
+    });
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(
+      toolFailureRecord({
+        slug: 'x.read',
+        args: circular,
+        ok: false,
+        rejected: true,
+        observation: { error: 'denied', code: 'DENIED_CODE' },
+        error: 'not_permitted',
+      }),
+    ).toMatchObject({
+      args: { unserializable: true },
+      argsChars: 0,
+      status: 'rejected',
+      errorCode: 'DENIED_CODE',
+    });
+    expect(
+      toolFailureRecord({
+        slug: 'x.read',
+        args: {},
+        ok: true,
+        rejected: false,
+        observation: {},
+      }),
+    ).toBeNull();
+  });
+
+  it('audits the original argument size, not the truncation stand-in (#4383)', () => {
+    const args = { q: 'y'.repeat(MAX_TOOL_FAILURE_ARGS_CHARS) };
+    const record = toolFailureRecord({
+      slug: 'x.read',
+      args,
+      ok: false,
+      rejected: false,
+      observation: { error: 'bad' },
+      error: 'invalid_request',
+      modelContent: '{"error":"bad"}',
+    });
+    expect(record && toolFailureAuditMetadata(record)).toEqual({
+      name: 'x.read',
+      status: 'error',
+      errorKind: 'invalid_request',
+      errorCode: 'invalid_request',
+      argsChars: JSON.stringify(args).length,
+      shownChars: '{"error":"bad"}'.length,
+    });
+  });
+
   it('reports a real tool failure as execution_error', async () => {
     const failures = [
       new Error('connection reset'),
       Object.assign(new Error('upstream failed'), { status: 502 }),
+      // The data surface's generic failure keeps its stable code.
+      Object.assign(new Error('Data surface query failed.'), {
+        status: 502,
+        code: 'DATA_SURFACE_QUERY_FAILED',
+      }),
     ];
     for (const thrown of failures) {
       const ai = makeAI((_m, options) =>
@@ -665,7 +771,11 @@ describe('runToolLoop', () => {
         ok: false,
         rejected: false,
         error: 'execution_error',
-        observation: { error: thrown.message },
+        observation: {
+          error: thrown.message,
+          kind: 'execution_error',
+          hint: TOOL_EXECUTION_ERROR_HINT,
+        },
       });
       expect(classifyToolError(thrown)).toBe('execution_error');
     }
@@ -719,10 +829,12 @@ describe('runToolLoop', () => {
       executed += 1;
       return { step: executed };
     });
-    // The model always wants another tool call while tools are offered.
+    // The model always wants another (distinct) tool call while tools are
+    // offered; identical reads would be deduped (#4382).
+    let page = 0;
     const ai = makeAI((_m, options) =>
       toolsOffered(options)
-        ? toolCall('tool_loop_notes.read', {})
+        ? toolCall('tool_loop_notes.read', { offset: page++ })
         : textResponse('ceiling reached'),
     );
     const result = await runToolLoop({
@@ -739,6 +851,790 @@ describe('runToolLoop', () => {
     expect(result.steps).toBe(3);
     expect(executed).toBe(3);
     expect(result.content).toBe('ceiling reached');
+  });
+
+  it('appends the answer-now instruction to the forced final call only (#4378)', async () => {
+    const seen: Array<{ offered: boolean; messages: AIMessage[] }> = [];
+    const ai = makeAI((messages, options) => {
+      seen.push({ offered: toolsOffered(options), messages: [...messages] });
+      return toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('answered');
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'how many notes?' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      maxSteps: 2,
+      executeTool: async () => ({ count: 3 }),
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('max_steps');
+    expect(seen).toHaveLength(3);
+    // Tool-offering rounds carry no instruction.
+    for (const round of seen.slice(0, 2)) {
+      expect(round.offered).toBe(true);
+      expect(
+        round.messages.some(
+          (m) => m.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+        ),
+      ).toBe(false);
+    }
+    const final = seen[2];
+    expect(final?.offered).toBe(false);
+    expect(final?.messages.at(-1)).toEqual({
+      role: 'user',
+      content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+    });
+    // The instruction is per-call: the returned transcript never holds it.
+    expect(
+      result.messages.some(
+        (m) => m.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+      ),
+    ).toBe(false);
+  });
+
+  it('appends the answer-now instruction when the token budget is spent (#4378)', async () => {
+    let last: AIMessage | undefined;
+    const ai = makeAI((messages, options) => {
+      if (!toolsOffered(options)) {
+        last = messages.at(-1);
+        return textResponse('within budget');
+      }
+      return {
+        ...toolCall('tool_loop_notes.read', {}),
+        usage: { promptTokens: 90, completionTokens: 20, totalTokens: 110 },
+      };
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'count' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      maxTotalTokens: 100,
+      executeTool: async () => ({ count: 1 }),
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('budget');
+    expect(last?.content).toBe(TOOL_LOOP_ANSWER_NOW_INSTRUCTION);
+  });
+
+  it('sends no answer-now instruction when no tools are configured', async () => {
+    let last: AIMessage | undefined;
+    const ai = makeAI((messages) => {
+      last = messages.at(-1);
+      return textResponse('hi');
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('no_tools');
+    expect(last?.content).toBe('hello');
+  });
+
+  it('caps a large server observation with the narrow-your-query marker (#4378)', async () => {
+    const big = {
+      rows: Array.from({ length: 2_000 }, (_, i) => ({
+        i,
+        text: 'x'.repeat(40),
+      })),
+    };
+    const seenTool: string[] = [];
+    const ai = makeAI((messages, options, call) => {
+      for (const m of messages) {
+        if (m.role === 'tool') seenTool.push(String(m.content));
+      }
+      return call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done');
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'everything' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => big,
+      audit: () => {},
+    });
+    const toolMessage = result.messages.find((m) => m.role === 'tool');
+    const content = String(toolMessage?.content);
+    expect(content.length).toBe(
+      MAX_SERVER_TOOL_OBSERVATION_CHARS +
+        SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER.length,
+    );
+    expect(content.endsWith(SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER)).toBe(
+      true,
+    );
+    expect(seenTool[0]).toBe(content);
+    // The invocation log keeps the full observation (persistence unchanged).
+    expect(result.invocations[0]?.observation).toBe(big);
+  });
+
+  it('keeps an observation of exactly the cap untruncated (#4378)', async () => {
+    // JSON.stringify adds two quotes.
+    const exact = 'x'.repeat(MAX_SERVER_TOOL_OBSERVATION_CHARS - 2);
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'q' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => exact,
+      audit: () => {},
+    });
+    const content = String(
+      result.messages.find((m) => m.role === 'tool')?.content,
+    );
+    expect(content).toHaveLength(MAX_SERVER_TOOL_OBSERVATION_CHARS);
+    expect(content).toBe(JSON.stringify(exact));
+  });
+
+  it('never splits a surrogate pair at the observation cut (#4378)', async () => {
+    // '"' + 15998 x's puts an emoji's high surrogate at index 15999, the
+    // last unit kept.
+    const value = `${'x'.repeat(MAX_SERVER_TOOL_OBSERVATION_CHARS - 2)}\u{1F600}tail`;
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'q' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => value,
+      audit: () => {},
+    });
+    const content = String(
+      result.messages.find((m) => m.role === 'tool')?.content,
+    );
+    const kept = content.slice(
+      0,
+      content.length - SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER.length,
+    );
+    expect(kept).toHaveLength(MAX_SERVER_TOOL_OBSERVATION_CHARS - 1);
+    expect(/[\uD800-\uDBFF]$/.test(kept)).toBe(false);
+    expect(content.endsWith(SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER)).toBe(
+      true,
+    );
+  });
+
+  it('leaves a small server observation untouched and observes undefined as null', async () => {
+    let n = 0;
+    const ai = makeAI((_m, options, call) =>
+      call < 2 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', { offset: call })
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'small' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => {
+        n += 1;
+        return n === 1 ? { count: 2 } : undefined;
+      },
+      audit: () => {},
+    });
+    const contents = result.messages
+      .filter((m) => m.role === 'tool')
+      .map((m) => m.content);
+    expect(contents).toEqual(['{"count":2}', 'null']);
+  });
+
+  function rawToolCall(name: string, rawArguments: string): AIResponse {
+    return {
+      content: '',
+      finishReason: 'tool_calls',
+      toolCalls: [
+        {
+          id: `tc_${Math.random().toString(36).slice(2)}`,
+          type: 'function',
+          function: { name, arguments: rawArguments },
+        },
+      ],
+    };
+  }
+
+  it('answers malformed tool-argument JSON with invalid_request, never running the tool (#4378)', async () => {
+    const executeTool = vi.fn(async () => ({ rows: 'all of them' }));
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? rawToolCall('tool_loop_notes.read', '{"where": {"state": "open-xyz"')
+        : textResponse('retrying'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'open notes?' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool,
+      audit: () => {},
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.invocations[0]).toMatchObject({
+      ok: false,
+      rejected: false,
+      error: 'invalid_request',
+      observation: {
+        kind: 'invalid_request',
+        code: 'TOOL_ARGUMENTS_MALFORMED',
+      },
+    });
+    const content = String(
+      result.messages.find((m) => m.role === 'tool')?.content,
+    );
+    expect(content).toContain('not a valid JSON object');
+    expect(content).not.toContain('open-xyz');
+  });
+
+  it('rejects non-object argument JSON but treats blank or null as no arguments', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const raws = ['[1,2]', '"text"', '', 'null'];
+    const ai = makeAI((_m, options, call) =>
+      call < raws.length && toolsOffered(options)
+        ? rawToolCall('tool_loop_notes.read', raws[call] as string)
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'x' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async (ctx) => {
+        seen.push(ctx.args);
+        return { ok: true };
+      },
+      audit: () => {},
+    });
+    expect(result.invocations.map((i) => i.error ?? 'ok')).toEqual([
+      'invalid_request',
+      'invalid_request',
+      'ok',
+      'ok',
+    ]);
+    expect(result.invocations.slice(2).map((i) => i.args)).toEqual([{}, {}]);
+    // Blank and null are the same no-argument read, so the repeat is
+    // deduped (#4382) rather than run twice.
+    expect(seen).toEqual([{}]);
+    expect(result.invocations[3]?.deduped).toBe(true);
+  });
+
+  it('records and audits a malformed browser tool call (#4383)', async () => {
+    const audits: PrincipalAuditEntry[] = [];
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? rawToolCall('page_fill', '{not json')
+        : textResponse('fixed'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'fill it' }],
+      tools: [],
+      clientTools: [
+        {
+          name: 'page_fill',
+          description: 'Fill the form',
+          inputSchema: { type: 'object' },
+          effect: 'write',
+        },
+      ],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: (entry) => {
+        audits.push(entry);
+      },
+    });
+    expect(result.invocations).toEqual([
+      expect.objectContaining({
+        slug: 'page_fill',
+        ok: false,
+        error: 'invalid_request',
+      }),
+    ]);
+    expect(audits.filter((a) => a.action === 'chat.tool_call_failed')).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          name: 'page_fill',
+          errorCode: 'TOOL_ARGUMENTS_MALFORMED',
+        }),
+      }),
+    ]);
+  });
+
+  it('answers a browser tool call with malformed arguments instead of suspending (#4378)', async () => {
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? rawToolCall('page_fill', '{not json')
+        : textResponse('fixed'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'fill it' }],
+      tools: [],
+      clientTools: [
+        {
+          name: 'page_fill',
+          description: 'Fill the form',
+          inputSchema: { type: 'object' },
+          effect: 'write',
+        },
+      ],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('stop');
+    expect(result.pendingClientToolCalls).toEqual([]);
+    expect(
+      String(result.messages.find((m) => m.role === 'tool')?.content),
+    ).toContain('TOOL_ARGUMENTS_MALFORMED');
+  });
+
+  it('rejects a stray filter or a non-object where on the manifest read tool (#4378)', async () => {
+    await grant('tool_loop_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    for (const state of ['open', 'closed']) {
+      await (await notes.create({ tenantId, title: state, state })).save();
+    }
+    const bad: Array<Record<string, unknown>> = [
+      { filter: { state: 'open-value-1' } },
+      { where: 'state = open-value-2' },
+      { where: ['open-value-3'] },
+      { limit: '10' },
+      { id: 42 },
+    ];
+    const good = { where: { state: 'open' } };
+    const ai = makeAI((_m, options, call) =>
+      call <= bad.length && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', bad[call] ?? good)
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'open notes' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      maxSteps: 10,
+      audit: () => {},
+    });
+    const failed = result.invocations.slice(0, bad.length);
+    for (const invocation of failed) {
+      expect(invocation).toMatchObject({
+        ok: false,
+        rejected: false,
+        error: 'invalid_request',
+        observation: { code: 'TOOL_ARGUMENTS_INVALID' },
+      });
+      expect(JSON.stringify(invocation.observation)).not.toMatch(
+        /open-value|"filter"|\b42\b/,
+      );
+    }
+    expect(
+      String((failed[0]?.observation as { error: string } | undefined)?.error),
+    ).toContain('accepts only id, where, limit and offset');
+    expect(
+      String((failed[1]?.observation as { error: string } | undefined)?.error),
+    ).toContain('where must be an object');
+    const ok = result.invocations[bad.length];
+    expect(ok?.ok).toBe(true);
+    expect(
+      (ok?.observation as Array<{ state: string }> | undefined)?.map(
+        (row) => row.state,
+      ),
+    ).toEqual(['open']);
+  });
+
+  it('pins the read argument bounds: limit >= 1, offset >= 0, integers only (#4378)', async () => {
+    await grant('tool_loop_notes.read');
+    const cases: Array<[Record<string, unknown>, boolean, string?]> = [
+      [{ limit: 1 }, true],
+      [{ offset: 0 }, true],
+      [{ limit: 0 }, false, 'limit must be an integer of at least 1'],
+      [{ offset: -1 }, false, 'offset must be an integer of at least 0'],
+      [{ limit: 2.5 }, false, 'limit must be an integer of at least 1'],
+      [{ offset: 1.5 }, false, 'offset must be an integer of at least 0'],
+      [{ id: 7 }, false, 'id must be a string'],
+      [{ unknownKey: true }, false, 'accepts only id, where, limit and offset'],
+    ];
+    let call = 0;
+    const ai = makeAI((_m, options) =>
+      call < cases.length && toolsOffered(options)
+        ? toolCall(
+            'tool_loop_notes.read',
+            (cases[call++] as [Record<string, unknown>])[0],
+          )
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'q' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      maxSteps: cases.length + 1,
+      audit: () => {},
+    });
+    expect(result.invocations).toHaveLength(cases.length);
+    cases.forEach(([, ok, message], index) => {
+      const invocation = result.invocations[index];
+      expect(invocation?.ok).toBe(ok);
+      if (!ok) {
+        expect(invocation?.error).toBe('invalid_request');
+        expect(
+          String(
+            (invocation?.observation as { error: string } | undefined)?.error,
+          ),
+        ).toContain(message);
+      }
+    });
+  });
+
+  it('offers the read tool a closed schema with integer limit/offset bounds (#4378)', () => {
+    const [read] = tools(['tool_loop_notes.read']);
+    const parameters = manifestToolToAITool(read as ManifestTool).function
+      .parameters as {
+      additionalProperties?: unknown;
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(parameters.additionalProperties).toBe(false);
+    expect(Object.keys(parameters.properties).sort()).toEqual([
+      'id',
+      'limit',
+      'offset',
+      'where',
+    ]);
+    expect(parameters.properties.limit).toEqual({
+      type: 'integer',
+      minimum: 1,
+    });
+    expect(parameters.properties.offset).toEqual({
+      type: 'integer',
+      minimum: 0,
+    });
+    expect(parameters.properties.where?.type).toBe('object');
+  });
+
+  describe('dedupe of identical read-only calls (#4382)', () => {
+    function queryTool(
+      runs: Array<Record<string, unknown>>,
+      fail?: () => Error | null,
+    ): PrincipalTool {
+      return {
+        slug: 'data.query',
+        aiTool: {
+          type: 'function',
+          function: {
+            name: 'data-query',
+            description: 'Query.',
+            parameters: { type: 'object' },
+          },
+        },
+        async execute({ args }) {
+          runs.push(args);
+          const error = fail?.();
+          if (error) throw error;
+          return { total: 3 };
+        },
+      };
+    }
+    const allow = () => ({
+      runAsUserId: userId,
+      tenantId,
+      allowedTools: [...NOTE_TOOLS, 'data.query'],
+    });
+
+    it('runs an identical read-only call once, even with keys reordered, and audits the repeat', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const sequence = [
+        {
+          surfaceId: 's',
+          request: { mode: 'count', filter: { kind: 'all', filters: [] } },
+        },
+        {
+          request: { filter: { filters: [], kind: 'all' }, mode: 'count' },
+          surfaceId: 's',
+        },
+        { surfaceId: 's', request: { mode: 'count' } },
+      ];
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall('data-query', sequence[n++] as Record<string, unknown>)
+          : textResponse('3'),
+      );
+      const audits: PrincipalAuditEntry[] = [];
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'count' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        audit: (entry) => {
+          audits.push(entry);
+        },
+      });
+      expect(runs).toHaveLength(2);
+      expect(result.invocations.map((i) => Boolean(i.deduped))).toEqual([
+        false,
+        true,
+        false,
+      ]);
+      expect(result.invocations[1]).toMatchObject({
+        ok: true,
+        observation: { deduped: true, note: TOOL_CALL_DEDUPED_NOTE },
+      });
+      expect(
+        audits.filter((a) => a.action === 'chat.tool_call_deduped'),
+      ).toHaveLength(1);
+    });
+
+    it('forgets remembered reads after a write: read, create, read runs fresh (#4382)', async () => {
+      await grant('tool_loop_notes.read');
+      await grant('tool_loop_notes.create');
+      const read = { where: { title: 'Fresh' } };
+      const sequence = [
+        ['tool_loop_notes.read', read],
+        ['tool_loop_notes.create', { title: 'Fresh', tenantId }],
+        ['tool_loop_notes.read', read],
+      ] as const;
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall(sequence[n][0], sequence[n++][1])
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: tools(['tool_loop_notes.read', 'tool_loop_notes.create']),
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(result.invocations.map((i) => Boolean(i.deduped))).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      expect(result.invocations[0]?.observation).toEqual([]);
+      expect(
+        (
+          result.invocations[2]?.observation as
+            | Array<{ title: string }>
+            | undefined
+        )?.map((row) => row.title),
+      ).toEqual(['Fresh']);
+    });
+
+    it('forgets remembered reads after any non-read-only extra tool (#4382)', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const other: PrincipalTool = {
+        slug: 'other.tool',
+        aiTool: {
+          type: 'function',
+          function: {
+            name: 'other-tool',
+            description: 'Other.',
+            parameters: { type: 'object' },
+          },
+        },
+        async execute() {
+          throw new Error('failed anyway');
+        },
+      };
+      const sequence = [
+        ['data-query', { surfaceId: 's' }],
+        ['other-tool', {}],
+        ['data-query', { surfaceId: 's' }],
+      ] as const;
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall(sequence[n][0], sequence[n++][1])
+          : textResponse('done'),
+      );
+      await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool(runs), other],
+        principal: { ...allow(), allowedTools: ['data.query', 'other.tool'] },
+        audit: () => {},
+      });
+      // The other tool failed, but it is not read-only: the cache is cleared.
+      expect(runs).toHaveLength(2);
+    });
+
+    it('tells the model a deduped repeat of a rejected call will fail again (#4382)', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const ai = makeAI((_m, options, call) =>
+        toolsOffered(options) && call < 2
+          ? toolCall('data-query', { request: { surfaceId: 's' } })
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [
+          queryTool(runs, () =>
+            Object.assign(new Error('bad request'), { status: 400 }),
+          ),
+        ],
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(runs).toHaveLength(1);
+      expect(result.invocations[1]).toMatchObject({
+        ok: false,
+        deduped: true,
+        error: 'invalid_request',
+        observation: { deduped: true, note: TOOL_CALL_DEDUPED_REJECTED_NOTE },
+      });
+    });
+
+    it('bounds the cache at 64 calls and never keys oversized arguments (#4382)', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const big = { surfaceId: 's', pad: 'z'.repeat(4_100) };
+      const sequence: Array<Record<string, unknown>> = [
+        ...Array.from({ length: MAX_DEDUPED_CALLS_PER_TURN + 1 }, (_, i) => ({
+          surfaceId: `s${i}`,
+        })),
+        // The 65th distinct call was not remembered: it runs again.
+        { surfaceId: `s${MAX_DEDUPED_CALLS_PER_TURN}` },
+        // The first is still remembered: deduped.
+        { surfaceId: 's0' },
+        big,
+        big,
+      ];
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall('data-query', sequence[n++] as Record<string, unknown>)
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        maxSteps: sequence.length + 1,
+        audit: () => {},
+      });
+      const deduped = result.invocations.map((i) => Boolean(i.deduped));
+      expect(deduped.slice(0, MAX_DEDUPED_CALLS_PER_TURN + 1)).not.toContain(
+        true,
+      );
+      expect(deduped.slice(MAX_DEDUPED_CALLS_PER_TURN + 1)).toEqual([
+        false,
+        true,
+        false,
+        false,
+      ]);
+      expect(runs).toHaveLength(sequence.length - 1);
+    });
+
+    it('never dedupes a mutating call, and retries after a server failure', async () => {
+      await grant('tool_loop_notes.create');
+      const sequence = [
+        ['tool_loop_notes.create', { title: 'Same', tenantId }],
+        ['tool_loop_notes.create', { title: 'Same', tenantId }],
+        ['data-query', { surfaceId: 's' }],
+        ['data-query', { surfaceId: 's' }],
+      ] as const;
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall(sequence[n][0], sequence[n++][1])
+          : textResponse('done'),
+      );
+      const runs: Array<Record<string, unknown>> = [];
+      let failures = 1;
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: tools(['tool_loop_notes.create']),
+        extraTools: [
+          queryTool(runs, () =>
+            failures-- > 0
+              ? Object.assign(new Error('down'), { status: 503 })
+              : null,
+          ),
+        ],
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(result.invocations.map((i) => Boolean(i.deduped))).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(runs).toHaveLength(2);
+      const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+      expect(await notes.list({ where: { title: 'Same' } })).toHaveLength(2);
+    });
+
+    it('counts deduped rounds toward the step cap and never dedupes across turns', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const ai = () =>
+        makeAI((_m, options) =>
+          toolsOffered(options)
+            ? toolCall('data-query', { surfaceId: 's' })
+            : textResponse('stop'),
+        );
+      const options = {
+        db,
+        messages: [{ role: 'user' as const, content: 'loop' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        maxSteps: 3,
+        audit: () => {},
+      };
+      const first = await runToolLoop({ ai: ai(), ...options });
+      expect(first.stoppedReason).toBe('max_steps');
+      expect(first.steps).toBe(3);
+      expect(runs).toHaveLength(1);
+      await runToolLoop({ ai: ai(), ...options });
+      expect(runs).toHaveLength(2);
+    });
   });
 
   describe('end-to-end permission enforcement (catalog assert, RLS off)', () => {

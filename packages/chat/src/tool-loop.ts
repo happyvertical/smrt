@@ -106,7 +106,10 @@ export interface ManifestTool {
 export interface ToolInvocation {
   /** The tool name the model asked for. */
   slug: string;
-  /** Parsed arguments (best-effort JSON parse of the model's raw arguments). */
+  /**
+   * Parsed arguments. `{}` when the raw arguments were not a JSON object; the
+   * call then failed `invalid_request` without running.
+   */
   args: Record<string, unknown>;
   /** Whether the operation executed successfully. */
   ok: boolean;
@@ -120,6 +123,41 @@ export interface ToolInvocation {
    * error the model can fix and retry), or `execution_error` (the tool failed).
    */
   error?: string;
+  /**
+   * The exact tool-message content the model was shown for this call (the
+   * serialized observation, capped at {@link MAX_SERVER_TOOL_OBSERVATION_CHARS}).
+   * Set before `onInvocation` runs (#4383).
+   */
+  modelContent?: string;
+  /**
+   * True when this call repeated an identical read-only call made earlier in
+   * the same turn and was not executed again (#4382). `ok`/`error` mirror
+   * the earlier call; `observation` is a fixed pointer note.
+   */
+  deduped?: boolean;
+}
+
+/**
+ * A failed, rejected, or denied tool call, in the bounded shape both callers
+ * persist as a tool row (#4383). Like a successful call's row it carries the
+ * arguments and the text the model saw, so it is NOT value-free; the audit
+ * sink gets only {@link toolFailureAuditMetadata}.
+ */
+export interface ToolFailureRecord {
+  /** The tool slug (or the name the model used, for an unoffered tool). */
+  name: string;
+  /** The parsed arguments, bounded to {@link MAX_TOOL_FAILURE_ARGS_CHARS}. */
+  args: Record<string, unknown>;
+  /** Serialized size of the ORIGINAL arguments (0 when unserializable). */
+  argsChars: number;
+  /** `rejected` (denied / not permitted) or `error` (invalid or failed). */
+  status: 'rejected' | 'error';
+  /** The error kind: `not_permitted`, `invalid_request` or `execution_error`. */
+  errorKind: string;
+  /** A stable, value-free code: the tool error's own code, else the kind. */
+  errorCode: string;
+  /** The exact text the model was shown. */
+  shown: string;
 }
 
 /**
@@ -362,18 +400,93 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Best-effort parse of the model's raw tool-call arguments (a JSON string).
- * A non-object or malformed payload yields `{}` so a bad-argument call still
- * flows through the permission gate rather than throwing before it.
+ * Parse the model's raw tool-call arguments (a JSON string).
+ *
+ * Absent, blank, or `null` arguments are an empty object (a no-argument call).
+ * Anything else that is not a JSON object — malformed JSON, an array, a
+ * scalar — is `null`: the loop answers it with an `invalid_request`
+ * observation instead of running the tool with silently dropped arguments
+ * (#4378).
  */
-function parseToolArguments(raw: string | undefined): Record<string, unknown> {
-  if (!raw) {
+function parseToolArguments(
+  raw: string | undefined,
+): Record<string, unknown> | null {
+  if (raw === undefined || raw === null || raw.trim() === '') {
     return {};
   }
+  let parsed: unknown;
   try {
-    return asRecord(JSON.parse(raw));
+    parsed = JSON.parse(raw);
   } catch {
-    return {};
+    return null;
+  }
+  if (parsed === null) return {};
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
+}
+
+/** Error code for tool arguments that are not a JSON object. */
+const TOOL_ARGUMENTS_MALFORMED = 'TOOL_ARGUMENTS_MALFORMED';
+/** Error code for tool arguments the tool does not accept. */
+const TOOL_ARGUMENTS_INVALID = 'TOOL_ARGUMENTS_INVALID';
+
+/**
+ * The value-free error for unparseable arguments: it never echoes the raw
+ * payload back to the model.
+ */
+function malformedArgumentsError(): ValidationError {
+  return new ValidationError(
+    'The tool-call arguments were not a valid JSON object, so the tool did not run. ' +
+      'Send the arguments as one JSON object, for example {"field": "value"}.',
+    TOOL_ARGUMENTS_MALFORMED,
+  );
+}
+
+const READ_ARGUMENT_KEYS = new Set(['id', 'where', 'limit', 'offset']);
+
+/**
+ * Validate a manifest `read` call's arguments (#4378). A stray key (a
+ * `filter` next to `where`) or a mistyped `where`/`id`/`limit`/`offset` used
+ * to be dropped silently, turning a filtered question into "every row". The
+ * message names only the accepted shape, never the model's values or keys.
+ */
+function assertReadArguments(slug: string, args: Record<string, unknown>) {
+  const problems: string[] = [];
+  if (Object.keys(args).some((key) => !READ_ARGUMENT_KEYS.has(key))) {
+    problems.push('it accepts only id, where, limit and offset');
+  }
+  const present = (key: string) =>
+    Object.hasOwn(args, key) && args[key] !== undefined && args[key] !== null;
+  if (present('id') && typeof args.id !== 'string') {
+    problems.push('id must be a string');
+  }
+  if (
+    present('where') &&
+    (typeof args.where !== 'object' || Array.isArray(args.where))
+  ) {
+    problems.push(
+      'where must be an object of equality filters like {"status": "open"}',
+    );
+  }
+  for (const [key, min] of [
+    ['limit', 1],
+    ['offset', 0],
+  ] as const) {
+    const value = args[key];
+    if (
+      present(key) &&
+      (typeof value !== 'number' || !Number.isInteger(value) || value < min)
+    ) {
+      problems.push(`${key} must be an integer of at least ${min}`);
+    }
+  }
+  if (problems.length > 0) {
+    throw new ValidationError(
+      `'${slug}' arguments were rejected: ${problems.join('; ')}. ` +
+        'Put equality filters inside where.',
+      TOOL_ARGUMENTS_INVALID,
+    );
   }
 }
 
@@ -555,11 +668,13 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
           },
           where: {
             type: 'object',
-            description: 'Equality filters for a list.',
+            description:
+              'Equality filters for a list, e.g. {"status": "open"}. The only way to filter.',
           },
-          limit: { type: 'number' },
-          offset: { type: 'number' },
+          limit: { type: 'integer', minimum: 1 },
+          offset: { type: 'integer', minimum: 0 },
         },
+        additionalProperties: false,
       };
     case 'create':
       return { type: 'object', properties: fieldProps() };
@@ -734,6 +849,7 @@ export async function invokeManifestTool(
 
   switch (tool.action) {
     case 'read': {
+      assertReadArguments(tool.slug, args);
       const id = typeof args.id === 'string' ? args.id : undefined;
       if (id) {
         const item = await collection.get(id);
@@ -908,6 +1024,32 @@ export async function runToolLoop(
       // structural superset of `AIMessage`, so the transcript stays chat-compatible.
       const working: LoopMessage[] = [...messages];
       const invocations: ToolInvocation[] = [];
+      // Identical read-only calls already made in this leg (#4382), keyed by
+      // tool + canonical arguments. Bounded; never shared across calls.
+      const priorReadOnlyCalls = new Map<string, ToolInvocation>();
+      /**
+       * Report a failed call to the audit sink (#4383): tool, status, kind,
+       * stable code and sizes only — never the arguments or the error text,
+       * which can carry user data or raw server errors.
+       */
+      const auditFailure = async (invocation: ToolInvocation) => {
+        if (!audit) return;
+        const record = toolFailureRecord(invocation);
+        if (!record) return;
+        try {
+          await audit({
+            action: 'chat.tool_call_failed',
+            actorUserId: principal.runAsUserId,
+            onBehalfOfUserId: onBehalfOfUserId ?? null,
+            tenantId: principal.tenantId ?? null,
+            ...(agentClass ? { agentClass } : {}),
+            actsAsProfileId: principal.actsAsProfileId ?? null,
+            metadata: toolFailureAuditMetadata(record),
+          });
+        } catch {
+          // Audit of a failed call never fails the turn.
+        }
+      };
       let executedRounds = Math.max(0, Math.floor(initialSteps));
       let totalTokens = 0;
       let response: AIResponse;
@@ -930,8 +1072,17 @@ export async function runToolLoop(
         const offerTools =
           aiTools.length > 0 && executedRounds < maxSteps && !budgetSpent;
         onStep?.({ type: 'round', step: executedRounds });
+        // The forced final call (step cap or spent budget, #4378): tools are
+        // withdrawn, so tell the model to answer now instead of resending a
+        // transcript that ends on tool observations with no instruction. The
+        // instruction is sent on this call only; it never enters the
+        // returned transcript, so stored conversations are unchanged.
+        const forcedFinal = aiTools.length > 0 && !offerTools;
+        const roundMessages: LoopMessage[] = forcedFinal
+          ? [...working, answerNowMessage()]
+          : working;
         try {
-          response = await ai.chat(working, {
+          response = await ai.chat(roundMessages, {
             model,
             temperature,
             maxTokens,
@@ -994,12 +1145,42 @@ export async function runToolLoop(
         const pendingClient: PendingClientToolCall[] = [];
         for (const call of toolCalls) {
           const requestedName = call.function.name;
-          const args = parseToolArguments(call.function.arguments);
+          const parsedArgs = parseToolArguments(call.function.arguments);
+          const args = parsedArgs ?? {};
           const tool = offered.get(requestedName);
           // An extra (non-manifest) tool only when no manifest tool matched.
           const extraTool = tool ? undefined : offeredExtra.get(requestedName);
           const clientTool =
             tool || extraTool ? undefined : offeredClient.get(requestedName);
+          if (clientTool && parsedArgs === null) {
+            // Never hand the browser a call whose arguments were dropped:
+            // answer it here so the model can resend valid JSON (#4378), and
+            // record it like any failed call (#4383).
+            const malformed: ToolInvocation = {
+              slug: clientTool.name,
+              args: {},
+              ok: false,
+              rejected: false,
+              observation: toolErrorObservation(
+                malformedArgumentsError(),
+                'invalid_request',
+              ),
+              error: 'invalid_request',
+            };
+            malformed.modelContent = serverObservationContent(
+              malformed.observation,
+            );
+            invocations.push(malformed);
+            await auditFailure(malformed);
+            await onInvocation?.(malformed);
+            working.push({
+              role: 'tool',
+              name: requestedName,
+              tool_call_id: call.id,
+              content: malformed.modelContent,
+            });
+            continue;
+          }
           if (clientTool) {
             // Runs in the browser: record it and keep going with the round's
             // server calls. The observation is appended on resume.
@@ -1044,6 +1225,13 @@ export async function runToolLoop(
           }
 
           let invocation: ToolInvocation;
+          const dedupeKey =
+            tool || extraTool
+              ? readOnlyCallKey(tool, extraTool, slug, parsedArgs)
+              : null;
+          const prior = dedupeKey
+            ? priorReadOnlyCalls.get(dedupeKey)
+            : undefined;
           if (!tool && !extraTool) {
             // Offer gate: a tool the persona was not offered (not on the
             // allow-list, or hallucinated) is rejected without execution.
@@ -1056,6 +1244,38 @@ export async function runToolLoop(
                 error: `Tool '${slug}' is not permitted for this persona.`,
               },
               error: 'not_permitted',
+            };
+          } else if (prior) {
+            // An identical read-only call already ran this turn (#4382):
+            // do not run it again; point the model at the earlier result.
+            invocation = {
+              slug,
+              args,
+              ok: prior.ok,
+              rejected: prior.rejected,
+              observation: {
+                deduped: true,
+                // A repeat of a rejected call must say it will fail again,
+                // not just point at the result.
+                note: prior.ok
+                  ? TOOL_CALL_DEDUPED_NOTE
+                  : TOOL_CALL_DEDUPED_REJECTED_NOTE,
+              },
+              ...(prior.error ? { error: prior.error } : {}),
+              deduped: true,
+            };
+          } else if (parsedArgs === null) {
+            // Malformed arguments (#4378): never run the tool with `{}`.
+            invocation = {
+              slug,
+              args,
+              ok: false,
+              rejected: false,
+              observation: toolErrorObservation(
+                malformedArgumentsError(),
+                'invalid_request',
+              ),
+              error: 'invalid_request',
             };
           } else {
             try {
@@ -1090,7 +1310,45 @@ export async function runToolLoop(
             }
           }
 
+          // The copy the model reads, recorded on the invocation so a failed
+          // call can be persisted with the exact text it was shown (#4383).
+          invocation.modelContent = serverObservationContent(
+            invocation.observation,
+          );
           invocations.push(invocation);
+          if ((tool || extraTool) && !isReadOnlyTool(tool, extraTool)) {
+            // Any non-read-only server call (a write, `agents.invoke`, any
+            // other extra tool) may change what a read returns, whatever its
+            // result: forget every remembered read so a later identical read
+            // runs fresh (#4382).
+            priorReadOnlyCalls.clear();
+          } else if (
+            dedupeKey &&
+            !invocation.deduped &&
+            invocation.error !== 'execution_error' &&
+            priorReadOnlyCalls.size < MAX_DEDUPED_CALLS_PER_TURN
+          ) {
+            // A transient server failure may be retried; anything else an
+            // identical call would only repeat.
+            priorReadOnlyCalls.set(dedupeKey, invocation);
+          }
+          if (invocation.deduped && audit) {
+            try {
+              await audit({
+                action: 'chat.tool_call_deduped',
+                actorUserId: principal.runAsUserId,
+                onBehalfOfUserId: onBehalfOfUserId ?? null,
+                tenantId: principal.tenantId ?? null,
+                ...(agentClass ? { agentClass } : {}),
+                actsAsProfileId: principal.actsAsProfileId ?? null,
+                metadata: { name: slug.slice(0, 128), deduped: true },
+              });
+            } catch {
+              // Audit of a deduped call never fails the turn.
+            }
+          } else if (!invocation.ok) {
+            await auditFailure(invocation);
+          }
           await onInvocation?.(invocation);
           onStep?.({
             type: 'tool_result',
@@ -1107,7 +1365,11 @@ export async function runToolLoop(
             // providers (OpenAI) require `tool_call_id` on a tool message and
             // mis-associate observations without it when several calls occur.
             tool_call_id: call.id,
-            content: JSON.stringify(invocation.observation),
+            // Bounded like a browser result (#4378): the transcript only grows
+            // and every round resends it. The invocation keeps the full
+            // observation for `onInvocation` / persistence; only the copy the
+            // model reads is capped.
+            content: invocation.modelContent,
           });
         }
 
@@ -1127,6 +1389,21 @@ export async function runToolLoop(
       }
     },
   );
+}
+
+/**
+ * Fixed instruction appended (as a `user` message, which every chat template
+ * accepts mid-conversation) to the forced no-tools final call at the step cap
+ * or when the turn budget is spent (#4378). It is constant text: it never
+ * carries tool output or argument values.
+ */
+export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
+  "Tools are no longer available for this turn. Answer the user's question now " +
+  'from the tool results above, without calling tools. ' +
+  'If they do not answer the question, say so.';
+
+function answerNowMessage(): LoopMessage {
+  return { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION };
 }
 
 /** Max browser tools accepted on one turn. */
@@ -1286,9 +1563,203 @@ export function appendClientToolResults(
   return next;
 }
 
-function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
-  return value.length > max ? `${value.slice(0, max)}… [truncated]` : value;
+/**
+ * Max characters of one server tool observation fed back to the model
+ * (#4378) — the same bound as a browser result
+ * ({@link MAX_CLIENT_TOOL_RESULT_CHARS}).
+ */
+export const MAX_SERVER_TOOL_OBSERVATION_CHARS = MAX_CLIENT_TOOL_RESULT_CHARS;
+
+/**
+ * Fixed marker appended to a server observation cut at
+ * {@link MAX_SERVER_TOOL_OBSERVATION_CHARS}. It carries no tool output: it
+ * tells the model the result is incomplete and how to ask for less.
+ */
+export const SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER =
+  ' [truncated: this tool result was too large and was cut off, so it is incomplete. ' +
+  'Do not treat it as the full result. Narrow the request and call the tool again: ' +
+  'add a filter, project fewer fields, request a smaller page, or use a count.]';
+
+/** Serialize a server observation for the transcript, bounded. */
+function serverObservationContent(observation: unknown): string {
+  let serialized: string;
+  try {
+    // A tool that returns nothing observes `null`, not a missing content.
+    serialized = JSON.stringify(observation) ?? 'null';
+  } catch {
+    // Circular or BigInt-bearing results: report, never echo them.
+    return JSON.stringify({ error: 'unserializable_result' });
+  }
+  return serialized.length > MAX_SERVER_TOOL_OBSERVATION_CHARS
+    ? `${sliceOnCodePoint(serialized, MAX_SERVER_TOOL_OBSERVATION_CHARS)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
+    : serialized;
 }
+
+/**
+ * The first `max` UTF-16 units of `value`, one fewer when the cut would split
+ * a surrogate pair: a truncated result never ends in a lone surrogate.
+ */
+function sliceOnCodePoint(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const code = value.charCodeAt(max - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? max - 1 : max;
+  return value.slice(0, end);
+}
+
+function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
+  return value.length > max
+    ? `${sliceOnCodePoint(value, max)}… [truncated]`
+    : value;
+}
+
+/**
+ * Fixed note returned for a deduped call (#4382), instead of a second copy
+ * of the earlier observation.
+ */
+export const TOOL_CALL_DEDUPED_NOTE =
+  'This exact call was already made in this turn; its result is above. Use it, or change the arguments.';
+
+/**
+ * Fixed note for a deduped repeat of a call that was rejected or refused
+ * (#4382): repeating it unchanged cannot succeed.
+ */
+export const TOOL_CALL_DEDUPED_REJECTED_NOTE =
+  'This exact call was already rejected above; repeating it will not work. Fix the arguments as the error says.';
+
+/** Max distinct read-only calls remembered for dedupe in one leg (#4382). */
+export const MAX_DEDUPED_CALLS_PER_TURN = 64;
+/** Calls whose canonical arguments exceed this are never deduped. */
+const MAX_DEDUPE_KEY_CHARS = 4_000;
+
+/**
+ * Read-only, idempotent extra tools that may be deduped (#4382). Mutating,
+ * delegating (`agents.invoke`) and browser tools never are.
+ */
+const DEDUPABLE_EXTRA_TOOLS: ReadonlySet<string> = new Set([
+  'data.discover',
+  'data.inspect',
+  'data.query',
+]);
+
+/** Stable JSON with sorted object keys. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      );
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** Whether a resolved server tool is on the dedupe allow-list (#4382). */
+function isReadOnlyTool(
+  tool: ManifestTool | undefined,
+  extraTool: PrincipalTool | undefined,
+): boolean {
+  if (tool) return tool.action === 'read';
+  return extraTool ? DEDUPABLE_EXTRA_TOOLS.has(extraTool.slug) : false;
+}
+
+/**
+ * The dedupe key for a read-only call (manifest `read`, or a known read-only
+ * data tool), or `null` when the call never qualifies.
+ */
+function readOnlyCallKey(
+  tool: ManifestTool | undefined,
+  extraTool: PrincipalTool | undefined,
+  slug: string,
+  args: Record<string, unknown> | null,
+): string | null {
+  if (args === null) return null;
+  if (!isReadOnlyTool(tool, extraTool)) return null;
+  let key: string;
+  try {
+    key = `${slug}\u0000${canonicalJson(args)}`;
+  } catch {
+    return null;
+  }
+  return key.length > MAX_DEDUPE_KEY_CHARS ? null : key;
+}
+
+/** Max serialized characters of a failed call's persisted arguments (#4383). */
+export const MAX_TOOL_FAILURE_ARGS_CHARS = 2_000;
+
+const STABLE_CODE = /^[A-Z0-9_]{1,64}$/;
+
+/**
+ * The persisted / audited record of a failed tool call (#4383), or `null`
+ * for a successful one. Arguments are bounded: over
+ * {@link MAX_TOOL_FAILURE_ARGS_CHARS} they become `{ truncated: true }`. The
+ * error code is the observation's own stable code, else the error kind; the
+ * text is exactly what the model was shown.
+ */
+export function toolFailureRecord(
+  invocation: ToolInvocation,
+): ToolFailureRecord | null {
+  if (invocation.ok) return null;
+  // A deduped repeat is not a fresh failure (#4382).
+  if (invocation.deduped) return null;
+  const errorKind = invocation.error ?? 'execution_error';
+  const observation = asRecord(invocation.observation);
+  const code =
+    typeof observation.code === 'string' && STABLE_CODE.test(observation.code)
+      ? observation.code
+      : errorKind;
+  let args: Record<string, unknown> = invocation.args;
+  let argsChars = 0;
+  try {
+    argsChars = (JSON.stringify(args) ?? '').length;
+    if (argsChars > MAX_TOOL_FAILURE_ARGS_CHARS) {
+      args = { truncated: true };
+    }
+  } catch {
+    args = { unserializable: true };
+  }
+  return {
+    name: invocation.slug.slice(0, 128),
+    args,
+    argsChars,
+    status: invocation.rejected ? 'rejected' : 'error',
+    errorKind,
+    errorCode: code,
+    shown:
+      invocation.modelContent ??
+      serverObservationContent(invocation.observation),
+  };
+}
+
+/**
+ * The value-free part of a {@link ToolFailureRecord} the audit sink receives
+ * (#4383): tool, status, kind, stable code, and sizes — never the arguments
+ * or the shown text.
+ */
+export function toolFailureAuditMetadata(
+  record: ToolFailureRecord,
+): Record<string, unknown> {
+  return {
+    name: record.name,
+    status: record.status,
+    errorKind: record.errorKind,
+    errorCode: record.errorCode,
+    // The original arguments' size, not the `{ truncated: true }` stand-in.
+    argsChars: record.argsChars,
+    shownChars: record.shown.length,
+  };
+}
+
+/**
+ * Fixed hint on an `execution_error` observation (#4378): the failure is the
+ * server's, so changing the arguments will not fix it.
+ */
+export const TOOL_EXECUTION_ERROR_HINT =
+  'The tool failed on the server; this was not caused by your arguments. ' +
+  'Do not repeat the same call. Answer with what you already have; if that does not answer the question, say so ' +
+  'and tell the user the data could not be read right now.';
 
 /** How a thrown tool error is reported to the model and the invocation log. */
 export type ToolErrorKind =
@@ -1361,11 +1832,24 @@ function toolErrorObservation(
   kind: ToolErrorKind,
 ): Record<string, unknown> {
   const message = error instanceof Error ? error.message : String(error);
-  if (kind !== 'invalid_request') return { error: message };
-  const { publicMessage, code } = error as {
+  const { publicMessage, code } = (error ?? {}) as {
     publicMessage?: unknown;
     code?: unknown;
   };
+  if (kind === 'execution_error') {
+    // A server-side failure (#4378): say so, so the model stops resending
+    // the same call and tells the user, instead of guessing at arguments.
+    // Fixed text plus the error's own stable code — no internals.
+    return {
+      error: message,
+      kind,
+      ...(typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code)
+        ? { code }
+        : {}),
+      hint: TOOL_EXECUTION_ERROR_HINT,
+    };
+  }
+  if (kind !== 'invalid_request') return { error: message };
   return {
     error:
       typeof publicMessage === 'string' && publicMessage

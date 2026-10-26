@@ -342,14 +342,93 @@ function disallowedCondition(
 }
 
 /**
+ * A one-line valid `data.query` call for this surface (#4378), appended to
+ * every request error so a small model can copy the shape. Built only from
+ * the surface id and the caller-visible schema (field ids, operators) with
+ * `<value>` placeholders — never from the caller's own arguments. The mode
+ * follows the failed request's mode (count when unknown).
+ */
+function validQueryExample(
+  surfaceId: string,
+  schema: DataQuerySchema,
+  request: unknown,
+): string {
+  const mode =
+    isRecord(request) && (request.mode === 'rows' || request.mode === 'facets')
+      ? request.mode
+      : 'count';
+  const filterable = schema.fields.filter(
+    (field) => (field.filterOperators?.length ?? 0) > 0,
+  );
+  const inField = filterable.find((field) =>
+    field.filterOperators?.includes('in'),
+  );
+  const field = inField ?? filterable[0];
+  const filter = field
+    ? inField
+      ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
+      : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(field.filterOperators?.[0])},"value":"<value>"}`
+    : '';
+  let body: string;
+  if (mode === 'facets') {
+    const facet = schema.fields.find((candidate) => candidate.facetable);
+    body = facet
+      ? `"mode":"facets","facets":[{"field":${JSON.stringify(facet.id)},"limit":10}]`
+      : `"mode":"count"${filter}`;
+  } else if (mode === 'rows') {
+    body = `"mode":"rows","projection":[${JSON.stringify(schema.identityField)}]${filter},"page":{"kind":"offset","offset":0,"limit":10}`;
+  } else {
+    body = `"mode":"count"${filter}`;
+  }
+  return `Valid example: {"surfaceId":${JSON.stringify(surfaceId)},"request":{${body}}}`;
+}
+
+const FILTER_KINDS = new Set(['condition', 'all', 'any', 'not']);
+
+/**
+ * A targeted hint when a filter's `kind` is not one of the four (#4378):
+ * small models write `"kind":"in"` or `"kind":"or"`. Names a misused
+ * operator only from the fixed operator vocabulary, never free model text.
+ */
+function filterKindHint(request: unknown): string {
+  const seen = new Set<string>();
+  const walk = (filter: unknown, depth: number) => {
+    if (!isRecord(filter) || depth > 16) return;
+    if (typeof filter.kind === 'string' && !FILTER_KINDS.has(filter.kind)) {
+      seen.add(filter.kind);
+    }
+    const children = Array.isArray(filter.filters)
+      ? filter.filters
+      : [filter.filter];
+    for (const child of children) walk(child, depth + 1);
+  };
+  walk(isRecord(request) ? request.filter : undefined, 0);
+  if (seen.size === 0) return '';
+  const operators = [...seen].filter((kind) =>
+    (DATA_QUERY_OPERATORS as readonly string[]).includes(kind),
+  );
+  const logical = [...seen].some((kind) => kind === 'or' || kind === 'and');
+  return (
+    'A filter kind is condition, all, any or not. ' +
+    (operators.length > 0
+      ? `${operators.join(', ')} is an operator: use {"kind":"condition","field":f,"operator":${JSON.stringify(operators[0])},"value":v}. `
+      : '') +
+    (logical
+      ? 'For OR use {"kind":"any","filters":[...]}; for AND use {"kind":"all","filters":[...]}. '
+      : '')
+  );
+}
+
+/**
  * Turn a core `DataQueryValidationError` into an actionable
  * `DataSurfaceRequestError`: the original reason plus what the visible schema
- * does allow in its place.
+ * does allow in its place, and a one-line valid example for the surface.
  */
 function explainRequestError(
   error: DataQueryValidationError,
   schema: DataQuerySchema,
   request: unknown,
+  surfaceId: string,
 ): DataSurfaceRequestError {
   const reason = error.publicMessage.replace(/\.?$/, '.');
   let hint: string;
@@ -411,20 +490,24 @@ function explainRequestError(
       break;
     }
     default:
-      hint = DATA_QUERY_REQUEST_SHAPE_HINT;
+      hint = `${filterKindHint(request)}${DATA_QUERY_REQUEST_SHAPE_HINT}`;
   }
-  return new DataSurfaceRequestError(`${reason} ${hint}`, error.code);
+  return new DataSurfaceRequestError(
+    `${reason} ${hint} ${validQueryExample(surfaceId, schema, request)}`,
+    error.code,
+  );
 }
 
 function normalizeSurfaceRequest(
   value: unknown,
   schema: DataQuerySchema,
+  surfaceId: string,
 ): DataQueryRequest {
   try {
     return normalizeDataQueryRequest(value, schema);
   } catch (error) {
     if (error instanceof DataQueryValidationError) {
-      throw explainRequestError(error, schema, value);
+      throw explainRequestError(error, schema, value, surfaceId);
     }
     throw error;
   }
@@ -1094,9 +1177,125 @@ async function bounded<T>(
  * `normalizeDataQueryRequest` against the visible schema. A flat call (the
  * request's keys beside `surfaceId`, no `request` object) is accepted too.
  */
-function requestFromArgs(args: Record<string, unknown>): unknown {
+/** Request-grammar keys a model sometimes misplaces next to `request`. */
+const DATA_QUERY_REQUEST_KEYS = [
+  'mode',
+  'projection',
+  'filter',
+  'sort',
+  'page',
+  'facets',
+  'version',
+  'requestId',
+] as const;
+
+/** Valid-shape example used before the surface is known. */
+const GENERIC_QUERY_EXAMPLE =
+  'Valid example: {"surfaceId":"<surface id from data.discover>","request":{"mode":"count",' +
+  '"filter":{"kind":"condition","field":"<field>","operator":"in","value":["<value>","<value>"]}}}';
+
+/**
+ * Put `surfaceId` where `data.query` / `data.inspect` read it (#4378). Small
+ * models nest it inside `request` (or wrap the request in `query`), and a
+ * missing top-level id used to surface as the generic "not available"
+ * denial, which reads as a permission problem.
+ *
+ * - A `request.surfaceId` string is lifted to the top level and removed
+ *   from `request` (the value is used, nothing is dropped). A top-level
+ *   `query` object standing in for `request`, or a `query` object that is
+ *   `request`'s only key, is unwrapped the same way: the intent is
+ *   unambiguous and every key inside it is then validated as usual.
+ * - Two different ids (top level vs nested) are a request error.
+ * - No id at all is a request error, never a denial.
+ *
+ * Only an id that names no visible surface still gets the generic denial.
+ * Messages never echo the ids or other values.
+ */
+function placeSurfaceId(
+  args: Record<string, unknown>,
+  tool: 'query' | 'inspect',
+): Record<string, unknown> {
+  let next: Record<string, unknown> = { ...args };
+  if (
+    tool === 'query' &&
+    !Object.hasOwn(next, 'request') &&
+    isRecord(next.query) &&
+    Object.keys(next).every((key) => key === 'surfaceId' || key === 'query')
+  ) {
+    const { query, ...rest } = next;
+    next = { ...rest, request: query };
+  }
+  const nested: unknown[] = [];
+  if (isRecord(next.request)) {
+    let request: Record<string, unknown> = { ...next.request };
+    const keys = Object.keys(request).filter((key) => key !== 'surfaceId');
+    if (keys.length === 1 && keys[0] === 'query' && isRecord(request.query)) {
+      const { query, ...rest } = request;
+      if (Object.hasOwn(query as Record<string, unknown>, 'surfaceId')) {
+        nested.push((query as Record<string, unknown>).surfaceId);
+      }
+      request = { ...(query as Record<string, unknown>), ...rest };
+    }
+    if (Object.hasOwn(request, 'surfaceId')) {
+      nested.push(request.surfaceId);
+      delete request.surfaceId;
+    }
+    next.request = request;
+  }
+  const top = next.surfaceId;
+  const candidates = [
+    ...(top !== undefined && top !== null ? [top] : []),
+    ...nested,
+  ];
+  const example =
+    tool === 'inspect'
+      ? 'Valid example: {"surfaceId":"<surface id from data.discover>"}'
+      : GENERIC_QUERY_EXAMPLE;
+  if (
+    candidates.length === 0 ||
+    candidates.some((id) => typeof id !== 'string' || !id)
+  ) {
+    throw new DataSurfaceRequestError(
+      `surfaceId is required at the top level${tool === 'query' ? ', next to request' : ''}, as a surface id string from data.discover. ${example}`,
+      'DATA_QUERY_SURFACE_ID_REQUIRED',
+    );
+  }
+  if (new Set(candidates).size > 1) {
+    throw new DataSurfaceRequestError(
+      `surfaceId was given twice with different values. Give it once, at the top level${tool === 'query' ? ', next to request' : ''}. ${example}`,
+      'DATA_QUERY_SURFACE_ID_CONFLICT',
+    );
+  }
+  next.surfaceId = candidates[0];
+  return next;
+}
+
+function requestFromArgs(
+  args: Record<string, unknown>,
+  example: () => string,
+): unknown {
   let raw: unknown;
   if (Object.hasOwn(args, 'request')) {
+    // `data.query` takes exactly {surfaceId, request} (#4378): a `filter`
+    // beside `request` used to be dropped silently, so a filtered count
+    // counted every row. Name only the fixed grammar keys that were
+    // misplaced — never the model's own keys or values.
+    const stray = Object.keys(args).filter(
+      (key) => key !== 'surfaceId' && key !== 'request',
+    );
+    if (stray.length > 0) {
+      const misplaced = DATA_QUERY_REQUEST_KEYS.filter((key) =>
+        stray.includes(key),
+      );
+      throw new DataSurfaceRequestError(
+        'data.query accepts only surfaceId and request at the top level' +
+          (misplaced.length > 0
+            ? `; move ${misplaced.join(', ')} inside request.`
+            : '; put every query option inside request.') +
+          ` ${example()}`,
+        'DATA_QUERY_ARGUMENTS_UNEXPECTED',
+      );
+    }
     raw = args.request;
   } else {
     const { surfaceId: _surfaceId, ...rest } = args;
@@ -1353,7 +1552,11 @@ export function createDataSurfaceTools(
     },
     async ({ run, args }) => {
       run.assertToolAllowed(DATA_INSPECT_TOOL_SLUG);
-      const entry = findSurface(await catalog(run, 'inspect'), args.surfaceId);
+      const placed = placeSurfaceId(args, 'inspect');
+      const entry = findSurface(
+        await catalog(run, 'inspect'),
+        placed.surfaceId,
+      );
       if (!entry) throw new DataSurfaceDeniedError();
       await audit({ action: 'inspect', surfaceId: entry.surface.id }, run);
       return descriptor(entry.surface, entry.schema);
@@ -1367,11 +1570,23 @@ export function createDataSurfaceTools(
     DATA_QUERY_TOOL_PARAMETERS,
     async ({ run, args, db }) => {
       run.assertToolAllowed(DATA_QUERY_TOOL_SLUG);
-      const entry = findSurface(await catalog(run, 'query'), args.surfaceId);
+      const queryArgs = placeSurfaceId(args, 'query');
+      const entry = findSurface(
+        await catalog(run, 'query'),
+        queryArgs.surfaceId,
+      );
       if (!entry) throw new DataSurfaceDeniedError();
+      const surfaceId = entry.surface.id;
+      const example = (raw?: unknown) =>
+        validQueryExample(
+          surfaceId,
+          entry.schema,
+          raw ?? (isRecord(queryArgs.request) ? queryArgs.request : queryArgs),
+        );
       const request = normalizeSurfaceRequest(
-        requestFromArgs(args),
+        requestFromArgs(queryArgs, () => example()),
         entry.schema,
+        surfaceId,
       );
       const principal = principalFromRun(run);
       const signal = new AbortController();
@@ -1394,7 +1609,7 @@ export function createDataSurfaceTools(
               EXECUTOR_REQUEST_ERROR_CODES.has(error.code)
             ) {
               throw new DataSurfaceRequestError(
-                error.publicMessage,
+                `${error.publicMessage.replace(/\.?$/, '.')} ${example(request)}`,
                 error.code,
               );
             }

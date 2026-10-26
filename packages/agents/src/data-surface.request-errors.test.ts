@@ -10,8 +10,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DataSurfaceSchema } from './data-surface.js';
 import {
   createDataSurfaceTools,
+  DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_TOOL_PARAMETERS,
   DATA_QUERY_TOOL_SLUG,
+  DataSurfaceDeniedError,
   DataSurfaceRequestError,
 } from './data-surface.js';
 import type { PrincipalRun } from './execute-as-principal.js';
@@ -169,7 +171,238 @@ describe('data.query envelope defaults', () => {
   });
 });
 
+describe('data.query surfaceId placement (#4378)', () => {
+  const count = {
+    mode: 'count',
+    filter: {
+      kind: 'condition',
+      field: 'id',
+      operator: 'in',
+      value: ['a'],
+    },
+  };
+  function capture() {
+    const seen: DataQueryRequest[] = [];
+    const run = queryTool({
+      execute: async (_surface: unknown, request: DataQueryRequest) => {
+        seen.push(request);
+        return { rows: [], total: { kind: 'exact' as const, value: 4 } };
+      },
+    });
+    return { run, seen };
+  }
+
+  it('lifts a surfaceId nested in request to the top level', async () => {
+    const { run, seen } = capture();
+    await expect(
+      run({ request: { ...count, surfaceId: 'records' } }),
+    ).resolves.toMatchObject({ total: { value: 4 } });
+    expect(seen[0]?.filter).toEqual(count.filter);
+    expect(seen[0]).not.toHaveProperty('surfaceId');
+  });
+
+  it('accepts the same id at both levels, and unwraps a query wrapper', async () => {
+    const { run, seen } = capture();
+    await run({
+      surfaceId: 'records',
+      request: { ...count, surfaceId: 'records' },
+    });
+    await run({ request: { query: { ...count, surfaceId: 'records' } } });
+    await run({ surfaceId: 'records', request: { query: count } });
+    await run({ surfaceId: 'records', query: count });
+    expect(seen).toHaveLength(4);
+    for (const request of seen) {
+      expect(request.mode).toBe('count');
+      expect(request.filter).toEqual(count.filter);
+    }
+  });
+
+  it('rejects two different ids as a request error, never echoing them', async () => {
+    const error = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { ...count, surfaceId: 'other-secret-id' },
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_CONFLICT');
+    expect(error.message).not.toContain('other-secret-id');
+    expect(error.message).toContain('at the top level, next to request');
+  });
+
+  it('rejects a query-wrapped surfaceId that differs from its sibling', async () => {
+    const error = await requestError(
+      queryTool()({
+        request: {
+          surfaceId: 'records',
+          query: { ...count, surfaceId: 'other' },
+        },
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_CONFLICT');
+  });
+
+  it('rejects a missing surfaceId as a 400 with an example, not a denial', async () => {
+    for (const args of [
+      { request: count },
+      { surfaceId: 7, request: count },
+      { request: { ...count, surfaceId: 3 } },
+    ]) {
+      const error = await requestError(queryTool()(args));
+      expect(error.status).toBe(400);
+      expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_REQUIRED');
+      expect(error.message).toContain(
+        'surfaceId is required at the top level, next to request',
+      );
+      expect(error.message).toContain(
+        'Valid example: {"surfaceId":"<surface id from data.discover>","request":{"mode":"count"',
+      );
+    }
+  });
+
+  it('keeps the generic denial for an unknown surface id', async () => {
+    await expect(
+      queryTool()({ surfaceId: 'unknown', request: count }),
+    ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    await expect(
+      queryTool()({ request: { ...count, surfaceId: 'unknown' } }),
+    ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+  });
+
+  it('applies the same placement to data.inspect', async () => {
+    const inspect = createDataSurfaceTools({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+    }).find((candidate) => candidate.slug === DATA_INSPECT_TOOL_SLUG);
+    const run = fakeRun();
+    run.assertToolAllowed = () => {};
+    const call = (args: Record<string, unknown>) =>
+      inspect?.execute({ run, args, db: undefined });
+    await expect(
+      call({ request: { surfaceId: 'records' } }),
+    ).resolves.toMatchObject({ id: 'records' });
+    const error = await requestError(call({}) as Promise<unknown>);
+    expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_REQUIRED');
+    expect(error.message).toContain(
+      'Valid example: {"surfaceId":"<surface id from data.discover>"}',
+    );
+  });
+
+  it('explains a filter kind that is really an operator or a logical word', async () => {
+    const inKind = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: {
+          mode: 'count',
+          filter: { kind: 'in', field: 'status', value: ['a'] },
+        },
+      }),
+    );
+    expect(inKind.message).toContain(
+      'A filter kind is condition, all, any or not. in is an operator: use {"kind":"condition","field":f,"operator":"in","value":v}.',
+    );
+    const nested = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: {
+          mode: 'count',
+          filter: {
+            kind: 'all',
+            filters: [{ kind: 'in', field: 'status', value: ['a'] }],
+          },
+        },
+      }),
+    );
+    expect(nested.message).toContain('in is an operator');
+    const orKind = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { mode: 'count', filter: { kind: 'or', filters: [] } },
+      }),
+    );
+    expect(orKind.message).toContain(
+      'For OR use {"kind":"any","filters":[...]}',
+    );
+  });
+});
+
 describe('data.query request errors', () => {
+  it('appends a one-line valid example in the failed request mode, never the caller values (#4378)', async () => {
+    const shapes: Array<[Record<string, unknown>, string]> = [
+      [
+        { mode: 'count', filter: { kind: 'or', filters: [] } },
+        '{"mode":"count","filter":{"kind":"condition","field":"id","operator":"in"',
+      ],
+      [{ mode: 'count', page: { limit: 3 } }, '{"mode":"count","filter":'],
+      [
+        {
+          mode: 'rows',
+          filter: {
+            kind: 'condition',
+            field: 'status',
+            operator: 'in',
+            value: 'caller-secret-value',
+          },
+        },
+        '{"mode":"rows","projection":["id"],"filter":',
+      ],
+      [
+        { mode: 'facets', facets: [{ field: 'nope', limit: 3 }] },
+        '{"mode":"facets","facets":[{"field":"status","limit":10}]}',
+      ],
+    ];
+    for (const [request, expected] of shapes) {
+      const error = await requestError(
+        queryTool()({ surfaceId: 'records', request }),
+      );
+      expect(error.message).toContain(
+        `Valid example: {"surfaceId":"records","request":${expected}`,
+      );
+      expect(error.message).not.toContain('caller-secret-value');
+      expect(error.message).not.toMatch(/secret"|restricted/);
+    }
+  });
+
+  it('rejects a filter placed beside request instead of dropping it (#4378)', async () => {
+    const execute = vi.fn(async () => ({
+      rows: [],
+      total: { kind: 'exact' as const, value: 10 },
+    }));
+    const error = await requestError(
+      queryTool({ execute })({
+        surfaceId: 'records',
+        request: { mode: 'count' },
+        filter: {
+          kind: 'condition',
+          field: 'status',
+          operator: 'eq',
+          value: 'open-secret-value',
+        },
+      }),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe('DATA_QUERY_ARGUMENTS_UNEXPECTED');
+    expect(error.message).toContain('move filter inside request');
+    expect(error.message).toContain(
+      'Valid example: {"surfaceId":"records","request":{"mode":"count","filter":{"kind":"condition","field":"id","operator":"in","value":["<value>","<value>"]}}}',
+    );
+    // Value-free: the model's argument values never come back.
+    expect(error.message).not.toContain('open-secret-value');
+  });
+
+  it('rejects an unknown sibling key without echoing its name', async () => {
+    const error = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { mode: 'count' },
+        whereClauseXyz: 'status = open',
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_ARGUMENTS_UNEXPECTED');
+    expect(error.message).toContain('put every query option inside request');
+    expect(error.message).not.toContain('whereClauseXyz');
+    expect(error.message).not.toContain('status = open');
+  });
+
   it('names the filterable fields for an unknown or hidden filter field, never the hidden ones', async () => {
     for (const field of ['published_at', 'secret', 'restricted']) {
       const error = await requestError(
@@ -277,7 +510,9 @@ describe('data.query request errors', () => {
         },
       }),
     );
-    expect(error.message).toBe('Data query value for id must be a complete id');
+    expect(error.message).toMatch(
+      /^Data query value for id must be a complete id\. Valid example: \{"surfaceId":"records","request":\{"mode":/,
+    );
     expect(error.reason).toBe('DATA_QUERY_VALUE_INVALID');
     expect(onFailure).not.toHaveBeenCalled();
   });

@@ -28,6 +28,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ASSISTANT_TURN_GENERIC_ERROR,
+  type AuthoredToolReply,
   createAssistantTurnResponse,
   createMemoryContinuationStore,
   createSessionContinuationStore,
@@ -44,6 +45,7 @@ import {
   type ClientToolDefinition,
   runToolLoop,
   sanitizeClientToolDeclarations,
+  type ToolInvocation,
 } from './tool-loop.js';
 
 type Round = (
@@ -833,6 +835,127 @@ describe('assistant turn', () => {
         type: 'status',
         status: { state: 'idle' },
       });
+    });
+
+    it('persists a failed server tool call by default, with the text the model saw (#4383)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const failing: PrincipalTool = {
+        ...readTool([]),
+        async execute() {
+          throw Object.assign(new Error('Data surface query failed.'), {
+            status: 502,
+            code: 'DATA_SURFACE_QUERY_FAILED',
+          });
+        },
+      };
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([calls(['data-discover', {}]), text('Sorry.')]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'discover',
+          extraTools: [failing],
+          author: {
+            chatService,
+            agentSessionId: session.id as string,
+            tenantId,
+          },
+        }),
+      );
+      const persisted = events
+        .filter((e) => e.type === 'message')
+        .map((e) => e.message as Record<string, unknown>);
+      expect(persisted).toHaveLength(2);
+      const row = persisted[0] as {
+        role: string;
+        content: string;
+        metadata: unknown;
+      };
+      expect(row.role).toBe('tool');
+      expect(row.content).toContain('DATA_SURFACE_QUERY_FAILED');
+      expect(
+        typeof row.metadata === 'string'
+          ? JSON.parse(row.metadata)
+          : row.metadata,
+      ).toEqual({
+        toolStatus: 'error',
+        errorKind: 'execution_error',
+        errorCode: 'DATA_SURFACE_QUERY_FAILED',
+      });
+    });
+
+    it('lets authorFailedInvocation override or skip a failed row, and keeps deduped failures from authorInvocation (#4383)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const failing: PrincipalTool = {
+        ...readTool([]),
+        slug: 'data.discover',
+        async execute() {
+          throw Object.assign(new Error('bad'), { status: 400 });
+        },
+      };
+      const seen: string[] = [];
+      const run = (
+        authorFailedInvocation:
+          | ((i: ToolInvocation) => AuthoredToolReply | null)
+          | undefined,
+      ) =>
+        collect(
+          runAssistantTurn({
+            // The same failing call twice: the second is a deduped repeat.
+            ai: scriptedAI([
+              calls(['data-discover', {}]),
+              calls(['data-discover', {}]),
+              text('Sorry.'),
+            ]),
+            db,
+            principal: principal(),
+            audit: () => {},
+            userMessage: 'discover',
+            extraTools: [failing],
+            author: {
+              chatService,
+              agentSessionId: session.id as string,
+              tenantId,
+              authorInvocation: (invocation) => {
+                seen.push(`ok:${invocation.ok}`);
+                return null;
+              },
+              ...(authorFailedInvocation ? { authorFailedInvocation } : {}),
+            },
+          }),
+        );
+      const overridden = await run(() => ({
+        content: 'custom failure row',
+        messageType: 'tool_result',
+        toolCallData: { name: 'data.discover' },
+      }));
+      const rows = overridden
+        .filter((e) => e.type === 'message')
+        .map((e) => (e.message as { content: string }).content);
+      expect(rows).toEqual(['custom failure row', 'Sorry.']);
+      const skipped = await run(() => null);
+      expect(
+        skipped
+          .filter((e) => e.type === 'message')
+          .map((e) => (e.message as { content: string }).content),
+      ).toEqual(['Sorry.']);
+      // Neither the failure nor its deduped repeat reached authorInvocation.
+      expect(seen).toEqual([]);
     });
 
     it('persists allowed tool results and the reply through the agent bridge', async () => {

@@ -41,6 +41,7 @@ import {
   type ManifestTool,
   runToolLoop,
   type ToolLoopResult,
+  toolFailureRecord,
 } from './tool-loop.js';
 
 /**
@@ -496,6 +497,38 @@ async function authorConversationReply(input: {
   const toolMessages: ChatMessage[] = [];
   for (const invocation of input.result.invocations) {
     if (!invocation.ok) {
+      // A failed, rejected or denied call is persisted too (#4383), with
+      // the exact text the model was shown, so a failed turn can be
+      // diagnosed. A call to a tool the session does not allow-list cannot
+      // be a tool row (the session's authoring gate refuses it); it is
+      // reported to the audit sink only.
+      const record = toolFailureRecord(invocation);
+      if (!record) continue;
+      try {
+        const message = await sendAgentReply(input.chatService, {
+          tenantId: input.tenantId,
+          agentSessionId: input.session.id as string,
+          threadId: input.threadId,
+          content: record.shown,
+          kind: 'tool',
+          messageType: 'tool_result',
+          toolCallData: {
+            name: record.name,
+            args: record.args,
+            status: record.status,
+            errorCode: record.errorCode,
+          },
+          metadata: {
+            toolStatus: record.status,
+            errorKind: record.errorKind,
+            errorCode: record.errorCode,
+          },
+        });
+        toolMessages.push(message);
+      } catch {
+        // Gate refusal (unoffered tool) or a write failure: the diagnostic
+        // row is best-effort and never fails the turn.
+      }
       continue;
     }
     const message = await sendAgentReply(input.chatService, {
@@ -505,7 +538,11 @@ async function authorConversationReply(input: {
       content: JSON.stringify(invocation.observation),
       kind: 'tool',
       messageType: 'tool_result',
-      toolCallData: { name: invocation.slug, args: invocation.args },
+      toolCallData: {
+        name: invocation.slug,
+        args: invocation.args,
+        ...(invocation.deduped ? { deduped: true } : {}),
+      },
     });
     toolMessages.push(message);
   }

@@ -16,7 +16,10 @@ import type {
   AIResponse,
   ChatOptions,
 } from '@happyvertical/ai';
-import type { PrincipalAuditEntry } from '@happyvertical/smrt-agents';
+import type {
+  PrincipalAuditEntry,
+  PrincipalTool,
+} from '@happyvertical/smrt-agents';
 import {
   field,
   ObjectRegistry,
@@ -293,6 +296,114 @@ describe('persona-bound conversation', () => {
     expect(captured[0]?.options?.tools ?? []).toEqual([]);
     expect(turn.result.stoppedReason).toBe('no_tools');
     expect(turn.result.invocations).toHaveLength(0);
+  });
+
+  it('persists failed and rejected tool calls with the text the model saw, and audits them (#4383)', async () => {
+    const probe: PrincipalTool = {
+      slug: 'probe.query',
+      aiTool: {
+        type: 'function',
+        function: {
+          name: 'probe-query',
+          description: 'Probe.',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+      async execute() {
+        throw Object.assign(new Error('Field nope is not filterable.'), {
+          status: 400,
+          code: 'PROBE_REQUEST_INVALID',
+        });
+      },
+    };
+    const probePersona = {
+      ...persona,
+      allowedTools: [...CONV_TOOLS, 'probe.query'],
+    };
+    const chatService = await ChatService.create({ tenantId, db });
+    await chatService.initialize();
+    const { session } = await chatService.createAgentSession({
+      tenantId,
+      agentId: 'praeco-agent',
+      actorProfileId: 'human-profile',
+    });
+    const bound = await bindPersonaToSession({
+      chatService,
+      session,
+      actorProfileId: 'human-profile',
+      tenantId,
+      persona: probePersona,
+    });
+    const { ai } = makeAI((call, offered) => {
+      if (offered && call === 0)
+        return toolCall('probe-query', { field: 'nope' });
+      if (offered && call === 1) return toolCall('secret-tool', { x: 1 });
+      return {
+        content: 'Could not count.',
+        finishReason: 'stop',
+      } as AIResponse;
+    });
+    const audits: PrincipalAuditEntry[] = [];
+    const turn = await runPersonaConversationTurn({
+      ai,
+      db,
+      persona: probePersona,
+      tenantId,
+      userMessage: 'how many?',
+      recall: false,
+      chatService,
+      session: bound,
+      extraTools: [probe],
+      audit: (entry) => {
+        audits.push(entry);
+      },
+    });
+    expect(turn.result.invocations.map((i) => i.ok)).toEqual([false, false]);
+
+    const messages = await chatService.getRoomMessages({
+      roomId: bound.chatRoomId as string,
+      actorProfileId: 'human-profile',
+      tenantId,
+      limit: 50,
+    });
+    const toolRows = messages.filter((m) => m.role === 'tool');
+    // The denied call to an unoffered tool cannot be a tool row (the
+    // session gate refuses its name); the failed allowed call is one.
+    expect(toolRows).toHaveLength(1);
+    const row = toolRows[0];
+    expect(row?.content).toBe(turn.result.invocations[0]?.modelContent);
+    expect(row?.content).toContain('Field nope is not filterable.');
+    expect(row?.getMetadata()).toEqual({
+      toolStatus: 'error',
+      errorKind: 'invalid_request',
+      errorCode: 'PROBE_REQUEST_INVALID',
+    });
+    expect(row?.getToolCallData()).toMatchObject({
+      name: 'probe.query',
+      args: { field: 'nope' },
+      status: 'error',
+      errorCode: 'PROBE_REQUEST_INVALID',
+    });
+
+    const failed = audits.filter((a) => a.action === 'chat.tool_call_failed');
+    expect(failed.map((a) => a.metadata)).toEqual([
+      expect.objectContaining({
+        name: 'probe.query',
+        status: 'error',
+        errorCode: 'PROBE_REQUEST_INVALID',
+      }),
+      expect.objectContaining({
+        name: 'secret-tool',
+        status: 'rejected',
+        errorCode: 'not_permitted',
+      }),
+    ]);
+    // The audit sink gets no arguments or shown text (#4383).
+    for (const entry of failed) {
+      expect(entry.metadata).not.toHaveProperty('args');
+      expect(entry.metadata).not.toHaveProperty('shown');
+      expect(JSON.stringify(entry.metadata)).not.toContain('nope');
+    }
   });
 
   it('binds a session to the persona and authors the assistant reply', async () => {
