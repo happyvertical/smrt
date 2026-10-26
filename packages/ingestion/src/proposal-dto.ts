@@ -135,6 +135,11 @@ export interface GenerationOutput {
      */
     duplicatesRemoved?: number;
     /**
+     * Suggestion explanations cut to the explanation bound before validation
+     * (#4331); a count only, absent when none were.
+     */
+    explanationsTruncated?: number;
+    /**
      * Split proposals dropped because they failed a fixed check, named here
      * (#4288); never page numbers or evidence ids. Absent when none were.
      */

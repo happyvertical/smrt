@@ -145,6 +145,45 @@ new text, but their digests do not record it; a host that needs provenance to
 tell the two apart bumps its own `promptVersion`, which, like any configuration
 change, makes earlier attempts read as stale (`GenerationSnapshotStaleError`).
 
+Each suggestion's `explanation` is one or two plain sentences stating what the
+document is and why the handler fits, with no deliberation, self-correction or
+restating of the rules, and is bounded at 300 code points (#4331,
+`PROPOSAL_EXPLANATION_LIMIT`). Two such sentences run about 150-250
+characters; the bound keeps a verbose model from spending its output budget
+(and hitting the `length` finish reason) on prose instead of arguments. A
+reply cut at the token limit is still refused (`finish_reason`) and partial
+JSON is never salvaged; the grammar bound and the instruction are what keep
+replies under the limit. The provider schema and the validator carry the same `maxLength`, so the provider
+copy still accepts a superset of the validator (#4261), and a grammar backend
+enforces the bound while decoding. In the provider schema `explanation` is the
+last suggestion property, after `handlerId`, `handlerVersion`, `args`,
+`evidence`, `alternatives` and `missingFields`, and the top-level keys are
+`outcome`, `suggestions`, `splits` in that order; `required` lists the same
+order. That order predates #4331 and is now pinned by a test, so explanation
+prose cannot precede the arguments. xgrammar emits object properties in schema `properties` order unless
+`any_order` is set (its default is `false`, and vLLM does not set it), and
+llguidance fixes property order to the `properties` map, then `required`. A provider
+that ignores the schema can still return a longer explanation: fresh output is
+normalized after the list deduplication above and before validation, cutting
+it to 299 code points plus `…` on a code-point boundary, so a long explanation
+never fails validation (the raw output-size and SDK `output_limit` checks
+still run first). The value-free count is recorded as
+`provenance.explanationsTruncated`, absent when zero and removed with
+`duplicatesRemoved` whenever the suggestions are discarded. It counts only
+replies from providers that ignore the schema: on a grammar backend such as
+vLLM the string closes at 300 code points with no marker, and nothing is
+counted. The cut happens
+before the invented-target echo check, so an echo beyond the bound is no
+longer seen; explanation text is never a target or authority.
+
+Replay: the bound, the property order and the instruction text feed no digest.
+The response schema is built per request and never persisted; the frozen
+interpretation configuration holds versions, identities, the catalog digest and
+`limits`, none of which include the explanation bound. Stored attempts are read
+as persisted, never re-validated or re-cut, so an earlier attempt with an
+explanation of up to 2000 characters still reads, previews and replays with
+its original `output_digest`. New attempts' digests cover the bounded form.
+
 A trusted custom `ProposalGenerator` must likewise honor cancellation, bound its
 response, and explicitly declare validated `complete` or `unknown` completion.
 The SDK currently normalizes missing/unknown finish reasons to `stop`
