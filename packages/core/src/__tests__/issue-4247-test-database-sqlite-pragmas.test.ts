@@ -39,6 +39,18 @@ describe('Issue #4247: getTestDatabase SQLite speed pragmas', () => {
     );
   });
 
+  it('leaves in-memory SQLite on its defaults', async () => {
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: [],
+    });
+    expect(String(await pragma(db, 'journal_mode')).toLowerCase()).toBe(
+      'memory',
+    );
+    expect(Number(await pragma(db, 'synchronous'))).not.toBe(0);
+  });
+
   it('leaves a caller-supplied database untouched', async () => {
     root = await mkdtemp(join(tmpdir(), 'issue-4247-'));
     const { getDatabase } = await import('@happyvertical/sql');
