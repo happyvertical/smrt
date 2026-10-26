@@ -10,8 +10,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DataSurfaceSchema } from './data-surface.js';
 import {
   createDataSurfaceTools,
+  DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_TOOL_PARAMETERS,
   DATA_QUERY_TOOL_SLUG,
+  DataSurfaceDeniedError,
   DataSurfaceRequestError,
 } from './data-surface.js';
 import type { PrincipalRun } from './execute-as-principal.js';
@@ -166,6 +168,134 @@ describe('data.query envelope defaults', () => {
     await expect(
       queryTool()({ surfaceId: 'records', mode: 'count' }),
     ).resolves.toMatchObject({ total: { kind: 'exact', value: 0 } });
+  });
+});
+
+describe('data.query surfaceId placement (#4378)', () => {
+  const count = {
+    mode: 'count',
+    filter: {
+      kind: 'condition',
+      field: 'id',
+      operator: 'in',
+      value: ['a'],
+    },
+  };
+  function capture() {
+    const seen: DataQueryRequest[] = [];
+    const run = queryTool({
+      execute: async (_surface: unknown, request: DataQueryRequest) => {
+        seen.push(request);
+        return { rows: [], total: { kind: 'exact' as const, value: 4 } };
+      },
+    });
+    return { run, seen };
+  }
+
+  it('lifts a surfaceId nested in request to the top level', async () => {
+    const { run, seen } = capture();
+    await expect(
+      run({ request: { ...count, surfaceId: 'records' } }),
+    ).resolves.toMatchObject({ total: { value: 4 } });
+    expect(seen[0]?.filter).toEqual(count.filter);
+    expect(seen[0]).not.toHaveProperty('surfaceId');
+  });
+
+  it('accepts the same id at both levels, and unwraps a query wrapper', async () => {
+    const { run, seen } = capture();
+    await run({
+      surfaceId: 'records',
+      request: { ...count, surfaceId: 'records' },
+    });
+    await run({ request: { query: { ...count, surfaceId: 'records' } } });
+    await run({ surfaceId: 'records', request: { query: count } });
+    await run({ surfaceId: 'records', query: count });
+    expect(seen).toHaveLength(4);
+    for (const request of seen) {
+      expect(request.mode).toBe('count');
+      expect(request.filter).toEqual(count.filter);
+    }
+  });
+
+  it('rejects two different ids as a request error, never echoing them', async () => {
+    const error = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { ...count, surfaceId: 'other-secret-id' },
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_CONFLICT');
+    expect(error.message).not.toContain('other-secret-id');
+    expect(error.message).toContain('at the top level, next to request');
+  });
+
+  it('rejects a missing surfaceId as a 400 with an example, not a denial', async () => {
+    for (const args of [
+      { request: count },
+      { surfaceId: 7, request: count },
+      { request: { ...count, surfaceId: 3 } },
+    ]) {
+      const error = await requestError(queryTool()(args));
+      expect(error.status).toBe(400);
+      expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_REQUIRED');
+      expect(error.message).toContain(
+        'surfaceId is required at the top level, next to request',
+      );
+      expect(error.message).toContain(
+        'Valid example: {"surfaceId":"<surface id from data.discover>","request":{"mode":"count"',
+      );
+    }
+  });
+
+  it('keeps the generic denial for an unknown surface id', async () => {
+    await expect(
+      queryTool()({ surfaceId: 'unknown', request: count }),
+    ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    await expect(
+      queryTool()({ request: { ...count, surfaceId: 'unknown' } }),
+    ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+  });
+
+  it('applies the same placement to data.inspect', async () => {
+    const inspect = createDataSurfaceTools({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+    }).find((candidate) => candidate.slug === DATA_INSPECT_TOOL_SLUG);
+    const run = fakeRun();
+    run.assertToolAllowed = () => {};
+    const call = (args: Record<string, unknown>) =>
+      inspect?.execute({ run, args, db: undefined });
+    await expect(
+      call({ request: { surfaceId: 'records' } }),
+    ).resolves.toMatchObject({ id: 'records' });
+    const error = await requestError(call({}) as Promise<unknown>);
+    expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_REQUIRED');
+    expect(error.message).toContain(
+      'Valid example: {"surfaceId":"<surface id from data.discover>"}',
+    );
+  });
+
+  it('explains a filter kind that is really an operator or a logical word', async () => {
+    const inKind = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: {
+          mode: 'count',
+          filter: { kind: 'in', field: 'status', value: ['a'] },
+        },
+      }),
+    );
+    expect(inKind.message).toContain(
+      'A filter kind is condition, all, any or not. in is an operator: use {"kind":"condition","field":f,"operator":"in","value":v}.',
+    );
+    const orKind = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { mode: 'count', filter: { kind: 'or', filters: [] } },
+      }),
+    );
+    expect(orKind.message).toContain(
+      'For OR use {"kind":"any","filters":[...]}',
+    );
   });
 });
 

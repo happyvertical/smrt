@@ -59,6 +59,16 @@ value-free: they name the accepted shape, never the model's values.
   `filter` fails with `DataSurfaceRequestError` reason
   `DATA_QUERY_ARGUMENTS_UNEXPECTED`, naming only misplaced grammar keys. The
   flat form (request keys beside `surfaceId`, no `request`) still works.
+- **`surfaceId` placement** (`data.query`, `data.inspect`). A
+  `request.surfaceId` string is lifted to the top level and removed from
+  `request`; a `query` object standing in for `request`, or one that is
+  `request`'s only key, is unwrapped (its keys are then validated as usual,
+  so nothing is dropped; unwrapping was chosen over rejecting because the
+  intent is unambiguous). Two different ids are
+  `DATA_QUERY_SURFACE_ID_CONFLICT`; no id at all is a 400
+  `DATA_QUERY_SURFACE_ID_REQUIRED` with an example. Only an id naming no
+  visible surface gets the generic "not available" denial. A filter `kind`
+  that is an operator (`in`) or a logical word (`or`) gets a targeted hint.
 - **Valid examples.** Every `data.query` request error ends with a one-line
   `Valid example: {"surfaceId":…,"request":{…}}` for that surface, in the
   failed request's mode (count, rows or facets), built from the surface id
