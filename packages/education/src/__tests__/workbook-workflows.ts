@@ -26,6 +26,10 @@ import { learnerFixture } from './learner-workflows.js';
 
 export const workbookClasses = [
   ...ingestionClasses,
+  // Public receipt expiry uses normal Asset cascades into these incoming joins.
+  'AssetTag',
+  'ProfileAsset',
+  'Tag',
   'Workbook',
   'WorkbookActivity',
   'WorkbookAttempt',
