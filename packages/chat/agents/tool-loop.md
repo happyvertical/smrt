@@ -65,6 +65,29 @@ value-free: they name the accepted shape, never the model's values.
   and caller-visible field ids with `<value>` placeholders — never the
   caller's own values.
 
+## Failed calls are persisted (#4383)
+
+Every tool invocation records `modelContent`, the exact (capped) text the
+model was shown. `toolFailureRecord(invocation)` turns a failed, rejected or
+denied call into a bounded record: `name`, `args` (over
+`MAX_TOOL_FAILURE_ARGS_CHARS` = 2,000 serialized characters they become
+`{ truncated: true }`; malformed-JSON calls already carry `{}`), `status`
+(`rejected` | `error`), `errorKind`, a value-free `errorCode` (the error's own
+stable `A-Z0-9_` code, else the kind) and `shown`.
+
+- `runPersonaConversationTurn` authors each failed call as a `tool_result`
+  row: content = `shown`, `toolCallData` `{ name, args, status, errorCode }`,
+  `metadata` `{ toolStatus, errorKind, errorCode }`.
+- `runAssistantTurn` does the same by default when an `author` is set;
+  `author.authorFailedInvocation` overrides the row or returns `null` to
+  skip it. A failed row's write error is not a dock step.
+- `runToolLoop` sends each record to the `audit` sink as
+  `action: 'chat.tool_call_failed'` with the record as `metadata` (a sink
+  throw never fails the turn).
+- Gap: a call to a tool the session does not allow-list cannot be a tool row
+  — `sendAgentReply`'s authoring gate refuses the name, and that gate is
+  unchanged — so it reaches the audit sink only.
+
 ## Tool errors
 
 A thrown tool error is classified by `classifyToolError`: permission denials

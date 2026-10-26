@@ -44,6 +44,7 @@ import {
   classifyToolError,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_SERVER_TOOL_OBSERVATION_CHARS,
+  MAX_TOOL_FAILURE_ARGS_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   runToolLoop,
@@ -51,6 +52,7 @@ import {
   TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
+  toolFailureRecord,
 } from './tool-loop.js';
 
 // A real, dispatchable manifest object the loop can operate. Defined in a
@@ -658,6 +660,35 @@ describe('runToolLoop', () => {
       expect((invocation.observation as { code?: string }).code).toBe(code);
       expect(classifyToolError(thrown)).toBe('invalid_request');
     }
+  });
+
+  it('bounds a failed call record and keeps only stable codes (#4383)', () => {
+    const big = toolFailureRecord({
+      slug: 'x.read',
+      args: { q: 'y'.repeat(MAX_TOOL_FAILURE_ARGS_CHARS) },
+      ok: false,
+      rejected: false,
+      observation: { error: 'bad', code: 'lower case not stable' },
+      error: 'invalid_request',
+      modelContent: '{"error":"bad"}',
+    });
+    expect(big).toEqual({
+      name: 'x.read',
+      args: { truncated: true },
+      status: 'error',
+      errorKind: 'invalid_request',
+      errorCode: 'invalid_request',
+      shown: '{"error":"bad"}',
+    });
+    expect(
+      toolFailureRecord({
+        slug: 'x.read',
+        args: {},
+        ok: true,
+        rejected: false,
+        observation: {},
+      }),
+    ).toBeNull();
   });
 
   it('reports a real tool failure as execution_error', async () => {

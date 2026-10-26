@@ -835,6 +835,61 @@ describe('assistant turn', () => {
       });
     });
 
+    it('persists a failed server tool call by default, with the text the model saw (#4383)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const failing: PrincipalTool = {
+        ...readTool([]),
+        async execute() {
+          throw Object.assign(new Error('Data surface query failed.'), {
+            status: 502,
+            code: 'DATA_SURFACE_QUERY_FAILED',
+          });
+        },
+      };
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([calls(['data-discover', {}]), text('Sorry.')]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'discover',
+          extraTools: [failing],
+          author: {
+            chatService,
+            agentSessionId: session.id as string,
+            tenantId,
+          },
+        }),
+      );
+      const persisted = events
+        .filter((e) => e.type === 'message')
+        .map((e) => e.message as Record<string, unknown>);
+      expect(persisted).toHaveLength(2);
+      const row = persisted[0] as {
+        role: string;
+        content: string;
+        metadata: unknown;
+      };
+      expect(row.role).toBe('tool');
+      expect(row.content).toContain('DATA_SURFACE_QUERY_FAILED');
+      expect(
+        typeof row.metadata === 'string'
+          ? JSON.parse(row.metadata)
+          : row.metadata,
+      ).toEqual({
+        toolStatus: 'error',
+        errorKind: 'execution_error',
+        errorCode: 'DATA_SURFACE_QUERY_FAILED',
+      });
+    });
+
     it('persists allowed tool results and the reply through the agent bridge', async () => {
       const chatService = await ChatService.create({ tenantId, db });
       await chatService.initialize();

@@ -265,6 +265,7 @@ export {
   MAX_CLIENT_TOOL_SCHEMA_BYTES,
   MAX_CLIENT_TOOLS,
   MAX_SERVER_TOOL_OBSERVATION_CHARS,
+  MAX_TOOL_FAILURE_ARGS_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   matchesToolAllowList,
@@ -276,12 +277,14 @@ export {
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolErrorKind,
   type ToolExecutionContext,
+  type ToolFailureRecord,
   type ToolInvocation,
   type ToolLoopOptions,
   type ToolLoopResult,
   type ToolLoopStepEvent,
   type ToolLoopStopReason,
   type ToolLoopUsage,
+  toolFailureRecord,
 } from './tool-loop.js';
 // Types
 export type {

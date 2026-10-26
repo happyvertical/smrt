@@ -123,6 +123,31 @@ export interface ToolInvocation {
    * error the model can fix and retry), or `execution_error` (the tool failed).
    */
   error?: string;
+  /**
+   * The exact tool-message content the model was shown for this call (the
+   * serialized observation, capped at {@link MAX_SERVER_TOOL_OBSERVATION_CHARS}).
+   * Set before `onInvocation` runs (#4383).
+   */
+  modelContent?: string;
+}
+
+/**
+ * A failed, rejected, or denied tool call, in the bounded, value-free shape
+ * both callers persist as a tool row and the audit sink receives (#4383).
+ */
+export interface ToolFailureRecord {
+  /** The tool slug (or the name the model used, for an unoffered tool). */
+  name: string;
+  /** The parsed arguments, bounded to {@link MAX_TOOL_FAILURE_ARGS_CHARS}. */
+  args: Record<string, unknown>;
+  /** `rejected` (denied / not permitted) or `error` (invalid or failed). */
+  status: 'rejected' | 'error';
+  /** The error kind: `not_permitted`, `invalid_request` or `execution_error`. */
+  errorKind: string;
+  /** A stable, value-free code: the tool error's own code, else the kind. */
+  errorCode: string;
+  /** The exact text the model was shown. */
+  shown: string;
 }
 
 /**
@@ -1210,7 +1235,30 @@ export async function runToolLoop(
             }
           }
 
+          // The copy the model reads, recorded on the invocation so a failed
+          // call can be persisted with the exact text it was shown (#4383).
+          invocation.modelContent = serverObservationContent(
+            invocation.observation,
+          );
           invocations.push(invocation);
+          if (!invocation.ok && audit) {
+            const record = toolFailureRecord(invocation);
+            if (record) {
+              try {
+                await audit({
+                  action: 'chat.tool_call_failed',
+                  actorUserId: principal.runAsUserId,
+                  onBehalfOfUserId: onBehalfOfUserId ?? null,
+                  tenantId: principal.tenantId ?? null,
+                  ...(agentClass ? { agentClass } : {}),
+                  actsAsProfileId: principal.actsAsProfileId ?? null,
+                  metadata: { ...record },
+                });
+              } catch {
+                // Audit of a failed call never fails the turn.
+              }
+            }
+          }
           await onInvocation?.(invocation);
           onStep?.({
             type: 'tool_result',
@@ -1231,7 +1279,7 @@ export async function runToolLoop(
             // and every round resends it. The invocation keeps the full
             // observation for `onInvocation` / persistence; only the copy the
             // model reads is capped.
-            content: serverObservationContent(invocation.observation),
+            content: invocation.modelContent,
           });
         }
 
@@ -1471,6 +1519,48 @@ function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
   return value.length > max
     ? `${sliceOnCodePoint(value, max)}… [truncated]`
     : value;
+}
+
+/** Max serialized characters of a failed call's persisted arguments (#4383). */
+export const MAX_TOOL_FAILURE_ARGS_CHARS = 2_000;
+
+const STABLE_CODE = /^[A-Z0-9_]{1,64}$/;
+
+/**
+ * The persisted / audited record of a failed tool call (#4383), or `null`
+ * for a successful one. Arguments are bounded: over
+ * {@link MAX_TOOL_FAILURE_ARGS_CHARS} they become `{ truncated: true }`. The
+ * error code is the observation's own stable code, else the error kind; the
+ * text is exactly what the model was shown.
+ */
+export function toolFailureRecord(
+  invocation: ToolInvocation,
+): ToolFailureRecord | null {
+  if (invocation.ok) return null;
+  const errorKind = invocation.error ?? 'execution_error';
+  const observation = asRecord(invocation.observation);
+  const code =
+    typeof observation.code === 'string' && STABLE_CODE.test(observation.code)
+      ? observation.code
+      : errorKind;
+  let args: Record<string, unknown> = invocation.args;
+  try {
+    if ((JSON.stringify(args) ?? '').length > MAX_TOOL_FAILURE_ARGS_CHARS) {
+      args = { truncated: true };
+    }
+  } catch {
+    args = { unserializable: true };
+  }
+  return {
+    name: invocation.slug.slice(0, 128),
+    args,
+    status: invocation.rejected ? 'rejected' : 'error',
+    errorKind,
+    errorCode: code,
+    shown:
+      invocation.modelContent ??
+      serverObservationContent(invocation.observation),
+  };
 }
 
 /**
