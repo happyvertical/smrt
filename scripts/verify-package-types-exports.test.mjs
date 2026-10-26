@@ -7,20 +7,21 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const wrapper = fileURLToPath(new URL('./verify-package-types-exports.js', import.meta.url));
-function verify(exports, files, { packedExports = exports } = {}) {
+function verify(exports, files, { packedExports = exports, smrt, packedSmrt = smrt, directories = [] } = {}) {
   const fixture = mkdtempSync(join(tmpdir(), 'smrt-svelte-export-'));
   try {
     const root = join(fixture, 'package');
     mkdirSync(root);
-    const manifest = { name: 'export-fixture', version: '1.0.0', type: 'module', exports };
+    const manifest = { name: 'export-fixture', version: '1.0.0', type: 'module', exports, smrt };
     writeFileSync(join(root, 'package.json'), JSON.stringify(manifest));
     for (const [path, source] of Object.entries(files)) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), source);
     }
+    for (const directory of directories) mkdirSync(join(root, directory), { recursive: true });
     const tarball = join(fixture, 'fixture.tgz');
     // Exercise the actual packed manifest as well as the root wrapper.
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ ...manifest, exports: packedExports }));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ ...manifest, exports: packedExports, smrt: packedSmrt }));
     const packed = spawnSync('tar', ['-czf', tarball, '-C', fixture, 'package']);
     assert.equal(packed.status, 0, packed.stderr?.toString());
     writeFileSync(join(root, 'package.json'), JSON.stringify(manifest));
@@ -141,4 +142,82 @@ test('wildcard exports inspect every packed JavaScript target', () => {
   assert.match(broken.output, /dist\/b.js/);
   const fixed = verify({ './utils/*': { svelte: './dist/*.js', import: './dist/*.js' } }, files);
   assert.equal(fixed.status, 0, fixed.output);
+});
+
+const resourceExports = { '.': './index.js', './template/*': './template/*' };
+const resourceMetadata = { resourceExports: ['./template/*'] };
+const resourceFiles = {
+  'index.js': 'export const templatePath = new URL("./template/", import.meta.url);',
+  'template/src/Layout.svelte': '<script>import { getContext } from "svelte";</script><div />',
+  'template/smrt.config.js': 'export default { latitude: {{LATITUDE}} };',
+};
+
+test('declared resource exports retain packaged assets without parsing scaffold source', () => {
+  const result = verify(resourceExports, resourceFiles, { smrt: resourceMetadata });
+  assert.equal(result.status, 0, result.output);
+});
+
+test('resource metadata comes from the packed manifest', () => {
+  const missing = verify(resourceExports, resourceFiles, { smrt: resourceMetadata, packedSmrt: {} });
+  assert.equal(missing.status, 1, missing.output);
+  assert.match(missing.output, /Svelte runtime|cannot parse packed JavaScript/);
+  const packed = verify(resourceExports, resourceFiles, { smrt: { resourceExports: ['.'] }, packedSmrt: resourceMetadata });
+  assert.equal(packed.status, 0, packed.output);
+});
+
+test('resource declaration cannot suppress runtime entries or imports into resource files', () => {
+  for (const [source, message] of [
+    ['export { getContext } from "svelte";', /Export \..*Svelte runtime/],
+    ['export { default as Layout } from "./template/src/Layout.svelte";', /Export \..*Svelte runtime/],
+    ['import "./template/smrt.config.js";', /cannot parse packed JavaScript template\/smrt.config.js/],
+    ['import "./template/missing.js";', /missing packed import target/],
+  ]) {
+    const result = verify(resourceExports, { ...resourceFiles, 'index.js': source }, { smrt: resourceMetadata });
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, message);
+  }
+  const runtimeWildcard = verify({ ...resourceExports, './runtime/*': './runtime/*.js' }, {
+    ...resourceFiles, 'runtime/context.js': 'export { getContext } from "svelte";',
+  }, { smrt: resourceMetadata });
+  assert.equal(runtimeWildcard.status, 1, runtimeWildcard.output);
+  assert.match(runtimeWildcard.output, /Export \.\/runtime\/\*.*Svelte runtime/);
+});
+
+test('resource metadata rejects malformed, broad, unknown and conditional declarations', () => {
+  for (const declaration of [null, './template/*', {}, [null], ['.'], ['./*'], ['./template/../*'], ['./template/./*'], ['./template/**'], ['./template/?*'], ['./template/\\*'], ['./unknown/*'], ['./template/*', './template/*']]) {
+    const result = verify(resourceExports, resourceFiles, { smrt: { resourceExports: declaration } });
+    assert.equal(result.status, 1, JSON.stringify(declaration) + result.output);
+    assert.match(result.output, /smrt\.resourceExports/);
+  }
+  for (const target of [{ default: './template/*' }, './other/*', null]) {
+    const result = verify({ ...resourceExports, './template/*': target }, resourceFiles, { smrt: resourceMetadata });
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, /smrt\.resourceExports/);
+  }
+});
+
+test('resource metadata requires packaged files even when a directory entry exists', () => {
+  const result = verify(resourceExports, { 'index.js': 'export {};' }, { smrt: resourceMetadata, directories: ['template'] });
+  assert.equal(result.status, 1, result.output);
+  assert.match(result.output, /smrt\.resourceExports.*no packed files/);
+});
+
+test('a runtime condition remains effective when its entry imports resource files', () => {
+  const result = verify({ ...resourceExports, '.': { svelte: './index.js', import: './index.js' } }, {
+    ...resourceFiles, 'index.js': 'export { default as Layout } from "./template/src/Layout.svelte";',
+  }, { smrt: resourceMetadata });
+  assert.equal(result.status, 0, result.output);
+});
+
+test('resource classification preserves other packed runtime and type artifact checks', () => {
+  for (const missingExport of [
+    { import: './missing.js' },
+    { types: './missing.d.ts', import: './index.js' },
+  ]) {
+    const result = verify(resourceExports, resourceFiles, {
+      smrt: resourceMetadata, packedExports: { ...resourceExports, './other': missingExport },
+    });
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, /missing required package artifacts|cannot read packed target/);
+  }
 });

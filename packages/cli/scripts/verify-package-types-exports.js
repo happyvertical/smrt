@@ -73,7 +73,7 @@ function collectTypePaths(packageJson) {
   return [...typePaths].map((filePath) => filePath.replace(/^\.\//, ''));
 }
 
-function collectRuntimePaths(packageJson) {
+function collectRuntimePaths(packageJson, resourceExports) {
   const runtimePaths = new Set();
 
   const addPath = (filePath) => {
@@ -110,7 +110,7 @@ function collectRuntimePaths(packageJson) {
     }
 
     for (const [key, child] of Object.entries(value)) {
-      visit(child, key);
+      if (!resourceExports.has(key)) visit(child, key);
     }
   };
 
@@ -135,6 +135,41 @@ function archiveHasPath(archiveEntries, relativePath) {
   );
 
   return [...archiveEntries].some((entry) => pattern.test(entry));
+}
+
+/** Resource declarations classify copied files, never runtime import edges. */
+function collectResourceExports(packageJson, archiveEntries) {
+  const declared = packageJson.smrt?.resourceExports;
+  if (declared === undefined) return new Set();
+  if (!Array.isArray(declared))
+    fail(
+      'smrt.resourceExports must be an array of literal-directory export patterns',
+    );
+  const resources = new Set();
+  for (const subpath of declared) {
+    // Require a non-root directory and one terminal wildcard. An exact,
+    // unconditioned mapping prevents a declaration from hiding other branches.
+    if (
+      typeof subpath !== 'string' ||
+      !/^\.\/(?:[a-zA-Z0-9_-][a-zA-Z0-9._-]*\/)+\*$/.test(subpath) ||
+      resources.has(subpath) ||
+      packageJson.exports?.[subpath] !== subpath
+    ) {
+      fail(
+        `Invalid smrt.resourceExports declaration: ${JSON.stringify(subpath)}; use a unique directory pattern such as "./template/*" with an identical unconditioned export target`,
+      );
+    }
+    const prefix = `package/${subpath.slice(2, -1)}`;
+    if (
+      ![...archiveEntries].some(
+        (entry) => entry.startsWith(prefix) && !entry.endsWith('/'),
+      )
+    ) {
+      fail(`smrt.resourceExports ${subpath} has no packed files`);
+    }
+    resources.add(subpath);
+  }
+  return resources;
 }
 
 function stripComments(source) {
@@ -423,6 +458,7 @@ function verifySvelteExportConditions(
   packageRoot,
   packageJson,
   archiveEntries,
+  resourceExports,
 ) {
   const display = (path) => relative(packageRoot, path);
   const reachesSvelte = (entryPath) => {
@@ -594,8 +630,9 @@ function verifySvelteExportConditions(
       fail(`Invalid export map for ${subpath}`);
     for (const [condition, child] of Object.entries(value)) {
       if (condition === 'types' || condition.startsWith('types@')) continue;
-      if (condition.startsWith('.')) inspect(child, condition, []);
-      else inspect(child, subpath, [{ conditions: value }, ...scopes]);
+      if (condition.startsWith('.')) {
+        if (!resourceExports.has(condition)) inspect(child, condition, []);
+      } else inspect(child, subpath, [{ conditions: value }, ...scopes]);
     }
   };
   if (packageJson.exports !== undefined) inspect(packageJson.exports, '.');
@@ -673,17 +710,8 @@ const packageArgument = args.find(
 const packageDir = resolve(process.cwd(), packageArgument ?? '.');
 const packageJsonPath = join(packageDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-const typePaths = collectTypePaths(packageJson);
-const runtimePaths = collectRuntimePaths(packageJson);
 const npmConfigDryRunKey = 'npm_config_dry_run';
 const npmConfigDryRunUpperKey = 'NPM_CONFIG_DRY_RUN';
-
-if (typePaths.length === 0 && runtimePaths.length === 0) {
-  console.log(
-    `ℹ️ No exported pack verification paths declared for ${packageJson.name}`,
-  );
-  process.exit(0);
-}
 
 const tempDir = mkdtempSync(join(tmpdir(), 'smrt-pack-'));
 
@@ -726,6 +754,17 @@ try {
       .filter(Boolean),
   );
 
+  run('tar', ['-xf', tarballPath, '-C', tempDir]);
+  const packageRoot = join(tempDir, 'package');
+  const packedPackageJson = JSON.parse(
+    readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+  );
+  const resourceExports = collectResourceExports(
+    packedPackageJson,
+    archiveEntries,
+  );
+  const typePaths = collectTypePaths(packedPackageJson);
+  const runtimePaths = collectRuntimePaths(packedPackageJson, resourceExports);
   const missing = typePaths.filter(
     (typePath) => !archiveHasPath(archiveEntries, typePath),
   );
@@ -734,12 +773,12 @@ try {
     (runtimePath) => !archiveHasPath(archiveEntries, runtimePath),
   );
 
-  run('tar', ['-xf', tarballPath, '-C', tempDir]);
-  const packageRoot = join(tempDir, 'package');
-  const packedPackageJson = JSON.parse(
-    readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+  verifySvelteExportConditions(
+    packageRoot,
+    packedPackageJson,
+    archiveEntries,
+    resourceExports,
   );
-  verifySvelteExportConditions(packageRoot, packedPackageJson, archiveEntries);
   const runtimeEntryFiles = collectPackageEntryFiles(
     packageRoot,
     runtimePaths,
@@ -783,6 +822,7 @@ try {
     `✅ Verified packed exports for ${packageJson.name}: ${[
       ...typePaths.map((typePath) => `types=${typePath}`),
       ...runtimePaths.map((runtimePath) => `runtime=${runtimePath}`),
+      ...[...resourceExports].map((subpath) => `resource=${subpath}`),
     ].join(', ')}`,
   );
 } catch (error) {

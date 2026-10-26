@@ -205,3 +205,51 @@ Validation on 2026-10-25 against `b9b9cae50` plus this uncommitted patch:
 Live GitHub partial-rerun evidence remains pending; workflow expression replay
 and executed gate scripts do not establish post-activation latency or live
 Actions scheduling behavior.
+
+
+## Accepted queue blocker: scaffold resource exports
+
+The publish-pack queue run [40202530914](https://github.com/happyvertical/smrt/actions/runs/40202530914)
+reached packages omitted by the earlier `verify:pack`-script sweep. Both
+scaffold packages export authored files through `./template/*`: Svelte markup
+and unrendered JavaScript placeholders are resources copied by the scaffolder.
+The accepted fix introduces narrowly validated packed metadata rather than
+changing their public export maps or executing template configuration.
+
+All cases run as a package author/release validator on Node 26 with pinned pnpm.
+SQL, transactions, browser rendering and tenant context are N/A: these tests
+inspect tarball contents and static import closures only.
+
+| Behavior/invariant | Reachable trigger | Positive case | Negative/failure case | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level/command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Copied scaffold files are resources | Packed `smrt.resourceExports` declares a directory pattern | Real SvelteKit and static-JSON template packs pass without parsing placeholders | Undeclared executable wildcard still requires Svelte conditions | Package author/release validator | Packed filesystem; no mutation/transaction | Node 26; SQL N/A | Actual packed metadata and exported resource files | Fixture and real-pack integration; `node --test scripts/verify-package-types-exports.test.mjs scripts/verify-template-packed-exports.test.mjs` |
+| Metadata cannot hide arbitrary exports | Malformed or overly broad resource declaration | Unique literal-directory pattern matches its exact unconditioned export and packaged files | Root, global, unknown, duplicate, conditional, escaping or missing-resource declarations fail | Package author/release validator | Packed filesystem; no transaction | Node 26; SQL N/A | Package.json metadata is untrusted input | Fixture command above |
+| Runtime paths retain their checks | Runtime entry imports a declared resource | Ordinary runtime root and resource-copy APIs pass | Runtime Svelte edge, malformed JS or missing relative import inside resource directory still fails | Package author/release validator | Static import closure; no transaction | Node 26; SQL N/A | Public runtime entry and transitive imports | Fixture command above |
+| Packed metadata is authoritative | Local and packed manifests differ | Valid packed declaration is used despite stale local metadata | Local declaration cannot hide missing packed declaration or runtime exports | Package author/release validator | Packed manifest; no transaction | Node 26; SQL N/A | Tarball/worktree mismatch | Fixture command above |
+| Publish inventory includes packages without `verify:pack` | Publish validator discovers eligible packages | Both templates are packed with normal hooks and verified | A script-name-only sweep cannot count as complete publish coverage | Release validator | Existing publish inventory and shard execution | Node 26/pnpm 11; SQL N/A | Fixed release group plus explicit publishConfig | `node scripts/validate-publish-packages.js` (every shard); narrow real-template integration command above |
+
+Evidence on 2026-10-25, based on `4286f91b1` plus this resource-export fix:
+
+- Final regression tests against the original bundled verifier, copied into an
+  isolated temporary repository: **10 passed, 9 failed**, exit 1. Both actual
+  template packs reproduced their queue failures despite the new metadata:
+  missing Svelte condition and unrendered `{{LATITUDE}}` JavaScript syntax.
+- The same fixture and real-pack integration command against the fix:
+  **19 passed**, zero failures/skips, exit 0. Both packs use ordinary
+  `pnpm pack` lifecycle hooks and the root verifier's `--tarball` path.
+- `pnpm test:ci-scripts`: **455 passed** across eight suites, zero failures/skips,
+  exit 0. The real-template integration tests are included in this command.
+- Narrow Biome 2.5.2 and `git diff --check` passed. Commands used Node 26.10.0,
+  pnpm 11.25.0, CPU affinity 0–3 at nice 10, and the documented private scratch
+  directory. No root build, browser test or container was needed for this fix.
+- Inventory inspection found **74 publish-eligible packages**, of which only
+  **48** have `verify:pack`. Complete publish-pack execution and exact artifact
+  membership validation remain the coordinator's integration gate; the two
+  narrow template packs alone do not establish that all 74 qualify.
+- Full output: `/tmp/smrt-4306-resource-final-tests-base.log`,
+  `/tmp/smrt-4306-resource-owning.log`,
+  `/tmp/smrt-4306-resource-ci-scripts.log`, and
+  `/tmp/smrt-4306-resource-biome.log`.
+
+Live queue evidence after requeue remains pending. These checks do not claim
+that a GitHub queue or publication attempt has succeeded.
