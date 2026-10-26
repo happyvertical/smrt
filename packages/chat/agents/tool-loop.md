@@ -18,6 +18,20 @@
   that call only and never enters the returned `messages` transcript, so
   stored conversations and continuations are unchanged.
 
+## Observation bounds
+
+- A server tool observation is serialized and capped at
+  `MAX_SERVER_TOOL_OBSERVATION_CHARS` (16,000, the same bound as
+  `MAX_CLIENT_TOOL_RESULT_CHARS` for browser results) before it enters the
+  transcript (#4378). A longer one is cut and gets the fixed
+  `SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER`, which says the result is
+  incomplete and tells the model to narrow the request (filter, fewer fields,
+  a smaller page, or a count). The marker carries no tool output.
+- Only the model's copy is capped: `ToolInvocation.observation` (handed to
+  `onInvocation`, persisted as tool messages, audited) keeps the full value.
+- A tool returning `undefined` observes `null`; an unserializable result
+  observes `{"error":"unserializable_result"}` instead of throwing.
+
 ## Tool errors
 
 A thrown tool error is classified by `classifyToolError`: permission denials

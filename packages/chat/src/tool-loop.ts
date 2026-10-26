@@ -1116,7 +1116,11 @@ export async function runToolLoop(
             // providers (OpenAI) require `tool_call_id` on a tool message and
             // mis-associate observations without it when several calls occur.
             tool_call_id: call.id,
-            content: JSON.stringify(invocation.observation),
+            // Bounded like a browser result (#4378): the transcript only grows
+            // and every round resends it. The invocation keeps the full
+            // observation for `onInvocation` / persistence; only the copy the
+            // model reads is capped.
+            content: serverObservationContent(invocation.observation),
           });
         }
 
@@ -1307,6 +1311,38 @@ export function appendClientToolResults(
     });
   }
   return next;
+}
+
+/**
+ * Max characters of one server tool observation fed back to the model
+ * (#4378) — the same bound as a browser result
+ * ({@link MAX_CLIENT_TOOL_RESULT_CHARS}).
+ */
+export const MAX_SERVER_TOOL_OBSERVATION_CHARS = MAX_CLIENT_TOOL_RESULT_CHARS;
+
+/**
+ * Fixed marker appended to a server observation cut at
+ * {@link MAX_SERVER_TOOL_OBSERVATION_CHARS}. It carries no tool output: it
+ * tells the model the result is incomplete and how to ask for less.
+ */
+export const SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER =
+  ' [truncated: this tool result was too large and was cut off, so it is incomplete. ' +
+  'Do not treat it as the full result. Narrow the request and call the tool again: ' +
+  'add a filter, project fewer fields, request a smaller page, or use a count.]';
+
+/** Serialize a server observation for the transcript, bounded. */
+function serverObservationContent(observation: unknown): string {
+  let serialized: string;
+  try {
+    // A tool that returns nothing observes `null`, not a missing content.
+    serialized = JSON.stringify(observation) ?? 'null';
+  } catch {
+    // Circular or BigInt-bearing results: report, never echo them.
+    return JSON.stringify({ error: 'unserializable_result' });
+  }
+  return serialized.length > MAX_SERVER_TOOL_OBSERVATION_CHARS
+    ? `${serialized.slice(0, MAX_SERVER_TOOL_OBSERVATION_CHARS)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
+    : serialized;
 }
 
 function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {

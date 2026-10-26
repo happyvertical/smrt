@@ -41,9 +41,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildManifestToolCatalog,
   classifyToolError,
+  MAX_SERVER_TOOL_OBSERVATION_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   runToolLoop,
+  SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
 } from './tool-loop.js';
@@ -827,6 +829,70 @@ describe('runToolLoop', () => {
     });
     expect(result.stoppedReason).toBe('no_tools');
     expect(last?.content).toBe('hello');
+  });
+
+  it('caps a large server observation with the narrow-your-query marker (#4378)', async () => {
+    const big = {
+      rows: Array.from({ length: 2_000 }, (_, i) => ({
+        i,
+        text: 'x'.repeat(40),
+      })),
+    };
+    const seenTool: string[] = [];
+    const ai = makeAI((messages, options, call) => {
+      for (const m of messages) {
+        if (m.role === 'tool') seenTool.push(String(m.content));
+      }
+      return call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done');
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'everything' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => big,
+      audit: () => {},
+    });
+    const toolMessage = result.messages.find((m) => m.role === 'tool');
+    const content = String(toolMessage?.content);
+    expect(content.length).toBe(
+      MAX_SERVER_TOOL_OBSERVATION_CHARS +
+        SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER.length,
+    );
+    expect(content.endsWith(SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER)).toBe(
+      true,
+    );
+    expect(seenTool[0]).toBe(content);
+    // The invocation log keeps the full observation (persistence unchanged).
+    expect(result.invocations[0]?.observation).toBe(big);
+  });
+
+  it('leaves a small server observation untouched and observes undefined as null', async () => {
+    let n = 0;
+    const ai = makeAI((_m, options, call) =>
+      call < 2 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'small' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => {
+        n += 1;
+        return n === 1 ? { count: 2 } : undefined;
+      },
+      audit: () => {},
+    });
+    const contents = result.messages
+      .filter((m) => m.role === 'tool')
+      .map((m) => m.content);
+    expect(contents).toEqual(['{"count":2}', 'null']);
   });
 
   describe('end-to-end permission enforcement (catalog assert, RLS off)', () => {
