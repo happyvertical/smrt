@@ -324,6 +324,10 @@ function closedResponseSchema(input: GenerativeProposalInput) {
       : [];
   });
   const suggestionVariants = input.offered.map(({ handler, candidates }) => {
+    // Alternatives are competing choices, never this variant's selected handler.
+    const competingKeys = alternativeKeys.filter(
+      (key) => key !== `${handler.id}@${handler.version}`,
+    );
     const args = structuredClone(handler.argsSchema) as Record<string, unknown>;
     if (!args.properties) args.properties = {};
     const properties = args.properties as Record<string, unknown>;
@@ -380,13 +384,13 @@ function closedResponseSchema(input: GenerativeProposalInput) {
             },
           },
         },
-        alternatives: alternativeKeys.length
+        alternatives: competingKeys.length
           ? {
               type: 'array',
               // Not portable; dropped for providers, enforced by the validator.
               uniqueItems: true,
               maxItems: 20,
-              items: { type: 'string', enum: alternativeKeys },
+              items: { type: 'string', enum: competingKeys },
             }
           : { type: 'array', maxItems: 0 },
         missingFields: {

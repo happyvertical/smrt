@@ -133,11 +133,16 @@ absent or no offered candidate matches. On required-only schema refusals, the
 validator computes the absent required set and corrects a mismatched model
 declaration; the instruction guides the model without making its declaration
 authoritative. Absent optional fields stay out
-of both `args` and `missingFields`. The model prefers `no_action` when no
+of both `args` and `missingFields`, rather than being sent as null (unless the field explicitly permits null). Suggestion objects contain exactly the required envelope keys, with handler arguments nested only inside `args`. Alternatives mean genuinely competing OTHER choices, not a list of offered choices: use `[]` when none exist and never list the selected handler itself. The SDK response schema excludes that handler key from each suggestion variant while retaining other handler and candidate keys (#4395). Existing malformed or ambiguous outputs remain refused/pending; no self-alternative is stripped after generation. The model prefers `no_action` when no
 offered handler's description fits the document's role, and `unknown` when the
 evidence cannot be interpreted (#4290). Domain routing, such as which received
 documents an application ignores, belongs in host handler descriptions or
-reviewer guidance, not in this text. The text is not persisted. It is not part
+reviewer guidance, not in this text. Keep these shared instructions concise: the
+maintained reference host pins the complete SDK request to an 8 KiB wire/input
+budget. That budget includes schema and transport overhead; adding repeated prose
+can prevent a valid small request from reaching its provider. The frozen
+evaluation checks the real envelope without raising its budget (#4395).
+The text is not persisted. It is not part
 of the frozen interpretation configuration, the input, catalog or output
 digests, or the stored generation output, so a package release that changes it
 leaves stored attempts readable and previewable unchanged. New attempts send the
