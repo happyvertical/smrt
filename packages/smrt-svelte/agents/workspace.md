@@ -688,6 +688,13 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   it. The token is a hidden field only and is never stored, logged or shown.
   Single-use, loopback-only enforcement stays server-side.
 
+`AppShell chrome={false}` omits generated chrome while retaining Provider,
+ThemeProvider, shell layout context and the canonical `useAdminShell()` state.
+A host can render its own navigation plus `ShellSettingsPage`; settings and
+layout consumers share AppShell's existing store rather than a second state.
+This mode renders no hidden AdminShell or navigation. Covered by the real
+`ShellSettingsPage` chrome-free component regression (#4338).
+
 ## Theme (premium baseline)
 
 The shell only consumes theme tokens; CSS and tokens changed, DOM and behaviour did not.
