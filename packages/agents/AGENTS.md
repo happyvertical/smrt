@@ -186,7 +186,8 @@ request failures also use a stable public error. Tool arguments never contain
 principal or tenant authority. `data.query` takes `{surfaceId, request}` or the
 flat form; a key beside `request` (a misplaced `filter`) is a 400
 `DataSurfaceRequestError` (`DATA_QUERY_ARGUMENTS_UNEXPECTED`), never silently
-dropped (#4378).
+dropped (#4378). Every request error ends with a one-line valid example for
+the surface (placeholders only, no caller values).
 
 ## Playbook Preflight (issue #2590)
 

@@ -48,6 +48,7 @@ import {
   manifestToolToAITool,
   runToolLoop,
   SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
+  TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
 } from './tool-loop.js';
@@ -663,6 +664,11 @@ describe('runToolLoop', () => {
     const failures = [
       new Error('connection reset'),
       Object.assign(new Error('upstream failed'), { status: 502 }),
+      // The data surface's generic failure keeps its stable code.
+      Object.assign(new Error('Data surface query failed.'), {
+        status: 502,
+        code: 'DATA_SURFACE_QUERY_FAILED',
+      }),
     ];
     for (const thrown of failures) {
       const ai = makeAI((_m, options) =>
@@ -686,7 +692,11 @@ describe('runToolLoop', () => {
         ok: false,
         rejected: false,
         error: 'execution_error',
-        observation: { error: thrown.message },
+        observation: {
+          error: thrown.message,
+          kind: 'execution_error',
+          hint: TOOL_EXECUTION_ERROR_HINT,
+        },
       });
       expect(classifyToolError(thrown)).toBe('execution_error');
     }

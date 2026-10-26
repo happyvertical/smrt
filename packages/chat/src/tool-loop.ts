@@ -1473,6 +1473,14 @@ function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
     : value;
 }
 
+/**
+ * Fixed hint on an `execution_error` observation (#4378): the failure is the
+ * server's, so changing the arguments will not fix it.
+ */
+export const TOOL_EXECUTION_ERROR_HINT =
+  'The tool failed on the server; this was not caused by your arguments. ' +
+  'Do not repeat the same call. Answer with what you already have, or tell the user the data could not be read right now.';
+
 /** How a thrown tool error is reported to the model and the invocation log. */
 export type ToolErrorKind =
   | 'not_permitted'
@@ -1544,11 +1552,24 @@ function toolErrorObservation(
   kind: ToolErrorKind,
 ): Record<string, unknown> {
   const message = error instanceof Error ? error.message : String(error);
-  if (kind !== 'invalid_request') return { error: message };
-  const { publicMessage, code } = error as {
+  const { publicMessage, code } = (error ?? {}) as {
     publicMessage?: unknown;
     code?: unknown;
   };
+  if (kind === 'execution_error') {
+    // A server-side failure (#4378): say so, so the model stops resending
+    // the same call and tells the user, instead of guessing at arguments.
+    // Fixed text plus the error's own stable code — no internals.
+    return {
+      error: message,
+      kind,
+      ...(typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code)
+        ? { code }
+        : {}),
+      hint: TOOL_EXECUTION_ERROR_HINT,
+    };
+  }
+  if (kind !== 'invalid_request') return { error: message };
   return {
     error:
       typeof publicMessage === 'string' && publicMessage

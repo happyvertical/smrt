@@ -272,6 +272,7 @@ export {
   runToolLoop,
   SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
   sanitizeClientToolDeclarations,
+  TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolErrorKind,
   type ToolExecutionContext,

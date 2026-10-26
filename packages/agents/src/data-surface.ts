@@ -301,14 +301,57 @@ function disallowedCondition(
 }
 
 /**
+ * A one-line valid `data.query` call for this surface (#4378), appended to
+ * every request error so a small model can copy the shape. Built only from
+ * the surface id and the caller-visible schema (field ids, operators) with
+ * `<value>` placeholders — never from the caller's own arguments. The mode
+ * follows the failed request's mode (count when unknown).
+ */
+function validQueryExample(
+  surfaceId: string,
+  schema: DataQuerySchema,
+  request: unknown,
+): string {
+  const mode =
+    isRecord(request) && (request.mode === 'rows' || request.mode === 'facets')
+      ? request.mode
+      : 'count';
+  const filterable = schema.fields.filter(
+    (field) => (field.filterOperators?.length ?? 0) > 0,
+  );
+  const inField = filterable.find((field) =>
+    field.filterOperators?.includes('in'),
+  );
+  const field = inField ?? filterable[0];
+  const filter = field
+    ? inField
+      ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
+      : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(field.filterOperators?.[0])},"value":"<value>"}`
+    : '';
+  let body: string;
+  if (mode === 'facets') {
+    const facet = schema.fields.find((candidate) => candidate.facetable);
+    body = facet
+      ? `"mode":"facets","facets":[{"field":${JSON.stringify(facet.id)},"limit":10}]`
+      : `"mode":"count"${filter}`;
+  } else if (mode === 'rows') {
+    body = `"mode":"rows","projection":[${JSON.stringify(schema.identityField)}]${filter},"page":{"kind":"offset","offset":0,"limit":10}`;
+  } else {
+    body = `"mode":"count"${filter}`;
+  }
+  return `Valid example: {"surfaceId":${JSON.stringify(surfaceId)},"request":{${body}}}`;
+}
+
+/**
  * Turn a core `DataQueryValidationError` into an actionable
  * `DataSurfaceRequestError`: the original reason plus what the visible schema
- * does allow in its place.
+ * does allow in its place, and a one-line valid example for the surface.
  */
 function explainRequestError(
   error: DataQueryValidationError,
   schema: DataQuerySchema,
   request: unknown,
+  surfaceId: string,
 ): DataSurfaceRequestError {
   const reason = error.publicMessage.replace(/\.?$/, '.');
   let hint: string;
@@ -372,18 +415,22 @@ function explainRequestError(
     default:
       hint = DATA_QUERY_REQUEST_SHAPE_HINT;
   }
-  return new DataSurfaceRequestError(`${reason} ${hint}`, error.code);
+  return new DataSurfaceRequestError(
+    `${reason} ${hint} ${validQueryExample(surfaceId, schema, request)}`,
+    error.code,
+  );
 }
 
 function normalizeSurfaceRequest(
   value: unknown,
   schema: DataQuerySchema,
+  surfaceId: string,
 ): DataQueryRequest {
   try {
     return normalizeDataQueryRequest(value, schema);
   } catch (error) {
     if (error instanceof DataQueryValidationError) {
-      throw explainRequestError(error, schema, value);
+      throw explainRequestError(error, schema, value, surfaceId);
     }
     throw error;
   }
@@ -975,7 +1022,10 @@ const DATA_QUERY_REQUEST_KEYS = [
   'requestId',
 ] as const;
 
-function requestFromArgs(args: Record<string, unknown>): unknown {
+function requestFromArgs(
+  args: Record<string, unknown>,
+  example: () => string,
+): unknown {
   let raw: unknown;
   if (Object.hasOwn(args, 'request')) {
     // `data.query` takes exactly {surfaceId, request} (#4378): a `filter`
@@ -994,7 +1044,7 @@ function requestFromArgs(args: Record<string, unknown>): unknown {
           (misplaced.length > 0
             ? `; move ${misplaced.join(', ')} inside request.`
             : '; put every query option inside request.') +
-          ` ${DATA_QUERY_REQUEST_SHAPE_HINT}`,
+          ` ${example()}`,
         'DATA_QUERY_ARGUMENTS_UNEXPECTED',
       );
     }
@@ -1259,9 +1309,17 @@ export function createDataSurfaceTools(
       run.assertToolAllowed(DATA_QUERY_TOOL_SLUG);
       const entry = findSurface(await catalog(run, 'query'), args.surfaceId);
       if (!entry) throw new DataSurfaceDeniedError();
+      const surfaceId = entry.surface.id;
+      const example = (raw?: unknown) =>
+        validQueryExample(
+          surfaceId,
+          entry.schema,
+          raw ?? (isRecord(args.request) ? args.request : args),
+        );
       const request = normalizeSurfaceRequest(
-        requestFromArgs(args),
+        requestFromArgs(args, () => example()),
         entry.schema,
+        surfaceId,
       );
       const principal = principalFromRun(run);
       const signal = new AbortController();
@@ -1284,7 +1342,7 @@ export function createDataSurfaceTools(
               EXECUTOR_REQUEST_ERROR_CODES.has(error.code)
             ) {
               throw new DataSurfaceRequestError(
-                error.publicMessage,
+                `${error.publicMessage.replace(/\.?$/, '.')} ${example(request)}`,
                 error.code,
               );
             }

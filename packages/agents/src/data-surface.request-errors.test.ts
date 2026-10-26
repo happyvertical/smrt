@@ -170,6 +170,42 @@ describe('data.query envelope defaults', () => {
 });
 
 describe('data.query request errors', () => {
+  it('appends a one-line valid example in the failed request mode, never the caller values (#4378)', async () => {
+    const shapes: Array<[Record<string, unknown>, string]> = [
+      [
+        { mode: 'count', filter: { kind: 'or', filters: [] } },
+        '{"mode":"count","filter":{"kind":"condition","field":"id","operator":"in"',
+      ],
+      [{ mode: 'count', page: { limit: 3 } }, '{"mode":"count","filter":'],
+      [
+        {
+          mode: 'rows',
+          filter: {
+            kind: 'condition',
+            field: 'status',
+            operator: 'in',
+            value: 'caller-secret-value',
+          },
+        },
+        '{"mode":"rows","projection":["id"],"filter":',
+      ],
+      [
+        { mode: 'facets', facets: [{ field: 'nope', limit: 3 }] },
+        '{"mode":"facets","facets":[{"field":"status","limit":10}]}',
+      ],
+    ];
+    for (const [request, expected] of shapes) {
+      const error = await requestError(
+        queryTool()({ surfaceId: 'records', request }),
+      );
+      expect(error.message).toContain(
+        `Valid example: {"surfaceId":"records","request":${expected}`,
+      );
+      expect(error.message).not.toContain('caller-secret-value');
+      expect(error.message).not.toMatch(/secret"|restricted/);
+    }
+  });
+
   it('rejects a filter placed beside request instead of dropping it (#4378)', async () => {
     const execute = vi.fn(async () => ({
       rows: [],
@@ -191,6 +227,9 @@ describe('data.query request errors', () => {
     expect(error.status).toBe(400);
     expect(error.reason).toBe('DATA_QUERY_ARGUMENTS_UNEXPECTED');
     expect(error.message).toContain('move filter inside request');
+    expect(error.message).toContain(
+      'Valid example: {"surfaceId":"records","request":{"mode":"count","filter":{"kind":"condition","field":"id","operator":"in","value":["<value>","<value>"]}}}',
+    );
     // Value-free: the model's argument values never come back.
     expect(error.message).not.toContain('open-secret-value');
   });
@@ -316,7 +355,9 @@ describe('data.query request errors', () => {
         },
       }),
     );
-    expect(error.message).toBe('Data query value for id must be a complete id');
+    expect(error.message).toMatch(
+      /^Data query value for id must be a complete id\. Valid example: \{"surfaceId":"records","request":\{"mode":/,
+    );
     expect(error.reason).toBe('DATA_QUERY_VALUE_INVALID');
     expect(onFailure).not.toHaveBeenCalled();
   });

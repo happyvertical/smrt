@@ -59,6 +59,11 @@ value-free: they name the accepted shape, never the model's values.
   `filter` fails with `DataSurfaceRequestError` reason
   `DATA_QUERY_ARGUMENTS_UNEXPECTED`, naming only misplaced grammar keys. The
   flat form (request keys beside `surfaceId`, no `request`) still works.
+- **Valid examples.** Every `data.query` request error ends with a one-line
+  `Valid example: {"surfaceId":…,"request":{…}}` for that surface, in the
+  failed request's mode (count, rows or facets), built from the surface id
+  and caller-visible field ids with `<value>` placeholders — never the
+  caller's own values.
 
 ## Tool errors
 
@@ -66,4 +71,8 @@ A thrown tool error is classified by `classifyToolError`: permission denials
 and 401/403 are `not_permitted` (reported as a rejection); a `ValidationError`
 or 400/404/409/422 is `invalid_request` (observation: the actionable message,
 `publicMessage` first, its `code`, and a fix-and-retry hint); everything else,
-including 429, is `execution_error`.
+including 429, is `execution_error`. An `execution_error` observation
+carries the error's message, its stable `code` when it has one (e.g.
+`DATA_SURFACE_QUERY_FAILED`), and the fixed `TOOL_EXECUTION_ERROR_HINT`:
+the failure is the server's, so the model should not resend the same call
+but answer with what it has or tell the user (#4378).
