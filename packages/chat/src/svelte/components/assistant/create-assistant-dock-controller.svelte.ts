@@ -1590,12 +1590,17 @@ export function createAssistantDockController(
         return;
       case 'done':
         streamingText = '';
-        if (
-          runCore &&
-          (event.stoppedReason === 'max_steps' ||
-            event.stoppedReason === 'budget')
-        ) {
-          runCore = { ...runCore, stoppedReason: event.stoppedReason };
+        {
+          // A capped turn is continuable even when it then ended `empty`
+          // or `timeout` (#4379): its `capReason` keeps the cap cause.
+          const cap =
+            event.stoppedReason === 'max_steps' ||
+            event.stoppedReason === 'budget'
+              ? event.stoppedReason
+              : event.capReason;
+          if (runCore && cap) {
+            runCore = { ...runCore, stoppedReason: cap };
+          }
         }
         return;
       default:

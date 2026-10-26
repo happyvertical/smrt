@@ -35,12 +35,14 @@
  */
 
 import { createHash } from 'node:crypto';
+import { createLogger, type Logger } from '@happyvertical/logger';
 import {
   canonicalizeDataQuery,
   createDataQueryFingerprint,
   DataQueryValidationError,
   getClassName,
   MAX_DATA_QUERY_OFFSET,
+  normalizeDataQueryFieldValues,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -57,6 +59,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type {
+  DataQueryAllowedValue,
   DataQueryFacetResult,
   DataQueryFieldDescriptor,
   DataQueryFilter,
@@ -173,6 +176,14 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
         | Promise<SmrtCollectionQueryScope | undefined>);
   /** Trusted policy override; defaults to the registry-derived schema. */
   schema?: DataSurfaceSchema;
+  /**
+   * Enforce field values derived from scanner-declared enums (#4381). By
+   * default they are advisory (`valuesEnforced: false`): the ORM does not
+   * validate enums on save, so stored rows may hold other values and filters
+   * on them keep working. Set `true` once the stored data is known to match.
+   * Ignored with a `schema` override, which declares its own `values`.
+   */
+  enforceDerivedValues?: boolean;
 }
 
 const DEFAULT_PAGE_LIMIT = 50;
@@ -408,6 +419,59 @@ function isPolicyExcludedField(
 }
 
 /**
+ * Allowed values for an enum- or literal-union-typed field (#4381), taken
+ * from the scanner-declared `enum` (top level, or mirrored under `_meta`) —
+ * never from row data.
+ *
+ * A declaration the core bounds reject (too many values, an over-long or
+ * unsafe member, a type mismatch) yields no values at all: a partial list
+ * would read as a complete closed set and, when enforced, reject stored
+ * values the type does declare. When the host opted into enforcement that
+ * is a configuration error and throws; otherwise the field stays usable
+ * without values and the reason is reported as a logger warning (once per
+ * memoized schema build).
+ */
+let schemaLogger: Logger | undefined;
+
+/** Shared `@happyvertical/logger` sink for schema-derivation diagnostics. */
+function dataSurfaceLog(): Logger {
+  schemaLogger ??= createLogger({ level: 'info' });
+  return schemaLogger;
+}
+
+function declaredEnumValues(
+  qualifiedName: string,
+  name: string,
+  field: RegistryFieldLike,
+  type: DataQueryFieldDescriptor['type'],
+  enforce: boolean,
+): DataQueryAllowedValue[] | undefined {
+  const declared = field.enum ?? meta(field).enum;
+  if (!Array.isArray(declared) || declared.length === 0) return undefined;
+  try {
+    return normalizeDataQueryFieldValues(
+      declared.map((value) => ({ value })),
+      type,
+      name,
+    );
+  } catch (error) {
+    if (!(error instanceof DataQueryValidationError)) throw error;
+    const reason = `${qualifiedName}.${name} enum cannot become data-query values: ${error.message}`;
+    if (enforce) {
+      throw new Error(`${reason} (enforceDerivedValues is set)`);
+    }
+    dataSurfaceLog().warn(
+      `${reason}; the field is advertised without values.`,
+      {
+        qualifiedName,
+        field: name,
+      },
+    );
+    return undefined;
+  }
+}
+
+/**
  * The set of registry field ids a host-supplied `options.schema` override
  * must never be able to re-advertise: restricted (`sensitive`/
  * `readPermission`), transient, the configured tenant field, `_`-prefixed
@@ -455,6 +519,7 @@ async function buildQuerySchemaForClass(
     defaultSort?: DataQuerySort[];
     cursorPagination: boolean;
     facets: boolean;
+    enforceDerivedValues: boolean;
   },
 ): Promise<DataQuerySchema> {
   const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
@@ -472,6 +537,15 @@ async function buildQuerySchemaForClass(
     const filterOperators = idFields.has(name)
       ? [...ID_FIELD_FILTER_OPERATORS]
       : filterOperatorsFor(type);
+    const values = idFields.has(name)
+      ? undefined
+      : declaredEnumValues(
+          qualifiedName,
+          name,
+          field,
+          type,
+          options.enforceDerivedValues,
+        );
     fields.push({
       id: name,
       type,
@@ -481,6 +555,12 @@ async function buildQuerySchemaForClass(
         name !== options.identityField &&
         (type === 'string' || type === 'boolean' || type === 'number'),
       ...(filterOperators ? { filterOperators } : {}),
+      ...(values
+        ? {
+            values,
+            ...(options.enforceDerivedValues ? {} : { valuesEnforced: false }),
+          }
+        : {}),
     });
   }
 
@@ -530,6 +610,8 @@ export function buildDataQuerySchemaForClass(
     defaultSort?: DataQuerySort[];
     cursorPagination?: boolean;
     facets?: boolean;
+    /** See `CreateSmrtCollectionDataSurfaceOptions.enforceDerivedValues`. */
+    enforceDerivedValues?: boolean;
   } = {},
 ): Promise<DataQuerySchema> {
   const identityField = options.identityField ?? 'id';
@@ -540,6 +622,7 @@ export function buildDataQuerySchemaForClass(
   const maxResultBytes = options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
   const cursorPagination = options.cursorPagination ?? true;
   const facets = options.facets ?? true;
+  const enforceDerivedValues = options.enforceDerivedValues === true;
   const canonicalDefaultSort = (options.defaultSort ?? [])
     .map((term) => `${term.field}:${term.direction}`)
     .join(',');
@@ -553,6 +636,7 @@ export function buildDataQuerySchemaForClass(
     canonicalDefaultSort,
     cursorPagination,
     facets,
+    enforceDerivedValues,
   ].join('::');
   const cached = schemaCache.get(key);
   if (cached) return cached;
@@ -565,6 +649,7 @@ export function buildDataQuerySchemaForClass(
     defaultSort: options.defaultSort,
     cursorPagination,
     facets,
+    enforceDerivedValues,
   }).catch((cause) => {
     schemaCache.delete(key);
     throw cause;
@@ -1525,6 +1610,7 @@ export async function createSmrtCollectionDataSurfaceDefinition(
         (typeof options.collection === 'function'
           ? true
           : typeof options.collection.facets === 'function'),
+      enforceDerivedValues: options.enforceDerivedValues,
     })) as DataSurfaceSchema;
   }
   const executableSchema = redactedQuerySchema(schema);

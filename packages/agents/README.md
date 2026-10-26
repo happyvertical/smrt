@@ -228,6 +228,23 @@ opaque-cursor paging, and never hydrates the full collection. An explicit,
 normalized-empty application `scope` denies all rows and short-circuits
 without calling the collection.
 
+A field with a scanner-declared closed set — a TypeScript `enum` or
+string/number literal-union type, carried as the registry field's `enum` —
+gets those members as its data-query `values` (#4381), so `data.inspect` and
+`data.discover` show them. Because the ORM does not validate enums on save,
+stored rows may predate or escape the declaration, so derived values are
+advisory by default (`valuesEnforced: false` in the descriptor) and filters on
+other values keep working. Set `enforceDerivedValues: true` once the stored
+data is known to match; `data.query` then rejects a filter value outside the
+set and the descriptor reports `valuesEnforced: true`. Values come only from
+the declaration, never from rows. A declaration outside the core bounds (more
+than 100 members, an over-long or unsafe member, a type mismatch) yields no
+values at all, since a partial list would read as complete: advisory surfaces
+log a `@happyvertical/logger` warning naming the class and field, and with
+`enforceDerivedValues: true` the schema build throws. Id fields never carry
+values. A `schema` override declares its own `values` (enforced unless it sets
+`valuesEnforced: false`).
+
 Cursors are opaque and bound to the exact query: they encode `{ binding,
 offset }`, where `binding` fingerprints the normalized request (filter, sort,
 projection) plus the merged tenant/application scope, so a cursor from a

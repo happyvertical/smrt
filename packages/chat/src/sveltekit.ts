@@ -88,6 +88,8 @@ import {
 import {
   buildManifestToolCatalog,
   type ClientToolResultInput,
+  FALLBACK_HISTORY_PLACEHOLDER,
+  isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
   type ManifestTool,
@@ -320,6 +322,10 @@ export interface MountAssistantRoutesOptions {
   maxSteps?: number;
   maxTurnTokens?: number;
   maxTurnMs?: number;
+  /** Per-model-call timeout in ms (see `AssistantTurnOptions`, #4379). */
+  requestTimeoutMs?: number;
+  /** Reply stored when the turn produced no answer (#4379). */
+  emptyAnswerFallback?: string;
   maxTokens?: number;
   temperature?: number;
   /** Earlier messages sent with a new turn. Default 20. */
@@ -1186,6 +1192,12 @@ export function mountAssistantRoutes(
         ...(options.maxTurnMs !== undefined
           ? { maxTurnMs: options.maxTurnMs }
           : {}),
+        ...(options.requestTimeoutMs !== undefined
+          ? { requestTimeoutMs: options.requestTimeoutMs }
+          : {}),
+        ...(options.emptyAnswerFallback !== undefined
+          ? { emptyAnswerFallback: options.emptyAnswerFallback }
+          : {}),
         ...(options.maxTokens !== undefined
           ? { maxTokens: options.maxTokens }
           : {}),
@@ -1758,7 +1770,15 @@ export function mountAssistantRoutes(
             continue;
           }
           if (!message.content) continue;
-          history.push({ role: message.role, content: message.content });
+          // A fallback reply is not a model answer: never replay it as one
+          // (#4379); a fixed marker keeps the roles alternating.
+          history.push({
+            role: message.role,
+            content:
+              message.role === 'assistant' && isFallbackReply(message)
+                ? FALLBACK_HISTORY_PLACEHOLDER
+                : message.content,
+          });
         }
       }
 

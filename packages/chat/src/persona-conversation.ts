@@ -38,9 +38,14 @@ import type { AgentSession } from './models/AgentSession.js';
 import type { ChatMessage } from './models/ChatMessage.js';
 import {
   buildManifestToolCatalog,
+  type FallbackReplyReason,
   type ManifestTool,
+  replyMetadataFor,
+  resolveTurnReply,
   runToolLoop,
+  type ToolLoopOptions,
   type ToolLoopResult,
+  toolFailureRecord,
 } from './tool-loop.js';
 
 /**
@@ -275,6 +280,34 @@ export interface PersonaConversationTurnOptions {
   temperature?: number;
   /** Max tokens per completion. */
   maxTokens?: number;
+  /** Tool-choice behaviour while tools are offered (forwarded). Default `'auto'`. */
+  toolChoice?: ToolLoopOptions['toolChoice'];
+  /**
+   * Token budget for the whole turn (forwarded as `maxTotalTokens`, #4379):
+   * once spent, the model answers without tools and the turn stops with
+   * `budget`. Unset: no budget.
+   */
+  maxTotalTokens?: number;
+  /** Wall-clock deadline for the turn, epoch ms (forwarded, #4379). */
+  deadline?: number;
+  /** Per-model-call timeout in ms (forwarded as `requestTimeoutMs`, #4379). */
+  requestTimeoutMs?: number;
+  /**
+   * Text stored as the assistant reply when the turn produced no answer
+   * (#4379). Default {@link DEFAULT_EMPTY_ANSWER_FALLBACK}; never `''`.
+   */
+  emptyAnswerFallback?: string;
+  /**
+   * Host opt-in: answer from the model's reasoning text when the final round
+   * and its retry are blank (forwarded, see `ToolLoopOptions`). Default false.
+   */
+  answerFromReasoning?: boolean;
+  /**
+   * Reasoning-text sink (forwarded, see `ToolLoopOptions.onReasoning`).
+   * Reasoning can quote documents and tool results: send it only to logs
+   * with the same protection as the conversation itself.
+   */
+  onReasoning?: ToolLoopOptions['onReasoning'];
   /** Originating user the turn runs on behalf of (audited). */
   onBehalfOfUserId?: string | null;
   /** Audit sink for the on-behalf-of entry (forwarded to `executeAsPrincipal`). */
@@ -302,6 +335,18 @@ export interface PersonaConversationTurnOptions {
 export interface PersonaConversationTurnResult {
   /** The tool-loop result (final text, invocations, transcript). */
   result: ToolLoopResult;
+  /**
+   * The reply text the turn stands behind (#4379): `result.content`
+   * trimmed, or the `emptyAnswerFallback` when that is blank. This is what is
+   * authored into the room; speak or display this rather than
+   * `result.content`.
+   */
+  reply: string;
+  /**
+   * Set when `reply` is the fallback (`empty` or `timeout`). The authored
+   * message carries it as `metadata.fallback`, and history builders skip it.
+   */
+  replyFallback?: FallbackReplyReason;
   /** The correlation id feedback on this turn should reference. */
   correlationId: string;
   /** The memory recalled into the turn's context. */
@@ -404,6 +449,18 @@ export async function runPersonaConversationTurn(
     model: options.model,
     temperature: options.temperature,
     maxTokens: options.maxTokens,
+    ...(options.toolChoice !== undefined
+      ? { toolChoice: options.toolChoice }
+      : {}),
+    ...(options.maxTotalTokens !== undefined
+      ? { maxTotalTokens: options.maxTotalTokens }
+      : {}),
+    ...(options.deadline !== undefined ? { deadline: options.deadline } : {}),
+    ...(options.requestTimeoutMs !== undefined
+      ? { requestTimeoutMs: options.requestTimeoutMs }
+      : {}),
+    ...(options.answerFromReasoning ? { answerFromReasoning: true } : {}),
+    ...(options.onReasoning ? { onReasoning: options.onReasoning } : {}),
     onBehalfOfUserId: options.onBehalfOfUserId,
     agentClass: persona.agentClass,
     postgresRls: options.postgresRls,
@@ -412,6 +469,8 @@ export async function runPersonaConversationTurn(
     onToken: options.onToken,
   });
 
+  const turnReply = resolveTurnReply(result, options.emptyAnswerFallback);
+  const reply = turnReply.content;
   let authoredMessages: AuthoredConversationMessages | undefined;
   if (options.chatService && options.session?.id) {
     authoredMessages = await authorConversationReply({
@@ -420,10 +479,20 @@ export async function runPersonaConversationTurn(
       tenantId,
       threadId: options.threadId ?? null,
       result,
+      reply,
+      metadata: replyMetadataFor(result, turnReply),
     });
   }
 
-  return { result, correlationId, recalled, systemPrompt, authoredMessages };
+  return {
+    result,
+    reply,
+    ...(turnReply.fallback ? { replyFallback: turnReply.fallback } : {}),
+    correlationId,
+    recalled,
+    systemPrompt,
+    authoredMessages,
+  };
 }
 
 /**
@@ -491,11 +560,47 @@ async function authorConversationReply(input: {
   tenantId: string;
   threadId: string | null;
   result: ToolLoopResult;
+  /** The final assistant text: the loop content, or the fallback when blank. */
+  reply: string;
+  /** Reply metadata (the fallback marker), when any. */
+  metadata?: Record<string, unknown>;
 }): Promise<AuthoredConversationMessages> {
   const { sendAgentReply } = await import('./services/ChatService.js');
   const toolMessages: ChatMessage[] = [];
   for (const invocation of input.result.invocations) {
     if (!invocation.ok) {
+      // A failed, rejected or denied call is persisted too (#4383), with
+      // the exact text the model was shown, so a failed turn can be
+      // diagnosed. A call to a tool the session does not allow-list cannot
+      // be a tool row (the session's authoring gate refuses it); it is
+      // reported to the audit sink only.
+      const record = toolFailureRecord(invocation);
+      if (!record) continue;
+      try {
+        const message = await sendAgentReply(input.chatService, {
+          tenantId: input.tenantId,
+          agentSessionId: input.session.id as string,
+          threadId: input.threadId,
+          content: record.shown,
+          kind: 'tool',
+          messageType: 'tool_result',
+          toolCallData: {
+            name: record.name,
+            args: record.args,
+            status: record.status,
+            errorCode: record.errorCode,
+          },
+          metadata: {
+            toolStatus: record.status,
+            errorKind: record.errorKind,
+            errorCode: record.errorCode,
+          },
+        });
+        toolMessages.push(message);
+      } catch {
+        // Gate refusal (unoffered tool) or a write failure: the diagnostic
+        // row is best-effort and never fails the turn.
+      }
       continue;
     }
     const message = await sendAgentReply(input.chatService, {
@@ -505,7 +610,11 @@ async function authorConversationReply(input: {
       content: JSON.stringify(invocation.observation),
       kind: 'tool',
       messageType: 'tool_result',
-      toolCallData: { name: invocation.slug, args: invocation.args },
+      toolCallData: {
+        name: invocation.slug,
+        args: invocation.args,
+        ...(invocation.deduped ? { deduped: true } : {}),
+      },
     });
     toolMessages.push(message);
   }
@@ -513,8 +622,9 @@ async function authorConversationReply(input: {
     tenantId: input.tenantId,
     agentSessionId: input.session.id as string,
     threadId: input.threadId,
-    content: input.result.content,
+    content: input.reply,
     kind: 'assistant',
+    ...(input.metadata ? { metadata: input.metadata } : {}),
   });
   return { toolMessages, assistantMessage };
 }

@@ -343,7 +343,8 @@ describe('ContentList agent data surface', () => {
       // Actionable: names what may be projected instead, from the visible
       // (and projectable) schema only.
       message:
-        'Data query projection field is not allowed: audit_note. Projectable fields: id, title.',
+        'Data query projection field is not allowed: audit_note. Projectable fields: id, title. ' +
+        'Valid example: {"surfaceId":"content-list","request":{"mode":"rows","projection":["id"],"filter":{"kind":"condition","field":"title","operator":"eq","value":"<value>"},"page":{"kind":"offset","offset":0,"limit":2}}}',
     });
     expect(list).not.toHaveBeenCalled();
     expect(facets).not.toHaveBeenCalled();
