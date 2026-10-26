@@ -4,22 +4,17 @@ import { pathToFileURL } from 'node:url';
 
 export function rewriteUbuntuMirrorList(text, security = false) {
   return text.replace(/^([ \t]*)(https?:\/\/[^\s]+)([^\r\n]*)/gim, (line, prefix, token, suffix) => {
-    let url;
-    try {
-      url = new URL(token);
-    } catch {
+    const raw = token.match(/^https?:\/\/([^/?#]+)(\/[^?#]*)$/i);
+    if (!raw || !['/ubuntu', '/ubuntu/'].includes(raw[2])) {
       return line;
     }
-    if (url.username || url.password || url.port || url.search || url.hash || !/^\/ubuntu\/?$/.test(url.pathname)) {
+    let hostname = raw[1].toLowerCase();
+    if (hostname === 'azure.archive.ubuntu.com') {
+      hostname = security ? 'security.ubuntu.com' : 'archive.ubuntu.com';
+    } else if (!['archive.ubuntu.com', 'security.ubuntu.com'].includes(hostname)) {
       return line;
     }
-    if (url.hostname === 'azure.archive.ubuntu.com') {
-      url.hostname = security ? 'security.ubuntu.com' : 'archive.ubuntu.com';
-    } else if (!['archive.ubuntu.com', 'security.ubuntu.com'].includes(url.hostname)) {
-      return line;
-    }
-    url.protocol = 'https:';
-    return `${prefix}${url.href}${suffix}`;
+    return `${prefix}https://${hostname}${raw[2]}${suffix}`;
   });
 }
 
