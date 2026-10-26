@@ -216,6 +216,7 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
           COUNT(*) AS request_count
         FROM _smrt_ai_usage
         WHERE tenant_id = ?
+          AND NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')
           AND created_at >= ?
           AND created_at < ?`,
       options.tenantId,

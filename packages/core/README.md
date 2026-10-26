@@ -159,6 +159,13 @@ cache whole-plan results, or change database pool defaults.
 
 ### Generate metadata and migrate
 
+The Vite integrations support Vite 5–8. Install Vite in the consuming build
+project. s-m-r-t's plugin declarations use a structural contract independent of
+Vite's bundler types; build-time Vite loading resolves from the project root.
+Core keeps Vite development-only, so server consumers need no build tool and
+different Vite peer contexts cannot duplicate the s-m-r-t runtime registry.
+`node scripts/verify-packed-vite-peer.mjs` verifies the packed consumer contract.
+
 Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
 directory containing your objects:
 
@@ -817,3 +824,19 @@ Consumer integration tests create disposable applications in
 compiler configuration and aliases. Core's production, test typecheck, and
 declaration builds exclude these directories, including leftovers from an
 interrupted test run; the authored consumer integration tests remain included.
+
+
+## External agent measurements
+
+`ExternalAgentUsageRecorder` persists validated provider counters on the existing
+AI usage store, with trusted tenant/project/task/session ownership bindings,
+immutable replay-safe sequences and nullable unknown counters.
+`summarizeExternalAgentUsage` returns per-session projections separately from
+hosted AI billing. See the [contract and validation design](../../docs/implementation/external-agent-usage-test-design.md).
+
+The initial contract supports one task, provider, model, and counter semantic per
+real native harness session. Rebinding an existing session fails closed. A new
+task requires a real fresh session or future explicit attribution-span support;
+never invent session IDs or reset a cumulative baseline to count prior work twice.
+Only adapter-proven exclusive structured measurements are supported. Call
+`ensureSystemTables(db)` before entering a caller-owned transaction.

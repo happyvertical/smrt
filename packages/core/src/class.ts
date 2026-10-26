@@ -281,7 +281,10 @@ function getQueryRows(
 function buildAiUsageWhereClause(
   options: AiUsageFilterOptions,
 ): AiUsageWhereClause {
-  const conditions: string[] = [];
+  // External harness measurements have a separate nullable summary contract.
+  const conditions: string[] = [
+    "NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')",
+  ];
   const params: unknown[] = [];
   let nextParamIndex = 1;
 

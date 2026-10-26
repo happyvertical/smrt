@@ -9,6 +9,7 @@ import type {
   ProjectGovernanceAction,
   ProjectGovernanceActorType,
   ProjectGovernanceRecordKind,
+  ProjectQuestionAnswerSelection,
 } from '../project-governance-types.js';
 
 export interface ProjectGovernanceEventOptions
@@ -23,6 +24,7 @@ export interface ProjectGovernanceEventOptions
   note?: string;
   value?: string;
   rationale?: string;
+  answerSelection?: string;
   revision?: number;
   fromOwnerType?: ProjectGovernanceActorType | '';
   fromOwnerId?: string;
@@ -71,6 +73,10 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
 
   rationale = '';
 
+  /** JSON answer snapshot; empty for events written before structured questions. */
+  @field({ default: '' })
+  answerSelection = '';
+
   revision = 1;
 
   fromOwnerType: ProjectGovernanceActorType | '' = '';
@@ -89,6 +95,8 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
     if (options.toStatus !== undefined) this.toStatus = options.toStatus;
     if (options.note !== undefined) this.note = options.note;
     if (options.value !== undefined) this.value = options.value;
+    if (options.answerSelection !== undefined)
+      this.answerSelection = options.answerSelection;
     if (options.rationale !== undefined) this.rationale = options.rationale;
     if (options.revision !== undefined) this.revision = options.revision;
     if (options.fromOwnerType !== undefined)
@@ -100,6 +108,26 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
     if (options.toOwnerId !== undefined) this.toOwnerId = options.toOwnerId;
   }
 
+  getAnswerSelection(): ProjectQuestionAnswerSelection | null {
+    if (!this.answerSelection) return null;
+    const value = JSON.parse(this.answerSelection);
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      typeof value.answer !== 'string' ||
+      !Number.isSafeInteger(value.expectedRevision) ||
+      value.expectedRevision < 1 ||
+      (value.selectedOptionId !== undefined &&
+        typeof value.selectedOptionId !== 'string') ||
+      (value.optionLabel !== undefined &&
+        typeof value.optionLabel !== 'string') ||
+      (value.idempotencyKey !== undefined &&
+        typeof value.idempotencyKey !== 'string')
+    )
+      throw new TypeError('Invalid project question answer snapshot.');
+    return value;
+  }
+
   async beforeDelete(): Promise<void> {
     throw new TypeError('Project governance history is append-only.');
   }
@@ -107,6 +135,7 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
   protected override async validateBeforeSave(): Promise<void> {
     if (this.isPersisted)
       throw new TypeError('Project governance history is append-only.');
+    this.getAnswerSelection();
     this.actorId = this.actorId.trim();
     if (!this.actorId)
       throw new TypeError('Project governance event actor id is required.');

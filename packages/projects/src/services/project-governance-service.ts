@@ -11,6 +11,7 @@ import type { ProjectQuestion } from '../models/ProjectQuestion.js';
 import {
   serializeContextReferences,
   serializeDecisionOptions,
+  serializeQuestionOptions,
 } from '../models/project-governance-validation.js';
 import type {
   ProjectDecisionCreateInput,
@@ -21,6 +22,7 @@ import type {
   ProjectGovernanceRecordKind,
   ProjectGovernanceScope,
   ProjectGovernanceVisibility,
+  ProjectQuestionAnswerSelection,
   ProjectQuestionCreateInput,
   ProjectQuestionStatus,
 } from '../project-governance-types.js';
@@ -32,6 +34,7 @@ interface GovernanceEventDetails {
   note?: string;
   value?: string;
   rationale?: string;
+  answerSelection?: ProjectQuestionAnswerSelection;
   fromOwnerType?: ProjectGovernanceActor['type'] | '';
   fromOwnerId?: string;
   toOwnerType?: ProjectGovernanceActor['type'] | '';
@@ -100,6 +103,9 @@ export class ProjectGovernanceService {
           metaType: input.projectType,
           metaId: input.projectId,
           prompt,
+          questionOptions: serializeQuestionOptions(
+            input.options === undefined ? [] : input.options,
+          ),
           ownerType: input.owner?.type ?? '',
           ownerId: input.owner?.id ?? '',
           contextReferences: serializeContextReferences(
@@ -163,19 +169,107 @@ export class ProjectGovernanceService {
   async answerQuestion(
     input: ProjectGovernanceScope & {
       questionId: string;
+      /** Required for old clients too; choices do not silently generate an answer. */
       answer: string;
+      selectedOptionId?: string;
+      idempotencyKey?: string;
       note?: string;
       expectedRevision: number;
       actor: ProjectGovernanceActor;
     },
   ): Promise<ProjectQuestion> {
+    if (typeof input.answer !== 'string' || !input.answer.trim())
+      throw new TypeError(
+        'Project question answer is required and must be text.',
+      );
+    if (
+      input.selectedOptionId !== undefined &&
+      (typeof input.selectedOptionId !== 'string' ||
+        !input.selectedOptionId.trim() ||
+        input.selectedOptionId !== input.selectedOptionId.trim())
+    )
+      throw new TypeError(
+        'Project question selected option id must be non-empty text.',
+      );
+    if (
+      input.idempotencyKey !== undefined &&
+      (typeof input.idempotencyKey !== 'string' ||
+        !input.idempotencyKey.trim() ||
+        input.idempotencyKey.length > 200)
+    )
+      throw new TypeError(
+        'Project question idempotency key must be non-empty text of at most 200 characters.',
+      );
+    if (input.note !== undefined && typeof input.note !== 'string')
+      throw new TypeError('Project question note must be text.');
     const answer = input.answer.trim();
-    if (!answer) throw new TypeError('Project question answer is required.');
-    return this.mutateQuestion(input, 'answered', 'answered', (question) => {
-      question.answer = answer;
-      question.answeredAt = new Date();
-      return { value: answer, note: input.note ?? '' };
-    });
+    const selectedOptionId = input.selectedOptionId;
+    return this.mutateQuestion(
+      input,
+      'answered',
+      'answered',
+      (question) => {
+        const option =
+          selectedOptionId === undefined
+            ? undefined
+            : question
+                .getOptions()
+                .find((entry) => entry.id === selectedOptionId);
+        if (selectedOptionId !== undefined && !option)
+          throw new TypeError(
+            'Project question answer must match an option id.',
+          );
+        question.answer = answer;
+        question.selectedOptionId = selectedOptionId ?? '';
+        question.answeredAt = new Date();
+        return {
+          value: answer,
+          note: input.note ?? '',
+          answerSelection: {
+            answer,
+            expectedRevision: input.expectedRevision,
+            ...(option
+              ? { selectedOptionId: option.id, optionLabel: option.label }
+              : {}),
+            ...(input.idempotencyKey !== undefined
+              ? { idempotencyKey: input.idempotencyKey }
+              : {}),
+          },
+        };
+      },
+      true,
+      input.idempotencyKey === undefined
+        ? undefined
+        : async (db) => {
+            const events = await ProjectGovernanceEventCollection.create({
+              db,
+            });
+            const history = await events.listForRecord({
+              tenantId: input.tenantId,
+              recordType: QUESTION_TYPE,
+              recordId: input.questionId,
+            });
+            const previous = history.find(
+              (event) =>
+                event.getAnswerSelection()?.idempotencyKey ===
+                input.idempotencyKey,
+            );
+            if (!previous) return false;
+            const snapshot = previous.getAnswerSelection();
+            if (
+              previous.actorType !== input.actor.type ||
+              previous.actorId !== input.actor.id ||
+              snapshot?.expectedRevision !== input.expectedRevision ||
+              snapshot.answer !== answer ||
+              snapshot.selectedOptionId !== selectedOptionId ||
+              previous.note !== (input.note ?? '')
+            )
+              throw new ProjectGovernanceConflictError(
+                'Project question idempotency key was already used with different input.',
+              );
+            return true;
+          },
+    );
   }
 
   async decide(
@@ -323,6 +417,7 @@ export class ProjectGovernanceService {
       'reopened',
       (question) => {
         question.answer = '';
+        question.selectedOptionId = '';
         question.answeredAt = null;
         return { note: input.note ?? '' };
       },
@@ -431,12 +526,26 @@ export class ProjectGovernanceService {
     action: ProjectGovernanceAction,
     apply: (question: ProjectQuestion) => GovernanceEventDetails,
     allowOwner = true,
+    replay?: (db: Database, question: ProjectQuestion) => Promise<boolean>,
   ): Promise<ProjectQuestion> {
     validateScope(input);
+    if (
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 1
+    )
+      throw new TypeError('Expected revision must be a positive integer.');
     return this.transaction(this.questions, async (db) => {
       const collection = await ProjectQuestionCollection.create({ db });
-      const current = await this.lockQuestion(db, collection, input);
+      const current = await this.lockQuestion(
+        db,
+        collection,
+        input,
+        Boolean(replay),
+      );
       authorize(current, input.actor, allowOwner);
+      if (replay && (await replay(db, current))) return current;
+      if (current.revision !== input.expectedRevision)
+        throw new ProjectGovernanceConflictError();
       const from = current.status;
       validateQuestionTransition(from, status);
       const event = apply(current);
@@ -500,11 +609,12 @@ export class ProjectGovernanceService {
       questionId: string;
       expectedRevision: number;
     },
+    deferRevisionCheck = false,
   ): Promise<ProjectQuestion> {
     await lockRow(db, collection.tableName, input.questionId, input);
     const current = await collection.getForProject(input, input.questionId);
     if (!current) throw new Error('Project question not found.');
-    if (current.revision !== input.expectedRevision)
+    if (!deferRevisionCheck && current.revision !== input.expectedRevision)
       throw new ProjectGovernanceConflictError();
     return current;
   }
@@ -550,6 +660,9 @@ export class ProjectGovernanceService {
         note: details.note ?? '',
         value: details.value ?? '',
         rationale: details.rationale ?? '',
+        answerSelection: details.answerSelection
+          ? JSON.stringify(details.answerSelection)
+          : '',
         fromOwnerType: details.fromOwnerType ?? '',
         fromOwnerId: details.fromOwnerId ?? '',
         toOwnerType: details.toOwnerType ?? '',

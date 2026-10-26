@@ -49,6 +49,8 @@ export interface ProjectGovernanceOwner {
 
 export interface ProjectQuestionCreateInput extends ProjectGovernanceScope {
   prompt: string;
+  /** Single-choice suggestions; Other is supplied by the service. */
+  options?: ProjectQuestionOption[];
   owner?: ProjectGovernanceOwner | null;
   contextReferences?: ProjectContextReference[];
   visibility?: ProjectGovernanceVisibility;
@@ -80,3 +82,20 @@ export type ProjectGovernanceAction =
   | 'deferred'
   | 'reopened'
   | 'superseded';
+
+/** Reserved identity for the always-available free-text choice. */
+export const PROJECT_QUESTION_OTHER_OPTION_ID = 'other';
+
+/** Recommendation is display guidance only, never a selected answer. */
+export interface ProjectQuestionOption extends ProjectDecisionOption {
+  recommended?: boolean;
+}
+
+/** Immutable answer provenance; absent on historical free-text events. */
+export interface ProjectQuestionAnswerSelection {
+  answer: string;
+  selectedOptionId?: string;
+  optionLabel?: string;
+  expectedRevision: number;
+  idempotencyKey?: string;
+}

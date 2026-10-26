@@ -227,6 +227,7 @@ export {
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';
+export * from './external-agent-usage.js';
 // Filesystem boundary (keeps @happyvertical/files out of neutral bundles)
 export {
   createFilesystemAdapter,

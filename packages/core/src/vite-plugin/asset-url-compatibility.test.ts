@@ -8,11 +8,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
 
 const runtime = vi.hoisted(() => ({ version: '7.3.7' }));
-vi.mock('vite', async () => ({
-  ...(await vi.importActual<typeof import('vite')>('vite')),
-  get version() {
-    return runtime.version;
-  },
+vi.mock('../utils/import-project-vite.js', () => ({
+  importProjectVite: vi.fn(async () => ({
+    ...(await vi.importActual<typeof import('vite')>('vite')),
+    version: runtime.version,
+  })),
 }));
 
 const unsafe = () => /new\s+URL.+import\.meta\.url/s;
@@ -43,8 +43,9 @@ describe('smrtAssetUrlCompatibility', () => {
   it('mutates root and worker filters synchronously before the resolved hook returns', async () => {
     runtime.version = '7.3.7';
     const root = smrtAssetUrlCompatibility();
-    const config = await configure(root, {});
-    const worker = config?.worker?.plugins?.()[1] as Plugin;
+    const config: UserConfig = {};
+    await configure(root, config);
+    const worker = config.worker?.plugins?.()[1] as Plugin;
     for (const plugin of [root, worker]) {
       const f = fixture();
       const hook = plugin.configResolved as (config: ResolvedConfig) => unknown;
@@ -247,9 +248,10 @@ describe('smrtAssetUrlCompatibility', () => {
     runtime.version = '7.3.7';
     const existing: Plugin = { name: 'existing-worker' };
     const factory = vi.fn(async () => [existing]);
-    const config = await configure(smrtAssetUrlCompatibility(), {
+    const config = {
       worker: { plugins: factory },
-    } as unknown as UserConfig);
+    } as unknown as UserConfig;
+    await configure(smrtAssetUrlCompatibility(), config);
     const workerFactory = config?.worker?.plugins;
     expect(workerFactory).toBeTypeOf('function');
     const chain = ['entry.js'];
@@ -261,7 +263,8 @@ describe('smrtAssetUrlCompatibility', () => {
     const f = fixture();
     await apply(worker, [f.asset]);
     expect(f.filter.code).toBe('import.meta.url');
-    const empty = await configure(smrtAssetUrlCompatibility(), {});
+    const empty: UserConfig = {};
+    await configure(smrtAssetUrlCompatibility(), empty);
     expect((await empty?.worker?.plugins?.())?.[1]).toHaveProperty(
       'name',
       'smrt-asset-url-compatibility',

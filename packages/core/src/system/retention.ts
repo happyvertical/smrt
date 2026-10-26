@@ -376,6 +376,10 @@ export async function pruneAiUsage(
 
   const now = retention.now ?? new Date();
   const scope = tenantScopeClause(retention);
+  // External reports are immutable replay evidence, not disposable AI telemetry.
+  scope.conditions.push(
+    "NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')",
+  );
   let pruned = 0;
 
   // Rows the age bound already accounted for. Redundant when they were really

@@ -48,15 +48,27 @@ $effect(() =>
   observeDecisions(decisions, 'open', { decided: 'project_decision_resolved' }),
 );
 
+let selections = $state<Record<string, string>>({});
+
 function submitAnswer(event: SubmitEvent, question: ProjectQuestionView) {
   event.preventDefault();
   const form = new FormData(event.currentTarget as HTMLFormElement);
-  const answer = String(form.get('answer') ?? '').trim();
+  const selectedOptionId = String(form.get('selectedOptionId') ?? '');
+  const option = question.options?.find(
+    (entry) => entry.id === selectedOptionId,
+  );
+  const structured = Boolean(question.options?.length);
+  if (structured && !selectedOptionId) return;
+  const answer =
+    structured && selectedOptionId !== 'other'
+      ? (option?.label ?? '')
+      : String(form.get('answer') ?? '').trim();
   if (answer)
     onanswer?.({
       id: question.id,
       answer,
       expectedRevision: question.revision,
+      ...(structured ? { selectedOptionId } : {}),
     });
 }
 
@@ -106,8 +118,28 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           {/if}
           {#if question.status === 'open' && question.canResolve}
             <Form onsubmit={(event) => submitAnswer(event, question)}>
-              <label for={`answer-${question.id}`}>{t(M['projects.governance.answer'])}</label>
-              <Textarea id={`answer-${question.id}`} name="answer" required></Textarea>
+              {#if question.options?.length}
+                <fieldset disabled={busy}>
+                  <legend>{t(M['projects.governance.answer'])}</legend>
+                  {#each question.options.filter((option) => option.id !== 'other') as option (option.id)}
+                    <label class="choice">
+                      <Input type="radio" name="selectedOptionId" value={option.id} required interaction={false} checked={selections[question.id] === option.id} onchange={() => selections[question.id] = option.id} />
+                      <span>{option.label}{#if option.recommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
+                        {#if option.description}<small>{option.description}</small>{/if}
+                      </span>
+                    </label>
+                  {/each}
+                  <label class="choice">
+                    <Input type="radio" name="selectedOptionId" value="other" required interaction={false} checked={selections[question.id] === 'other'} onchange={() => selections[question.id] = 'other'} />
+                    <span>{t(M['projects.governance.other'])}</span>
+                  </label>
+                  <label for={`answer-${question.id}`}>{t(M['projects.governance.other_answer'])}</label>
+                  <Textarea id={`answer-${question.id}`} name="answer" required={selections[question.id] === 'other'}></Textarea>
+                </fieldset>
+              {:else}
+                <label for={`answer-${question.id}`}>{t(M['projects.governance.answer'])}</label>
+                <Textarea id={`answer-${question.id}`} name="answer" required></Textarea>
+              {/if}
               <Button type="submit" disabled={busy}>{t(M['projects.governance.save_answer'])}</Button>
             </Form>
           {/if}
@@ -188,6 +220,10 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
   article { border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); display: grid; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-4); }
   article header { align-items: start; display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); }
   article header > div, article :global(form), .response { display: grid; gap: var(--smrt-spacing-2); }
+  fieldset { display: grid; gap: var(--smrt-spacing-2); border: 0; padding: 0; min-width: 0; }
+  .choice { display: flex; align-items: start; gap: var(--smrt-spacing-2); }
+  .choice :global(input[type='radio']) { width: auto; min-height: auto; padding: 0; }
+  .choice small { display: block; }
   .status { font-size: var(--smrt-typography-label-medium-size); text-transform: capitalize; }
   .references { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); list-style: none; margin: 0; padding: 0; }
   .references li { background: var(--smrt-color-surface-container); border-radius: var(--smrt-radius-small); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); }
