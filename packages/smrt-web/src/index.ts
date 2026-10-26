@@ -1019,7 +1019,11 @@ export interface SmrtWebSubscription {
  * own type is never named here so it stays swappable.
  */
 export interface SmrtWebCollection<TData extends object> {
-  /** All rows currently in the collection (plain DTOs, insertion order). */
+  /**
+   * All rows currently in the collection (plain DTOs), in the order of the
+   * latest list result — the server's sort. Rows the list has not returned
+   * (optimistic inserts) follow in insertion order.
+   */
   readonly toArray: ReadonlyArray<SmrtWebRow<TData>>;
   /** Number of rows currently in the collection. */
   readonly size: number;
@@ -1286,7 +1290,7 @@ export function createSmrtCollection<TData extends object>(
     // it here is safe. They mirror the public handle's `toArray` /
     // `subscribeChanges` exactly — projecting to plain DTOs so the engine's
     // virtual props never cross the seam.
-    snapshot: () => collection.toArray.map((row) => toPlainRow<TData>(row)),
+    snapshot: () => listOrderedRows(),
     subscribe: (callback) => {
       const subscription = collection.subscribeChanges((changes: unknown) =>
         callback(projectChanges(changes)),
@@ -1584,13 +1588,37 @@ export function createSmrtCollection<TData extends object>(
     }),
   );
 
+  // The engine keeps rows in insertion order and updates them in place, so a
+  // list fetched in a new order (or a warm-started cache saved in an old one)
+  // would keep the old order. The cached list result is the server's order:
+  // rows in it come first, in that order; any others keep insertion order.
+  function listOrderedRows(): SmrtWebRow<TData>[] {
+    const rows = collection.toArray.map((row) => toPlainRow<TData>(row));
+    const listed = queryClient.getQueryData<Row[]>(queryKey);
+    if (!Array.isArray(listed) || listed.length === 0) return rows;
+    const position = new Map<string, number>();
+    listed.forEach((row, index) => {
+      const key = String((row as Record<string, unknown>)[idField]);
+      if (!position.has(key)) position.set(key, index);
+    });
+    const at = (row: SmrtWebRow<TData>) =>
+      position.get(String((row as Record<string, unknown>)[idField])) ??
+      Number.POSITIVE_INFINITY;
+    // Array.prototype.sort is stable, so unlisted rows keep insertion order.
+    return rows.sort((left, right) => {
+      const a = at(left);
+      const b = at(right);
+      return a === b ? 0 : a < b ? -1 : 1;
+    });
+  }
+
   // Wrap the engine collection in the SMRT-owned public surface. The wrapper
   // projects rows to plain DTOs at every read boundary (toArray/get and change
   // payloads) so the engine's virtual props never escape, and confines the
   // engine's own types to this module.
   const handle: SmrtWebCollection<TData> = {
     get toArray() {
-      return collection.toArray.map((row) => toPlainRow<TData>(row));
+      return listOrderedRows();
     },
     get size() {
       return collection.size;
