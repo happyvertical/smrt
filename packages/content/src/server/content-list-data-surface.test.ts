@@ -117,9 +117,11 @@ describe('ContentList agent data surface', () => {
       scope: async (execution) => ({
         tenant_id: execution.principal.tenantId,
       }),
+      rowCountHint: 'thousands',
     });
 
     expect(definition).toMatchObject({
+      rowCountHint: 'thousands',
       id: CONTENT_LIST_DATA_SURFACE_ID,
       collection: CONTENT_LIST_DATA_SURFACE_COLLECTION,
       className: '@happyvertical/smrt-content:Content',

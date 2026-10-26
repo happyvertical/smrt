@@ -147,6 +147,40 @@ such as `MessagingSettingsService`.
 | `SmrtCollectionQueryScope` | Trusted, server-derived scope conditions for the generic adapter |
 | `SmrtCollectionDataSurfaceAction` | Declarative row/bulk action catalog entry surfaced via `metadata.actionCatalog` |
 
+### Summary Discovery
+
+`createDataSurfaceTools({ surfaces, discoverDetail: 'summary' })` makes
+`data.discover` return one small entry per readable surface — `id`, `label`
+(its first non-empty line, falling back to the id), the first non-empty line of
+`description` bounded to 160 characters with an ellipsis, and an optional
+`rowCountHint` — instead of the full field, metadata, `supports`, and `limits`
+descriptor. The model then calls `data.inspect` for one surface's fields and
+operators, so **summary mode assumes the principal's allow-list includes
+`data.inspect`**; a host that grants `data.discover` and `data.query` without
+it should keep full mode. The default, `discoverDetail: 'full'`, is unchanged
+(byte-identical when no `rowCountHint` is set); catalog filtering,
+permissions, the `discover` audit entry, failures, and `data.query` behave the
+same in both modes, and `data.inspect` always returns the full descriptor.
+
+`DataSurfaceDefinition.rowCountHint` (also accepted by
+`createSmrtCollectionDataSurfaceDefinition()`, report definitions, and
+`@happyvertical/smrt-content`'s `createContentListDataSurfaceDefinition()`) is
+a host-supplied size hint: a non-negative safe integer or a single-line label
+of at most 32 characters such as `"~2k"`. It is never computed by querying.
+Invalid values are omitted (see `normalizeDataSurfaceRowCountHint()`) without
+failing discovery: labels with control, format (bidi, zero-width, BOM, soft
+hyphen, tag), or line/paragraph-separator characters, or with nothing
+visible. Valid hints also appear in full descriptors.
+
+The same hint is shown to **every principal who can read the surface**, so it
+must not encode a tenant- or principal-specific count. Use a coarse, static
+label (`"thousands"`, `"~2k"`), never a live per-tenant total. Likewise, the
+first non-empty line of `description` is model-facing text in every summary:
+keep it free of secrets, internal identifiers, and instructions to the model.
+For the summary `label` and `description`, CR, LF, VT, FF, NEL, U+2028, and
+U+2029 are line breaks, format characters are removed, and other control
+characters become spaces. Full descriptors keep the host's text unchanged.
+
 ### Report Data-Surface Tools
 
 `createReportDataSurfaceTools()` combines the generic read-only data-surface
