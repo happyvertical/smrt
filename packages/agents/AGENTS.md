@@ -2,6 +2,12 @@
 
 Agent framework for autonomous actors with inter-agent messaging, interest-based object discovery, scheduling, and multi-tenant bindings.
 
+## Modules
+
+| Module | Contract |
+| --- | --- |
+| [Data-surface discovery](agents/data-surface-discovery.md) | Summary discovery, row-count hints, and allowed field values |
+
 ## Agent Lifecycle
 
 `initialize()` → `validate()` → `run()` → `shutdown()`
@@ -174,13 +180,6 @@ caller supplies a server-owned surface catalog and executor; the tools copy
 catalog permission and omit denied surfaces/fields. Query requests and results
 are normalized with the core bounded data-query protocol, including projection,
 cursor/page, row/byte, fingerprint, freshness, total, and truncation rules.
-Declared field `values` (#4381; contract in core
-[data-query.md](../core/agents/data-query.md)) appear on `data.inspect` and
-`data.discover` field descriptors with an explicit `valuesEnforced` flag; for
-an enforced set an undeclared `eq`/`ne`/`in`/`notIn` value fails as a
-`DataSurfaceRequestError` (`reason` `DATA_QUERY_VALUE_NOT_ALLOWED`) naming the
-allowed values. Enum-derived smrt-collection values are advisory unless the
-host sets `enforceDerivedValues`.
 Sensitive/read-permission fields are removed from descriptors, and
 `DataSurfaceField` policy metadata is stripped before the core schema validator.
 Executor-provided paginated rows retain their order and are validated with a
@@ -201,21 +200,6 @@ Refusals (#4387: action-specific denials, the `{ action }` catalog argument,
 `onDenied`, audit `denied` entries, missing executors):
 [agents/data-surface-denials.md](agents/data-surface-denials.md).
 
-`discoverDetail: 'summary'` (#4329; default `'full'`) makes `data.discover`
-return only `id`, a cleaned `label`, the description's first non-empty line
-bounded to 160 chars, and `rowCountHint`, with a discover tool description
-pointing to `data.inspect`. Without a `rowCountHint`, full discovery and
-`data.inspect` are byte-identical to before; a valid hint is added to both.
-The catalog/RBAC gates, including identity-field denial, run the same in both
-modes; query is unaffected. Summary mode assumes the persona may call
-`data.inspect`: a host granting discover and query without inspect keeps full.
-`DataSurfaceDefinition.rowCountHint` is host-supplied and never queried:
-`normalizeDataSurfaceRowCountHint()` accepts a non-negative safe integer or a
-trimmed label of at most 32 chars with something visible and no Cc/Cf/Zl/Zp
-characters, and omits anything else. Every reader of the surface sees the
-same hint, so it must be a coarse static label, never a tenant- or
-principal-specific count; the description's first line is model-facing and
-must carry no secrets or instructions.
 
 ## Playbook Preflight (issue #2590)
 
