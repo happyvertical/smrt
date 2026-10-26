@@ -173,6 +173,14 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
         | Promise<SmrtCollectionQueryScope | undefined>);
   /** Trusted policy override; defaults to the registry-derived schema. */
   schema?: DataSurfaceSchema;
+  /**
+   * Enforce field values derived from scanner-declared enums (#4381). By
+   * default they are advisory (`valuesEnforced: false`): the ORM does not
+   * validate enums on save, so stored rows may hold other values and filters
+   * on them keep working. Set `true` once the stored data is known to match.
+   * Ignored with a `schema` override, which declares its own `values`.
+   */
+  enforceDerivedValues?: boolean;
 }
 
 const DEFAULT_PAGE_LIMIT = 50;
@@ -481,6 +489,7 @@ async function buildQuerySchemaForClass(
     defaultSort?: DataQuerySort[];
     cursorPagination: boolean;
     facets: boolean;
+    enforceDerivedValues: boolean;
   },
 ): Promise<DataQuerySchema> {
   const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
@@ -510,7 +519,12 @@ async function buildQuerySchemaForClass(
         name !== options.identityField &&
         (type === 'string' || type === 'boolean' || type === 'number'),
       ...(filterOperators ? { filterOperators } : {}),
-      ...(values ? { values } : {}),
+      ...(values
+        ? {
+            values,
+            ...(options.enforceDerivedValues ? {} : { valuesEnforced: false }),
+          }
+        : {}),
     });
   }
 
@@ -560,6 +574,8 @@ export function buildDataQuerySchemaForClass(
     defaultSort?: DataQuerySort[];
     cursorPagination?: boolean;
     facets?: boolean;
+    /** See `CreateSmrtCollectionDataSurfaceOptions.enforceDerivedValues`. */
+    enforceDerivedValues?: boolean;
   } = {},
 ): Promise<DataQuerySchema> {
   const identityField = options.identityField ?? 'id';
@@ -570,6 +586,7 @@ export function buildDataQuerySchemaForClass(
   const maxResultBytes = options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
   const cursorPagination = options.cursorPagination ?? true;
   const facets = options.facets ?? true;
+  const enforceDerivedValues = options.enforceDerivedValues === true;
   const canonicalDefaultSort = (options.defaultSort ?? [])
     .map((term) => `${term.field}:${term.direction}`)
     .join(',');
@@ -583,6 +600,7 @@ export function buildDataQuerySchemaForClass(
     canonicalDefaultSort,
     cursorPagination,
     facets,
+    enforceDerivedValues,
   ].join('::');
   const cached = schemaCache.get(key);
   if (cached) return cached;
@@ -595,6 +613,7 @@ export function buildDataQuerySchemaForClass(
     defaultSort: options.defaultSort,
     cursorPagination,
     facets,
+    enforceDerivedValues,
   }).catch((cause) => {
     schemaCache.delete(key);
     throw cause;
@@ -1555,6 +1574,7 @@ export async function createSmrtCollectionDataSurfaceDefinition(
         (typeof options.collection === 'function'
           ? true
           : typeof options.collection.facets === 'function'),
+      enforceDerivedValues: options.enforceDerivedValues,
     })) as DataSurfaceSchema;
   }
   const executableSchema = redactedQuerySchema(schema);

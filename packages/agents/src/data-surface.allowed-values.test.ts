@@ -18,6 +18,8 @@ import type { PrincipalRun } from './execute-as-principal.js';
 import {
   buildDataQuerySchemaForClass,
   clearSmrtCollectionQuerySchemaCache,
+  createSmrtCollectionDataSurfaceDefinition,
+  type SmrtCollectionQueryCollection,
 } from './smrt-collection-data-surface.js';
 
 const STATUS_VALUES = [
@@ -112,9 +114,18 @@ describe('data surface allowed values (#4381)', () => {
       'values',
     );
     const discovered = (await call(DATA_DISCOVER_TOOL_SLUG, {})) as unknown[];
+    const discoveredStatus = fieldsOf(discovered[0]).find(
+      (field) => field.id === 'status',
+    );
+    expect(discoveredStatus?.values).toEqual(STATUS_VALUES);
+    // A hand-written declaration is authoritative.
+    expect(discoveredStatus?.valuesEnforced).toBe(true);
     expect(
-      fieldsOf(discovered[0]).find((field) => field.id === 'status')?.values,
-    ).toEqual(STATUS_VALUES);
+      inspected.find((field) => field.id === 'status')?.valuesEnforced,
+    ).toBe(true);
+    expect(inspected.find((field) => field.id === 'name')).not.toHaveProperty(
+      'valuesEnforced',
+    );
   });
 
   it('rejects an undeclared filter value with the allowed list', async () => {
@@ -190,6 +201,65 @@ describe('smrt-collection allowed-value derivation (#4381)', () => {
     clearSmrtCollectionQuerySchemaCache();
   });
 
+  async function enumSurface(enforceDerivedValues?: boolean) {
+    const list = vi.fn(async (_options: Record<string, unknown>) => []);
+    const collection: SmrtCollectionQueryCollection = {
+      list,
+      async count() {
+        return 0;
+      },
+    };
+    const surface = await createSmrtCollectionDataSurfaceDefinition({
+      id: 'enum-records',
+      qualifiedName: QUALIFIED_NAME,
+      collectionName: 'records',
+      collection,
+      facets: false,
+      exclude: ['context', 'created_at', 'slug', 'updated_at'],
+      ...(enforceDerivedValues === undefined ? {} : { enforceDerivedValues }),
+    });
+    const map = new Map(
+      createDataSurfaceTools({ surfaces: [surface] }).map((tool) => [
+        tool.slug,
+        tool,
+      ]),
+    );
+    const call = (slug: string, args: Record<string, unknown>) =>
+      map.get(slug)?.execute({ run: fakeRun(), args, db: undefined });
+    const countStatus = (value: unknown) =>
+      call(DATA_QUERY_TOOL_SLUG, {
+        surfaceId: 'enum-records',
+        request: {
+          mode: 'count',
+          filter: { kind: 'condition', field: 'status', operator: 'eq', value },
+        },
+      });
+    const status = fieldsOf(
+      await call(DATA_INSPECT_TOOL_SLUG, { surfaceId: 'enum-records' }),
+    ).find((field) => field.id === 'status');
+    return { status, countStatus };
+  }
+
+  it('surfaces derived values as advisory and accepts legacy filter values by default', async () => {
+    const { status, countStatus } = await enumSurface();
+    expect(status?.values).toEqual([
+      { value: 'pending' },
+      { value: 'in_progress' },
+      { value: 'done' },
+    ]);
+    expect(status?.valuesEnforced).toBe(false);
+    await expect(countStatus('legacy_open')).resolves.toBeDefined();
+  });
+
+  it('enforces derived values when the host opts in', async () => {
+    const { status, countStatus } = await enumSurface(true);
+    expect(status?.valuesEnforced).toBe(true);
+    await expect(countStatus('legacy_open')).rejects.toMatchObject({
+      reason: 'DATA_QUERY_VALUE_NOT_ALLOWED',
+    });
+    await expect(countStatus('pending')).resolves.toBeDefined();
+  });
+
   it('derives values from declared enums and omits out-of-bounds ones', async () => {
     const built = await buildDataQuerySchemaForClass(QUALIFIED_NAME, {
       exclude: ['context', 'created_at', 'slug', 'updated_at'],
@@ -200,6 +270,7 @@ describe('smrt-collection allowed-value derivation (#4381)', () => {
       { value: 'in_progress' },
       { value: 'done' },
     ]);
+    expect(byId.get('status')?.valuesEnforced).toBe(false);
     expect(byId.get('priority')?.values).toEqual([
       { value: 1 },
       { value: 2 },

@@ -131,10 +131,17 @@ export interface DataQueryFieldDescriptor {
   /**
    * Closed set of values the field holds, in declaration order (#4381).
    * Only `string`, `number`, and `boolean` fields may declare values, and
-   * each value must match the field type. When present, `eq`/`ne`/`in`/
-   * `notIn` filter values must be members (or `null`).
+   * each value must match the field type. Unless `valuesEnforced` is
+   * `false`, non-null `eq`/`ne`/`in`/`notIn` filter values must be members.
    */
   values?: DataQueryAllowedValue[];
+  /**
+   * Whether `values` is authoritative for filters (#4381). Defaults to `true`
+   * when `values` is declared; `false` marks the list advisory (for example
+   * derived from a type declaration that stored rows may predate), so filter
+   * values outside it are accepted. Only valid alongside `values`.
+   */
+  valuesEnforced?: boolean;
 }
 
 /**

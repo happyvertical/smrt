@@ -466,7 +466,10 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
       facetable: field.facetable === true,
       filterOperators: [...(field.filterOperators ?? [])].sort(),
       ...(field.values
-        ? { values: field.values.map((entry) => ({ ...entry })) }
+        ? {
+            values: field.values.map((entry) => ({ ...entry })),
+            valuesEnforced: field.valuesEnforced !== false,
+          }
         : {}),
       ...(metadataByFieldId.get(field.id)
         ? { metadata: metadataByFieldId.get(field.id) }

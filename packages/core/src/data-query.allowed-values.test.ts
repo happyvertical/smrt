@@ -221,6 +221,80 @@ describe('data-query allowed values (#4381)', () => {
     ).not.toThrow();
   });
 
+  it('accepts any value for an advisory set (valuesEnforced: false)', () => {
+    const advisory = {
+      ...schema,
+      fields: schema.fields.map((field) =>
+        field.id === 'status' ? { ...field, valuesEnforced: false } : field,
+      ),
+    };
+    const status = normalizeDataQuerySchema(advisory).fields.find(
+      (field) => field.id === 'status',
+    );
+    expect(status?.valuesEnforced).toBe(false);
+    expect(status?.values).toHaveLength(3);
+    expect(() =>
+      normalizeDataQueryRequest(condition('status', 'eq', 'legacy'), advisory),
+    ).not.toThrow();
+    expect(() =>
+      normalizeDataQueryRequest(
+        condition('status', 'in', ['legacy', 'pending']),
+        advisory,
+      ),
+    ).not.toThrow();
+  });
+
+  it('treats valuesEnforced: true as the default and omits it', () => {
+    const enforced = {
+      ...schema,
+      fields: schema.fields.map((field) =>
+        field.id === 'status' ? { ...field, valuesEnforced: true } : field,
+      ),
+    };
+    expect(
+      normalizeDataQuerySchema(enforced).fields.find(
+        (field) => field.id === 'status',
+      ),
+    ).not.toHaveProperty('valuesEnforced');
+    expect(
+      rejection(() =>
+        normalizeDataQueryRequest(condition('status', 'eq', 'open'), enforced),
+      ).code,
+    ).toBe('DATA_QUERY_VALUE_NOT_ALLOWED');
+  });
+
+  it('rejects a malformed or orphaned valuesEnforced', () => {
+    expect(
+      rejection(() =>
+        normalizeDataQuerySchema({
+          version: 1,
+          identityField: 'id',
+          fields: [
+            { id: 'id', type: 'string' },
+            { id: 'field', type: 'string', valuesEnforced: false },
+          ],
+        }),
+      ).message,
+    ).toMatch(/valuesEnforced requires values/);
+    expect(
+      rejection(() =>
+        normalizeDataQuerySchema({
+          version: 1,
+          identityField: 'id',
+          fields: [
+            { id: 'id', type: 'string' },
+            {
+              id: 'field',
+              type: 'string',
+              values: [{ value: 'a' }],
+              valuesEnforced: 'no',
+            },
+          ],
+        }),
+      ).message,
+    ).toMatch(/valuesEnforced must be boolean/);
+  });
+
   it('truncates long allowed-value lists in the message', () => {
     const many = Array.from({ length: 30 }, (_, index) => ({
       value: `v${index}`,

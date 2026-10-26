@@ -403,6 +403,7 @@ function normalizeFieldDescriptor(value: unknown): DataQueryFieldDescriptor {
       'facetable',
       'filterOperators',
       'values',
+      'valuesEnforced',
     ],
     'Data query schema field',
   );
@@ -450,6 +451,16 @@ function normalizeFieldDescriptor(value: unknown): DataQueryFieldDescriptor {
           type as DataQueryFieldDescriptor['type'],
           id,
         );
+  if (object.valuesEnforced !== undefined) {
+    if (typeof object.valuesEnforced !== 'boolean') {
+      return fail(`Data query field ${id} valuesEnforced must be boolean`);
+    }
+    if (!values) {
+      return fail(`Data query field ${id} valuesEnforced requires values`);
+    }
+  }
+  // Enforcement is the default, so only the advisory form is kept.
+  const advisory = values !== undefined && object.valuesEnforced === false;
   return {
     id,
     type: type as DataQueryFieldDescriptor['type'],
@@ -458,6 +469,7 @@ function normalizeFieldDescriptor(value: unknown): DataQueryFieldDescriptor {
     ...(facetable === undefined ? {} : { facetable }),
     ...(filterOperators ? { filterOperators } : {}),
     ...(values ? { values } : {}),
+    ...(advisory ? { valuesEnforced: false } : {}),
   };
 }
 
@@ -548,15 +560,22 @@ export function normalizeDataQueryFieldValues(
 }
 
 /**
- * Reject an equality-family filter value outside a field's declared closed
- * set with a message the caller can act on. `null` stays allowed.
+ * Reject an equality-family filter value outside a field's enforced closed
+ * set with a message the caller can act on. `null` stays allowed, and an
+ * advisory set (`valuesEnforced: false`) accepts any value.
  */
 function assertDeclaredValue(
   scalar: DataQueryScalar,
   descriptor: DataQueryFieldDescriptor,
   label: string,
 ): void {
-  if (scalar === null || !descriptor.values) return;
+  if (
+    scalar === null ||
+    !descriptor.values ||
+    descriptor.valuesEnforced === false
+  ) {
+    return;
+  }
   if (descriptor.values.some((entry) => entry.value === scalar)) return;
   const allowed = descriptor.values.map((entry) => entry.value);
   const listed = allowed
