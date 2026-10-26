@@ -18,6 +18,45 @@
   that call only and never enters the returned `messages` transcript, so
   stored conversations and continuations are unchanged.
 
+## Blank answers and timeouts (#4379)
+
+- **Retry once.** A final round with blank content and no usable tool calls
+  (none made, or discarded on a no-tools round) is retried once without
+  tools, with `TOOL_LOOP_ANSWER_NOW_INSTRUCTION` appended to that call only.
+  `emptyRetried: true` marks it, and an `empty_round` step event (no model
+  text) is emitted for each blank round. `runAssistantTurn` does not show it
+  as a dock step.
+- **Report.** Still blank after the retry: `stoppedReason: 'empty'`,
+  `content: ''`. A model call that throws a timeout (`AI_TIMEOUT`, `TIMEOUT`,
+  `REQUEST_TIMEOUT`, `TimeoutError`, or an `AbortError` the caller's signal
+  did not cause) ends `stoppedReason: 'timeout'` instead of failing or
+  passing as an empty success; other errors still throw. Older SDKs
+  (<= 0.108.0) end a timed-out stream quietly, so a streamed round with no
+  text, no tool calls and no `finishReason`, followed by a retry of the same
+  shape, is also `timeout`.
+- **Timeouts are configurable, not derived.** `requestTimeoutMs` is
+  forwarded as the per-call `timeout` (default: the provider's 120 s). It is
+  not derived from `deadline`/`maxTurnMs`: those only stop new tool rounds,
+  and cutting the final answer at the deadline would turn a late answer into
+  none.
+- **Fallback text.** Callers store `replyContentFor(result, fallback)`: the
+  content when non-blank (unchanged), else `emptyAnswerFallback` or
+  `DEFAULT_EMPTY_ANSWER_FALLBACK`. `runPersonaConversationTurn` authors it
+  and returns it as `reply` (voice and the chat stream use it);
+  `runAssistantTurn` replaces its old `'Done.'`; the plain chat-stream path
+  retries a blank stream once, then sends the fallback, or
+  `CHAT_STREAM_TIMEOUT_ERROR` after two quiet ends. Nothing else that is
+  stored or audited changes.
+- **Reasoning.** `AIResponse.reasoning` (newer SDKs, sdk#1459) is read
+  defensively, capped at `MAX_TOOL_LOOP_REASONING_CHARS`, passed to
+  `onReasoning` and returned as `result.reasoning` for host logging. By
+  design it is never persisted and never the answer unless the host opts in
+  with `answerFromReasoning` (then `contentFromReasoning: true`): reasoning
+  is unreviewed model scratch work, not a reply.
+- **Budgets on the persona path.** `runPersonaConversationTurn` forwards
+  `maxTotalTokens`, `deadline`, `toolChoice` and `requestTimeoutMs`
+  (`runAssistantTurn` exposes them as `maxTurnTokens`/`maxTurnMs`).
+
 ## Observation bounds
 
 - A server tool observation is serialized and capped at

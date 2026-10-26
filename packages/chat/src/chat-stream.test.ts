@@ -21,6 +21,7 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  CHAT_STREAM_TIMEOUT_ERROR,
   type ChatStreamContext,
   type ChatStreamEvent,
   ChatStreamUnauthorizedError,
@@ -33,6 +34,7 @@ import {
   type ConversationPersona,
 } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
+import { DEFAULT_EMPTY_ANSWER_FALLBACK } from './tool-loop.js';
 
 // ---------------------------------------------------------------------------
 // Mock AI boundary
@@ -187,6 +189,82 @@ describe('runChatConversationStream — plain path', () => {
     expect(events.at(-1)).toEqual({
       type: 'error',
       error: 'provider exploded',
+    });
+  });
+
+  function scriptedStreamAI(
+    attempts: Array<{ chunks: string[]; finish?: 'stop' }>,
+  ): AIInterface & { options: ChatOptions[] } {
+    const options: ChatOptions[] = [];
+    return {
+      options,
+      async *stream(_messages: AIMessage[], o: ChatOptions) {
+        const attempt = attempts[Math.min(options.length, attempts.length - 1)];
+        options.push(o);
+        for (const chunk of attempt?.chunks ?? []) yield chunk;
+        if (attempt?.finish) o.onFinishReason?.(attempt.finish);
+      },
+    } as unknown as AIInterface & { options: ChatOptions[] };
+  }
+
+  const doneContent = (events: ChatStreamEvent[]) => {
+    const done = events.at(-1) as {
+      type: string;
+      message?: { content: string };
+    };
+    expect(done.type).toBe('done');
+    return done.message?.content;
+  };
+
+  it('retries a blank stream once and then answers with the fallback, never empty (#4379)', async () => {
+    const ai = scriptedStreamAI([{ chunks: [], finish: 'stop' }]);
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai, requestTimeoutMs: 9_000 },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(ai.options).toHaveLength(2);
+    expect(ai.options.map((o) => o.timeout)).toEqual([9_000, 9_000]);
+    expect(doneContent(events)).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
+
+    const configured = await collect(
+      runChatConversationStream({
+        context: {
+          ai: scriptedStreamAI([{ chunks: [' '], finish: 'stop' }]),
+          emptyAnswerFallback: 'Nothing came back.',
+        },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(configured)).toBe('Nothing came back.');
+  });
+
+  it('recovers when the retry answers', async () => {
+    const events = await collect(
+      runChatConversationStream({
+        context: {
+          ai: scriptedStreamAI([
+            { chunks: [] },
+            { chunks: ['Hi there'], finish: 'stop' },
+          ]),
+        },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(events)).toBe('Hi there');
+  });
+
+  it('reports two quiet stream ends (no text, no finish reason) as a timeout error (#4379)', async () => {
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai: scriptedStreamAI([{ chunks: [] }]) },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(events.at(-1)).toEqual({
+      type: 'error',
+      error: CHAT_STREAM_TIMEOUT_ERROR,
     });
   });
 

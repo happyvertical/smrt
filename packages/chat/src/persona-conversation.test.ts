@@ -49,7 +49,11 @@ import {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
-import { toolFunctionName } from './tool-loop.js';
+import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+  toolFunctionName,
+} from './tool-loop.js';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -455,6 +459,150 @@ describe('persona-bound conversation', () => {
     );
     expect(assistant).toBeTruthy();
   });
+  describe('blank answers (#4379)', () => {
+    async function boundSession() {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'praeco-agent',
+        actorProfileId: 'human-profile',
+      });
+      const bound = await bindPersonaToSession({
+        chatService,
+        session,
+        actorProfileId: 'human-profile',
+        tenantId,
+        persona,
+      });
+      const assistantMessages = async () =>
+        (
+          await chatService.getRoomMessages({
+            roomId: bound.chatRoomId as string,
+            actorProfileId: 'human-profile',
+            tenantId,
+            limit: 50,
+          })
+        ).filter((m) => m.role === 'assistant');
+      return { chatService, bound, assistantMessages };
+    }
+
+    it('stores the fallback, never an empty message, when the model stays blank', async () => {
+      const { chatService, bound, assistantMessages } = await boundSession();
+      const { ai, captured } = makeAI((call, offered) =>
+        call === 0 && offered
+          ? toolCall(toolFunctionName('conv_notes.read'), {})
+          : ({ content: '', finishReason: 'stop' } as AIResponse),
+      );
+      const turn = await runPersonaConversationTurn({
+        ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'how many notes?',
+        recall: false,
+        chatService,
+        session: bound,
+      });
+      expect(turn.result.stoppedReason).toBe('empty');
+      expect(turn.result.content).toBe('');
+      expect(turn.reply).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
+      // Tool round, blank answer, one retry with the answer-now instruction.
+      expect(captured).toHaveLength(3);
+      expect(captured[2]?.messages.at(-1)?.content).toBe(
+        TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+      );
+      const stored = await assistantMessages();
+      expect(stored.map((m) => m.content)).toEqual([
+        DEFAULT_EMPTY_ANSWER_FALLBACK,
+      ]);
+    });
+
+    it('stores a host-configured fallback and keeps a real answer as produced', async () => {
+      const { chatService, bound, assistantMessages } = await boundSession();
+      const blank = makeAI(
+        () => ({ content: '', finishReason: 'stop' }) as AIResponse,
+      );
+      const turn = await runPersonaConversationTurn({
+        ai: blank.ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'q',
+        recall: false,
+        chatService,
+        session: bound,
+        emptyAnswerFallback: 'No answer this time.',
+      });
+      expect(turn.reply).toBe('No answer this time.');
+
+      const real = makeAI(
+        () => ({ content: 'Four notes. ', finishReason: 'stop' }) as AIResponse,
+      );
+      const answered = await runPersonaConversationTurn({
+        ai: real.ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'q',
+        recall: false,
+        chatService,
+        session: bound,
+      });
+      expect(answered.reply).toBe('Four notes. ');
+      expect((await assistantMessages()).map((m) => m.content).sort()).toEqual([
+        'Four notes. ',
+        'No answer this time.',
+      ]);
+    });
+
+    it('forwards maxTotalTokens, deadline, toolChoice and requestTimeoutMs to the loop', async () => {
+      const { ai, captured } = makeAI((call, offered) =>
+        call === 0 && offered
+          ? {
+              ...toolCall(toolFunctionName('conv_notes.read'), {}),
+              usage: {
+                promptTokens: 50,
+                completionTokens: 10,
+                totalTokens: 60,
+              },
+            }
+          : ({ content: 'ok', finishReason: 'stop' } as AIResponse),
+      );
+      const turn = await runPersonaConversationTurn({
+        ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'q',
+        recall: false,
+        maxTotalTokens: 50,
+        toolChoice: 'required',
+        requestTimeoutMs: 12_345,
+      });
+      expect(turn.result.stoppedReason).toBe('budget');
+      expect(captured[0]?.options?.toolChoice).toBe('required');
+      expect(
+        captured.map((c) => (c.options as { timeout?: number }).timeout),
+      ).toEqual([12_345, 12_345]);
+
+      const late = makeAI(
+        () => ({ content: 'late', finishReason: 'stop' }) as AIResponse,
+      );
+      const deadlined = await runPersonaConversationTurn({
+        ai: late.ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'q',
+        recall: false,
+        deadline: Date.now() - 1,
+      });
+      expect(deadlined.result.stoppedReason).toBe('budget');
+      expect(late.captured[0]?.options?.tools).toBeUndefined();
+    });
+  });
+
   describe('permission snapshot (#2978)', () => {
     const GATED = 'conv_notes.update';
     const surface: DataSurfaceDefinition = {

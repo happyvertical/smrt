@@ -886,6 +886,12 @@ assistant works and show a status instead (Anytown's watch mode).
   model gets a last round without tools and the turn ends with
   `stoppedReason: 'budget'` (or `'max_steps'`). `describeTool(name, args)`
   also gets a call's arguments, so a step can say "Opening Events".
+- **No answer (server, #4379).** A blank final reply is retried once
+  without tools. If it stays blank the turn ends `stoppedReason: 'empty'`;
+  a timed-out model call (`requestTimeoutMs`, or the provider's default)
+  ends it `'timeout'`. Both store `emptyAnswerFallback` (default
+  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`. See
+  [packages/chat/agents/tool-loop.md](../packages/chat/agents/tool-loop.md).
 - **Settle (browser).** After a step's browser tools ran, the dock waits before
   resuming: the host `settle` hook (e.g. "SvelteKit is no longer
   navigating"), navigations tracked on the registry (`registerLinkSurface`

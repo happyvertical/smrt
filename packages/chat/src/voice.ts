@@ -459,7 +459,7 @@ export async function handleVoiceGatewayTurn(
     return {
       session_id: payload.session_id,
       turn_id: payload.turn_id,
-      text: turn.result.content,
+      text: turn.reply,
       metadata: {
         tenantId: voiceSession.tenantId,
         chatRoomId: voiceSession.chatRoomId,

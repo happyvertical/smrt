@@ -54,6 +54,7 @@ import {
   DEFAULT_MAX_STEPS,
   type ManifestTool,
   type PendingClientToolCall,
+  replyContentFor,
   runToolLoop,
   type ToolFailureRecord,
   type ToolInvocation,
@@ -395,6 +396,23 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ChatOptions['toolChoice'];
+  /**
+   * Per-model-call timeout in ms (forwarded as `requestTimeoutMs`, #4379).
+   * Unset: the provider default. A timed-out call ends the turn with
+   * `stoppedReason: 'timeout'` and the fallback reply.
+   */
+  requestTimeoutMs?: number;
+  /**
+   * Reply stored when the turn produced no answer (#4379; `stoppedReason`
+   * `empty` or `timeout`, or blank content). Default
+   * `DEFAULT_EMPTY_ANSWER_FALLBACK`. Replaces the old `'Done.'`.
+   */
+  emptyAnswerFallback?: string;
+  /**
+   * Host opt-in: answer from the model's reasoning text when the final round
+   * and its retry are blank (forwarded, see `ToolLoopOptions`). Default false.
+   */
+  answerFromReasoning?: boolean;
   /** Cancels the turn (e.g. the request's own abort signal). */
   signal?: AbortSignal;
   /** Per-round token usage, for the host's usage attribution. */
@@ -774,6 +792,10 @@ async function runTurn<M>(
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     toolChoice: options.toolChoice,
+    ...(options.requestTimeoutMs !== undefined
+      ? { requestTimeoutMs: options.requestTimeoutMs }
+      : {}),
+    ...(options.answerFromReasoning ? { answerFromReasoning: true } : {}),
     signal: options.signal,
     onUsage: options.onUsage,
     permissions: options.permissions,
@@ -785,6 +807,9 @@ async function runTurn<M>(
       if (text) emit({ type: 'token', text });
     },
     onStep: (event) => {
+      // A blank round is retried inside the loop (#4379); it is not a step
+      // the dock shows.
+      if (event.type === 'empty_round') return;
       if (event.type === 'round') {
         if (event.step > initialSteps) {
           emit({ type: 'step', step: { kind: 'thinking', step: event.step } });
@@ -952,7 +977,8 @@ async function runTurn<M>(
     };
   }
 
-  const content = loop.content.trim() || 'Done.';
+  // Never store `''` or a content-free 'Done.' (#4379).
+  const content = replyContentFor(loop, options.emptyAnswerFallback).trim();
   let finalMessage: M | undefined;
   if (author && sendAgentReply) {
     const message = await sendAgentReply(author.chatService, {

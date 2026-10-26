@@ -96,6 +96,7 @@ export {
 // Conversational harness (L3, #1891): the persona-bound agentic tool-loop and
 // in-chat feedback capture. `chat → personas` is the new acyclic edge.
 export {
+  CHAT_STREAM_TIMEOUT_ERROR,
   ChatStreamBadRequestError,
   type ChatStreamContext,
   type ChatStreamControlCommand,
@@ -259,6 +260,7 @@ export {
   type ClientToolEffect,
   type ClientToolResultInput,
   classifyToolError,
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
   DEFAULT_MAX_STEPS,
   invokeManifestTool,
   MAX_CLIENT_TOOL_RESULT_CHARS,
@@ -267,10 +269,12 @@ export {
   MAX_DEDUPED_CALLS_PER_TURN,
   MAX_SERVER_TOOL_OBSERVATION_CHARS,
   MAX_TOOL_FAILURE_ARGS_CHARS,
+  MAX_TOOL_LOOP_REASONING_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   matchesToolAllowList,
   type PendingClientToolCall,
+  replyContentFor,
   runToolLoop,
   SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
   sanitizeClientToolDeclarations,

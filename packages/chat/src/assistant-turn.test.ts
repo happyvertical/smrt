@@ -43,8 +43,10 @@ import { ChatService } from './services/index.js';
 import {
   appendClientToolResults,
   type ClientToolDefinition,
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
   runToolLoop,
   sanitizeClientToolDeclarations,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolInvocation,
 } from './tool-loop.js';
 
@@ -999,6 +1001,112 @@ describe('assistant turn', () => {
       expect(done.message).toMatchObject({
         content: 'Here you go.',
         role: 'assistant',
+      });
+    });
+  });
+
+  describe('blank answers and timeouts (#4379)', () => {
+    async function authored(
+      rounds: Round[],
+      extra: Record<string, unknown> = {},
+    ) {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const ai = scriptedAI(rounds);
+      const events = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'how many articles?',
+          extraTools: [readTool([])],
+          author: {
+            chatService,
+            agentSessionId: session.id as string,
+            tenantId,
+          },
+          ...extra,
+        }),
+      );
+      const done = events.find((e) => e.type === 'done') as Extract<
+        AssistantTurnEvent,
+        { type: 'done' }
+      >;
+      return { ai, events, done };
+    }
+
+    it('retries a blank answer and stores the fallback instead of Done.', async () => {
+      const { ai, events, done } = await authored([
+        calls(['data-discover', {}]),
+        text(''),
+      ]);
+      expect(ai.seen).toHaveLength(3);
+      expect(ai.seen[2]?.at(-1)?.content).toBe(
+        TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+      );
+      expect(done.stoppedReason).toBe('empty');
+      expect(done.message).toMatchObject({
+        content: DEFAULT_EMPTY_ANSWER_FALLBACK,
+        role: 'assistant',
+      });
+      expect(
+        events.some(
+          (e) =>
+            e.type === 'message' &&
+            (e.message as { content?: string }).content === 'Done.',
+        ),
+      ).toBe(false);
+      // The retry is internal: no extra step reaches the dock.
+      expect(
+        events.filter((e) => e.type === 'step').map((e) => e.step.kind),
+      ).toEqual(['tool_call', 'tool_result', 'thinking']);
+    });
+
+    it('stores a configured fallback on a timeout and forwards requestTimeoutMs', async () => {
+      const timeouts: Array<number | undefined> = [];
+      const { done } = await authored(
+        [
+          (_m, options) => {
+            timeouts.push((options as { timeout?: number }).timeout);
+            throw Object.assign(new Error('Request timed out'), {
+              code: 'AI_TIMEOUT',
+            });
+          },
+        ],
+        { requestTimeoutMs: 5_000, emptyAnswerFallback: 'Took too long.' },
+      );
+      expect(timeouts).toEqual([5_000]);
+      expect(done.stoppedReason).toBe('timeout');
+      expect(done.message).toMatchObject({ content: 'Took too long.' });
+    });
+
+    it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {
+      const quiet: Round = () => ({ content: '' });
+      const { done } = await authored([quiet, quiet]);
+      expect(done.stoppedReason).toBe('timeout');
+      expect(done.message).toMatchObject({
+        content: DEFAULT_EMPTY_ANSWER_FALLBACK,
+      });
+    });
+
+    it('keeps a reasoning-only reply out of the stored answer', async () => {
+      const reasoningOnly: Round = () =>
+        ({
+          content: '',
+          finishReason: 'stop',
+          reasoning: 'Private chain of thought: 7.',
+        }) as AIResponse;
+      const { done } = await authored([reasoningOnly]);
+      expect(done.stoppedReason).toBe('empty');
+      expect(done.message).toMatchObject({
+        content: DEFAULT_EMPTY_ANSWER_FALLBACK,
       });
     });
   });

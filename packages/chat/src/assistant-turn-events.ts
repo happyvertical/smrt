@@ -99,7 +99,11 @@ export type AssistantTurnStopReason =
   /** The turn's token or time budget ran out (`maxTurnTokens`/`maxTurnMs`). */
   | 'budget'
   | 'no_tools'
-  | 'cancelled';
+  | 'cancelled'
+  /** The model returned no answer, even after one retry; the reply is the fallback (#4379). */
+  | 'empty'
+  /** A model call timed out; the reply is the fallback (#4379). */
+  | 'timeout';
 
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =

@@ -300,6 +300,10 @@ export interface MountAssistantRoutesOptions {
   maxSteps?: number;
   maxTurnTokens?: number;
   maxTurnMs?: number;
+  /** Per-model-call timeout in ms (see `AssistantTurnOptions`, #4379). */
+  requestTimeoutMs?: number;
+  /** Reply stored when the turn produced no answer (#4379). */
+  emptyAnswerFallback?: string;
   maxTokens?: number;
   temperature?: number;
   /** Earlier messages sent with a new turn. Default 20. */
@@ -1127,6 +1131,12 @@ export function mountAssistantRoutes(
           : {}),
         ...(options.maxTurnMs !== undefined
           ? { maxTurnMs: options.maxTurnMs }
+          : {}),
+        ...(options.requestTimeoutMs !== undefined
+          ? { requestTimeoutMs: options.requestTimeoutMs }
+          : {}),
+        ...(options.emptyAnswerFallback !== undefined
+          ? { emptyAnswerFallback: options.emptyAnswerFallback }
           : {}),
         ...(options.maxTokens !== undefined
           ? { maxTokens: options.maxTokens }

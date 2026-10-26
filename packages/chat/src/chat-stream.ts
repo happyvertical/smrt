@@ -41,6 +41,7 @@ import {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import type { ChatService } from './services/index.js';
+import { replyContentFor } from './tool-loop.js';
 import type { VoiceGatewayTurnMetadata } from './voice.js';
 
 /** Max conversation messages accepted on one streaming request. */
@@ -173,7 +174,24 @@ export interface ChatStreamContext {
   temperature?: number;
   maxTokens?: number;
   maxSteps?: number;
+  /**
+   * Per-model-call timeout in ms, forwarded to the AI boundary on both paths
+   * (#4379). Unset: the provider default (120 s in `@happyvertical/ai`).
+   */
+  requestTimeoutMs?: number;
+  /**
+   * Reply text used when the model produces no answer (#4379). Default
+   * `DEFAULT_EMPTY_ANSWER_FALLBACK`.
+   */
+  emptyAnswerFallback?: string;
 }
+
+/**
+ * Error text the plain path emits when a stream ends the way an older SDK
+ * ends a timed-out stream — no text and no finish reason — twice (#4379).
+ */
+export const CHAT_STREAM_TIMEOUT_ERROR =
+  'The model did not answer in time. Please try again.';
 
 /** Options for {@link runChatConversationStream}. */
 export interface RunChatConversationStreamOptions {
@@ -293,6 +311,12 @@ async function* streamPersonaConversation(
         temperature: context.temperature,
         maxTokens: context.maxTokens,
         maxSteps: context.maxSteps,
+        ...(context.requestTimeoutMs !== undefined
+          ? { requestTimeoutMs: context.requestTimeoutMs }
+          : {}),
+        ...(context.emptyAnswerFallback !== undefined
+          ? { emptyAnswerFallback: context.emptyAnswerFallback }
+          : {}),
         onBehalfOfUserId: binding.onBehalfOfUserId,
         audit: binding.audit,
         postgresRls: binding.postgresRls,
@@ -340,20 +364,45 @@ async function* streamPlainConversation(
   messages.push(...history, { role: 'user', content: userMessage });
 
   let content = '';
-  try {
-    for await (const chunk of context.ai.stream(messages, {
-      model: context.model,
-      temperature: context.temperature,
-      maxTokens: context.maxTokens,
-    })) {
-      if (chunk) {
-        content += chunk;
-        yield { type: 'token', text: chunk };
+  let finishReason: string | undefined;
+  // A blank stream is retried once (#4379). Older SDKs end a timed-out stream
+  // quietly — no text, no finish reason — so that shape on both attempts is a
+  // timeout, not an empty success; a newer SDK throws `AI_TIMEOUT` instead.
+  let suspectedTimeout = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    content = '';
+    finishReason = undefined;
+    try {
+      for await (const chunk of context.ai.stream(messages, {
+        model: context.model,
+        temperature: context.temperature,
+        maxTokens: context.maxTokens,
+        ...(context.requestTimeoutMs !== undefined
+          ? { timeout: context.requestTimeoutMs }
+          : {}),
+        onFinishReason: (reason) => {
+          finishReason = reason;
+        },
+      })) {
+        if (chunk) {
+          content += chunk;
+          yield { type: 'token', text: chunk };
+        }
       }
+    } catch (error) {
+      yield { type: 'error', error: toErrorMessage(error) };
+      return;
     }
-  } catch (error) {
-    yield { type: 'error', error: toErrorMessage(error) };
-    return;
+    if (content.trim()) break;
+    const quiet = finishReason === undefined;
+    suspectedTimeout = attempt === 0 ? quiet : suspectedTimeout && quiet;
+  }
+  if (!content.trim()) {
+    if (suspectedTimeout) {
+      yield { type: 'error', error: CHAT_STREAM_TIMEOUT_ERROR };
+      return;
+    }
+    content = replyContentFor({ content }, context.emptyAnswerFallback);
   }
   yield { type: 'done', message: synthesizeAssistantMessage(content) };
 }
@@ -609,14 +658,14 @@ function splitConversation(messages: ChatStreamMessage[]): {
 
 /** Map a persona turn's persisted reply to the wire `done` message. */
 function resolvePersonaDoneMessage(turn: {
-  result: { content: string };
+  reply: string;
   authoredMessages?: { assistantMessage: ChatMessage | null };
 }): ChatStreamMessage {
   const persisted = turn.authoredMessages?.assistantMessage;
   if (persisted) {
     return toStreamMessage(persisted);
   }
-  return synthesizeAssistantMessage(turn.result.content);
+  return synthesizeAssistantMessage(turn.reply);
 }
 
 /**
