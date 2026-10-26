@@ -58,7 +58,12 @@ export type ReportColumnKind = 'identity' | 'group' | 'bucket' | 'aggregate';
  */
 export type ReportFilterScope = 'where' | 'having';
 
-export interface ReportColumnDescriptor extends DataQueryFieldDescriptor {
+/**
+ * Report columns do not carry data-query allowed values (#4381): the adapter
+ * builds its schema from report definitions and never emits them.
+ */
+export interface ReportColumnDescriptor
+  extends Omit<DataQueryFieldDescriptor, 'values' | 'valuesEnforced'> {
   /** Stable output column id (never a property path). */
   id: string;
   fieldName: string;
