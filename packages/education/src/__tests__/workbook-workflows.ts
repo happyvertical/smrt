@@ -824,6 +824,92 @@ export function workbookContractTests(
       await f.close();
     }
   });
+  it('retains objective correctness without point weights and refuses the real mixed-null marking shape', async () => {
+    const f = await fixture();
+    try {
+      const assessment: WorkbookAssessment = {
+        ...f.assessment,
+        questions: [
+          { prompt: '2 + 3', answer: '5', result: 'correct' as const },
+          { prompt: '3 + 4', answer: '7', result: 'correct' as const },
+          { prompt: '4 + 5', answer: '8', result: 'incorrect' as const },
+          { prompt: '5 + 6', answer: '10', result: 'incorrect' as const },
+        ].map((question, index) => ({
+          ...f.assessment.questions[0],
+          ...question,
+          id: `p7:q${index + 1}`,
+          points: null,
+          possiblePoints: null,
+          markingCertainty: 'clear',
+        })),
+      };
+      const malformed = structuredClone(assessment);
+      // Actual provider output: incorrect0 paired with unknown possible points.
+      malformed.questions[2].points = 0;
+      await expect(
+        f.as(f.own, () =>
+          f.service.recordWorkbookAnalysis({
+            ...f.request,
+            ...f.own,
+            requestKey: 'mixed-null-provider-shape',
+            assessment: malformed,
+          }),
+        ),
+      ).rejects.toThrow('Invalid question points');
+      expect(
+        await f.as(f.own, async () =>
+          (
+            await WorkbookAssessmentRevisionCollection.create({ db: f.db })
+          ).list({
+            where: { tenantId: f.own.tenantId, learnerId: f.own.learnerId },
+          }),
+        ),
+      ).toHaveLength(0);
+      const revision = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...f.request,
+          ...f.own,
+          requestKey: 'unscored-correctness',
+          assessment,
+        }),
+      );
+      expect(revision.assessment.aggregate).toMatchObject({
+        correct: 2,
+        incorrect: 2,
+        unassessed: 0,
+        points: null,
+        possiblePoints: null,
+        score: null,
+      });
+      expect(
+        revision.assessment.questions.every(
+          (question) =>
+            question.points === null && question.possiblePoints === null,
+        ),
+      ).toBe(true);
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getSubmission({
+              ...f.own,
+              enrollmentId: f.activity.enrollmentId,
+              submissionId: f.attempt.submissionId,
+            }),
+          )
+        ).grade,
+      ).toBeNull();
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookSourceAnchors({ ...f.request, ...f.own }),
+          )
+        ).map((source) => source.sha256),
+      ).toEqual(assessment.questions[0].anchors.map((source) => source.sha256));
+    } finally {
+      await f.close();
+    }
+  });
+
   it('rejects fabricated anchors, malformed results, unknown concepts, and unknown-as-zero', async () => {
     const f = await fixture();
     try {

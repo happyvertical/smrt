@@ -80,7 +80,13 @@ binds the workbook attempt/policy before the host queues processing.
 `educationIntakeHandlers({workbookActivityId,...})` advertises a bounded JSON question
 schema to real ingestion generation. Assessed results require reason none;
 unassessed reasons require null points. Per-question outcomes must agree with
-points. Model aggregate scores/narratives are not requested or trusted: exact
+points. Correctness is independent of scoring: readable objectively solvable
+arithmetic may be assessed without a printed rubric. When no point allocation is
+evidenced, both `points` and `possiblePoints` remain null for every result,
+including incorrect; never invent weights or mix null/numeric values. The
+aggregate still counts correct/incorrect results while its score remains null.
+Incorrect earns zero only when the possible-point allocation is known.
+Model aggregate scores/narratives are not requested or trusted: exact
 count summaries and points scores are computed from validated questions without
 rounding or invented partial credit. Default legacy handlers remain compatible.
 `preserveWorkbookIntakeAnalysis` reads the public immutable completed generation,
