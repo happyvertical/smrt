@@ -14,4 +14,4 @@ comment projections and callbacks; it does not fetch or authorize records.
 See [test design](agents/test-design.md) and [idempotent creation](agents/idempotent-create.md) for behavior matrices and retry invariants.
 
 Run `pnpm --filter @happyvertical/smrt-comments test`, `test:postgres`, `typecheck`, `check`, and
-`npx --yes @biomejs/biome@2.5.2 check packages/comments` after changes.
+`npx --yes @biomejs/biome@2.5.3 check packages/comments` after changes.

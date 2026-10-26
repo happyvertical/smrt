@@ -214,7 +214,7 @@ jobs:
           node-version: '26.12.1'
 
       - name: Run Biome lint and format checks
-        run: npx --yes @biomejs/biome@2.5.2 ci --diagnostic-level=error .
+        run: npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error .
 
   affected-typecheck:
     name: Affected Typecheck
