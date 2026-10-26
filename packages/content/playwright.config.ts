@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
-const port = 4173;
+const port = Number(process.env.SMRT_CONTENT_E2E_PORT ?? 4173);
+if (!Number.isInteger(port) || port < 1 || port > 65535)
+  throw new Error('SMRT_CONTENT_E2E_PORT must be an integer from 1 to 65535');
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
