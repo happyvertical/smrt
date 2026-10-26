@@ -306,7 +306,7 @@ export class ExternalAgentUsageRecorder {
             reject('timestamp reordered', 'conflict');
           // A provider event is unique within its stream, even at another sequence.
           const candidates = await tx.query(
-            'SELECT tags FROM _smrt_ai_usage WHERE tenant_id = ? AND class_name = ?',
+            "SELECT tags FROM _smrt_ai_usage WHERE tenant_id = ? AND class_name = ? AND operation = 'external-agent' AND id LIKE 'external-agent:%'",
             this.binding.tenantId,
             streamId(this.binding),
           );
@@ -388,7 +388,7 @@ export class ExternalAgentUsageRecorder {
   /** Safe per-session projection; never estimates cost or coalesces unknown to zero. */
   async summarize(): Promise<ExternalAgentUsageSummary> {
     const result = await this.db.query(
-      'SELECT tags FROM _smrt_ai_usage WHERE tenant_id = ? AND class_name = ? AND operation = ?',
+      "SELECT tags FROM _smrt_ai_usage WHERE tenant_id = ? AND class_name = ? AND operation = ? AND id LIKE 'external-agent:%'",
       this.binding.tenantId,
       streamId(this.binding),
       EXTERNAL_AGENT_USAGE_OPERATION,
@@ -460,7 +460,7 @@ export async function summarizeExternalAgentUsage(
   if (scope.taskId !== undefined) text(scope.taskId);
   if (scope.sessionId !== undefined) text(scope.sessionId);
   const result = await db.query(
-    'SELECT tags FROM _smrt_ai_usage WHERE tenant_id = ? AND operation = ?',
+    "SELECT tags FROM _smrt_ai_usage WHERE tenant_id = ? AND operation = ? AND id LIKE 'external-agent:%'",
     scope.tenantId,
     EXTERNAL_AGENT_USAGE_OPERATION,
   );

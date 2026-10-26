@@ -282,7 +282,9 @@ function buildAiUsageWhereClause(
   options: AiUsageFilterOptions,
 ): AiUsageWhereClause {
   // External harness measurements have a separate nullable summary contract.
-  const conditions: string[] = ["operation <> 'external-agent'"];
+  const conditions: string[] = [
+    "NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')",
+  ];
   const params: unknown[] = [];
   let nextParamIndex = 1;
 

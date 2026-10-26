@@ -1,5 +1,6 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { AiUsagePersistenceHandler } from '../adapters/ai-usage.js';
 import {
   ExternalAgentUsageRecorder,
   type ExternalAgentUsageReport,
@@ -121,6 +122,26 @@ export function externalAgentUsageSuite(
         'event already recorded',
       );
       expect((await recorder.summarize()).reports).toBe(2);
+    });
+    it('isolates recorder candidates and session summaries from native UUID rows sharing its class name', async () => {
+      const recorder = new ExternalAgentUsageRecorder(db, binding);
+      const first = await recorder.record(fact());
+      const persisted = await db.get('_smrt_ai_usage', { id: first.id });
+      await new AiUsagePersistenceHandler(db).handle({
+        provider: 'fixture',
+        model: 'native',
+        operation: 'external-agent',
+        className: String(persisted?.class_name),
+        tenantId: binding.tenantId,
+        timestamp: new Date('2026-10-25T00:00:00Z'),
+        duration: 1,
+        usage: { totalTokens: 100 },
+        tags: { component: 'ordinary-native' },
+      });
+      expect((await recorder.summarize()).reports).toBe(1);
+      await recorder.record(next());
+      expect((await recorder.summarize()).reports).toBe(2);
+      expect((await recorder.summarize()).counters.totalTokens).toBe(28);
     });
     it('denies untrusted ownership changes and persisted session rebinding', async () => {
       const recorder = new ExternalAgentUsageRecorder(db, binding);

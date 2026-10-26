@@ -1,9 +1,12 @@
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterAll, describe, expect, it } from 'vitest';
+import { AiUsagePersistenceHandler } from '../adapters/ai-usage.js';
+import { SmrtClass } from '../class.js';
 import {
   type ExternalAgentUsageReceipt,
   ExternalAgentUsageRecorder,
   type ExternalAgentUsageReport,
+  summarizeExternalAgentUsage,
 } from '../external-agent-usage.js';
 import { ensureSystemTables } from '../system/bootstrap.js';
 import { externalAgentUsageSuite } from './external-agent-usage.cases.js';
@@ -187,6 +190,85 @@ if (url) {
     expect(
       (await new ExternalAgentUsageRecorder(db, binding).summarize()).reports,
     ).toBe(2);
+  });
+  it('keeps native custom-operation UUID accounting separate from genuine external recorder rows', async () => {
+    class NativeOperationReader extends SmrtClass {
+      async start() {
+        await this.initialize();
+      }
+    }
+    const reader = new NativeOperationReader({ db });
+    await reader.start();
+    try {
+      for (const tags of [undefined, { component: 'ordinary-native' }]) {
+        await new AiUsagePersistenceHandler(db).handle({
+          provider: 'fixture',
+          model: 'native',
+          operation: 'external-agent',
+          className: 'Native',
+          tenantId: fixtureTenantId,
+          timestamp: new Date('2026-10-26T00:00:00Z'),
+          duration: 12,
+          estimatedCost: 0.25,
+          usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+          ...(tags ? { tags } : {}),
+        });
+      }
+      const binding = {
+        tenantId: fixtureTenantId,
+        workspaceId: 'native-compat-workspace',
+        projectId: 'native-compat-project',
+        taskId: 'task',
+        sessionId: 'mixed-native-external',
+        role: 'worker',
+      };
+      await new ExternalAgentUsageRecorder(db, binding).record({
+        version: 1,
+        binding,
+        provider: 'fixture',
+        model: 'external',
+        provenance: {
+          harness: 'fixture',
+          source: 'fixture.usage',
+          eventId: 'mixed-0',
+        },
+        observedAt: '2026-10-26T00:00:00Z',
+        sequence: 0,
+        epoch: 0,
+        basis: 'delta',
+        baseline: 'zero',
+        scope: 'exclusive',
+        inputIncludesCache: true,
+        outputIncludesReasoning: true,
+        counters: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      });
+      expect(
+        await reader.listAiUsage({ tenantId: fixtureTenantId }),
+      ).toHaveLength(2);
+      const native = await reader.summarizeAiUsage({
+        tenantId: fixtureTenantId,
+        groupBy: 'operation',
+      });
+      expect(native['external-agent']).toMatchObject({
+        callCount: 2,
+        promptTokens: 14,
+        completionTokens: 6,
+        totalTokens: 20,
+        estimatedCost: 0.5,
+      });
+      const external = await summarizeExternalAgentUsage(db, {
+        tenantId: fixtureTenantId,
+        workspaceId: binding.workspaceId,
+        projectId: binding.projectId,
+      });
+      expect(external).toHaveLength(1);
+      expect(external[0]).toMatchObject({
+        reports: 1,
+        counters: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      });
+    } finally {
+      reader.destroy();
+    }
   });
   afterAll(async () => {
     await db.query(

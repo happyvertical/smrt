@@ -28,7 +28,10 @@ cumulative snapshot again as a new zero baseline.
 No prompt, transcript, arbitrary tags, costs, or credentials enter the contract.
 Provider-measured facts only: producer verification belongs to authenticated
 adapters. The framework cannot authenticate provider output from a JSON object.
-Native subscription AI billing excludes `operation = external-agent`. Default core list/summary queries also exclude external records; consumers
+Native subscription AI billing excludes recorder rows only when both operation
+`external-agent` and the existing synthetic `external-agent:` row-ID namespace
+match. Native custom operation names remain unrestricted; native-handler UUID
+rows remain native even when their operation is `external-agent`. Default core list/summary queries also exclude external records; consumers
 use the safe recorder summary for external usage. `duration = 0` is a required
 legacy storage placeholder, never a measured duration. Empty summaries contain
 unknown counters. `complete` means every supported counter has known deltas for
@@ -36,7 +39,7 @@ every report; per-counter `coverage` exposes known and unknown report counts. A
 provider omitting cache/reasoning counters produces partial data.
 
 Retention: external reports are durable replay evidence. `pruneAiUsage` excludes
-this operation for both age and row limits. Explicit application deletion is an
+these compound-identified recorder rows for both age and row limits. Explicit application deletion is an
 administrative boundary: consumers must allocate a fresh session after deletion.
 
 ## Behavior-to-test matrix
@@ -113,3 +116,28 @@ No database result, SQL operation, uniqueness conflict or transaction is mocked.
 Workers do not start containers; native PostgreSQL execution and its evidence
 belong to the foreman. A pre-fix execution requires that same native PostgreSQL
 lane; SQLite/DuckDB serialize writers and cannot prove this interleaving.
+
+
+## Native operation compatibility (#4336)
+
+The operation name alone is not reserved. Every classification query uses both
+`operation = 'external-agent'` and the recorder's existing synthetic ID namespace.
+Public native persistence assigns UUID IDs, so native custom operations and null
+or ordinary tags remain native; arbitrary native tags are never parsed as receipts.
+The deterministic single-receipt lookup is already bound to its synthetic ID.
+
+Real native-handler regressions cover SQLite and DuckDB list/summary, billing,
+project summary isolation and both retention policies. A real native UUID row
+sharing the recorder's synthetic class name additionally proves candidate-query
+and per-session isolation. The existing billing exclusion fixture now uses the
+actual external recorder rather than an operation-only SQL seed. All24 original
+native-operation cases failed againstfd30907 before repair (20core,4meter).
+
+The narrow optional PostgreSQL case is named `keeps native custom-operation UUID
+accounting separate from genuine external recorder rows`. It persists two real
+native rows (null and ordinary tags) alongside an actual external receipt, then
+checks native totals/list and external project-summary isolation. Foreman runs
+`pnpm --filter @happyvertical/smrt-core exec vitest run
+src/__tests__/external-agent-usage-postgres.optional.test.ts` in its isolated DB;
+workers start no containers. No schema, store, parser or reserved-operation
+contract is introduced.
