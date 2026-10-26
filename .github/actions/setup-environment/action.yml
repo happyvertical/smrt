@@ -297,6 +297,7 @@ runs:
 
         echo "Installing ONNX Runtime system dependencies..."
         node_path="$(command -v node)"
+        sudo "$node_path" "$GITHUB_WORKSPACE/scripts/configure-ubuntu-apt-mirrors.mjs"
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get update' \
           --timeout-seconds 120 \
