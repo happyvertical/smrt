@@ -44,6 +44,7 @@ import {
   type ManifestTool,
   manifestToolToAITool,
   runToolLoop,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
 } from './tool-loop.js';
 
@@ -739,6 +740,93 @@ describe('runToolLoop', () => {
     expect(result.steps).toBe(3);
     expect(executed).toBe(3);
     expect(result.content).toBe('ceiling reached');
+  });
+
+  it('appends the answer-now instruction to the forced final call only (#4378)', async () => {
+    const seen: Array<{ offered: boolean; messages: AIMessage[] }> = [];
+    const ai = makeAI((messages, options) => {
+      seen.push({ offered: toolsOffered(options), messages: [...messages] });
+      return toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('answered');
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'how many notes?' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      maxSteps: 2,
+      executeTool: async () => ({ count: 3 }),
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('max_steps');
+    expect(seen).toHaveLength(3);
+    // Tool-offering rounds carry no instruction.
+    for (const round of seen.slice(0, 2)) {
+      expect(round.offered).toBe(true);
+      expect(
+        round.messages.some(
+          (m) => m.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+        ),
+      ).toBe(false);
+    }
+    const final = seen[2];
+    expect(final?.offered).toBe(false);
+    expect(final?.messages.at(-1)).toEqual({
+      role: 'user',
+      content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+    });
+    // The instruction is per-call: the returned transcript never holds it.
+    expect(
+      result.messages.some(
+        (m) => m.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+      ),
+    ).toBe(false);
+  });
+
+  it('appends the answer-now instruction when the token budget is spent (#4378)', async () => {
+    let last: AIMessage | undefined;
+    const ai = makeAI((messages, options) => {
+      if (!toolsOffered(options)) {
+        last = messages.at(-1);
+        return textResponse('within budget');
+      }
+      return {
+        ...toolCall('tool_loop_notes.read', {}),
+        usage: { promptTokens: 90, completionTokens: 20, totalTokens: 110 },
+      };
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'count' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      maxTotalTokens: 100,
+      executeTool: async () => ({ count: 1 }),
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('budget');
+    expect(last?.content).toBe(TOOL_LOOP_ANSWER_NOW_INSTRUCTION);
+  });
+
+  it('sends no answer-now instruction when no tools are configured', async () => {
+    let last: AIMessage | undefined;
+    const ai = makeAI((messages) => {
+      last = messages.at(-1);
+      return textResponse('hi');
+    });
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: () => {},
+    });
+    expect(result.stoppedReason).toBe('no_tools');
+    expect(last?.content).toBe('hello');
   });
 
   describe('end-to-end permission enforcement (catalog assert, RLS off)', () => {

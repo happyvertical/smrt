@@ -930,8 +930,17 @@ export async function runToolLoop(
         const offerTools =
           aiTools.length > 0 && executedRounds < maxSteps && !budgetSpent;
         onStep?.({ type: 'round', step: executedRounds });
+        // The forced final call (step cap or spent budget, #4378): tools are
+        // withdrawn, so tell the model to answer now instead of resending a
+        // transcript that ends on tool observations with no instruction. The
+        // instruction is sent on this call only; it never enters the
+        // returned transcript, so stored conversations are unchanged.
+        const forcedFinal = aiTools.length > 0 && !offerTools;
+        const roundMessages: LoopMessage[] = forcedFinal
+          ? [...working, answerNowMessage()]
+          : working;
         try {
-          response = await ai.chat(working, {
+          response = await ai.chat(roundMessages, {
             model,
             temperature,
             maxTokens,
@@ -1127,6 +1136,20 @@ export async function runToolLoop(
       }
     },
   );
+}
+
+/**
+ * Fixed instruction appended (as a `user` message, which every chat template
+ * accepts mid-conversation) to the forced no-tools final call at the step cap
+ * or when the turn budget is spent (#4378). It is constant text: it never
+ * carries tool output or argument values.
+ */
+export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
+  "Tools are no longer available for this turn. Answer the user's question now " +
+  'from the tool results above, without calling tools.';
+
+function answerNowMessage(): LoopMessage {
+  return { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION };
 }
 
 /** Max browser tools accepted on one turn. */

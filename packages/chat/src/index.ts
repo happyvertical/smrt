@@ -270,6 +270,7 @@ export {
   type PendingClientToolCall,
   runToolLoop,
   sanitizeClientToolDeclarations,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolErrorKind,
   type ToolExecutionContext,
   type ToolInvocation,
