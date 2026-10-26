@@ -157,7 +157,13 @@ export interface DataSurfaceDeniedEntry {
   action: DataSurfaceAction;
   /** Only for a surface visible to the principal; never an unknown id. */
   surfaceId?: string;
-  userId: string;
+  /** The model-supplied `request.requestId`, when it sent one (≤ 256 chars). */
+  requestId?: string;
+  /**
+   * The run's user. Omitted when the run has none (success entries cannot
+   * occur then: they resolve the same principal and refuse without a user).
+   */
+  userId?: string;
   tenantId: string | null;
   reason: DataSurfaceDenialReason;
 }
@@ -1468,21 +1474,31 @@ export function createDataSurfaceTools(
     action: DataSurfaceAction,
     requestedId: unknown,
     reason?: DataSurfaceDenialReason,
+    requestId?: unknown,
   ): Promise<DataSurfaceDeniedError> => {
     let surfaceId: string | undefined;
     let finalReason: DataSurfaceDenialReason = reason ?? 'not_visible';
-    const actionAware =
-      typeof options.surfaces === 'function' && options.surfaces.length >= 2;
+    // Only a function catalog can differ per action. Its lesser catalogs
+    // are evaluated on this denial path only — at most two calls, each
+    // once — whatever the function's declared arity (default or rest
+    // parameters and wrappers make arity detection unreliable).
     if (
       !reason &&
-      actionAware &&
-      action !== 'discover' &&
+      typeof options.surfaces === 'function' &&
       typeof requestedId === 'string' &&
       requestedId
     ) {
-      const lesser: DataSurfaceAction[] =
-        action === 'query' ? ['inspect', 'discover'] : ['discover'];
-      for (const lesserAction of lesser) {
+      const lesser: Array<[DataSurfaceAction, string]> =
+        action === 'query'
+          ? [
+              ['inspect', DATA_INSPECT_TOOL_SLUG],
+              ['discover', DATA_DISCOVER_TOOL_SLUG],
+            ]
+          : [['discover', DATA_DISCOVER_TOOL_SLUG]];
+      for (const [lesserAction, lesserSlug] of lesser) {
+        // A lesser action counts only when its own tool is allowed, so a
+        // query-only principal cannot probe which surfaces exist.
+        if (!run.isToolAllowed(lesserSlug)) continue;
         let visible: Awaited<ReturnType<typeof availableSurfaces>>;
         try {
           visible = await availableSurfaces(options, run, lesserAction);
@@ -1505,31 +1521,41 @@ export function createDataSurfaceTools(
         }
       }
     }
-    const userId = run.context.userId ?? '';
+    const userId = run.context.userId || undefined;
     const tenantId = run.context.tenantId ?? null;
     try {
       await options.onDenied?.({
         action,
         ...(surfaceId ? { surfaceId } : {}),
-        userId,
+        ...(typeof requestId === 'string' && requestId
+          ? { requestId: requestId.slice(0, 256) }
+          : {}),
+        ...(userId ? { userId } : {}),
         tenantId,
         reason: finalReason,
       });
     } catch {
       // Host telemetry never changes the denial.
     }
-    try {
-      await options.audit?.({
-        action,
-        ...(surfaceId ? { surfaceId } : {}),
-        userId,
-        tenantId,
-        denied: true,
-        reason: finalReason,
-      });
-    } catch {
-      // The audit of a refusal never turns it into a failure.
+    // The audit entry needs a user, as success entries do; a run without
+    // one is reported to `onDenied` only.
+    if (userId) {
+      try {
+        await options.audit?.({
+          action,
+          ...(surfaceId ? { surfaceId } : {}),
+          userId,
+          tenantId,
+          denied: true,
+          reason: finalReason,
+        });
+      } catch (error) {
+        // The refusal stands; the broken audit sink is a server failure.
+        await reportFailure(options, run, action, surfaceId, undefined, error);
+      }
     }
+    // `discover` is only ever refused at the allow-list (no surface), so
+    // this guard is type narrowing for the action-specific constructor.
     return surfaceId && action !== 'discover'
       ? new DataSurfaceActionDeniedError(action, surfaceId)
       : new DataSurfaceDeniedError();
@@ -1596,7 +1622,15 @@ export function createDataSurfaceTools(
         await catalog(run, 'query'),
         queryArgs.surfaceId,
       );
-      if (!entry) throw await deny(run, 'query', queryArgs.surfaceId);
+      if (!entry) {
+        throw await deny(
+          run,
+          'query',
+          queryArgs.surfaceId,
+          undefined,
+          isRecord(queryArgs.request) ? queryArgs.request.requestId : undefined,
+        );
+      }
       const surfaceId = entry.surface.id;
       const example = (raw?: unknown) =>
         validQueryExample(

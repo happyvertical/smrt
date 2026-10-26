@@ -213,7 +213,13 @@ describe('action-specific denials (#4387)', () => {
     ).rejects.toBeInstanceOf(DataSurfaceQueryError);
     expect(denied).toEqual([]);
     expect(failures).toEqual([
-      expect.objectContaining({ action: 'query', surfaceId: 'records' }),
+      expect.objectContaining({
+        action: 'query',
+        surfaceId: 'records',
+        error: expect.objectContaining({
+          message: 'Data surface has no executor.',
+        }),
+      }),
     ]);
   });
 
@@ -252,14 +258,7 @@ describe('action-specific denials (#4387)', () => {
     expect(failures.map((entry) => entry.action)).toEqual(['inspect']);
   });
 
-  it('evaluates lesser catalogs only for an action-aware function, once per action', async () => {
-    const actions: string[] = [];
-    const aware = createDataSurfaceTools({
-      surfaces: (_run, { action }) => {
-        actions.push(action);
-        return [];
-      },
-    });
+  it('evaluates lesser catalogs for any function catalog, once each, stopping at a hit', async () => {
     const run = (tools: ReturnType<typeof createDataSurfaceTools>) =>
       tools
         .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
@@ -269,19 +268,133 @@ describe('action-specific denials (#4387)', () => {
           db: undefined,
         })
         .catch(() => undefined);
-    await run(aware);
-    expect(actions).toEqual(['query', 'inspect', 'discover']);
-
-    let oneArgCalls = 0;
+    // A one-argument (or defaulted / wrapped) function is not skipped.
+    const actions: string[] = [];
     await run(
       createDataSurfaceTools({
-        surfaces: (_run) => {
-          oneArgCalls += 1;
+        surfaces: (...callArgs: unknown[]) => {
+          actions.push(
+            (callArgs[1] as { action: string } | undefined)?.action ?? '?',
+          );
           return [];
         },
       }),
     );
-    expect(oneArgCalls).toBe(1);
+    expect(actions).toEqual(['query', 'inspect', 'discover']);
+
+    // A hit on inspect stops the search: discover is never evaluated.
+    const hit: string[] = [];
+    await run(
+      createDataSurfaceTools({
+        surfaces: (_run, { action }) => {
+          hit.push(action);
+          return action === 'inspect' ? [records] : [];
+        },
+      }),
+    );
+    expect(hit).toEqual(['query', 'inspect']);
+
+    // A static catalog never needs another evaluation.
+    const tools = createDataSurfaceTools({ surfaces: [] });
+    await expect(
+      tools
+        .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
+        ?.execute({
+          run: fakeRun(),
+          args: { surfaceId: 'records', request: count },
+          db: undefined,
+        }),
+    ).rejects.toThrow('Data surface is not available.');
+  });
+
+  it('ignores a lesser action whose tool the principal is not allowed', async () => {
+    const actions: string[] = [];
+    const denied: DataSurfaceDeniedEntry[] = [];
+    const tools = createDataSurfaceTools({
+      surfaces: (_run, { action }) => {
+        actions.push(action);
+        return action === 'query' ? [] : [records];
+      },
+      onDenied: (entry) => {
+        denied.push(entry);
+      },
+    });
+    const run = fakeRun();
+    run.isToolAllowed = (slug) => slug === DATA_QUERY_TOOL_SLUG;
+    const error = await tools
+      .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
+      ?.execute({
+        run,
+        args: { surfaceId: 'records', request: count },
+        db: undefined,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).not.toBeInstanceOf(DataSurfaceActionDeniedError);
+    expect((error as Error).message).toBe('Data surface is not available.');
+    expect(actions).toEqual(['query']);
+    expect(denied[0]).toMatchObject({ reason: 'not_visible' });
+    expect(denied[0]).not.toHaveProperty('surfaceId');
+  });
+
+  it('passes the model requestId to onDenied, and reports a throwing audit sink', async () => {
+    const denied: DataSurfaceDeniedEntry[] = [];
+    const failures: Array<{ action: string; error: unknown }> = [];
+    const tools = createDataSurfaceTools({
+      surfaces: [],
+      onDenied: (entry) => {
+        denied.push(entry);
+      },
+      onFailure: (entry) => {
+        failures.push(entry);
+      },
+      audit: () => {
+        throw new Error('audit down');
+      },
+    });
+    await expect(
+      tools
+        .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
+        ?.execute({
+          run: fakeRun(),
+          args: { surfaceId: 'x', request: { ...count, requestId: 'req-7' } },
+          db: undefined,
+        }),
+    ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    expect(denied[0]?.requestId).toBe('req-7');
+    expect(failures).toEqual([
+      expect.objectContaining({
+        action: 'query',
+        error: expect.objectContaining({ message: 'audit down' }),
+      }),
+    ]);
+  });
+
+  it('omits the user, and skips the audit, for a run without one', async () => {
+    const denied: DataSurfaceDeniedEntry[] = [];
+    const audits: DataSurfaceAuditEntry[] = [];
+    const tools = createDataSurfaceTools({
+      surfaces: [],
+      onDenied: (entry) => {
+        denied.push(entry);
+      },
+      audit: (entry) => {
+        audits.push(entry);
+      },
+    });
+    const run = fakeRun();
+    (run.context as { userId: string | null }).userId = null;
+    await tools
+      .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
+      ?.execute({
+        run,
+        args: { surfaceId: 'x', request: count },
+        db: undefined,
+      })
+      .catch(() => undefined);
+    expect(denied).toEqual([
+      { action: 'query', tenantId: 'tenant-a', reason: 'not_visible' },
+    ]);
+    expect(audits).toEqual([]);
   });
 
   it('rejects a non-string or empty surfaceId as a request error, with no denial', async () => {

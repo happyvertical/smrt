@@ -193,19 +193,22 @@ the surface (placeholders only, no caller values).
 Refusals (#4387): a surface visible for a lesser action (`discover`/`inspect`)
 but not the requested one gets `DataSurfaceActionDeniedError` naming the action
 and that visible id; an invisible surface keeps the generic
-`DataSurfaceDeniedError`. A function catalog receives `{ action }`; lesser
-catalogs are evaluated (once each per call, a throw reported to `onFailure`)
-only when the function declares that second parameter, since a static or
-one-argument catalog is the same for every action. Allow-list refusals and
-surface denials go to `onDenied` (action, visible surface id only, principal,
-`reason`: `not_visible` | `action_not_permitted` | `tool_not_allowed`) and to
-the audit sink as an entry with `denied: true` and the same `action` value as
-a call — audit consumers must branch on `denied` (a distinct action value was
-rejected as non-additive for exhaustive consumers). `onDenied` is separate
-from `onFailure`: a denial is an authorization outcome, not a server error;
-sink throws are ignored. Request errors (including hidden fields, which get
-`DATA_QUERY_FIELD_NOT_ALLOWED`) are not denials; a visible surface with no
-executor is a configuration failure (`onFailure`, `DataSurfaceQueryError`).
+`DataSurfaceDeniedError`. A function catalog receives `{ action }` (the report
+tools forward it to a `reports` function); on the denial path only, it is
+re-evaluated for the lesser actions (at most two calls, once each, a throw
+reported to `onFailure`), and a lesser action counts only when its own tool is
+allowed. Limit an action through the per-action catalog, never by leaving out
+the executor: a visible surface with no executor is a configuration failure
+(`onFailure`, `DataSurfaceQueryError`). Allow-list refusals and surface denials
+go to `onDenied` (action, visible surface id only, the model's `requestId`,
+the run's user when it has one, `reason`: `not_visible` |
+`action_not_permitted` | `tool_not_allowed`) and to the audit sink as an
+entry with `denied: true` and the same `action` as a call — audit consumers
+must branch on `denied`. A run without a user gets no audit entry (as on
+success); a throwing audit sink is reported to `onFailure` and the refusal
+stands. `onDenied` is separate from `onFailure`: a denial is an authorization
+outcome, not a server error. Request errors (including hidden fields, which
+get `DATA_QUERY_FIELD_NOT_ALLOWED`) are not denials.
 
 ## Playbook Preflight (issue #2590)
 

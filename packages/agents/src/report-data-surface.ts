@@ -42,6 +42,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   createDataSurfaceTools,
   DATA_QUERY_TOOL_SLUG,
+  type DataSurfaceCatalogContext,
   type DataSurfaceDefinition,
   DataSurfaceDeniedError,
   type DataSurfaceExecutionContext,
@@ -156,6 +157,8 @@ export interface ReportDataSurfaceToolsOptions {
     | readonly ReportDataSurfaceDefinition[]
     | ((
         run: PrincipalRun,
+        /** Set when evaluated as the data-tool catalog (#4387). */
+        context?: DataSurfaceCatalogContext,
       ) =>
         | readonly ReportDataSurfaceDefinition[]
         | Promise<readonly ReportDataSurfaceDefinition[]>);
@@ -325,9 +328,12 @@ function reportCatalogMetadata(
 async function configuredReports(
   options: ReportDataSurfaceToolsOptions,
   run: PrincipalRun,
+  context?: DataSurfaceCatalogContext,
 ): Promise<readonly ReportDataSurfaceDefinition[]> {
   return typeof options.reports === 'function'
-    ? options.reports(run)
+    ? context
+      ? options.reports(run, context)
+      : options.reports(run)
     : options.reports;
 }
 
@@ -448,9 +454,10 @@ export async function createReportDataSurfaceDefinition(
 async function dataSurfaceCatalog(
   options: ReportDataSurfaceToolsOptions,
   run: PrincipalRun,
+  context: DataSurfaceCatalogContext,
 ): Promise<readonly DataSurfaceDefinition[]> {
   return Promise.all(
-    (await configuredReports(options, run)).map((definition) =>
+    (await configuredReports(options, run, context)).map((definition) =>
       createReportDataSurfaceDefinition(
         definition,
         run,
@@ -504,7 +511,8 @@ export function createReportDataSurfaceTools(
 ): PrincipalTool[] {
   const generic = createDataSurfaceTools({
     ...options.dataSurface,
-    surfaces: (run) => dataSurfaceCatalog(options, run),
+    // Forward the action context so a per-action report catalog works.
+    surfaces: (run, context) => dataSurfaceCatalog(options, run, context),
   });
 
   const query = aiTool(
