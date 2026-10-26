@@ -154,6 +154,42 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - Required peers (e.g. `users` requires `profiles`) documented in `AGENTS.md`
 - **`publishConfig.registry`** always `https://registry.npmjs.org` for published packages, with `access: "public"`
 
+### Copied resource exports
+
+The packed-export verifier distinguishes executable exports from authored files
+copied by a scaffold. A package may explicitly declare copied directory exports:
+
+```json
+{
+  "exports": { ".": "./index.js", "./template/*": "./template/*" },
+  "smrt": { "resourceExports": ["./template/*"] }
+}
+```
+
+Each declaration must be a unique non-root directory pattern with one terminal
+`*` and an identical, unconditioned export target. Directory segments start with
+an ASCII letter, digit, `_` or `-`, followed by those characters or `.`.
+Root/global patterns, traversal, conditional targets and unknown export keys
+are rejected. The declared directory must contain files in the actual tarball;
+a directory entry alone is insufficient. Metadata is read from packed
+`package.json`, never inferred from package names or file extensions.
+
+Resource exports retain packaged-presence checks but do not enter the runtime
+JavaScript/Svelte analysis merely because a copied file has a code extension.
+This allows unrendered scaffold placeholders without parsing or executing
+template configuration. Runtime roots, other exports (including wildcards),
+and runtime imports into resource directories retain all normal checks. A
+runtime entry reaching Svelte still requires an effective `svelte` condition.
+The declaration does not change Node's exports map or scaffold copy behavior.
+
+`node --test scripts/verify-template-packed-exports.test.mjs` creates both real
+template tarballs with normal `pnpm pack` hooks and verifies them through the
+root wrapper. Complete publish validation uses
+`node scripts/validate-publish-packages.js` for every shard, then
+`node scripts/verify-publish-artifacts.mjs <output-directory>` to check exact
+publish membership, versions and digests. This covers all publishable packages,
+including those without a convenience `verify:pack` script.
+
 ---
 
 ## 3. Build configuration

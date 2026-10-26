@@ -43,6 +43,7 @@
         "!src/manifest/test-manifest.json",
         "!src/manifest/test-manifest-stub.ts",
         "!src/lib/types/smrt-generated/**",
+        "!src/types/virtual-modules.d.ts",
         "scripts/generate-manifest.js",
         "scripts/generate-smrt-types.js",
         "AGENTS.md",
@@ -90,6 +91,7 @@
         "src/**",
         "!src/manifest/test-manifest.json",
         "!src/manifest/test-manifest-stub.ts",
+        "!src/types/virtual-modules.d.ts",
         "package.json",
         "tsconfig*.json",
         "vite.config.ts",
@@ -103,7 +105,8 @@
         "dist/**",
         ".next/**",
         "docs/**",
-        "tsconfig.*.tsbuildinfo"
+        "tsconfig.*.tsbuildinfo",
+        "src/types/virtual-modules.d.ts"
       ],
       "cache": true
     },
@@ -143,6 +146,7 @@
         "!src/manifest/static-manifest.json",
         "!src/manifest/smrt-knowledge.json",
         "!src/**/smrt-generated/**",
+        "!src/types/virtual-modules.d.ts",
         "!src/manifest/test-manifest.json",
         "!src/manifest/test-manifest-stub.ts",
         "!dist/**",
@@ -209,6 +213,7 @@
         "!src/manifest/static-manifest.json",
         "!src/manifest/smrt-knowledge.json",
         "!src/**/smrt-generated/**",
+        "!src/types/virtual-modules.d.ts",
         "!src/manifest/test-manifest.json",
         "!src/manifest/test-manifest-stub.ts",
         "!dist/**",

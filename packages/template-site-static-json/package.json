@@ -8,6 +8,9 @@
     ".": "./index.js",
     "./template/*": "./template/*"
   },
+  "smrt": {
+    "resourceExports": ["./template/*"]
+  },
   "files": [
     "CLAUDE.md",
     "README.md",

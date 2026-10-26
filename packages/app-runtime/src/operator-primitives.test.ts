@@ -134,7 +134,10 @@ describe('operation lock', () => {
         await withOperationLock(process.argv[1], 'race', () => new Promise((r) => setTimeout(r, 1500)));
         process.stdout.write('won');
       } catch (error) {
-        process.stdout.write(error.message.includes('Another application operation is active') ? 'lost' : 'error:' + error.message);
+        // Exclusive creation can be observed before its owner record is written.
+        const denied = error.message.includes('Another application operation is active')
+          || error.message === 'An application operation lock exists but cannot be verified; inspect the private state directory.';
+        process.stdout.write(denied ? 'lost' : 'error:' + error.message);
       }`;
     const runs = Array.from({ length: 4 }, () => {
       const child = spawn(

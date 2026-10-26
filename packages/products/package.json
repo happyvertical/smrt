@@ -29,10 +29,12 @@
     },
     "./components": {
       "types": "./dist/lib/components.d.ts",
+      "svelte": "./dist/lib/components.js",
       "default": "./dist/lib/components.js"
     },
     "./stores": {
       "types": "./dist/lib/stores.d.ts",
+      "svelte": "./dist/lib/stores.js",
       "default": "./dist/lib/stores.js"
     },
     "./stores/product-collection": {

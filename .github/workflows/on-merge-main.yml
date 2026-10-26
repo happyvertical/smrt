@@ -38,22 +38,53 @@ permissions:
 
 jobs:
   queue-idle:
-    name: Require Idle Merge Queue
+    name: Reserve Release Snapshot
+    if: github.ref == 'refs/heads/main'
+    environment: release
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     permissions:
       actions: read
       contents: read
+    outputs:
+      snapshot_sha: ${{ steps.window.outputs.snapshot_sha || github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Generate admission controller token
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        id: controller-token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Close admissions and freeze the drained snapshot
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        id: window
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.controller-token.outputs.token }}
+          CI_MERGE_QUEUE_ENABLED: ${{ vars.CI_MERGE_QUEUE_ENABLED }}
+        run: node scripts/release-admission.mjs close --timeout-minutes 90 --drain-minutes 30
 
       - name: Defer release while merge groups are active
+        if: vars.CI_RELEASE_WINDOW_ENABLED != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/check-merge-queue-idle.mjs
 
   docs-scope:
     name: Detect Documentation Deployment Scope
+    needs: queue-idle
     runs-on: ubuntu-latest
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
@@ -61,6 +92,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.queue-idle.outputs.snapshot_sha }}
           fetch-depth: 0
 
       - name: Select latest release tag
@@ -82,7 +114,7 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           base: ${{ steps.release-base.outputs.ref }}
-          ref: ${{ github.sha }}
+          ref: ${{ needs.queue-idle.outputs.snapshot_sha }}
           filters: |
             docs:
               - 'docs/**'
@@ -125,6 +157,7 @@ jobs:
       (vars.CI_MERGE_QUEUE_ENABLED == 'true' || needs.build.result == 'success')
     uses: ./.github/workflows/publish.yml
     with:
+      checkout_ref: ${{ needs.queue-idle.outputs.snapshot_sha }}
       deploy-docs: >-
         ${{
           (github.event_name == 'workflow_dispatch' && !inputs.skip-docs) ||

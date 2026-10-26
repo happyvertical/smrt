@@ -409,19 +409,17 @@ jobs:
 
   workbench-browser:
     name: Workbench Consumer and Browser
-    # In affected mode, let the core and package shard matrices consume the
-    # fleet first. This browser lane then adds one runner without widening the
-    # shard burst. Full mode still starts after its required build. The `if:`
-    # below deliberately accepts a skipped affected-package-tests, which an
-    # upstream affected-test-scope failure produces.
-    needs: [affected-scope, affected-package-tests, build]
+    # This lane builds its own fixture and does not consume package-test output.
+    # Hosted runner queueing was 2–3 seconds in the #4306 baseline; serializing
+    # it after package tests added browser validation to the critical path.
+    # Full mode still waits for the build that seeds its shared build cache.
+    needs: [affected-scope, build]
     if: >-
       always() &&
       (
         (inputs.mode == 'affected' &&
-        needs.affected-scope.outputs.workbench == 'true' &&
-        (needs.affected-package-tests.result == 'success' ||
-        needs.affected-package-tests.result == 'skipped')) ||
+        needs.affected-scope.result == 'success' &&
+        needs.affected-scope.outputs.workbench == 'true') ||
         (inputs.mode == 'full' && needs.build.result == 'success')
       )
     runs-on: ubuntu-latest

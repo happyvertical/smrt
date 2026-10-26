@@ -40,6 +40,7 @@
     },
     "./workbench": {
       "types": "./dist/workbench.d.ts",
+      "svelte": "./dist/workbench.js",
       "import": "./dist/workbench.js"
     }
   },

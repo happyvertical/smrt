@@ -432,6 +432,53 @@ jobs:
         if: success() || failure()
         run: node scripts/check-audit-policy.mjs
 
+  ci-control-plane:
+    name: CI Control Plane Regression
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout validated revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      # Root script tests exercise selectors, receipts and workflow contracts.
+      # The production-manifest regression also loads core's built dependencies.
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build manifest-regression prerequisites
+        run: pnpm turbo run build --filter='@happyvertical/smrt-core^...'
+
+      # Record proposed coverage before using it to narrow any existing gate.
+      # Unknown inputs remain full validation in the planner and current lanes.
+      - name: Record validation impact inventory
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+        run: node scripts/ci-impact.mjs --base "$BASE_SHA" --head "$(git rev-parse HEAD)" --output ci-impact.json
+
+      - name: Upload validation impact inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: validation-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-impact.json
+          if-no-files-found: error
+
+      - name: Run CI control-plane regressions
+        run: pnpm test:ci-scripts
+
   test:
     name: Validate Changes
     if: >-
@@ -622,6 +669,7 @@ jobs:
       - secret-scan
       - check-standards
       - dependency-audit
+      - ci-control-plane
       - test
       - publish-dry-run
       - visual-scope
@@ -644,6 +692,7 @@ jobs:
           SECRET_SCAN: ${{ needs.secret-scan.result }}
           CHECK_STANDARDS: ${{ needs.check-standards.result }}
           DEPENDENCY_AUDIT: ${{ needs.dependency-audit.result }}
+          CI_CONTROL_PLANE: ${{ needs.ci-control-plane.result }}
           TEST_SUITE: ${{ needs.test.result }}
           PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
           VISUAL_SCOPE: ${{ needs.visual-scope.result }}
@@ -658,7 +707,7 @@ jobs:
           for result in \
             "$VALIDATE_COMMITS" "$VALIDATE_WORKFLOWS" "$CHECK_SDK" \
             "$SECRET_SCAN" "$CHECK_STANDARDS" "$DEPENDENCY_AUDIT" \
-            "$TEST_SUITE"; do
+            "$CI_CONTROL_PLANE" "$TEST_SUITE"; do
             if [ "$result" != success ]; then
               echo "::error::full validation did not succeed"
               exit 1

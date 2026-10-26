@@ -37,6 +37,7 @@
     "./app/*": "./app/*",
     "./commands": {
       "types": "./dist/planner/commands/index.d.ts",
+      "svelte": "./dist/planner/commands/index.js",
       "default": "./dist/planner/commands/index.js"
     },
     "./package.json": "./package.json"
