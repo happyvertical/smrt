@@ -147,9 +147,10 @@ export function workbookPhotoIntakeHandlers(input: {
   ) =>
     bound(context, async (service) => {
       await service.authorizePhotoIntake(input.request);
-      const rows = await service.listWorkbookPhotoIntakes(input.request);
-      if (!rows.some((r) => r.itemId === context.itemId))
-        throw new Error('Photo receipt unavailable');
+      await service.getWorkbookPhotoIntakeByItem({
+        ...input.request,
+        itemId: context.itemId,
+      });
     });
   return [
     {

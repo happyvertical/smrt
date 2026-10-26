@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAssetRuntime } from '@happyvertical/smrt-assets';
+import type { HandlerContext } from '@happyvertical/smrt-ingestion/execution';
 import { IngestionService } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it, vi } from 'vitest';
@@ -24,6 +25,7 @@ import {
 import {
   WorkbookContextRevisionCollection,
   WorkbookPhotoDecisionCollection,
+  WorkbookPhotoIntakeCollection,
 } from '../workbook-photo-models.js';
 import {
   preservePhotoProposal,
@@ -92,6 +94,141 @@ export function photoIntakeTests(
       },
     };
   }
+  it('authorizes an exact durable receipt beyond the inbox window without weakening ownership or privacy', async () => {
+    const f = await fixture();
+    try {
+      await f.as(f.own, async () => {
+        if (!f.db.transaction)
+          throw new Error('Transactional fixture required');
+        await f.db.transaction(async (db) => {
+          const rows = await WorkbookPhotoIntakeCollection.create({ db });
+          for (let index = 0; index < 1000; index++)
+            await rows.create({
+              tenantId: f.own.tenantId,
+              learnerId: f.own.learnerId,
+              actorUserId: f.own.actorUserId,
+              itemId: `older-${index}`,
+              contentDigest: 'a'.repeat(64),
+              createdAt: new Date('2000-01-01T00:00:00Z'),
+            });
+        });
+      });
+      const target = await f.receive('beyond-inbox-window');
+      const context: HandlerContext = {
+        db: f.db,
+        scope: {
+          tenantId: f.own.tenantId,
+          actorId: f.own.actorUserId,
+          confidentialScopeId: f.own.learnerId,
+        },
+        itemId: target.itemId,
+        policy: { requireReview: true } as HandlerContext['policy'],
+        assertTarget: async () => {},
+      };
+      const handler = workbookPhotoIntakeHandlers({
+        workbooks: f.service,
+        request: f.own,
+      })[0];
+      const args = JSON.parse(
+        JSON.stringify({
+          identification: f.identification,
+          confidence: 'confident',
+          identityEvidence: ['Arithmetic', 'Edition1'],
+          lessonEvidence: '',
+        }),
+      );
+      await f.as(f.own, async () => {
+        const listed = await f.service.listWorkbookPhotoIntakes(f.own);
+        expect(listed).toHaveLength(1000);
+        expect(listed.some((row) => row.id === target.id)).toBe(false);
+        const newest = await f.service.listWorkbookPhotoIntakes(f.own, {
+          newestFirst: true,
+        });
+        expect(newest).toHaveLength(1000);
+        expect(newest[0].id).toBe(target.id);
+        await expect(handler.validate(args, context)).resolves.toEqual({
+          ok: true,
+        });
+        expect(
+          (
+            await f.service.getWorkbookPhotoIntakeByItem({
+              ...f.own,
+              itemId: target.itemId,
+            })
+          ).id,
+        ).toBe(target.id);
+        await expect(handler.preview(args, context)).resolves.toMatchObject({
+          display: { gradeApplied: false },
+        });
+        await expect(
+          handler.discovery!.candidates!('', context, { limit: 10 }),
+        ).resolves.toMatchObject({ items: [] });
+        await expect(
+          f.service.getWorkbookPhotoIntakeByItem({
+            ...f.own,
+            itemId: 'missing-item',
+          }),
+        ).rejects.toThrow();
+        await expect(
+          f.service.getWorkbookPhotoIntakeByItem({
+            ...f.own,
+            learnerId: String(f.sibling.id),
+            itemId: target.itemId,
+          }),
+        ).rejects.toThrow();
+        await expect(
+          f.service.getWorkbookPhotoIntakeByItem({
+            ...f.own,
+            learnerId: String(f.foreign.id),
+            itemId: target.itemId,
+          }),
+        ).rejects.toThrow();
+      });
+      await f.as({ ...f.own, tenantId: f.foreign.tenantId }, () =>
+        expect(
+          f.service.getWorkbookPhotoIntakeByItem({
+            ...f.own,
+            itemId: target.itemId,
+          }),
+        ).rejects.toThrow(),
+      );
+      const hidden = await f.as(f.parent, () =>
+        f.service.retainWorkbookPhotoIntake({
+          ...f.parent,
+          itemId: 'guardian-hidden',
+          pages: f.pages,
+        }),
+      );
+      await f.as(f.own, () =>
+        expect(
+          handler.validate(args, { ...context, itemId: hidden.itemId }),
+        ).rejects.toThrow(),
+      );
+      const parentHandler = workbookPhotoIntakeHandlers({
+        workbooks: f.service,
+        request: f.parent,
+      })[0];
+      const parentContext = {
+        ...context,
+        scope: { ...context.scope, actorId: f.parent.actorUserId },
+      };
+      await f.as(f.parent, () =>
+        expect(parentHandler.validate(args, parentContext)).resolves.toEqual({
+          ok: true,
+        }),
+      );
+      await f.db.query(
+        'UPDATE profile_relationships SET to_profile_id=? WHERE id=?',
+        [String(f.bob.profile.id), String(f.relationship.id)],
+      );
+      await f.as(f.parent, () =>
+        expect(parentHandler.validate(args, parentContext)).rejects.toThrow(),
+      );
+    } finally {
+      await f.finish();
+    }
+  }, 60000);
+
   it('authorizes before intake and retains private originals without an activity', async () => {
     const f = await fixture();
     try {

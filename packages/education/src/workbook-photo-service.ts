@@ -307,8 +307,32 @@ export class WorkbookPhotoService extends WorkbookService {
         })),
     };
   }
+  /** Exact receipt lookup for processing/retry; inbox pagination grants no authority. */
+  async getWorkbookPhotoIntakeByItem(
+    request: LearnerRequest & { itemId: string },
+  ): Promise<WorkbookPhotoIntakeView> {
+    await this.requireActor(request, 'education.learner.read');
+    key(request.itemId);
+    const row = await (
+      await WorkbookPhotoIntakeCollection.create({ db: this.db })
+    ).get(
+      {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        itemId: request.itemId,
+      },
+      { cache: false },
+    );
+    if (!row) throw new LearnerAuthorizationError();
+    // Reuse the full current actor and private-origin/release visibility boundary.
+    return this.getWorkbookPhotoIntake({
+      ...request,
+      intakeId: String(row.id),
+    });
+  }
   async listWorkbookPhotoIntakes(
     request: LearnerRequest,
+    options: { newestFirst?: boolean } = {},
   ): Promise<WorkbookPhotoIntakeView[]> {
     await this.requireActor(request, 'education.learner.read');
     const rows = await (
@@ -316,7 +340,7 @@ export class WorkbookPhotoService extends WorkbookService {
     ).list({
       where: { tenantId: request.tenantId, learnerId: request.learnerId },
       limit: 1000,
-      orderBy: 'createdAt',
+      orderBy: options.newestFirst === true ? 'createdAt DESC' : 'createdAt',
     });
     const visible: WorkbookPhotoIntakeView[] = [];
     for (const row of rows) {

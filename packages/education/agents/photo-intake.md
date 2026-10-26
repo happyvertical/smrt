@@ -160,3 +160,17 @@ not invented IDs or claims about what is printed on the new photograph.
 title/edition may match retained publisher provenance without publisher/ISBN
 being reprinted. Conflicting identity, duplicate candidates and title-only
 matching remain pending; malformed model output is never repaired automatically.
+
+## Exact receipt authorization
+
+Processing and retries resolve `context.itemId` through the service-owned
+`getWorkbookPhotoIntakeByItem` lookup, scoped to the current tenant and learner
+on the supplied executor. It delegates to the same current actor and private
+source/release checks as the intake-ID getter. The inbox list remains capped at
+1,000 rows for display; that pagination window is never an authorization or
+lifetime receipt limit.
+
+Hosts may opt into `listWorkbookPhotoIntakes(request, { newestFirst: true })`
+for a current inbox. Default ordering remains unchanged and both orders keep the
+1,000-row display bound and the same per-receipt visibility checks. Exact selected
+receipt reads remain independent of either display window.
