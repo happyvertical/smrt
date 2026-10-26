@@ -52,3 +52,12 @@ fail before host authorization. Nested workbook guardian review asserts catalog
 and learner callbacks share the same active transaction. A real PostgreSQL plus
 SessionService heartbeat regression belongs to the host integration lane; synthetic
 SQLite affinity alone is not proof that a pooled session lock can never deadlock.
+
+Preservation regression uses actual public IngestionService generation with an
+injected synthetic generator and actual WorkbookService persistence. It proves
+the raw stale-snapshot guard still rejects after grading while preservation skips
+the imported revision, allows a genuinely new provisional reanalysis, and keeps
+review/release/correction history and child feedback gates intact after public
+receipt expiry. Legacy stale/unavailable scratch is retained; novel stale analysis
+is not imported; unexpected database errors propagate. This is service-integrity
+evidence, not live-provider accuracy evidence.

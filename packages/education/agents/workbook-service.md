@@ -131,6 +131,34 @@ error/correct counts. Descriptive cues cite actual evidence: needs practice, imp
 on this item, needs a fresh independent check, not enough evidence. No mastery
 percentage, generic score comparison, hidden threshold or predictive label is used.
 
+## Preserved processing status and retention
+
+`getWorkbookPreservationState` authorizes exact actor/learner/activity/submission
+and returns only the intake ID plus retained assessment/analysis IDs and the
+interpretation revision. It contains no questions, scores, feedback or hidden
+assessment payloads. New AI provenance records `analysisRevision` from the
+completed interpretation snapshot, separately from its extraction-source pin.
+
+`preserveWorkbookIntakeAnalysis` checks this education-owned state and the public
+content-free ingestion item revision before requesting raw completed analysis.
+An exact already-preserved revision returns `retained` immediately. Guardian
+review, release, corrections and receipt expiry therefore do not force a stale
+proposal reread or prevent durable education history from loading. The public
+ingestion stale-snapshot guard remains unchanged and still rejects the old raw
+snapshot after guardian grading. A genuinely new valid analysis can append a new
+provisional revision; a novel stale analysis returns `needs_review/stale_analysis`
+and creates no mark. Legacy retained rows without interpretation revision remain
+readable when scratch is stale/unavailable; an authorized current snapshot whose
+attempt ID is already retained is also skipped before retry reconstruction.
+
+Only the exact public scratch `Intake unavailable` response is translated to
+retained history, or `unavailable` for a capture with no retained assessment,
+after independent education authorization. Missing/pending current analysis may
+return pending or retained. Unexpected configuration, integrity and database
+failures still throw. This does not widen scratch access: no stale or unavailable
+raw proposal is read, imported or used as grade authority. Hosts must also render
+the authorized education timeline independently of optional scratch processing.
+
 ## Validation and limits
 
 `src/__tests__/workbook-workflows.ts` is the shared SQLite/PostgreSQL contract suite;

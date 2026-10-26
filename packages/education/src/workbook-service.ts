@@ -28,6 +28,7 @@ import {
   type WorkbookAssistance,
   type WorkbookAttemptView,
   type WorkbookConceptSummary,
+  type WorkbookPreservationState,
   type WorkbookRevisionView,
   type WorkbookTimeline,
   workbookAggregateFeedback,
@@ -541,6 +542,32 @@ export class WorkbookService extends SubmissionService {
     if (row.enrollmentId !== request.enrollmentId)
       throw new LearnerAuthorizationError();
     return this.attemptView(request, row, attempt);
+  }
+  /** Authorized content-free preservation status; never exposes withheld marks. */
+  async getWorkbookPreservationState(
+    request: AttemptRequest,
+  ): Promise<WorkbookPreservationState> {
+    const { attempt, row } = await this.attempt(request);
+    const submission = await super.getSubmission({
+      ...request,
+      enrollmentId: row.enrollmentId,
+    });
+    const revisions = await this.revisions(request, String(attempt.id));
+    return {
+      activityId: attempt.activityId,
+      submissionId: attempt.submissionId,
+      intakeItemId: submission.intakeItemId,
+      retainedAnalyses: revisions
+        .filter((r) => r.kind === 'ai')
+        .map((r) => {
+          const provenance = revisionView(r).assessment.provenance;
+          return {
+            assessmentRevisionId: String(r.id),
+            analysisAttemptId: provenance.analysisId,
+            analysisRevision: provenance.analysisRevision ?? null,
+          };
+        }),
+    };
   }
   /** Public data-only digest map used to preserve ingestion source anchors. */
   async getWorkbookSourceAnchors(

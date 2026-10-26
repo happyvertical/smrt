@@ -3,6 +3,7 @@ import {
   type ExtractionAdapter,
   type ExtractionLimits,
   extractAnalysis,
+  GenerationSnapshotStaleError,
   type IngestionService,
 } from '@happyvertical/smrt-ingestion/server';
 
@@ -772,14 +773,21 @@ function educationEvidenceGrounding(
 
 export type WorkbookPreservationResult =
   | { kind: 'pending' }
+  | { kind: 'unavailable' }
+  | { kind: 'retained'; revisionId: string }
   | { kind: 'preserved'; revisionId: string }
   | {
       kind: 'needs_review';
-      reason: 'invalid_assessment' | 'ungrounded_source' | 'ambiguous_proposal';
+      reason:
+        | 'invalid_assessment'
+        | 'ungrounded_source'
+        | 'ambiguous_proposal'
+        | 'stale_analysis';
     };
 
 /** Preserve validated question evidence; invalid model output is reviewable status,
- * never an educational mark or a generic server error. Auth/integrity/DB errors throw.
+ * never an educational mark or a generic server error. Education authorization,
+ * integrity and DB errors throw; unavailable scratch never grants raw access.
  */
 export async function preserveWorkbookIntakeAnalysis(input: {
   ingestion: IngestionService;
@@ -801,12 +809,48 @@ export async function preserveWorkbookIntakeAnalysis(input: {
   )
     throw new Error('Workbook intake binding unavailable');
   const itemId = attempt.submission.intakeItemId;
+  const state = await workbooks.getWorkbookPreservationState({
+    ...request,
+    activityId,
+    submissionId,
+  });
+  const latestRetained = state.retainedAnalyses.at(-1);
+  const legacyRetained = state.retainedAnalyses.every(
+    (entry) => entry.analysisRevision === null,
+  )
+    ? latestRetained
+    : undefined;
+  let currentRevision: number;
+  try {
+    currentRevision = (await ingestion.getItem(itemId)).analysisRevision;
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Intake unavailable')
+      return latestRetained
+        ? { kind: 'retained', revisionId: latestRetained.assessmentRevisionId }
+        : { kind: 'unavailable' };
+    throw error;
+  }
+  const exact = state.retainedAnalyses.find(
+    (entry) => entry.analysisRevision === currentRevision,
+  );
+  if (exact)
+    return { kind: 'retained', revisionId: exact.assessmentRevisionId };
   let snapshot: Awaited<ReturnType<IngestionService['getCompletedAnalysis']>>;
   try {
     snapshot = await ingestion.getCompletedAnalysis(itemId);
   } catch (error) {
+    if (error instanceof GenerationSnapshotStaleError)
+      return legacyRetained
+        ? { kind: 'retained', revisionId: legacyRetained.assessmentRevisionId }
+        : { kind: 'needs_review', reason: 'stale_analysis' };
+    if (error instanceof Error && error.message === 'Intake unavailable')
+      return latestRetained
+        ? { kind: 'retained', revisionId: latestRetained.assessmentRevisionId }
+        : { kind: 'unavailable' };
     if (error instanceof Error && error.message === 'Analysis unavailable')
-      return { kind: 'pending' };
+      return latestRetained
+        ? { kind: 'retained', revisionId: latestRetained.assessmentRevisionId }
+        : { kind: 'pending' };
     throw error;
   }
   if (
@@ -814,6 +858,14 @@ export async function preserveWorkbookIntakeAnalysis(input: {
     !['completed', 'partial'].includes(snapshot.result.status)
   )
     return { kind: 'pending' };
+  const importedAttempt = state.retainedAnalyses.find(
+    (entry) => entry.analysisAttemptId === snapshot.attemptId,
+  );
+  if (importedAttempt)
+    return {
+      kind: 'retained',
+      revisionId: importedAttempt.assessmentRevisionId,
+    };
   const sources = await workbooks.getWorkbookSourceAnchors({
     ...request,
     activityId,
@@ -962,6 +1014,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         rubricVersion: generation.provenance.promptVersion,
         inputHash: snapshot.inputDigest,
         analysisId: snapshot.attemptId,
+        analysisRevision: snapshot.revision,
         proposalDigest: workbookProposalDigest(suggestion.args),
         providerVersion: generation.provenance.generative.version,
         sourceAnalysis: generation.source,

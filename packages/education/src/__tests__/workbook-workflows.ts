@@ -2,7 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAssetRuntime } from '@happyvertical/smrt-assets';
-import { IngestionService } from '@happyvertical/smrt-ingestion/server';
+import {
+  GenerationSnapshotStaleError,
+  IngestionService,
+} from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it } from 'vitest';
 import {
@@ -845,8 +848,15 @@ export function workbookContractTests(
         })),
       };
       let attemptId = 'generation-one';
+      const processingRevision = () =>
+        attemptId === 'generation-one'
+          ? 2
+          : attemptId === 'generation-two'
+            ? 4
+            : 6;
       const snapshot = () => ({
         attemptId,
+        revision: processingRevision(),
         inputDigest: 'a'.repeat(64),
         configuration: { stage: 'interpret' },
         evidence: [
@@ -879,6 +889,7 @@ export function workbookContractTests(
       });
       let state: 'completed' | 'pending' | 'failed' = 'pending';
       const ingestion = {
+        getItem: async () => ({ analysisRevision: processingRevision() }),
         getCompletedAnalysis: async () => {
           if (state === 'pending') throw new Error('Analysis unavailable');
           const value = snapshot();
@@ -968,6 +979,11 @@ export function workbookContractTests(
         learnerId: String(f.foreign.id),
       };
       for (const actor of [sibling, foreign]) {
+        await expect(
+          f.as(actor, () =>
+            f.service.getWorkbookPreservationState({ ...f.request, ...actor }),
+          ),
+        ).rejects.toThrow('authorized');
         await expect(
           f.as(actor, () =>
             f.service.getWorkbookTimeline({
@@ -1122,9 +1138,13 @@ export function workbookContractTests(
       };
       let mediaType = 'image/png';
       let id = 'bad-generation';
+      const currentRevision = () =>
+        id === 'bad-generation' ? 2 : id === 'valid-generation' ? 4 : 6;
       const ingestion = {
+        getItem: async () => ({ analysisRevision: currentRevision() }),
         getCompletedAnalysis: async () => ({
           attemptId: id,
+          revision: currentRevision(),
           inputDigest: 'b'.repeat(64),
           configuration: {
             stage: 'interpret',
@@ -1276,7 +1296,7 @@ export function workbookContractTests(
       await f.close();
     }
   });
-  it('accepts evidence-ID-only workbook JSON through public generic ingestion validation', async () => {
+  it('validates evidence-only wire JSON and keeps public ingestion workbook history after review and expiry', async () => {
     const f = await fixture();
     try {
       await f.as(f.parent, async () => {
@@ -1333,11 +1353,11 @@ export function workbookContractTests(
             acceptAfter: new Date(Date.now() - 3600000),
           },
           limits: {
-            maxBytes: 4096,
+            maxBytes: 100000,
             maxParts: 10,
             maxAttempts: 3,
             leaseMs: 10000,
-            maxOutputBytes: 4096,
+            maxOutputBytes: 100000,
           },
         });
         if (!('itemId' in receipt)) throw new Error('Missing receipt');
@@ -1365,6 +1385,50 @@ export function workbookContractTests(
         });
         const ingestion = new IngestionService({
           ...options,
+          proposals: {
+            version: 'retention-test',
+            promptVersion: 'retention-test',
+            generator: {
+              identity: { provider: 'fixture', model: 'fixture', version: '1' },
+              generate: async (input) => ({
+                completion: 'complete',
+                output: {
+                  outcome: 'proposals',
+                  suggestions: [
+                    {
+                      handlerId,
+                      handlerVersion: '1',
+                      args: {
+                        ...args,
+                        submissionId: input.offered.find(
+                          (entry) => entry.handler.id === handlerId,
+                        )?.candidates[0].id,
+                      },
+                      evidence: [
+                        {
+                          evidenceId: input.evidence[0].evidenceId,
+                          location: { kind: 'source' },
+                        },
+                      ],
+                      alternatives: [],
+                      missingFields: [],
+                      explanation: 'Synthetic evidence',
+                    },
+                  ],
+                  splits: [],
+                },
+              }),
+            },
+            limits: {
+              maxHandlers: 10,
+              maxCandidates: 10,
+              maxSuggestions: 10,
+              maxInputBytes: 100000,
+              maxOutputBytes: 100000,
+              maxQueryLength: 1000,
+              timeoutMs: 10000,
+            },
+          },
           execution: {
             handlers,
             authorize: async () => ({
@@ -1376,6 +1440,7 @@ export function workbookContractTests(
               policy: [
                 {
                   version: 'app',
+                  providers: ['fixture'],
                   handlers: [handlerId],
                   operations: [operation],
                   reviewers: [f.parent.actorUserId],
@@ -1463,6 +1528,149 @@ export function workbookContractTests(
         const extraPage = structuredClone(args);
         extraPage.questions[0].anchors[0].page = 0;
         await expect(preview('no-page-selector', extraPage)).rejects.toThrow();
+        let generationNumber = 0;
+        const generate = async () => {
+          generationNumber++;
+          const extraction = await ingestion.analyze(
+            receipt.itemId,
+            { stage: 'extract', extraction: { configurationRevision: '1' } },
+            `retention-extraction-${generationNumber}`,
+          );
+          const extractionLease = await ingestion.claimAnalysis(
+            receipt.itemId,
+            extraction.revision,
+            'worker',
+          );
+          if (!extractionLease) throw new Error('Missing extraction lease');
+          await ingestion.completeAnalysis(extractionLease, {
+            status: 'completed',
+            provider: 'smrt-ingestion-extraction',
+            model: 'none',
+            version: '1',
+            usage: {},
+            output: {
+              configurationRevision: '1',
+              results: [
+                {
+                  evidence,
+                  configurationRevision: '1',
+                  status: 'complete',
+                  segments: [
+                    {
+                      text: '2 + 3 = 5',
+                      location: { kind: 'source' },
+                      boxes: null,
+                    },
+                  ],
+                  capabilities: [{ location: 'source', boxes: false }],
+                },
+              ],
+            },
+          });
+          const generationConfig = await ingestion.prepareGeneration(
+            receipt.itemId,
+            extractionLease.attemptId,
+          );
+          const generation = await ingestion.analyze(
+            receipt.itemId,
+            generationConfig,
+            `retention-generation-${generationNumber}`,
+          );
+          const generationLease = await ingestion.claimAnalysis(
+            receipt.itemId,
+            generation.revision,
+            'worker',
+          );
+          if (!generationLease) throw new Error('Missing generation lease');
+          await ingestion.generateProposals(generationLease);
+          return {
+            revision: generation.revision,
+            attemptId: generationLease.attemptId,
+          };
+        };
+        const generation = await generate();
+        const preservation = {
+          ingestion,
+          workbooks: f.service,
+          request,
+          activityId: activity.id,
+          submissionId: submission.id,
+        };
+        const imported = await preserveWorkbookIntakeAnalysis(preservation);
+        expect(imported.kind).toBe('preserved');
+        if (imported.kind !== 'preserved')
+          throw new Error('Expected preserved analysis');
+        const saved = await f.service.getWorkbookPreservationState({
+          ...request,
+          activityId: activity.id,
+          submissionId: submission.id,
+        });
+        expect(saved.retainedAnalyses[0]).toMatchObject({
+          analysisRevision: generation.revision,
+          analysisAttemptId: generation.attemptId,
+        });
+        const reviewed = await f.service.reviewWorkbookAssessment({
+          ...request,
+          activityId: activity.id,
+          submissionId: submission.id,
+          revisionId: imported.revisionId,
+          expectedHeadId: null,
+          requestKey: 'retention-review',
+        });
+        await expect(
+          ingestion.getCompletedAnalysis(receipt.itemId),
+        ).rejects.toBeInstanceOf(GenerationSnapshotStaleError);
+        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+          'retained',
+        );
+        const withheld = await f.as(f.own, () =>
+          f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+        );
+        expect(withheld.attempts[0].revisions).toHaveLength(0);
+        await f.service.releaseWorkbookFeedback({
+          ...request,
+          activityId: activity.id,
+          submissionId: submission.id,
+          revisionId: reviewed.id,
+          expectedHeadId: reviewed.id,
+          requestKey: 'retention-release',
+        });
+        // A genuinely new interpretation is still imported as provisional.
+        await generate();
+        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+          'preserved',
+        );
+        await f.service.captureWorkbookWork({
+          ...request,
+          activityId: activity.id,
+          requestKey: 'retention-correction',
+          previousSubmissionId: submission.id,
+          pages: [
+            {
+              name: 'correction.png',
+              mimeType: 'image/png',
+              data: Buffer.from('correction'),
+            },
+          ],
+        });
+        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+          'retained',
+        );
+        await ingestion.expire(receipt.itemId);
+        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+          'retained',
+        );
+        const durable = await f.service.getWorkbookTimeline({
+          ...request,
+          activityId: activity.id,
+        });
+        expect(durable.attempts).toHaveLength(2);
+        const child = await f.as(f.own, () =>
+          f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+        );
+        expect(
+          child.attempts.flatMap((a) => a.revisions).map((r) => r.id),
+        ).toEqual([reviewed.id]);
       });
     } finally {
       await f.close();
@@ -1508,6 +1716,82 @@ export function workbookContractTests(
       expect(learnerExecutors.size).toBe(1);
       expect(catalogExecutors.size).toBe(1);
       expect([...catalogExecutors]).toEqual([...learnerExecutors]);
+    } finally {
+      await f.close();
+    }
+  });
+  it('keeps legacy retained history when scratch is stale and rejects novel stale reanalysis', async () => {
+    const f = await fixture();
+    try {
+      const legacy = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...f.request,
+          ...f.own,
+          requestKey: 'legacy',
+          assessment: f.assessment,
+        }),
+      );
+      let mode: 'stale' | 'unavailable' | 'db' = 'stale';
+      let currentRevision = 2;
+      const ingestion = {
+        getItem: async () => ({ analysisRevision: currentRevision }),
+        getCompletedAnalysis: async () => {
+          if (mode === 'stale') throw new GenerationSnapshotStaleError();
+          if (mode === 'unavailable') throw new Error('Intake unavailable');
+          throw new Error('database offline');
+        },
+      } as unknown as Parameters<
+        typeof preserveWorkbookIntakeAnalysis
+      >[0]['ingestion'];
+      const input = {
+        ingestion,
+        workbooks: f.service,
+        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        activityId: f.activity.id,
+        submissionId: f.attempt.submissionId,
+      };
+      expect(
+        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+      ).toEqual({ kind: 'retained', revisionId: legacy.id });
+      mode = 'unavailable';
+      expect(
+        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+      ).toBe('retained');
+      mode = 'db';
+      await expect(
+        f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+      ).rejects.toThrow('database offline');
+      mode = 'stale';
+      currentRevision = 4;
+      await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...f.request,
+          ...f.own,
+          requestKey: 'modern',
+          assessment: {
+            ...f.assessment,
+            provenance: {
+              ...f.assessment.provenance,
+              analysisId: 'modern-attempt',
+              analysisRevision: 2,
+            },
+          },
+        }),
+      );
+      expect(
+        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+      ).toEqual({ kind: 'needs_review', reason: 'stale_analysis' });
+
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookTimeline({
+              ...f.own,
+              activityId: f.activity.id,
+            }),
+          )
+        ).attempts[0].revisions,
+      ).toHaveLength(0);
     } finally {
       await f.close();
     }

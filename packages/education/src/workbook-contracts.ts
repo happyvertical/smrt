@@ -37,6 +37,16 @@ export interface WorkbookQuestion {
   mappingProvenance?: 'proposed' | 'guardian-reviewed' | 'unknown';
   evidenceLimitations?: string[];
 }
+export interface WorkbookPreservationState {
+  activityId: string;
+  submissionId: string;
+  intakeItemId: string | null;
+  retainedAnalyses: {
+    assessmentRevisionId: string;
+    analysisAttemptId: string;
+    analysisRevision: number | null;
+  }[];
+}
 export interface WorkbookAggregate {
   correct: number;
   incorrect: number;
@@ -118,6 +128,8 @@ export interface WorkbookAssessment {
     rubricVersion: string;
     inputHash: string;
     analysisId: string;
+    /** Current interpretation revision, distinct from its extraction-source revision. */
+    analysisRevision?: number;
     /** Digest of validated structured proposal arguments, never model-authored. */
     proposalDigest?: string;
     providerVersion?: string;
@@ -252,6 +264,14 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
     if (!value.provenance[key].trim())
       throw new WorkbookAssessmentValidationError(`Missing ${key}`);
   }
+  if (
+    value.provenance.analysisRevision !== undefined &&
+    (!Number.isSafeInteger(value.provenance.analysisRevision) ||
+      value.provenance.analysisRevision < 1)
+  )
+    throw new WorkbookAssessmentValidationError(
+      'Invalid interpretation revision',
+    );
   if (!/^[a-f0-9]{64}$/.test(value.provenance.inputHash))
     throw new WorkbookAssessmentValidationError('Invalid input hash');
   text(value.vocabulary.namespace, 'concept namespace', 200);
