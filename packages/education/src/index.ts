@@ -216,6 +216,7 @@ export type {
 export {
   SubmissionService,
   SubmissionStorageCleanupError,
+  WorkbookWorkflowRequiredError,
 } from './submission-service.js';
 export type {
   ExternalCompletionReporter,

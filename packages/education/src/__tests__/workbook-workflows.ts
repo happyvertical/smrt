@@ -9,12 +9,15 @@ import {
 } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it } from 'vitest';
+import { GradeCollection, SubmissionCollection } from '../collections.js';
 import {
   captureEducationIntake,
   educationIntakeHandlers,
   educationIntakeTargetResolver,
   preserveWorkbookIntakeAnalysis,
 } from '../ingestion.js';
+import { LearnerService } from '../learner-service.js';
+import { SubmissionService } from '../submission-service.js';
 import {
   WORKBOOK_MATH_VOCABULARY,
   type WorkbookAssessment,
@@ -137,6 +140,305 @@ export function workbookContractTests(
     const environment = await createDb();
     return workbookFixture(environment.db, environment.cleanup);
   };
+  it.each([
+    true,
+    false,
+  ])('keeps workbook authority private across base APIs and rejects legacy forks (review gate %s)', async (reviewRequired) => {
+    const f = await fixture();
+    try {
+      let target = f.attempt;
+      let capture = f.capture;
+      if (!reviewRequired) {
+        await f.as(f.parent, () =>
+          f.service.setWorkbookFeedbackPolicy({
+            ...f.parent,
+            activityId: f.activity.id,
+            expectedPolicyVersion: 1,
+            reviewRequired: false,
+          }),
+        );
+        capture = {
+          ...f.capture,
+          requestKey: 'direct-correction',
+          intakeItemId: 'direct-intake',
+          pages: [{ ...f.capture.pages[0], data: Buffer.from('direct-work') }],
+        };
+        target = await f.as(f.own, () =>
+          f.service.captureWorkbookWork({
+            ...capture,
+            previousSubmissionId: f.attempt.submissionId,
+          }),
+        );
+      }
+      const req = { ...f.request, submissionId: target.submissionId };
+      const [source] = await f.as(f.parent, () =>
+        f.service.getWorkbookSourceAnchors(req),
+      );
+      const assessment = {
+        ...f.assessment,
+        questions: f.assessment.questions.map((q) => ({
+          ...q,
+          anchors: [
+            {
+              ...source,
+              page: 1,
+              rect: [0, 0, 1, 1] as [number, number, number, number],
+            },
+          ],
+        })),
+      };
+      const ai = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...req,
+          ...f.own,
+          requestKey: 'privacy-ai',
+          assessment,
+        }),
+      );
+      const decision = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...req,
+          revisionId: ai.id,
+          expectedHeadId: null,
+          requestKey: 'privacy-review',
+          assessment: { ...assessment, feedback: 'Unreleased guardian detail' },
+        }),
+      );
+      const authorize = ({
+        own,
+        relationshipTypeId,
+      }: Parameters<import('../learner-service.js').LearnerAuthorizer>[0]) =>
+        own || relationshipTypeId === f.guardianType.id;
+      const plain = new SubmissionService(f.db, authorize, () => true, {
+        storage: f.storage,
+      });
+      const learnerOnly = new LearnerService(f.db, authorize, () => true);
+      const scope = { ...f.own, enrollmentId: f.activity.enrollmentId };
+      const beforeSubmissions = await f.as(f.own, async () =>
+        (await SubmissionCollection.create({ db: f.db })).list({
+          where: {
+            tenantId: f.own.tenantId,
+            progressId: target.submission.progressId,
+          },
+        }),
+      );
+      const beforeGrades = await f.as(f.parent, async () =>
+        (await GradeCollection.create({ db: f.db })).list({
+          where: {
+            tenantId: f.parent.tenantId,
+            submissionId: target.submissionId,
+          },
+        }),
+      );
+      for (const service of [plain, f.service]) {
+        const ownView = await f.as(f.own, () =>
+          service.getSubmission({
+            ...scope,
+            submissionId: target.submissionId,
+          }),
+        );
+        expect(ownView.grade).toBeNull();
+        expect(ownView.status).toBe('captured');
+        expect(
+          (
+            await f.as(f.parent, () =>
+              service.getSubmission({
+                ...scope,
+                ...f.parent,
+                submissionId: target.submissionId,
+              }),
+            )
+          ).grade?.feedback,
+        ).toBe('Unreleased guardian detail');
+        await expect(
+          f.as(f.own, () =>
+            service.captureSubmission({
+              ...scope,
+              lessonId: f.activity.lessonId,
+              requestKey: capture.requestKey,
+              pages: capture.pages,
+              intake: {
+                intakeItemId: capture.intakeItemId,
+                kind: 'completed_work',
+                ...(target.submission.previousSubmissionId
+                  ? {
+                      previousSubmissionId:
+                        target.submission.previousSubmissionId,
+                    }
+                  : {}),
+              },
+            }),
+          ),
+        ).rejects.toThrow('Workbook workflow required');
+        await expect(
+          f.as(f.own, () =>
+            service.resubmitSubmission({
+              ...scope,
+              lessonId: f.activity.lessonId,
+              requestKey: 'legacy-fork',
+              pages: capture.pages,
+              intakeItemId: 'legacy-fork',
+              previousSubmissionId: target.submissionId,
+            }),
+          ),
+        ).rejects.toThrow('Workbook workflow required');
+        await expect(
+          f.as(f.own, () =>
+            service.assertNonWorkbookSubmissionScope({
+              ...scope,
+              lessonId: f.activity.lessonId,
+              previousSubmissionId: target.submissionId,
+            }),
+          ),
+        ).rejects.toThrow('Workbook workflow required');
+      }
+      for (const service of [learnerOnly, plain, f.service]) {
+        const progress = (
+          await f.as(f.own, () => service.listProgress(scope))
+        ).find((row) => row.lessonId === f.activity.lessonId)!;
+        expect(progress).toMatchObject({
+          bestScore: null,
+          status: 'submitted',
+          completedAt: null,
+        });
+        const assignment = (
+          await f.as(f.own, () => service.assignmentLessons(scope))
+        ).find((row) => row.lesson.id === f.activity.lessonId)!;
+        expect(assignment.progress).toMatchObject({
+          bestScore: null,
+          status: 'submitted',
+          completedAt: null,
+        });
+        expect(
+          await f.as(f.own, () =>
+            service.startLesson({ ...scope, lessonId: f.activity.lessonId }),
+          ),
+        ).toMatchObject({
+          bestScore: null,
+          status: 'submitted',
+          completedAt: null,
+        });
+        expect(
+          (await f.as(f.own, () => service.nextLessons(scope)))[0].progress,
+        ).toMatchObject({
+          bestScore: null,
+          status: 'submitted',
+          completedAt: null,
+        });
+        expect(
+          (
+            await f.as(f.parent, () =>
+              service.listProgress({ ...scope, ...f.parent }),
+            )
+          )[0],
+        ).toMatchObject({ bestScore: 0, status: 'complete' });
+      }
+      const retry = await f.as(f.own, () =>
+        f.service.captureWorkbookWork({
+          ...capture,
+          ...(target.submission.previousSubmissionId
+            ? { previousSubmissionId: target.submission.previousSubmissionId }
+            : {}),
+        }),
+      );
+      expect(retry.id).toBe(target.id);
+      expect(retry.submission.grade).toBeNull();
+      expect(retry.submission.status).toBe('captured');
+      const afterSubmissions = await f.as(f.own, async () =>
+        (await SubmissionCollection.create({ db: f.db })).list({
+          where: {
+            tenantId: f.own.tenantId,
+            progressId: target.submission.progressId,
+          },
+        }),
+      );
+      const afterGrades = await f.as(f.parent, async () =>
+        (await GradeCollection.create({ db: f.db })).list({
+          where: {
+            tenantId: f.parent.tenantId,
+            submissionId: target.submissionId,
+          },
+        }),
+      );
+      expect(afterSubmissions.map((row) => row.id)).toEqual(
+        beforeSubmissions.map((row) => row.id),
+      );
+      expect(afterGrades.map((row) => row.id)).toEqual(
+        beforeGrades.map((row) => row.id),
+      );
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookTimeline({
+              ...f.own,
+              activityId: f.activity.id,
+            }),
+          )
+        ).attempts
+          .find((attempt) => attempt.id === target.id)!
+          .revisions.some((revision) => revision.id === decision.id),
+      ).toBe(false);
+      const corrected = await f.as(f.own, () =>
+        f.service.captureWorkbookWork({
+          ...f.capture,
+          requestKey: 'proper-correction',
+          intakeItemId: 'proper-correction',
+          pages: [
+            { ...f.capture.pages[0], data: Buffer.from('proper-correction') },
+          ],
+          previousSubmissionId: target.submissionId,
+        }),
+      );
+      expect(corrected.episodeId).toBe(target.episodeId);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it('preserves ordinary non-workbook submission and progress projections', async () => {
+    const f = await fixture();
+    try {
+      const service = new SubmissionService(
+        f.db,
+        ({ own, relationshipTypeId }) =>
+          own || relationshipTypeId === f.guardianType.id,
+        () => true,
+        { storage: f.storage },
+      );
+      const scope = {
+        ...f.own,
+        enrollmentId: f.enrollment.id,
+        lessonId: String(f.lesson.id),
+        requestKey: 'ordinary',
+        pages: f.capture.pages,
+      };
+      const submission = await f.as(f.own, () =>
+        service.captureSubmission(scope),
+      );
+      await f.as(f.parent, () =>
+        service.reviewSubmission({
+          ...f.parent,
+          enrollmentId: f.enrollment.id,
+          submissionId: submission.id,
+          score: 0.5,
+          feedback: 'Ordinary visible feedback',
+        }),
+      );
+      expect(
+        (await f.as(f.own, () => service.captureSubmission(scope))).grade,
+      ).toMatchObject({ score: 0.5, feedback: 'Ordinary visible feedback' });
+      expect(
+        (
+          await f.as(f.own, () =>
+            service.listProgress({ ...f.own, enrollmentId: f.enrollment.id }),
+          )
+        )[0],
+      ).toMatchObject({ bestScore: 0.5, status: 'complete' });
+    } finally {
+      await f.close();
+    }
+  });
+
   it('resolves explicit identity, denies sibling/foreign/learner planning, deduplicates capture and rolls back failed units', async () => {
     const f = await fixture();
     try {

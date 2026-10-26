@@ -161,6 +161,26 @@ failures still throw. This does not widen scratch access: no stale or unavailabl
 raw proposal is read, imported or used as grade authority. Hosts must also render
 the authorized education timeline independently of optional scratch processing.
 
+## Compatibility API privacy boundary
+
+Workbook feedback is projected only from the revision/release workflow. The base
+`SubmissionService` recognizes authoritative `WorkbookActivity` lesson ownership,
+including calls through a plain service instance. Own-learner compatibility views
+withhold Grade and grade-derived status; learner progress projections withhold
+bestScore/completedAt and do not let completion alter next-lesson selection.
+Guardian and ordinary non-workbook projections retain their existing behavior.
+This applies in both feedback policy modes; direct feedback remains provisional
+and does not authorize compatibility Grade disclosure.
+
+Generic capture/resubmission rejects workbook enrollment or lesson scaffolding,
+including idempotent retries. Only the protected exact-activity owning workflow
+can capture workbook work. Hosts must call public
+`assertNonWorkbookSubmissionScope` before legacy intake receipt creation and when
+reading an old legacy binding, using authoritative enrollment, lesson and
+predecessor selectors. `WorkbookWorkflowRequiredError` is a controlled denial.
+The browser's optional workbook flag is never authority. Authenticated original
+asset delivery remains a separate read authorization path.
+
 ## Validation and limits
 
 `src/__tests__/workbook-workflows.ts` is the shared SQLite/PostgreSQL contract suite;

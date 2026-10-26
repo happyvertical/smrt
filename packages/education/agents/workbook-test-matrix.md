@@ -3,7 +3,7 @@
 Design derived from the approved Hearth workbook plan (2026-10-22), learning-record
 contract and WB-001–WB-019 preparation packet (2026-10-23). Feature-class additive
 schema/API change, Refs #4334. Named risk: private learner evidence, authorization,
-concurrency and structured external model output. No breaking Submission/Grade change.
+concurrency and structured external model output. Compatibility workbook captures now require their owning workflow; ordinary non-workbook Submission/Grade behavior is unchanged.
 
 Every row uses current actor-bound service context, exact tenant/learner resources,
 and the same authorization callback executor as persistence. Shared command C:
@@ -61,3 +61,14 @@ review/release/correction history and child feedback gates intact after public
 receipt expiry. Legacy stale/unavailable scratch is retained; novel stale analysis
 is not imported; unexpected database errors propagate. This is service-integrity
 evidence, not live-provider accuracy evidence.
+
+Independent-review privacy regression (WB-PRIVACY-1/2): the shared suite exercises
+plain LearnerService/SubmissionService and WorkbookService after guardian review
+before release, in both policy modes. getSubmission, capture retry, listProgress,
+assignmentLessons, startLesson and nextLessons do not disclose Grade, score or
+grade-derived completion to the own learner. Generic capture/resubmission and
+legacy preflight reject workbook enrollment/lesson/predecessor scopes without
+creating submissions or grades; legitimate owning-workflow retries and corrections
+still work. Guardian projections and ordinary non-workbook captures/retries remain
+unchanged. The app signed-session PostgreSQL lane separately exercises legacy
+host/upload/review routes and asserts no new receipts, submissions or grades.

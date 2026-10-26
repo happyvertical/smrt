@@ -386,24 +386,6 @@ export class WorkbookService extends SubmissionService {
     if (!attempt) throw new LearnerAuthorizationError();
     return { ...found, attempt };
   }
-  override async getSubmission(
-    request: LearnerRequest & { enrollmentId: string; submissionId: string },
-  ) {
-    const submission = await super.getSubmission(request);
-    const learner = await this.requireActor(request, 'education.learner.read');
-    if (learner.userId !== request.actorUserId) return submission;
-    const attempt = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
-    ).get(
-      {
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        submissionId: request.submissionId,
-      },
-      { cache: false },
-    );
-    return attempt ? { ...submission, grade: null } : submission;
-  }
   private async attemptView(
     request: LearnerRequest,
     row: WorkbookActivity,
@@ -463,20 +445,26 @@ export class WorkbookService extends SubmissionService {
         enrollmentId: row.enrollmentId,
         lessonId: row.lessonId,
       };
-      const submission = request.previousSubmissionId
-        ? await service.resubmitSubmission({
-            ...capture,
-            previousSubmissionId: request.previousSubmissionId,
-            intakeItemId:
-              request.intakeItemId ??
-              `workbook:${digest([request.activityId, request.requestKey])}`,
-          })
-        : await service.captureSubmission({
-            ...capture,
-            intake: request.intakeItemId
-              ? { intakeItemId: request.intakeItemId, kind: 'completed_work' }
-              : undefined,
-          });
+      const intakeItemId =
+        request.intakeItemId ??
+        (request.previousSubmissionId
+          ? `workbook:${digest([request.activityId, request.requestKey])}`
+          : undefined);
+      const submission = await service.captureWorkbookSubmission(
+        {
+          ...capture,
+          intake: intakeItemId
+            ? {
+                intakeItemId,
+                kind: 'completed_work',
+                ...(request.previousSubmissionId
+                  ? { previousSubmissionId: request.previousSubmissionId }
+                  : {}),
+              }
+            : undefined,
+        },
+        request.activityId,
+      );
       const prior = await attempts.get(
         { tenantId: request.tenantId, submissionId: submission.id },
         { cache: false },
