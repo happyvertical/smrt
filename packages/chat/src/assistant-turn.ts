@@ -296,10 +296,13 @@ export interface AssistantTurnAuthor {
   tenantId: string;
   threadId?: string | null;
   /**
-   * Maps a server tool invocation to a persisted message, or `null` to keep
-   * it out of the conversation (the default for every invocation). The
-   * message's `toolCallData` tool name must be on the session's
-   * `allowedTools` — `sendAgentReply`'s gate is unchanged.
+   * Maps a SUCCESSFUL server tool invocation to a persisted message, or
+   * `null` to keep it out of the conversation (the default for successful
+   * calls). Failed calls go through {@link authorFailedInvocation}, which
+   * persists them by default (#4383, a behaviour change: before, nothing was
+   * persisted for a failed call). The message's `toolCallData` tool name
+   * must be on the session's `allowedTools` — `sendAgentReply`'s gate is
+   * unchanged.
    */
   authorInvocation?: (invocation: ToolInvocation) => AuthoredToolReply | null;
   /**
@@ -830,6 +833,9 @@ async function runTurn<M>(
     onInvocation: async (invocation) => {
       if (!author || !sendAgentReply) return;
       const failure = toolFailureRecord(invocation);
+      // A deduped repeat of a failed call (#4382) has no failure record and
+      // is not a success either: keep it out of `authorInvocation`.
+      if (!invocation.ok && !failure) return;
       const reply = failure
         ? author.authorFailedInvocation
           ? author.authorFailedInvocation(invocation)

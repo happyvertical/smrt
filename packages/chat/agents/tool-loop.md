@@ -100,19 +100,28 @@ Every tool invocation records `modelContent`, the exact (capped) text the
 model was shown. `toolFailureRecord(invocation)` turns a failed, rejected or
 denied call into a bounded record: `name`, `args` (over
 `MAX_TOOL_FAILURE_ARGS_CHARS` = 2,000 serialized characters they become
-`{ truncated: true }`; malformed-JSON calls already carry `{}`), `status`
-(`rejected` | `error`), `errorKind`, a value-free `errorCode` (the error's own
-stable `A-Z0-9_` code, else the kind) and `shown`.
+`{ truncated: true }`; unserializable ones `{ unserializable: true }`;
+malformed-JSON calls carry `{}`), `status` (`rejected` | `error`),
+`errorKind`, `errorCode` (the error's own stable `A-Z0-9_` code, else the
+kind) and `shown`. Like a successful call's row it carries the arguments
+and shown text, so it is not value-free. A deduped repeat has no record.
 
 - `runPersonaConversationTurn` authors each failed call as a `tool_result`
   row: content = `shown`, `toolCallData` `{ name, args, status, errorCode }`,
   `metadata` `{ toolStatus, errorKind, errorCode }`.
-- `runAssistantTurn` does the same by default when an `author` is set;
+- `runAssistantTurn` now does the same **by default** when an `author` is
+  set — a behaviour change: before, failed calls were never persisted.
   `author.authorFailedInvocation` overrides the row or returns `null` to
-  skip it. A failed row's write error is not a dock step.
-- `runToolLoop` sends each record to the `audit` sink as
-  `action: 'chat.tool_call_failed'` with the record as `metadata` (a sink
-  throw never fails the turn).
+  skip it; `authorInvocation` sees successful calls only (never a failed or
+  deduped-failed one). A failed row's write error is not a dock step.
+- `runToolLoop` sends the audit sink `action: 'chat.tool_call_failed'` with
+  only `toolFailureAuditMetadata(record)`: `name`, `status`, `errorKind`,
+  `errorCode`, `argsChars`, `shownChars` — never the arguments or the shown
+  text, which can hold user data or raw server errors. A sink throw never
+  fails the turn.
+- A browser tool call with malformed arguments is recorded the same way (an
+  invocation, an audit entry, `onInvocation`), besides being answered in
+  the transcript.
 - Gap: a call to a tool the session does not allow-list cannot be a tool row
   — `sendAgentReply`'s authoring gate refuses the name, and that gate is
   unchanged — so it reaches the audit sink only.

@@ -287,6 +287,7 @@ export {
   type ToolLoopStepEvent,
   type ToolLoopStopReason,
   type ToolLoopUsage,
+  toolFailureAuditMetadata,
   toolFailureRecord,
 } from './tool-loop.js';
 // Types

@@ -138,8 +138,10 @@ export interface ToolInvocation {
 }
 
 /**
- * A failed, rejected, or denied tool call, in the bounded, value-free shape
- * both callers persist as a tool row and the audit sink receives (#4383).
+ * A failed, rejected, or denied tool call, in the bounded shape both callers
+ * persist as a tool row (#4383). Like a successful call's row it carries the
+ * arguments and the text the model saw, so it is NOT value-free; the audit
+ * sink gets only {@link toolFailureAuditMetadata}.
  */
 export interface ToolFailureRecord {
   /** The tool slug (or the name the model used, for an unoffered tool). */
@@ -1023,6 +1025,29 @@ export async function runToolLoop(
       // Identical read-only calls already made in this leg (#4382), keyed by
       // tool + canonical arguments. Bounded; never shared across calls.
       const priorReadOnlyCalls = new Map<string, ToolInvocation>();
+      /**
+       * Report a failed call to the audit sink (#4383): tool, status, kind,
+       * stable code and sizes only — never the arguments or the error text,
+       * which can carry user data or raw server errors.
+       */
+      const auditFailure = async (invocation: ToolInvocation) => {
+        if (!audit) return;
+        const record = toolFailureRecord(invocation);
+        if (!record) return;
+        try {
+          await audit({
+            action: 'chat.tool_call_failed',
+            actorUserId: principal.runAsUserId,
+            onBehalfOfUserId: onBehalfOfUserId ?? null,
+            tenantId: principal.tenantId ?? null,
+            ...(agentClass ? { agentClass } : {}),
+            actsAsProfileId: principal.actsAsProfileId ?? null,
+            metadata: toolFailureAuditMetadata(record),
+          });
+        } catch {
+          // Audit of a failed call never fails the turn.
+        }
+      };
       let executedRounds = Math.max(0, Math.floor(initialSteps));
       let totalTokens = 0;
       let response: AIResponse;
@@ -1127,17 +1152,30 @@ export async function runToolLoop(
             tool || extraTool ? undefined : offeredClient.get(requestedName);
           if (clientTool && parsedArgs === null) {
             // Never hand the browser a call whose arguments were dropped:
-            // answer it here so the model can resend valid JSON (#4378).
+            // answer it here so the model can resend valid JSON (#4378), and
+            // record it like any failed call (#4383).
+            const malformed: ToolInvocation = {
+              slug: clientTool.name,
+              args: {},
+              ok: false,
+              rejected: false,
+              observation: toolErrorObservation(
+                malformedArgumentsError(),
+                'invalid_request',
+              ),
+              error: 'invalid_request',
+            };
+            malformed.modelContent = serverObservationContent(
+              malformed.observation,
+            );
+            invocations.push(malformed);
+            await auditFailure(malformed);
+            await onInvocation?.(malformed);
             working.push({
               role: 'tool',
               name: requestedName,
               tool_call_id: call.id,
-              content: JSON.stringify(
-                toolErrorObservation(
-                  malformedArgumentsError(),
-                  'invalid_request',
-                ),
-              ),
+              content: malformed.modelContent,
             });
             continue;
           }
@@ -1306,23 +1344,8 @@ export async function runToolLoop(
             } catch {
               // Audit of a deduped call never fails the turn.
             }
-          } else if (!invocation.ok && audit) {
-            const record = toolFailureRecord(invocation);
-            if (record) {
-              try {
-                await audit({
-                  action: 'chat.tool_call_failed',
-                  actorUserId: principal.runAsUserId,
-                  onBehalfOfUserId: onBehalfOfUserId ?? null,
-                  tenantId: principal.tenantId ?? null,
-                  ...(agentClass ? { agentClass } : {}),
-                  actsAsProfileId: principal.actsAsProfileId ?? null,
-                  metadata: { ...record },
-                });
-              } catch {
-                // Audit of a failed call never fails the turn.
-              }
-            }
+          } else if (!invocation.ok) {
+            await auditFailure(invocation);
           }
           await onInvocation?.(invocation);
           onStep?.({
@@ -1701,6 +1724,30 @@ export function toolFailureRecord(
     shown:
       invocation.modelContent ??
       serverObservationContent(invocation.observation),
+  };
+}
+
+/**
+ * The value-free part of a {@link ToolFailureRecord} the audit sink receives
+ * (#4383): tool, status, kind, stable code, and sizes — never the arguments
+ * or the shown text.
+ */
+export function toolFailureAuditMetadata(
+  record: ToolFailureRecord,
+): Record<string, unknown> {
+  let argsChars = 0;
+  try {
+    argsChars = (JSON.stringify(record.args) ?? '').length;
+  } catch {
+    argsChars = 0;
+  }
+  return {
+    name: record.name,
+    status: record.status,
+    errorKind: record.errorKind,
+    errorCode: record.errorCode,
+    argsChars,
+    shownChars: record.shown.length,
   };
 }
 

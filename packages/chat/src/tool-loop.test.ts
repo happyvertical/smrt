@@ -687,6 +687,22 @@ describe('runToolLoop', () => {
       errorCode: 'invalid_request',
       shown: '{"error":"bad"}',
     });
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(
+      toolFailureRecord({
+        slug: 'x.read',
+        args: circular,
+        ok: false,
+        rejected: true,
+        observation: { error: 'denied', code: 'DENIED_CODE' },
+        error: 'not_permitted',
+      }),
+    ).toMatchObject({
+      args: { unserializable: true },
+      status: 'rejected',
+      errorCode: 'DENIED_CODE',
+    });
     expect(
       toolFailureRecord({
         slug: 'x.read',
@@ -1097,6 +1113,48 @@ describe('runToolLoop', () => {
     // deduped (#4382) rather than run twice.
     expect(seen).toEqual([{}]);
     expect(result.invocations[3]?.deduped).toBe(true);
+  });
+
+  it('records and audits a malformed browser tool call (#4383)', async () => {
+    const audits: PrincipalAuditEntry[] = [];
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? rawToolCall('page_fill', '{not json')
+        : textResponse('fixed'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'fill it' }],
+      tools: [],
+      clientTools: [
+        {
+          name: 'page_fill',
+          description: 'Fill the form',
+          inputSchema: { type: 'object' },
+          effect: 'write',
+        },
+      ],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: (entry) => {
+        audits.push(entry);
+      },
+    });
+    expect(result.invocations).toEqual([
+      expect.objectContaining({
+        slug: 'page_fill',
+        ok: false,
+        error: 'invalid_request',
+      }),
+    ]);
+    expect(audits.filter((a) => a.action === 'chat.tool_call_failed')).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          name: 'page_fill',
+          errorCode: 'TOOL_ARGUMENTS_MALFORMED',
+        }),
+      }),
+    ]);
   });
 
   it('answers a browser tool call with malformed arguments instead of suspending (#4378)', async () => {

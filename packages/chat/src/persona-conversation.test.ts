@@ -398,6 +398,12 @@ describe('persona-bound conversation', () => {
         errorCode: 'not_permitted',
       }),
     ]);
+    // The audit sink gets no arguments or shown text (#4383).
+    for (const entry of failed) {
+      expect(entry.metadata).not.toHaveProperty('args');
+      expect(entry.metadata).not.toHaveProperty('shown');
+      expect(JSON.stringify(entry.metadata)).not.toContain('nope');
+    }
   });
 
   it('binds a session to the persona and authors the assistant reply', async () => {
