@@ -1397,7 +1397,8 @@ export async function runToolLoop(
  */
 export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
   "Tools are no longer available for this turn. Answer the user's question now " +
-  'from the tool results above, without calling tools.';
+  'from the tool results above, without calling tools. ' +
+  'If they do not answer the question, say so.';
 
 function answerNowMessage(): LoopMessage {
   return { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION };
