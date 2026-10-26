@@ -7556,6 +7556,47 @@ export function proposalSuite(
       );
     });
     describe('host suggestion review hook', () => {
+      it('presents bounded explanations to the host and retains both normalization records on replay', async () => {
+        chooseCreate();
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          const generated = response.output as {
+            suggestions: Array<{ explanation: string }>;
+          };
+          generated.suggestions[0].explanation = 'x'.repeat(350);
+          return response;
+        });
+        const seen = vi.fn();
+        configuration.reviewSuggestion = ({ suggestion }) => {
+          seen(suggestion.explanation);
+          return { hold: true, reasons: ['check_required'] };
+        };
+        const input = await generate();
+        expect(seen).toHaveBeenCalledWith(`${'x'.repeat(299)}…`);
+        expect(input.output.provenance.explanationsTruncated).toBe(1);
+        expect(input.output.provenance.hostReview).toEqual({
+          annotated: 1,
+          held: 1,
+        });
+        expect(input.output.suggestions[0].disposition).toBe('needs_review');
+        expect(await output(input.lease)).toEqual(input.output);
+      });
+      it('holds with a value-free failure code when an asynchronous host check never settles', async () => {
+        chooseCreate();
+        configuration.limits.timeoutMs = 20;
+        configuration.reviewSuggestion = () => new Promise(() => {});
+        const input = await generate();
+        expect(input.output.suggestions[0]).toMatchObject({
+          disposition: 'needs_review',
+          hostReview: {
+            held: true,
+            reasons: ['host_review_failed'],
+            prefilled: [],
+          },
+        });
+        expect(input.output.automaticActionEligible).toBe(false);
+      });
       it('is absent by default: no annotation, no provenance entry', async () => {
         chooseCreate();
         const input = await generate();
