@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.32
+
+### Patch Changes
+
+- ### Features
+  
+  - add measured agent usage and structured project questions (#4377)
+- @happyvertical/smrt-config@0.57.32
+  - @happyvertical/smrt-scanner@0.57.32
+  - @happyvertical/smrt-types@0.57.32
+
 ## 0.57.31
 
 ### Patch Changes
