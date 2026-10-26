@@ -408,7 +408,7 @@ export function educationIntakeHandlers(input: {
     id: '@happyvertical/smrt-education:review-submission',
     version: '1',
     description: workbook
-      ? 'Assess each visible question on this physical workbook page. Use stable question IDs from printed number plus occurrence/subpart (q1:a); preserve those IDs for corrections. Cite original evidence IDs only. Do not invent rectangles or coordinates; geometry is supplied by extraction, not by you. Omit page unless extraction identifies that page. For assessed correct/incorrect/partially_correct use reason none; unsupported means cannot assess and requires result unassessed and null points. Example: a clear wrong answer uses incorrect, reason none, points 0. Do not generate an aggregate score or summary; the service computes exact totals. Unanswered/illegible/missing-context/not-present is unassessed with null points, never incorrect. Concepts are suggestions from the supplied vocabulary only. If no concept matches, use conceptIds [] and assess the question normally; missing vocabulary never makes an answer unsupported. Marking certainty describes the answer judgment; mapping certainty independently describes concept mapping. Guardian review is required for authority.'
+      ? 'Assess each visible question on this physical workbook page. Use stable question IDs from printed number plus occurrence/subpart (q1:a); preserve those IDs for corrections. Cite original evidence IDs only. Do not supply page numbers, rectangles or coordinates. The service retains whole-original source evidence. For assessed correct/incorrect/partially_correct use reason none; unsupported means cannot assess and requires result unassessed and null points. Example: a clear wrong answer uses incorrect, reason none, points 0. Do not generate an aggregate score or summary; the service computes exact totals. Unanswered/illegible/missing-context/not-present is unassessed with null points, never incorrect. Concepts are suggestions from the supplied vocabulary only. If no concept matches, use conceptIds [] and assess the question normally; missing vocabulary never makes an answer unsupported. Marking certainty describes the answer judgment; mapping certainty independently describes concept mapping. Guardian review is required for authority.'
       : 'Suggest marks and feedback for this captured attempt. Only a current authorized guardian decision may apply a grade.',
     operation: { model: GRADE, action: 'create', version: '1' },
     capability: { effect: 'write', idempotent: false, openWorld: false },
@@ -720,7 +720,6 @@ function workbookQuestionsSchema(vocabulary: WorkbookAssessment['vocabulary']) {
             required: ['evidenceId'],
             properties: {
               evidenceId: idSchema,
-              page: { type: 'integer', minimum: 1 },
             },
           },
         },
@@ -919,7 +918,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
           : [],
       );
       const anchors = q.anchors.map((value) => {
-        const anchor = value as { evidenceId?: string; page?: number };
+        const anchor = value as { evidenceId?: string };
         const index = originals.findIndex((e) => e.id === anchor?.evidenceId);
         if (index < 0)
           throw new WorkbookAssessmentValidationError(
@@ -927,25 +926,10 @@ export async function preserveWorkbookIntakeAnalysis(input: {
             'ungrounded_source',
           );
         const original = originals[index];
-        const verified = trustedGrounding?.sources?.find(
-          (s) =>
-            s.evidenceId === original.id && s.sha256 === original.contentHash,
-        );
-        const page =
-          Number.isSafeInteger(anchor.page) &&
-          verified?.pages.includes(anchor.page as number)
-            ? (anchor.page as number)
-            : original.mediaType?.startsWith('image/')
-              ? 1
-              : null;
-        const level =
-          page !== null && verified?.pages.includes(page)
-            ? ('page' as const)
-            : ('source' as const);
+        const page = original.mediaType?.startsWith('image/') ? 1 : null;
+        const level = 'source' as const;
         limitations.add(
-          level === 'page'
-            ? 'Page-level evidence only; extraction supplied no verified question region.'
-            : 'Source-level evidence only; no verified question page or region was supplied by extraction.',
+          'Source-level evidence only; no verified question page or region was supplied by extraction.',
         );
         return {
           assetId: sources[index].assetId,

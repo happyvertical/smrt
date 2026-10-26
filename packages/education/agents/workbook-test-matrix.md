@@ -34,4 +34,14 @@ Real synthetic provider regression (2026-10-25): unsupported+incorrect is reject
 model score0.75/three-correct narrative is ignored when question evidence is2of4,
 whole-source geometry replaces unverified generated rectangles and PDF source-only
 anchors have page:null. The shared workbook suite covers these as executable
-regressions; raw provider output remains immutable in ingestion.
+regressions. A completed structured proposal rejected on educational semantics
+remains in ingestion history. Malformed wire responses may retain only safe
+diagnostics; without raw values a page-minimum failure cannot identify null
+versus zero or prove a generic validator defect.
+
+The source-only wire regression uses the public IngestionService preview API
+and its generic handler schema validator on a real retained workbook receipt.
+A JSON-roundtripped evidenceId-only proposal is accepted; malformed result/reason
+and an extra page selector are rejected. Image anchors are page1; PDF source-only
+anchors remain page:null. No conclusion about the unknown malformed provider
+page value is inferred from the earlier minimum diagnostic.

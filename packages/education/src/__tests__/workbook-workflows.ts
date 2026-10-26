@@ -1,10 +1,14 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createAssetRuntime } from '@happyvertical/smrt-assets';
+import { IngestionService } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it } from 'vitest';
 import {
+  captureEducationIntake,
   educationIntakeHandlers,
+  educationIntakeTargetResolver,
   preserveWorkbookIntakeAnalysis,
 } from '../ingestion.js';
 import {
@@ -13,11 +17,11 @@ import {
 } from '../workbook-contracts.js';
 import { WorkbookAssessmentRevisionCollection } from '../workbook-models.js';
 import { WorkbookService } from '../workbook-service.js';
+import { ingestionClasses } from './ingestion-workflows.js';
 import { learnerFixture } from './learner-workflows.js';
-import { submissionClasses } from './submission-workflows.js';
 
 export const workbookClasses = [
-  ...submissionClasses,
+  ...ingestionClasses,
   'Workbook',
   'WorkbookActivity',
   'WorkbookAttempt',
@@ -108,6 +112,7 @@ async function workbookFixture(
     attempt,
     request,
     assessment,
+    storage,
     close: async () => {
       await cleanup();
       await rm(storage, { recursive: true, force: true });
@@ -1267,6 +1272,198 @@ export function workbookContractTests(
       expect(
         pdf.attempts[0].revisions[0].assessment.questions[0].anchors[0],
       ).toMatchObject({ page: null, grounding: 'source', rect: [0, 0, 1, 1] });
+    } finally {
+      await f.close();
+    }
+  });
+  it('accepts evidence-ID-only workbook JSON through public generic ingestion validation', async () => {
+    const f = await fixture();
+    try {
+      await f.as(f.parent, async () => {
+        const activity = await f.service.resolveWorkbookActivity({
+          ...f.create,
+          pageKey: 'wire:p1',
+          pageLabel: 'Wire page',
+        });
+        const scope = {
+          tenantId: f.parent.tenantId,
+          actorId: f.parent.actorUserId,
+          confidentialScopeId: activity.enrollmentId,
+        };
+        const assets = await createAssetRuntime({
+          db: f.db,
+          storage: f.storage,
+        });
+        const handlerId = '@happyvertical/smrt-education:review-submission';
+        const operation = '@happyvertical/smrt-education:Grade:create@1';
+        const principalId = '22222222-2222-4222-8222-222222222222';
+        const options = {
+          db: f.db,
+          assets,
+          scope,
+          authorize: async () => true,
+          jobTarget: { objectType: 'unused-worker', method: 'process' },
+          purgeDerived: async () => {},
+        };
+        const uploader = new IngestionService(options);
+        const receipt = await uploader.receive({
+          sourceId: 'wire',
+          sourceVersion: '1',
+          deliveryKey: 'evidence-only',
+          deliveredAt: new Date(),
+          parts: [
+            {
+              partId: 'page',
+              mediaType: 'image/png',
+              bytes: Buffer.from('synthetic wire page'),
+            },
+          ],
+          capturedCeiling: {
+            execution: {
+              principalId,
+              permissions: ['grades.create'],
+              handlers: [handlerId],
+              operations: [operation],
+            },
+          },
+          retention: {
+            version: '1',
+            expiresAt: new Date(Date.now() + 3600000),
+            replayUntil: new Date(Date.now() + 7200000),
+            acceptAfter: new Date(Date.now() - 3600000),
+          },
+          limits: {
+            maxBytes: 4096,
+            maxParts: 10,
+            maxAttempts: 3,
+            leaseMs: 10000,
+            maxOutputBytes: 4096,
+          },
+        });
+        if (!('itemId' in receipt)) throw new Error('Missing receipt');
+        const request = {
+          ...f.parent,
+          enrollmentId: activity.enrollmentId,
+          lessonId: activity.lessonId,
+        };
+        const submission = await captureEducationIntake({
+          ingestion: uploader,
+          scope,
+          submissions: f.service,
+          request: {
+            ...request,
+            workbookActivityId: activity.id,
+            itemId: receipt.itemId,
+            kind: 'completed_work',
+          },
+        });
+        const handlers = educationIntakeHandlers({
+          submissions: f.service,
+          request,
+          submissionId: submission.id,
+          workbookActivityId: activity.id,
+        });
+        const ingestion = new IngestionService({
+          ...options,
+          execution: {
+            handlers,
+            authorize: async () => ({
+              allowed: true,
+              reviewer: true,
+              principalId,
+              permissions: ['grades.create'],
+              mutationBoundary: 'serialized' as const,
+              policy: [
+                {
+                  version: 'app',
+                  handlers: [handlerId],
+                  operations: [operation],
+                  reviewers: [f.parent.actorUserId],
+                  access: [activity.enrollmentId],
+                  requireReview: true,
+                },
+                { version: 'tenant' },
+                { version: 'source' },
+              ],
+            }),
+            assertTarget: educationIntakeTargetResolver({
+              submissions: f.service,
+              request,
+              submissionId: submission.id,
+            }),
+          },
+        });
+        const analysis = await ingestion.analyze(
+          receipt.itemId,
+          { version: 'wire' },
+          'wire-analysis',
+        );
+        const lease = await ingestion.claimAnalysis(
+          receipt.itemId,
+          analysis.revision,
+          'test-worker',
+        );
+        if (!lease) throw new Error('Missing lease');
+        await ingestion.completeAnalysis(lease, {
+          status: 'completed',
+          provider: 'fixture',
+          model: 'fixture',
+          version: '1',
+          output: {},
+          usage: {},
+        });
+        const evidence = (await ingestion.getEvidence(receipt.itemId))[0];
+        const args = JSON.parse(
+          JSON.stringify({
+            submissionId: submission.id,
+            questions: [
+              {
+                id: 'q1',
+                prompt: '2 + 3',
+                answer: '5',
+                result: 'correct',
+                reason: 'none',
+                feedback: 'Correct',
+                points: 1,
+                possiblePoints: 1,
+                anchors: [{ evidenceId: evidence.id }],
+                conceptIds: [],
+                markingCertainty: 'clear',
+                mappingCertainty: 'unknown',
+                evidenceLimitations: [],
+              },
+            ],
+          }),
+        );
+        const preview = async (key: string, payload: typeof args) => {
+          const actionId = await ingestion.createAction(
+            receipt.itemId,
+            'wire',
+            { key },
+          );
+          return ingestion.previewProposal({
+            itemId: receipt.itemId,
+            attemptId: lease.attemptId,
+            actionId,
+            expectedRevision: 0,
+            requestId: key,
+            handlerId,
+            handlerVersion: '1',
+            args: payload,
+          });
+        };
+        expect((await preview('evidence-only', args)).revision).toBeGreaterThan(
+          0,
+        );
+        const invalidReason = structuredClone(args);
+        invalidReason.questions[0].reason = 'unsupported';
+        await expect(
+          preview('invalid-reason', invalidReason),
+        ).rejects.toThrow();
+        const extraPage = structuredClone(args);
+        extraPage.questions[0].anchors[0].page = 0;
+        await expect(preview('no-page-selector', extraPage)).rejects.toThrow();
+      });
     } finally {
       await f.close();
     }

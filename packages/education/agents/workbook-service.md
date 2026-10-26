@@ -38,9 +38,11 @@ and answer text, explicit result/reason, nullable points, feedback, retained sou
 anchors and curated concept mappings. An anchor names an owned asset plus SHA-256,
 one-based verified page (or null for a whole-file PDF source) and normalized
 x/y/width/height rectangle. Ingestion proposals never generate rectangles: the
-service uses [0,0,1,1] and explicit source/page grounding with limitations. Only
-pinned extraction page annotations can justify a PDF page; missing localization
-remains a complete original-file anchor, not a claim about page 1. Fictitious PDF
+service uses [0,0,1,1] and explicit source/page grounding with limitations. The provider wire contract
+contains evidenceId only, with no page/rect selector. An image is a known single
+page; PDF questions retain a whole original-file anchor with page:null, not a
+claim about page 1. Extraction metadata remains provenance, never a model page
+localization grant. Fictitious PDF
 pages and foreign files fail. Missing, illegible, unsupported and absent questions
 are unassessed; unassessed points stay null. Marking certainty, mapping certainty,
 mapping review provenance and evidence limitations are distinct; absent certainty
@@ -78,9 +80,9 @@ transfer is idempotent by analysis attempt. Preservation must complete before ho
 scratch retention cleanup; there is no automatic retention bypass in this API.
 The ingestion handler can apply only an exact previously preserved proposal through
 guardian review; it never grants AI grade authority. No prose parsing is used. The generation configuration carries bounded source
-hash/page-support metadata from the completed extraction before it ceases to be
+hash/page-support provenance from the completed extraction before it ceases to be
 the current analysis. This uses public ingestion APIs and is pinned by its
-configuration digest; absent metadata yields honest source-only grounding.
+configuration digest; question anchors always use honest source-only grounding.
 
 ## Authority, visibility and history
 
