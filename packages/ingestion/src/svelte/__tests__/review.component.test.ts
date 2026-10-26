@@ -762,6 +762,38 @@ describe('intake review host boundary', () => {
     view.analysis = currentAnalysis();
     return view;
   }
+  it.each([
+    true,
+    false,
+  ])('renders the host review annotation with held=%s without invoking an action', async (held) => {
+    const view = generationFor(page());
+    view.generation!.suggestions = [
+      {
+        handlerId: 'draft',
+        handlerVersion: '1',
+        args: { title: 'Invoice' },
+        evidence: [],
+        alternatives: [],
+        missingFields: [],
+        explanation: 'An invoice draft.',
+        disposition: held ? 'needs_review' : 'ready_for_review',
+        hostReview: {
+          held,
+          reasons: ['total_not_in_text'],
+          prefilled: ['title'],
+        },
+      },
+    ];
+    const callbacks = host(view);
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const annotation = await screen.findByTestId('host-review');
+    expect(annotation.textContent).toContain('title');
+    expect(annotation.textContent).toContain('total_not_in_text');
+    expect(annotation.textContent?.includes('held for review')).toBe(held);
+    expect(callbacks.preview).not.toHaveBeenCalled();
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+  });
   it('records reviewer instructions against the current analysis revision and polls until the background reinterpretation lands in place', async () => {
     const before = generationFor(page());
     const processing: ItemReviewView = {

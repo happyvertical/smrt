@@ -425,6 +425,44 @@ phrase. Transport failures through the OpenAI SDK already carried
 problem, and other non-SDK errors contribute the transport facts above. The
 category is unchanged (`unavailable`).
 
+### Host suggestion review (`reviewSuggestion`)
+
+A host's own checks on a generated suggestion (a label that is not the invoice
+date, an amount that is not in the document) can hold it and leave a record a
+reviewer sees:
+
+```ts
+proposals: {
+  // ...
+  reviewSuggestion: ({ suggestion, handler, evidence }) => ({
+    hold: true,                        // optional; forces needs_review
+    reasons: ['total_not_in_text'],    // optional; <= 8 codes, /^[a-z][a-z0-9_.-]{0,47}$/
+    prefilled: ['billDate'],           // optional; names declared in handler.argsSchema.properties
+  }),
+},
+```
+
+The hook is trusted, server-only and optional. It runs once per validated
+suggestion, after validation and before the decision gate, with deep copies of
+the suggestion, its offered handler and the retained evidence text. It cannot
+change `args`, `missingFields`, evidence or the outcome except through `hold`,
+and it can never upgrade: `hold` sets the suggestion (and a `proposals` outcome)
+to `needs_review`; absent or `hold: false` leaves the validator's disposition.
+
+The result is stored as `suggestion.hostReview` (`{held, reasons, prefilled}`)
+and counted in `provenance.hostReview` (`{annotated, held}`); both are absent
+when the hook records nothing. Values cannot be stored: unknown keys, free-text
+or over-long reasons, `prefilled` names that are not argument names, and any
+reason code containing one of the suggestion's own argument values (3+
+characters) make the result invalid. An invalid result, a throw, a rejection or
+a hook slower than `limits.timeoutMs` holds the suggestion with the fixed code
+`host_review_invalid` or `host_review_failed`; the error text is discarded.
+`ReviewView` shows "Checked by the shop: ..." under the arguments.
+
+Like `failureCapture`, the hook is not public read configuration and never enters
+frozen configuration or digests. Hosts keep it synchronous-cheap: it runs inside
+the generation lease.
+
 ### Failed-attempt capture (opt-in, #4285)
 
 The value-free reason cannot show what the model actually sent. A host that

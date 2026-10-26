@@ -36,6 +36,11 @@ import {
   FeedbackRetrievalDeniedError,
   IntakeFeedbackService,
 } from './feedback.js';
+import {
+  HOST_REVIEW_FAILED,
+  HOST_REVIEW_INVALID,
+  normalizeHostReview,
+} from './host-review.js';
 import type {
   GenerationStageConfiguration,
   GenerativeProposalInput,
@@ -51,6 +56,7 @@ import type {
   GeneratedSuggestion,
   GenerationOutput,
   GenerationSourcePin,
+  HostSuggestionReview,
   PreviewGeneratedInput,
   ProposalCandidate,
   ProposalCatalogEntry,
@@ -200,6 +206,11 @@ export class IngestionProposalService {
         ...(capture.redact ? { redact: capture.redact.bind(capture) } : {}),
       });
     }
+    if ('reviewSuggestion' in config && config.reviewSuggestion !== undefined) {
+      if (typeof config.reviewSuggestion !== 'function')
+        throw new Error('Invalid suggestion review hook');
+      this.reviewSuggestion = config.reviewSuggestion.bind(config);
+    }
     if ('identity' in config.generator)
       this.generator = {
         identity: this.identity,
@@ -249,6 +260,7 @@ export class IngestionProposalService {
   }
   private readonly config: ProposalReadConfiguration;
   private readonly failureCapture?: ProposalConfiguration['failureCapture'];
+  private readonly reviewSuggestion?: ProposalConfiguration['reviewSuggestion'];
   private generation(): ProposalConfiguration['generator'] {
     if (!this.generator)
       throw new Error('Intake proposal generation is not configured');
@@ -950,9 +962,11 @@ export class IngestionProposalService {
             output.suggestions = [];
             delete output.provenance.missingFieldsCorrection;
             delete output.provenance.unofferedTargetsDropped;
+            delete output.provenance.hostReview;
             output.warnings.push('human_split_not_respected');
           }
         }
+        await this.hostReview(output, evidence);
         output.provenance.usage = safeUsage(generated.usage);
         if (generated.responseModel)
           output.provenance.generativeResponseModel = generated.responseModel;
@@ -1024,6 +1038,7 @@ export class IngestionProposalService {
       delete output.provenance.explanationsTruncated;
       delete output.provenance.splitsDropped;
       delete output.provenance.unofferedTargetsDropped;
+      delete output.provenance.hostReview;
       output.warnings.push(failure);
     }
     if (bytes(publication()) > maxBytes) {
@@ -1039,6 +1054,7 @@ export class IngestionProposalService {
       delete output.provenance.explanationsTruncated;
       delete output.provenance.splitsDropped;
       delete output.provenance.unofferedTargetsDropped;
+      delete output.provenance.hostReview;
       output.warnings.push('output_limit');
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');
@@ -1058,6 +1074,73 @@ export class IngestionProposalService {
       publication(),
       capture,
     );
+  }
+  /**
+   * Host checks on validated suggestions (`reviewSuggestion`). They can only
+   * hold a suggestion and record value-free annotations; a failing hook holds
+   * the suggestion with a fixed code rather than letting it stand unchecked.
+   */
+  private async hostReview(
+    output: GenerationOutput,
+    evidence: GenerativeProposalInput['evidence'],
+  ) {
+    const hook = this.reviewSuggestion;
+    if (!hook || !output.suggestions.length) return;
+    let annotated = 0;
+    let held = 0;
+    for (const suggestion of output.suggestions) {
+      const handler = output.offered.find(
+        (entry) =>
+          entry.handler.id === suggestion.handlerId &&
+          entry.handler.version === suggestion.handlerVersion,
+      )?.handler;
+      if (!handler) continue;
+      let review: HostSuggestionReview | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const result = await Promise.race([
+          Promise.resolve(
+            hook({
+              suggestion: structuredClone(suggestion),
+              handler: structuredClone(handler),
+              evidence: structuredClone(evidence),
+            }),
+          ),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error('timeout')),
+              this.config.limits.timeoutMs,
+            );
+          }),
+        ]);
+        try {
+          review = normalizeHostReview(
+            result,
+            handler.argsSchema,
+            suggestion.args,
+          );
+        } catch {
+          review = {
+            held: true,
+            reasons: [HOST_REVIEW_INVALID],
+            prefilled: [],
+          };
+        }
+      } catch {
+        review = { held: true, reasons: [HOST_REVIEW_FAILED], prefilled: [] };
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!review) continue;
+      suggestion.hostReview = review;
+      annotated++;
+      if (review.held) {
+        held++;
+        suggestion.disposition = 'needs_review';
+        if (output.outcome === 'proposals') output.outcome = 'needs_review';
+      }
+    }
+    if (annotated) output.provenance.hostReview = { annotated, held };
   }
   private async decide(
     lease: AnalysisLease,

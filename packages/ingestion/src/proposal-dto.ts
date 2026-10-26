@@ -61,6 +61,24 @@ export interface GeneratedSuggestion {
   missingFields: string[];
   explanation: string;
   disposition: 'ready_for_review' | 'needs_review';
+  /**
+   * Host annotation recorded by `ProposalConfiguration.reviewSuggestion`;
+   * absent when the host recorded nothing. Value-free by construction.
+   */
+  hostReview?: HostSuggestionReview;
+}
+/**
+ * What the application's own checks recorded about one suggestion: which
+ * argument fields it filled itself and bounded reason codes, never values.
+ * `held` forces `needs_review`; a host can never upgrade a disposition.
+ */
+export interface HostSuggestionReview {
+  /** The host held the suggestion at `needs_review`. */
+  held: boolean;
+  /** Bounded codes (`^[a-z][a-z0-9_.-]{0,47}$`, at most 8). */
+  reasons: string[];
+  /** Argument field names (declared in the handler's `argsSchema`) the host filled itself. */
+  prefilled: string[];
 }
 /**
  * Value-free record that the validator replaced model-declared `missingFields`
@@ -153,6 +171,11 @@ export interface GenerationOutput {
     missingFieldsCorrection?: MissingFieldsCorrection;
     /** Present only when an invented target was dropped; absent output is unchanged. */
     unofferedTargetsDropped?: UnofferedTargetsDropped;
+    /**
+     * Counts of suggestions the host's `reviewSuggestion` hook annotated or
+     * held; absent when it recorded nothing or is not configured.
+     */
+    hostReview?: { annotated: number; held: number };
   };
   automaticActionEligible: false;
 }
