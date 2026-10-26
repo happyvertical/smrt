@@ -9,6 +9,9 @@ are redacted. Tests verify protected workflow ordering and Helm build-metadata t
 mapping. Real workflow run 40354918465 reproduced the former org REST HTTP400;
 its validation/exercise/teardown passed before publication failed. The scoped GHCR
 guard uses the workflow token without an organization-wide package REST request.
+Existing OCI indexes and Docker v2 manifests/lists must also refuse overwrite;
+the lookup accepts all four supported media types to avoid false missing-manifest
+responses caused by content negotiation.
 
 All tests run with `node --test scripts/deployment-release.test.mjs`. Runtime: Node from root package.json; SQL dialect N/A (runner never executes SQL). Injectable command/observation adapters isolate external contracts; live Kubernetes exercise remains integration evidence, not asserted by unit tests.
 

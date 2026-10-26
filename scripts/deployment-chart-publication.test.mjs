@@ -39,6 +39,24 @@ test('existing version never permits overwrite', async () => {
   await assert.rejects(assertChartVersionAbsent('0.1.0', options(() => response({}))), /already exists/);
 });
 
+test('content negotiation cannot hide an existing OCI index or Docker manifest', async () => {
+  for (const mediaType of [
+    'application/vnd.oci.image.manifest.v1+json',
+    'application/vnd.oci.image.index.v1+json',
+    'application/vnd.docker.distribution.manifest.v2+json',
+    'application/vnd.docker.distribution.manifest.list.v2+json',
+  ]) {
+    const config = options(() => {
+      const accepted = config.calls[1].headers.Accept.split(', ');
+      // Distribution registries may report an unacceptable stored manifest
+      // as MANIFEST_UNKNOWN; this must never authorize overwriting its tag.
+      return accepted.includes(mediaType) ? response({ mediaType }) :
+        response({ errors: [{ code: 'MANIFEST_UNKNOWN' }] }, 404);
+    });
+    await assert.rejects(assertChartVersionAbsent('0.1.0', config), /already exists/);
+  }
+});
+
 test('registry HTTP errors are not absence proof', async () => {
   for (const status of [201, 204, 301, 400, 401, 403, 429, 500, 503]) {
     const config = options(() => new Response(null, { status }));

@@ -45,7 +45,14 @@ export async function assertChartVersionAbsent(version, {
   const tag = version.replace('+', '_');
   const manifest = await request(`https://ghcr.io/v2/${repository}/manifests/${tag}`, {
     Authorization: `Bearer ${credentials.token}`,
-    Accept: 'application/vnd.oci.image.manifest.v1+json',
+    // Accept every OCI/Docker v2 manifest shape GHCR supports. A narrower
+    // Accept can turn an existing index into MANIFEST_UNKNOWN, not absence.
+    Accept: [
+      'application/vnd.oci.image.manifest.v1+json',
+      'application/vnd.oci.image.index.v1+json',
+      'application/vnd.docker.distribution.manifest.v2+json',
+      'application/vnd.docker.distribution.manifest.list.v2+json',
+    ].join(', '),
   });
   if (manifest.status === 200) throw new Error('Chart version already exists; bump Chart.yaml before publication.');
   if (manifest.status !== 404) throw new Error('Chart registry lookup failed; publication blocked.');
