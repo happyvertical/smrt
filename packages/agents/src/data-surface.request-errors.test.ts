@@ -229,6 +229,18 @@ describe('data.query surfaceId placement (#4378)', () => {
     expect(error.message).toContain('at the top level, next to request');
   });
 
+  it('rejects a query-wrapped surfaceId that differs from its sibling', async () => {
+    const error = await requestError(
+      queryTool()({
+        request: {
+          surfaceId: 'records',
+          query: { ...count, surfaceId: 'other' },
+        },
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_CONFLICT');
+  });
+
   it('rejects a missing surfaceId as a 400 with an example, not a denial', async () => {
     for (const args of [
       { request: count },
@@ -287,6 +299,19 @@ describe('data.query surfaceId placement (#4378)', () => {
     expect(inKind.message).toContain(
       'A filter kind is condition, all, any or not. in is an operator: use {"kind":"condition","field":f,"operator":"in","value":v}.',
     );
+    const nested = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: {
+          mode: 'count',
+          filter: {
+            kind: 'all',
+            filters: [{ kind: 'in', field: 'status', value: ['a'] }],
+          },
+        },
+      }),
+    );
+    expect(nested.message).toContain('in is an operator');
     const orKind = await requestError(
       queryTool()({
         surfaceId: 'records',
