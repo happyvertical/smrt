@@ -37,7 +37,8 @@ function message(id: string, role: AssistantMessage['role'], content: string) {
 function scriptedTransport(
   legs: AssistantClientToolCall[][],
   finish: {
-    stoppedReason?: 'stop' | 'max_steps' | 'budget';
+    stoppedReason?: 'stop' | 'max_steps' | 'budget' | 'empty' | 'timeout';
+    capReason?: 'max_steps' | 'budget';
     fail?: boolean;
   } = {},
 ) {
@@ -102,6 +103,7 @@ function scriptedTransport(
       input.onEvent?.({
         type: 'done',
         stoppedReason: finish.stoppedReason ?? 'stop',
+        ...(finish.capReason ? { capReason: finish.capReason } : {}),
       });
       return {
         inProgress: false,
@@ -303,6 +305,34 @@ describe('assistant run', () => {
       waitingFor: { kind: 'continue', count: 1 },
       stoppedReason: 'max_steps',
     });
+    controller.dispose();
+  });
+
+  it('still asks to continue when a capped turn ended empty or timeout (#4379)', async () => {
+    for (const [stoppedReason, capReason] of [
+      ['empty', 'max_steps'],
+      ['timeout', 'budget'],
+    ] as const) {
+      const transport = scriptedTransport([[call('1', NAV.name)]], {
+        stoppedReason,
+        capReason,
+      });
+      const controller = await open(transport, tools([NAV]));
+      await controller.send('look everywhere');
+      expect(controller.run).toMatchObject({
+        state: 'waiting',
+        waitingFor: { kind: 'continue', count: 1 },
+        stoppedReason: capReason,
+      });
+      controller.dispose();
+    }
+    // An uncapped empty turn is not continuable.
+    const transport = scriptedTransport([[call('1', NAV.name)]], {
+      stoppedReason: 'empty',
+    });
+    const controller = await open(transport, tools([NAV]));
+    await controller.send('look everywhere');
+    expect(controller.run?.waitingFor).toBeNull();
     controller.dispose();
   });
 

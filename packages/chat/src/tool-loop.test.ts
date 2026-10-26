@@ -2077,6 +2077,74 @@ describe('runToolLoop', () => {
       expect(result.content).toBe(emoji.repeat(MAX_TOOL_LOOP_REASONING_CHARS));
     });
 
+    it('keeps capReason when the forced final call times out', async () => {
+      const result = await runToolLoop({
+        ai: makeAI((_m, options) => {
+          if (toolsOffered(options))
+            return toolCall('tool_loop_notes.read', {});
+          throw Object.assign(new Error('late'), { code: 'AI_TIMEOUT' });
+        }),
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        maxSteps: 1,
+        executeTool: async () => ({ count: 1 }),
+        audit: () => {},
+      });
+      expect(result).toMatchObject({
+        stoppedReason: 'timeout',
+        capReason: 'max_steps',
+      });
+    });
+
+    it('checks for an abort before the retry and never retries a cancelled turn', async () => {
+      const controller = new AbortController();
+      const chat = vi.fn(async (): Promise<AIResponse> => {
+        // The first call returns blank, and the user stops meanwhile.
+        controller.abort();
+        return textResponse('');
+      });
+      const result = await runToolLoop({
+        ai: { chat } as unknown as AIInterface,
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        signal: controller.signal,
+        audit: () => {},
+      });
+      expect(chat).toHaveBeenCalledTimes(1);
+      expect(result.stoppedReason).toBe('cancelled');
+    });
+
+    it('sends the answer-now instruction once on a retried forced final call', async () => {
+      const seen: AIMessage[][] = [];
+      const ai = makeAI((messages, options) => {
+        seen.push([...messages]);
+        return toolsOffered(options)
+          ? toolCall('tool_loop_notes.read', {})
+          : textResponse('');
+      });
+      await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        maxSteps: 1,
+        executeTool: async () => ({ count: 1 }),
+        audit: () => {},
+      });
+      // Tool round, forced final, retry: each no-tools call carries one.
+      expect(seen).toHaveLength(3);
+      for (const call of seen.slice(1)) {
+        expect(
+          call.filter((m) => m.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION),
+        ).toHaveLength(1);
+      }
+    });
+
     it('reports a timeout on the retry call as timeout', async () => {
       let n = 0;
       const result = await runToolLoop({

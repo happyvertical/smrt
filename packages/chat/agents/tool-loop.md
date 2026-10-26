@@ -43,12 +43,16 @@
   finish reason in this process (so its absence is anomalous), and only when
   the retry ends the same way; then the turn is `timeout`. A boundary that
   never reports finish reasons, or a blank reply that has one, is `empty`.
+  The "has reported" flag is kept per AI client object for the process
+  lifetime, so one client that routes to providers with and without finish
+  reasons can mislabel an `empty` turn as `timeout` (or the reverse).
 - **Timeouts are configurable, not derived.** `requestTimeoutMs` is
   forwarded as the per-call `timeout` (default: the provider's 120 s). It is
   not derived from `deadline`/`maxTurnMs`: those only stop new tool rounds
   and gate the retry.
 - **Fallback text.** Both callers store `resolveTurnReply(result,
-  fallback)`: the content trimmed (both paths trim alike), or
+  fallback)`: the content trimmed at its outer edges only (both paths
+  alike; persona replies were stored untrimmed before), or
   `emptyAnswerFallback` / `DEFAULT_EMPTY_ANSWER_FALLBACK` when blank.
   `runPersonaConversationTurn` returns it as `reply` (plus `replyFallback`);
   voice and the chat stream use it. `runAssistantTurn` replaces its old
@@ -63,9 +67,14 @@
   `done` event's `stoppedReason` and `capReason` (assistant), or the stored
   message's metadata. `isFallbackReply(message)` tells a fallback apart; the
   assistant route's and voice's history builders skip fallback replies so
-  they are never replayed to the model as answers. Gap: the plain
-  chat-stream path takes history from the browser, which does not send
-  metadata, so a fallback the browser echoes back is replayed there.
+  they are never replayed to the model as answers. The chat-stream paths
+  (plain and persona) take history from the browser, which sends no
+  metadata, so they drop an assistant message whose text exactly equals
+  the configured or default fallback text. Hosts should hide feedback
+  controls (thumbs, corrections) on a message where `isFallbackReply` is
+  true: there is no model answer to rate.
+- **Dock.** The `done` event's `capReason` reaches the dock, which offers
+  Continue for a capped turn even when it ended `empty` or `timeout`.
 - **Reasoning.** `AIResponse.reasoning` (newer SDKs, sdk#1459) is read
   defensively, capped at `MAX_TOOL_LOOP_REASONING_CHARS` code points, passed
   to `onReasoning` (forwarded by both callers; a throw is ignored) and

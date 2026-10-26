@@ -27,6 +27,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ConversationPersona } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
+import { DEFAULT_EMPTY_ANSWER_FALLBACK } from './tool-loop.js';
 import {
   createVoiceChatSession,
   createVoiceGatewayTurnHandler,
@@ -267,6 +268,44 @@ describe('voice gateway chat integration', () => {
       voiceRole: 'assistant',
       correlationId: response.metadata.correlationId,
     });
+  });
+
+  it('never replays a stored fallback reply as voice history (#4379)', async () => {
+    const voiceSession = await createVoiceChatSession({
+      chatService: chat,
+      db,
+      tenantId,
+      actorProfileId: 'speaker-profile',
+      actorUserId: 'speaker-user',
+      persona,
+      ttlSeconds: 60,
+    });
+    // Turn 1: blank and its retry blank -> the fallback is stored.
+    const { ai, captured } = makeAI((call) =>
+      textResponse(call < 2 ? '' : 'Now I can answer.'),
+    );
+    const first = await handleVoiceGatewayTurn({
+      chatService: chat,
+      db,
+      ai,
+      payload: payloadFor(voiceSession),
+      recall: false,
+    });
+    expect(first.text).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
+    await handleVoiceGatewayTurn({
+      chatService: chat,
+      db,
+      ai,
+      payload: payloadFor(voiceSession, { turn_id: 'turn-2', text: 'again' }),
+      recall: false,
+    });
+    const history = (captured[2]?.messages ?? []).filter(
+      (m) => m.role !== 'system',
+    );
+    expect(history.map((m) => [m.role, m.content])).toEqual([
+      ['user', 'hello from voice'],
+      ['user', 'again'],
+    ]);
   });
 
   it('rejects an expired voice session before creating chat messages', async () => {

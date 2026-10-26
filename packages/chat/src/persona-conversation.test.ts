@@ -576,6 +576,31 @@ describe('persona-bound conversation', () => {
       }
     });
 
+    it('persists capReason with the stop reason on a capped reply', async () => {
+      const { chatService, bound, assistantMessages } = await boundSession();
+      const { ai } = makeAI((call, offered) =>
+        offered
+          ? toolCall(toolFunctionName('conv_notes.read'), {})
+          : ({ content: 'Capped answer.', finishReason: 'stop' } as AIResponse),
+      );
+      await runPersonaConversationTurn({
+        ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'q',
+        recall: false,
+        chatService,
+        session: bound,
+        maxSteps: 1,
+      });
+      const [reply] = await assistantMessages();
+      expect(reply?.getMetadata()).toEqual({
+        stoppedReason: 'max_steps',
+        capReason: 'max_steps',
+      });
+    });
+
     it('forwards maxTotalTokens, deadline, toolChoice and requestTimeoutMs to the loop', async () => {
       const { ai, captured } = makeAI((call, offered) =>
         call === 0 && offered

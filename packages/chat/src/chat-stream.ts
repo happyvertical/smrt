@@ -42,6 +42,7 @@ import {
 } from './persona-conversation.js';
 import type { ChatService } from './services/index.js';
 import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
   noteFinishReason,
   replyContentFor,
   reportsFinishReason,
@@ -243,7 +244,10 @@ export async function* runChatConversationStream(
 ): AsyncGenerator<ChatStreamEvent> {
   const { context } = options;
   const messages = normalizeMessages(options.messages);
-  const { history, userMessage } = splitConversation(messages);
+  const { history, userMessage } = splitConversation(
+    messages,
+    fallbackTexts(context.emptyAnswerFallback),
+  );
   if (!userMessage) {
     yield { type: 'error', error: 'No user message to respond to' };
     return;
@@ -639,11 +643,25 @@ function normalizeMessages(messages: ChatStreamMessage[]): ChatStreamMessage[] {
 }
 
 /**
+ * The fallback reply texts a browser may echo back (#4379): the configured
+ * one and the default, as stored (trimmed).
+ */
+function fallbackTexts(configured: string | undefined): Set<string> {
+  return new Set([
+    replyContentFor({ content: '' }, configured),
+    DEFAULT_EMPTY_ANSWER_FALLBACK,
+  ]);
+}
+
+/**
  * Split the conversation into prior turns (`history`) and this turn's prompt
  * (`userMessage`, the last user message). Anything after the last user message
  * is dropped — the turn responds to the user's newest input.
  */
-function splitConversation(messages: ChatStreamMessage[]): {
+function splitConversation(
+  messages: ChatStreamMessage[],
+  fallbacks: ReadonlySet<string>,
+): {
   history: AIMessage[];
   userMessage: string;
 } {
@@ -655,12 +673,22 @@ function splitConversation(messages: ChatStreamMessage[]): {
     }
   }
   if (lastUserIndex === -1) return { history: [], userMessage: '' };
-  const history = messages.slice(0, lastUserIndex).map(
-    (message): AIMessage => ({
-      role: message.role,
-      content: message.content,
-    }),
-  );
+  const history = messages
+    .slice(0, lastUserIndex)
+    // The browser sends no metadata, so a stored fallback reply is
+    // recognised by its exact text and never replayed as an answer (#4379).
+    .filter(
+      (message) =>
+        !(
+          message.role === 'assistant' && fallbacks.has(message.content.trim())
+        ),
+    )
+    .map(
+      (message): AIMessage => ({
+        role: message.role,
+        content: message.content,
+      }),
+    );
   return { history, userMessage: messages[lastUserIndex].content };
 }
 

@@ -279,6 +279,59 @@ describe('runChatConversationStream — plain path', () => {
     });
   });
 
+  it('needs both attempts quiet: quiet then a finished blank gets the fallback (#4379)', async () => {
+    const ai = scriptedStreamAI([
+      { chunks: ['Earlier.'], finish: 'stop' },
+      { chunks: [] },
+      { chunks: [], finish: 'stop' },
+    ]);
+    await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'first' }],
+      }),
+    );
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(events)).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
+  });
+
+  it('drops a stored fallback reply from the history the browser sends (#4379)', async () => {
+    const seen: AIMessage[][] = [];
+    const ai = {
+      async *stream(messages: AIMessage[], o: ChatOptions) {
+        seen.push(messages);
+        yield 'ok';
+        o.onFinishReason?.('stop');
+      },
+    } as unknown as AIInterface;
+    await collect(
+      runChatConversationStream({
+        context: { ai, emptyAnswerFallback: 'No luck.' },
+        messages: [
+          { role: 'user', content: 'q1' },
+          { role: 'assistant', content: DEFAULT_EMPTY_ANSWER_FALLBACK },
+          { role: 'user', content: 'q2' },
+          { role: 'assistant', content: 'No luck.' },
+          { role: 'user', content: 'q3' },
+          { role: 'assistant', content: 'A real answer.' },
+          { role: 'user', content: 'q4' },
+        ],
+      }),
+    );
+    expect(seen[0]?.map((m) => [m.role, m.content])).toEqual([
+      ['user', 'q1'],
+      ['user', 'q2'],
+      ['user', 'q3'],
+      ['assistant', 'A real answer.'],
+      ['user', 'q4'],
+    ]);
+  });
+
   it('gives a blank, reason-less stream the fallback when the SDK never reports finish reasons', async () => {
     const events = await collect(
       runChatConversationStream({
