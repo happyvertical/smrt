@@ -6,9 +6,14 @@
  * explicit package list, and `smrtPlugin({...})` with the SvelteKit path
  * options. `smrtConsumer` and `smrtPlugin` stay public and unchanged.
  */
-import type { Plugin, UserConfig } from 'vite';
+
 import { smrtConsumer } from '../consumer-plugin/index.js';
 import { type SmrtPluginOptions, smrtPlugin } from '../vite-plugin/index.js';
+import type {
+  SmrtDecoratorConfig,
+  SmrtUserConfig,
+  SmrtVitePlugin,
+} from '../vite-plugin/plugin-contract.js';
 import { resolveCookbookHostedObjects } from './cookbook-exposure.js';
 
 export interface SmrtPresetOptions {
@@ -106,22 +111,20 @@ async function resolvePackages(
   return validatePackages(declared, 'smrt.config `consumer.packages`');
 }
 
-function decoratorPlugin(): Plugin {
+function decoratorPlugin(): SmrtVitePlugin {
   return {
     name: 'smrt:decorators',
     // Vite merges a hook's result over the user config, so fill only the
     // values the app has not set itself.
-    config(user: UserConfig) {
-      const decorator = (
-        user as { oxc?: { decorator?: Record<string, unknown> } }
-      ).oxc?.decorator;
-      const fill: Record<string, boolean> = {};
+    config(user: SmrtUserConfig) {
+      const decorator = user.oxc ? user.oxc.decorator : undefined;
+      const fill: SmrtDecoratorConfig = {};
       if (decorator?.legacy === undefined) fill.legacy = true;
       if (decorator?.emitDecoratorMetadata === undefined) {
         fill.emitDecoratorMetadata = true;
       }
       return Object.keys(fill).length
-        ? ({ oxc: { decorator: fill } } as UserConfig)
+        ? { oxc: { decorator: fill } }
         : undefined;
     },
   };
@@ -138,7 +141,7 @@ function decoratorPlugin(): Plugin {
  */
 export const SMRT_SHARED_RUNTIME_PACKAGES = ['@sveltejs/kit'] as const;
 
-function sharedRuntimePlugin(): Plugin {
+function sharedRuntimePlugin(): SmrtVitePlugin {
   let isBuild = false;
   return {
     name: 'smrt:shared-runtime',
@@ -174,7 +177,9 @@ function sharedRuntimePlugin(): Plugin {
  * generation in one entry. Returns a promise because the package list is read
  * from `smrt.config.ts`; Vite accepts promised plugins.
  */
-export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
+export async function smrt(
+  options: SmrtPresetOptions = {},
+): Promise<SmrtVitePlugin<unknown>[]> {
   const D = SMRT_PRESET_DEFAULTS;
   const objectsDir = options.objectsDir ?? D.objectsDir;
   const typesDir = options.typesDir ?? D.typesDir;
@@ -190,7 +195,7 @@ export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
     options.projectRoot ?? process.cwd(),
   );
 
-  const plugins: Plugin[] = [];
+  const plugins: SmrtVitePlugin<unknown>[] = [];
   if (options.decorators !== false) plugins.push(decoratorPlugin());
   plugins.push(sharedRuntimePlugin());
   // smrtConsumer must precede smrtPlugin, as in the template's hand-written form.

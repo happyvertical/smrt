@@ -13,7 +13,14 @@ import type {
   DomainKnowledgeConfig,
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
-import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
+import type {
+  SmrtDevServer,
+  SmrtResolvedConfig,
+  SmrtVitePlugin,
+} from './plugin-contract.js';
+
+export type { SmrtVitePlugin } from './plugin-contract.js';
+
 import { publishAtomicArtifact } from '../consumer-plugin/artifact-publication.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
@@ -628,7 +635,9 @@ function mergeExternalManifestEntries(
   };
 }
 
-export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
+export function smrtPlugin(
+  options: SmrtPluginOptions = {},
+): SmrtVitePlugin<SmrtPluginApi> & { api: SmrtPluginApi } {
   const {
     projectRoot: configuredProjectRoot,
     generationSnapshot,
@@ -720,7 +729,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
-  let server: ViteDevServer | undefined;
+  let server: SmrtDevServer | undefined;
   let manifest: SmartObjectManifest | null = null;
   /**
    * The declared agent surface from the most recent OXC scan (#2591). Held
@@ -732,7 +741,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let activeBuildStart: Promise<void> | undefined;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
-  let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
+  let config: SmrtResolvedConfig | null = null; // Store resolved config for closeBundle hook
   let resolvedPluginNames: string[] = [];
   let hasFreshConfigResolvedManifest = false;
   let configHookManifest: SmartObjectManifest | null = null;
@@ -1021,7 +1030,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
-  const plugin: Plugin = {
+  const plugin: SmrtVitePlugin<SmrtPluginApi> & { api: SmrtPluginApi } = {
     name: 'smrt-auto-service',
     // SvelteKit inventories routes in a `config.order = 'pre'` hook. Put SMRT
     // in Vite's earlier plugin tier so this plugin's own pre hook runs first
@@ -1434,9 +1443,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // into `.smrt/runtime/register.js` for out-of-bundle worker processes
       // (#3117). Once per build; a failure fails the build, because a worker
       // without it cannot run any application-defined job.
-      const environment = (
-        this as { environment?: { config?: { consumer?: string } } }
-      ).environment;
+      const environment = this.environment;
       const serverBuild =
         environment?.config?.consumer === 'server' || !!config?.build?.ssr;
       if (

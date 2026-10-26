@@ -160,8 +160,10 @@ cache whole-plan results, or change database pool defaults.
 ### Generate metadata and migrate
 
 The Vite integrations support Vite 5–8. Install Vite in the consuming build
-project so the plugin declarations resolve against that project's Vite types.
-Vite is an optional peer: server-only consumers do not need to install it.
+project. s-m-r-t's plugin declarations use a structural contract independent of
+Vite's bundler types; build-time Vite loading resolves from the project root.
+Core keeps Vite development-only, so server consumers need no build tool and
+different Vite peer contexts cannot duplicate the s-m-r-t runtime registry.
 `node scripts/verify-packed-vite-peer.mjs` verifies the packed consumer contract.
 
 Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
