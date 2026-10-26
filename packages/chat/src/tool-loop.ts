@@ -148,6 +148,8 @@ export interface ToolFailureRecord {
   name: string;
   /** The parsed arguments, bounded to {@link MAX_TOOL_FAILURE_ARGS_CHARS}. */
   args: Record<string, unknown>;
+  /** Serialized size of the ORIGINAL arguments (0 when unserializable). */
+  argsChars: number;
   /** `rejected` (denied / not permitted) or `error` (invalid or failed). */
   status: 'rejected' | 'error';
   /** The error kind: `not_permitted`, `invalid_request` or `execution_error`. */
@@ -1709,8 +1711,10 @@ export function toolFailureRecord(
       ? observation.code
       : errorKind;
   let args: Record<string, unknown> = invocation.args;
+  let argsChars = 0;
   try {
-    if ((JSON.stringify(args) ?? '').length > MAX_TOOL_FAILURE_ARGS_CHARS) {
+    argsChars = (JSON.stringify(args) ?? '').length;
+    if (argsChars > MAX_TOOL_FAILURE_ARGS_CHARS) {
       args = { truncated: true };
     }
   } catch {
@@ -1719,6 +1723,7 @@ export function toolFailureRecord(
   return {
     name: invocation.slug.slice(0, 128),
     args,
+    argsChars,
     status: invocation.rejected ? 'rejected' : 'error',
     errorKind,
     errorCode: code,
@@ -1736,18 +1741,13 @@ export function toolFailureRecord(
 export function toolFailureAuditMetadata(
   record: ToolFailureRecord,
 ): Record<string, unknown> {
-  let argsChars = 0;
-  try {
-    argsChars = (JSON.stringify(record.args) ?? '').length;
-  } catch {
-    argsChars = 0;
-  }
   return {
     name: record.name,
     status: record.status,
     errorKind: record.errorKind,
     errorCode: record.errorCode,
-    argsChars,
+    // The original arguments' size, not the `{ truncated: true }` stand-in.
+    argsChars: record.argsChars,
     shownChars: record.shown.length,
   };
 }

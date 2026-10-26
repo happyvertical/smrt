@@ -59,6 +59,7 @@ import {
   TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
+  toolFailureAuditMetadata,
   toolFailureRecord,
 } from './tool-loop.js';
 
@@ -682,6 +683,8 @@ describe('runToolLoop', () => {
     expect(big).toEqual({
       name: 'x.read',
       args: { truncated: true },
+      argsChars: JSON.stringify({ q: 'y'.repeat(MAX_TOOL_FAILURE_ARGS_CHARS) })
+        .length,
       status: 'error',
       errorKind: 'invalid_request',
       errorCode: 'invalid_request',
@@ -700,6 +703,7 @@ describe('runToolLoop', () => {
       }),
     ).toMatchObject({
       args: { unserializable: true },
+      argsChars: 0,
       status: 'rejected',
       errorCode: 'DENIED_CODE',
     });
@@ -712,6 +716,27 @@ describe('runToolLoop', () => {
         observation: {},
       }),
     ).toBeNull();
+  });
+
+  it('audits the original argument size, not the truncation stand-in (#4383)', () => {
+    const args = { q: 'y'.repeat(MAX_TOOL_FAILURE_ARGS_CHARS) };
+    const record = toolFailureRecord({
+      slug: 'x.read',
+      args,
+      ok: false,
+      rejected: false,
+      observation: { error: 'bad' },
+      error: 'invalid_request',
+      modelContent: '{"error":"bad"}',
+    });
+    expect(record && toolFailureAuditMetadata(record)).toEqual({
+      name: 'x.read',
+      status: 'error',
+      errorKind: 'invalid_request',
+      errorCode: 'invalid_request',
+      argsChars: JSON.stringify(args).length,
+      shownChars: '{"error":"bad"}'.length,
+    });
   });
 
   it('reports a real tool failure as execution_error', async () => {
