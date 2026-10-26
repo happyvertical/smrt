@@ -531,16 +531,29 @@ const SUMMARY_LINE_BREAK = /\r\n|[\n\v\f\r\u0085\u2028\u2029]/;
 /** Format characters: bidi controls, zero-width characters, BOM, soft hyphen. */
 const FORMAT_CHARACTERS = /\p{Cf}/gu;
 
+/** Remaining control characters (tabs, NUL, ESC, ...), each made a space. */
+const CONTROL_CHARACTERS = /\p{Cc}/gu;
+
 /**
- * First line of a description, without format characters, bounded with an
- * ellipsis when cut.
+ * First non-empty line of model-facing summary text, with format characters
+ * removed and control characters replaced by spaces.
  */
+function firstSummaryLine(text: unknown): string | undefined {
+  if (typeof text !== 'string') return undefined;
+  for (const rawLine of text.split(SUMMARY_LINE_BREAK)) {
+    const line = rawLine
+      .replace(FORMAT_CHARACTERS, '')
+      .replace(CONTROL_CHARACTERS, ' ')
+      .trim();
+    if (line.length > 0) return line;
+  }
+  return undefined;
+}
+
+/** Summary description: its first non-empty line, bounded with an ellipsis. */
 function summaryDescription(description: unknown): string | undefined {
-  if (typeof description !== 'string') return undefined;
-  const line = (description.split(SUMMARY_LINE_BREAK, 1)[0] ?? '')
-    .replace(FORMAT_CHARACTERS, '')
-    .trim();
-  if (line.length === 0) return undefined;
+  const line = firstSummaryLine(description);
+  if (line === undefined) return undefined;
   const characters = Array.from(line);
   if (characters.length <= MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS) {
     return line;
@@ -555,7 +568,7 @@ function summary(surface: DataSurfaceDefinition): DataSurfaceSummary {
   const description = summaryDescription(surface.description);
   return {
     id: surface.id,
-    label: surface.label ?? surface.id,
+    label: firstSummaryLine(surface.label) ?? surface.id,
     ...(description ? { description } : {}),
     ...rowCountHintEntry(surface),
   };

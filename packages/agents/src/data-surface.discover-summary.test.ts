@@ -278,8 +278,8 @@ describe('data.discover summary mode (#4329)', () => {
       '  Padded first line  \nrest',
       long,
       `${'z'.repeat(160)}`,
-      '\nleading blank line hides the rest',
-      '   ',
+      '\n  \t\nfirst non-empty line wins\nrest',
+      '   \n\t\n',
     ];
     const result = await discover({
       surfaces: descriptions.map((description, index) =>
@@ -296,7 +296,7 @@ describe('data.discover summary mode (#4329)', () => {
       'Padded first line',
       `${long.slice(0, 159)}\u2026`,
       'z'.repeat(160),
-      undefined,
+      'first non-empty line wins',
       undefined,
     ]);
     const cut = (result as Array<{ description?: string }>)[2].description;
@@ -323,12 +323,53 @@ describe('data.discover summary mode (#4329)', () => {
     const [stripped, onlyFormat] = (await discover({
       surfaces: [
         surface({ id: 'a', description: `Sa${format}fe text${format}` }),
-        surface({ id: 'b', description: `${format}\nhidden` }),
+        surface({ id: 'b', description: `${format}\n\u200B \n${format}` }),
       ],
       discoverDetail: 'summary',
     })) as Array<{ description?: string }>;
     expect(stripped.description).toBe('Safe text');
     expect(onlyFormat).not.toHaveProperty('description');
+  });
+
+  it('uses the first non-empty line of a template-literal description', async () => {
+    const [entry] = (await discover({
+      surfaces: [
+        surface({
+          description: `
+            Invoices issued to customers.
+            Columns include totals and due dates.
+          `,
+        }),
+      ],
+      discoverDetail: 'summary',
+    })) as Array<{ description?: string }>;
+    expect(entry.description).toBe('Invoices issued to customers.');
+  });
+
+  it('turns remaining control characters into spaces in summary text', async () => {
+    const [entry] = (await discover({
+      surfaces: [
+        surface({ label: 'Re\u0000cords\t', description: 'Tab\there\u001B' }),
+      ],
+      discoverDetail: 'summary',
+    })) as Array<{ label: string; description?: string }>;
+    expect(entry).toMatchObject({ label: 'Re cords', description: 'Tab here' });
+  });
+
+  it('cleans the summary label like the description and falls back to the id', async () => {
+    const result = (await discover({
+      surfaces: [
+        surface({ id: 'a', label: '\n\u202EInvoices\u200B\nsecond line' }),
+        surface({ id: 'b', label: '\u200B\u2066 \n' }),
+      ],
+      discoverDetail: 'summary',
+    })) as Array<{ id: string; label: string }>;
+    expect(result.map((entry) => entry.label)).toEqual(['Invoices', 'b']);
+    // Full mode keeps the host's label exactly as given.
+    const [full] = (await discover({
+      surfaces: [surface({ id: 'a', label: '\u202EInvoices' })],
+    })) as Array<{ label: string }>;
+    expect(full.label).toBe('\u202EInvoices');
   });
 
   it('cuts on code points, never splitting an astral character, and trims a cut on a space', async () => {
@@ -509,6 +550,14 @@ describe('data.discover summary mode (#4329)', () => {
     ['only an ideographic space', '\u3000'],
   ])('rejects a rowCountHint containing %s', (_name, hint) => {
     expect(normalizeDataSurfaceRowCountHint(hint)).toBeUndefined();
+  });
+
+  it('counts the 32-character hint limit in code points, not UTF-16 units', () => {
+    const emoji = '\u{1F600}';
+    expect(normalizeDataSurfaceRowCountHint(emoji.repeat(32))).toBe(
+      emoji.repeat(32),
+    );
+    expect(normalizeDataSurfaceRowCountHint(emoji.repeat(33))).toBeUndefined();
   });
 
   it('accepts visible non-ASCII labels', () => {
