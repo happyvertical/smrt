@@ -45,3 +45,10 @@ A JSON-roundtripped evidenceId-only proposal is accepted; malformed result/reaso
 and an extra page selector are rejected. Image anchors are page1; PDF source-only
 anchors remain page:null. No conclusion about the unknown malformed provider
 page value is inferred from the earlier minimum diagnostic.
+
+Executor affinity regression: direct catalog read/private/answer-key callbacks
+receive the exact shared public collection.db executor. Mixed catalog executors
+fail before host authorization. Nested workbook guardian review asserts catalog
+and learner callbacks share the same active transaction. A real PostgreSQL plus
+SessionService heartbeat regression belongs to the host integration lane; synthetic
+SQLite affinity alone is not proof that a pooled session lock can never deadlock.

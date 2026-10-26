@@ -1,7 +1,12 @@
 # Physical workbook contract
 
 `WorkbookService` extends `SubmissionService` with the same actor-bound authorization,
-private asset runtime, transaction executor and guardian Grade boundary. It is an
+private asset runtime, transaction executor and guardian Grade boundary. Both
+LearnerAuthorizer and CatalogAuthorizer receive the active executor. Host session
+heartbeats and current permission checks must use that supplied executor, including
+nested guardian review; a captured outer pool can wait on its own transaction.
+CatalogService obtains the executor through the public collection.db getter and
+fails closed when its four catalog collections do not share the same handle. It is an
 additive API; existing Submission/Grade consumers retain their contracts. The six
 closed `Workbook*` models are package-manifest models. Apply normal application
 schema migrations before using them; the service never creates runtime schema.

@@ -1468,4 +1468,48 @@ export function workbookContractTests(
       await f.close();
     }
   });
+  it('keeps nested workbook guardian review and catalog callbacks on the same executor', async () => {
+    const f = await fixture();
+    try {
+      const proposal = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...f.request,
+          ...f.own,
+          requestKey: 'executor-proposal',
+          assessment: f.assessment,
+        }),
+      );
+      const learnerExecutors = new Set<DatabaseInterface>();
+      const catalogExecutors = new Set<DatabaseInterface>();
+      const service = new WorkbookService(
+        f.db,
+        ({ executor, own, relationshipTypeId }) => {
+          learnerExecutors.add(executor);
+          return own || relationshipTypeId === f.guardianType.id;
+        },
+        ({ executor }) => {
+          catalogExecutors.add(executor);
+          expect(learnerExecutors.has(executor)).toBe(true);
+          return true;
+        },
+        { storage: f.storage },
+      );
+      const reviewed = await f.as(f.parent, () =>
+        service.withTransaction((scoped) =>
+          scoped.reviewWorkbookAssessment({
+            ...f.request,
+            revisionId: proposal.id,
+            expectedHeadId: null,
+            requestKey: 'executor-review',
+          }),
+        ),
+      );
+      expect(reviewed.kind).toBe('guardian');
+      expect(learnerExecutors.size).toBe(1);
+      expect(catalogExecutors.size).toBe(1);
+      expect([...catalogExecutors]).toEqual([...learnerExecutors]);
+    } finally {
+      await f.close();
+    }
+  });
 }

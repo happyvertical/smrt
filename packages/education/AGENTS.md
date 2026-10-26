@@ -3,7 +3,8 @@
 Catalog objects are optional-tenant scoped and have no generated REST, CLI, MCP,
 or AI surface. Applications use `CatalogService`, supplying their actor-bound
 authorization decision and the trusted `TenantCollection.withTenantCatalogReadScope`
-adapter from smrt-users. That read scope may widen only an allowlisted catalog
+adapter from smrt-users. Catalog authorization receives the exact shared collection
+executor; live session/permission checks must use that executor. That read scope may widen only an allowlisted catalog
 collection's `list` to self, ancestors, and globals; it never authorizes a get,
 write, raw query, sibling, or descendant read.
 

@@ -1,4 +1,5 @@
 import type { TenantCollection } from '@happyvertical/smrt-users';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { Course, CourseSection, Lesson } from './catalog.js';
 import type {
   CourseCollection,
@@ -17,6 +18,8 @@ export type CatalogActorContext = Parameters<
 
 export type CatalogAuthorizer = (
   request: Omit<CatalogActorContext, 'mode'> & {
+    /** Actual collection executor, including the current education transaction. */
+    executor: DatabaseInterface;
     action:
       | 'education.catalog.read'
       | 'education.catalog.read-private'
@@ -72,6 +75,22 @@ export class CatalogService {
     >,
     private readonly authorize: CatalogAuthorizer,
   ) {}
+  private executor(): DatabaseInterface {
+    const executor = this.courses.db;
+    if (
+      !executor ||
+      [this.sections, this.lessons, this.assets].some(
+        (collection) => collection.db !== executor,
+      )
+    )
+      throw new CatalogAuthorizationError();
+    return executor;
+  }
+  private authorizeInScope(
+    request: Omit<Parameters<CatalogAuthorizer>[0], 'executor'>,
+  ) {
+    return this.authorize({ ...request, executor: this.executor() });
+  }
   async findVisible(request: CatalogReadRequest): Promise<Course[]> {
     const {
       tenantId,
@@ -86,14 +105,14 @@ export class CatalogService {
       actorUserId,
       rootTenantId: tenantId,
     };
-    const allowed = await this.authorize({
+    const allowed = await this.authorizeInScope({
       ...actor,
       action: 'education.catalog.read',
     });
     if (allowed !== true) throw new CatalogAuthorizationError();
     if (
       includePrivate &&
-      (await this.authorize({
+      (await this.authorizeInScope({
         ...actor,
         action: 'education.catalog.read-private',
       })) !== true
@@ -145,7 +164,7 @@ export class CatalogService {
     };
     if (
       includeAnswerKeys &&
-      (await this.authorize({
+      (await this.authorizeInScope({
         ...actor,
         action: 'education.catalog.answer-key.read',
       })) !== true
