@@ -381,6 +381,20 @@ describe('principal-bound report data-surface tools', () => {
     });
   });
 
+  it('passes a host rowCountHint through to report discovery', async () => {
+    const run = fakeRun([DATA_DISCOVER_TOOL_SLUG]);
+    const discover = async (overrides: Record<string, unknown>) =>
+      (await toolSet({ reports: [reportDefinition(overrides)] })
+        .get(DATA_DISCOVER_TOOL_SLUG)
+        ?.execute({ run, args: {}, db: undefined })) as Array<
+        Record<string, unknown>
+      >;
+    expect((await discover({ rowCountHint: 'about 40' }))[0]).toMatchObject({
+      rowCountHint: 'about 40',
+    });
+    expect((await discover({}))[0]).not.toHaveProperty('rowCountHint');
+  });
+
   it('keeps silent queries local and background queries authority-free', async () => {
     const queued: unknown[] = [];
     const adapter = { tenantScope: 'tenant' as const };

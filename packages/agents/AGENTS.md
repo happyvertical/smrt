@@ -192,7 +192,11 @@ to 160 chars, and `rowCountHint`, with a discover tool description pointing to
 the same in both modes; inspect and query are unaffected.
 `DataSurfaceDefinition.rowCountHint` is host-supplied and never queried:
 `normalizeDataSurfaceRowCountHint()` accepts a non-negative safe integer or a
-trimmed single-line label of at most 32 chars, and omits anything else.
+trimmed label of at most 32 chars with something visible and no Cc/Cf/Zl/Zp
+characters, and omits anything else. Every reader of the surface sees the
+same hint, so it must be a coarse static label, never a tenant- or
+principal-specific count; the description's first line is model-facing and
+must carry no secrets or instructions.
 
 ## Playbook Preflight (issue #2590)
 

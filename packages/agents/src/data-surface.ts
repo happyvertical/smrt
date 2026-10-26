@@ -486,8 +486,18 @@ function visibleSchema(
 }
 
 /**
+ * Control, format (bidi overrides, zero-width, BOM, soft hyphen, tag
+ * characters), and line/paragraph-separator code points: never valid in a hint.
+ */
+const ROW_COUNT_HINT_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+/** Separators plus Unicode "blank" letters/symbols that render as nothing. */
+const INVISIBLE_CHARACTERS = /[\p{Z}\u115F\u1160\u2800\u3164\uFFA0]/gu;
+
+/**
  * Validate a host-supplied row-count hint: a non-negative safe integer, or a
- * trimmed single-line label of 1-32 characters. Anything else is `undefined`.
+ * trimmed single-line label of 1-32 characters with no control, format, or
+ * separator characters and at least one visible character. Anything else is
+ * `undefined`.
  */
 export function normalizeDataSurfaceRowCountHint(
   value: unknown,
@@ -495,12 +505,14 @@ export function normalizeDataSurfaceRowCountHint(
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   }
-  if (typeof value !== 'string') return undefined;
+  // Check the raw value: `trim()` would silently drop an edge U+FEFF/U+2028.
+  if (typeof value !== 'string' || ROW_COUNT_HINT_FORBIDDEN.test(value)) {
+    return undefined;
+  }
   const label = value.trim();
   if (
-    label.length === 0 ||
-    Array.from(label).length > MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS ||
-    /\p{Cc}/u.test(label)
+    label.replace(INVISIBLE_CHARACTERS, '').length === 0 ||
+    Array.from(label).length > MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS
   ) {
     return undefined;
   }
@@ -514,12 +526,20 @@ function rowCountHintEntry(surface: DataSurfaceDefinition): {
   return rowCountHint === undefined ? {} : { rowCountHint };
 }
 
-/** First line of a description, bounded with an ellipsis when cut. */
+/** CRLF, LF, VT, FF, CR, NEL, and the Unicode line/paragraph separators. */
+const SUMMARY_LINE_BREAK = /\r\n|[\n\v\f\r\u0085\u2028\u2029]/;
+/** Format characters: bidi controls, zero-width characters, BOM, soft hyphen. */
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
+
+/**
+ * First line of a description, without format characters, bounded with an
+ * ellipsis when cut.
+ */
 function summaryDescription(description: unknown): string | undefined {
   if (typeof description !== 'string') return undefined;
-  const line = (
-    description.split(/\r\n|[\r\n\u2028\u2029]/, 1)[0] ?? ''
-  ).trim();
+  const line = (description.split(SUMMARY_LINE_BREAK, 1)[0] ?? '')
+    .replace(FORMAT_CHARACTERS, '')
+    .trim();
   if (line.length === 0) return undefined;
   const characters = Array.from(line);
   if (characters.length <= MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS) {

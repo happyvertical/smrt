@@ -160,11 +160,22 @@ full field, metadata, `supports`, and `limits` descriptor. The model then calls
 same in both modes.
 
 `DataSurfaceDefinition.rowCountHint` (also accepted by
-`createSmrtCollectionDataSurfaceDefinition()` and report definitions) is a
-host-supplied size hint: a non-negative safe integer or a single-line label of
-at most 32 characters such as `"~2k"`. It is never computed by querying;
-invalid values are omitted (see `normalizeDataSurfaceRowCountHint()`) without
-failing discovery, and valid ones also appear in full descriptors.
+`createSmrtCollectionDataSurfaceDefinition()`, report definitions, and
+`@happyvertical/smrt-content`'s `createContentListDataSurfaceDefinition()`) is
+a host-supplied size hint: a non-negative safe integer or a single-line label
+of at most 32 characters such as `"~2k"`. It is never computed by querying.
+Invalid values are omitted (see `normalizeDataSurfaceRowCountHint()`) without
+failing discovery: labels with control, format (bidi, zero-width, BOM, soft
+hyphen, tag), or line/paragraph-separator characters, or with nothing
+visible. Valid hints also appear in full descriptors.
+
+The same hint is shown to **every principal who can read the surface**, so it
+must not encode a tenant- or principal-specific count. Use a coarse, static
+label (`"thousands"`, `"~2k"`), never a live per-tenant total. Likewise, the
+first line of `description` is model-facing text in every summary: keep it
+free of secrets, internal identifiers, and instructions to the model. The
+summary strips format characters from it and treats CR, LF, VT, FF, NEL,
+U+2028, and U+2029 as line breaks.
 
 ### Report Data-Surface Tools
 

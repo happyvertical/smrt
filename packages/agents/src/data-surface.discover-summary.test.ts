@@ -154,9 +154,15 @@ function sha256(value: unknown): string {
 }
 
 /**
- * JSON of `data.discover` for `syntheticCatalog()` under `fakeRun()`, recorded
- * from the implementation before `discoverDetail` existed (e4a97858c). Full
- * mode must stay byte-identical to it.
+ * SHA-256 of the JSON of `data.discover` for `syntheticCatalog()` under
+ * `fakeRun()`, recorded from the implementation before `discoverDetail`
+ * existed (e4a97858c). Full mode must stay byte-identical to it. Reproduce it
+ * against the base from `packages/agents` (the test only needs the base's
+ * `createDataSurfaceTools`; the summary-only tests fail there as expected):
+ *
+ *   git show e4a97858c:packages/agents/src/data-surface.ts > src/data-surface.ts
+ *   pnpm exec vitest run src/data-surface.discover-summary.test.ts -t byte-identical
+ *   git checkout -- src/data-surface.ts
  */
 const FULL_DISCOVER_BASELINE_SHA256 =
   '6e334cd5c7db4cf729ba0319cecd34d669b46b27f6335f67d570de29d77fb131';
@@ -195,6 +201,28 @@ describe('data.discover summary mode (#4329)', () => {
       surfaces: syntheticCatalog(),
       discoverDetail: 'full',
     });
+    // Readable structural check first, so a shape change names the key.
+    const [first] = implicit as Array<Record<string, unknown>>;
+    expect(Object.keys(first)).toEqual([
+      'id',
+      'label',
+      'description',
+      'metadata',
+      'collection',
+      'identityField',
+      'fields',
+      'supports',
+      'limits',
+    ]);
+    expect(Object.keys((first.fields as object[])[1])).toEqual([
+      'id',
+      'type',
+      'projectable',
+      'sortable',
+      'facetable',
+      'filterOperators',
+      'metadata',
+    ]);
     expect(sha256(implicit)).toBe(FULL_DISCOVER_BASELINE_SHA256);
     expect(JSON.stringify(explicit)).toBe(JSON.stringify(implicit));
   });
@@ -273,6 +301,49 @@ describe('data.discover summary mode (#4329)', () => {
     ]);
     const cut = (result as Array<{ description?: string }>)[2].description;
     expect(Array.from(cut ?? '').length).toBeLessThanOrEqual(160);
+  });
+
+  it.each([
+    ['VT', 'One\vTwo'],
+    ['FF', 'One\fTwo'],
+    ['CR', 'One\rTwo'],
+    ['NEL', 'One\u0085Two'],
+    ['LINE SEPARATOR', 'One\u2028Two'],
+    ['PARAGRAPH SEPARATOR', 'One\u2029Two'],
+  ])('treats %s as a line break in the summary description', async (_name, description) => {
+    const [entry] = (await discover({
+      surfaces: [surface({ description })],
+      discoverDetail: 'summary',
+    })) as Array<{ description?: string }>;
+    expect(entry.description).toBe('One');
+  });
+
+  it('strips bidi, zero-width, and other format characters from the summary line', async () => {
+    const format = '\u202E\u2066\u200B\u200E\u200D\uFEFF\u00AD\u{E0041}\u2060';
+    const [stripped, onlyFormat] = (await discover({
+      surfaces: [
+        surface({ id: 'a', description: `Sa${format}fe text${format}` }),
+        surface({ id: 'b', description: `${format}\nhidden` }),
+      ],
+      discoverDetail: 'summary',
+    })) as Array<{ description?: string }>;
+    expect(stripped.description).toBe('Safe text');
+    expect(onlyFormat).not.toHaveProperty('description');
+  });
+
+  it('cuts on code points, never splitting an astral character, and trims a cut on a space', async () => {
+    const emojiAtCut = `${'a'.repeat(158)}\u{1F600}${'b'.repeat(10)}`;
+    const spaceAtCut = `${'c'.repeat(157)}  ${'d'.repeat(10)}`;
+    const [emoji, space] = (await discover({
+      surfaces: [
+        surface({ id: 'a', description: emojiAtCut }),
+        surface({ id: 'b', description: spaceAtCut }),
+      ],
+      discoverDetail: 'summary',
+    })) as Array<{ description: string }>;
+    expect(emoji.description).toBe(`${'a'.repeat(158)}\u{1F600}\u2026`);
+    expect(Array.from(emoji.description)).toHaveLength(160);
+    expect(space.description).toBe(`${'c'.repeat(157)}\u2026`);
   });
 
   it('keeps a 34-surface summary a small fraction of the full catalog', async () => {
@@ -420,5 +491,28 @@ describe('data.discover summary mode (#4329)', () => {
     }
     expect(normalizeDataSurfaceRowCountHint(' 5k ')).toBe('5k');
     expect(normalizeDataSurfaceRowCountHint(-3)).toBeUndefined();
+  });
+
+  it.each([
+    ['Cc (NUL)', '5k\u0000'],
+    ['Cc (tab)', '5\tk'],
+    ['Cf (RIGHT-TO-LEFT OVERRIDE)', '\u202E5k'],
+    ['Cf (LEFT-TO-RIGHT ISOLATE)', '5k\u2066'],
+    ['Cf (ZERO WIDTH SPACE)', '5\u200Bk'],
+    ['Cf (LEFT-TO-RIGHT MARK)', '5k\u200E'],
+    ['Cf (BOM at an edge trim() would drop)', '\uFEFF5k'],
+    ['Cf (SOFT HYPHEN)', '5\u00ADk'],
+    ['Cf (tag character)', '5k\u{E0041}'],
+    ['Zl (LINE SEPARATOR at an edge)', '5k\u2028'],
+    ['Zp (PARAGRAPH SEPARATOR)', '5\u2029k'],
+    ['only invisible blanks', '\u3164\u2800\u00A0'],
+    ['only an ideographic space', '\u3000'],
+  ])('rejects a rowCountHint containing %s', (_name, hint) => {
+    expect(normalizeDataSurfaceRowCountHint(hint)).toBeUndefined();
+  });
+
+  it('accepts visible non-ASCII labels', () => {
+    expect(normalizeDataSurfaceRowCountHint('≈ 2 000')).toBe('≈ 2 000');
+    expect(normalizeDataSurfaceRowCountHint('约2千')).toBe('约2千');
   });
 });
