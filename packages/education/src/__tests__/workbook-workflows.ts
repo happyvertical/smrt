@@ -5,6 +5,7 @@ import { createAssetRuntime } from '@happyvertical/smrt-assets';
 import {
   GenerationSnapshotStaleError,
   IngestionService,
+  ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it } from 'vitest';
@@ -1731,12 +1732,13 @@ export function workbookContractTests(
           assessment: f.assessment,
         }),
       );
-      let mode: 'stale' | 'unavailable' | 'db' = 'stale';
+      let mode: 'stale' | 'unavailable' | 'config' | 'db' = 'stale';
       let currentRevision = 2;
       const ingestion = {
         getItem: async () => ({ analysisRevision: currentRevision }),
         getCompletedAnalysis: async () => {
           if (mode === 'stale') throw new GenerationSnapshotStaleError();
+          if (mode === 'config') throw new ProposalsNotConfiguredError();
           if (mode === 'unavailable') throw new Error('Intake unavailable');
           throw new Error('database offline');
         },
@@ -1754,6 +1756,10 @@ export function workbookContractTests(
         await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
       ).toEqual({ kind: 'retained', revisionId: legacy.id });
       mode = 'unavailable';
+      expect(
+        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+      ).toBe('retained');
+      mode = 'config';
       expect(
         (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
       ).toBe('retained');
@@ -1781,6 +1787,10 @@ export function workbookContractTests(
       expect(
         await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
       ).toEqual({ kind: 'needs_review', reason: 'stale_analysis' });
+      mode = 'config';
+      expect(
+        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+      ).toBe('unavailable');
 
       expect(
         (

@@ -5,6 +5,7 @@ import {
   extractAnalysis,
   GenerationSnapshotStaleError,
   type IngestionService,
+  ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
 
 export { requireIngestionMemoryLimit } from './ingestion-isolation.js';
@@ -839,6 +840,10 @@ export async function preserveWorkbookIntakeAnalysis(input: {
   try {
     snapshot = await ingestion.getCompletedAnalysis(itemId);
   } catch (error) {
+    if (error instanceof ProposalsNotConfiguredError)
+      return legacyRetained
+        ? { kind: 'retained', revisionId: legacyRetained.assessmentRevisionId }
+        : { kind: 'unavailable' };
     if (error instanceof GenerationSnapshotStaleError)
       return legacyRetained
         ? { kind: 'retained', revisionId: legacyRetained.assessmentRevisionId }

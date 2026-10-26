@@ -148,7 +148,9 @@ ingestion stale-snapshot guard remains unchanged and still rejects the old raw
 snapshot after guardian grading. A genuinely new valid analysis can append a new
 provisional revision; a novel stale analysis returns `needs_review/stale_analysis`
 and creates no mark. Legacy retained rows without interpretation revision remain
-readable when scratch is stale/unavailable; an authorized current snapshot whose
+readable when scratch is stale/unavailable or the public
+ProposalsNotConfiguredError reports removed provider read configuration. A novel
+analysis with no provider read configuration returns unavailable without import; an authorized current snapshot whose
 attempt ID is already retained is also skipped before retry reconstruction.
 
 Only the exact public scratch `Intake unavailable` response is translated to
