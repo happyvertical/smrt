@@ -27,6 +27,8 @@
   `SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER`, which says the result is
   incomplete and tells the model to narrow the request (filter, fewer fields,
   a smaller page, or a count). The marker carries no tool output.
+- The cut never splits a surrogate pair (it keeps one unit fewer instead);
+  browser results (`appendClientToolResults`) are cut the same way.
 - Only the model's copy is capped: `ToolInvocation.observation` (handed to
   `onInvocation`, persisted as tool messages, audited) keeps the full value.
 - A tool returning `undefined` observes `null`; an unserializable result

@@ -1452,12 +1452,25 @@ function serverObservationContent(observation: unknown): string {
     return JSON.stringify({ error: 'unserializable_result' });
   }
   return serialized.length > MAX_SERVER_TOOL_OBSERVATION_CHARS
-    ? `${serialized.slice(0, MAX_SERVER_TOOL_OBSERVATION_CHARS)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
+    ? `${sliceOnCodePoint(serialized, MAX_SERVER_TOOL_OBSERVATION_CHARS)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
     : serialized;
 }
 
+/**
+ * The first `max` UTF-16 units of `value`, one fewer when the cut would split
+ * a surrogate pair: a truncated result never ends in a lone surrogate.
+ */
+function sliceOnCodePoint(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const code = value.charCodeAt(max - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? max - 1 : max;
+  return value.slice(0, end);
+}
+
 function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
-  return value.length > max ? `${value.slice(0, max)}… [truncated]` : value;
+  return value.length > max
+    ? `${sliceOnCodePoint(value, max)}… [truncated]`
+    : value;
 }
 
 /** How a thrown tool error is reported to the model and the invocation log. */

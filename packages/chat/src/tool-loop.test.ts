@@ -39,8 +39,10 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  appendClientToolResults,
   buildManifestToolCatalog,
   classifyToolError,
+  MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_SERVER_TOOL_OBSERVATION_CHARS,
   type ManifestTool,
   manifestToolToAITool,
@@ -269,6 +271,22 @@ describe('buildManifestToolCatalog (offer gate)', () => {
     // they are not writable through the generated CRUD policy.
     expect(parameters.properties.calculatedTotal).toBeUndefined();
     expect(parameters.properties.internalScore).toBeUndefined();
+  });
+});
+
+describe('appendClientToolResults truncation', () => {
+  it('cuts a browser result on a code-point boundary (#4378)', () => {
+    const result = `${'x'.repeat(MAX_CLIENT_TOOL_RESULT_CHARS - 1)}\u{1F600}tail`;
+    const [message] = appendClientToolResults(
+      [],
+      [{ id: 'c1', name: 'page_read', args: {}, effect: 'read' }],
+      [{ id: 'c1', ok: true, result }],
+    );
+    const kept = (JSON.parse(String(message?.content)) as { result: string })
+      .result;
+    expect(kept.endsWith('… [truncated]')).toBe(true);
+    const body = kept.slice(0, -'… [truncated]'.length);
+    expect(body).toBe('x'.repeat(MAX_CLIENT_TOOL_RESULT_CHARS - 1));
   });
 });
 
@@ -868,6 +886,62 @@ describe('runToolLoop', () => {
     expect(seenTool[0]).toBe(content);
     // The invocation log keeps the full observation (persistence unchanged).
     expect(result.invocations[0]?.observation).toBe(big);
+  });
+
+  it('keeps an observation of exactly the cap untruncated (#4378)', async () => {
+    // JSON.stringify adds two quotes.
+    const exact = 'x'.repeat(MAX_SERVER_TOOL_OBSERVATION_CHARS - 2);
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'q' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => exact,
+      audit: () => {},
+    });
+    const content = String(
+      result.messages.find((m) => m.role === 'tool')?.content,
+    );
+    expect(content).toHaveLength(MAX_SERVER_TOOL_OBSERVATION_CHARS);
+    expect(content).toBe(JSON.stringify(exact));
+  });
+
+  it('never splits a surrogate pair at the observation cut (#4378)', async () => {
+    // '"' + 15998 x's puts an emoji's high surrogate at index 15999, the
+    // last unit kept.
+    const value = `${'x'.repeat(MAX_SERVER_TOOL_OBSERVATION_CHARS - 2)}\u{1F600}tail`;
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'q' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => value,
+      audit: () => {},
+    });
+    const content = String(
+      result.messages.find((m) => m.role === 'tool')?.content,
+    );
+    const kept = content.slice(
+      0,
+      content.length - SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER.length,
+    );
+    expect(kept).toHaveLength(MAX_SERVER_TOOL_OBSERVATION_CHARS - 1);
+    expect(/[\uD800-\uDBFF]$/.test(kept)).toBe(false);
+    expect(content.endsWith(SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER)).toBe(
+      true,
+    );
   });
 
   it('leaves a small server observation untouched and observes undefined as null', async () => {
