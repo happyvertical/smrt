@@ -20,10 +20,10 @@ describe('proposal instructions', () => {
 
   it('asks for every readable argument and only genuinely absent missingFields (#4290)', () => {
     expect(proposalInstructions).toContain(
-      'Fill every args field whose value can be read from the evidence, such as identifiers, numbers, dates, quantities, amounts and currency, in the form its schema requires; if a value cannot be expressed in that form, treat the field as absent, and never invent a value the evidence does not show.',
+      'Fill every readable args field (identifiers, numbers, dates, quantities, amounts, currency) in its schema form; unrepresentable values are absent. Never invent values not shown in evidence.',
     );
     expect(proposalInstructions).toContain(
-      "Use the value whose label or context matches the field's name and description; when several similar values appear, such as several dates, choose the one the field names, and if it is not present treat the field as absent rather than substituting another.",
+      "Match the field's name and description to the evidence label or context; among similar values (e.g. dates), choose only its named value; if absent, omit the field, never substitute.",
     );
     // The model should name exactly the absent required set. The validator
     // computes and corrects that declaration on required-only refusals; the
