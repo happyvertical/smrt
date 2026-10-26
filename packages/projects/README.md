@@ -202,3 +202,42 @@ await withRepositoryClient(
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Structured project questions
+
+`ProjectGovernanceService.createQuestion({ ..., options })` accepts optional
+single-choice suggestions (`ProjectQuestionOption`: stable `id`, `label`, optional
+`description`, optional boolean `recommended`). Recommendations are presentation
+only: creation leaves the question open, with no answer or selection. IDs must be
+unique and nonempty; `other` (case insensitive) is reserved and cannot be authored.
+`question.getOptions()` appends `{ id: 'other', label: 'Other' }` to structured
+questions. Omitting options, or supplying an empty array, keeps the existing
+free-text question flow.
+
+`answerQuestion` continues to require a nonempty string `answer`. It additionally
+accepts optional `selectedOptionId` and `idempotencyKey`. An explicit selection
+must match an offered ID, including `other`; an Other answer requires text. Hosts
+should send the chosen label as `answer` for ordinary choices and the person's
+text for Other. The generic `ProjectQuestionsAndDecisions` component supplies
+these values, uses an unselected radio group, marks recommendations, and always
+shows the Other text box. Only explicit form submission invokes `onanswer`.
+
+Existing free-text API clients remain compatible, including when answering a
+structured question without a selection: the service stores their answer and
+leaves `selectedOptionId` empty. It never guesses an option from text. Existing
+questions and immutable history are not rewritten or backfilled. New answer
+history has a `getAnswerSelection()` snapshot with answer text, observed revision,
+and explicit option ID/label when supplied; older events return `null`.
+
+The optional idempotency key is scoped to a question. After tenant/project and
+current owner/manager authorization, an identical actor, answer, selection,
+expected revision, and note replays without a new revision or history event.
+Reusing the key with different input conflicts. Without a key, the existing
+expected-revision conflict behavior applies. Transaction rollback covers both
+question and history writes. Hosts retain responsibility for affected-task
+reconciliation after persistence and replay.
+
+This additive contract adds `question_options` and `selected_option_id` columns
+to `project_questions`, and `answer_selection` to `project_governance_events`.
+Consumers must run their normal manifest-driven database migration before using
+the new released surface. It introduces no new model or table.

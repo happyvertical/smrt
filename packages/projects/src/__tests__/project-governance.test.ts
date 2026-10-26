@@ -1,11 +1,16 @@
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  getPendingSchemaStatements,
+  migrateSmrtSchemas,
+} from '@happyvertical/smrt-core/migrations';
 import {
   disableTenancy,
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ProjectGovernanceEventCollection } from '../collections/ProjectGovernanceEvents.js';
 import { ProjectGovernanceService } from '../services/project-governance-service.js';
 
 const project = {
@@ -406,5 +411,379 @@ describe('ProjectGovernanceService', () => {
         actor: manager,
       }),
     ).rejects.toThrow(/unique/i);
+  });
+  it('roundtrips structured options and explicit answer snapshots without choosing recommendations', async () => {
+    const question = await service.createQuestion({
+      ...project,
+      prompt: 'How often?',
+      owner,
+      actor: manager,
+      options: [
+        { id: '15min', label: '15 minutes', recommended: true },
+        { id: 'hourly', label: 'Hourly' },
+      ],
+    });
+    expect(question).toMatchObject({
+      status: 'open',
+      answer: '',
+      selectedOptionId: '',
+      revision: 1,
+    });
+    expect(question.getOptions()).toEqual([
+      { id: '15min', label: '15 minutes', recommended: true },
+      { id: 'hourly', label: 'Hourly' },
+      { id: 'other', label: 'Other' },
+    ]);
+    const answered = await service.answerQuestion({
+      ...project,
+      questionId: question.id as string,
+      answer: '15 minutes',
+      selectedOptionId: '15min',
+      expectedRevision: 1,
+      actor: owner,
+      idempotencyKey: 'answer:1',
+    });
+    expect(answered).toMatchObject({
+      answer: '15 minutes',
+      selectedOptionId: '15min',
+      revision: 2,
+    });
+    const hydrated = (await service.listForProject(project)).questions[0];
+    expect(hydrated.getOptions()).toEqual(question.getOptions());
+    expect(hydrated.selectedOptionId).toBe('15min');
+    const history = await service.historyForQuestion({
+      ...project,
+      questionId: question.id as string,
+    });
+    expect(history[0].getAnswerSelection()).toBeNull();
+    expect(history[1].getAnswerSelection()).toEqual({
+      answer: '15 minutes',
+      selectedOptionId: '15min',
+      optionLabel: '15 minutes',
+      expectedRevision: 1,
+      idempotencyKey: 'answer:1',
+    });
+    const replay = await service.answerQuestion({
+      ...project,
+      questionId: question.id as string,
+      answer: '15 minutes',
+      selectedOptionId: '15min',
+      expectedRevision: 1,
+      actor: owner,
+      idempotencyKey: 'answer:1',
+    });
+    expect(replay.revision).toBe(2);
+    await expect(
+      service.answerQuestion({
+        ...project,
+        questionId: question.id as string,
+        answer: 'Different',
+        selectedOptionId: '15min',
+        expectedRevision: 1,
+        actor: owner,
+        idempotencyKey: 'answer:1',
+      }),
+    ).rejects.toThrow(/different input/);
+    await expect(
+      service.answerQuestion({
+        ...project,
+        questionId: question.id as string,
+        answer: '15 minutes',
+        selectedOptionId: '15min',
+        expectedRevision: 1,
+        actor: manager,
+        idempotencyKey: 'answer:1',
+      }),
+    ).rejects.toThrow(/different input/);
+    await expect(
+      service.answerQuestion({
+        ...project,
+        questionId: question.id as string,
+        answer: '15 minutes',
+        selectedOptionId: '15min',
+        expectedRevision: 1,
+        actor: { type: 'agent', id: 'outsider' },
+        idempotencyKey: 'answer:1',
+      }),
+    ).rejects.toThrow(/cannot change/);
+    await expect(
+      service.answerQuestion({
+        ...project,
+        projectId: 'different-project',
+        questionId: question.id as string,
+        answer: '15 minutes',
+        selectedOptionId: '15min',
+        expectedRevision: 1,
+        actor: owner,
+        idempotencyKey: 'answer:1',
+      }),
+    ).rejects.toThrow(/not found/);
+    await expect(
+      withTenant({ tenantId: 'another-tenant' }, () =>
+        service.answerQuestion({
+          ...project,
+          questionId: question.id as string,
+          answer: '15 minutes',
+          selectedOptionId: '15min',
+          expectedRevision: 1,
+          actor: owner,
+          idempotencyKey: 'answer:1',
+        }),
+      ),
+    ).rejects.toThrow(/tenant|isolation/i);
+    expect(
+      await service.historyForQuestion({
+        ...project,
+        questionId: question.id as string,
+      }),
+    ).toHaveLength(2);
+  });
+
+  it('validates choices and malformed answers atomically, including Other', async () => {
+    for (const options of [
+      [{ id: 'other', label: 'Custom other' }],
+      [{ id: 'Other', label: 'Collision' }],
+      [
+        { id: 'a', label: 'A' },
+        { id: 'a', label: 'Duplicate' },
+      ],
+      [{ id: 'a', label: 'A', recommended: 'yes' }],
+      [{ id: 'a', label: 'A', description: 12 }],
+    ]) {
+      await expect(
+        service.createQuestion({
+          ...project,
+          prompt: 'Invalid?',
+          actor: manager,
+          options: options as never,
+        }),
+      ).rejects.toThrow();
+    }
+    expect((await service.listForProject(project)).questions).toHaveLength(0);
+    const question = await service.createQuestion({
+      ...project,
+      prompt: 'Preference?',
+      owner,
+      actor: manager,
+      options: [{ id: 'a', label: 'A' }],
+    });
+    const base = {
+      ...project,
+      questionId: question.id as string,
+      expectedRevision: 1,
+      actor: owner,
+    };
+    for (const payload of [
+      { answer: 'unknown', selectedOptionId: 'unknown' },
+      { answer: '', selectedOptionId: 'other' },
+      { answer: '   ', selectedOptionId: 'other' },
+      { answer: 12 },
+      { answer: 'x', selectedOptionId: 1 },
+      { answer: 'x', selectedOptionId: ' a ' },
+      { answer: 'x', idempotencyKey: '' },
+      { answer: 'x', expectedRevision: 0 },
+    ])
+      await expect(
+        service.answerQuestion({ ...base, ...payload } as never),
+      ).rejects.toThrow();
+    const [unchanged] = (await service.listForProject(project)).questions;
+    expect(unchanged).toMatchObject({
+      status: 'open',
+      answer: '',
+      revision: 1,
+    });
+    expect(await service.historyForQuestion(base)).toHaveLength(1);
+    const answered = await service.answerQuestion({
+      ...base,
+      selectedOptionId: 'other',
+      answer: ' Custom schedule ',
+    });
+    expect(answered).toMatchObject({
+      answer: 'Custom schedule',
+      selectedOptionId: 'other',
+      revision: 2,
+    });
+    expect(
+      (await service.historyForQuestion(base))[1].getAnswerSelection(),
+    ).toMatchObject({
+      selectedOptionId: 'other',
+      optionLabel: 'Other',
+      answer: 'Custom schedule',
+    });
+  });
+
+  it('preserves old free-text answers and history without inferring a selection', async () => {
+    const question = await service.createQuestion({
+      ...project,
+      prompt: 'How often?',
+      owner,
+      actor: manager,
+    });
+    const base = { ...project, questionId: question.id as string };
+    const answered = await service.answerQuestion({
+      ...base,
+      answer: '15 minutes',
+      expectedRevision: 1,
+      actor: owner,
+    });
+    expect(answered).toMatchObject({
+      answer: '15 minutes',
+      selectedOptionId: '',
+      revision: 2,
+    });
+    expect(answered.getOptions()).toEqual([]);
+    const history = await service.historyForQuestion(base);
+    expect(history[1].value).toBe('15 minutes');
+    expect(history[1].getAnswerSelection()?.selectedOptionId).toBeUndefined();
+    const before = history.map((event) => event.toJSON());
+    await service.listForProject(project);
+    expect(
+      (await service.historyForQuestion(base)).map((event) => event.toJSON()),
+    ).toEqual(before);
+    const structured = await service.createQuestion({
+      ...project,
+      prompt: 'Legacy client?',
+      owner,
+      actor: manager,
+      options: [{ id: 'a', label: 'A' }],
+    });
+    const legacy = await service.answerQuestion({
+      ...project,
+      questionId: structured.id as string,
+      answer: 'A',
+      expectedRevision: 1,
+      actor: owner,
+    });
+    expect(legacy.selectedOptionId).toBe('');
+  });
+  it('rolls back answer and retry key if history persistence fails, then permits a retry', async () => {
+    const question = await service.createQuestion({
+      ...project,
+      prompt: 'Retry?',
+      owner,
+      actor: manager,
+      options: [{ id: 'a', label: 'A' }],
+    });
+    const input = {
+      ...project,
+      questionId: question.id as string,
+      answer: 'A',
+      selectedOptionId: 'a',
+      actor: owner,
+      expectedRevision: 1,
+      idempotencyKey: 'retry:1',
+    };
+    const fail = vi
+      .spyOn(ProjectGovernanceEventCollection.prototype, 'create')
+      .mockRejectedValueOnce(new Error('Fixture history failure'));
+    try {
+      await expect(service.answerQuestion(input)).rejects.toThrow(
+        'Fixture history failure',
+      );
+    } finally {
+      fail.mockRestore();
+    }
+    const [unchanged] = (await service.listForProject(project)).questions;
+    expect(unchanged).toMatchObject({
+      answer: '',
+      selectedOptionId: '',
+      revision: 1,
+      status: 'open',
+    });
+    expect(await service.historyForQuestion(input)).toHaveLength(1);
+    expect((await service.answerQuestion(input)).revision).toBe(2);
+    expect((await service.answerQuestion(input)).revision).toBe(2);
+    expect(await service.historyForQuestion(input)).toHaveLength(2);
+  });
+  it('migrates old question/event schemas without rewriting legacy answers or audit history', async () => {
+    const question = await service.createQuestion({
+      ...project,
+      prompt: 'Old cadence?',
+      owner,
+      actor: manager,
+    });
+    await service.answerQuestion({
+      ...project,
+      questionId: question.id as string,
+      answer: '15 minutes',
+      expectedRevision: 1,
+      actor: owner,
+    });
+    // Fixture represents the deployed schema before #4337, with no selection metadata.
+    await db.query(
+      'ALTER TABLE project_questions DROP COLUMN question_options',
+    );
+    await db.query(
+      'ALTER TABLE project_questions DROP COLUMN selected_option_id',
+    );
+    await db.query(
+      'ALTER TABLE project_governance_events DROP COLUMN answer_selection',
+    );
+    const beforeQuestion = await db.query(
+      'SELECT * FROM project_questions WHERE id = ?',
+      question.id,
+    );
+    const beforeEvents = await db.query(
+      'SELECT * FROM project_governance_events WHERE meta_id = ? ORDER BY revision',
+      question.id,
+    );
+    const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+    const own = {
+      project_questions: schemas.project_questions,
+      project_governance_events: schemas.project_governance_events,
+    };
+    const registry = vi
+      .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+      .mockReturnValue(own);
+    try {
+      const plan = await getPendingSchemaStatements(db);
+      expect(plan.statements.join(' ')).toContain('question_options');
+      expect(plan.statements.join(' ')).toContain('selected_option_id');
+      expect(plan.statements.join(' ')).toContain('answer_selection');
+      expect(plan.statements.join(' ')).not.toMatch(/DROP TABLE|DELETE FROM/i);
+      const migrated = await migrateSmrtSchemas({
+        db,
+        packageName: '@happyvertical/smrt-projects',
+        postgresSafe: false,
+      });
+      expect(migrated.applied).toBe(true);
+      expect((await getPendingSchemaStatements(db)).hasChanges).toBe(false);
+    } finally {
+      registry.mockRestore();
+    }
+    const afterQuestion = await db.query(
+      'SELECT * FROM project_questions WHERE id = ?',
+      question.id,
+    );
+    const { question_options, selected_option_id, ...unchangedQuestion } =
+      afterQuestion.rows[0];
+    expect(unchangedQuestion).toEqual(beforeQuestion.rows[0]);
+    expect(question_options).toBe('[]');
+    expect(selected_option_id).toBe('');
+    const afterEvents = await db.query(
+      'SELECT * FROM project_governance_events WHERE meta_id = ? ORDER BY revision',
+      question.id,
+    );
+    expect(
+      afterEvents.rows.map(({ answer_selection, ...event }) => event),
+    ).toEqual(beforeEvents.rows);
+    expect(
+      afterEvents.rows.every((event) => event.answer_selection === ''),
+    ).toBe(true);
+    const [legacy] = (await service.listForProject(project)).questions;
+    expect(legacy).toMatchObject({
+      answer: '15 minutes',
+      revision: 2,
+      selectedOptionId: '',
+    });
+    expect(legacy.getOptions()).toEqual([]);
+    expect(
+      (
+        await service.historyForQuestion({
+          ...project,
+          questionId: question.id as string,
+        })
+      ).every((event) => event.getAnswerSelection() === null),
+    ).toBe(true);
   });
 });
