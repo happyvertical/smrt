@@ -1215,7 +1215,11 @@ export async function runToolLoop(
               rejected: prior.rejected,
               observation: {
                 deduped: true,
-                note: TOOL_CALL_DEDUPED_NOTE,
+                // A repeat of a rejected call must say it will fail again,
+                // not just point at the result.
+                note: prior.ok
+                  ? TOOL_CALL_DEDUPED_NOTE
+                  : TOOL_CALL_DEDUPED_REJECTED_NOTE,
               },
               ...(prior.error ? { error: prior.error } : {}),
               deduped: true,
@@ -1272,7 +1276,13 @@ export async function runToolLoop(
             invocation.observation,
           );
           invocations.push(invocation);
-          if (
+          if ((tool || extraTool) && !isReadOnlyTool(tool, extraTool)) {
+            // Any non-read-only server call (a write, `agents.invoke`, any
+            // other extra tool) may change what a read returns, whatever its
+            // result: forget every remembered read so a later identical read
+            // runs fresh (#4382).
+            priorReadOnlyCalls.clear();
+          } else if (
             dedupeKey &&
             !invocation.deduped &&
             invocation.error !== 'execution_error' &&
@@ -1583,6 +1593,13 @@ function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
 export const TOOL_CALL_DEDUPED_NOTE =
   'This exact call was already made in this turn; its result is above. Use it, or change the arguments.';
 
+/**
+ * Fixed note for a deduped repeat of a call that was rejected or refused
+ * (#4382): repeating it unchanged cannot succeed.
+ */
+export const TOOL_CALL_DEDUPED_REJECTED_NOTE =
+  'This exact call was already rejected above; repeating it will not work. Fix the arguments as the error says.';
+
 /** Max distinct read-only calls remembered for dedupe in one leg (#4382). */
 export const MAX_DEDUPED_CALLS_PER_TURN = 64;
 /** Calls whose canonical arguments exceed this are never deduped. */
@@ -1613,6 +1630,15 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
+/** Whether a resolved server tool is on the dedupe allow-list (#4382). */
+function isReadOnlyTool(
+  tool: ManifestTool | undefined,
+  extraTool: PrincipalTool | undefined,
+): boolean {
+  if (tool) return tool.action === 'read';
+  return extraTool ? DEDUPABLE_EXTRA_TOOLS.has(extraTool.slug) : false;
+}
+
 /**
  * The dedupe key for a read-only call (manifest `read`, or a known read-only
  * data tool), or `null` when the call never qualifies.
@@ -1624,12 +1650,7 @@ function readOnlyCallKey(
   args: Record<string, unknown> | null,
 ): string | null {
   if (args === null) return null;
-  const readOnly = tool
-    ? tool.action === 'read'
-    : extraTool
-      ? DEDUPABLE_EXTRA_TOOLS.has(extraTool.slug)
-      : false;
-  if (!readOnly) return null;
+  if (!isReadOnlyTool(tool, extraTool)) return null;
   let key: string;
   try {
     key = `${slug}\u0000${canonicalJson(args)}`;

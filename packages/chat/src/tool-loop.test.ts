@@ -47,6 +47,7 @@ import {
   buildManifestToolCatalog,
   classifyToolError,
   MAX_CLIENT_TOOL_RESULT_CHARS,
+  MAX_DEDUPED_CALLS_PER_TURN,
   MAX_SERVER_TOOL_OBSERVATION_CHARS,
   MAX_TOOL_FAILURE_ARGS_CHARS,
   type ManifestTool,
@@ -54,6 +55,7 @@ import {
   runToolLoop,
   SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
   TOOL_CALL_DEDUPED_NOTE,
+  TOOL_CALL_DEDUPED_REJECTED_NOTE,
   TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   type ToolExecutionContext,
@@ -1328,6 +1330,154 @@ describe('runToolLoop', () => {
       expect(
         audits.filter((a) => a.action === 'chat.tool_call_deduped'),
       ).toHaveLength(1);
+    });
+
+    it('forgets remembered reads after a write: read, create, read runs fresh (#4382)', async () => {
+      await grant('tool_loop_notes.read');
+      await grant('tool_loop_notes.create');
+      const read = { where: { title: 'Fresh' } };
+      const sequence = [
+        ['tool_loop_notes.read', read],
+        ['tool_loop_notes.create', { title: 'Fresh', tenantId }],
+        ['tool_loop_notes.read', read],
+      ] as const;
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall(sequence[n][0], sequence[n++][1])
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: tools(['tool_loop_notes.read', 'tool_loop_notes.create']),
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(result.invocations.map((i) => Boolean(i.deduped))).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      expect(result.invocations[0]?.observation).toEqual([]);
+      expect(
+        (result.invocations[2]?.observation as Array<{ title: string }>).map(
+          (row) => row.title,
+        ),
+      ).toEqual(['Fresh']);
+    });
+
+    it('forgets remembered reads after any non-read-only extra tool (#4382)', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const other: PrincipalTool = {
+        slug: 'other.tool',
+        aiTool: {
+          type: 'function',
+          function: {
+            name: 'other-tool',
+            description: 'Other.',
+            parameters: { type: 'object' },
+          },
+        },
+        async execute() {
+          throw new Error('failed anyway');
+        },
+      };
+      const sequence = [
+        ['data-query', { surfaceId: 's' }],
+        ['other-tool', {}],
+        ['data-query', { surfaceId: 's' }],
+      ] as const;
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall(sequence[n][0], sequence[n++][1])
+          : textResponse('done'),
+      );
+      await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool(runs), other],
+        principal: { ...allow(), allowedTools: ['data.query', 'other.tool'] },
+        audit: () => {},
+      });
+      // The other tool failed, but it is not read-only: the cache is cleared.
+      expect(runs).toHaveLength(2);
+    });
+
+    it('tells the model a deduped repeat of a rejected call will fail again (#4382)', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const ai = makeAI((_m, options, call) =>
+        toolsOffered(options) && call < 2
+          ? toolCall('data-query', { request: { surfaceId: 's' } })
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [
+          queryTool(runs, () =>
+            Object.assign(new Error('bad request'), { status: 400 }),
+          ),
+        ],
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(runs).toHaveLength(1);
+      expect(result.invocations[1]).toMatchObject({
+        ok: false,
+        deduped: true,
+        error: 'invalid_request',
+        observation: { deduped: true, note: TOOL_CALL_DEDUPED_REJECTED_NOTE },
+      });
+    });
+
+    it('bounds the cache at 64 calls and never keys oversized arguments (#4382)', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const big = { surfaceId: 's', pad: 'z'.repeat(4_100) };
+      const sequence: Array<Record<string, unknown>> = [
+        ...Array.from({ length: MAX_DEDUPED_CALLS_PER_TURN + 1 }, (_, i) => ({
+          surfaceId: `s${i}`,
+        })),
+        // The 65th distinct call was not remembered: it runs again.
+        { surfaceId: `s${MAX_DEDUPED_CALLS_PER_TURN}` },
+        // The first is still remembered: deduped.
+        { surfaceId: 's0' },
+        big,
+        big,
+      ];
+      let n = 0;
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options) && n < sequence.length
+          ? toolCall('data-query', sequence[n++] as Record<string, unknown>)
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        maxSteps: sequence.length + 1,
+        audit: () => {},
+      });
+      const deduped = result.invocations.map((i) => Boolean(i.deduped));
+      expect(deduped.slice(0, MAX_DEDUPED_CALLS_PER_TURN + 1)).not.toContain(
+        true,
+      );
+      expect(deduped.slice(MAX_DEDUPED_CALLS_PER_TURN + 1)).toEqual([
+        false,
+        true,
+        false,
+        false,
+      ]);
+      expect(runs).toHaveLength(sequence.length - 1);
     });
 
     it('never dedupes a mutating call, and retries after a server failure', async () => {

@@ -77,6 +77,12 @@ second copy of the result.
   `data.discover`, `data.inspect`, `data.query`. Mutating tools,
   `agents.invoke`, other extra tools and browser tools never do; nor do
   malformed-argument calls.
+- **Invalidation.** Any resolved server call that is not on that allow-list
+  (a write, `agents.invoke`, any other extra tool), whatever its result,
+  clears every remembered read, so a read after a write always runs fresh.
+- A repeat of a rejected or refused call observes
+  `TOOL_CALL_DEDUPED_REJECTED_NOTE` (repeating it will not work; fix the
+  arguments) instead of the plain pointer note.
 - An earlier `execution_error` is not reused: a transient server failure
   may be retried. Arguments over 4,000 canonical characters are never keyed.
 - The cache holds at most `MAX_DEDUPED_CALLS_PER_TURN` (64) calls and lives
