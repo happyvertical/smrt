@@ -190,6 +190,9 @@ dropped (#4378). A `surfaceId` nested in `request` (or a `query` wrapper) is
 lifted; two different ids are `DATA_QUERY_SURFACE_ID_CONFLICT`, none is
 `DATA_QUERY_SURFACE_ID_REQUIRED` (400s, not denials). Every request error ends with a one-line valid example for
 the surface (placeholders only, no caller values).
+Refusals (#4387: action-specific denials, the `{ action }` catalog argument,
+`onDenied`, audit `denied` entries, missing executors):
+[agents/data-surface-denials.md](agents/data-surface-denials.md).
 
 `discoverDetail: 'summary'` (#4329; default `'full'`) makes `data.discover`
 return only `id`, a cleaned `label`, the description's first non-empty line
