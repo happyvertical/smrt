@@ -1076,7 +1076,7 @@ export function workbookContractTests(
         await f.as(f.own, () =>
           f.service.getWorkbookQuestionIdentity({ ...request, ...f.own }),
         ),
-      ).toEqual([{ id: 'p7:q1', prompt: '8+7' }]);
+      ).toEqual([{ id: 'p7:q1' }]);
       const sources = await f.as(f.parent, () =>
         f.service.getWorkbookSourceAnchors(request),
       );
@@ -1125,6 +1125,175 @@ export function workbookContractTests(
           )
         ).grade,
       ).toBeNull();
+    } finally {
+      await f.close();
+    }
+  });
+  it('uses current correction text without carrying historical equation or prose answers into generation', async () => {
+    const f = await fixture();
+    try {
+      const original = structuredClone(f.assessment);
+      original.questions[0].prompt = '7 - 4 = 2';
+      original.questions[0].answer = '2';
+      original.questions.push({
+        ...original.questions[0],
+        id: 'p7:q2',
+        prompt: 'Name the shape. The learner wrote: circle',
+        answer: 'circle',
+      });
+      const first = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...f.request,
+          ...f.own,
+          requestKey: 'original-answers',
+          assessment: original,
+        }),
+      );
+      const correction = await f.as(f.own, () =>
+        f.service.captureWorkbookWork({
+          ...f.capture,
+          intakeItemId: 'new-answers',
+          requestKey: 'new-answers',
+          previousSubmissionId: f.attempt.submissionId,
+          pages: [
+            { ...f.capture.pages[0], data: Buffer.from('corrected-photo') },
+          ],
+        }),
+      );
+      const request = { ...f.request, submissionId: correction.submissionId };
+      const ids = await f.as(f.own, () =>
+        f.service.getWorkbookQuestionIdentity({ ...request, ...f.own }),
+      );
+      expect(ids).toEqual([{ id: 'p7:q1' }, { id: 'p7:q2' }]);
+      const handler = educationIntakeHandlers({
+        submissions: f.service,
+        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        submissionId: correction.submissionId,
+        workbookActivityId: f.activity.id,
+      }).find((h) => h.id.endsWith('review-submission'))!;
+      const candidates = await f.as(f.own, () =>
+        handler.discovery!.candidates!(
+          '',
+          {
+            db: f.db,
+            scope: { tenantId: f.own.tenantId, actorId: f.own.actorUserId },
+            policy: { requireReview: true },
+          } as unknown as Parameters<
+            NonNullable<NonNullable<typeof handler.discovery>['candidates']>
+          >[1],
+          { limit: 100 },
+        ),
+      );
+      const label = candidates.items[0].label;
+      expect(label).toContain('p7:q1');
+      expect(label).not.toContain('7 - 4');
+      expect(label).not.toContain('circle');
+      expect(handler.description).toContain('current captured evidence');
+      const sources = await f.as(f.parent, () =>
+        f.service.getWorkbookSourceAnchors(request),
+      );
+      const corrected = structuredClone(original);
+      corrected.provenance.analysisId = 'corrected-analysis';
+      corrected.questions = corrected.questions.map((q, index) => ({
+        ...q,
+        prompt:
+          index === 0
+            ? '7 - 4 ='
+            : 'Name the shape. The learner wrote: triangle',
+        answer: index === 0 ? '3' : 'triangle',
+        result: 'correct',
+        points: 1,
+        feedback: 'Correct on the current capture.',
+        anchors: [{ ...sources[0], page: 1, rect: [0, 0, 1, 1] }],
+      }));
+      const record = (assessment: WorkbookAssessment, requestKey: string) =>
+        f.as(f.own, () =>
+          f.service.recordWorkbookAnalysis({
+            ...request,
+            ...f.own,
+            requestKey,
+            assessment,
+          }),
+        );
+      for (const questions of [
+        corrected.questions.slice(1),
+        [...corrected.questions, { ...corrected.questions[0], id: 'invented' }],
+        corrected.questions.map((q, index) =>
+          index ? q : { ...q, id: 'foreign-page:q1' },
+        ),
+      ])
+        await expect(
+          record({ ...corrected, questions }, 'bad-identities'),
+        ).rejects.toThrow('question identity');
+      await expect(
+        record(
+          {
+            ...corrected,
+            questions: [corrected.questions[0], corrected.questions[0]],
+          },
+          'duplicate-ids',
+        ),
+      ).rejects.toThrow('Duplicate or empty question id');
+      // Printed IDs, not array position, establish correspondence.
+      corrected.questions.reverse();
+      const retained = await record(corrected, 'current-answers');
+      expect(retained.assessment.questions.map((q) => q.answer)).toEqual([
+        'triangle',
+        '3',
+      ]);
+      expect((await record(corrected, 'current-answers')).id).toBe(retained.id);
+      await expect(
+        record(
+          {
+            ...corrected,
+            provenance: {
+              ...corrected.provenance,
+              analysisId: 'retargeted-analysis',
+            },
+            questions: corrected.questions.map((q, index) =>
+              index ? q : { ...q, prompt: '9 - 1 =' },
+            ),
+          },
+          'retargeted',
+        ),
+      ).rejects.toThrow('question identity');
+      const ambiguous = await record(
+        {
+          ...corrected,
+          provenance: {
+            ...corrected.provenance,
+            analysisId: 'ambiguous-analysis',
+          },
+          questions: corrected.questions.map((q) => ({
+            ...q,
+            answer: '',
+            result: 'unassessed',
+            reason: 'not_present',
+            points: null,
+            possiblePoints: null,
+            feedback: 'Cannot establish correspondence on this capture.',
+            evidenceLimitations: ['Printed question identity is ambiguous.'],
+          })),
+        },
+        'ambiguous',
+      );
+      expect(ambiguous.assessment.aggregate?.score).toBeNull();
+      const timeline = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({
+          ...f.parent,
+          activityId: f.activity.id,
+        }),
+      );
+      expect(
+        timeline.attempts
+          .flatMap((a) => a.revisions)
+          .map((r) => r.id)
+          .sort(),
+      ).toEqual([first.id, retained.id, ambiguous.id].sort());
+      expect(
+        timeline.attempts.find((a) => a.id === f.attempt.id)!.revisions[0]
+          .assessment,
+      ).toEqual(first.assessment);
     } finally {
       await f.close();
     }

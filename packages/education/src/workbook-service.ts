@@ -564,10 +564,10 @@ export class WorkbookService extends SubmissionService {
     const { attempt } = await this.attempt(request);
     return JSON.parse(attempt.sourceHashes);
   }
-  /** Question identity context for a correction, containing no answers or marks. */
+  /** Stable IDs only: historical prompts may themselves contain learner answers. */
   async getWorkbookQuestionIdentity(
     request: AttemptRequest,
-  ): Promise<{ id: string; prompt: string }[]> {
+  ): Promise<{ id: string }[]> {
     const { attempt } = await this.attempt(request, 'education.learner.submit');
     const sourceId = attempt.previousAttemptId ?? String(attempt.id);
     const source = await (
@@ -589,7 +589,6 @@ export class WorkbookService extends SubmissionService {
     return revision
       ? revisionView(revision).assessment.questions.map((q) => ({
           id: q.id,
-          prompt: q.prompt,
         }))
       : [];
   }
@@ -636,8 +635,10 @@ export class WorkbookService extends SubmissionService {
             'Assessment source does not belong to capture',
             'ungrounded_source',
           );
-    // Once a question set/vocabulary is guardian-reviewed, analysis cannot mint
-    // replacement identities or let free-text labels enter confirmed summaries.
+    // IDs span captures; transcriptions belong to each capture's own evidence.
+    // Pin prompts within a capture only: historical prompts can include old
+    // learner answers and must never force those answers onto a correction.
+    // Reviewed vocabulary still cannot be replaced by free-text labels.
     const activities = await (
       await WorkbookAttemptCollection.create({ db: this.db })
     ).list({
@@ -669,7 +670,9 @@ export class WorkbookService extends SubmissionService {
         assessment.questions.some(
           (q) =>
             !ids.has(q.id) ||
-            previous.questions.find((p) => p.id === q.id)?.prompt !== q.prompt,
+            (String(prior.id) === String(attempt.id) &&
+              previous.questions.find((p) => p.id === q.id)?.prompt !==
+                q.prompt),
         )
       )
         throw new WorkbookAssessmentValidationError(

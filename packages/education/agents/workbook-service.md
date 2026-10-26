@@ -59,9 +59,19 @@ The default `WORKBOOK_MATH_VOCABULARY` has addition, subtraction and place value
 Other subjects may use an explicit curated `workbookVocabulary` on WorkbookService,
 the ingestion handler factory and preservation helper. Unknown concept IDs fail;
 zero mapped concepts is valid. AI mappings are proposed, guardian mappings reviewed.
-Known question IDs and prompts are pinned across reanalysis/corrections. The public
-`getWorkbookQuestionIdentity` supplies prompt/ID context without answers or marks;
-handlers use it to request the same IDs and explicit not-present rows on rescans.
+Known question IDs are pinned across captures; exact prompts are pinned within a
+capture's reanalysis only. Correction transcriptions come from the new capture,
+so earlier answer-bearing prompts cannot override corrected work. Immutable
+historical prompts remain unchanged. The public `getWorkbookQuestionIdentity`
+returns IDs only: historical prompt text can itself include a learner response.
+Handlers map IDs by printed number/occurrence/subpart, never array position, and
+read prompt, answer, feedback and marks exclusively from current evidence. New
+prompts should contain printed task text without the learner response. An absent
+or ambiguously matched known question is unassessed/not_present with an explicit
+limitation. Missing, duplicate, invented or foreign IDs reject the proposal; a
+changed question order does not change identity. The ID check does not establish
+semantic equivalence of printed tasks; uncertain correspondence requires human
+review rather than an invented match.
 A different page/question requires explicit new activity identity, never AI retargeting.
 
 `captureEducationIntake` accepts optional `workbookActivityId`/`assistance` when its
