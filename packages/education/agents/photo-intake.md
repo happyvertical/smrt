@@ -149,3 +149,14 @@ base submission reads/signing, exact release, later unreleased reanalysis and a
 different attempt that stays private. Existing own-learner capture cases remain
 readable, and legacy submission/workbook suites protect consumers without photo
 tables.
+
+## Existing candidate identification
+
+`workbookId` selects an exact authorized candidate; it does not replace the
+required `identification.workbook` contract. Copy that candidate's `workbookKey`,
+`title` and `edition` into the required object. Those are catalog identity fields,
+not invented IDs or claims about what is printed on the new photograph.
+`identityEvidence` quotes only current visible material. A unique current
+title/edition may match retained publisher provenance without publisher/ISBN
+being reprinted. Conflicting identity, duplicate candidates and title-only
+matching remain pending; malformed model output is never repaired automatically.

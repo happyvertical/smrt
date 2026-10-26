@@ -64,7 +64,12 @@ const schema = {
     'lessonEvidence',
   ],
   properties: {
-    workbookId: { type: 'string', maxLength: 64 },
+    workbookId: {
+      type: 'string',
+      maxLength: 64,
+      description:
+        'Exact existing candidate id. Also copy its workbookKey, title and edition into the required identification.workbook object; this selects existing identity, not a new workbook.',
+    },
     confidence: { type: 'string', enum: ['confident', 'uncertain'] },
     identityEvidence: {
       type: 'array',
@@ -151,7 +156,7 @@ export function workbookPhotoIntakeHandlers(input: {
       id: WORKBOOK_PHOTO_HANDLER,
       version: '1',
       description:
-        'Classify the current original photos as lesson, cover, reference (including contents/answer keys), or uncertain. The argument object has exactly identification, confidence, identityEvidence, lessonEvidence, and optional workbookId. identification has only kind, workState, optional workbook, activity, notes. workbook has only workbookKey, title, optional edition, publisher, isbn. activity has only pageKey and pageLabel. Never add extra fields or put workbook metadata at the top level. Transcribe visible workbook title, publisher, edition, ISBN and printed lesson identifier. Return plain visible text without NUL or control sentinels. Omit absent optional fields rather than invent placeholder characters. identityEvidence contains exact printed identity quotations from CURRENT evidence. Never infer a book from a generic title or page number alone. pageKey must be lesson:<printed lesson identifier>, and may group multiple pages of the SAME lesson. lessonEvidence quotes that printed lesson identifier; page number alone is not a lesson identifier. Distinguish blank exercises from completed learner work; blank/unknown work is never a completed attempt. Cover/reference has no activity and uses an empty lessonEvidence string. Each identityEvidence item must be a nonempty single-line exact visible quote; omit absent identity evidence rather than filling its place with control characters. If workbook identity is uncertain omit workbook. If identity or classification is ambiguous use uncertain confidence. workbookKey is a proposed hint, never authority to merge. Authorized workbook candidates include cover context. Use their exact workbookId only when current evidence identifies that book; missing printed context is uncertain, never choose the first candidate. No marks or learning observations.',
+        'Classify current photos as lesson, cover, reference (including contents/answer keys), or uncertain; no marks or learning observations. args has exactly identification, confidence, identityEvidence, lessonEvidence, optional workbookId. identification has kind, workState, optional workbook, activity, notes. workbook has workbookKey, title, optional edition, publisher, isbn; activity has pageKey and pageLabel. Existing book: choose exact candidate id as workbookId AND copy its workbookKey, title and edition into required identification.workbook. This is existing identity, not a new book. A unique current title+edition can match retained publisher context; publisher/ISBN need not reappear. Do not copy candidate context into identityEvidence: quote only current photos. Conflicting identity, duplicate candidates, title-only or page-only matches stay uncertain; never choose the first candidate. For a new book transcribe current visible ISBN or publisher/title/edition; workbookKey is a proposed hint, never merge authority. Lesson activity requires a printed lesson identifier: pageKey=lesson:<identifier>, lessonEvidence quotes it; page number alone is insufficient. Multiple pages may share one lesson. Distinguish blank, completed and unknown work; only completed learner work is an attempt. Cover/reference omit activity and use empty lessonEvidence. identityEvidence items are nonempty single-line exact visible quotes. Plain text only, no control sentinels. Omit absent optional fields, never null/placeholders or extra fields. If identity/classification is ambiguous use uncertain confidence; omit unknown workbook.',
       operation: { model: MODEL, action: 'get', version: '1' },
       capability: { effect: 'read', idempotent: true, openWorld: false },
       argsSchema: schema,

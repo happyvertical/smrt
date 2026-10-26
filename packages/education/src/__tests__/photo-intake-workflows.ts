@@ -627,6 +627,61 @@ export function photoIntakeTests(
         expect(await f.service.listWorkbookPhotoWorkbooks(f.own)).toHaveLength(
           1,
         );
+        const candidate = (
+          await f.service.listWorkbookPhotoWorkbooks(f.own)
+        )[0];
+        // Exact malformed live-model shape: a selected candidate does not waive
+        // the required workbookKey. Keep it pending, never repair the payload.
+        proposal = {
+          confidence: 'confident',
+          workbookId: candidate.id,
+          identityEvidence: [candidate.title, candidate.edition],
+          lessonEvidence: '',
+          identification: {
+            kind: 'reference',
+            workState: 'unknown',
+            workbook: { title: candidate.title, edition: candidate.edition },
+          },
+        } as WorkbookPhotoProposal;
+        const missingKey = await generate('reference-missing-candidate-key');
+        expect(missingKey.status).toBe('pending');
+        const refused = await ingestion.getCompletedAnalysis(missingKey.itemId);
+        expect(
+          (
+            refused.result.output.proposals as {
+              suggestions: Array<{ missingFields: string[] }>;
+            }
+          ).suggestions[0].missingFields,
+        ).toContain('/identification/workbook/workbookKey');
+        proposal.identification.workbook = {
+          workbookKey: candidate.workbookKey,
+          title: candidate.title,
+          edition: candidate.edition,
+        };
+        const reference = await generate('reference-existing-identity');
+        expect(reference.status).toBe('resolved');
+        expect(reference.identification?.workbook?.workbookKey).toBe(
+          candidate.workbookKey,
+        );
+        expect(reference.activity).toBeNull();
+        expect(reference.submissionId).toBeNull();
+        expect(await f.service.listWorkbookPhotoWorkbooks(f.own)).toHaveLength(
+          1,
+        );
+        proposal.identification.workbook.publisher = 'Conflicting Press';
+        const conflicting = await generate('reference-conflicting-publisher');
+        expect(conflicting.status).toBe('pending');
+        expect(await f.service.listWorkbookPhotoWorkbooks(f.own)).toHaveLength(
+          1,
+        );
+        proposal.identification.workbook = { ...f.identification.workbook! };
+        proposal.identification.kind = 'cover';
+        proposal.workbookId = undefined;
+        proposal.identityEvidence = [
+          'Arithmetic',
+          'Example Press',
+          'Edition 1',
+        ];
         reviewRequired = true;
         const uncertain = await generate('needs-guardian-review');
         expect(uncertain.status).toBe('pending');
