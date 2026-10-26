@@ -174,6 +174,14 @@ it('requires explicit choice, displays recommendation only, and always offers Ot
   });
   const radios = screen.getAllByRole('radio') as HTMLInputElement[];
   expect(radios).toHaveLength(3);
+  expect(
+    radios.every(
+      (radio) =>
+        radio.dataset.smrtComponent === 'Input' &&
+        radio.name === 'selectedOptionId' &&
+        radio.required,
+    ),
+  ).toBe(true);
   expect(radios.every((radio) => !radio.checked)).toBe(true);
   expect(screen.getByLabelText('Other answer')).toBeVisible();
   expect(screen.getByText('Recommended')).toBeVisible();
@@ -182,6 +190,7 @@ it('requires explicit choice, displays recommendation only, and always offers Ot
   expect(onanswer).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('radio', { name: /15 minutes/ }));
   expect(onanswer).not.toHaveBeenCalled();
+  expect(radios.map((radio) => radio.checked)).toEqual([true, false, false]);
   await userEvent.click(screen.getByRole('button', { name: 'Save answer' }));
   expect(onanswer).toHaveBeenLastCalledWith({
     id: 'choices',

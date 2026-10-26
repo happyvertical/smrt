@@ -123,14 +123,14 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
                   <legend>{t(M['projects.governance.answer'])}</legend>
                   {#each question.options.filter((option) => option.id !== 'other') as option (option.id)}
                     <label class="choice">
-                      <input type="radio" name="selectedOptionId" value={option.id} required onchange={() => selections[question.id] = option.id} />
+                      <Input type="radio" name="selectedOptionId" value={option.id} required interaction={false} checked={selections[question.id] === option.id} onchange={() => selections[question.id] = option.id} />
                       <span>{option.label}{#if option.recommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
                         {#if option.description}<small>{option.description}</small>{/if}
                       </span>
                     </label>
                   {/each}
                   <label class="choice">
-                    <input type="radio" name="selectedOptionId" value="other" required onchange={() => selections[question.id] = 'other'} />
+                    <Input type="radio" name="selectedOptionId" value="other" required interaction={false} checked={selections[question.id] === 'other'} onchange={() => selections[question.id] = 'other'} />
                     <span>{t(M['projects.governance.other'])}</span>
                   </label>
                   <label for={`answer-${question.id}`}>{t(M['projects.governance.other_answer'])}</label>
@@ -222,6 +222,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
   article header > div, article :global(form), .response { display: grid; gap: var(--smrt-spacing-2); }
   fieldset { display: grid; gap: var(--smrt-spacing-2); border: 0; padding: 0; min-width: 0; }
   .choice { display: flex; align-items: start; gap: var(--smrt-spacing-2); }
+  .choice :global(input[type='radio']) { width: auto; min-height: auto; padding: 0; }
   .choice small { display: block; }
   .status { font-size: var(--smrt-typography-label-medium-size); text-transform: capitalize; }
   .references { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); list-style: none; margin: 0; padding: 0; }
