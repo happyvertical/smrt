@@ -16,7 +16,9 @@ usage as explicitly declared; the service never derives total tokens by addition
 Unknown counters remain null, including a cumulative delta after an unknown
 baseline or unknown previous counter. Cumulative resets require an explicit next
 epoch; first/reset measurements require a verified zero origin to count the
-snapshot as delta. Provider/model and measurement semantics cannot change within
+snapshot as delta. Per-counter monotonicity uses the latest known snapshot within
+the same epoch even across unknown reports; delta computation still uses only
+the immediate predecessor, so missing intervals remain unknown. Provider/model and measurement semantics cannot change within
 a real native harness session. The initial contract supports one task/provider/model
 per session; task or model switching within an existing main chat is unsupported
 and fails closed. A new span requires a real fresh session with verified zero
@@ -77,3 +79,21 @@ core root export. `/tmp/work-419-packs/happyvertical-smrt-core-0.57.30.tgz` is t
 uncommitted consumer-proof package; final adoption requires a published family
 version. Integrated root validation/review and isolated PostgreSQL lane belong
 to the foreman and remain required before shipping.
+
+
+## Unknown-gap reset regression (#4336)
+
+Reachable cumulative sequence `1000 -> null -> 900` in one epoch must reject
+without persistence. The shared SQLite/DuckDB/native PostgreSQL suite now covers
+that refusal, retry at the same sequence with1100 and an unknown gap delta, the
+following1200 snapshot yielding100, explicit epoch+1 reset to900, and a delta-basis
+900 report remaining valid after1000. Monotonic validation reuses the transaction's
+already-loaded stream receipts and selects the latest known counter by sequence
+within the current epoch; no earlier epoch or missing interval is subtracted.
+
+The added regression failed twice (SQLite and DuckDB) against the preceding
+combined source21bfb5e7 and passes after the repair. Prior whole-train evidence
+at21bfb5e7 remains historical unchanged coverage; current affected build, tests,
+typecheck and scoped lint are recorded in `/tmp/work-happy-usage/smrt-gap-repair`.
+The foreman owns the isolated native PostgreSQL delta lane and final combined
+coverage reconciliation. No schema/model/API changes accompany this repair.

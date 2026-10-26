@@ -177,6 +177,54 @@ export function externalAgentUsageSuite(
       expect((await recorder.record(after)).delta.inputTokens).toBe(4);
       expect((await recorder.summarize()).counters.inputTokens).toBeNull();
     });
+    it('preserves same-epoch monotonicity across unknown snapshots without inventing gap deltas', async () => {
+      const recorder = new ExternalAgentUsageRecorder(db, binding);
+      const snapshot = (sequence: number, count: number | null, epoch = 0) =>
+        fact({
+          sequence,
+          epoch,
+          counters: { inputTokens: count },
+          provenance: {
+            harness: 'fixture',
+            source: 'fixture.usage',
+            eventId: `gap-${sequence}`,
+          },
+        });
+      await recorder.record(snapshot(0, 1000));
+      expect(
+        (await recorder.record(snapshot(1, null))).delta.inputTokens,
+      ).toBeNull();
+      await expect(recorder.record(snapshot(2, 900))).rejects.toThrow(
+        'counter decreased without reset',
+      );
+      expect((await recorder.summarize()).reports).toBe(2);
+      expect(
+        (await recorder.record(snapshot(2, 1100))).delta.inputTokens,
+      ).toBeNull();
+      expect((await recorder.record(snapshot(3, 1200))).delta.inputTokens).toBe(
+        100,
+      );
+      expect(
+        (await recorder.record(snapshot(4, 900, 1))).delta.inputTokens,
+      ).toBe(900);
+      expect((await recorder.summarize()).counters.inputTokens).toBeNull();
+      const deltaBinding = { ...binding, sessionId: 'delta-basis-session' };
+      const deltaRecorder = new ExternalAgentUsageRecorder(db, deltaBinding);
+      await deltaRecorder.record({
+        ...snapshot(0, 1000),
+        binding: deltaBinding,
+        basis: 'delta',
+      });
+      expect(
+        (
+          await deltaRecorder.record({
+            ...snapshot(1, 900),
+            binding: deltaBinding,
+            basis: 'delta',
+          })
+        ).delta.inputTokens,
+      ).toBe(900);
+    });
     it('refuses gaps, undeclared reset, event reuse, changed semantics and reordered timestamps', async () => {
       const recorder = new ExternalAgentUsageRecorder(db, binding);
       await recorder.record(fact());

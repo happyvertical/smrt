@@ -284,6 +284,7 @@ export class ExternalAgentUsageRecorder {
             : await read(tx, this.binding, report.sequence - 1);
         if (report.sequence === 0 ? report.epoch !== 0 : !previous)
           reject('out of order sequence', 'conflict');
+        let snapshots: ExternalAgentUsageReceipt[] = [];
         if (previous) {
           const last = previous.report;
           if (
@@ -309,11 +310,13 @@ export class ExternalAgentUsageRecorder {
             this.binding.tenantId,
             streamId(this.binding),
           );
+          snapshots = candidates.rows.map(
+            (row) => JSON.parse(String(row.tags)) as ExternalAgentUsageReceipt,
+          );
           if (
-            candidates.rows.some(
+            snapshots.some(
               (row) =>
-                (JSON.parse(String(row.tags)) as ExternalAgentUsageReceipt)
-                  .report.provenance.eventId === report.provenance.eventId,
+                row.report.provenance.eventId === report.provenance.eventId,
             )
           )
             reject('event already recorded', 'conflict');
@@ -323,12 +326,29 @@ export class ExternalAgentUsageRecorder {
           const current = report.counters[key] ?? null;
           const last = previous?.report;
           const before = last?.counters[key] ?? null;
+          if (report.basis === 'cumulative' && current !== null) {
+            const latestKnown = snapshots.reduce<
+              ExternalAgentUsageReceipt | undefined
+            >(
+              (latest, row) =>
+                row.report.epoch === report.epoch &&
+                row.report.sequence < report.sequence &&
+                row.report.counters[key] != null &&
+                (!latest || row.report.sequence > latest.report.sequence)
+                  ? row
+                  : latest,
+              undefined,
+            );
+            if (
+              latestKnown &&
+              current < (latestKnown.report.counters[key] as number)
+            )
+              reject('counter decreased without reset', 'conflict');
+          }
           if (report.basis === 'delta') delta[key] = current;
           else if (!last || report.epoch !== last.epoch)
             delta[key] = report.baseline === 'zero' ? current : null;
           else {
-            if (current !== null && before !== null && current < before)
-              reject('counter decreased without reset', 'conflict');
             delta[key] =
               current !== null && before !== null ? current - before : null;
           }
