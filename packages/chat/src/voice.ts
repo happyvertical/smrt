@@ -16,7 +16,7 @@ import {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import type { ChatService } from './services/index.js';
-import { isFallbackReply } from './tool-loop.js';
+import { FALLBACK_HISTORY_PLACEHOLDER, isFallbackReply } from './tool-loop.js';
 
 export const SMRT_CHAT_VOICE_TARGET = 'smrt:chat';
 export const MAX_VOICE_GATEWAY_TEXT_LENGTH = 12_000;
@@ -774,8 +774,11 @@ function chatMessageToAIMessage(message: ChatMessage): AIMessage | null {
   ) {
     return null;
   }
-  // A fallback reply is not a model answer: never replay it (#4379).
-  if (message.role === 'assistant' && isFallbackReply(message)) return null;
+  // A fallback reply is not a model answer: never replay it as one (#4379);
+  // a fixed marker keeps the roles alternating.
+  if (message.role === 'assistant' && isFallbackReply(message)) {
+    return { role: 'assistant', content: FALLBACK_HISTORY_PLACEHOLDER };
+  }
   return { role: message.role, content: message.content } as AIMessage;
 }
 

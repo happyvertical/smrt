@@ -43,6 +43,7 @@ import {
 import type { ChatService } from './services/index.js';
 import {
   DEFAULT_EMPTY_ANSWER_FALLBACK,
+  FALLBACK_HISTORY_PLACEHOLDER,
   noteFinishReason,
   replyContentFor,
   reportsFinishReason,
@@ -676,17 +677,15 @@ function splitConversation(
   const history = messages
     .slice(0, lastUserIndex)
     // The browser sends no metadata, so a stored fallback reply is
-    // recognised by its exact text and never replayed as an answer (#4379).
-    .filter(
-      (message) =>
-        !(
-          message.role === 'assistant' && fallbacks.has(message.content.trim())
-        ),
-    )
+    // recognised by its exact text and never replayed as an answer (#4379);
+    // a fixed marker keeps the roles alternating.
     .map(
       (message): AIMessage => ({
         role: message.role,
-        content: message.content,
+        content:
+          message.role === 'assistant' && fallbacks.has(message.content.trim())
+            ? FALLBACK_HISTORY_PLACEHOLDER
+            : message.content,
       }),
     );
   return { history, userMessage: messages[lastUserIndex].content };

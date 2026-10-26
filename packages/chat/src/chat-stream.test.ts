@@ -34,7 +34,10 @@ import {
   type ConversationPersona,
 } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
-import { DEFAULT_EMPTY_ANSWER_FALLBACK } from './tool-loop.js';
+import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  FALLBACK_HISTORY_PLACEHOLDER,
+} from './tool-loop.js';
 
 // ---------------------------------------------------------------------------
 // Mock AI boundary
@@ -325,7 +328,9 @@ describe('runChatConversationStream — plain path', () => {
     );
     expect(seen[0]?.map((m) => [m.role, m.content])).toEqual([
       ['user', 'q1'],
+      ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
       ['user', 'q2'],
+      ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
       ['user', 'q3'],
       ['assistant', 'A real answer.'],
       ['user', 'q4'],

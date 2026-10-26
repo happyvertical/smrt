@@ -262,6 +262,7 @@ export {
   classifyToolError,
   DEFAULT_EMPTY_ANSWER_FALLBACK,
   DEFAULT_MAX_STEPS,
+  FALLBACK_HISTORY_PLACEHOLDER,
   FALLBACK_REPLY_METADATA_KEY,
   type FallbackReplyReason,
   invokeManifestTool,

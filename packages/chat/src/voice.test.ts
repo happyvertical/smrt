@@ -27,7 +27,10 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ConversationPersona } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
-import { DEFAULT_EMPTY_ANSWER_FALLBACK } from './tool-loop.js';
+import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  FALLBACK_HISTORY_PLACEHOLDER,
+} from './tool-loop.js';
 import {
   createVoiceChatSession,
   createVoiceGatewayTurnHandler,
@@ -304,6 +307,7 @@ describe('voice gateway chat integration', () => {
     );
     expect(history.map((m) => [m.role, m.content])).toEqual([
       ['user', 'hello from voice'],
+      ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
       ['user', 'again'],
     ]);
   });

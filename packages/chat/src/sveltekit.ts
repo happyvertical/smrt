@@ -88,6 +88,7 @@ import {
 import {
   buildManifestToolCatalog,
   type ClientToolResultInput,
+  FALLBACK_HISTORY_PLACEHOLDER,
   isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
@@ -1707,11 +1708,15 @@ export function mountAssistantRoutes(
             continue;
           }
           if (!message.content) continue;
-          // A fallback reply is not a model answer: never replay it (#4379).
-          if (message.role === 'assistant' && isFallbackReply(message)) {
-            continue;
-          }
-          history.push({ role: message.role, content: message.content });
+          // A fallback reply is not a model answer: never replay it as one
+          // (#4379); a fixed marker keeps the roles alternating.
+          history.push({
+            role: message.role,
+            content:
+              message.role === 'assistant' && isFallbackReply(message)
+                ? FALLBACK_HISTORY_PLACEHOLDER
+                : message.content,
+          });
         }
       }
 

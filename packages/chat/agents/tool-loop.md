@@ -69,8 +69,11 @@
   assistant route's and voice's history builders skip fallback replies so
   they are never replayed to the model as answers. The chat-stream paths
   (plain and persona) take history from the browser, which sends no
-  metadata, so they drop an assistant message whose text exactly equals
-  the configured or default fallback text. Hosts should hide feedback
+  metadata, so they recognise an assistant message whose text exactly
+  equals the configured or default fallback text. All three replay the
+  fixed `FALLBACK_HISTORY_PLACEHOLDER` in its place rather than dropping
+  it: a drop would leave two user messages in a row, which strict chat
+  templates (Gemma, Anthropic) reject. Hosts should hide feedback
   controls (thumbs, corrections) on a message where `isFallbackReply` is
   true: there is no model answer to rate.
 - **Dock.** The `done` event's `capReason` reaches the dock, which offers

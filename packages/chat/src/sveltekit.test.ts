@@ -48,7 +48,10 @@ import {
   type MountAssistantRoutesOptions,
   mountAssistantRoutes,
 } from './sveltekit.js';
-import { DEFAULT_EMPTY_ANSWER_FALLBACK } from './tool-loop.js';
+import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  FALLBACK_HISTORY_PLACEHOLDER,
+} from './tool-loop.js';
 
 const ORIGIN = 'http://app.test';
 
@@ -556,9 +559,10 @@ describe('mountAssistantRoutes', () => {
           clientRequestId: 'f-2',
         }),
       );
-      // The fallback is not in turn 2's history.
+      // The fallback is not replayed; a marker keeps roles alternating.
       expect(ai.seen[2].map((m) => [m.role, m.content])).toEqual([
         ['user', 'How many?'],
+        ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
         ['user', 'Try again'],
       ]);
     });

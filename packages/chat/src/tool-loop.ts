@@ -1698,6 +1698,16 @@ export function replyMetadataFor(
 }
 
 /**
+ * What a history builder replays in place of a stored fallback reply
+ * (#4379). Dropping the reply would leave two user messages in a row, which
+ * strict chat templates (Gemma, Anthropic) reject; this fixed marker keeps
+ * the roles alternating and says plainly that no answer was given, so it is
+ * never mistaken for a real prior answer.
+ */
+export const FALLBACK_HISTORY_PLACEHOLDER =
+  '(No answer was given to this message.)';
+
+/**
  * Whether a stored chat message is a fallback reply (#4379). Accepts a
  * `ChatMessage` (its `getMetadata()`), or a raw metadata object or JSON string.
  */
