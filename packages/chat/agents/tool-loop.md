@@ -145,7 +145,8 @@ value-free: they name the accepted shape, never the model's values.
   `Valid example: {"surfaceId":…,"request":{…}}` for that surface, in the
   failed request's mode (count, rows or facets), built from the surface id
   and caller-visible field ids with `<value>` placeholders — never the
-  caller's own values.
+  caller's own values. Row examples cap page size at the surface’s
+  `maxPageLimit`.
 
 ## Dedupe of identical read-only calls (#4382)
 

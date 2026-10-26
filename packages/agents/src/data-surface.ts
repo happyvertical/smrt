@@ -450,7 +450,7 @@ function validQueryExample(
       ? `"mode":"facets","facets":[{"field":${JSON.stringify(facet.id)},"limit":10}]`
       : `"mode":"count"${filter}`;
   } else if (mode === 'rows') {
-    body = `"mode":"rows","projection":[${JSON.stringify(schema.identityField)}]${filter},"page":{"kind":"offset","offset":0,"limit":10}`;
+    body = `"mode":"rows","projection":[${JSON.stringify(schema.identityField)}]${filter},"page":{"kind":"offset","offset":0,"limit":${Math.min(10, schema.maxPageLimit ?? 10)}}`;
   } else {
     body = `"mode":"count"${filter}`;
   }
