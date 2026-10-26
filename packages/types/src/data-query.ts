@@ -109,6 +109,17 @@ export interface DataQueryRequest {
   facets?: DataQueryFacetRequest[];
 }
 
+/**
+ * One host-declared allowed value of a closed-set field (#4381). `label` and
+ * `description` let an agent map natural language ("open") onto stored
+ * values; they are schema text, never derived from row data.
+ */
+export interface DataQueryAllowedValue {
+  value: string | number | boolean;
+  label?: string;
+  description?: string;
+}
+
 /** An explicitly declared query field and its capability allowlist. */
 export interface DataQueryFieldDescriptor {
   id: DataQueryFieldId;
@@ -117,6 +128,13 @@ export interface DataQueryFieldDescriptor {
   sortable?: boolean;
   facetable?: boolean;
   filterOperators?: DataQueryFilterOperator[];
+  /**
+   * Closed set of values the field holds, in declaration order (#4381).
+   * Only `string`, `number`, and `boolean` fields may declare values, and
+   * each value must match the field type. When present, `eq`/`ne`/`in`/
+   * `notIn` filter values must be members (or `null`).
+   */
+  values?: DataQueryAllowedValue[];
 }
 
 /**

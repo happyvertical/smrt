@@ -41,6 +41,7 @@ import {
   DataQueryValidationError,
   getClassName,
   MAX_DATA_QUERY_OFFSET,
+  normalizeDataQueryFieldValues,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -57,6 +58,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type {
+  DataQueryAllowedValue,
   DataQueryFacetResult,
   DataQueryFieldDescriptor,
   DataQueryFilter,
@@ -406,6 +408,32 @@ function isPolicyExcludedField(
 }
 
 /**
+ * Allowed values for an enum- or literal-union-typed field (#4381), taken
+ * from the scanner-declared `enum` (top level, or mirrored under `_meta`) —
+ * never from row data. A declaration the core bounds reject (too many
+ * values, over-long or unsafe text, a type mismatch) is omitted rather than
+ * failing the whole schema.
+ */
+function declaredEnumValues(
+  name: string,
+  field: RegistryFieldLike,
+  type: DataQueryFieldDescriptor['type'],
+): DataQueryAllowedValue[] | undefined {
+  const declared = field.enum ?? meta(field).enum;
+  if (!Array.isArray(declared) || declared.length === 0) return undefined;
+  try {
+    return normalizeDataQueryFieldValues(
+      declared.map((value) => ({ value })),
+      type,
+      name,
+    );
+  } catch (error) {
+    if (error instanceof DataQueryValidationError) return undefined;
+    throw error;
+  }
+}
+
+/**
  * The set of registry field ids a host-supplied `options.schema` override
  * must never be able to re-advertise: restricted (`sensitive`/
  * `readPermission`), transient, the configured tenant field, `_`-prefixed
@@ -470,6 +498,9 @@ async function buildQuerySchemaForClass(
     const filterOperators = idFields.has(name)
       ? [...ID_FIELD_FILTER_OPERATORS]
       : filterOperatorsFor(type);
+    const values = idFields.has(name)
+      ? undefined
+      : declaredEnumValues(name, field, type);
     fields.push({
       id: name,
       type,
@@ -479,6 +510,7 @@ async function buildQuerySchemaForClass(
         name !== options.identityField &&
         (type === 'string' || type === 'boolean' || type === 'number'),
       ...(filterOperators ? { filterOperators } : {}),
+      ...(values ? { values } : {}),
     });
   }
 

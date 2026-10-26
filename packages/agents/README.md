@@ -194,6 +194,14 @@ opaque-cursor paging, and never hydrates the full collection. An explicit,
 normalized-empty application `scope` denies all rows and short-circuits
 without calling the collection.
 
+A field with a scanner-declared closed set — a TypeScript `enum` or
+string/number literal-union type, carried as the registry field's `enum` —
+gets those members as its data-query `values` (#4381), so `data.inspect`
+shows them and `data.query` rejects a filter value outside them. Values come
+only from the declaration, never from rows; a declaration outside the core
+bounds (more than 100 members, over-long or unsafe text, a type mismatch) is
+omitted rather than failing the schema. Id fields never carry values.
+
 Cursors are opaque and bound to the exact query: they encode `{ binding,
 offset }`, where `binding` fingerprints the normalized request (filter, sort,
 projection) plus the merged tenant/application scope, so a cursor from a

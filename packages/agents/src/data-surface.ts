@@ -360,6 +360,9 @@ function explainRequestError(
         'This surface has no facetable fields; use mode "count" or "rows".',
       );
       break;
+    case 'DATA_QUERY_VALUE_NOT_ALLOWED':
+      hint = 'Call data.inspect for each field’s values and their labels.';
+      break;
     case 'DATA_QUERY_UNSUPPORTED': {
       const supports = schema.supports ?? {};
       hint = `This surface supports offset paging${
@@ -462,6 +465,9 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
       sortable: field.sortable === true,
       facetable: field.facetable === true,
       filterOperators: [...(field.filterOperators ?? [])].sort(),
+      ...(field.values
+        ? { values: field.values.map((entry) => ({ ...entry })) }
+        : {}),
       ...(metadataByFieldId.get(field.id)
         ? { metadata: metadataByFieldId.get(field.id) }
         : {}),

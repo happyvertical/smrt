@@ -174,6 +174,11 @@ caller supplies a server-owned surface catalog and executor; the tools copy
 catalog permission and omit denied surfaces/fields. Query requests and results
 are normalized with the core bounded data-query protocol, including projection,
 cursor/page, row/byte, fingerprint, freshness, total, and truncation rules.
+Declared field `values` (#4381; contract in core
+[data-query.md](../core/agents/data-query.md)) appear on `data.inspect` and
+`data.discover` field descriptors, and an undeclared `eq`/`ne`/`in`/`notIn`
+value fails as a `DataSurfaceRequestError` (`reason`
+`DATA_QUERY_VALUE_NOT_ALLOWED`) naming the allowed values.
 Sensitive/read-permission fields are removed from descriptors, and
 `DataSurfaceField` policy metadata is stripped before the core schema validator.
 Executor-provided paginated rows retain their order and are validated with a
