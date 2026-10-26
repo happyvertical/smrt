@@ -2,6 +2,7 @@ import type { DataQuerySchema } from '@happyvertical/smrt-types';
 import { describe, expect, it } from 'vitest';
 import {
   DataQueryValidationError,
+  MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH,
   MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH,
   MAX_DATA_QUERY_FIELD_VALUE_LENGTH,
   MAX_DATA_QUERY_FIELD_VALUES,
@@ -119,37 +120,56 @@ describe('data-query allowed values (#4381)', () => {
     rejection(() => normalizeDataQuerySchema(withValues(type, values)));
   });
 
-  it('bounds the value count and text lengths', () => {
-    const tooMany = Array.from(
-      { length: MAX_DATA_QUERY_FIELD_VALUES + 1 },
-      (_, index) => ({ value: `v${index}` }),
-    );
+  it('accepts exactly the maximum value count and rejects one more', () => {
+    const entries = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ value: `v${index}` }));
     expect(
-      rejection(() => normalizeDataQuerySchema(withValues('string', tooMany)))
-        .message,
+      normalizeDataQueryFieldValues(
+        entries(MAX_DATA_QUERY_FIELD_VALUES),
+        'string',
+        'field',
+      ),
+    ).toHaveLength(MAX_DATA_QUERY_FIELD_VALUES);
+    expect(
+      rejection(() =>
+        normalizeDataQueryFieldValues(
+          entries(MAX_DATA_QUERY_FIELD_VALUES + 1),
+          'string',
+          'field',
+        ),
+      ).message,
     ).toMatch(`cannot exceed ${MAX_DATA_QUERY_FIELD_VALUES} entries`);
-    expect(() =>
-      normalizeDataQuerySchema(
-        withValues('string', tooMany.slice(0, MAX_DATA_QUERY_FIELD_VALUES)),
-      ),
-    ).not.toThrow();
-    rejection(() =>
-      normalizeDataQuerySchema(
-        withValues('string', [
-          { value: 'x'.repeat(MAX_DATA_QUERY_FIELD_VALUE_LENGTH + 1) },
-        ]),
-      ),
-    );
-    rejection(() =>
-      normalizeDataQuerySchema(
-        withValues('string', [
-          {
-            value: 'x',
-            label: 'x'.repeat(MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH + 1),
-          },
-        ]),
-      ),
-    );
+  });
+
+  it.each([
+    ['value', MAX_DATA_QUERY_FIELD_VALUE_LENGTH],
+    ['label', MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH],
+    ['description', MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH],
+  ] as const)('caps %s text at %i characters', (key, limit) => {
+    const entry = (length: number) =>
+      key === 'value'
+        ? { value: 'x'.repeat(length) }
+        : { value: 'x', [key]: 'x'.repeat(length) };
+    expect(
+      normalizeDataQueryFieldValues([entry(limit)], 'string', 'field')[0][key],
+    ).toHaveLength(limit);
+    expect(
+      rejection(() =>
+        normalizeDataQueryFieldValues([entry(limit + 1)], 'string', 'field'),
+      ).message,
+    ).toMatch(`up to ${limit} characters`);
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects %s as a number value', (_name, value) => {
+    expect(
+      rejection(() =>
+        normalizeDataQueryFieldValues([{ value }], 'number', 'field'),
+      ).message,
+    ).toMatch(/must be a finite number/);
   });
 
   it.each([
@@ -159,6 +179,9 @@ describe('data-query allowed values (#4381)', () => {
     ['a bidi override in a value', { value: `a${ch(0x202e)}b` }],
     ['a bidi isolate in a label', { value: 'a', label: `${ch(0x2066)}x` }],
     ['a zero-width space in a value', { value: `a${ch(0x200b)}b` }],
+    ['a lone high surrogate in a value', { value: `a${ch(0xd800)}` }],
+    ['a lone low surrogate in a label', { value: 'a', label: ch(0xdc00) }],
+    ['a paragraph separator in a value', { value: `a${ch(0x2029)}b` }],
     [
       'a line separator in a description',
       { value: 'a', description: ch(0x2028) },
@@ -209,6 +232,7 @@ describe('data-query allowed values (#4381)', () => {
     expect(error.details).toEqual({
       field: 'status',
       allowedValues: ['pending', 'in_progress', 'done'],
+      allowedValueCount: 3,
     });
   });
 
@@ -311,8 +335,10 @@ describe('data-query allowed values (#4381)', () => {
       normalizeDataQueryRequest(condition('code', 'eq', 'nope'), wide),
     );
     expect(error.message).toMatch(/"v19", and 10 more$/);
+    // details is capped like the message, with the full count alongside.
+    expect(error.details).toMatchObject({ allowedValueCount: 30 });
     expect(
       (error.details as { allowedValues: unknown[] }).allowedValues,
-    ).toHaveLength(30);
+    ).toEqual(many.slice(0, 20).map((entry) => entry.value));
   });
 });

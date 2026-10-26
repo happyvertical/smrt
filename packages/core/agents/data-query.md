@@ -30,7 +30,8 @@ the field type; value, label, and description text are bounded
 zero-width), surrogate, and line/paragraph-separator characters. Declared values
 are enforced by default: non-null `eq`/`ne`/`in`/`notIn` filter values must be
 members, or the request fails with `DATA_QUERY_VALUE_NOT_ALLOWED` and a message
-listing the allowed values (`details.allowedValues` carries the full list).
+listing the allowed values. The message and `details.allowedValues` both stop
+at the first 20 values; `details.allowedValueCount` gives the full size.
 `valuesEnforced: false` (valid only with `values`) marks the set advisory and
 skips that check; the normalized schema keeps only the `false` form. Range and
 `like` operators, result rows, and facets are never checked against the set.

@@ -203,9 +203,11 @@ advisory by default (`valuesEnforced: false` in the descriptor) and filters on
 other values keep working. Set `enforceDerivedValues: true` once the stored
 data is known to match; `data.query` then rejects a filter value outside the
 set and the descriptor reports `valuesEnforced: true`. Values come only from
-the declaration, never from rows; a declaration outside the core bounds (more
-than 100 members, over-long or unsafe text, a type mismatch) is omitted rather
-than failing the schema. Id fields never carry values. A `schema` override
+the declaration, never from rows. A declaration outside the core bounds (more
+than 100 members, an over-long or unsafe member, a type mismatch) yields no
+values at all, since a partial list would read as complete: advisory surfaces
+log a `@happyvertical/logger` warning naming the class and field, and with
+`enforceDerivedValues: true` the schema build throws. Id fields never carry values. A `schema` override
 declares its own `values` (enforced unless it sets `valuesEnforced: false`).
 
 Cursors are opaque and bound to the exact query: they encode `{ binding,

@@ -56,7 +56,10 @@ export const MAX_DATA_QUERY_FIELD_VALUES = 100;
 export const MAX_DATA_QUERY_FIELD_VALUE_LENGTH = 256;
 export const MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH = 128;
 export const MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH = 512;
-/** Allowed values listed in a rejected-filter message before truncation. */
+/**
+ * Allowed values listed in a rejected-filter message and its
+ * `details.allowedValues` before truncation, so neither grows with the set.
+ */
 const MAX_LISTED_ALLOWED_VALUES = 20;
 /**
  * Control (C0/C1/DEL), format (bidi overrides/isolates, zero-width, BOM),
@@ -578,10 +581,8 @@ function assertDeclaredValue(
   }
   if (descriptor.values.some((entry) => entry.value === scalar)) return;
   const allowed = descriptor.values.map((entry) => entry.value);
-  const listed = allowed
-    .slice(0, MAX_LISTED_ALLOWED_VALUES)
-    .map((entry) => JSON.stringify(entry))
-    .join(', ');
+  const shown = allowed.slice(0, MAX_LISTED_ALLOWED_VALUES);
+  const listed = shown.map((entry) => JSON.stringify(entry)).join(', ');
   const more =
     allowed.length > MAX_LISTED_ALLOWED_VALUES
       ? `, and ${allowed.length - MAX_LISTED_ALLOWED_VALUES} more`
@@ -589,7 +590,11 @@ function assertDeclaredValue(
   fail(
     `${label} is not an allowed value for ${descriptor.id}; use one of: ${listed}${more}`,
     'DATA_QUERY_VALUE_NOT_ALLOWED',
-    { field: descriptor.id, allowedValues: allowed },
+    {
+      field: descriptor.id,
+      allowedValues: shown,
+      allowedValueCount: allowed.length,
+    },
   );
 }
 

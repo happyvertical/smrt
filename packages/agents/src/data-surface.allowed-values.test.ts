@@ -6,6 +6,22 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { SessionPermissionRuntimeContext } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const loggerWarn = vi.hoisted(() => vi.fn());
+vi.mock('@happyvertical/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@happyvertical/logger')>();
+  return {
+    ...actual,
+    createLogger: (...args: Parameters<typeof actual.createLogger>) => {
+      const logger = actual.createLogger(...args);
+      return new Proxy(logger, {
+        get: (target, key, receiver) =>
+          key === 'warn' ? loggerWarn : Reflect.get(target, key, receiver),
+      });
+    },
+  };
+});
+
 import {
   createDataSurfaceTools,
   DATA_DISCOVER_TOOL_SLUG,
@@ -215,7 +231,16 @@ describe('smrt-collection allowed-value derivation (#4381)', () => {
       collectionName: 'records',
       collection,
       facets: false,
-      exclude: ['context', 'created_at', 'slug', 'updated_at'],
+      // The out-of-bounds enums are covered separately below.
+      exclude: [
+        'context',
+        'created_at',
+        'slug',
+        'updated_at',
+        'mismatched',
+        'oversized',
+        'unsafe',
+      ],
       ...(enforceDerivedValues === undefined ? {} : { enforceDerivedValues }),
     });
     const map = new Map(
@@ -261,9 +286,18 @@ describe('smrt-collection allowed-value derivation (#4381)', () => {
   });
 
   it('derives values from declared enums and omits out-of-bounds ones', async () => {
+    loggerWarn.mockClear();
     const built = await buildDataQuerySchemaForClass(QUALIFIED_NAME, {
       exclude: ['context', 'created_at', 'slug', 'updated_at'],
     });
+    // Each dropped declaration is reported once, naming class and field.
+    const warnings = loggerWarn.mock.calls.map((call) => String(call[0]));
+    expect(warnings).toHaveLength(3);
+    for (const id of ['mismatched', 'oversized', 'unsafe']) {
+      expect(
+        warnings.some((line) => line.includes(`${QUALIFIED_NAME}.${id} enum`)),
+      ).toBe(true);
+    }
     const byId = new Map(built.fields.map((field) => [field.id, field]));
     expect(byId.get('status')?.values).toEqual([
       { value: 'pending' },
@@ -279,5 +313,61 @@ describe('smrt-collection allowed-value derivation (#4381)', () => {
     for (const id of ['id', 'name', 'mismatched', 'oversized', 'unsafe']) {
       expect(byId.get(id)).not.toHaveProperty('values');
     }
+  });
+
+  it('fails schema build on a rejected enum when enforcement is opted in', async () => {
+    await expect(
+      buildDataQuerySchemaForClass(QUALIFIED_NAME, {
+        exclude: ['context', 'created_at', 'slug', 'updated_at'],
+        enforceDerivedValues: true,
+      }),
+    ).rejects.toThrow(/\.mismatched enum cannot become data-query values/);
+  });
+});
+
+const ID_FIXTURE = '@happyvertical/smrt-agents:SmrtSurfaceEnumIdFixture';
+
+describe('allowed-value derivation on id fields (#4381)', () => {
+  beforeEach(() => {
+    ObjectRegistry.clear();
+    ObjectRegistry.registerFromManifest(
+      'SmrtSurfaceEnumIdFixture',
+      {
+        className: 'SmrtSurfaceEnumIdFixture',
+        fields: {
+          id: { type: 'text', enum: ['a', 'b'] },
+          parentId: { type: 'foreignKey', enum: ['a', 'b'] },
+          kind: { type: 'text', enum: ['a', 'b'] },
+        },
+        methods: {},
+        decoratorConfig: { tableName: 'smrt_surface_enum_id_fixtures' },
+        schema: {
+          tableName: 'smrt_surface_enum_id_fixtures',
+          ddl: '',
+          columns: {
+            id: { type: 'UUID' },
+            parent_id: { type: 'UUID' },
+            kind: { type: 'TEXT' },
+          },
+          indexes: [],
+          version: 'test',
+        },
+      } as never,
+      '@happyvertical/smrt-agents',
+    );
+  });
+  afterEach(() => {
+    ObjectRegistry.clear();
+    clearSmrtCollectionQuerySchemaCache();
+  });
+
+  it('never derives values for id or foreign-key UUID columns', async () => {
+    const built = await buildDataQuerySchemaForClass(ID_FIXTURE, {
+      exclude: ['context', 'created_at', 'slug', 'updated_at'],
+    });
+    const byId = new Map(built.fields.map((field) => [field.id, field]));
+    expect(byId.get('id')).not.toHaveProperty('values');
+    expect(byId.get('parentId')).not.toHaveProperty('values');
+    expect(byId.get('kind')?.values).toEqual([{ value: 'a' }, { value: 'b' }]);
   });
 });

@@ -35,6 +35,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { createLogger, type Logger } from '@happyvertical/logger';
 import {
   canonicalizeDataQuery,
   createDataQueryFingerprint,
@@ -418,14 +419,30 @@ function isPolicyExcludedField(
 /**
  * Allowed values for an enum- or literal-union-typed field (#4381), taken
  * from the scanner-declared `enum` (top level, or mirrored under `_meta`) —
- * never from row data. A declaration the core bounds reject (too many
- * values, over-long or unsafe text, a type mismatch) is omitted rather than
- * failing the whole schema.
+ * never from row data.
+ *
+ * A declaration the core bounds reject (too many values, an over-long or
+ * unsafe member, a type mismatch) yields no values at all: a partial list
+ * would read as a complete closed set and, when enforced, reject stored
+ * values the type does declare. When the host opted into enforcement that
+ * is a configuration error and throws; otherwise the field stays usable
+ * without values and the reason is reported as a logger warning (once per
+ * memoized schema build).
  */
+let schemaLogger: Logger | undefined;
+
+/** Shared `@happyvertical/logger` sink for schema-derivation diagnostics. */
+function dataSurfaceLog(): Logger {
+  schemaLogger ??= createLogger({ level: 'info' });
+  return schemaLogger;
+}
+
 function declaredEnumValues(
+  qualifiedName: string,
   name: string,
   field: RegistryFieldLike,
   type: DataQueryFieldDescriptor['type'],
+  enforce: boolean,
 ): DataQueryAllowedValue[] | undefined {
   const declared = field.enum ?? meta(field).enum;
   if (!Array.isArray(declared) || declared.length === 0) return undefined;
@@ -436,8 +453,19 @@ function declaredEnumValues(
       name,
     );
   } catch (error) {
-    if (error instanceof DataQueryValidationError) return undefined;
-    throw error;
+    if (!(error instanceof DataQueryValidationError)) throw error;
+    const reason = `${qualifiedName}.${name} enum cannot become data-query values: ${error.message}`;
+    if (enforce) {
+      throw new Error(`${reason} (enforceDerivedValues is set)`);
+    }
+    dataSurfaceLog().warn(
+      `${reason}; the field is advertised without values.`,
+      {
+        qualifiedName,
+        field: name,
+      },
+    );
+    return undefined;
   }
 }
 
@@ -509,7 +537,13 @@ async function buildQuerySchemaForClass(
       : filterOperatorsFor(type);
     const values = idFields.has(name)
       ? undefined
-      : declaredEnumValues(name, field, type);
+      : declaredEnumValues(
+          qualifiedName,
+          name,
+          field,
+          type,
+          options.enforceDerivedValues,
+        );
     fields.push({
       id: name,
       type,
