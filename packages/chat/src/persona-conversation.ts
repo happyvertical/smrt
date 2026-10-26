@@ -38,8 +38,10 @@ import type { AgentSession } from './models/AgentSession.js';
 import type { ChatMessage } from './models/ChatMessage.js';
 import {
   buildManifestToolCatalog,
+  type FallbackReplyReason,
   type ManifestTool,
-  replyContentFor,
+  replyMetadataFor,
+  resolveTurnReply,
   runToolLoop,
   type ToolLoopOptions,
   type ToolLoopResult,
@@ -300,6 +302,12 @@ export interface PersonaConversationTurnOptions {
    * and its retry are blank (forwarded, see `ToolLoopOptions`). Default false.
    */
   answerFromReasoning?: boolean;
+  /**
+   * Reasoning-text sink (forwarded, see `ToolLoopOptions.onReasoning`).
+   * Reasoning can quote documents and tool results: send it only to logs
+   * with the same protection as the conversation itself.
+   */
+  onReasoning?: ToolLoopOptions['onReasoning'];
   /** Originating user the turn runs on behalf of (audited). */
   onBehalfOfUserId?: string | null;
   /** Audit sink for the on-behalf-of entry (forwarded to `executeAsPrincipal`). */
@@ -328,11 +336,17 @@ export interface PersonaConversationTurnResult {
   /** The tool-loop result (final text, invocations, transcript). */
   result: ToolLoopResult;
   /**
-   * The reply text the turn stands behind (#4379): `result.content`, or the
-   * `emptyAnswerFallback` when that is blank. This is what is authored into
-   * the room; speak or display this rather than `result.content`.
+   * The reply text the turn stands behind (#4379): `result.content`
+   * trimmed, or the `emptyAnswerFallback` when that is blank. This is what is
+   * authored into the room; speak or display this rather than
+   * `result.content`.
    */
   reply: string;
+  /**
+   * Set when `reply` is the fallback (`empty` or `timeout`). The authored
+   * message carries it as `metadata.fallback`, and history builders skip it.
+   */
+  replyFallback?: FallbackReplyReason;
   /** The correlation id feedback on this turn should reference. */
   correlationId: string;
   /** The memory recalled into the turn's context. */
@@ -446,6 +460,7 @@ export async function runPersonaConversationTurn(
       ? { requestTimeoutMs: options.requestTimeoutMs }
       : {}),
     ...(options.answerFromReasoning ? { answerFromReasoning: true } : {}),
+    ...(options.onReasoning ? { onReasoning: options.onReasoning } : {}),
     onBehalfOfUserId: options.onBehalfOfUserId,
     agentClass: persona.agentClass,
     postgresRls: options.postgresRls,
@@ -454,7 +469,8 @@ export async function runPersonaConversationTurn(
     onToken: options.onToken,
   });
 
-  const reply = replyContentFor(result, options.emptyAnswerFallback);
+  const turnReply = resolveTurnReply(result, options.emptyAnswerFallback);
+  const reply = turnReply.content;
   let authoredMessages: AuthoredConversationMessages | undefined;
   if (options.chatService && options.session?.id) {
     authoredMessages = await authorConversationReply({
@@ -464,12 +480,14 @@ export async function runPersonaConversationTurn(
       threadId: options.threadId ?? null,
       result,
       reply,
+      metadata: replyMetadataFor(result, turnReply),
     });
   }
 
   return {
     result,
     reply,
+    ...(turnReply.fallback ? { replyFallback: turnReply.fallback } : {}),
     correlationId,
     recalled,
     systemPrompt,
@@ -544,6 +562,8 @@ async function authorConversationReply(input: {
   result: ToolLoopResult;
   /** The final assistant text: the loop content, or the fallback when blank. */
   reply: string;
+  /** Reply metadata (the fallback marker), when any. */
+  metadata?: Record<string, unknown>;
 }): Promise<AuthoredConversationMessages> {
   const { sendAgentReply } = await import('./services/ChatService.js');
   const toolMessages: ChatMessage[] = [];
@@ -604,6 +624,7 @@ async function authorConversationReply(input: {
     threadId: input.threadId,
     content: input.reply,
     kind: 'assistant',
+    ...(input.metadata ? { metadata: input.metadata } : {}),
   });
   return { toolMessages, assistantMessage };
 }

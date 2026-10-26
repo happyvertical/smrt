@@ -73,8 +73,9 @@ export interface AgentReplyParams {
    */
   replyToMessageId?: string | null;
   /**
-   * Message metadata, set by the trusted runtime only (e.g. the #4383 tool
-   * status on a failed call's row).
+   * Message metadata, set by the trusted runtime only: the #4383 tool
+   * status on a failed call's row, and the #4379 `stoppedReason` /
+   * `fallback` markers on a reply.
    */
   metadata?: Record<string, unknown> | null;
 }

@@ -88,6 +88,7 @@ import {
 import {
   buildManifestToolCatalog,
   type ClientToolResultInput,
+  isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
   type ManifestTool,
@@ -1706,6 +1707,10 @@ export function mountAssistantRoutes(
             continue;
           }
           if (!message.content) continue;
+          // A fallback reply is not a model answer: never replay it (#4379).
+          if (message.role === 'assistant' && isFallbackReply(message)) {
+            continue;
+          }
           history.push({ role: message.role, content: message.content });
         }
       }

@@ -44,6 +44,7 @@ import {
   appendClientToolResults,
   type ClientToolDefinition,
   DEFAULT_EMPTY_ANSWER_FALLBACK,
+  isFallbackReply,
   runToolLoop,
   sanitizeClientToolDeclarations,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
@@ -574,9 +575,10 @@ describe('assistant turn', () => {
     it('ends with budget once the turn token budget is spent, across resumes', async () => {
       const store = createMemoryContinuationStore();
       // Each tool round reports 12 tokens; the budget allows one round.
+      // The resumed leg's forced final call answers. (A blank one is not
+      // retried past a spent budget: see the #4379 tests.)
       const ai = scriptedAI([
         calls(['smrt_ui_list_form_controls', {}, 'r1']),
-        calls(['smrt_ui_list_form_controls', {}, 'r2']),
         text('Here is what I found so far.'),
       ]);
       const first = await collect(
@@ -1002,6 +1004,13 @@ describe('assistant turn', () => {
         content: 'Here you go.',
         role: 'assistant',
       });
+      const metadata = (done.message as { metadata?: unknown }).metadata;
+      expect(
+        typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
+      ).toEqual({ stoppedReason: 'stop' });
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        false,
+      );
     });
   });
 
@@ -1056,6 +1065,10 @@ describe('assistant turn', () => {
         content: DEFAULT_EMPTY_ANSWER_FALLBACK,
         role: 'assistant',
       });
+      // Marked as a fallback, not a model answer.
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
       expect(
         events.some(
           (e) =>
@@ -1085,11 +1098,20 @@ describe('assistant turn', () => {
       expect(timeouts).toEqual([5_000]);
       expect(done.stoppedReason).toBe('timeout');
       expect(done.message).toMatchObject({ content: 'Took too long.' });
+      expect((done.message as { metadata?: unknown }).metadata).toBeDefined();
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
     });
 
     it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {
       const quiet: Round = () => ({ content: '' });
-      const { done } = await authored([quiet, quiet]);
+      // The tool round's finishReason shows the SDK populates finish reasons.
+      const { done } = await authored([
+        calls(['data-discover', {}]),
+        quiet,
+        quiet,
+      ]);
       expect(done.stoppedReason).toBe('timeout');
       expect(done.message).toMatchObject({
         content: DEFAULT_EMPTY_ANSWER_FALLBACK,

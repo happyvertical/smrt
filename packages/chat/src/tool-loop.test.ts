@@ -1859,10 +1859,52 @@ describe('runToolLoop', () => {
       ).rejects.toThrow('boom');
     });
 
-    it('treats a quiet stream end (no text, tool calls or finish reason) twice as a timeout', async () => {
+    it('treats a quiet stream end twice as a timeout only for an SDK that reports finish reasons', async () => {
       const quiet = (): AIResponse => ({ content: '' });
+      // A tool round (finishReason: tool_calls) shows this boundary populates
+      // finish reasons; its quiet blank ends are then a suspected timeout.
+      const reporting = (after: () => AIResponse) =>
+        makeAI((_m, options, call) =>
+          call === 0 && toolsOffered(options)
+            ? toolCall('tool_loop_notes.read', {})
+            : after(),
+        );
+      const run = (ai: AIInterface) =>
+        runToolLoop({
+          ai,
+          db,
+          messages: [{ role: 'user', content: 'q' }],
+          tools: tools(['tool_loop_notes.read']),
+          principal: principal(),
+          executeTool: async () => ({ count: 1 }),
+          onToken: () => {},
+          audit: () => {},
+        });
+      expect(await run(reporting(quiet))).toMatchObject({
+        stoppedReason: 'timeout',
+        content: '',
+        emptyRetried: true,
+      });
+
+      // Quiet once, then a finished blank reply (finishReason present): empty.
+      let n = 0;
+      expect(
+        (await run(reporting(() => (n++ === 0 ? quiet() : textResponse('')))))
+          .stoppedReason,
+      ).toBe('empty');
+
+      // Quiet once, then an answer: recovered.
+      let m = 0;
+      expect(
+        await run(
+          reporting(() => (m++ === 0 ? quiet() : textResponse('Here it is.'))),
+        ),
+      ).toMatchObject({ stoppedReason: 'stop', content: 'Here it is.' });
+    });
+
+    it('treats a blank reply with no finish reason as blank when the SDK never reports one', async () => {
       const result = await runToolLoop({
-        ai: makeAI(() => quiet()),
+        ai: makeAI(() => ({ content: '' })),
         db,
         messages: [{ role: 'user', content: 'q' }],
         tools: tools(['tool_loop_notes.read']),
@@ -1871,39 +1913,168 @@ describe('runToolLoop', () => {
         audit: () => {},
       });
       expect(result).toMatchObject({
-        stoppedReason: 'timeout',
-        content: '',
+        stoppedReason: 'empty',
         emptyRetried: true,
       });
+    });
 
-      // Quiet once, then a real (finished) blank reply: empty, not timeout.
+    it('a blank reply with finishReason present is empty, never timeout', async () => {
+      const result = await runToolLoop({
+        ai: makeAI(() => textResponse('')),
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        onToken: () => {},
+        audit: () => {},
+      });
+      expect(result.stoppedReason).toBe('empty');
+    });
+
+    it('skips the retry when the token budget is already spent, keeping capReason', async () => {
+      const chat = vi.fn(
+        async (_m: AIMessage[], options?: ChatOptions): Promise<AIResponse> =>
+          toolsOffered(options)
+            ? {
+                ...toolCall('tool_loop_notes.read', {}),
+                usage: {
+                  promptTokens: 90,
+                  completionTokens: 20,
+                  totalTokens: 110,
+                },
+              }
+            : textResponse(''),
+      );
+      const result = await runToolLoop({
+        ai: { chat } as unknown as AIInterface,
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        maxTotalTokens: 100,
+        executeTool: async () => ({ count: 1 }),
+        audit: () => {},
+      });
+      // Tool round + the forced final call; no retry past the budget.
+      expect(chat).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({
+        stoppedReason: 'empty',
+        capReason: 'budget',
+      });
+      expect(result).not.toHaveProperty('emptyRetried');
+    });
+
+    it('skips the retry when the deadline has passed', async () => {
+      let clock = 1_000;
+      const chat = vi.fn(async (): Promise<AIResponse> => {
+        clock += 500;
+        return textResponse('');
+      });
+      const result = await runToolLoop({
+        ai: { chat } as unknown as AIInterface,
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        deadline: 1_200,
+        now: () => clock,
+        audit: () => {},
+      });
+      expect(chat).toHaveBeenCalledTimes(1);
+      expect(result.stoppedReason).toBe('empty');
+    });
+
+    it('keeps capReason max_steps when the cap turn ends empty after its retry', async () => {
+      const result = await runToolLoop({
+        ai: makeAI((_m, options) =>
+          toolsOffered(options)
+            ? toolCall('tool_loop_notes.read', {})
+            : textResponse(''),
+        ),
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        maxSteps: 1,
+        executeTool: async () => ({ count: 1 }),
+        audit: () => {},
+      });
+      expect(result).toMatchObject({
+        stoppedReason: 'empty',
+        capReason: 'max_steps',
+        emptyRetried: true,
+      });
+    });
+
+    it('classifies an AbortError as a timeout when the caller signal is not aborted', async () => {
+      const controller = new AbortController();
+      const result = await runToolLoop({
+        ai: makeAI(() => {
+          throw Object.assign(new Error('The operation was aborted'), {
+            name: 'AbortError',
+          });
+        }),
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: [],
+        principal: principal(),
+        signal: controller.signal,
+        audit: () => {},
+      });
+      expect(controller.signal.aborted).toBe(false);
+      expect(result.stoppedReason).toBe('timeout');
+    });
+
+    it('ignores an onReasoning callback that throws', async () => {
+      const result = await runToolLoop({
+        ai: makeAI(
+          () =>
+            ({
+              content: 'answer',
+              finishReason: 'stop',
+              reasoning: 'thinking',
+            }) as AIResponse,
+        ),
+        db,
+        messages: [{ role: 'user', content: 'q' }],
+        tools: [],
+        principal: principal(),
+        onReasoning: () => {
+          throw new Error('logger down');
+        },
+        audit: () => {},
+      });
+      expect(result).toMatchObject({
+        content: 'answer',
+        reasoning: 'thinking',
+      });
+    });
+
+    it('answers from the first round reasoning when the retry has none (opt-in), cut on code points', async () => {
       let n = 0;
-      const mixed = await runToolLoop({
-        ai: makeAI(() => (n++ === 0 ? quiet() : textResponse(''))),
+      const emoji = '\u{1F600}';
+      const result = await runToolLoop({
+        ai: makeAI(() =>
+          n++ === 0
+            ? ({
+                content: '',
+                finishReason: 'stop',
+                reasoning: emoji.repeat(MAX_TOOL_LOOP_REASONING_CHARS + 5),
+              } as AIResponse)
+            : textResponse(''),
+        ),
         db,
         messages: [{ role: 'user', content: 'q' }],
-        tools: tools(['tool_loop_notes.read']),
+        tools: [],
         principal: principal(),
-        onToken: () => {},
+        answerFromReasoning: true,
         audit: () => {},
       });
-      expect(mixed.stoppedReason).toBe('empty');
-
-      // Quiet once, then an answer: recovered.
-      let m = 0;
-      const recovered = await runToolLoop({
-        ai: makeAI(() => (m++ === 0 ? quiet() : textResponse('Here it is.'))),
-        db,
-        messages: [{ role: 'user', content: 'q' }],
-        tools: tools(['tool_loop_notes.read']),
-        principal: principal(),
-        onToken: () => {},
-        audit: () => {},
-      });
-      expect(recovered).toMatchObject({
-        stoppedReason: 'stop',
-        content: 'Here it is.',
-      });
+      expect(result.contentFromReasoning).toBe(true);
+      expect(Array.from(result.content)).toHaveLength(
+        MAX_TOOL_LOOP_REASONING_CHARS,
+      );
+      expect(result.content).toBe(emoji.repeat(MAX_TOOL_LOOP_REASONING_CHARS));
     });
 
     it('reports a timeout on the retry call as timeout', async () => {

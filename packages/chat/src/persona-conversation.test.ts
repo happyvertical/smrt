@@ -43,6 +43,7 @@ import {
   DATA_INSPECT_TOOL_SLUG,
   type DataSurfaceDefinition,
 } from './data-surface-tools.js';
+import type { ChatMessage } from './models/ChatMessage.js';
 import {
   bindPersonaToSession,
   type ConversationPersona,
@@ -51,6 +52,7 @@ import {
 import { ChatService } from './services/index.js';
 import {
   DEFAULT_EMPTY_ANSWER_FALLBACK,
+  isFallbackReply,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
   toolFunctionName,
 } from './tool-loop.js';
@@ -512,10 +514,16 @@ describe('persona-bound conversation', () => {
       expect(captured[2]?.messages.at(-1)?.content).toBe(
         TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
       );
+      expect(turn.replyFallback).toBe('empty');
       const stored = await assistantMessages();
       expect(stored.map((m) => m.content)).toEqual([
         DEFAULT_EMPTY_ANSWER_FALLBACK,
       ]);
+      expect(stored[0]?.getMetadata()).toEqual({
+        stoppedReason: 'empty',
+        fallback: 'empty',
+      });
+      expect(isFallbackReply(stored[0] as ChatMessage)).toBe(true);
     });
 
     it('stores a host-configured fallback and keeps a real answer as produced', async () => {
@@ -549,11 +557,23 @@ describe('persona-bound conversation', () => {
         chatService,
         session: bound,
       });
-      expect(answered.reply).toBe('Four notes. ');
-      expect((await assistantMessages()).map((m) => m.content).sort()).toEqual([
-        'Four notes. ',
+      // Both paths trim the stored answer alike.
+      expect(answered.reply).toBe('Four notes.');
+      expect(answered.replyFallback).toBeUndefined();
+      const stored = await assistantMessages();
+      expect(stored.map((m) => m.content).sort()).toEqual([
+        'Four notes.',
         'No answer this time.',
       ]);
+      expect(
+        stored.filter((m) => isFallbackReply(m)).map((m) => m.content),
+      ).toEqual(['No answer this time.']);
+      // Every authored reply records its stop reason (enum only).
+      for (const message of stored) {
+        expect(message.getMetadata().stoppedReason).toBe(
+          isFallbackReply(message) ? 'empty' : 'stop',
+        );
+      }
     });
 
     it('forwards maxTotalTokens, deadline, toolChoice and requestTimeoutMs to the loop', async () => {

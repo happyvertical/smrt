@@ -255,10 +255,21 @@ describe('runChatConversationStream — plain path', () => {
     expect(doneContent(events)).toBe('Hi there');
   });
 
-  it('reports two quiet stream ends (no text, no finish reason) as a timeout error (#4379)', async () => {
+  it('reports two quiet stream ends as a timeout only for an SDK that reports finish reasons (#4379)', async () => {
+    // This boundary finished a reply before, so it populates finish reasons.
+    const ai = scriptedStreamAI([
+      { chunks: ['Earlier.'], finish: 'stop' },
+      { chunks: [] },
+    ]);
+    await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'first' }],
+      }),
+    );
     const events = await collect(
       runChatConversationStream({
-        context: { ai: scriptedStreamAI([{ chunks: [] }]) },
+        context: { ai },
         messages: [{ role: 'user', content: 'hi' }],
       }),
     );
@@ -266,6 +277,16 @@ describe('runChatConversationStream — plain path', () => {
       type: 'error',
       error: CHAT_STREAM_TIMEOUT_ERROR,
     });
+  });
+
+  it('gives a blank, reason-less stream the fallback when the SDK never reports finish reasons', async () => {
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai: scriptedStreamAI([{ chunks: [] }]) },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(events)).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
   });
 
   it('threads prior turns as history and answers the latest user message', async () => {

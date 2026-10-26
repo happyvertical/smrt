@@ -41,7 +41,11 @@ import {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import type { ChatService } from './services/index.js';
-import { replyContentFor } from './tool-loop.js';
+import {
+  noteFinishReason,
+  replyContentFor,
+  reportsFinishReason,
+} from './tool-loop.js';
 import type { VoiceGatewayTurnMetadata } from './voice.js';
 
 /** Max conversation messages accepted on one streaming request. */
@@ -365,9 +369,12 @@ async function* streamPlainConversation(
 
   let content = '';
   let finishReason: string | undefined;
-  // A blank stream is retried once (#4379). Older SDKs end a timed-out stream
-  // quietly — no text, no finish reason — so that shape on both attempts is a
-  // timeout, not an empty success; a newer SDK throws `AI_TIMEOUT` instead.
+  // A blank stream is retried once (#4379). A newer SDK throws `AI_TIMEOUT`
+  // on a timeout. Older SDKs (<= 0.108.0) can end a timed-out stream quietly:
+  // no text and no finish reason. That shape is a suspected timeout only for
+  // an AI boundary that has reported finish reasons before (so their absence
+  // is anomalous) and only when both attempts end that way; any other blank
+  // answer gets the fallback text.
   let suspectedTimeout = false;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     content = '';
@@ -382,6 +389,7 @@ async function* streamPlainConversation(
           : {}),
         onFinishReason: (reason) => {
           finishReason = reason;
+          noteFinishReason(context.ai, reason);
         },
       })) {
         if (chunk) {
@@ -394,7 +402,7 @@ async function* streamPlainConversation(
       return;
     }
     if (content.trim()) break;
-    const quiet = finishReason === undefined;
+    const quiet = finishReason === undefined && reportsFinishReason(context.ai);
     suspectedTimeout = attempt === 0 ? quiet : suspectedTimeout && quiet;
   }
   if (!content.trim()) {

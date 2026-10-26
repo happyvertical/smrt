@@ -116,7 +116,16 @@ export type AssistantTurnEvent<M = Record<string, unknown>> =
       continuationId: string;
       calls: AssistantClientToolCall[];
     }
-  | { type: 'done'; message?: M; stoppedReason: AssistantTurnStopReason }
+  | {
+      type: 'done';
+      message?: M;
+      stoppedReason: AssistantTurnStopReason;
+      /**
+       * Why tools were withdrawn on the final round, kept when the turn then
+       * ends `empty` or `timeout` (#4379).
+       */
+      capReason?: 'max_steps' | 'budget';
+    }
   | {
       type: 'error';
       /**
