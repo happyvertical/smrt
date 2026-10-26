@@ -47,6 +47,13 @@ export interface AssistantHttpOptions {
 export interface AssistantHttpTransportOptions extends AssistantHttpOptions {
   /** When set, the dock renders `ModelPicker`; the server checks the choice. */
   models?: ModelOption[];
+  /**
+   * A JSON object sent as `context` with every send and resume, for the
+   * server's per-request callbacks (`AssistantRequestContext.requestContext`),
+   * e.g. the surfaces the page has mounted. A function is read per request.
+   * The server caps it (8 KiB) and treats it as untrusted.
+   */
+  context?: Record<string, unknown> | (() => Record<string, unknown>);
 }
 
 /** A non-2xx answer from the assistant routes. `message` is user-safe. */
@@ -160,6 +167,13 @@ export function createAssistantHttpTransport(
       body: JSON.stringify(body),
       ...(signal ? { signal } : {}),
     });
+  const contextField = () => {
+    const value =
+      typeof options.context === 'function'
+        ? options.context()
+        : options.context;
+    return value ? { context: value } : {};
+  };
   const threadPath = (threadId: string, leaf: string) =>
     `/threads/${encodeURIComponent(threadId)}/${leaf}`;
 
@@ -191,6 +205,7 @@ export function createAssistantHttpTransport(
             ...(input.clientTools?.length
               ? { clientTools: input.clientTools }
               : {}),
+            ...contextField(),
           },
           input.signal,
         );
@@ -207,6 +222,7 @@ export function createAssistantHttpTransport(
             ...(input.clientTools?.length
               ? { clientTools: input.clientTools }
               : {}),
+            ...contextField(),
           },
           input.signal,
         );

@@ -124,6 +124,8 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
   label?: string;
   description?: string;
   metadata?: NonNullable<DataSurfaceDefinition['metadata']>;
+  /** Host-supplied discovery size hint; never computed by querying. */
+  rowCountHint?: DataSurfaceDefinition['rowCountHint'];
   /** Row identity field. Defaults to `id`. */
   identityField?: string;
   /** Extra field ids to exclude beyond the standard field-policy exclusions. */
@@ -1544,6 +1546,9 @@ export async function createSmrtCollectionDataSurfaceDefinition(
     description:
       options.description ??
       'Bounded, tenant-safe rows, counts, facets, and continuations.',
+    ...(options.rowCountHint !== undefined
+      ? { rowCountHint: options.rowCountHint }
+      : {}),
     metadata: {
       domain: 'smrt-collection',
       adapter: 'SmrtCollection',

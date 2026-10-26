@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GenerationOutput } from './proposal-dto.js';
+import { PROPOSAL_EXPLANATION_LIMIT } from './proposal-validation.js';
 import { proposalInstructions, proposalInstructionsFor } from './proposals.js';
 
 describe('proposal instructions', () => {
@@ -19,10 +20,10 @@ describe('proposal instructions', () => {
 
   it('asks for every readable argument and only genuinely absent missingFields (#4290)', () => {
     expect(proposalInstructions).toContain(
-      'Fill every args field whose value can be read from the evidence, such as identifiers, numbers, dates, quantities, amounts and currency, in the form its schema requires; if a value cannot be expressed in that form, treat the field as absent, and never invent a value the evidence does not show.',
+      'Fill every readable args field (identifiers, numbers, dates, quantities, amounts, currency) in its schema form; unrepresentable values are absent. Never invent values not shown in evidence.',
     );
     expect(proposalInstructions).toContain(
-      "Use the value whose label or context matches the field's name and description; when several similar values appear, such as several dates, choose the one the field names, and if it is not present treat the field as absent rather than substituting another.",
+      "Match the field's name and description to the evidence label or context; among similar values (e.g. dates), choose only its named value; if absent, omit the field, never substitute.",
     );
     // The model should name exactly the absent required set. The validator
     // computes and corrects that declaration on required-only refusals; the
@@ -58,6 +59,20 @@ describe('proposal instructions', () => {
     // Smoke check that the fixed text stays generic: no host domain words.
     expect(proposalInstructions).not.toMatch(
       /\b(vendors?|invoices?|bills?|shops?|purchase orders?|customers?)\b/i,
+    );
+  });
+
+  it('asks for a short, plain explanation written after the fields (#4331)', () => {
+    expect(proposalInstructions).toContain(
+      'Each suggestion: handlerId, handlerVersion, args, evidence:[{"evidenceId":"supplied id","location":supplied location}], alternatives, missingFields, explanation. Write explanation last, as one or two plain sentences of at most 300 characters stating what the document is and why the handler fits; no deliberation, self-correction or restating of these rules.',
+    );
+    // The stated bound is the enforced one.
+    expect(proposalInstructions).toContain(
+      `at most ${PROPOSAL_EXPLANATION_LIMIT} characters`,
+    );
+    expect(proposalInstructions).not.toContain('${');
+    expect(proposalInstructions).not.toMatch(
+      /\b(vendors?|invoices?|bills?|shops?|purchase orders?|customers?|receipts?|totals?|cents)\b/i,
     );
   });
 

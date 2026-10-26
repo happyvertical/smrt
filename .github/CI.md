@@ -173,6 +173,15 @@ CI runs on GitHub-hosted `ubuntu-latest` runners, which never set
 dependencies through apt (#3653). Jobs with `install-deps: 'false'` skip the
 step entirely: without an install they never load `onnxruntime-node`.
 
+Before apt runs, `scripts/configure-ubuntu-apt-mirrors.mjs` routes the hosted
+runner's standard Ubuntu mirror-list entries to the canonical Ubuntu HTTPS
+archive/security endpoints. Azure mirror downloads exhausted the six-minute
+visual-job budget before project installation on #4399. Only known Ubuntu
+entries in `apt-mirrors.txt` and `apt-security-mirrors.txt` change; custom mirrors,
+distribution suites, components, signing keys and required packages are preserved.
+Missing mirror-list files leave other runner configurations unchanged. Unexpected
+filesystem failures stop setup; the visual-job budget and apt retries stay intact.
+
 Each `apt-get update` attempt is bounded at two minutes and is tried up to
 three times with a 10 s / 20 s backoff; `apt-get install` gets ten minutes per
 attempt and two attempts. A single slow mirror response therefore no longer

@@ -73,8 +73,14 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-types', '../types/src/index.ts'],
 ];
 
+// Production models share native-loader constructors; only UI needs source aliases.
+const uiAlias = /(\/svelte|\/smrt-(ui|svelte|playground|web))(\/|$)/;
+const activeEntries = workspaceAliasEntries.filter(
+  ([name]) => process.env.NODE_ENV !== 'production' || uiAlias.test(name),
+);
+
 function getSortedWorkspaceAliasEntries() {
-  return [...workspaceAliasEntries].sort(
+  return [...activeEntries].sort(
     ([left], [right]) => right.length - left.length,
   );
 }
@@ -91,7 +97,7 @@ function resolveWorkspacePackageRoot(relativePath) {
   return dirname(absolutePath);
 }
 
-export const workspaceAliasPackageNames = workspaceAliasEntries.map(
+export const workspaceAliasPackageNames = activeEntries.map(
   ([packageName]) => packageName,
 );
 

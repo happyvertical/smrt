@@ -129,6 +129,8 @@ export interface ReportDataSurfaceDefinition {
   collection: string;
   label?: string;
   description?: string;
+  /** Host-supplied discovery size hint; see `DataSurfaceDefinition`. */
+  rowCountHint?: DataSurfaceDefinition['rowCountHint'];
   adapter?: ReportAdapterOptions;
   /** Application-owned collection/lifecycle seam for materialized reads. */
   query?: (
@@ -416,6 +418,9 @@ export async function createReportDataSurfaceDefinition(
     className: descriptor.reportClassName,
     label: definition.label ?? descriptor.reportClassName,
     ...(definition.description ? { description: definition.description } : {}),
+    ...(definition.rowCountHint !== undefined
+      ? { rowCountHint: definition.rowCountHint }
+      : {}),
     metadata: reportCatalogMetadata(
       definition,
       descriptor,

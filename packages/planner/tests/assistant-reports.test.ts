@@ -226,7 +226,7 @@ describe('the assistant builds runtime reports (#4100)', () => {
     // The preview is smrt-reports' own proposal shape.
     const proposal = runtimeReportProposalFromMessage(answer ?? {});
     if (!proposal) throw new Error('no report preview');
-    expect((answer?.toolCallData as { name: string }).name).toBe(
+    expect((answer?.toolCallData as { name: string } | undefined)?.name).toBe(
       REPORT_DEFINE_TOOL,
     );
     expect(parseRuntimeReportSpec(proposal.spec)).toEqual(proposal.spec);
@@ -523,7 +523,9 @@ describe('the assistant builds runtime reports (#4100)', () => {
     const reloaded = (await transport.loadMessages('planner')).find(
       (m) => m.id === answer.id,
     );
-    expect((reloaded?.toolCallData as { outcome?: unknown }).outcome).toEqual({
+    expect(
+      (reloaded?.toolCallData as { outcome?: unknown } | undefined)?.outcome,
+    ).toEqual({
       status: 'declined',
     });
   });

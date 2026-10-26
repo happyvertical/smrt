@@ -141,6 +141,15 @@ export type AssistantPrincipalResolver = (
 export interface AssistantRequestContext {
   event: AssistantRouteEvent;
   principal: AssistantPrincipal;
+  /**
+   * The client-supplied `context` object of a send or resume body (for
+   * example the surfaces the page has mounted), validated to be a plain JSON
+   * object of at most {@link MAX_ASSISTANT_REQUEST_CONTEXT_BYTES} bytes.
+   * Present only on the callbacks of a send or resume; absent when the client
+   * sent none. It is untrusted request input: use it to narrow, never to
+   * grant.
+   */
+  requestContext?: Readonly<Record<string, unknown>>;
 }
 
 /** A value, or a per-request callback producing it. */
@@ -262,6 +271,17 @@ export interface MountAssistantRoutesOptions {
   resolvePrincipal?: AssistantPrincipalResolver;
   /** The assistant's agent id (its `bot` profile slug). Default `smrt-assistant`. */
   agentId?: string;
+  /**
+   * Session key of the dock's `AgentSession`. Default
+   * {@link ASSISTANT_DOCK_SESSION_KEY} (`assistant-dock`). A host whose
+   * assistant threads already live in another session passes that session's
+   * key to list and continue them: `null` adopts the person's unkeyed session
+   * (what `ChatService.createAgentSession` opens without a `sessionKey`), a
+   * string adopts the session stored under that key. Sessions are matched on
+   * the key exactly, so a host changing it from the default stops seeing the
+   * threads of the old key.
+   */
+  sessionKey?: string | null;
   systemPrompt?: AssistantRouteValue<string | undefined>;
   /**
    * Server tool allow-list, fail-closed: absent or empty offers NO tools.
@@ -420,6 +440,8 @@ export interface AssistantDuplicateSendWire {
 export const DEFAULT_ASSISTANT_AGENT_ID = 'smrt-assistant';
 /** Session key isolating the dock's session from other uses of the agent id. */
 export const ASSISTANT_DOCK_SESSION_KEY = 'assistant-dock';
+/** Largest serialized `context` object a send or resume body may carry. */
+export const MAX_ASSISTANT_REQUEST_CONTEXT_BYTES = 8 * 1024;
 /** Default JSON body cap. */
 export const DEFAULT_ASSISTANT_MAX_BODY_BYTES = 1024 * 1024;
 /** Default attachment cap. */
@@ -797,6 +819,15 @@ export function mountAssistantRoutes(
     }
   }
   const agentId = options.agentId ?? DEFAULT_ASSISTANT_AGENT_ID;
+  const dockSessionKey =
+    options.sessionKey === undefined
+      ? ASSISTANT_DOCK_SESSION_KEY
+      : options.sessionKey;
+  if (dockSessionKey !== null && !dockSessionKey.trim()) {
+    throw new Error(
+      'mountAssistantRoutes: sessionKey must be a non-empty string or null.',
+    );
+  }
   const paramName = options.paramName ?? 'path';
   const maxBody = options.maxBodyBytes ?? DEFAULT_ASSISTANT_MAX_BODY_BYTES;
   const maxContent = options.maxContentLength ?? MAX_CHAT_STREAM_CONTENT_LENGTH;
@@ -883,7 +914,7 @@ export function mountAssistantRoutes(
     return (
       sessions.find(
         (session) =>
-          session.getSessionKey() === ASSISTANT_DOCK_SESSION_KEY &&
+          session.getSessionKey() === dockSessionKey &&
           session.participantProfileId === principal.profileId &&
           session.tenantId === principal.tenantId &&
           Boolean(session.chatRoomId),
@@ -1022,6 +1053,33 @@ export function mountAssistantRoutes(
         ? current
         : null;
     });
+  };
+
+  /**
+   * Attach a body's optional `context` object to the request context: a plain
+   * JSON object (not an array) of bounded size, else 400.
+   */
+  const withRequestContext = (
+    context: AssistantRequestContext,
+    value: unknown,
+  ): AssistantRequestContext => {
+    if (value === undefined || value === null) return context;
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw badRequest('context must be an object.', 'invalid_context');
+    }
+    if (
+      new TextEncoder().encode(JSON.stringify(value)).length >
+      MAX_ASSISTANT_REQUEST_CONTEXT_BYTES
+    ) {
+      throw badRequest(
+        `context is limited to ${MAX_ASSISTANT_REQUEST_CONTEXT_BYTES} bytes.`,
+        'invalid_context',
+      );
+    }
+    return {
+      ...context,
+      requestContext: value as Readonly<Record<string, unknown>>,
+    };
   };
 
   /**
@@ -1303,6 +1361,9 @@ export function mountAssistantRoutes(
           // narrowed at bind time; the pre-bind snapshot never reaches it.
           const turnContext: AssistantRequestContext = {
             event: context.event,
+            ...(context.requestContext
+              ? { requestContext: context.requestContext }
+              : {}),
             principal: {
               ...principal,
               permissions: effectiveScopes(granted, bound.scopes),
@@ -1389,7 +1450,7 @@ export function mountAssistantRoutes(
       agentId,
       actorProfileId: principal.profileId,
       allowedTools,
-      sessionKey: ASSISTANT_DOCK_SESSION_KEY,
+      sessionKey: dockSessionKey,
     });
     if (!session.chatRoomId) throw new Error('Assistant session has no room');
     const thread = await chat.startThread({
@@ -1552,10 +1613,11 @@ export function mountAssistantRoutes(
     };
 
   const sendMessage = async (
-    context: AssistantRequestContext,
+    baseContext: AssistantRequestContext,
     threadId: string,
   ) => {
-    const body = await readJsonObject(context.event.request, maxBody);
+    const body = await readJsonObject(baseContext.event.request, maxBody);
+    const context = withRequestContext(baseContext, body.context);
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     if (!content) throw badRequest('The message is empty.', 'empty_message');
     if (content.length > maxContent) {
@@ -1727,10 +1789,11 @@ export function mountAssistantRoutes(
   };
 
   const resumeTurn = async (
-    context: AssistantRequestContext,
+    baseContext: AssistantRequestContext,
     threadId: string,
   ) => {
-    const body = await readJsonObject(context.event.request, maxBody);
+    const body = await readJsonObject(baseContext.event.request, maxBody);
+    const context = withRequestContext(baseContext, body.context);
     const continuationId = requireId(body.continuationId, 'continuationId');
     if (
       !Array.isArray(body.results) ||
