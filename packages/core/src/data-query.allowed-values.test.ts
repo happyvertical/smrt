@@ -319,6 +319,90 @@ describe('data-query allowed values (#4381)', () => {
     ).toMatch(/valuesEnforced must be boolean/);
   });
 
+  it('lists exactly 20 allowed values without a truncation suffix', () => {
+    const twenty = {
+      version: 1,
+      identityField: 'id',
+      fields: [
+        { id: 'id', type: 'string' },
+        {
+          id: 'code',
+          type: 'string',
+          filterOperators: ['eq'],
+          values: Array.from({ length: 20 }, (_, index) => ({
+            value: `v${index}`,
+          })),
+        },
+      ],
+    };
+    const error = rejection(() =>
+      normalizeDataQueryRequest(condition('code', 'eq', 'nope'), twenty),
+    );
+    expect(error.message).toMatch(/"v19"$/);
+    expect(error.message).not.toContain('more');
+    expect(error.details).toMatchObject({ allowedValueCount: 20 });
+  });
+
+  it('enforces declared values on number and boolean fields', () => {
+    const typed = {
+      version: 1,
+      identityField: 'id',
+      fields: [
+        { id: 'id', type: 'string' },
+        {
+          id: 'priority',
+          type: 'number',
+          filterOperators: ['eq', 'in'],
+          values: [{ value: 1 }, { value: 2 }],
+        },
+        {
+          id: 'archived',
+          type: 'boolean',
+          filterOperators: ['eq'],
+          values: [{ value: false, label: 'Active' }],
+        },
+      ],
+    };
+    expect(
+      rejection(() =>
+        normalizeDataQueryRequest(condition('priority', 'eq', 3), typed),
+      ).message,
+    ).toContain('use one of: 1, 2');
+    expect(
+      rejection(() =>
+        normalizeDataQueryRequest(condition('priority', 'in', [1, 9]), typed),
+      ).code,
+    ).toBe('DATA_QUERY_VALUE_NOT_ALLOWED');
+    expect(() =>
+      normalizeDataQueryRequest(condition('priority', 'in', [2, 1]), typed),
+    ).not.toThrow();
+    expect(
+      rejection(() =>
+        normalizeDataQueryRequest(condition('archived', 'eq', true), typed),
+      ).message,
+    ).toContain('use one of: false');
+    expect(() =>
+      normalizeDataQueryRequest(condition('archived', 'eq', false), typed),
+    ).not.toThrow();
+  });
+
+  it('accepts null beside declared values in an in list', () => {
+    expect(
+      normalizeDataQueryRequest(
+        condition('status', 'in', [null, 'pending']),
+        schema,
+      ).filter,
+    ).toMatchObject({ operator: 'in', value: expect.arrayContaining([null]) });
+    expect(
+      rejection(() =>
+        normalizeDataQueryRequest(
+          condition('status', 'in', [null, 'open']),
+          schema,
+        ),
+      ).code,
+    ).toBe('DATA_QUERY_VALUE_NOT_ALLOWED');
+  });
+
   it('truncates long allowed-value lists in the message', () => {
     const many = Array.from({ length: 30 }, (_, index) => ({
       value: `v${index}`,
