@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.57.31
+
+### Patch Changes
+
+- ### Features
+  
+  - add guarded maintenance releases and durable data steps (#4326) (deployment)
+  
+  ### Bug Fixes
+  
+  - retain invented-target suggestions for review (#4289) (#4328) (ingestion)
+  
+  ### Other Changes
+  
+  - ci: bound release admission and strengthen validation evidence (#4324)
+- @happyvertical/smrt-config@0.57.31
+  - @happyvertical/smrt-scanner@0.57.31
+  - @happyvertical/smrt-types@0.57.31
+
 ## 0.57.30
 
 ### Patch Changes
