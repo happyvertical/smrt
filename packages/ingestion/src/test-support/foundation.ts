@@ -2584,6 +2584,79 @@ export function foundationSuite(
         'unavailable',
       );
     });
+    it('safely fails unsupported Unicode in complete analysis and permits a fresh literal-escape retry (#4393)', async () => {
+      const invalid = [
+        {
+          nested: { values: ['safe', 'PRIVATE-4393' + String.fromCharCode(0)] },
+        },
+        { ['key' + String.fromCharCode(0)]: 'value' },
+        { ['key' + String.fromCharCode(0xd800)]: 'value' },
+        { ['key' + String.fromCharCode(0xdc00)]: 'value' },
+        { nested: { value: 'bad' + String.fromCharCode(0xd800) } },
+        { nested: { value: 'bad' + String.fromCharCode(0xdc00) } },
+      ];
+      for (const [index, body] of invalid.entries()) {
+        const id = await accepted(`unicode-${index}`);
+        const lease = await analysis(id);
+        expect(
+          await service.completeAnalysis(lease, { ...output, output: body }),
+        ).toBe(true);
+        expect((await service.getItem(id)).processingState).toBe(
+          'needs_attention',
+        );
+        const [attempt] = (
+          await db.query(
+            'SELECT state,safe_error,data,output_digest FROM intake_analysis_attempts WHERE id=?',
+            lease.attemptId,
+          )
+        ).rows;
+        expect(attempt.state).toBe('needs_attention');
+        expect(attempt.safe_error).toBe('malformed_output');
+        expect(String(attempt.output_digest ?? '')).toBe('');
+        expect(JSON.stringify(attempt.data)).not.toContain('PRIVATE-4393');
+        const original = (await service.getEvidence(id))[0];
+        expect(
+          Buffer.from(await service.readEvidence(id, original.id)).toString(),
+        ).toBe('retained original');
+        expect(
+          (await db.query('SELECT id FROM intake_actions WHERE item_id=?', id))
+            .rows,
+        ).toEqual([]);
+        expect(
+          (
+            await db.query(
+              'SELECT state FROM intake_dispatches WHERE item_id=? AND revision=?',
+              id,
+              lease.revision,
+            )
+          ).rows.every((row) => row.state === 'completed'),
+        ).toBe(true);
+        await expect(
+          service.getCompletedAnalysis(id, lease.attemptId),
+        ).rejects.toThrow('Analysis unavailable');
+        expect(await service.completeAnalysis(lease, output)).toBe(false);
+        const retried = await service.analyze(id, {}, 'unicode-valid-retry');
+        const fresh = await service.claimAnalysis(
+          id,
+          retried.revision,
+          'worker',
+        );
+        if (!fresh) throw new Error('Missing retry lease');
+        const valid = {
+          text: String.raw`literal \u0000 and \ud800 are text`,
+          astral: '🙂',
+          controls: 'line\n\t' + String.fromCharCode(1),
+          nested: { 'valid🙂key': ['text'] },
+        };
+        expect(
+          await service.completeAnalysis(fresh, { ...output, output: valid }),
+        ).toBe(true);
+        expect(
+          (await service.getCompletedAnalysis(id, fresh.attemptId)).result
+            .output,
+        ).toEqual(valid);
+      }
+    });
     it('rejects malformed input, unsupported engines and bounded-output overflow', async () => {
       expect(await service.receive({ ...receive(), parts: [] })).toEqual({
         kind: 'rejected',

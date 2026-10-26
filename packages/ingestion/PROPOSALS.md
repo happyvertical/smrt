@@ -580,3 +580,28 @@ Interpretation output uses the exported `GenerationAnalysisOutput` wrapper at
 An explicit feedback `retrieve` denial omits optional examples and feedback
 provenance and continues generation. Item/execution denials, unexpected failures,
 and revocation after examples were selected still fail closed before disclosure.
+
+## Storage-safe provider text (#4393)
+
+After the normal output-byte ceiling, generation validates decoded JSON object
+keys and nested string values for PostgreSQL's unsupported NUL and unpaired
+UTF-16 surrogate characters. A refusal is `malformed_output` with a fixed,
+value-free reason, before either accepted or refused suggestion arguments can be
+retained. Provider content is never stripped, repaired or treated as authority.
+Literal backslash-u text and valid supplementary Unicode remain unchanged.
+
+The generic `completeAnalysis` publication boundary independently checks the
+whole result, including provider metadata and diagnostics. An invalid result
+records the exact current fenced attempt as `needs_attention/malformed_output`
+on the same authorized executor and completes its dispatch; it produces no
+completed analysis, proposal or execution. Originals remain readable, and a
+fresh authorized analysis revision can retry without rewriting the failed one.
+Existing byte limits and current authority/fence checks still apply.
+
+Optional failed-attempt capture uses the existing private, reviewer-authorized
+host redaction policy. Unsupported generated JSON can be retained there as its
+JSON-escaped diagnostic representation; it is never copied into a successful
+proposal or returned in ordinary snapshot payloads. Without an enabled redactor,
+no raw diagnostic text is retained. Shared foundation/proposal tests exercise
+SQLite and actual PostgreSQL JSONB writes, invalid keys and values, lone high/low
+surrogates, valid emoji/literal escapes, source retention, retry and capture policy.

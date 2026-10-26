@@ -656,6 +656,62 @@ export function proposalSuite(
           );
         return dump.join('\n');
       }
+      it.each([
+        'schema-valid',
+        'schema-refused',
+      ] as const)('safely refuses unsupported Unicode %s arguments with policy-owned failure capture (#4393)', async (mode) => {
+        calls.mockImplementation(async (input) => ({
+          completion: 'complete',
+          output: {
+            outcome: 'proposals',
+            suggestions: [
+              {
+                handlerId: CREATE,
+                handlerVersion: '1',
+                args: {
+                  title: mode === 'schema-valid' ? 'Draft' : 17,
+                  body: 'PRIVATE-4393' + String.fromCharCode(0),
+                },
+                evidence: [
+                  {
+                    evidenceId: input.evidence[0].evidenceId,
+                    location: input.evidence[0].segments[0].location,
+                  },
+                ],
+                alternatives: [],
+                missingFields: [],
+                explanation: 'Current source',
+              },
+            ],
+            splits: [],
+          },
+        }));
+        const failed = await generate();
+        expect(failed.output.outcome).toBe('provider_error');
+        expect(failed.output.provenance.failure?.category).toBe(
+          'malformed_output',
+        );
+        expect(failed.output.suggestions).toEqual([]);
+        expect(JSON.stringify(failed.output)).not.toContain('PRIVATE-4393');
+        expect(
+          (await attemptData(failed.lease.attemptId)).failureCapture,
+        ).toBeUndefined();
+        configuration.failureCapture = {
+          enabled: true,
+          redact: ({ text }) => text,
+        };
+        const captured = await generate();
+        expect(captured.output.provenance.failure?.category).toBe(
+          'malformed_output',
+        );
+        const capture = await service.getFailedAttemptCapture(
+          captured.itemId,
+          captured.lease.attemptId,
+        );
+        expect(capture?.status).toBe('captured');
+        expect(capture?.text).toContain(String.raw`\u0000`);
+        expect(capture?.text).not.toContain(String.fromCharCode(0));
+      });
       it('stores nothing by default and keeps the reason value-free', async () => {
         calls.mockResolvedValue(hostile());
         const failed = await generate();

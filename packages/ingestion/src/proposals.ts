@@ -36,6 +36,7 @@ import {
   FeedbackRetrievalDeniedError,
   IntakeFeedbackService,
 } from './feedback.js';
+import { storableJSONText } from './json-storage.js';
 import type {
   GenerationStageConfiguration,
   GenerativeProposalInput,
@@ -907,6 +908,11 @@ export class IngestionProposalService {
         if (generated.completion === 'unknown')
           output.warnings.push('generation_completion_unknown');
         if (bytes(generated.output) > maxBytes) throw new StageFailure('limit');
+        if (!storableJSONText(JSON.stringify(generated.output)))
+          throw new StageFailure(
+            'malformed_output',
+            'Provider output contains unsupported Unicode',
+          );
         const deduped = dedupeGeneratedLists(generated.output);
         const { missingFieldsCorrection, splitsDropped, ...validated } =
           validateSuggestions(
