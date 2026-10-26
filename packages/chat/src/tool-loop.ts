@@ -129,6 +129,12 @@ export interface ToolInvocation {
    * Set before `onInvocation` runs (#4383).
    */
   modelContent?: string;
+  /**
+   * True when this call repeated an identical read-only call made earlier in
+   * the same turn and was not executed again (#4382). `ok`/`error` mirror
+   * the earlier call; `observation` is a fixed pointer note.
+   */
+  deduped?: boolean;
 }
 
 /**
@@ -1014,6 +1020,9 @@ export async function runToolLoop(
       // structural superset of `AIMessage`, so the transcript stays chat-compatible.
       const working: LoopMessage[] = [...messages];
       const invocations: ToolInvocation[] = [];
+      // Identical read-only calls already made in this leg (#4382), keyed by
+      // tool + canonical arguments. Bounded; never shared across calls.
+      const priorReadOnlyCalls = new Map<string, ToolInvocation>();
       let executedRounds = Math.max(0, Math.floor(initialSteps));
       let totalTokens = 0;
       let response: AIResponse;
@@ -1176,6 +1185,13 @@ export async function runToolLoop(
           }
 
           let invocation: ToolInvocation;
+          const dedupeKey =
+            tool || extraTool
+              ? readOnlyCallKey(tool, extraTool, slug, parsedArgs)
+              : null;
+          const prior = dedupeKey
+            ? priorReadOnlyCalls.get(dedupeKey)
+            : undefined;
           if (!tool && !extraTool) {
             // Offer gate: a tool the persona was not offered (not on the
             // allow-list, or hallucinated) is rejected without execution.
@@ -1188,6 +1204,21 @@ export async function runToolLoop(
                 error: `Tool '${slug}' is not permitted for this persona.`,
               },
               error: 'not_permitted',
+            };
+          } else if (prior) {
+            // An identical read-only call already ran this turn (#4382):
+            // do not run it again; point the model at the earlier result.
+            invocation = {
+              slug,
+              args,
+              ok: prior.ok,
+              rejected: prior.rejected,
+              observation: {
+                deduped: true,
+                note: TOOL_CALL_DEDUPED_NOTE,
+              },
+              ...(prior.error ? { error: prior.error } : {}),
+              deduped: true,
             };
           } else if (parsedArgs === null) {
             // Malformed arguments (#4378): never run the tool with `{}`.
@@ -1241,7 +1272,31 @@ export async function runToolLoop(
             invocation.observation,
           );
           invocations.push(invocation);
-          if (!invocation.ok && audit) {
+          if (
+            dedupeKey &&
+            !invocation.deduped &&
+            invocation.error !== 'execution_error' &&
+            priorReadOnlyCalls.size < MAX_DEDUPED_CALLS_PER_TURN
+          ) {
+            // A transient server failure may be retried; anything else an
+            // identical call would only repeat.
+            priorReadOnlyCalls.set(dedupeKey, invocation);
+          }
+          if (invocation.deduped && audit) {
+            try {
+              await audit({
+                action: 'chat.tool_call_deduped',
+                actorUserId: principal.runAsUserId,
+                onBehalfOfUserId: onBehalfOfUserId ?? null,
+                tenantId: principal.tenantId ?? null,
+                ...(agentClass ? { agentClass } : {}),
+                actsAsProfileId: principal.actsAsProfileId ?? null,
+                metadata: { name: slug.slice(0, 128), deduped: true },
+              });
+            } catch {
+              // Audit of a deduped call never fails the turn.
+            }
+          } else if (!invocation.ok && audit) {
             const record = toolFailureRecord(invocation);
             if (record) {
               try {
@@ -1521,6 +1576,69 @@ function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
     : value;
 }
 
+/**
+ * Fixed note returned for a deduped call (#4382), instead of a second copy
+ * of the earlier observation.
+ */
+export const TOOL_CALL_DEDUPED_NOTE =
+  'This exact call was already made in this turn; its result is above. Use it, or change the arguments.';
+
+/** Max distinct read-only calls remembered for dedupe in one leg (#4382). */
+export const MAX_DEDUPED_CALLS_PER_TURN = 64;
+/** Calls whose canonical arguments exceed this are never deduped. */
+const MAX_DEDUPE_KEY_CHARS = 4_000;
+
+/**
+ * Read-only, idempotent extra tools that may be deduped (#4382). Mutating,
+ * delegating (`agents.invoke`) and browser tools never are.
+ */
+const DEDUPABLE_EXTRA_TOOLS: ReadonlySet<string> = new Set([
+  'data.discover',
+  'data.inspect',
+  'data.query',
+]);
+
+/** Stable JSON with sorted object keys. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      );
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * The dedupe key for a read-only call (manifest `read`, or a known read-only
+ * data tool), or `null` when the call never qualifies.
+ */
+function readOnlyCallKey(
+  tool: ManifestTool | undefined,
+  extraTool: PrincipalTool | undefined,
+  slug: string,
+  args: Record<string, unknown> | null,
+): string | null {
+  if (args === null) return null;
+  const readOnly = tool
+    ? tool.action === 'read'
+    : extraTool
+      ? DEDUPABLE_EXTRA_TOOLS.has(extraTool.slug)
+      : false;
+  if (!readOnly) return null;
+  let key: string;
+  try {
+    key = `${slug}\u0000${canonicalJson(args)}`;
+  } catch {
+    return null;
+  }
+  return key.length > MAX_DEDUPE_KEY_CHARS ? null : key;
+}
+
 /** Max serialized characters of a failed call's persisted arguments (#4383). */
 export const MAX_TOOL_FAILURE_ARGS_CHARS = 2_000;
 
@@ -1537,6 +1655,8 @@ export function toolFailureRecord(
   invocation: ToolInvocation,
 ): ToolFailureRecord | null {
   if (invocation.ok) return null;
+  // A deduped repeat is not a fresh failure (#4382).
+  if (invocation.deduped) return null;
   const errorKind = invocation.error ?? 'execution_error';
   const observation = asRecord(invocation.observation);
   const code =

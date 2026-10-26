@@ -538,7 +538,11 @@ async function authorConversationReply(input: {
       content: JSON.stringify(invocation.observation),
       kind: 'tool',
       messageType: 'tool_result',
-      toolCallData: { name: invocation.slug, args: invocation.args },
+      toolCallData: {
+        name: invocation.slug,
+        args: invocation.args,
+        ...(invocation.deduped ? { deduped: true } : {}),
+      },
     });
     toolMessages.push(message);
   }

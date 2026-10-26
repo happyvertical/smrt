@@ -65,6 +65,29 @@ value-free: they name the accepted shape, never the model's values.
   and caller-visible field ids with `<value>` placeholders — never the
   caller's own values.
 
+## Dedupe of identical read-only calls (#4382)
+
+Within one `runToolLoop` call, a server call that repeats an earlier one —
+same tool, same arguments after canonicalization (object keys sorted) — is
+not executed again. Its invocation has `deduped: true`, mirrors the earlier
+`ok`/`error`, and observes the fixed `TOOL_CALL_DEDUPED_NOTE` instead of a
+second copy of the result.
+
+- Only read-only, idempotent tools qualify: manifest `read`, and
+  `data.discover`, `data.inspect`, `data.query`. Mutating tools,
+  `agents.invoke`, other extra tools and browser tools never do; nor do
+  malformed-argument calls.
+- An earlier `execution_error` is not reused: a transient server failure
+  may be retried. Arguments over 4,000 canonical characters are never keyed.
+- The cache holds at most `MAX_DEDUPED_CALLS_PER_TURN` (64) calls and lives
+  only inside that `runToolLoop` call: never across turns (an assistant
+  resume leg starts a fresh cache).
+- Deduped calls count toward the step cap: a round of repeats is still a
+  round, so a model stuck repeating a call still stops at `maxSteps`.
+- The audit sink gets `action: 'chat.tool_call_deduped'` (not a fresh
+  execution or failure); the persona path's tool row carries
+  `toolCallData.deduped: true`.
+
 ## Failed calls are persisted (#4383)
 
 Every tool invocation records `modelContent`, the exact (capped) text the
