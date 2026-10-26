@@ -22,6 +22,7 @@ const AI_USAGE_DDL = `
 
 interface SeedRow {
   tenantId: string;
+  operation?: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -44,7 +45,7 @@ async function seedAiUsage(
       `usage-${counter}`,
       'openai',
       'gpt-test',
-      'do',
+      row.operation ?? 'do',
       row.promptTokens,
       row.completionTokens,
       row.totalTokens,
@@ -74,6 +75,15 @@ describe('TenantUsageMeter AI usage summaries', () => {
 
   it('sums persisted _smrt_ai_usage rows within the window for the tenant', async () => {
     await seedAiUsage(metrics, [
+      {
+        tenantId: 'tenant-1',
+        operation: 'external-agent',
+        promptTokens: 999,
+        completionTokens: 999,
+        totalTokens: 1998,
+        estimatedCost: 99,
+        createdAt: '2026-06-10T12:00:00.000Z',
+      },
       {
         tenantId: 'tenant-1',
         promptTokens: 100,

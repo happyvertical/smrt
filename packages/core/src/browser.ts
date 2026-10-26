@@ -570,6 +570,7 @@ export {
 // NOTE: Generators (CLI, REST, MCP) are excluded from browser builds
 // Use the main entry point for Node.js applications that need generators
 
+export * from './external-agent-usage.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,
