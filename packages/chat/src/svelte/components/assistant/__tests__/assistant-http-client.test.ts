@@ -180,3 +180,37 @@ describe('createAssistantHttpTransport', () => {
     expect(seen[0].has('authorization')).toBe(false);
   });
 });
+
+describe('createAssistantHttpTransport context', () => {
+  it('sends the configured context with a send and a resume, reading a function per request', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return jsonResponse({ duplicate: false }, 500);
+      },
+    ) as unknown as typeof fetch;
+    let n = 0;
+    const transport = createAssistantHttpTransport({
+      endpoint: '/api/assistant',
+      fetchImpl,
+      context: () => ({ n: ++n }),
+    });
+    await transport
+      .sendMessage?.({
+        threadId: 't1',
+        content: 'hi',
+        clientRequestId: 'r1',
+      } as never)
+      .catch(() => {});
+    await transport
+      .resumeTurn?.({
+        threadId: 't1',
+        clientRequestId: 'r2',
+        continuationId: 'c1',
+        results: [],
+      } as never)
+      .catch(() => {});
+    expect(bodies.map((b) => b.context)).toEqual([{ n: 1 }, { n: 2 }]);
+  });
+});

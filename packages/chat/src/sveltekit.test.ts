@@ -439,6 +439,118 @@ describe('mountAssistantRoutes', () => {
       expect(array.status).toBe(400);
     });
 
+    it('keeps the default session key, and adopts an unkeyed or custom-keyed session when configured', async () => {
+      const chat = await ChatService.create({ tenantId, db });
+      const seed = async (sessionKey?: string) => {
+        const { session } = await chat.createAgentSession({
+          tenantId,
+          agentId: 'smrt-assistant',
+          actorProfileId: ownerA.user.profileId,
+          ...(sessionKey ? { sessionKey } : {}),
+        });
+        const thread = await chat.startThread({
+          tenantId,
+          roomId: session.chatRoomId as string,
+          actorProfileId: ownerA.user.profileId,
+          title: sessionKey ?? 'unkeyed',
+        });
+        return thread.id as string;
+      };
+      const unkeyed = await seed();
+      const custom = await seed('legacy-dock');
+      const titles = async (routes: AssistantRoutes) =>
+        (
+          (await (await call(routes, 'GET', 'threads')).json()) as {
+            items: Array<{ title: string }>;
+          }
+        ).items.map((item) => item.title);
+
+      // Default: neither pre-existing session is the dock's.
+      expect(await titles(mount())).toEqual([]);
+      expect(await titles(mount({ sessionKey: null }))).toEqual(['unkeyed']);
+      expect(await titles(mount({ sessionKey: 'legacy-dock' }))).toEqual([
+        'legacy-dock',
+      ]);
+
+      // An adopted thread is readable and writable, and a thread of another
+      // session is still not.
+      const adopted = mount({ sessionKey: null });
+      expect(await listMessages(adopted, unkeyed)).toEqual([]);
+      const events1 = await events(
+        await send(adopted, unkeyed, {
+          content: 'hi',
+          clientRequestId: 'adopt-1',
+        }),
+      );
+      expect(events1.thrown).toBeNull();
+      expect(
+        (await call(adopted, 'GET', `threads/${custom}/messages`)).status,
+      ).toBe(404);
+
+      // A new thread lands in the adopted session, not a new one.
+      const created = await createThread(adopted, ownerA, 'Fresh');
+      expect(created).toBeTruthy();
+      expect(await titles(adopted)).toEqual(
+        expect.arrayContaining(['unkeyed', 'Fresh']),
+      );
+      const sessions = await chat.findActiveAgentSessions({
+        tenantId,
+        agentId: 'smrt-assistant',
+        participantProfileId: ownerA.user.profileId,
+      });
+      expect(sessions).toHaveLength(2);
+    });
+
+    it('refuses an empty sessionKey at mount', () => {
+      expect(() => mount({ sessionKey: '  ' })).toThrow(/sessionKey/);
+    });
+
+    it('hands a send or resume body’s context to the per-request callbacks', async () => {
+      const seen: unknown[] = [];
+      const routes = mount({
+        allowedTools: ['data.discover'],
+        extraTools: (context) => {
+          seen.push(context.requestContext);
+          return [discoverTool([])];
+        },
+      });
+      const threadId = await createThread(routes);
+      const ok = await send(routes, threadId, {
+        content: 'hi',
+        clientRequestId: 'ctx-1',
+        context: { surfaces: ['a', 'b'] },
+      });
+      expect((await events(ok)).thrown).toBeNull();
+      expect(seen).toContainEqual({ surfaces: ['a', 'b'] });
+
+      seen.length = 0;
+      await events(
+        await send(routes, threadId, {
+          content: 'hi',
+          clientRequestId: 'ctx-2',
+        }),
+      );
+      expect(seen.every((value) => value === undefined)).toBe(true);
+
+      for (const [index, context] of [
+        'text',
+        ['x'],
+        { big: 'x'.repeat(9 * 1024) },
+      ].entries()) {
+        const refused = await send(routes, threadId, {
+          content: 'hi',
+          clientRequestId: `ctx-bad-${index}`,
+          context,
+        });
+        expect(refused.status).toBe(400);
+        expect(await refused.json()).toMatchObject({ code: 'invalid_context' });
+      }
+      const resume = await call(routes, 'POST', `threads/${threadId}/resume`, {
+        body: { continuationId: 'c', results: [], context: 'text' },
+      });
+      expect(resume.status).toBe(400);
+    });
+
     it('reads messages only from the actor’s own assistant room in the tenant', async () => {
       const routes = mount();
       const threadId = await createThread(routes);
