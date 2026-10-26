@@ -1758,7 +1758,8 @@ export function toolFailureAuditMetadata(
  */
 export const TOOL_EXECUTION_ERROR_HINT =
   'The tool failed on the server; this was not caused by your arguments. ' +
-  'Do not repeat the same call. Answer with what you already have, or tell the user the data could not be read right now.';
+  'Do not repeat the same call. Answer with what you already have; if that does not answer the question, say so ' +
+  'and tell the user the data could not be read right now.';
 
 /** How a thrown tool error is reported to the model and the invocation log. */
 export type ToolErrorKind =
