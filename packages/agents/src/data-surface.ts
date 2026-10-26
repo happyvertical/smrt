@@ -130,6 +130,45 @@ export interface DataSurfaceAuditEntry {
   tenantId: string | null;
   rowCount?: number;
   truncated?: boolean;
+  /** Set on a refused call (#4387); `reason` says why. */
+  denied?: boolean;
+  reason?: DataSurfaceDenialReason;
+}
+
+/** A data tool action. */
+export type DataSurfaceAction = 'discover' | 'inspect' | 'query';
+
+/**
+ * Why a data tool call was refused (#4387), value-free:
+ * - `not_visible`: the surface does not exist for this principal, or the
+ *   request named no visible surface (indistinguishable on purpose);
+ * - `action_not_permitted`: the surface is visible for a lesser action
+ *   (discover / inspect) but not for this one;
+ * - `no_executor`: the surface is visible but has no executor to query it.
+ */
+export type DataSurfaceDenialReason =
+  | 'not_visible'
+  | 'action_not_permitted'
+  | 'no_executor';
+
+/** What the host's {@link DataSurfaceToolsOptions.onDenied} sink receives. */
+export interface DataSurfaceDeniedEntry {
+  action: DataSurfaceAction;
+  /** Only for a surface visible to the principal; never an unknown id. */
+  surfaceId?: string;
+  requestId?: string;
+  userId: string;
+  tenantId: string | null;
+  reason: DataSurfaceDenialReason;
+}
+
+export type DataSurfaceDeniedSink = (
+  entry: DataSurfaceDeniedEntry,
+) => void | Promise<void>;
+
+/** Passed to a function catalog: the action it is evaluated for (#4387). */
+export interface DataSurfaceCatalogContext {
+  action: DataSurfaceAction;
 }
 
 export type DataSurfaceAuditSink = (
@@ -144,6 +183,7 @@ export interface DataSurfaceToolsOptions {
     | readonly DataSurfaceDefinition[]
     | ((
         run: PrincipalRun,
+        context: DataSurfaceCatalogContext,
       ) =>
         | readonly DataSurfaceDefinition[]
         | Promise<readonly DataSurfaceDefinition[]>);
@@ -155,6 +195,14 @@ export interface DataSurfaceToolsOptions {
   deadlineMs?: number;
   /** Receives detailed server-side failures; never surfaced to the model. */
   onFailure?: DataSurfaceFailureSink;
+  /**
+   * Receives every refused call (#4387): action, visible surface id, request
+   * id, principal and a value-free reason. A separate sink from `onFailure`
+   * because a denial is an authorization outcome, not a server failure: it
+   * carries no error object, and hosts route it to access logs instead of
+   * incident alerts. A throw is ignored.
+   */
+  onDenied?: DataSurfaceDeniedSink;
 }
 
 export interface DataSurfaceFailureEntry {
@@ -177,6 +225,23 @@ export class DataSurfaceDeniedError extends Error {
     // Deliberately generic: callers must not learn whether a surface exists.
     super('Data surface is not available.');
     this.name = 'DataSurfaceDeniedError';
+  }
+}
+
+/**
+ * A surface the principal can see for a lesser action (discover / inspect)
+ * but not for this one (#4387). Unlike {@link DataSurfaceDeniedError} it names
+ * the action and the surface — only one the principal can already see — so
+ * the model stops retrying. A surface the principal cannot see at all keeps
+ * the generic denial.
+ */
+export class DataSurfaceActionDeniedError extends DataSurfaceDeniedError {
+  readonly code = 'DATA_SURFACE_ACTION_DENIED';
+
+  constructor(action: 'inspect' | 'query', surfaceId: string) {
+    super();
+    this.message = `${action === 'query' ? 'Querying' : 'Inspecting'} '${surfaceId}' is not permitted for you; answer without this data or ask an administrator.`;
+    this.name = 'DataSurfaceActionDeniedError';
   }
 }
 
@@ -561,10 +626,11 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
 async function availableSurfaces(
   options: DataSurfaceToolsOptions,
   run: PrincipalRun,
+  action: DataSurfaceAction,
 ): Promise<Array<{ surface: DataSurfaceDefinition; schema: DataQuerySchema }>> {
   const configured =
     typeof options.surfaces === 'function'
-      ? await options.surfaces(run)
+      ? await options.surfaces(run, { action })
       : options.surfaces;
   const result: Array<{
     surface: DataSurfaceDefinition;
@@ -1378,11 +1444,73 @@ export function createDataSurfaceTools(
     action: DataSurfaceFailureEntry['action'],
   ) => {
     try {
-      return await availableSurfaces(options, run);
+      return await availableSurfaces(options, run, action);
     } catch (error) {
       await reportFailure(options, run, action, undefined, undefined, error);
       throw new DataSurfaceQueryError();
     }
+  };
+  /**
+   * Refuse a call (#4387): report it to `onDenied` and the audit sink, and
+   * return the error the model sees. A requested id that is visible for a
+   * lesser action gets the action-specific denial; anything else keeps the
+   * generic one, so a hidden surface is never revealed. Sink failures never
+   * change the outcome.
+   */
+  const deny = async (
+    run: PrincipalRun,
+    action: 'inspect' | 'query',
+    requestedId: unknown,
+    known?: { surfaceId: string; reason: DataSurfaceDenialReason },
+  ): Promise<DataSurfaceDeniedError> => {
+    let surfaceId = known?.surfaceId;
+    let reason: DataSurfaceDenialReason = known?.reason ?? 'not_visible';
+    if (!known && typeof requestedId === 'string' && requestedId) {
+      const lesser: DataSurfaceAction[] =
+        action === 'query' ? ['inspect', 'discover'] : ['discover'];
+      for (const lesserAction of lesser) {
+        let visible: Awaited<ReturnType<typeof availableSurfaces>> = [];
+        try {
+          visible = await availableSurfaces(options, run, lesserAction);
+        } catch {
+          visible = [];
+        }
+        const entry = findSurface(visible, requestedId);
+        if (entry) {
+          surfaceId = entry.surface.id;
+          reason = 'action_not_permitted';
+          break;
+        }
+      }
+    }
+    const userId = run.context.userId ?? '';
+    const tenantId = run.context.tenantId ?? null;
+    try {
+      await options.onDenied?.({
+        action,
+        ...(surfaceId ? { surfaceId } : {}),
+        userId,
+        tenantId,
+        reason,
+      });
+    } catch {
+      // Host telemetry never changes the denial.
+    }
+    try {
+      await options.audit?.({
+        action,
+        ...(surfaceId ? { surfaceId } : {}),
+        userId,
+        tenantId,
+        denied: true,
+        reason,
+      });
+    } catch {
+      // The audit of a refusal never turns it into a failure.
+    }
+    return surfaceId
+      ? new DataSurfaceActionDeniedError(action, surfaceId)
+      : new DataSurfaceDeniedError();
   };
 
   const discover = tool(
@@ -1415,7 +1543,7 @@ export function createDataSurfaceTools(
         await catalog(run, 'inspect'),
         placed.surfaceId,
       );
-      if (!entry) throw new DataSurfaceDeniedError();
+      if (!entry) throw await deny(run, 'inspect', placed.surfaceId);
       await audit({ action: 'inspect', surfaceId: entry.surface.id }, run);
       return descriptor(entry.surface, entry.schema);
     },
@@ -1433,7 +1561,7 @@ export function createDataSurfaceTools(
         await catalog(run, 'query'),
         queryArgs.surfaceId,
       );
-      if (!entry) throw new DataSurfaceDeniedError();
+      if (!entry) throw await deny(run, 'query', queryArgs.surfaceId);
       const surfaceId = entry.surface.id;
       const example = (raw?: unknown) =>
         validQueryExample(
@@ -1449,7 +1577,12 @@ export function createDataSurfaceTools(
       const principal = principalFromRun(run);
       const signal = new AbortController();
       const executor = entry.surface.execute ?? options.execute;
-      if (!executor) throw new DataSurfaceDeniedError();
+      if (!executor) {
+        throw await deny(run, 'query', surfaceId, {
+          surfaceId,
+          reason: 'no_executor',
+        });
+      }
       try {
         const internal = buildInternalQuery(request, entry.schema);
         const raw = await bounded(

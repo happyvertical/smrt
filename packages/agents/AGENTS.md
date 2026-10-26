@@ -190,6 +190,16 @@ dropped (#4378). A `surfaceId` nested in `request` (or a `query` wrapper) is
 lifted; two different ids are `DATA_QUERY_SURFACE_ID_CONFLICT`, none is
 `DATA_QUERY_SURFACE_ID_REQUIRED` (400s, not denials). Every request error ends with a one-line valid example for
 the surface (placeholders only, no caller values).
+Refusals (#4387): a surface visible for a lesser action (`discover`/`inspect`)
+but not the requested one, or with no executor, gets
+`DataSurfaceActionDeniedError` naming the action and that visible id; an
+invisible surface keeps the generic `DataSurfaceDeniedError`. A function
+catalog receives `{ action }` so hosts can vary it per action. Every refusal
+goes to `onDenied` (action, visible surface id only, principal, value-free
+`reason`: `not_visible` | `action_not_permitted` | `no_executor`) and the
+audit sink (`denied: true`). `onDenied` is separate from `onFailure` because a
+denial is an authorization outcome, not a server error; sink throws are
+ignored. Hidden fields still get `DATA_QUERY_FIELD_NOT_ALLOWED`.
 
 ## Playbook Preflight (issue #2590)
 
