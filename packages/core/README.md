@@ -159,6 +159,11 @@ cache whole-plan results, or change database pool defaults.
 
 ### Generate metadata and migrate
 
+The Vite integrations support Vite 5–8. Install Vite in the consuming build
+project so the plugin declarations resolve against that project's Vite types.
+Vite is an optional peer: server-only consumers do not need to install it.
+`node scripts/verify-packed-vite-peer.mjs` verifies the packed consumer contract.
+
 Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
 directory containing your objects:
 
