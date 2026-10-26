@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { PDFDocument } from 'pdf-lib';
 import type { CatalogAuthorizer } from './catalog-service.js';
@@ -20,15 +19,18 @@ import {
   type SubmissionServiceOptions,
 } from './submission-service.js';
 import {
+  aggregateWorkbookQuestions,
   validateWorkbookAssessment,
   WORKBOOK_MATH_VOCABULARY,
   type WorkbookActivityView,
   type WorkbookAssessment,
+  WorkbookAssessmentValidationError,
   type WorkbookAssistance,
   type WorkbookAttemptView,
   type WorkbookConceptSummary,
   type WorkbookRevisionView,
   type WorkbookTimeline,
+  workbookAggregateFeedback,
 } from './workbook-contracts.js';
 import {
   type Workbook,
@@ -45,6 +47,13 @@ import {
 
 type ActivityRequest = LearnerRequest & { activityId: string };
 type AttemptRequest = ActivityRequest & { submissionId: string };
+function createHash(algorithm: 'sha256') {
+  const crypto =
+    typeof process !== 'undefined' && process.getBuiltinModule?.('node:crypto');
+  if (!crypto)
+    throw new Error('Workbook capture and revisions require a Node server');
+  return crypto.createHash(algorithm);
+}
 function digest(value: unknown) {
   const canonical = (v: unknown): unknown =>
     Array.isArray(v)
@@ -593,7 +602,9 @@ export class WorkbookService extends SubmissionService {
         this.workbookOptions.workbookVocabulary ?? WORKBOOK_MATH_VOCABULARY,
       )
     )
-      throw new Error('Assessment must use configured curated vocabulary');
+      throw new WorkbookAssessmentValidationError(
+        'Assessment must use configured curated vocabulary',
+      );
     const sources: { assetId: string; sha256: string; pageCount: number }[] =
       JSON.parse(attempt.sourceHashes);
     for (const q of assessment.questions)
@@ -603,10 +614,13 @@ export class WorkbookService extends SubmissionService {
             (s) =>
               s.assetId === anchor.assetId &&
               s.sha256 === anchor.sha256 &&
-              anchor.page <= s.pageCount,
+              (anchor.page === null || anchor.page <= s.pageCount),
           )
         )
-          throw new Error('Assessment source does not belong to capture');
+          throw new WorkbookAssessmentValidationError(
+            'Assessment source does not belong to capture',
+            'ungrounded_source',
+          );
     // Once a question set/vocabulary is guardian-reviewed, analysis cannot mint
     // replacement identities or let free-text labels enter confirmed summaries.
     const activities = await (
@@ -630,8 +644,9 @@ export class WorkbookService extends SubmissionService {
         JSON.stringify(previous.vocabulary) !==
           JSON.stringify(assessment.vocabulary)
       )
-        throw new Error(
+        throw new WorkbookAssessmentValidationError(
           'Reviewed concept vocabulary requires explicit guardian remapping',
+          'ambiguous_proposal',
         );
       const ids = new Set(previous.questions.map((q) => q.id));
       if (
@@ -642,7 +657,10 @@ export class WorkbookService extends SubmissionService {
             previous.questions.find((p) => p.id === q.id)?.prompt !== q.prompt,
         )
       )
-        throw new Error('Unconfirmed question identity or changed prompt');
+        throw new WorkbookAssessmentValidationError(
+          'Unconfirmed question identity or changed prompt',
+          'ambiguous_proposal',
+        );
     }
   }
   private async appendRevision(
@@ -717,8 +735,9 @@ export class WorkbookService extends SubmissionService {
         request,
         'education.learner.submit',
       );
-      const assessment = {
+      const assessment: WorkbookAssessment = {
         ...request.assessment,
+        aggregate: undefined,
         questions: request.assessment.questions?.map((q) => ({
           ...q,
           markingCertainty: q.markingCertainty ?? ('unknown' as const),
@@ -727,6 +746,10 @@ export class WorkbookService extends SubmissionService {
           evidenceLimitations: q.evidenceLimitations ?? [],
         })),
       };
+      validateWorkbookAssessment(assessment);
+      const aggregate = aggregateWorkbookQuestions(assessment.questions);
+      assessment.aggregate = aggregate;
+      assessment.feedback = workbookAggregateFeedback(aggregate);
       const prior = (await service.revisions(request, String(attempt.id))).find(
         (r) => r.requestKey === request.requestKey,
       );
@@ -770,8 +793,9 @@ export class WorkbookService extends SubmissionService {
       if (!source) throw new Error('Assessment revision unavailable');
       const originalAssessment =
         request.assessment ?? revisionView(source).assessment;
-      const assessment = {
+      const assessment: WorkbookAssessment = {
         ...originalAssessment,
+        aggregate: undefined,
         questions: originalAssessment.questions.map((q) => ({
           ...q,
           markingCertainty: q.markingCertainty ?? ('unknown' as const),
@@ -788,6 +812,7 @@ export class WorkbookService extends SubmissionService {
       nonempty(decisionReason, 'guardian decision reason');
       // Guardian may explicitly correct transcription, result or mapping.
       validateWorkbookAssessment(assessment);
+      assessment.aggregate = aggregateWorkbookQuestions(assessment.questions);
       if (
         JSON.stringify(assessment.vocabulary) !==
         JSON.stringify(
@@ -805,7 +830,7 @@ export class WorkbookService extends SubmissionService {
               (s) =>
                 s.assetId === a.assetId &&
                 s.sha256 === a.sha256 &&
-                a.page <= s.pageCount,
+                (a.page === null || a.page <= s.pageCount),
             )
           )
             throw new Error('Foreign review source');
@@ -835,14 +860,7 @@ export class WorkbookService extends SubmissionService {
           },
         });
         if (!successors.length) {
-          const scored = assessment.questions.filter(
-            (q) => q.result !== 'unassessed',
-          );
-          const total = scored.reduce((n, q) => n + (q.possiblePoints ?? 0), 0);
-          const score =
-            total > 0
-              ? scored.reduce((n, q) => n + (q.points ?? 0), 0) / total
-              : null;
+          const score = aggregateWorkbookQuestions(assessment.questions).score;
           await service.reviewSubmission({
             ...request,
             enrollmentId: row.enrollmentId,

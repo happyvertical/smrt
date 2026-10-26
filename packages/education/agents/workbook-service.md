@@ -36,7 +36,11 @@ uses the inherited fresh-file compensation ledger.
 `WorkbookAssessment` version 1 has stable question IDs, original/corrected prompt
 and answer text, explicit result/reason, nullable points, feedback, retained source
 anchors and curated concept mappings. An anchor names an owned asset plus SHA-256,
-one-based image/PDF page and normalized x/y/width/height rectangle. Fictitious PDF
+one-based verified page (or null for a whole-file PDF source) and normalized
+x/y/width/height rectangle. Ingestion proposals never generate rectangles: the
+service uses [0,0,1,1] and explicit source/page grounding with limitations. Only
+pinned extraction page annotations can justify a PDF page; missing localization
+remains a complete original-file anchor, not a claim about page 1. Fictitious PDF
 pages and foreign files fail. Missing, illegible, unsupported and absent questions
 are unassessed; unassessed points stay null. Marking certainty, mapping certainty,
 mapping review provenance and evidence limitations are distinct; absent certainty
@@ -57,17 +61,26 @@ A different page/question requires explicit new activity identity, never AI reta
 service is WorkbookService. It preserves the existing return SubmissionView and
 binds the workbook attempt/policy before the host queues processing.
 `educationIntakeHandlers({workbookActivityId,...})` advertises a bounded JSON question
-schema to real ingestion generation. Default legacy handlers remain compatible.
+schema to real ingestion generation. Assessed results require reason none;
+unassessed reasons require null points. Per-question outcomes must agree with
+points. Model aggregate scores/narratives are not requested or trusted: exact
+count summaries and points scores are computed from validated questions without
+rounding or invented partial credit. Default legacy handlers remain compatible.
 `preserveWorkbookIntakeAnalysis` reads the public immutable completed generation,
 checks its exact submission and offered workbook schema, maps cited original
 ingestion evidence by hash/order to retained education-owned files and imports one
 validated proposal. Provider/model/version, configuration/rubric, source analysis
 pin and proposal digest are durable provenance. Pending/failed processing produces
-no assessment. Malformed/ambiguous/foreign-source proposals fail visibly. Repeated
+no assessment. Malformed/ambiguous/foreign-source proposals return typed needs_review with no
+education revision or Grade. The host can offer retry/review without a route 500.
+Authorization, durable-source integrity and database failures still throw. Repeated
 transfer is idempotent by analysis attempt. Preservation must complete before host
 scratch retention cleanup; there is no automatic retention bypass in this API.
 The ingestion handler can apply only an exact previously preserved proposal through
-guardian review; it never grants AI grade authority. No prose parsing is used.
+guardian review; it never grants AI grade authority. No prose parsing is used. The generation configuration carries bounded source
+hash/page-support metadata from the completed extraction before it ceases to be
+the current analysis. This uses public ingestion APIs and is pinned by its
+configuration digest; absent metadata yields honest source-only grounding.
 
 ## Authority, visibility and history
 

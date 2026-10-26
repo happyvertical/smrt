@@ -141,7 +141,19 @@ describe('education analysis job', () => {
       })),
       getCompletedAnalysis: vi.fn(async () => ({
         attemptId: 'attempt',
-        result: { status: 'completed' },
+        evidence: [{ id: 'source-image', contentHash: 'a'.repeat(64) }],
+        result: {
+          status: 'completed',
+          output: {
+            results: [
+              {
+                evidence: { id: 'source-image', contentHash: 'a'.repeat(64) },
+                capabilities: [{ location: 'source', boxes: false }],
+                segments: [{ location: { kind: 'source' }, boxes: null }],
+              },
+            ],
+          },
+        },
       })),
       prepareGeneration: vi.fn(async () => ({
         stage: 'interpret',
@@ -160,7 +172,17 @@ describe('education analysis job', () => {
     expect(result).toEqual({ kind: 'generation_queued', revision: 2 });
     expect(ingestion.analyze).toHaveBeenCalledWith(
       'item',
-      { stage: 'interpret', pin: 'frozen' },
+      {
+        stage: 'interpret',
+        pin: 'frozen',
+        educationEvidenceGrounding: {
+          version: 1,
+          extractionAttemptId: 'attempt',
+          sources: [
+            { evidenceId: 'source-image', sha256: 'a'.repeat(64), pages: [] },
+          ],
+        },
+      },
       'education:interpret:attempt',
     );
   });

@@ -7,7 +7,10 @@ export interface WorkbookConcept {
 export interface WorkbookAnchor {
   assetId: string;
   sha256: string;
-  page: number;
+  page: number | null;
+  /** Source means the complete original; page means extraction-verified page. */
+  grounding?: 'source' | 'page';
+  extractionAttemptId?: string;
   /** Normalized x, y, width, height on the retained page. */
   rect: [number, number, number, number];
 }
@@ -34,8 +37,78 @@ export interface WorkbookQuestion {
   mappingProvenance?: 'proposed' | 'guardian-reviewed' | 'unknown';
   evidenceLimitations?: string[];
 }
+export interface WorkbookAggregate {
+  correct: number;
+  incorrect: number;
+  partiallyCorrect: number;
+  unassessed: number;
+  points: number | null;
+  possiblePoints: number | null;
+  score: number | null;
+}
+export class WorkbookAssessmentValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly reason:
+      | 'invalid_assessment'
+      | 'ungrounded_source'
+      | 'ambiguous_proposal' = 'invalid_assessment',
+  ) {
+    super(message);
+    this.name = 'WorkbookAssessmentValidationError';
+  }
+}
+/** Exact arithmetic over validated questions, never a provider's rounded score. */
+export function aggregateWorkbookQuestions(
+  questions: readonly WorkbookQuestion[],
+): WorkbookAggregate {
+  const aggregate: WorkbookAggregate = {
+    correct: 0,
+    incorrect: 0,
+    partiallyCorrect: 0,
+    unassessed: 0,
+    points: null,
+    possiblePoints: null,
+    score: null,
+  };
+  const assessed = questions.filter((q) => q.result !== 'unassessed');
+  for (const q of questions) {
+    if (q.result === 'correct') aggregate.correct++;
+    else if (q.result === 'incorrect') aggregate.incorrect++;
+    else if (q.result === 'partially_correct') aggregate.partiallyCorrect++;
+    else aggregate.unassessed++;
+  }
+  if (
+    assessed.length &&
+    assessed.every((q) => q.points !== null && q.possiblePoints !== null)
+  ) {
+    aggregate.points = assessed.reduce((sum, q) => sum + (q.points ?? 0), 0);
+    aggregate.possiblePoints = assessed.reduce(
+      (sum, q) => sum + (q.possiblePoints ?? 0),
+      0,
+    );
+    if (
+      !Number.isFinite(aggregate.points) ||
+      !Number.isFinite(aggregate.possiblePoints)
+    )
+      throw new WorkbookAssessmentValidationError(
+        'Aggregate points exceed finite range',
+      );
+    aggregate.score =
+      aggregate.possiblePoints > 0
+        ? aggregate.points / aggregate.possiblePoints
+        : null;
+  }
+  return aggregate;
+}
+export function workbookAggregateFeedback(
+  aggregate: WorkbookAggregate,
+): string {
+  return `${aggregate.correct} correct; ${aggregate.incorrect} incorrect; ${aggregate.partiallyCorrect} partially correct; ${aggregate.unassessed} unassessed.`;
+}
 export interface WorkbookAssessment {
   version: 1;
+  aggregate?: WorkbookAggregate;
   feedback: string;
   questions: WorkbookQuestion[];
   provenance: {
@@ -150,7 +223,7 @@ function text(
   max = 10000,
 ): asserts value is string {
   if (typeof value !== 'string' || value.length > max)
-    throw new Error(`Invalid ${label}`);
+    throw new WorkbookAssessmentValidationError(`Invalid ${label}`);
 }
 /** Validate at every external/persistence boundary; unknown enum values fail closed. */
 export function validateWorkbookAssessment(value: WorkbookAssessment): void {
@@ -161,10 +234,12 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
     !value.questions.length ||
     value.questions.length > 200
   )
-    throw new Error('Invalid workbook assessment');
+    throw new WorkbookAssessmentValidationError('Invalid workbook assessment');
   text(value.feedback, 'feedback');
   if (!value.provenance || !value.vocabulary)
-    throw new Error('Missing assessment provenance');
+    throw new WorkbookAssessmentValidationError(
+      'Missing assessment provenance',
+    );
   for (const key of [
     'provider',
     'model',
@@ -174,10 +249,11 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
     'analysisId',
   ] as const) {
     text(value.provenance[key], key, 500);
-    if (!value.provenance[key].trim()) throw new Error(`Missing ${key}`);
+    if (!value.provenance[key].trim())
+      throw new WorkbookAssessmentValidationError(`Missing ${key}`);
   }
   if (!/^[a-f0-9]{64}$/.test(value.provenance.inputHash))
-    throw new Error('Invalid input hash');
+    throw new WorkbookAssessmentValidationError('Invalid input hash');
   text(value.vocabulary.namespace, 'concept namespace', 200);
   text(value.vocabulary.version, 'concept version', 200);
   if (
@@ -186,13 +262,13 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
     !Array.isArray(value.vocabulary.concepts) ||
     value.vocabulary.concepts.length > 100
   )
-    throw new Error('Invalid concept vocabulary');
+    throw new WorkbookAssessmentValidationError('Invalid concept vocabulary');
   const concepts = new Set<string>();
   for (const concept of value.vocabulary.concepts) {
     text(concept.id, 'concept id', 200);
     text(concept.label, 'concept label', 500);
     if (!concept.id.trim() || !concept.label.trim() || concepts.has(concept.id))
-      throw new Error('Duplicate or empty concept');
+      throw new WorkbookAssessmentValidationError('Duplicate or empty concept');
     concepts.add(concept.id);
   }
   const ids = new Set<string>();
@@ -201,19 +277,19 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
       q.markingCertainty !== undefined &&
       !['clear', 'uncertain', 'unknown'].includes(q.markingCertainty)
     )
-      throw new Error('Invalid marking certainty');
+      throw new WorkbookAssessmentValidationError('Invalid marking certainty');
     if (
       q.mappingCertainty !== undefined &&
       !['clear', 'uncertain', 'unknown'].includes(q.mappingCertainty)
     )
-      throw new Error('Invalid mapping certainty');
+      throw new WorkbookAssessmentValidationError('Invalid mapping certainty');
     if (
       q.mappingProvenance !== undefined &&
       !['proposed', 'guardian-reviewed', 'unknown'].includes(
         q.mappingProvenance,
       )
     )
-      throw new Error('Invalid mapping provenance');
+      throw new WorkbookAssessmentValidationError('Invalid mapping provenance');
     if (
       q.evidenceLimitations !== undefined &&
       (!Array.isArray(q.evidenceLimitations) ||
@@ -222,13 +298,17 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
           (v) => typeof v !== 'string' || v.length > 500,
         ))
     )
-      throw new Error('Invalid evidence limitations');
+      throw new WorkbookAssessmentValidationError(
+        'Invalid evidence limitations',
+      );
     text(q.id, 'question id', 200);
     text(q.prompt, 'prompt');
     text(q.answer, 'answer');
     text(q.feedback, 'question feedback');
     if (!q.id.trim() || ids.has(q.id))
-      throw new Error('Duplicate or empty question id');
+      throw new WorkbookAssessmentValidationError(
+        'Duplicate or empty question id',
+      );
     ids.add(q.id);
     if (
       !['correct', 'incorrect', 'partially_correct', 'unassessed'].includes(
@@ -243,9 +323,11 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
         'not_present',
       ].includes(q.reason)
     )
-      throw new Error('Invalid question result');
+      throw new WorkbookAssessmentValidationError('Invalid question result');
     if (q.markingCertainty === 'uncertain' && q.result !== 'unassessed')
-      throw new Error('Uncertain marking must remain unassessed');
+      throw new WorkbookAssessmentValidationError(
+        'Uncertain marking must remain unassessed',
+      );
     if (
       (q.result === 'unassessed' && q.reason === 'none') ||
       ([
@@ -257,12 +339,14 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
       ].includes(q.reason) &&
         q.result !== 'unassessed')
     )
-      throw new Error('Uncertain evidence must remain unassessed');
+      throw new WorkbookAssessmentValidationError(
+        'Uncertain evidence must remain unassessed',
+      );
     if (
       q.result === 'unassessed' &&
       (q.points !== null || q.possiblePoints !== null)
     )
-      throw new Error('Unassessed is not zero');
+      throw new WorkbookAssessmentValidationError('Unassessed is not zero');
     if (
       (q.points === null) !== (q.possiblePoints === null) ||
       (q.points !== null &&
@@ -272,22 +356,43 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
           q.possiblePoints! <= 0 ||
           q.points > q.possiblePoints!))
     )
-      throw new Error('Invalid question points');
+      throw new WorkbookAssessmentValidationError('Invalid question points');
+    if (
+      q.points !== null &&
+      q.possiblePoints !== null &&
+      ((q.result === 'correct' && q.points !== q.possiblePoints) ||
+        (q.result === 'incorrect' && q.points !== 0) ||
+        (q.result === 'partially_correct' &&
+          (q.points <= 0 || q.points >= q.possiblePoints)))
+    )
+      throw new WorkbookAssessmentValidationError(
+        'Question result contradicts points',
+      );
     if (
       !Array.isArray(q.conceptIds) ||
       q.conceptIds.some((id) => !concepts.has(id)) ||
       new Set(q.conceptIds).size !== q.conceptIds.length
     )
-      throw new Error('Unknown concept mapping');
+      throw new WorkbookAssessmentValidationError('Unknown concept mapping');
     if (!Array.isArray(q.anchors) || !q.anchors.length || q.anchors.length > 20)
-      throw new Error('Question requires retained source anchors');
+      throw new WorkbookAssessmentValidationError(
+        'Question requires retained source anchors',
+      );
     for (const a of q.anchors) {
       text(a.assetId, 'source asset', 64);
+      if (a.grounding && JSON.stringify(a.rect) !== '[0,0,1,1]')
+        throw new WorkbookAssessmentValidationError(
+          'Source/page grounding cannot claim an unverified question region',
+          'ungrounded_source',
+        );
       if (
         !a.assetId ||
         !/^[a-f0-9]{64}$/.test(a.sha256) ||
-        !Number.isSafeInteger(a.page) ||
-        a.page < 1 ||
+        (a.page === null
+          ? a.grounding !== 'source'
+          : !Number.isSafeInteger(a.page) || a.page < 1) ||
+        (a.grounding !== undefined &&
+          !['source', 'page'].includes(a.grounding)) ||
         !Array.isArray(a.rect) ||
         a.rect.length !== 4 ||
         a.rect.some((n) => !Number.isFinite(n) || n < 0 || n > 1) ||
@@ -296,11 +401,24 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
         a.rect[0] + a.rect[2] > 1 ||
         a.rect[1] + a.rect[3] > 1
       )
-        throw new Error('Invalid source anchor');
+        throw new WorkbookAssessmentValidationError('Invalid source anchor');
     }
   }
+  if (value.aggregate) {
+    const expected = aggregateWorkbookQuestions(value.questions);
+    if (
+      (Object.keys(expected) as (keyof WorkbookAggregate)[]).some(
+        (key) => value.aggregate?.[key] !== expected[key],
+      )
+    )
+      throw new WorkbookAssessmentValidationError(
+        'Assessment aggregate contradicts questions',
+      );
+  }
   if (JSON.stringify(value).length > 1024 * 1024)
-    throw new Error('Assessment exceeds size limit');
+    throw new WorkbookAssessmentValidationError(
+      'Assessment exceeds size limit',
+    );
 }
 /** A deliberately small curated vocabulary; hosts may supply a different one. */
 export const WORKBOOK_MATH_VOCABULARY: WorkbookAssessment['vocabulary'] = {

@@ -524,6 +524,17 @@ export function workbookContractTests(
           reason: 'unanswered',
         },
         { ...f.assessment.questions[0], result: 'invented' },
+        { ...f.assessment.questions[0], result: 'correct', points: 0 },
+        {
+          ...f.assessment.questions[0],
+          result: 'incorrect',
+          reason: 'unsupported',
+        },
+        {
+          ...f.assessment.questions[0],
+          result: 'partially_correct',
+          points: 1,
+        },
         { ...f.assessment.questions[0], conceptIds: ['free-text'] },
         {
           ...f.assessment.questions[0],
@@ -550,6 +561,25 @@ export function workbookContractTests(
           ),
         ).rejects.toThrow();
       }
+      await expect(
+        f.as(f.own, () =>
+          f.service.recordWorkbookAnalysis({
+            ...f.request,
+            ...f.own,
+            requestKey: 'overflow',
+            assessment: {
+              ...f.assessment,
+              questions: ['q1', 'q2'].map((id) => ({
+                ...f.assessment.questions[0],
+                id,
+                result: 'correct',
+                points: 1e308,
+                possiblePoints: 1e308,
+              })),
+            },
+          }),
+        ),
+      ).rejects.toThrow('finite range');
       const assessment = {
         ...f.assessment,
         questions: [
@@ -876,9 +906,9 @@ export function workbookContractTests(
       state = 'completed';
       args.questions[0].result = 'unassessed';
       args.questions[0].reason = 'illegible';
-      await expect(
-        f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
-      ).rejects.toThrow('not zero');
+      expect(
+        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+      ).toEqual({ kind: 'needs_review', reason: 'invalid_assessment' });
       expect(
         (
           await f.as(f.parent, () =>
@@ -912,9 +942,9 @@ export function workbookContractTests(
       ).toBe('configured-provider');
       args.questions[0].anchors[0].evidenceId = 'foreign-evidence';
       attemptId = 'generation-three';
-      await expect(
-        f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
-      ).rejects.toThrow('captured original');
+      expect(
+        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+      ).toEqual({ kind: 'needs_review', reason: 'ungrounded_source' });
     } finally {
       await f.close();
     }
@@ -996,6 +1026,247 @@ export function workbookContractTests(
         ),
       );
       expect([...executors]).toEqual([f.db]);
+    } finally {
+      await f.close();
+    }
+  });
+  it('rejects actual bad provider-shaped marks, derives exact totals, and discards invented geometry', async () => {
+    const f = await fixture();
+    try {
+      const handler = educationIntakeHandlers({
+        submissions: f.service,
+        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        submissionId: f.attempt.submissionId,
+        workbookActivityId: f.activity.id,
+      }).find((h) => h.id.endsWith('review-submission'))!;
+      const properties = handler.argsSchema.properties as Record<
+        string,
+        unknown
+      >;
+      expect(properties.score).toBeUndefined();
+      expect(properties.feedback).toBeUndefined();
+      const questionSchema = properties.questions as {
+        items: {
+          oneOf: unknown[];
+          properties: {
+            anchors: { items: { properties: Record<string, unknown> } };
+          };
+        };
+      };
+      expect(questionSchema.items.oneOf).toHaveLength(2);
+      expect(
+        questionSchema.items.properties.anchors.items.properties.rect,
+      ).toBeUndefined();
+      const sources = await f.as(f.parent, () =>
+        f.service.getWorkbookSourceAnchors(f.request),
+      );
+      const rawQuestions = [
+        {
+          id: 'q1',
+          prompt: '2 + 3',
+          answer: '5',
+          result: 'correct',
+          reason: 'none',
+          points: 1,
+        },
+        {
+          id: 'q2',
+          prompt: '7 - 4',
+          answer: '2',
+          result: 'incorrect',
+          reason: 'unsupported',
+          points: 0,
+        },
+        {
+          id: 'q3',
+          prompt: '3 x 4',
+          answer: '12',
+          result: 'correct',
+          reason: 'none',
+          points: 1,
+        },
+        {
+          id: 'q4',
+          prompt: '12 / 3',
+          answer: '5',
+          result: 'incorrect',
+          reason: 'unsupported',
+          points: 0,
+        },
+      ].map((q, index) => ({
+        ...q,
+        possiblePoints: 1,
+        feedback: 'Question-specific explanation',
+        conceptIds: [],
+        markingCertainty: 'clear',
+        mappingCertainty: 'unknown',
+        evidenceLimitations: [],
+        anchors: [
+          {
+            evidenceId: 'original',
+            page: 1,
+            rect: [0, index / 10, 1, (index + 1) / 10],
+          },
+        ],
+      }));
+      const args = {
+        submissionId: f.attempt.submissionId,
+        questions: rawQuestions,
+        score: 0.75,
+        feedback: 'Three answers are correct; 0.5 rounded to 0.75.',
+      };
+      let mediaType = 'image/png';
+      let id = 'bad-generation';
+      const ingestion = {
+        getCompletedAnalysis: async () => ({
+          attemptId: id,
+          inputDigest: 'b'.repeat(64),
+          configuration: {
+            stage: 'interpret',
+            educationEvidenceGrounding: {
+              version: 1,
+              extractionAttemptId: 'extract',
+              sources: [
+                {
+                  evidenceId: 'original',
+                  sha256: sources[0].sha256,
+                  pages: [],
+                },
+              ],
+            },
+          },
+          evidence: [
+            {
+              id: 'original',
+              partId: 'one',
+              parentEvidenceId: null,
+              contentHash: sources[0].sha256,
+              mediaType,
+            },
+          ],
+          result: {
+            status: 'completed',
+            output: {
+              proposals: {
+                version: 1,
+                outcome: 'proposals',
+                source: {
+                  attemptId: 'extract',
+                  revision: 1,
+                  inputDigest: 'c'.repeat(64),
+                  outputDigest: 'd'.repeat(64),
+                  evidenceDigest: 'e'.repeat(64),
+                },
+                suggestions: [
+                  { handlerId: handler.id, args, missingFields: [] },
+                ],
+                offered: [{ handler }],
+                provenance: {
+                  generative: {
+                    provider: 'provider',
+                    model: 'model',
+                    version: '1',
+                  },
+                  configurationVersion: '1',
+                  promptVersion: '1',
+                },
+              },
+            },
+          },
+        }),
+      } as unknown as Parameters<
+        typeof preserveWorkbookIntakeAnalysis
+      >[0]['ingestion'];
+      const input = {
+        ingestion,
+        workbooks: f.service,
+        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        activityId: f.activity.id,
+        submissionId: f.attempt.submissionId,
+      };
+      expect(
+        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+      ).toEqual({ kind: 'needs_review', reason: 'invalid_assessment' });
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.getWorkbookTimeline({
+              ...f.parent,
+              activityId: f.activity.id,
+            }),
+          )
+        ).attempts[0].revisions,
+      ).toHaveLength(0);
+      rawQuestions[1].reason = 'none';
+      rawQuestions[3].reason = 'none';
+      id = 'valid-generation';
+      const result = await f.as(f.own, () =>
+        preserveWorkbookIntakeAnalysis(input),
+      );
+      expect(result.kind).toBe('preserved');
+      const timeline = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({
+          ...f.parent,
+          activityId: f.activity.id,
+        }),
+      );
+      const assessment = timeline.attempts[0].revisions[0].assessment;
+      expect(assessment.aggregate).toMatchObject({
+        correct: 2,
+        incorrect: 2,
+        points: 2,
+        possiblePoints: 4,
+        score: 0.5,
+      });
+      expect(assessment.feedback).toBe(
+        '2 correct; 2 incorrect; 0 partially correct; 0 unassessed.',
+      );
+      for (const q of assessment.questions) {
+        expect(q.anchors[0]).toMatchObject({
+          page: 1,
+          grounding: 'source',
+          rect: [0, 0, 1, 1],
+        });
+        expect(q.evidenceLimitations?.join(' ')).toContain('Source-level');
+      }
+      const parentFeedback = 'Please practise subtraction with me after lunch.';
+      const reviewed = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...f.request,
+          revisionId: timeline.attempts[0].revisions[0].id,
+          expectedHeadId: null,
+          requestKey: 'review-exact',
+          assessment: { ...assessment, feedback: parentFeedback },
+        }),
+      );
+      expect(reviewed.assessment.feedback).toBe(parentFeedback);
+      expect(reviewed.assessment.aggregate?.score).toBe(0.5);
+
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.getSubmission({
+              ...f.parent,
+              enrollmentId: f.activity.enrollmentId,
+              submissionId: f.attempt.submissionId,
+            }),
+          )
+        ).grade?.score,
+      ).toBe(0.5);
+      mediaType = 'application/pdf';
+      id = 'pdf-source-only';
+      expect(
+        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+      ).toBe('preserved');
+      const pdf = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({
+          ...f.parent,
+          activityId: f.activity.id,
+        }),
+      );
+      expect(
+        pdf.attempts[0].revisions[0].assessment.questions[0].anchors[0],
+      ).toMatchObject({ page: null, grounding: 'source', rect: [0, 0, 1, 1] });
     } finally {
       await f.close();
     }
