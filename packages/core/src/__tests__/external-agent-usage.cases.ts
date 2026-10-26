@@ -112,7 +112,15 @@ export function externalAgentUsageSuite(
       await expect(
         recorder.record(fact({ counters: { inputTokens: 11 } })),
       ).rejects.toThrow('conflicting');
-      expect((await recorder.summarize()).reports).toBe(1);
+      const nonzero = await Promise.all([
+        recorder.record(next()),
+        recorder.record(next()),
+      ]);
+      expect(nonzero[0]).toEqual(nonzero[1]);
+      await expect(recorder.record(next({ sequence: 2 }))).rejects.toThrow(
+        'event already recorded',
+      );
+      expect((await recorder.summarize()).reports).toBe(2);
     });
     it('denies untrusted ownership changes and persisted session rebinding', async () => {
       const recorder = new ExternalAgentUsageRecorder(db, binding);

@@ -97,3 +97,19 @@ at21bfb5e7 remains historical unchanged coverage; current affected build, tests,
 typecheck and scoped lint are recorded in `/tmp/work-happy-usage/smrt-gap-repair`.
 The foreman owns the isolated native PostgreSQL delta lane and final combined
 coverage reconciliation. No schema/model/API changes accompany this repair.
+
+
+## Concurrent nonzero-sequence retry regression (#4336)
+
+| Behavior | Reachable trigger | Positive | Negative | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level/command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Same-sequence duplicate reaches insert arbitration | Both transactions read sequence1 absent; winner commits before loser reads stream candidates | Identical retry returns exact winning receipt | Changed same-sequence payload conflicts; same event at another sequence still rejects | Two authorized reporters for the same trusted tenant/session | Two actual PostgreSQL pools; real transaction reads paused after the missing receipt read, no read/query results fabricated | Node26, native PostgreSQL; SQLite/DuckDB ordinary nonzero retry cases | Stable event identity plus sequence, immutable report replay | Optional PostgreSQL service integration fixture; foreman executes `pnpm --filter @happyvertical/smrt-core exec vitest run src/__tests__/external-agent-usage-postgres.optional.test.ts` |
+
+The PostgreSQL fixture schedules real database calls using a forwarding executor
+proxy: it pauses one completed receipt lookup, commits the winning transaction,
+then resumes the losing transaction before its real stream query. Both absent
+lookups are observed, and winner receipt visibility is proved before release.
+No database result, SQL operation, uniqueness conflict or transaction is mocked.
+Workers do not start containers; native PostgreSQL execution and its evidence
+belong to the foreman. A pre-fix execution requires that same native PostgreSQL
+lane; SQLite/DuckDB serialize writers and cannot prove this interleaving.

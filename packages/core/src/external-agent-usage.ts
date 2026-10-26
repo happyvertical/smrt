@@ -316,6 +316,7 @@ export class ExternalAgentUsageRecorder {
           if (
             snapshots.some(
               (row) =>
+                row.report.sequence !== report.sequence &&
                 row.report.provenance.eventId === report.provenance.eventId,
             )
           )
