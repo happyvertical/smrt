@@ -69,6 +69,19 @@ database coverage and ordinary-role PostgreSQL execution.
 | Hook budgets match declared test budgets (#4311) | All 33 affected effective Vitest project contexts have matching budgets | Non-inherited root settings cannot stand in for child-project budgets; unaffected analytics projects stay unchanged | Vitest configuration resolution; no DB transaction | Shared manifest-registration setup | Effective configuration proof plus types, mobile-contract and web suites |
 | Unmapped legacy-lease ancestry is isolated from application data (#3877 fixture repair) | Home-owned application fixtures serialize initialization and wait for a live legacy lease while `/tmp` reads as uid 65534 | Ambient `/tmp` fixtures previously failed application custody preflight before reaching lease assertions; ownership rejection remains unchanged | Independent SQLite initializer/legacy-holder processes; existing lease assertions retained | Mocked filesystem ownership; home fixture and legacy lease teardown | `pnpm --filter @happyvertical/smrt-app-runtime test src/local-runtime.test.ts`: 76 passed, 3 skipped with ambient `/tmp`; package typecheck passed |
 
+### Operation-lock fixture scope override
+
+The concurrent-process fixture accepts either documented denial while a winner
+holds the exclusive lock: an active owner or a record observed between exclusive
+creation and writing. It still requires exactly one winner, three losers, final
+lock removal, and rejects every other error. Runtime lock behavior is unchanged.
+The deterministic real-file probe opens an empty exclusive record and verifies
+that a contender never enters its callback or removes the held record; the old
+fixture misclassifies that safe denial. Validate the full app-runtime suite and
+root suite with `pnpm --filter @happyvertical/smrt-app-runtime test` and `pnpm test`.
+Executor: independent Node processes and a private temporary filesystem; SQL,
+transactions, tenant context and browser rendering are N/A for this fixture.
+
 ## Reuse and scope constraints
 
 - Package-level graph reachability is conservative. Commerce backend code
