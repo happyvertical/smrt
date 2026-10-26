@@ -1649,6 +1649,118 @@ describe('runToolLoop', () => {
     const hasInstruction = (messages: AIMessage[]) =>
       messages.at(-1)?.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION;
 
+    it.each(
+      [false, true].flatMap((offered) =>
+        [false, true].flatMap((multipart) =>
+          [false, true].map((blankAgain) => ({
+            offered,
+            multipart,
+            blankAgain,
+          })),
+        ),
+      ),
+    )('keeps strict user-role alternation on first-blank retry ($offered/$multipart/$blankAgain)', async ({
+      offered,
+      multipart,
+      blankAgain,
+    }) => {
+      const content: AIMessage['content'] = multipart
+        ? [
+            { type: 'text', text: 'What is shown?' },
+            {
+              type: 'image_url',
+              image_url: { url: 'data:image/png;base64,cGljdHVyZQ==' },
+            },
+          ]
+        : 'What is shown?';
+      const input: AIMessage[] = [
+        { role: 'system', content: 'Answer the question.' },
+        { role: 'user', content: 'Earlier question' },
+        { role: 'assistant', content: 'Earlier answer' },
+        { role: 'user', content, name: 'subject' },
+      ];
+      const original = structuredClone(input);
+      for (const message of input) Object.freeze(message);
+      if (Array.isArray(content)) Object.freeze(content);
+      Object.freeze(input);
+      const seen: AIMessage[][] = [];
+      const ai = makeAI((messages, options, call) => {
+        const turns = messages.filter((message) => message.role !== 'system');
+        for (let i = 1; i < turns.length; i++) {
+          if (turns[i]?.role === turns[i - 1]?.role)
+            throw new Error('strict template forbids consecutive user roles');
+        }
+        seen.push(structuredClone(messages));
+        if (call === 0) return textResponse('');
+        expect(toolsOffered(options)).toBe(false);
+        expect(options?.toolChoice).toBe('none');
+        return textResponse(blankAgain ? '' : 'The answer.');
+      });
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: input,
+        tools: offered ? tools(['tool_loop_notes.read']) : [],
+        principal: principal(),
+        audit: () => {},
+      });
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).toEqual(original);
+      expect(seen[1]).toEqual([
+        ...original.slice(0, -1),
+        {
+          ...original.at(-1),
+          content: multipart
+            ? [
+                ...content,
+                { type: 'text', text: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
+              ]
+            : `${content}\n\n${TOOL_LOOP_ANSWER_NOW_INSTRUCTION}`,
+        },
+      ]);
+      expect(input).toEqual(original);
+      expect(result.messages).toEqual(original);
+      expect(result.emptyRetried).toBe(true);
+      expect(replyContentFor(result)).toBe(
+        blankAgain ? DEFAULT_EMPTY_ANSWER_FALLBACK : 'The answer.',
+      );
+    });
+
+    it.each([
+      'max_steps',
+      'budget',
+    ] as const)('keeps strict user-role alternation when %s forces the first call', async (cap) => {
+      const input: AIMessage[] = [{ role: 'user', content: 'Question' }];
+      const seen: AIMessage[][] = [];
+      const ai = makeAI((messages, options) => {
+        if (messages.length !== 1 || messages[0]?.role !== 'user')
+          throw new Error('strict template forbids consecutive user roles');
+        seen.push(structuredClone(messages));
+        expect(toolsOffered(options)).toBe(false);
+        return textResponse('The answer.');
+      });
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: input,
+        tools: tools(['tool_loop_notes.read']),
+        principal: principal(),
+        ...(cap === 'max_steps' ? { maxSteps: 0 } : { maxTotalTokens: 0 }),
+        audit: () => {},
+      });
+      expect(seen).toEqual([
+        [
+          {
+            role: 'user',
+            content: `Question\n\n${TOOL_LOOP_ANSWER_NOW_INSTRUCTION}`,
+          },
+        ],
+      ]);
+      expect(result.stoppedReason).toBe(cap);
+      expect(result.messages).toEqual(input);
+      expect(input).toEqual([{ role: 'user', content: 'Question' }]);
+    });
+
     it('retries a blank answer after a tool round once, without tools, with the answer-now instruction', async () => {
       const calls: Array<{ offered: boolean; instructed: boolean }> = [];
       const ai = makeAI((messages, options, call) => {

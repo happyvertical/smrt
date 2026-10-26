@@ -13,10 +13,12 @@
 - **Forced final call (#4378).** At the cap, or once the budget is spent, the
   next round is offered no tools (`tools: undefined`, `toolChoice: 'none'`),
   and any tool calls the model still emits are discarded. That call alone gets
-  the fixed `TOOL_LOOP_ANSWER_NOW_INSTRUCTION` appended as a `user` message
-  (every chat template accepts a mid-conversation `user` turn). It is sent on
-  that call only and never enters the returned `messages` transcript, so
-  stored conversations and continuations are unchanged.
+  the fixed `TOOL_LOOP_ANSWER_NOW_INSTRUCTION` as a temporary `user`
+  instruction. If the transcript already ends with a user turn, it is added
+  to a copy of that turn's text or multimodal content instead of introducing
+  consecutive user roles that strict templates reject. Otherwise it is a new
+  user message. It never enters the returned `messages` transcript; input
+  messages, stored conversations, and continuations stay unchanged.
 
 ## Blank answers and timeouts (#4379)
 

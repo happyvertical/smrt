@@ -1223,7 +1223,7 @@ export async function runToolLoop(
         // returned transcript, so stored conversations are unchanged.
         const forcedFinal = aiTools.length > 0 && !offerTools;
         const roundMessages: LoopMessage[] = forcedFinal
-          ? [...working, answerNowMessage()]
+          ? withAnswerNowInstruction(working)
           : working;
         const outcome = await callModel(roundMessages, offerTools);
         if (outcome === 'cancelled') return cancelled();
@@ -1282,7 +1282,7 @@ export async function runToolLoop(
               emptyRetried = true;
               if (signal?.aborted) return cancelled();
               const outcome = await callModel(
-                [...working, answerNowMessage()],
+                withAnswerNowInstruction(working),
                 false,
               );
               if (outcome === 'cancelled') return cancelled();
@@ -1598,18 +1598,38 @@ export async function runToolLoop(
 }
 
 /**
- * Fixed instruction appended (as a `user` message, which every chat template
- * accepts mid-conversation) to the forced no-tools final call at the step cap
- * or when the turn budget is spent (#4378). It is constant text: it never
- * carries tool output or argument values.
+ * Fixed instruction added to the forced no-tools final call at the step cap
+ * or when the turn budget is spent (#4378). When the transcript already ends
+ * with a user message, append to a temporary copy of its content so strict
+ * alternating-role templates remain valid. The instruction is constant text:
+ * it never carries tool output or argument values.
  */
 export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
   "Tools are no longer available for this turn. Answer the user's question now " +
   'from the tool results above, without calling tools. ' +
   'If they do not answer the question, say so.';
 
-function answerNowMessage(): LoopMessage {
-  return { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION };
+function withAnswerNowInstruction(messages: LoopMessage[]): LoopMessage[] {
+  const last = messages.at(-1);
+  if (last?.role === 'user') {
+    return [
+      ...messages.slice(0, -1),
+      {
+        ...last,
+        content:
+          typeof last.content === 'string'
+            ? `${last.content}\n\n${TOOL_LOOP_ANSWER_NOW_INSTRUCTION}`
+            : [
+                ...last.content,
+                { type: 'text', text: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
+              ],
+      },
+    ];
+  }
+  return [
+    ...messages,
+    { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
+  ];
 }
 
 /**
