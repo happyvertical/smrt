@@ -141,8 +141,9 @@ Chart checks run in the separate `SMRT chart` workflow. After review and merge,
 an authorized maintainer dispatches that workflow on `main` with `publish=true`.
 Configure the `smrt-chart-publication` GitHub environment with required reviewers
 and main-only deployment protection before enabling publication. The workflow
-checks registry inventory, refuses to overwrite an existing version, packages
-the chart, and pushes to GHCR; it does not deploy an application. Record the
+checks the exact version through authenticated GHCR manifest lookup, refuses to
+overwrite an existing version, packages the chart, and pushes to GHCR; it does
+not deploy an application. Record the
 emitted OCI digest in platform-owned source configuration. Chart versions are
 independent of npm releases and do not use manually authored changesets.
 

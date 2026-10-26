@@ -1,5 +1,15 @@
 # Release runner test design
 
+Chart publication guard: `node --test scripts/deployment-chart-publication.test.mjs`.
+Publication principal on repository Node; SQL/transactions N/A (registry metadata
+reads only). Authenticated exact-version `MANIFEST_UNKNOWN`/`NAME_UNKNOWN` permits
+publication; existing version, missing credentials, malformed/unknown/mixed errors,
+auth/rate-limit/server/network failure and redirects block it. Token/body errors
+are redacted. Tests verify protected workflow ordering and Helm build-metadata tag
+mapping. Real workflow run 40354918465 reproduced the former org REST HTTP400;
+its validation/exercise/teardown passed before publication failed. The scoped GHCR
+guard uses the workflow token without an organization-wide package REST request.
+
 All tests run with `node --test scripts/deployment-release.test.mjs`. Runtime: Node from root package.json; SQL dialect N/A (runner never executes SQL). Injectable command/observation adapters isolate external contracts; live Kubernetes exercise remains integration evidence, not asserted by unit tests.
 
 | Behavior/invariant | Reachable trigger | Positive | Negative | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Command |
