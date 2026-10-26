@@ -200,7 +200,19 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   (`agentId`, default `smrt-assistant`, session key `assistant-dock`). A
   thread is served only when it lives in that session's room, so another
   member's thread, another tenant's thread, or another room the actor belongs
-  to answers 404. Reads never create a session.
+  to answers 404. Reads never create a session. A host whose threads already
+  live in another session sets `sessionKey` on `mountAssistantRoutes`: `null`
+  adopts the actor's unkeyed session (the one `createAgentSession` opens with
+  no `sessionKey`), a string adopts the session stored under that key. The key
+  is matched exactly and new threads are created in the adopted session;
+  sessions under other keys (including the default) are no longer listed.
+- **Request context.** A send or resume body may carry `context`, a plain JSON
+  object of at most 8 KiB (else 400 `invalid_context`), handed to the
+  per-request callbacks (`allowedTools`, `extraTools`, `systemPrompt`, ...) as
+  `AssistantRequestContext.requestContext`. It is untrusted input: use it to
+  narrow what the turn sees (e.g. the surfaces the page mounted), never to
+  grant. `createAssistantHttpTransport({ context })` sends it (an object, or a
+  function read per request).
 - **Turns.** A send stores the user message (`ChatService.sendMessage`, with
   `clientRequestId` in `metadata`) and runs `runAssistantTurn`, whose reply is
   authored through the agent bridge. `ai` is a client or a per-turn factory;
