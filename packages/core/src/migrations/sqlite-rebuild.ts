@@ -62,6 +62,12 @@
  * the change stays a manual intervention. That includes the target's own
  * self-references, because the staging table copies them and so becomes a
  * child of the table being dropped.
+ *
+ * #4413: explicit ordinary NOT NULL relaxation uses the same live-DDL rewrite,
+ * but carries SQLITE_RELAX_REBUILD_MARKER to MigrationTracker. The tracker owns
+ * FK suspension outside the transaction, validation before commit and setting
+ * restoration. That path safely supports inbound references. Type-only rebuilds
+ * retain the refusal above; ambiguous relaxation shapes remain manual.
  */
 
 import { createLogger } from '@happyvertical/logger';
@@ -78,6 +84,9 @@ const logger = createLogger({ level: 'info' });
  * mistaken for user data.
  */
 export const SQLITE_REBUILD_TABLE_PREFIX = '_smrt_rebuild_';
+
+/** Executable handoff to MigrationTracker: suspend FKs outside its transaction. */
+export const SQLITE_RELAX_REBUILD_MARKER = 'PRAGMA foreign_keys = OFF';
 
 /**
  * The advisory SQL the differ emits for a SQLite type upgrade it cannot
@@ -218,7 +227,15 @@ export async function planSqliteTableRebuilds(
       typeof change.column?.backfill === 'string' &&
       isSqliteBackfillPlaceholder(change.sql),
   );
-  const pending = [...retypes, ...backfills];
+  const relaxations = changes.filter(
+    (change) =>
+      change.type === 'alter_column' &&
+      change.alteration === 'drop_not_null' &&
+      change.name &&
+      !change.advisory &&
+      change.sql?.includes('requires table recreation'),
+  );
+  const pending = [...retypes, ...backfills, ...relaxations];
   if (pending.length === 0) {
     return changes;
   }
@@ -246,10 +263,19 @@ export async function planSqliteTableRebuilds(
   if (!context.createTableSql) {
     return block('no CREATE TABLE statement found in sqlite_master');
   }
+  if (relaxations.length && /\bAUTOINCREMENT\b/i.test(context.createTableSql)) {
+    return block(
+      'AUTOINCREMENT sequence preservation is not supported for nullable relaxation',
+    );
+  }
   if (context.columns.length === 0) {
     return block('PRAGMA table_info returned no columns');
   }
-  if (context.foreignKeysEnabled && context.inboundReferences.length > 0) {
+  if (
+    context.foreignKeysEnabled &&
+    context.inboundReferences.length > 0 &&
+    relaxations.length === 0
+  ) {
     return block(
       `PRAGMA foreign_keys is ON and ${context.inboundReferences
         .map((name) => `"${name}"`)
@@ -301,6 +327,9 @@ export async function planSqliteTableRebuilds(
     legacyAlterTable: context.legacyAlterTable,
     appendColumns,
     tightenColumns,
+    nullableColumns: new Set(
+      relaxations.map((change) => change.name as string),
+    ),
   });
 
   if (!plan) {
@@ -310,7 +339,11 @@ export async function planSqliteTableRebuilds(
   }
 
   const [primary, ...covered] = pending;
-  const statements = [...plan.statements, ...followUps];
+  const statements = [
+    ...(relaxations.length ? [SQLITE_RELAX_REBUILD_MARKER] : []),
+    ...plan.statements,
+    ...followUps,
+  ];
   const rebuilt = changes.map((change) => {
     if (change === primary) {
       return {
@@ -484,6 +517,8 @@ export interface BuildSqliteRebuildStatementsInput {
    * copy expression that fills their NULLs.
    */
   tightenColumns?: Map<string, string>;
+  /** Explicit NOT NULL relaxations; all other clauses remain unchanged. */
+  nullableColumns?: Set<string>;
 }
 
 /** A column a rebuild appends to the table (#3008). */
@@ -525,6 +560,7 @@ export function buildSqliteRebuildStatements(
     legacyAlterTable,
     appendColumns = [],
     tightenColumns = new Map<string, string>(),
+    nullableColumns = new Set<string>(),
   } = input;
 
   const stagingTable = `${SQLITE_REBUILD_TABLE_PREFIX}${tableName}`;
@@ -532,6 +568,7 @@ export function buildSqliteRebuildStatements(
     tableName: stagingTable,
     columnTypes,
     notNullColumns: new Set(tightenColumns.keys()),
+    nullableColumns,
     appendDefinitions: appendColumns.map((column) => column.definition),
   });
   if (!createStaging) {
@@ -545,12 +582,32 @@ export function buildSqliteRebuildStatements(
     if (liveColumns.has(column.name.toLowerCase())) return null;
   }
 
+  // Explicit rowids can be referenced by consumers even when the PK is text.
+  // Keep gaps/assigned identities; refuse when every SQLite alias is shadowed.
+  let rowidColumns: string[] = [];
+  if (
+    nullableColumns.size &&
+    !/\bWITHOUT\s+ROWID\b/i.test(
+      parseCreateTableBody(createTableSql)?.tail ?? '',
+    )
+  ) {
+    const alias = ['rowid', '_rowid_', 'oid'].find(
+      (name) => !liveColumns.has(name),
+    );
+    if (!alias) return null;
+    rowidColumns = [alias];
+  }
   const quotedTable = quoteIdentifier(tableName);
   const quotedStaging = quoteIdentifier(stagingTable);
-  const targetList = [...columns, ...appendColumns.map((c) => c.name)]
+  const targetList = [
+    ...rowidColumns,
+    ...columns,
+    ...appendColumns.map((c) => c.name),
+  ]
     .map((name) => quoteIdentifier(name))
     .join(', ');
   const sourceList = [
+    ...rowidColumns.map(quoteIdentifier),
     ...columns.map((name) => tightenColumns.get(name) ?? quoteIdentifier(name)),
     ...appendColumns.map((column) => column.copyExpression),
   ].join(', ');
@@ -601,6 +658,7 @@ export function rewriteSqliteCreateTable(
     columnTypes: Map<string, string>;
     /** #3008: columns whose definition gains `NOT NULL`. */
     notNullColumns?: Set<string>;
+    nullableColumns?: Set<string>;
     /** #3008: column definitions appended after the existing columns. */
     appendDefinitions?: string[];
   },
@@ -619,12 +677,21 @@ export function rewriteSqliteCreateTable(
     [...(target.notNullColumns ?? [])].map((name) => name.toLowerCase()),
   );
 
+  const nullable = new Set(
+    [...(target.nullableColumns ?? [])].map((name) => name.toLowerCase()),
+  );
   const rewritten: string[] = [];
   let lastColumnIndex = -1;
   for (const item of parsed.items) {
     const columnName = readColumnDefinitionName(item);
     if (columnName) lastColumnIndex = rewritten.length;
     let current = item;
+    if (columnName && nullable.has(columnName.toLowerCase())) {
+      const relaxed = removeColumnNotNull(current);
+      if (relaxed === null) return null;
+      current = relaxed;
+      nullable.delete(columnName.toLowerCase());
+    }
     if (columnName && tighten.has(columnName.toLowerCase())) {
       tighten.delete(columnName.toLowerCase());
       if (!/\bnot\s+null\b/i.test(current)) {
@@ -644,7 +711,7 @@ export function rewriteSqliteCreateTable(
     wanted.delete(columnName.toLowerCase());
   }
 
-  if (tighten.size > 0) {
+  if (tighten.size > 0 || nullable.size > 0) {
     return null;
   }
   // Column definitions must precede table-level constraints.
@@ -660,6 +727,50 @@ export function rewriteSqliteCreateTable(
   return `CREATE TABLE ${quoteIdentifier(target.tableName)} (\n  ${rewritten.join(
     ',\n  ',
   )}\n)${tail}`;
+}
+
+/** Refuse named/conflict/PK constraints instead of changing their semantics. */
+function removeColumnNotNull(item: string): string | null {
+  const identifier = readLeadingIdentifier(item);
+  if (!identifier) return null;
+  const words: { text: string; start: number; end: number }[] = [];
+  let depth = 0;
+  for (let index = identifier.end; index < item.length; ) {
+    const skipped = skipQuotedOrComment(item, index);
+    if (skipped !== null) {
+      index = skipped;
+      continue;
+    }
+    const char = item[index];
+    if (char === '(') depth++;
+    if (char === ')') depth--;
+    const word = /^[A-Za-z_][\w$]*/.exec(item.slice(index));
+    if (word) {
+      if (depth === 0)
+        words.push({
+          text: word[0].toLowerCase(),
+          start: index,
+          end: index + word[0].length,
+        });
+      index += word[0].length;
+    } else index++;
+  }
+  if (
+    words.some((word) =>
+      ['constraint', 'primary', 'generated', 'as'].includes(word.text),
+    )
+  )
+    return null;
+  const matches = words.flatMap((word, i) =>
+    word.text === 'not' && words[i + 1]?.text === 'null' ? [i] : [],
+  );
+  if (matches.length !== 1) return null;
+  const i = matches[0];
+  if (words[i + 2]?.text === 'on') return null;
+  // Comments between NOT and NULL are not part of the supported grammar.
+  if (!/^not\s+null$/i.test(item.slice(words[i].start, words[i + 1].end)))
+    return null;
+  return item.slice(0, words[i].start) + item.slice(words[i + 1].end);
 }
 
 interface ParsedCreateTable {

@@ -846,10 +846,9 @@ export class SchemaComparer {
     // #2370: SQLite cannot change a column's type in place. Turn the
     // "requires table recreation" placeholders those comparisons emit into an
     // executable table rebuild (see `./sqlite-rebuild.ts`); anything the
-    // rebuild can't do safely stays manual drift, as before. The planner only
-    // consumes `type_upgrade` placeholders — SQLite `alter_column`
-    // nullability/default drift (#2369) stays manual until the rebuild also
-    // rewrites constraints.
+    // rebuild can't do safely stays manual drift, as before. Explicit NOT NULL relaxation also uses
+    // the rebuild, with tracker-owned foreign-key suspension (#4413).
+    // Other constraint drift remains manual.
     const plannedColumnChanges =
       this.engine === 'sqlite'
         ? await planSqliteTableRebuilds({
@@ -3388,8 +3387,9 @@ export class SchemaComparer {
    *   emitting an ALTER the engine would reject mid-batch.
    * - Relaxing (`DROP NOT NULL`, `DROP DEFAULT`) is reported as an advisory
    *   unless `relaxColumns` is set, in which case it is executable.
-   * - SQLite has no `ALTER COLUMN`; every alteration is reported as manual
-   *   (advisory-comment SQL) until the table-rebuild path (#2370) lands.
+   * - SQLite has no `ALTER COLUMN`; explicit supported NOT NULL relaxation
+   *   uses the table rebuild (#4413). Other alterations remain manual except
+   *   declared backfill rebuilds (#3008).
    * - Defaults are compared through {@link canonicalizeDefault}; when either
    *   side cannot be canonicalized the comparison is skipped rather than
    *   risking a false positive that would churn every run.
@@ -3786,7 +3786,8 @@ export class SchemaComparer {
    * says so instead of implying the flag will act (#2370).
    */
   private relaxHint(action: string): string {
-    return this.supportsAlterColumn()
+    return this.supportsAlterColumn() ||
+      (this.engine === 'sqlite' && action === 'drop the constraint')
       ? `Pass relaxColumns / --relax-columns to ${action}.`
       : `SQLite cannot ${action} in place (no ALTER COLUMN); it requires a table rebuild (#2370) — relaxColumns / --relax-columns only reports it as manual here.`;
   }

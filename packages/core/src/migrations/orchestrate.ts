@@ -85,6 +85,8 @@ export interface MigrateSmrtSchemasOptions {
    * `DiffOptions.emptyTextAsNull`.
    */
   emptyTextAsNull?: boolean;
+  /** Explicitly allow relaxing live column constraints. */
+  relaxColumns?: boolean;
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -151,6 +153,8 @@ export async function getPendingSchemaStatements(
     engineHint?: DatabaseEngine;
     postgresTimestampMigration?: { legacyTimezone: 'UTC' };
     emptyTextAsNull?: boolean;
+    /** Explicitly allow relaxing live column constraints. */
+    relaxColumns?: boolean;
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
@@ -163,6 +167,7 @@ export async function getPendingSchemaStatements(
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
+    relaxColumns: options.relaxColumns,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(diff);
@@ -218,6 +223,7 @@ export async function migrateSmrtSchemas(
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
+    relaxColumns: options.relaxColumns,
   });
   if (!pending.hasChanges || pending.statements.length === 0) {
     return {

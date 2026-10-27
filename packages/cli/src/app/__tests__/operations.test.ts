@@ -1432,6 +1432,18 @@ describe('smrt app export / import', () => {
 });
 
 describe('smrt app migrate', () => {
+  it('forwards explicit constraint relaxation under the operation lock', async () => {
+    const fixture = makeFixture();
+    expect(await fixture.run(['migrate', '--relax-columns'])).toBe(0);
+    expect(fixture.calls.smrt[0].args).toEqual([
+      'db:migrate',
+      '--relax-columns',
+    ]);
+    expectNoLocks(fixture);
+    expect(await fixture.run(['migrate', '--unknown'])).toBe(1);
+    expect(fixture.calls.smrt).toHaveLength(1);
+  });
+
   it('prepares local custody and runs db:migrate with the local database', async () => {
     const fixture = makeFixture();
     expect(await fixture.run(['migrate'])).toBe(0);
