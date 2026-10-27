@@ -1766,6 +1766,17 @@ test('active scheduled Pods retain the rendered service-account and security env
   all[2].spec.serviceAccountName = 'privileged-other';
   await assert.rejects(() => verifyRuntime(doc, all), /Pod security or credential envelope/);
   all[2].spec.serviceAccountName = 'schedule-runtime';
+  const cronBefore = structuredClone(all[0]);
+  for (const spec of [all[1].spec.template.spec, all[2].spec]) {
+    spec.volumes = [{ name: 'token', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }];
+    spec.containers[0].volumeMounts = [{ name: 'token', mountPath: '/injected-api', readOnly: true }];
+  }
+  assert.deepEqual(all[0], cronBefore, 'Job-only admission mutation leaves CronJob untouched');
+  await assert.rejects(() => verifyRuntime(doc, all), /Pod security or credential envelope/);
+  for (const spec of [all[1].spec.template.spec, all[2].spec]) {
+    delete spec.volumes;
+    delete spec.containers[0].volumeMounts;
+  }
   for (const spec of [all[0].spec.jobTemplate.spec.template.spec, all[1].spec.template.spec, all[2].spec])
     spec.volumes = [{ name: 'token', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }];
   await assert.rejects(() => verifyRuntime(doc, all), /Pod security or credential envelope/);

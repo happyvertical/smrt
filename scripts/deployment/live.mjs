@@ -1405,6 +1405,10 @@ export async function verifyRuntime(document, all) {
         ),
         'Active scheduled Job differs from CronJob template',
       );
+      verifyPodEnvelope(
+        job.spec.template.spec,
+        cron.spec.jobTemplate.spec.template.spec,
+      );
       for (const pod of all.filter(
         (o) =>
           o.kind === 'Pod' &&
