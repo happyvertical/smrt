@@ -241,3 +241,22 @@ mappings. Release evidence must state the exact target/environment, accepted
 Git revisions, controller versions, image identities, validation commands, and
 remaining adoption gaps. See the matrix for qualification evidence requirements
 and the separately authorized real-application rollout requirement.
+
+### Chart 0.2.0 security prerequisites
+
+Chart 0.2.0 supports explicit workload/migration `serviceAccountName`, bounded
+`podSecurityContext` and container `securityContext`, plus migration `scratch`.
+Migration-only `observerAccess` defaults to false and requires a pre-existing
+observer service account when enabled. Its read-only API projection supplies a
+600-second native token request, namespace root CA and fresh Pod name/UID at the
+standard service-account path; automatic token mounting stays disabled.
+Platform owners must supply namespace-scoped read-only observer RBAC and CA.
+See `charts/smrt-app/README.md` for exact supported fields and permissions.
+
+Runner preflight verifies platform references and performs non-persistent fresh
+Pod admission dry runs as the reconciler, requiring namespace `create pods`.
+That RBAC grant also permits real creates; admission identity and later policy
+changes mean preflight cannot guarantee future admission. Actual Pod proofs bind
+the rendered account, security and credential/scratch volumes. Adoption requires
+real hardened-container exercise evidence and a separately published 0.2.0 chart;
+this source change does not replace the published 0.1.0 artifact.

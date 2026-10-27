@@ -32,6 +32,94 @@ const exactKeys = (value, keys) =>
   object(value) &&
   Object.keys(value).length === keys.length &&
   keys.every((key) => Object.hasOwn(value, key));
+function validatePodCapabilities(workload, migration) {
+  const pod = workload.podSecurityContext;
+  const container = workload.securityContext;
+  const positiveId = (id) => Number.isInteger(id) && id > 0 && id <= 2147483647;
+  const allowed = (value, keys) =>
+    object(value) && Object.keys(value).every((key) => keys.includes(key));
+  if (pod !== undefined)
+    demand(
+      allowed(pod, [
+        'runAsNonRoot',
+        'runAsUser',
+        'runAsGroup',
+        'fsGroup',
+        'supplementalGroups',
+        'seccompProfile',
+      ]) &&
+        pod.runAsNonRoot === true &&
+        positiveId(pod.runAsUser) &&
+        positiveId(pod.runAsGroup) &&
+        (pod.fsGroup === undefined || positiveId(pod.fsGroup)) &&
+        (pod.supplementalGroups === undefined ||
+          (Array.isArray(pod.supplementalGroups) &&
+            pod.supplementalGroups.length <= 16 &&
+            pod.supplementalGroups.every(positiveId) &&
+            new Set(pod.supplementalGroups).size ===
+              pod.supplementalGroups.length)) &&
+        exactKeys(pod.seccompProfile, ['type']) &&
+        pod.seccompProfile.type === 'RuntimeDefault',
+      'Invalid podSecurityContext',
+    );
+  if (container !== undefined)
+    demand(
+      exactKeys(container, [
+        'allowPrivilegeEscalation',
+        'readOnlyRootFilesystem',
+        'capabilities',
+      ]) &&
+        container.allowPrivilegeEscalation === false &&
+        container.readOnlyRootFilesystem === true &&
+        exactKeys(container.capabilities, ['drop']) &&
+        hash(container.capabilities.drop) === hash(['ALL']),
+      'Invalid securityContext',
+    );
+  if (workload.serviceAccountName !== undefined)
+    demand(
+      typeof workload.serviceAccountName === 'string' &&
+        /^[a-z][a-z0-9-]{0,62}$/.test(workload.serviceAccountName),
+      'Invalid serviceAccountName',
+    );
+  demand(
+    migration || !Object.hasOwn(workload, 'observerAccess'),
+    'Observer access is migration-only',
+  );
+  if (migration && Object.hasOwn(workload, 'observerAccess'))
+    demand(
+      typeof workload.observerAccess === 'boolean' &&
+        (!workload.observerAccess || workload.serviceAccountName),
+      'Observer access requires explicit migration serviceAccountName',
+    );
+  if (workload.scratch !== undefined)
+    demand(
+      Array.isArray(workload.scratch) &&
+        workload.scratch.every(
+          (volume) =>
+            allowed(volume, ['name', 'mountPath', 'sizeLimit', 'medium']) &&
+            /^[a-z][a-z0-9-]{0,30}$/.test(volume.name) &&
+            volume.name !== 'smrt-observer' &&
+            typeof volume.mountPath === 'string' &&
+            /^\/(?!var(?:\/|$))(?!run(?:\/|$))(?!proc(?:\/|$))(?!sys(?:\/|$))(?!dev(?:\/|$))[A-Za-z0-9_][A-Za-z0-9_./-]*$/.test(
+              volume.mountPath,
+            ) &&
+            !volume.mountPath.includes('//') &&
+            !volume.mountPath
+              .split('/')
+              .some((part) => ['.', '..'].includes(part)) &&
+            (volume.medium === undefined ||
+              ['', 'Memory'].includes(volume.medium)) &&
+            (volume.sizeLimit === undefined ||
+              (typeof volume.sizeLimit === 'string' &&
+                volume.sizeLimit.length > 0)),
+        ) &&
+        new Set(workload.scratch.map((volume) => volume.name)).size ===
+          workload.scratch.length &&
+        new Set(workload.scratch.map((volume) => volume.mountPath)).size ===
+          workload.scratch.length,
+      'Invalid scratch volume',
+    );
+}
 export function validateRuntime(runtime) {
   demand(
     object(runtime) &&
@@ -56,6 +144,7 @@ export function validateRuntime(runtime) {
         Array.isArray(workload.env),
       'Invalid RuntimeSnapshot image/command/environment',
     );
+    validatePodCapabilities(workload, workload === runtime.migration);
     demand(
       !Object.hasOwn(workload, 'envFrom') &&
         workload.env.every((entry) => {

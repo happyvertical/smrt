@@ -27,3 +27,15 @@
 {{- range .Values.target.workloads }}{{ $_ := set $runtimeImages .image true }}{{ end }}
 {{- if not (hasKey $runtimeImages .Values.target.migration.image) }}{{ fail "migration must use a target workload image" }}{{ end }}
 {{- if empty .Values.target.migration.env }}{{ fail "migration-only credentials are required" }}{{ end }}
+
+{{- range $runtime := list .Values.current .Values.target }}
+{{- if $runtime }}
+{{- range $w := append (values $runtime.workloads) $runtime.migration }}
+{{- $names := dict }}{{ $paths := dict }}
+{{- range $w.scratch }}
+{{- if or (hasKey $names .name) (hasKey $paths .mountPath) }}{{ fail "scratch names and mount paths must be unique" }}{{ end }}
+{{- $_ := set $names .name true }}{{ $_ := set $paths .mountPath true }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
