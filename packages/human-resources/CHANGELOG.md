@@ -1,5 +1,15 @@
 # @happyvertical/smrt-human-resources
 
+## 0.57.34
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.34
+  - @happyvertical/smrt-tenancy@0.57.34
+  - @happyvertical/smrt-ui@0.57.34
+  - @happyvertical/smrt-types@0.57.34
+
 ## 0.57.33
 
 ### Patch Changes

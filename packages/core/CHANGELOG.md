@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.34
+
+### Patch Changes
+
+- ### Features
+  
+  - release durable workbook intake and source-bound marking (#4432) (education)
+- @happyvertical/smrt-config@0.57.34
+  - @happyvertical/smrt-scanner@0.57.34
+  - @happyvertical/smrt-types@0.57.34
+
 ## 0.57.33
 
 ### Patch Changes
