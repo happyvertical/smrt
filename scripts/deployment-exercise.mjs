@@ -438,10 +438,10 @@ try {
   assert.equal((await s3(bucketEndpoint, 'PUT', '/assets/sentinel', 'preserve-object')).status, 200);
   const endpoint = await forward('traefik', 8080);
   const registryEndpoint = await forward('registry', 5000);
-  execFileSync(helm, ['push', join(scratch, 'smrt-app-0.2.0.tgz'), `oci://${new URL(registryEndpoint).host}/charts`, '--plain-http'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync(helm, ['push', join(scratch, 'smrt-app-0.2.1.tgz'), `oci://${new URL(registryEndpoint).host}/charts`, '--plain-http'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   // Helm may write the receipt to stderr; inspect the registry manifest itself
   // to bind the OCIRepository to the exact published artifact digest.
-  const receipt = await fetch(`${registryEndpoint}/v2/charts/smrt-app/manifests/0.2.0`, { headers: { Accept: 'application/vnd.oci.image.manifest.v1+json' } });
+  const receipt = await fetch(`${registryEndpoint}/v2/charts/smrt-app/manifests/0.2.1`, { headers: { Accept: 'application/vnd.oci.image.manifest.v1+json' } });
   assert.equal(receipt.status, 200, 'published chart manifest exists');
   const chartDigest = receipt.headers.get('docker-content-digest');
   assert.match(chartDigest, /^sha256:[a-f0-9]{64}$/);
