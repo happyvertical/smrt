@@ -1192,14 +1192,22 @@ export function photoIntakeTests(
       ).toEqual([]);
       expect(
         Number(
-          (await f.db.query('SELECT COUNT(*) AS count FROM submissions'))
-            .rows[0].count,
+          (
+            await f.db.query(
+              'SELECT COUNT(*) AS count FROM submissions WHERE tenant_id=? AND learner_id=?',
+              [f.parent.tenantId, f.parent.learnerId],
+            )
+          ).rows[0].count,
         ),
       ).toBe(0);
       expect(
         Number(
-          (await f.db.query('SELECT COUNT(*) AS count FROM grades')).rows[0]
-            .count,
+          (
+            await f.db.query(
+              'SELECT COUNT(*) AS count FROM grades g JOIN submissions s ON s.id=g.submission_id AND s.tenant_id=g.tenant_id WHERE s.tenant_id=? AND s.learner_id=?',
+              [f.parent.tenantId, f.parent.learnerId],
+            )
+          ).rows[0].count,
         ),
       ).toBe(0);
       const unresolved = await f.as(f.parent, () =>
