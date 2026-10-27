@@ -63,6 +63,123 @@ function request(bytes: Buffer) {
 }
 
 describe('bounded vision image preparation', () => {
+  it('observes upright full-frame regions in the same vision call with numeric usage', async () => {
+    const bytes = await phonePhoto();
+    const original = Buffer.from(bytes);
+    const { providers, chat } = vision(
+      JSON.stringify({
+        observations: 'Visible learner ink in upper-right red area.',
+        observedRegions: {
+          version: 1,
+          coordinateSpace: 'display-oriented',
+          regions: [
+            {
+              id: 'r1',
+              text: 'Visible learner response',
+              rect: [0.8, 0, 0.2, 0.15],
+            },
+          ],
+        },
+      }),
+    );
+    providers.observeAnswerRegions = true;
+    chat.mockImplementationOnce(async () => ({
+      content: JSON.stringify({
+        observations: 'Visible learner ink in upper-right red area.',
+        observedRegions: {
+          version: 1,
+          coordinateSpace: 'display-oriented',
+          regions: [
+            {
+              id: 'r1',
+              text: 'Visible learner response',
+              rect: [0.8, 0, 0.2, 0.15],
+            },
+          ],
+        },
+      }),
+      model: 'fixture-scene',
+      usage: { promptTokens: 31, completionTokens: 19, totalTokens: 50 },
+    }));
+    const result = await extractWithProviders(request(bytes), providers);
+    expect(chat).toHaveBeenCalledOnce();
+    expect(result.segments[0].observedRegions?.regions[0].rect).toEqual([
+      0.8, 0, 0.2, 0.15,
+    ]);
+    const sent = sentImage(chat);
+    const { data, info } = await sharp(sent.bytes)
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const offset =
+      (Math.floor(info.height * 0.075) * info.width +
+        Math.floor(info.width * 0.9)) *
+      3;
+    expect(data[offset]).toBeGreaterThan(200);
+    expect(data[offset + 1]).toBeLessThan(50);
+    expect(result.capabilities.every((c) => !c.boxes)).toBe(true);
+    expect(result.segments[0].boxes).toBeNull();
+    expect(bytes).toEqual(original);
+    expect(result.usage).toMatchObject({
+      vision_promptTokens: 31,
+      vision_completionTokens: 19,
+      vision_totalTokens: 50,
+    });
+    expect(JSON.stringify(chat.mock.calls[0])).toContain(
+      'ENTIRE upright image',
+    );
+  });
+  it.each([
+    null,
+    { version: 2 },
+    {
+      version: 1,
+      coordinateSpace: 'display-oriented',
+      regions: [{ id: 'bad', text: 'response', rect: [0, 0, 2, 2] }],
+    },
+  ])('retains observations when optional region metadata is invalid %#', async (observedRegions) => {
+    const bytes = await sharp({
+      create: { width: 20, height: 20, channels: 3, background: 'white' },
+    })
+      .jpeg()
+      .toBuffer();
+    const { providers, chat } = vision(
+      JSON.stringify({
+        observations: 'Readable answer remains 8.',
+        observedRegions,
+      }),
+    );
+    providers.observeAnswerRegions = true;
+    const result = await extractWithProviders(request(bytes), providers);
+    expect(chat).toHaveBeenCalledOnce();
+    expect(result.status).toBe('complete');
+    expect(result.segments[0].text).toBe('Readable answer remains 8.');
+    expect(result.segments[0].observedRegions).toBeUndefined();
+  });
+
+  it('keeps region observation off unless the trusted configuration opts in', async () => {
+    const bytes = await sharp({
+      create: { width: 20, height: 20, channels: 3, background: 'white' },
+    })
+      .jpeg()
+      .toBuffer();
+    const { providers, chat } = vision(
+      JSON.stringify({
+        observations: 'Visible answer',
+        observedRegions: {
+          version: 1,
+          coordinateSpace: 'display-oriented',
+          regions: [{ id: 'r1', text: 'answer', rect: [0, 0, 1, 1] }],
+        },
+      }),
+    );
+    const result = await extractWithProviders(request(bytes), providers);
+    expect(chat).toHaveBeenCalledOnce();
+    expect(result.segments[0].observedRegions).toBeUndefined();
+    expect(JSON.stringify(chat.mock.calls[0])).not.toContain(
+      'Return one JSON object',
+    );
+  });
   it('sends faithful observation instructions with a synthetic annotated worksheet', async () => {
     // This exercises the sent request contract, not model recognition quality.
     const bytes = await sharp(

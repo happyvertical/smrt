@@ -157,3 +157,24 @@ truncation only. The adapter never bypasses the SDK to recover hidden fields.
 The missing SDK metadata is tracked in [happyvertical/ocr#144](https://github.com/happyvertical/ocr/issues/144).
 AI vision retains reported truncation when supplied by its SDK. Missing provider
 cost is unknown, not zero; no cost estimate is invented.
+
+### Optional observed image regions
+
+Trusted SDK configuration `observeAnswerRegions: true` asks the SAME existing
+vision request for JSON observations plus an optional bounded region catalog.
+Default off preserves ordinary text observations. This prompt/protocol adoption
+requires a new host configurationRevision (Hearth uses
+`hearth-paper-v5-answer-regions`); no model change or extra automatic request.
+
+Catalog rectangles are approximate direct visual observations, not verified boxes:
+version1, coordinateSpace display-oriented, at most64 regions with short id/text
+and finite normalized positive `[x,y,width,height]` inside the entire upright
+EXIF-oriented uncropped image. Fit-inside resize preserves full-frame mapping;
+never infer locations from columns/task numbers. Initial source images only,
+not PDF raster fallback. Missing, uncertain or malformed catalog data is omitted
+while valid observation text survives. A catalog that alone would exceed the
+retained output byte budget is omitted. Existing total token/native/input limits
+still apply; usage includes numeric vision_* counters when the provider reports
+them. Tests prove exactly one SDK call and synthetic oriented alignment, not remote
+model quality. imagePreparations records original orientation/dimensions and sent
+format/dimensions/bytes; immutable source hashes/bytes remain unchanged.

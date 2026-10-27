@@ -2389,6 +2389,17 @@ export function workbookContractTests(
             kind: 'completed_work',
           },
         });
+        const answerCatalog = {
+          version: 1,
+          coordinateSpace: 'display-oriented',
+          regions: [
+            {
+              id: 'answer-ink',
+              text: 'Visible learner 5',
+              rect: [0.4, 0.2, 0.1, 0.05],
+            },
+          ],
+        };
         const handlers = educationIntakeHandlers({
           submissions: f.service,
           request,
@@ -2403,6 +2414,9 @@ export function workbookContractTests(
             generator: {
               identity: { provider: 'fixture', model: 'fixture', version: '1' },
               generate: async (input) => {
+                expect(input.evidence[0].segments[0].observedRegions).toEqual(
+                  answerCatalog,
+                );
                 const offered = input.offered.find(
                   (entry) => entry.handler.id === handlerId,
                 );
@@ -2517,6 +2531,16 @@ export function workbookContractTests(
         const args = JSON.parse(
           JSON.stringify({
             submissionId: submission.id,
+            answerRegions: {
+              version: 1,
+              regions: [
+                {
+                  questionId: 'q1',
+                  evidenceId: evidence.id,
+                  observationId: 'answer-ink',
+                },
+              ],
+            },
             layout: {
               version: 1,
               provenance: 'observed',
@@ -2637,6 +2661,7 @@ export function workbookContractTests(
                   segments: [
                     {
                       text: '2 + 3 = 5',
+                      observedRegions: answerCatalog,
                       location: { kind: 'source' },
                       boxes: null,
                     },
@@ -2652,7 +2677,31 @@ export function workbookContractTests(
           );
           const generation = await ingestion.analyze(
             receipt.itemId,
-            generationConfig,
+            {
+              ...generationConfig,
+              educationEvidenceGrounding: {
+                version: 1,
+                extractionAttemptId: extractionLease.attemptId,
+                sources: [
+                  {
+                    evidenceId: evidence.id,
+                    sha256: evidence.contentHash,
+                    pages: [],
+                    observedRegions: {
+                      version: 1,
+                      coordinateSpace: 'display-oriented',
+                      regions: [
+                        {
+                          id: 'answer-ink',
+                          text: 'Visible learner 5',
+                          rect: [0.4, 0.2, 0.1, 0.05],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
             `retention-generation-${generationNumber}`,
           );
           const generationLease = await ingestion.claimAnalysis(
@@ -2719,6 +2768,19 @@ export function workbookContractTests(
           ],
           placements: [{ questionId: 'q1', row: 0, column: 1 }],
         });
+        expect(importedBody?.answerRegions).toEqual({
+          version: 1,
+          provenance: 'observed',
+          coordinateSpace: 'display-oriented',
+          regions: [
+            {
+              questionId: 'q1',
+              source: { assetId: submission.pages[0].assetId, page: 1 },
+              observationId: 'answer-ink',
+              rect: [0.4, 0.2, 0.1, 0.05],
+            },
+          ],
+        });
         const saved = await f.service.getWorkbookPreservationState({
           ...request,
           activityId: activity.id,
@@ -2755,6 +2817,9 @@ export function workbookContractTests(
           requestKey: 'retention-release',
         });
         expect(reviewed.assessment.layout).toEqual(importedBody?.layout);
+        expect(reviewed.assessment.answerRegions).toEqual(
+          importedBody?.answerRegions,
+        );
         // Legacy same-capture prompts are authoritative only for transcription;
         // a new interpretation appends without changing the old assessment.
         expect(
@@ -2769,6 +2834,7 @@ export function workbookContractTests(
         });
         // Invalid advisory layout must not cause generic schema rejection or lose marks.
         args.layout = 'malformed optional layout';
+        Object.assign(args.answerRegions.regions[0], { rect: [0, 0, 1, 1] }); // Grader coordinates are forbidden even if plausible.
         await generate();
         const malformedLayoutImport =
           await preserveWorkbookIntakeAnalysis(preservation);
@@ -2786,6 +2852,8 @@ export function workbookContractTests(
         expect(fallback?.questions[0].result).toBe('correct');
         expect(fallback?.layout).toBeUndefined();
         expect(fallback?.layoutOmission).toBe('invalid');
+        expect(fallback?.answerRegions).toBeUndefined();
+        expect(fallback?.answerRegionsOmission).toBe('invalid');
         expect(
           layoutHistory.attempts[0].revisions.find((r) => r.id === reviewed.id)
             ?.assessment.layout,

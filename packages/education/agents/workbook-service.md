@@ -334,3 +334,19 @@ current-attempt revision, so preserving a proposal does not invalidate its own
 completed snapshot or preview. It never ignores guardian decisions, predecessor
 revisions or another interpretation. Direct reads omit this engine pin and retain
 normal current revision visibility; browser/upload fields cannot supply the pin.
+
+### Observed answer-region overlays
+
+Optional `answerRegions` version1/provenance observed/coordinateSpace
+`display-oriented` carries one approximate rect `[x,y,width,height]` per question,
+with exact retained asset/page1 and observationId. Rects are normalized to the
+whole EXIF-oriented image; they never change question IDs, grading, anchors or
+layout, and never claim verified geometry. Images only in this version; PDFs or
+unknown positions omit regions. Direct malformed metadata is omitted with safe
+`answerRegionsOmission: invalid`; marking/layout survive independently.
+
+Vision catalogs originate in the existing opt-in extraction call. Generation
+references exact evidence/observation IDs, never supplies coordinates. The bridge
+copies catalog rectangles from the extraction-pinned configuration with matching
+source hash. Guardian copies retain them; correction sources must match current
+anchors. Existing exact release and ancestry privacy apply to the complete body.

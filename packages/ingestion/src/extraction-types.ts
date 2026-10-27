@@ -37,6 +37,8 @@ export type EvidenceLocation =
   | { kind: 'pages'; startPage: number; endPage: number }
   | { kind: 'time'; startMs: number; endMs: number };
 export interface ExtractionSegment {
+  /** Optional advisory image observations; independent of verified boxes. */
+  observedRegions?: import('./observed-regions.js').ObservedImageRegions;
   text: string;
   location: EvidenceLocation;
   confidence: { value: number; scale: '0-1'; calibration: 'unknown' } | null;

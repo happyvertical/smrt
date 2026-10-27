@@ -18,6 +18,7 @@ import {
   SubmissionService,
   type SubmissionServiceOptions,
 } from './submission-service.js';
+import { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
 import {
   aggregateWorkbookQuestions,
   validateWorkbookAssessment,
@@ -1332,6 +1333,17 @@ export class WorkbookService extends SubmissionService {
       delete assessment.layoutOmission;
       Object.assign(assessment, normalizedLayout);
       if (!assessment.layout && omitted) assessment.layoutOmission = 'invalid';
+      const regionOmitted = assessment.answerRegionsOmission === 'invalid';
+      const normalizedRegions = normalizeWorkbookAnswerRegions(
+        assessment.answerRegions,
+        assessment.questions,
+        JSON.parse(attempt.sourceHashes),
+      );
+      delete assessment.answerRegions;
+      delete assessment.answerRegionsOmission;
+      Object.assign(assessment, normalizedRegions);
+      if (!assessment.answerRegions && regionOmitted)
+        assessment.answerRegionsOmission = 'invalid';
       // This method returns its raw revision to the caller. A learner cannot
       // use it to probe hidden identities or obtain a new guardian-source body.
       if (
@@ -1420,6 +1432,17 @@ export class WorkbookService extends SubmissionService {
       delete assessment.layoutOmission;
       Object.assign(assessment, normalizedLayout);
       if (!assessment.layout && omitted) assessment.layoutOmission = 'invalid';
+      const regionOmitted = assessment.answerRegionsOmission === 'invalid';
+      const normalizedRegions = normalizeWorkbookAnswerRegions(
+        assessment.answerRegions,
+        assessment.questions,
+        JSON.parse(attempt.sourceHashes),
+      );
+      delete assessment.answerRegions;
+      delete assessment.answerRegionsOmission;
+      Object.assign(assessment, normalizedRegions);
+      if (!assessment.answerRegions && regionOmitted)
+        assessment.answerRegionsOmission = 'invalid';
       assessment.aggregate = aggregateWorkbookQuestions(assessment.questions);
       if (
         JSON.stringify(assessment.vocabulary) !==

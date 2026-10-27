@@ -20,6 +20,7 @@ import type {
   VisionImageLimits,
 } from './extraction-types.js';
 import { providerIdentity } from './extraction-types.js';
+import { normalizeObservedImageRegions } from './observed-regions.js';
 import type { AnalysisLease, IngestionService } from './server.js';
 
 export type * from './extraction-types.js';
@@ -36,6 +37,8 @@ export interface ExtractionSDKConfiguration {
   imageMode?: 'ocr' | 'vision';
   /** Vision derivatives only. Optional bounds may tighten the safe versioned defaults. */
   visionImageLimits?: VisionImageLimits;
+  /** Trusted opt-in to advisory image answer-region observations. */
+  observeAnswerRegions?: boolean;
   /** Maximum concurrent child processes for this adapter instance (default 1). */
   maxConcurrentProcesses?: number;
   /** The deployment enforces a native-memory ceiling outside Node (e.g. container).
@@ -56,6 +59,11 @@ export function createSDKExtractionAdapter(
   if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 32)
     throw new Error('Invalid extraction concurrency');
   visionImageLimits(configuration.visionImageLimits);
+  if (
+    configuration.observeAnswerRegions !== undefined &&
+    typeof configuration.observeAnswerRegions !== 'boolean'
+  )
+    throw new Error('Invalid observed region configuration');
   let running = 0;
   if (configuration.nativeMemoryIsolation !== 'host-enforced')
     throw new Error('Native memory isolation is required');
@@ -347,8 +355,17 @@ function validateAndNormalizeExtractionOutput(
   )
     throw new Error('Invalid extraction output');
   // Structural typing permits extra host fields. Never persist them as identity.
-  for (const segment of result.segments)
+  for (const segment of result.segments) {
     segment.provenance = providerIdentity(segment.provenance);
+    const regions =
+      request.evidence.mediaType.startsWith('image/') &&
+      segment.kind === 'observation' &&
+      segment.location.kind === 'source'
+        ? normalizeObservedImageRegions(segment.observedRegions)
+        : undefined;
+    delete segment.observedRegions;
+    if (regions) segment.observedRegions = regions;
+  }
   if (result.imagePreparations)
     result.imagePreparations = result.imagePreparations.map((image) => ({
       policy: image.policy,

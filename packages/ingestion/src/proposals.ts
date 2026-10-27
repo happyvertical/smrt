@@ -37,6 +37,7 @@ import {
   IntakeFeedbackService,
 } from './feedback.js';
 import { storableJSONText } from './json-storage.js';
+import { normalizeObservedImageRegions } from './observed-regions.js';
 import type {
   GenerationStageConfiguration,
   GenerativeProposalInput,
@@ -759,6 +760,13 @@ export class IngestionProposalService {
         segments: entry.segments.map((segment) => ({
           text: segment.text,
           location: structuredClone(segment.location),
+          ...(normalizeObservedImageRegions(segment.observedRegions)
+            ? {
+                observedRegions: normalizeObservedImageRegions(
+                  segment.observedRegions,
+                ),
+              }
+            : {}),
         })),
       }));
       const query = evidence

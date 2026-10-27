@@ -136,12 +136,26 @@ export interface WorkbookObservedLayout {
     part?: number;
   }[];
 }
+/** Approximate image observations, not verified OCR boxes or answer identity. */
+export interface WorkbookAnswerRegions {
+  version: 1;
+  provenance: 'observed';
+  coordinateSpace: 'display-oriented';
+  regions: {
+    questionId: string;
+    source: { assetId: string; page: 1 };
+    rect: [number, number, number, number];
+    observationId: string;
+  }[];
+}
 export interface WorkbookAssessment {
   version: 1;
   aggregate?: WorkbookAggregate;
   feedback: string;
   layout?: WorkbookObservedLayout;
   layoutOmission?: 'invalid';
+  answerRegions?: WorkbookAnswerRegions;
+  answerRegionsOmission?: 'invalid';
   questions: WorkbookQuestion[];
   provenance: {
     provider: string;

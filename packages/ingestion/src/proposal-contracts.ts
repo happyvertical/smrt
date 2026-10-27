@@ -43,7 +43,11 @@ export interface GenerativeProposalInput {
     parentEvidenceId: string | null;
     mediaType: string;
     contentHash: string;
-    segments: Array<{ text: string; location: EvidenceLocation }>;
+    segments: Array<{
+      text: string;
+      location: EvidenceLocation;
+      observedRegions?: import('./observed-regions.js').ObservedImageRegions;
+    }>;
   }>;
   offered: Array<{
     handler: ProposalCatalogEntry;

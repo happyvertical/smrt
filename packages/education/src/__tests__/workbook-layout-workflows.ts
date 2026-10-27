@@ -147,6 +147,22 @@ export function workbookLayoutContractTests(
     const f = await fixture();
     try {
       const assetId = f.assessment.questions[0].anchors[0].assetId;
+      f.assessment.answerRegions = {
+        version: 1,
+        provenance: 'observed',
+        coordinateSpace: 'display-oriented',
+        regions: [
+          {
+            questionId: 'p7:q1',
+            source: {
+              assetId: f.assessment.questions[0].anchors[0].assetId,
+              page: 1,
+            },
+            rect: [0.2, 0.3, 0.1, 0.1],
+            observationId: 'visible-learner-region',
+          },
+        ],
+      };
       f.assessment.layout = {
         version: 1,
         provenance: 'observed',
@@ -175,6 +191,7 @@ export function workbookLayoutContractTests(
           .id,
       ).toBe(ai.id);
       expect(ai.assessment.layout).toEqual(f.assessment.layout);
+      expect(ai.assessment.answerRegions).toEqual(f.assessment.answerRegions);
       const review = await f.as(f.parent, () =>
         f.service.reviewWorkbookAssessment({
           ...f.request,
@@ -184,10 +201,14 @@ export function workbookLayoutContractTests(
         }),
       );
       expect(review.assessment.layout).toEqual(f.assessment.layout);
+      expect(review.assessment.answerRegions).toEqual(
+        f.assessment.answerRegions,
+      );
       const hidden = await f.as(f.own, () =>
         f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(hidden)).not.toContain('Private heading');
+      expect(JSON.stringify(hidden)).not.toContain('visible-learner-region');
       await f.as(f.parent, () =>
         f.service.releaseWorkbookFeedback({
           ...f.request,
@@ -200,6 +221,7 @@ export function workbookLayoutContractTests(
         f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(visible)).toContain('Private heading');
+      expect(JSON.stringify(visible)).toContain('visible-learner-region');
       const correction = await f.as(f.own, () =>
         f.service.captureWorkbookWork({
           ...f.capture,
@@ -229,6 +251,8 @@ export function workbookLayoutContractTests(
       );
       expect(current.assessment.layout).toBeUndefined();
       expect(current.assessment.layoutOmission).toBe('invalid');
+      expect(current.assessment.answerRegions).toBeUndefined();
+      expect(current.assessment.answerRegionsOmission).toBe('invalid');
       expect(current.assessment.questions[0].answer).toBe('14');
     } finally {
       await f.close();
@@ -237,6 +261,22 @@ export function workbookLayoutContractTests(
   it('withholds guardian-origin layout from learner timeline, raw write and correction ancestry until exact release', async () => {
     const f = await fixture(true);
     try {
+      f.assessment.answerRegions = {
+        version: 1,
+        provenance: 'observed',
+        coordinateSpace: 'display-oriented',
+        regions: [
+          {
+            questionId: 'p7:q1',
+            source: {
+              assetId: f.assessment.questions[0].anchors[0].assetId,
+              page: 1,
+            },
+            rect: [0.2, 0.3, 0.1, 0.1],
+            observationId: 'visible-learner-region',
+          },
+        ],
+      };
       f.assessment.layout = {
         version: 1,
         provenance: 'observed',
@@ -267,6 +307,7 @@ export function workbookLayoutContractTests(
         f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(hidden)).not.toContain('Guardian-only heading');
+      expect(JSON.stringify(hidden)).not.toContain('visible-learner-region');
       await expect(
         f.as(f.own, () =>
           f.service.recordWorkbookAnalysis({
@@ -317,6 +358,7 @@ export function workbookLayoutContractTests(
         f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(visible)).toContain('Guardian-only heading');
+      expect(JSON.stringify(visible)).toContain('visible-learner-region');
     } finally {
       await f.close();
     }

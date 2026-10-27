@@ -5,8 +5,10 @@ import {
   extractAnalysis,
   GenerationSnapshotStaleError,
   type IngestionService,
+  normalizeObservedImageRegions,
   ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
+import { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
 
 import { normalizeWorkbookObservedLayout } from './workbook-layout.js';
 
@@ -426,6 +428,10 @@ export function educationIntakeHandlers(input: {
         submissionId: idSchema,
         ...(workbook
           ? {
+              answerRegions: {
+                description:
+                  'Include advisory answer locations when a current observedRegions catalog clearly matches visible learner responses. Omit unknown or uncertain positions. Shape {version:1,regions:[{questionId,evidenceId,observationId}]}. Reference ONLY exact current evidence observedRegions catalog IDs with matching visible learner response/question; no coordinates or geometry in arguments. Never infer positions from layout, IDs, canonical prompts or expected answers. Omit uncertain/unknown/missing regions. Image-only sources; PDF unsupported. Invalid metadata is dropped independently of valid marking/layout.',
+              },
               layout: {
                 description:
                   'Optional observed presentation only; omit if unknown. Shape: version1, provenance observed; sections in observed order {id,label?,columns1..8,readingOrder? rows|columns,source:{evidenceId:original evidence ID,page:physical source page1based or null unknown}}; placements {questionId,sectionId,row0based,column0based,part?0..31}. Up to32sections/200placements/200rows. Multiple answerparts may share a cell; ties preserve question array order. Printed page numbers are not source page indices. Never infer from IDs or claim verified coordinates. Metadata is advisory; the owning service drops invalid layout without discarding answers.',
@@ -824,9 +830,12 @@ function educationEvidenceGrounding(
   const sources = results.slice(0, 100).flatMap((value) => {
     if (!value || typeof value !== 'object') return [];
     const result = value as {
-      evidence?: { id?: string; contentHash?: string };
+      evidence?: { id?: string; contentHash?: string; mediaType?: string };
       capabilities?: { location?: string }[];
-      segments?: { location?: { kind?: string; page?: number } }[];
+      segments?: {
+        location?: { kind?: string; page?: number };
+        observedRegions?: unknown;
+      }[];
     };
     const evidence = (snapshot.evidence ?? []).find(
       (e) =>
@@ -851,7 +860,21 @@ function educationEvidenceGrounding(
             ),
           ].slice(0, 1000)
         : [];
-    return [{ evidenceId: evidence.id, sha256: evidence.contentHash, pages }];
+    const catalogs =
+      evidence.mediaType.startsWith('image/') && Array.isArray(result.segments)
+        ? result.segments
+            .filter((s) => s.location?.kind === 'source')
+            .map((s) => normalizeObservedImageRegions(s.observedRegions))
+            .filter((s) => s !== undefined)
+        : [];
+    return [
+      {
+        evidenceId: evidence.id,
+        sha256: evidence.contentHash,
+        pages,
+        ...(catalogs.length === 1 ? { observedRegions: catalogs[0] } : {}),
+      },
+    ];
   });
   return { version: 1, extractionAttemptId: snapshot.attemptId, sources };
 }
@@ -1034,7 +1057,12 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       | {
           version?: number;
           extractionAttemptId?: string;
-          sources?: { evidenceId: string; sha256: string; pages: number[] }[];
+          sources?: {
+            evidenceId: string;
+            sha256: string;
+            pages: number[];
+            observedRegions?: unknown;
+          }[];
         }
       | undefined;
     const trustedGrounding =
@@ -1127,11 +1155,62 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         };
       }
     }
+    let mappedRegions: unknown = suggestion.args.answerRegions;
+    if (
+      mappedRegions &&
+      typeof mappedRegions === 'object' &&
+      !Array.isArray(mappedRegions)
+    ) {
+      const proposed = mappedRegions as Record<string, unknown>;
+      if (proposed.version === 1 && Array.isArray(proposed.regions)) {
+        mappedRegions = {
+          version: 1,
+          provenance: 'observed',
+          coordinateSpace: 'display-oriented',
+          regions: proposed.regions.map((entry: unknown) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+              return {};
+            const r = entry as Record<string, unknown>;
+            if (
+              Object.keys(r).some(
+                (key) =>
+                  !['questionId', 'evidenceId', 'observationId'].includes(key),
+              )
+            )
+              return {};
+            const index = originals.findIndex(
+              (e) => e.id === r.evidenceId && e.mediaType.startsWith('image/'),
+            );
+            const catalogSource = trustedGrounding?.sources?.find(
+              (source) =>
+                source.evidenceId === r.evidenceId &&
+                source.sha256 === originals[index]?.contentHash,
+            );
+            const catalog = normalizeObservedImageRegions(
+              catalogSource?.observedRegions,
+            );
+            const observed = catalog?.regions.find(
+              (region) => region.id === r.observationId,
+            );
+            return {
+              questionId: r.questionId,
+              source: {
+                assetId: index >= 0 ? sources[index].assetId : '',
+                page: 1,
+              },
+              observationId: r.observationId,
+              rect: observed?.rect,
+            };
+          }),
+        };
+      }
+    }
     assessment = {
       version: 1,
       feedback: '',
       questions,
       ...normalizeWorkbookObservedLayout(observedLayout, questions, sources),
+      ...normalizeWorkbookAnswerRegions(mappedRegions, questions, sources),
       vocabulary: structuredClone(curated),
       provenance: {
         provider: generation.provenance.generative.provider,

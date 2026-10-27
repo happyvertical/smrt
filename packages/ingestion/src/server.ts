@@ -1,3 +1,5 @@
+export { normalizeObservedImageRegions } from './observed-regions.js';
+
 import {
   createCipheriv,
   createDecipheriv,
