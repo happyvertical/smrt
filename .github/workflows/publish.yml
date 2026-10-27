@@ -578,14 +578,14 @@ jobs:
           CI: true
         run: node scripts/planner-release-gate.mjs --packs "$RUNNER_TEMP/release-packs"
 
-  publish-release:
-    name: Publish Release
+  seal-release:
+    name: Seal Release Candidate
     needs:
       - prepare-release
       - validate-release-shards
       - planner-release-gate
     if: |
-      github.ref == 'refs/heads/main' &&
+      github.ref == 'refs/heads/main' && vars.CI_RELEASE_WINDOW_ENABLED == 'true' &&
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success' &&
       needs.planner-release-gate.result == 'success'
@@ -596,6 +596,13 @@ jobs:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
 
+    outputs:
+      release-commit-sha: ${{ steps.seal.outputs.release_commit_sha }}
+      candidate-artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+      candidate-artifact-digest: ${{ steps.candidate.outputs.artifact-digest }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Generate token from GitHub App
         id: generate_token
@@ -737,6 +744,7 @@ jobs:
         run: node scripts/release-admission.mjs assert-window
 
       - name: Prepare exact release commit
+        id: seal
         if: steps.guard.outputs.already-recorded != 'true'
         env:
           CI: true
@@ -767,9 +775,11 @@ jobs:
 
           if [ "$CI_RELEASE_WINDOW_ENABLED" = true ]; then
             git bundle create release-candidate.bundle HEAD "^$RELEASE_SOURCE_SHA"
+            echo "release_commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Preserve exact release commit for recovery
+        id: candidate
         if: steps.guard.outputs.already-recorded != 'true' && vars.CI_RELEASE_WINDOW_ENABLED == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -777,6 +787,330 @@ jobs:
           path: release-candidate.bundle
           if-no-files-found: error
           retention-days: 30
+
+
+  authorize-release:
+    name: Authorize Exact Publication
+    needs: [prepare-release, seal-release, validate-release-shards]
+    if: >-
+      github.ref == 'refs/heads/main' && vars.CI_RELEASE_WINDOW_ENABLED == 'true' &&
+      needs.seal-release.result == 'success'
+    environment: release-fence-verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout trusted authorization code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+      - name: Generate release state writer token
+        id: writer
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+      - name: Generate SMRT-only fence verifier token
+        id: verifier
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: '5496137'
+          installation_retrieval_mode: id
+          installation_retrieval_payload: '175845335'
+          private_key: ${{ secrets.HAVE_FENCE_APP_PRIVATE_KEY }}
+          repositories: '["smrt"]'
+          permissions: '{"administration":"write","metadata":"read"}'
+      - name: Verify immutable bytes and authorize original publication
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.writer.outputs.token }}
+          FENCE_GITHUB_TOKEN: ${{ steps.verifier.outputs.token }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          RELEASE_COMMIT_SHA: ${{ needs.seal-release.outputs.release-commit-sha }}
+          CANDIDATE_ARTIFACT_ID: ${{ needs.seal-release.outputs.candidate-artifact-id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ needs.seal-release.outputs.candidate-artifact-digest }}
+          PACK_1_ARTIFACT_ID: ${{ needs.validate-release-shards.outputs.pack-1-artifact-id }}
+          PACK_1_ARTIFACT_DIGEST: ${{ needs.validate-release-shards.outputs.pack-1-artifact-digest }}
+          PACK_2_ARTIFACT_ID: ${{ needs.validate-release-shards.outputs.pack-2-artifact-id }}
+          PACK_2_ARTIFACT_DIGEST: ${{ needs.validate-release-shards.outputs.pack-2-artifact-digest }}
+        run: node scripts/authorize-release.mjs
+
+  publish-window:
+    name: Publish Authorized Window
+    needs: [prepare-release, authorize-release]
+    if: >-
+      github.ref == 'refs/heads/main' && vars.CI_RELEASE_WINDOW_ENABLED == 'true' &&
+      needs.authorize-release.result == 'success'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: release-publish-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout trusted publication code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+      - name: Generate token from GitHub App
+        id: generate_token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+      - name: Authenticate to the primary registry
+        # The emergency changesets mode publishes to npmjs with NPM_TOKEN via
+        # setup-node's npmrc; replacing NPM_CONFIG_USERCONFIG job-wide would
+        # strip that credential, so this step is artifacts-mode only.
+        if: inputs.publish-mode != 'changesets'
+        env:
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "${PRIMARY_TOKEN:-}" ]; then
+            echo "❌ NPM_HAPPYVERTICAL_PUBLISH_TOKEN is required to publish to $RELEASE_PRIMARY_REGISTRY"
+            exit 1
+          fi
+          # Refuse any host outside the scripts' reviewed allowlist BEFORE the
+          # token is written for it or sent to it.
+          node --input-type=module -e "import { primaryRegistry } from './scripts/release-registry.mjs'; primaryRegistry();"
+          host="${RELEASE_PRIMARY_REGISTRY#https://}"
+          host="${host%/}"
+          rc="$RUNNER_TEMP/release-npmrc"
+          umask 077
+          printf '//%s/:_authToken=%s\n' "$host" "$PRIMARY_TOKEN" > "$rc"
+          echo "NPM_CONFIG_USERCONFIG=$rc" >> "$GITHUB_ENV"
+          export NPM_CONFIG_USERCONFIG="$rc"
+          who=$(npm whoami --registry "$RELEASE_PRIMARY_REGISTRY" \
+            "--@happyvertical:registry=$RELEASE_PRIMARY_REGISTRY")
+          echo "✓ Authenticated to $RELEASE_PRIMARY_REGISTRY as $who"
+
+      - name: Publish original authorized bytes and reopen
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+        run: node scripts/publish-current-release.mjs
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          if gh release view "v$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "Release v$RELEASE_VERSION already exists on GitHub; nothing to do."
+            exit 0
+          fi
+
+          RELEASE_NOTES="## Published Packages"$'\n\n'
+          RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
+          RELEASE_NOTES="${RELEASE_NOTES} ${RELEASE_PRIMARY_REGISTRY}"
+          RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION."
+          RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Mirroring to npmjs.org is a"
+          RELEASE_NOTES="${RELEASE_NOTES} separate best-effort follow-up; see"
+          RELEASE_NOTES="${RELEASE_NOTES} the Mirror Release to npmjs job of"
+          RELEASE_NOTES="${RELEASE_NOTES} this run for its result."
+          RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
+          RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
+          RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
+          RELEASE_NOTES="${RELEASE_NOTES}v$PREVIOUS_VERSION...v$RELEASE_VERSION"
+
+          gh release create "v$RELEASE_VERSION" \
+            --title "v$RELEASE_VERSION" \
+            --notes "$RELEASE_NOTES" \
+            --latest
+
+  publish-release:
+    name: Publish Release
+    needs:
+      - prepare-release
+      - validate-release-shards
+      - planner-release-gate
+    if: |
+      github.ref == 'refs/heads/main' && vars.CI_RELEASE_WINDOW_ENABLED != 'true' &&
+      needs.prepare-release.outputs.should-publish == 'true' &&
+      needs.validate-release-shards.result == 'success' &&
+      needs.planner-release-gate.result == 'success'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: release-publish-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Generate token from GitHub App
+        id: generate_token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+          # push-release-refs supplies the release App credential explicitly.
+          # Persisting checkout auth can send duplicate Authorization headers.
+          persist-credentials: false
+          token: ${{ steps.generate_token.outputs.token }}
+
+      # Read-only assertion: retries cannot take over a reserved attempt or
+      # replay publication after its irreversible boundary; use recovery there.
+      - name: Download release version patch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare-release.outputs.patch-artifact-id }}
+          path: release-artifacts
+
+      - name: Apply version patch
+        run: git apply --binary release-artifacts/release-version.patch
+
+      - name: Restore versioned workspace and build outputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare-release.outputs.workspace-artifact-id }}
+          path: release-artifacts
+
+      - name: Extract versioned workspace and build outputs
+        run: tar -xf release-artifacts/publish-release-workspace.tar
+
+      - name: Download verified package artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: >-
+            ${{ needs.validate-release-shards.outputs.pack-1-artifact-id }},
+            ${{ needs.validate-release-shards.outputs.pack-2-artifact-id }}
+          path: publish-pack-output
+          merge-multiple: true
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          # This job consumes already-built, verified tarballs and its release
+          # scripts use only Node built-ins. Reinstalling the workspace can
+          # exhaust the recovery window before sequential npm publication.
+          install-deps: 'false'
+          setup-playwright: 'false'
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # This job installs nothing, so it does not need setup-node's npmrc.
+      # Write a fresh one holding only the primary's credential and point npm
+      # at it for the rest of the job. Never append to setup-node's file: it
+      # ends without a newline, so an appended line fuses onto its
+      # `registry=` line and the token is silently never a credential (#3005).
+      # `npm whoami` then proves the token is valid against the primary before
+      # anything irreversible: an empty-string check is what let an expired
+      # token reach the publish step in #2998.
+      - name: Authenticate to the primary registry
+        # The emergency changesets mode publishes to npmjs with NPM_TOKEN via
+        # setup-node's npmrc; replacing NPM_CONFIG_USERCONFIG job-wide would
+        # strip that credential, so this step is artifacts-mode only.
+        if: inputs.publish-mode != 'changesets'
+        env:
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "${PRIMARY_TOKEN:-}" ]; then
+            echo "❌ NPM_HAPPYVERTICAL_PUBLISH_TOKEN is required to publish to $RELEASE_PRIMARY_REGISTRY"
+            exit 1
+          fi
+          # Refuse any host outside the scripts' reviewed allowlist BEFORE the
+          # token is written for it or sent to it.
+          node --input-type=module -e "import { primaryRegistry } from './scripts/release-registry.mjs'; primaryRegistry();"
+          host="${RELEASE_PRIMARY_REGISTRY#https://}"
+          host="${host%/}"
+          rc="$RUNNER_TEMP/release-npmrc"
+          umask 077
+          printf '//%s/:_authToken=%s\n' "$host" "$PRIMARY_TOKEN" > "$rc"
+          echo "NPM_CONFIG_USERCONFIG=$rc" >> "$GITHUB_ENV"
+          export NPM_CONFIG_USERCONFIG="$rc"
+          who=$(npm whoami --registry "$RELEASE_PRIMARY_REGISTRY" \
+            "--@happyvertical:registry=$RELEASE_PRIMARY_REGISTRY")
+          echo "✓ Authenticated to $RELEASE_PRIMARY_REGISTRY as $who"
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Computes whether this exact RELEASE_VERSION still needs work rather
+      # than failing outright when part of it already landed (npm publish is
+      # irreversible; a prior attempt can die before recording the release —
+      # see #2871). already-recorded=true means the tag is already pushed and
+      # every package is already on npm: the remaining steps become a no-op
+      # so the job still finishes green instead of erroring on repeat state.
+      - name: Guard release publish target
+        id: guard
+        env:
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
+          RELEASE_BASE_BRANCH: main
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: node scripts/guard-release-publish.js
+
+      - name: Verify complete release artifact set
+        if: steps.guard.outputs.already-recorded != 'true'
+        run: node scripts/verify-publish-artifacts.mjs publish-pack-output
+
+      # Recheck immediately before the irreversible release phase. Once npm
+      # publication starts, the matching main/tag update must not be deferred:
+      # doing so would strand a registry release that the collision guard cannot
+      # safely reconstruct on a later run.
+      - name: Recheck merge queue before publication
+        if: steps.guard.outputs.already-recorded != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-merge-queue-idle.mjs
+
+      - name: Prepare exact release commit
+        if: steps.guard.outputs.already-recorded != 'true'
+        env:
+          CI: true
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_BASE_BRANCH: main
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
+        run: |
+          echo "🚀 Publishing validated release $RELEASE_VERSION"
+
+          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          git add package.json
+          git add -A .changeset
+          if [ "${#release_files[@]}" -gt 0 ]; then
+            git add "${release_files[@]}"
+          fi
+          git commit -m "chore(release): v$RELEASE_VERSION [skip ci]"
+          git tag -f "v$RELEASE_VERSION"
+
+          # Exercise the same authenticated atomic push before npm publication
+          # makes the release irreversible. This catches credential and remote
+          # ref failures without updating either main or the release tag.
+          RELEASE_PUSH_DRY_RUN=true node scripts/push-release-refs.mjs
+
 
       - name: Publish validated release
         if: steps.guard.outputs.already-recorded != 'true'
@@ -791,11 +1125,6 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
           PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
         run: |
-          # Persist the irreversible-phase boundary before the first registry
-          # write. Failure after this point retains the fence for recovery.
-          if [ "$CI_RELEASE_WINDOW_ENABLED" = true ]; then
-            node scripts/release-admission.mjs begin-publishing --artifact-dir publish-pack-output
-          fi
 
           if [ "$PUBLISH_MODE" = "artifacts" ]; then
             node scripts/publish-validated-artifacts.mjs publish-pack-output
@@ -823,11 +1152,6 @@ jobs:
           # match the repository's real gitdir even though public fetches work.
           node scripts/push-release-refs.mjs
 
-          # Reopen only after independently confirming the exact primary
-          # artifacts and source-bound release refs. npmjs remains a mirror.
-          if [ "$CI_RELEASE_WINDOW_ENABLED" = true ]; then
-            node scripts/release-admission.mjs complete --artifact-dir publish-pack-output
-          fi
 
       # Deliberately not gated on `already-recorded` and not part of the step
       # above: `already-recorded` only tracks the tag push and npm publishes,
@@ -876,11 +1200,14 @@ jobs:
   # version bump. It never fails the workflow (#3002).
   mirror-npmjs:
     name: Mirror Release to npmjs
-    needs: [prepare-release, publish-release]
+    needs: [prepare-release, publish-release, publish-window]
     if: |
       github.ref == 'refs/heads/main' &&
       always() && !cancelled() &&
-      (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')
+      ((vars.CI_RELEASE_WINDOW_ENABLED == 'true' &&
+        (needs.publish-window.result == 'success' || needs.prepare-release.outputs.should-publish != 'true')) ||
+       (vars.CI_RELEASE_WINDOW_ENABLED != 'true' &&
+        (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')))
     runs-on: ubuntu-latest
     # Catching up dozens of versions per package takes far longer than one
     # release's worth; 30 minutes cancelled every attempt mid-run (#3963).

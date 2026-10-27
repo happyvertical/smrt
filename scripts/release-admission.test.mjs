@@ -775,3 +775,60 @@ test('read-only window assertions need no App token and cannot send any mutation
   assert.equal(calls.length, 1, 'no mutation reaches the network');
   assert.throws(() => createForge({ readToken: 'actions-read-only' }), /Separate/);
 });
+
+test('private ruleset reads use a third token only for fixed GET endpoints', async () => {
+  const calls = [];
+  const forge = createForge({ readToken: 'actions', writeToken: 'writer', fenceToken: 'verifier', fetchImpl: async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, status: 200, json: async () => url.includes('/installation/repositories?') ? { total_count: 1, repositories: [{ id: 1077603934, full_name: REPOSITORY }] } : url.includes('?') ? [{ id: 1, enforcement: 'active' }] : { id: 1, bypass_actors } };
+  } });
+  await forge.privateRules();
+  assert.ok(calls.every(c => c.options.method === 'GET' && c.options.headers.Authorization === 'Bearer verifier'));
+  assert.match(calls[0].url, /installation\/repositories/);
+  assert.match(calls[1].url, /includes_parents=false/);
+  calls.length = 0;
+  await forge.request('branches/main'); assert.equal(calls[0].options.headers.Authorization, 'Bearer actions');
+  for (const options of [{ method: 'PATCH', fence: true }, { method: 'POST', fence: true }]) await assert.rejects(forge.request('rulesets/1', options), /restricted to ruleset GETs/);
+  await assert.rejects(forge.request('statuses/head', { fence: true }), /restricted/);
+  const noVerifier = createForge({ readToken: 'actions', writeToken: 'writer', fetchImpl: async () => { throw new Error('network must not run'); } });
+  await assert.rejects(noVerifier.privateRules(), /Separate SMRT-only/);
+  const reader = createForge({ readToken: 'actions', readOnly: true, fenceToken: 'forbidden', fetchImpl: async () => { throw new Error('network must not run'); } });
+  await assert.rejects(reader.privateRules(), /Read-only/);
+});
+
+test('qualification tolerates API redaction but both privileged transitions require live exclusive bypass evidence', async () => {
+  const f = fixture(); f.refs = []; await f.controller.close(owner);
+  for (const id of [1, 2]) delete f.responses.get(`rulesets/${id}`).bypass_actors;
+  await f.controller.assertWindow(owner, snapshot);
+  await assert.rejects(f.controller.verifyFence(), /App-bound/);
+  let reads = 0;
+  f.forge.privateRules = async () => { reads++; return structuredClone(rules); };
+  await f.controller.verifyFence(); assert.equal(reads, 1);
+  f.forge.privateRules = async () => { throw new Error('Live private fence rejected'); };
+  await assert.rejects(f.controller.close(owner), /Live private fence/);
+  await assert.rejects(f.controller.beginPublishing(owner, { snapshotSha: snapshot }), /Live private fence/);
+  assert.equal(f.state.phase, 'qualifying');
+});
+
+test('authorization refuses a changed immutable inventory after verifying bytes', async () => {
+  const f = fixture(); f.refs = []; await f.controller.close(owner);
+  const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
+  const controller = createController({ store: f.store, forge: f.forge, now: () => 100,
+    git: args => args[0] === 'rev-parse' ? releaseCommit : `${releaseCommit} ${snapshot}`,
+    verifyArtifacts: () => ({ releaseVersion: version, packages: [{}] }),
+  });
+  const expectedArtifacts = structuredClone(recoveryArtifacts); expectedArtifacts[0].id = 99;
+  await assert.rejects(controller.beginPublishing(owner, { snapshotSha: snapshot, version, artifactDir: 'packs', expectedArtifacts }), /identities changed/);
+  assert.equal(f.state.phase, 'qualifying');
+});
+
+
+test('verifier refuses owner tokens, expanded installations, wrong repository IDs and malformed scope before ruleset reads', async () => {
+  for (const scope of [null, { total_count: 2, repositories: [] }, { total_count: 1, repositories: [{ id: 1, full_name: REPOSITORY }] }, { total_count: 1, repositories: [{ id: 1077603934, full_name: 'other/repo' }] }, { total_count: 1 }]) {
+    let calls = 0;
+    const forge = createForge({ readToken: 'read', writeToken: 'writer', fenceToken: 'verifier', fetchImpl: async () => {
+      calls++; return { ok: scope !== null, json: async () => scope };
+    } });
+    await assert.rejects(forge.privateRules()); assert.equal(calls, 1);
+  }
+});

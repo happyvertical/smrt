@@ -40,7 +40,7 @@ jobs:
   queue-idle:
     name: Reserve Release Snapshot
     if: github.ref == 'refs/heads/main'
-    environment: release
+    environment: release-fence-verifier
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -67,12 +67,25 @@ jobs:
           app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
           private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
 
+      - name: Generate SMRT-only fence verifier token
+        if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
+        id: fence-token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: '5496137'
+          installation_retrieval_mode: id
+          installation_retrieval_payload: '175845335'
+          private_key: ${{ secrets.HAVE_FENCE_APP_PRIVATE_KEY }}
+          repositories: '["smrt"]'
+          permissions: '{"administration":"write","metadata":"read"}'
+
       - name: Close admissions and freeze the drained snapshot
         if: vars.CI_RELEASE_WINDOW_ENABLED == 'true'
         id: window
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_GITHUB_TOKEN: ${{ steps.controller-token.outputs.token }}
+          FENCE_GITHUB_TOKEN: ${{ steps.fence-token.outputs.token }}
           CI_MERGE_QUEUE_ENABLED: ${{ vars.CI_MERGE_QUEUE_ENABLED }}
         run: node scripts/release-admission.mjs close --timeout-minutes 90 --drain-minutes 30
 

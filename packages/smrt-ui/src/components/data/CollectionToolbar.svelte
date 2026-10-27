@@ -290,6 +290,6 @@ onDestroy(() => surfaceRegistration?.cleanup());
   .spacer { flex: 1; }
   /* Controls a host renders in the filters/actions snippets inherit it too. */
   .toolbar[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .toolbar[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .toolbar[data-density='comfortable'] { --smrt-control-target-min: calc(var(--smrt-touch-target-min) * 0); }
 }
 </style>

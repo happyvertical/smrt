@@ -266,3 +266,26 @@ Evidence on 2026-10-25, based on `4286f91b1` plus this resource-export fix:
 
 Live queue evidence after requeue remains pending. These checks do not claim
 that a GitHub queue or publication attempt has succeeded.
+
+
+## Verification credential repair (2026-10-27)
+
+The first bounded live release (40440562042) failed before closing or publishing:
+GitHub hides `bypass_actors` from the Actions read token. A real disabled-rule
+probe also rejected the proposed public-revision snapshot shortcut. No marker
+snapshot or inferred empty bypass list is accepted as private verification.
+
+| Behavior/invariant | Reachable trigger | Positive case | Negative/failure case | Actor/context | Executor/transaction | Runtime | External contract edge | Level/validation |
+|---|---|---|---|---|---|---|---|---|
+| Full private fence at reservation and publication authorization | Release flag on | Separate selected-SMRT verifier token reads App-only bypass before state CAS | Missing token, redaction, additional actor, failed GET or changed controls prevents transition | Dedicated main-only verifier jobs, App5496137 | Fixed-origin GET-only credential route; existing App writer/CAS | Node26 | GitHub ruleset authorization/redaction | `node --test scripts/release-admission.test.mjs`; live trusted workflow required after merge |
+| Qualification remains read-only | Pack/Planner/sealing starts | Public controls, owner/attempt/source, phase/deadline and protected main verified with Actions token | Mutations/verifier route denied; mismatched owner/main/control stops qualification | Candidate/Planner jobs without verifier secret | GitHub GET only | Node26 | Public rules omit bypass actors | Same controller test command; workflow contract test |
+| Immutable authorization executes no candidate code | Sealed bundle and two pack ZIPs available | Sizes, digests, original IDs/attempt, sole source parent, version and complete inventory verified before private fence/CAS | Corrupt ZIP, wrong owner, changed artifact identities, bypass denial fail before publishing | Isolated authorization job | Trusted native helpers, no-hooks/no-filter Git worktree, no dependencies/lifecycle | Node26/Python stdlib | GitHub immutable artifacts and Git object hashes | `node --test scripts/recover-release.test.mjs` (real bundle/ZIP/pack fixtures and candidate execution marker) |
+| Original active publication vs terminated recovery | Authorized publishing or stranded partial publication | Exact active owner consumes original bound bytes; terminated owner recovery remains available | Active attempt cannot use recovery; different run/attempt or recovery-phase active publisher denied | Trusted publisher/recovery jobs, no verifier credential | Existing primary registry/ref verification and CAS | Node26 | Originating Actions run/attempt status | Same real recovery fixture command |
+| Credential job isolation and legacy compatibility | Workflow graph and feature flag selection | Only reservation/authorization reference dedicated environment/key; both are main-only; legacy off path preserved | Failed/skipped authorization cannot start publisher; no key in callbacks, package, Planner, seal, publisher or mirror | GitHub Actions jobs | Protected main workflow DAG | GitHub Actions | Environment branch-type main policy and job needs | `node --test scripts/release-window-workflow.test.mjs`; `actionlint` both changed workflows |
+
+SQL/runtime model/schema changes are N/A: only repository release tooling changes.
+Source regression evidence, full documented validation and independent high-risk
+code reviews must cover the final committed revision before delivery. The earlier
+external App setup reviews do not certify this integration. Successful bounded
+publication/reopen and three representative postactivation timing cases remain
+live acceptance gates, not unit-test claims.

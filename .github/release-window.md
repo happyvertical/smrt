@@ -22,7 +22,30 @@ the controller code exists on `main`.
 2. Grant release App **2315871** repository **Commit statuses: write**
    (`statuses:write`) in addition to its existing contents write permission.
    The installation owner must approve the updated permission request. The
-   approval is required before activation. Retain the reviewed `release` environment,
+   approval is required before activation. Full bypass verification additionally
+   uses private App **5496137**, `smrt-release-fence-verifier`, installed on
+   **selected repository `happyvertical/smrt` only**, installation **175845335**.
+   Workflow token minting pins both App and installation IDs. Grant only repository
+   Administration write and mandatory Metadata read. GitHub redacts
+   `bypass_actors` without ruleset write access; Administration read is not enough.
+   Administration write can also change protections, environment policies, deploy
+   keys, collaborator access and settings. It is not a GitHub-enforced read-only
+   permission. Do not expand the organization-wide release App or reuse an owner's
+   token. The verifier App must have no ruleset bypass entries.
+
+   Store `HAVE_FENCE_APP_PRIVATE_KEY` only in the dedicated
+   `release-fence-verifier` environment, with a **branch-type `main`** deployment
+   policy. Never store it in the shared `release` environment or organization
+   secrets. The owner generates and enters the private key directly. Only clean
+   reservation and publication-authorization jobs may reference that environment
+   or secret. They check out the trusted release workflow source, install no
+   dependencies and execute no candidate code. Mint a token explicitly restricted
+   to `smrt`, Administration write and Metadata read. Before private rule GETs,
+   the adapter independently verifies that the installation token enumerates only
+   repository ID **1077603934** (`happyvertical/smrt`). The token action revokes it
+   before either job completes. No key, JWT or verifier token crosses a job output.
+
+   Retain the reviewed `release` environment,
    its main-only deployment rule, `HAVE_RELEASE_APP_ID`,
    `HAVE_RELEASE_APP_PRIVATE_KEY` and primary registry publish credential.
 3. Create the active state-branch ruleset below. Only the App may create,
@@ -48,11 +71,22 @@ the controller code exists on `main`.
    while leaving its required status unserved; a rollback needs the same
    quiescent, reviewed rules/flag coordination.
 
-The controller's `verifyFence()` runs before closing or asserting a release
-window. It refuses missing/inactive protections, a context without App binding,
+The controller's full `verifyFence()` reads private bypass actors directly with
+the verifier credential before closing and immediately before publication
+authorization enters `publishing`. It refuses missing/inactive protections, a context without App binding,
 non-App bypass actors, missing state-ref restrictions, a queue wider than one
 entry, or an unprotected/moved `main`. `close` also requires
 `CI_MERGE_QUEUE_ENABLED=true`. A flag alone is insufficient readiness proof.
+Qualification's `assert-window` uses only the Actions read token. It checks live
+public rule structure (App-bound context, state-ref restrictions and one-entry
+queue), protected main, exact owner/attempt/source, qualifying phase and deadline.
+It does not claim to see private bypass actors and cannot authorize publication.
+The separate authorization job repeats full private verification after all
+qualification and sealing, before any registry write. A missing verifier token or
+missing bypass evidence fails closed. Never reuse a saved bypass list based on
+`updated_at`: the live #4306 probe did not establish a reliable bypass revision
+marker.
+
 Check App installation permissions and state initialization separately; GitHub
 permission failures and missing state fail closed.
 
@@ -183,6 +217,15 @@ reserved attempt. A rerun that changes the owning attempt must stop; after
 publication has begun, use the explicit original-owner recovery below. Qualification
 remains subject to the original deadline.
 
+The flag-on release has three final jobs: **Seal Release Candidate** creates the
+candidate and uploads its bundle after qualification; **Authorize Exact
+Publication** downloads the exact immutable ZIPs, checks their sizes/digests and
+original ownership, restores Git objects with hooks/filters disabled and verifies
+the candidate and packs as data; **Publish Authorized Window** publishes those
+same bound bytes using the trusted recovery engine. Candidate code, installs and
+npm lifecycle scripts never execute in the latter two jobs. The verifier key is
+present only in authorization. Legacy flag-off publishing remains separate.
+
 `releaseCommitSha` is a different, newly versioned commit whose sole parent is
 `snapshotSha`. It is created locally before npm publication. Before entering
 `publishing`, the workflow uploads its Git bundle and binds the original run's
@@ -202,14 +245,22 @@ irreversible boundary before the first registry write.
 The state branch uses Git compare-and-swap with a direct-parent commit and a
 non-force ref update. Concurrent writers refresh and retry; permission/policy
 failures are not treated as successful updates. Before publication, failure,
-abort or deadline expiry can reopen through that CAS protocol. Once publishing
+abort or deadline expiry can reopen through that CAS protocol. Authorization persists `publishing` before the final publisher is scheduled.
+Consequently even a publisher runner delay or failure before its first npm write
+requires original-owner recovery after the originating attempt terminates; it is
+not proof that the window can safely reopen. The original 90-minute deadline
+still gates authorization, and immutable artifacts retain their 30-day recovery
+window. Once publishing
 has begun, failure/timeout stays fenced in `recovery`; it never automatically
 reopens just because a workflow finished or a deadline elapsed.
 
 Completion verifies every expected tarball against
 `https://npm.happyvertical.com/`, the exact protected main SHA and lightweight
 version tag, and the release commit's source parent. Only then does it reopen.
-The primary registry gates reopening; npmjs mirroring runs independently
+The normal publisher must be the exact currently running original run/attempt
+and consume a `publishing` state; it cannot publish a `recovery` state. Manual
+recovery retains the separate requirement that the original attempt be completed.
+Neither path transfers ownership or rebuilds packages. The primary registry gates reopening; npmjs mirroring runs independently
 afterward and cannot extend the release fence. Direct/manual **Publish** does
 not reserve its own window: with the flag enabled its `assert-window` must find
 the exact owning run/attempt and frozen snapshot or publication stops.
@@ -282,3 +333,14 @@ Post-change end-to-end timings for metadata/export, shared runtime and
 persistence are **pending activation and representative live runs**. Do not
 report unit tests, targets or pre-activation workflow edits as measured latency
 improvements. Record unchanged slow paths alongside any improvement.
+
+## Verifier credential recovery
+
+If the verifier key is suspected compromised, disable its two consuming jobs,
+revoke the private key and uninstall its SMRT installation. Inspect the
+organization audit log for that App's changes to rules, environments, deploy keys,
+collaborators and settings; restore protections from owner-reviewed beforeimages.
+Keep publication paused/fenced until repaired. Do not clear admission state,
+force-update its branch or disable a served required context. Creating additional
+audit infrastructure or changing organization-wide deploy-key policy requires its
+own scoped decision; neither is implicitly authorized by this credential.

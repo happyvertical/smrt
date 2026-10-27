@@ -44,7 +44,9 @@ test('reserved source snapshot flows through the release DAG and every publish c
   const checkouts = steps(publish).filter((entry) => /uses: actions\/checkout@/.test(entry.source));
   assert.ok(checkouts.length >= 5);
   for (const checkout of checkouts) {
-    assert.match(checkout.source, /ref: \$\{\{ env\.CHECKOUT_REF \}\}/, checkout.name);
+    const control = ['Checkout trusted authorization code', 'Checkout trusted publication code'].includes(checkout.name);
+    assert.match(checkout.source, control ? /ref: \$\{\{ github\.sha \}\}/ : /ref: \$\{\{ env\.CHECKOUT_REF \}\}/, checkout.name);
+    if (control) assert.match(checkout.source, /fetch-depth: 0/, 'Frozen source may advance while pre-admitted groups drain; bundle prerequisites must be available');
   }
 });
 
@@ -100,7 +102,7 @@ test('immutable per-attempt packs and Git bundle survive thirty days before publ
     assert.match(packs, /retention-days: 30/);
     assert.doesNotMatch(packs, /overwrite:/);
   }
-  const publisher = job(publish, 'publish-release');
+  const publisher = job(publish, 'seal-release');
   const prepare = step(publisher, 'Prepare exact release commit');
   assert.match(prepare, /git bundle create release-candidate\.bundle HEAD "\^\$RELEASE_SOURCE_SHA"/);
   assert.match(prepare, /RELEASE_PUSH_DRY_RUN=true node scripts\/push-release-refs\.mjs/);
@@ -110,13 +112,11 @@ test('immutable per-attempt packs and Git bundle survive thirty days before publ
   assert.match(bundle, /if-no-files-found: error/);
   const ordered = steps(publisher).map((entry) => entry.name);
   assert.ok(ordered.indexOf('Prepare exact release commit') < ordered.indexOf('Preserve exact release commit for recovery'));
-  assert.ok(ordered.indexOf('Preserve exact release commit for recovery') < ordered.indexOf('Publish validated release'));
-  const irreversible = step(publisher, 'Publish validated release');
-  const begin = irreversible.indexOf('release-admission.mjs begin-publishing');
-  const registry = irreversible.indexOf('node scripts/publish-validated-artifacts.mjs');
-  const refs = irreversible.indexOf('node scripts/push-release-refs.mjs');
-  const complete = irreversible.indexOf('release-admission.mjs complete');
-  assert.ok(begin >= 0 && begin < registry && registry < refs && refs < complete);
+  assert.match(job(publish, 'authorize-release'), /needs: \[prepare-release, seal-release, validate-release-shards\]/);
+  assert.match(job(publish, 'authorize-release'), /node scripts\/authorize-release\.mjs/);
+  assert.match(job(publish, 'publish-window'), /needs: \[prepare-release, authorize-release\]/);
+  assert.match(step(job(publish, 'publish-window'), 'Publish original authorized bytes and reopen'), /node scripts\/publish-current-release\.mjs/);
+  assert.doesNotMatch(publisher, /node scripts\/publish-validated-artifacts\.mjs|node scripts\/publish-current-release\.mjs/);
 });
 
 test('standalone publishing cannot bypass a reserved window and primary completion precedes the mirror', () => {
@@ -124,9 +124,9 @@ test('standalone publishing cannot bypass a reserved window and primary completi
   assert.match(reserve, /vars\.CI_RELEASE_WINDOW_ENABLED == 'true'/);
   assert.match(reserve, /node scripts\/release-admission\.mjs assert-window/);
   assert.match(reserve, /test "\$PUBLISH_MODE" = artifacts/);
-  assert.match(step(job(publish, 'publish-release'), 'Recheck reserved snapshot before publication'), /assert-window/);
+  assert.match(step(job(publish, 'seal-release'), 'Recheck reserved snapshot before publication'), /assert-window/);
   const mirror = job(publish, 'mirror-npmjs');
-  assert.match(mirror, /needs: \[prepare-release, publish-release\]/);
+  assert.match(mirror, /needs: \[prepare-release, publish-release, publish-window\]/);
   assert.match(mirror, /continue-on-error: true/);
   assert.doesNotMatch(mirror, /release-admission\.mjs complete/);
 });
@@ -169,4 +169,34 @@ test('documented additive rules bind the App without replacing existing checks',
   assert.match(required, /name: Required CI/);
   assert.match(required, /if: always\(\)/);
   assert.match(required, /- ci-control-plane/);
+});
+
+test('verifier key is confined to clean reservation and authorization jobs, never candidate or callback jobs', () => {
+  const reserve = job(batch, 'queue-idle');
+  const authorize = job(publish, 'authorize-release');
+  for (const privileged of [reserve, authorize]) {
+    assert.match(privileged, /environment: release-fence-verifier/);
+    assert.match(privileged, /app_id: '5496137'/);
+    assert.match(privileged, /installation_retrieval_mode: id/);
+    assert.match(privileged, /installation_retrieval_payload: '175845335'/);
+    assert.match(privileged, /repositories: '\["smrt"\]'/);
+    assert.match(privileged, /permissions: '\{"administration":"write","metadata":"read"\}'/);
+    assert.match(privileged, /secrets\.HAVE_FENCE_APP_PRIVATE_KEY/);
+    assert.doesNotMatch(privileged, /uses: \.\/|pnpm |npm |planner-release-gate|download-artifact|tar -/);
+  }
+  assert.equal((batch.match(/secrets\.HAVE_FENCE_APP_PRIVATE_KEY/g) ?? []).length, 1);
+  assert.equal((publish.match(/secrets\.HAVE_FENCE_APP_PRIVATE_KEY/g) ?? []).length, 1);
+  assert.doesNotMatch(admission, /HAVE_FENCE|release-fence-verifier/);
+  for (const name of ['prepare-release', 'pack-release-1', 'pack-release-2', 'planner-release-gate', 'seal-release', 'publish-window', 'publish-release']) {
+    assert.doesNotMatch(job(publish, name), /HAVE_FENCE|FENCE_GITHUB_TOKEN|release-fence-verifier/);
+  }
+  assert.match(authorize, /needs: \[prepare-release, seal-release, validate-release-shards\]/);
+  assert.match(job(publish, 'publish-window'), /needs: \[prepare-release, authorize-release\]/);
+  assert.match(job(publish, 'publish-window'), /node scripts\/publish-current-release\.mjs/);
+  for (const name of ['seal-release', 'authorize-release', 'publish-window']) {
+    assert.match(job(publish, name), /permissions:\n      contents: read\n      actions: read/);
+    assert.doesNotMatch(job(publish, name), /(?:contents|actions|pull-requests|id-token|pages): write/);
+  }
+  assert.doesNotMatch(job(publish, 'publish-window'), /setup-environment|install-deps|pnpm |tar -/);
+  assert.doesNotMatch(job(publish, 'seal-release'), /run: node scripts\/publish-current-release\.mjs|run: \|\n.*begin-publishing/);
 });

@@ -21,13 +21,17 @@ const appStatus = (status, head) => Number.isSafeInteger(status?.id) && status.i
   status.creator.login === 'have-release-bot[bot]' && status.creator.type === 'Bot' &&
   status.url === `https://api.github.com/repos/${REPOSITORY}/statuses/${head}`;
 
-export function createForge({ readToken, writeToken, readOnly = false, fetchImpl = fetch }) {
+export function createForge({ readToken, writeToken, readOnly = false, fetchImpl = fetch, fenceToken }) {
   check(readToken && (readOnly || (writeToken && readToken !== writeToken)), 'Separate GITHUB_TOKEN and RELEASE_GITHUB_TOKEN are required');
-  async function request(path, { method = 'GET', body, missing = false } = {}) {
-    check(!readOnly || method === 'GET', 'Read-only release assertion cannot mutate GitHub');
+  async function request(path, { method = 'GET', body, missing = false, fence = false } = {}) {
+    check(!readOnly || (method === 'GET' && !fence), 'Read-only release assertion cannot mutate GitHub or access verifier credentials');
+    if (fence) {
+      check(method === 'GET' && /^rulesets(?:\/[1-9][0-9]*)?$/.test(path.split('?')[0]), 'Verifier credential is restricted to ruleset GETs');
+      check(fenceToken && fenceToken !== readToken && fenceToken !== writeToken, 'Separate SMRT-only fence verifier token required');
+    }
     const response = await fetchImpl(`https://api.github.com/repos/${REPOSITORY}/${path}`, {
       method, redirect: 'error', headers: {
-        Authorization: `Bearer ${method === 'GET' ? readToken : writeToken}`,
+        Authorization: `Bearer ${fence ? fenceToken : method === 'GET' ? readToken : writeToken}`,
         Accept: 'application/vnd.github+json', 'Content-Type': 'application/json',
         'X-GitHub-Api-Version': '2022-11-28',
       }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -46,10 +50,10 @@ export function createForge({ readToken, writeToken, readOnly = false, fetchImpl
     }
     return response.json();
   }
-  async function list(path, key) {
+  async function list(path, key, options) {
     const result = [];
     for (let page = 1; page <= 20; page++) {
-      const response = await request(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
+      const response = await request(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, options);
       const entries = key ? response[key] : response;
       check(Array.isArray(entries), 'Invalid GitHub list');
       if (key) check(Number.isSafeInteger(response.total_count) && response.total_count <= 1000, 'Validation run inventory exceeds GitHub search limit; narrow reconciliation before retrying');
@@ -61,6 +65,18 @@ export function createForge({ readToken, writeToken, readOnly = false, fetchImpl
   }
   return {
     request, list,
+    privateRules: async () => {
+      check(!readOnly, 'Read-only release assertion cannot access verifier credentials');
+      check(fenceToken && fenceToken !== readToken && fenceToken !== writeToken, 'Separate SMRT-only fence verifier token required');
+      const scope = await fetchImpl('https://api.github.com/installation/repositories?per_page=100', {
+        method: 'GET', redirect: 'error', headers: { Authorization: `Bearer ${fenceToken}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+      });
+      check(scope.ok, 'Unable to verify fence installation token scope');
+      const repositories = await scope.json();
+      check(repositories.total_count === 1 && repositories.repositories?.length === 1 &&
+        repositories.repositories[0].id === 1077603934 && repositories.repositories[0].full_name === REPOSITORY, 'Verifier token must be restricted to SMRT only');
+      return Promise.all((await list('rulesets?includes_parents=false', undefined, { fence: true })).filter((rule) => rule.enforcement === 'active').map((rule) => request(`rulesets/${rule.id}`, { fence: true })));
+    },
     main: () => request('branches/main'),
     groups: () => list('git/matching-refs/heads/gh-readonly-queue/main/'),
     status: async (head, state, description) => {
@@ -73,7 +89,7 @@ export function createForge({ readToken, writeToken, readOnly = false, fetchImpl
   };
 }
 
-export function createController({ store, forge, grantOwner = { runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) }, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), git = (args) => execFileSync('git', args, { encoding: 'utf8' }).trim(), verifyArtifacts = verifyPublishArtifacts, registryMetadata = (artifact) => JSON.parse(execFileSync('npm', ['view', `${artifact.name}@${artifact.version}`, '--json', '--prefer-online', ...registryArgs(primaryRegistry())], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }) {
+export function createController({ store, forge, grantOwner = { runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) }, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), git = (args) => execFileSync('git', args, { encoding: 'utf8' }).trim(), verifyArtifacts = verifyPublishArtifacts, candidateVersion = () => JSON.parse(readFileSync('package.json', 'utf8')).version, registryMetadata = (artifact) => JSON.parse(execFileSync('npm', ['view', `${artifact.name}@${artifact.version}`, '--json', '--prefer-online', ...registryArgs(primaryRegistry())], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }) {
   const update = (operation) => updateReleaseAdmissionState(store, (state) => transitionReleaseAdmission(state, operation));
   async function state() {
     const head = await store.read();
@@ -154,17 +170,19 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
       check(latest.state === 'open' && latest.head?.sha === run.head_sha && latest.head.repo?.full_name === REPOSITORY, 'Stale PR validation head');
     });
   }
-  async function verifyFence() {
-    const rules = await Promise.all((await forge.list('rulesets')).filter((rule) => rule.enforcement === 'active').map((rule) => forge.request(`rulesets/${rule.id}`)));
+  async function verifyFence(privateBypass = true) {
+    const rules = privateBypass && forge.privateRules ? await forge.privateRules() : await Promise.all((await forge.list('rulesets')).filter((rule) => rule.enforcement === 'active').map((rule) => forge.request(`rulesets/${rule.id}`)));
     const applies = (rule, refs) => rule.target === 'branch' && rule.enforcement === 'active' && rule.conditions?.ref_name?.exclude?.length === 0 && rule.conditions.ref_name.include.some((ref) => refs.includes(ref));
-    const onlyApp = (rule) => (rule.bypass_actors ?? []).every((actor) => actor.actor_type === 'Integration' && actor.actor_id === 2315871 && actor.bypass_mode === 'always');
+    const onlyApp = (rule) => Array.isArray(rule.bypass_actors) && rule.bypass_actors.length > 0 && rule.bypass_actors.every((actor) => actor.actor_type === 'Integration' && actor.actor_id === 2315871 && actor.bypass_mode === 'always');
     const mainRules = rules.filter((rule) => applies(rule, ['refs/heads/main', '~DEFAULT_BRANCH']));
-    check(mainRules.some((rule) => onlyApp(rule) && rule.bypass_actors?.some((actor) => actor.actor_id === 2315871) && rule.rules.some((entry) => entry.type === 'required_status_checks' && entry.parameters.required_status_checks.some((status) => status.context === CONTEXT && status.integration_id === 2315871))), 'Provision App-bound Release Admission required status before activation');
+    check(mainRules.some((rule) => (!privateBypass || onlyApp(rule)) && rule.rules.some((entry) => entry.type === 'required_status_checks' && entry.parameters.required_status_checks.some((status) => status.context === CONTEXT && status.integration_id === 2315871))), 'Provision App-bound Release Admission required status before activation');
     check(mainRules.some((rule) => rule.rules.some((entry) => entry.type === 'merge_queue' && entry.parameters.max_entries_to_build === 1 && entry.parameters.max_entries_to_merge === 1)), 'Release admission requires a one-entry merge queue');
-    check(rules.some((rule) => applies(rule, ['refs/heads/hv-release-admission']) && onlyApp(rule) && rule.bypass_actors?.some((actor) => actor.actor_id === 2315871) && ['creation', 'update', 'deletion', 'non_fast_forward'].every((type) => rule.rules.some((entry) => entry.type === type))), 'Protect admission ref against non-App creation/updates/deletion/force-push before activation');
+    check(rules.some((rule) => applies(rule, ['refs/heads/hv-release-admission']) && (!privateBypass || onlyApp(rule)) && ['creation', 'update', 'deletion', 'non_fast_forward'].every((type) => rule.rules.some((entry) => entry.type === type))), 'Protect admission ref against non-App creation/updates/deletion/force-push before activation');
   }
   async function assertWindow(owner, snapshotSha) {
-    await verifyFence();
+    // Qualification has no verifier credential and cannot authorize publishing.
+    // Full private bypass checks run directly at both privileged transitions.
+    await verifyFence(false);
     const current = await state();
     check(current.phase === 'qualifying' && current.owner.runId === owner.runId && current.owner.runAttempt === owner.runAttempt && current.snapshotSha === snapshotSha && now() < current.deadlineMs, 'Release window owner/snapshot/phase/deadline mismatch');
     const main = await forge.main();
@@ -232,13 +250,15 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     });
     return validateReleaseRecoveryArtifacts(selected);
   }
-  async function beginPublishing(owner, { snapshotSha, version, ref = `refs/tags/v${version}`, artifactDir }) {
+  async function beginPublishing(owner, { snapshotSha, version, ref = `refs/tags/v${version}`, artifactDir, expectedArtifacts }) {
+    await verifyFence();
     await assertWindow(owner, snapshotSha);
     const releaseCommitSha = git(['rev-parse', 'HEAD']);
     check(sha(snapshotSha) && sha(releaseCommitSha) && git(['rev-list', '--parents', '-n', '1', 'HEAD']) === `${releaseCommitSha} ${snapshotSha}`, 'Release commit must have exactly the frozen source as parent');
-    check(JSON.parse(readFileSync('package.json', 'utf8')).version === version, 'Local version does not match release');
+    check(candidateVersion() === version, 'Local version does not match release');
     artifacts(artifactDir, version);
     const boundArtifacts = await recoveryArtifacts(owner);
+    check(expectedArtifacts === undefined || JSON.stringify(boundArtifacts) === JSON.stringify(validateReleaseRecoveryArtifacts(expectedArtifacts)), 'Verified artifact identities changed before authorization');
     const main = await forge.main();
     check(main.commit.sha === snapshotSha, 'Main advanced after release freeze');
     return update({ type: 'beginPublishing', owner, nowMs: now(), release: { snapshotSha, releaseCommitSha, version, ref, recoveryArtifacts: boundArtifacts }, qualification: { authenticated: true, repository: REPOSITORY, success: true, snapshotSha } });
@@ -330,7 +350,7 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     check(errors.length === 0, `Admission reconciliation incomplete (${errors.length} heads): ${errors.join('; ')}`);
     return state();
   }
-  return { admit, close, assertWindow, finishRun, ackGrant, beginPublishing, complete, reconcile,
+  return { admit, close, assertWindow, verifyFence, finishRun, ackGrant, beginPublishing, complete, reconcile,
     init: () => store.initialize(createReleaseAdmissionState({ repository: REPOSITORY })),
     abort: (owner) => update({ type: 'abort', owner }),
   };
@@ -351,10 +371,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const readOnly = command === 'assert-window';
   const controller = createController({
     store: createReleaseAdmissionStore({ repository: REPOSITORY, token: readOnly ? env.GITHUB_TOKEN : env.RELEASE_GITHUB_TOKEN }),
-    forge: createForge({ readToken: env.GITHUB_TOKEN, writeToken: readOnly ? undefined : env.RELEASE_GITHUB_TOKEN, readOnly }),
+    forge: createForge({ readToken: env.GITHUB_TOKEN, writeToken: readOnly ? undefined : env.RELEASE_GITHUB_TOKEN, readOnly, fenceToken: readOnly ? undefined : env.FENCE_GITHUB_TOKEN }),
   });
   let result;
-  if (command === 'init') result = await controller.init();
+  if (command === 'verify-fence') result = await controller.verifyFence();
+  else if (command === 'init') result = await controller.init();
   else if (command === 'admit') result = await controller.admit(Number(options['run-id']));
   else if (command === 'finish-run') result = await controller.finishRun(Number(options['run-id']), options['run-attempt'] === undefined ? undefined : Number(options['run-attempt']));
   else if (command === 'reconcile') result = await controller.reconcile();
