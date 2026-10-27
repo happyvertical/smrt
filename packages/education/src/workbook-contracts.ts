@@ -116,10 +116,32 @@ export function workbookAggregateFeedback(
 ): string {
   return `${aggregate.correct} correct; ${aggregate.incorrect} incorrect; ${aggregate.partiallyCorrect} partially correct; ${aggregate.unassessed} unassessed.`;
 }
+/** Advisory observed structure; never verified source geometry or identity. */
+export interface WorkbookObservedLayout {
+  version: 1;
+  provenance: 'observed';
+  sections: {
+    id: string;
+    label?: string;
+    columns: number;
+    readingOrder?: 'rows' | 'columns';
+    source: { assetId: string; page: number | null };
+  }[];
+  placements: {
+    questionId: string;
+    sectionId: string;
+    row: number;
+    column: number;
+    /** Sort parts only when all cell placements specify one; ties use question order. */
+    part?: number;
+  }[];
+}
 export interface WorkbookAssessment {
   version: 1;
   aggregate?: WorkbookAggregate;
   feedback: string;
+  layout?: WorkbookObservedLayout;
+  layoutOmission?: 'invalid';
   questions: WorkbookQuestion[];
   provenance: {
     provider: string;

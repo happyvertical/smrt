@@ -10,9 +10,11 @@ import {
   fixtureIdentity,
 } from './test-support/extraction-fixtures.js';
 
-function vision() {
+function vision(
+  content = 'Visible worksheet; unreadable text remains unreadable',
+) {
   const chat = vi.fn(async (_messages: unknown) => ({
-    content: 'Visible worksheet; unreadable text remains unreadable',
+    content,
     model: 'fixture-scene',
   }));
   const providers: ExtractionProviders = {
@@ -99,6 +101,50 @@ describe('bounded vision image preparation', () => {
       expect(prompt).toContain(instruction);
     }
     expect(sentImage(chat).bytes.length).toBeGreaterThan(0);
+    expect(result.automaticActionEligible).toBe(false);
+  });
+  it('requests observed layout and page uncertainty while retaining textual observations', async () => {
+    // Synthetic evidence checks the actual SDK request, not recognition quality.
+    const bytes = await sharp(
+      Buffer.from(
+        '<svg width="600" height="400"><rect width="600" height="400" fill="white"/><text x="20" y="30">Section A: Read</text><text x="20" y="80">1(a) First part</text><text x="320" y="80">1(b) Second part</text><text x="20" y="140">2(a) Third part</text><text x="320" y="140">2(b) Fourth part</text><text x="20" y="240">Section B: Match</text><text x="20" y="290">3. Label</text><text x="320" y="290">Target</text><text x="280" y="380">Page 12</text></svg>',
+      ),
+    )
+      .jpeg()
+      .toBuffer();
+    const observations =
+      'Section A: Read. Two columns, two rows of task parts. Reading order unknown. Section B: Match. Printed page number: 12. Physical source page: unknown.';
+    const { providers, chat } = vision(observations);
+    const result = await extractWithProviders(request(bytes), providers);
+    expect(result.status).toBe('complete');
+    expect(chat).toHaveBeenCalledOnce();
+    const messages = chat.mock.calls[0][0] as Array<{
+      role: string;
+      content: Array<{ type: string; text?: string }>;
+    }>;
+    const prompt = messages[0].content.find(
+      (part) => part.type === 'text',
+    )?.text;
+    for (const instruction of [
+      'Preserve visible sections and headings, columns and rows, task parts, and reading order in the observation text',
+      'keeping text and responses associated with their observed section and task part',
+      'Describe layout only where visibly supported',
+      'explicitly report unclear structure or reading order as unknown',
+      'Do not invent layout, bounding boxes, coordinates, or verified geometry',
+      'Identify the physical source page only when known; otherwise report it as unknown',
+      'Keep any visible printed page number separate from the physical source page',
+      'a printed page number does not establish the physical source page',
+    ]) {
+      expect(prompt).toContain(instruction);
+    }
+    expect(sentImage(chat).bytes.length).toBeGreaterThan(0);
+    expect(result.segments).toEqual([
+      expect.objectContaining({
+        text: observations,
+        kind: 'observation',
+        location: { kind: 'source' },
+      }),
+    ]);
     expect(result.automaticActionEligible).toBe(false);
   });
   it('sends an oriented full-frame bounded JPEG while retaining original evidence', async () => {

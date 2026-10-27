@@ -348,6 +348,9 @@ export async function extractWithProviders(
               type: 'text',
               text: [
                 'Describe visible scene content and readable text as observations.',
+                'Preserve visible sections and headings, columns and rows, task parts, and reading order in the observation text, keeping text and responses associated with their observed section and task part.',
+                'Describe layout only where visibly supported; explicitly report unclear structure or reading order as unknown. Do not invent layout, bounding boxes, coordinates, or verified geometry.',
+                'Identify the physical source page only when known; otherwise report it as unknown. Keep any visible printed page number separate from the physical source page; a printed page number does not establish the physical source page.',
                 'Distinguish printed questions, instructions, and solved examples from learner handwriting or annotations; do not attribute printed answers to the learner.',
                 'Transcribe only visibly observed learner responses as learner responses, preserving their written content even when incorrect. Never solve arithmetic or infer a correct answer and call it an observed response.',
                 'For matching or connecting lines, report each visibly traceable connection with both endpoints identified by their readable labels or visible positions. Do not infer a connection from the expected answer or nearby placement.',

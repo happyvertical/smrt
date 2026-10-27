@@ -26,6 +26,8 @@ export interface WorkbookPhotoProposal {
 export interface WorkbookPhotoIntakeView {
   id: string;
   itemId: string;
+  /** Exact latest retained book-context resolution, independent of activity filing. */
+  workbookId?: string | null;
   learnerId: string;
   status: 'pending' | 'resolved' | 'captured';
   identification: WorkbookPhotoIdentification | null;

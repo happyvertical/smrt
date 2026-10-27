@@ -232,3 +232,18 @@ serialized transaction: stale/unauthorized/conflicting requests create nothing,
 and a later failure rolls both back. No cover re-upload, canonical lesson,
 submission replacement or second assessment is needed. New books keep the default
 review policy; filing never changes the source attempt's captured policy.
+
+## Exact cover context for header selection
+
+`getWorkbookPhotoIntake` adds optional nullable `workbookId`, loaded from the latest
+retained resolution's exact WorkbookContextRevision under the same tenant/learner
+and decision ID. Pending/uncertain or unfiled-work resolution returns null; this is
+independent of a later activity filing. It never guesses from title or an inbox
+list. Existing guardian-origin receipt privacy still applies before lookup.
+
+Header cover camera/upload uses the normal receive/process photo flow. A confident
+cover resolves book/context only, with no attempt, lesson or Grade. Read that exact
+intake, then let the guardian explicitly choose `fileWorkbookWork({workbookId,...})`.
+An uncertain cover can use the existing guardian `resolveWorkbookPhotoIntake` with
+manual cover metadata, followed by the same exact getter and explicit filing.
+Neither cover identification nor context alone publishes learner source/feedback.

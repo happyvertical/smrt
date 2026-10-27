@@ -72,6 +72,14 @@ reports matching lines only with visibly traceable endpoints. Unreadable or
 uncertain responses/endpoints remain unknown; arithmetic solutions and expected
 matches must not be reported as observations. The generic scene/text instruction,
 untrusted-image instruction boundary and prohibition on actions still apply.
+Observation text preserves visible sections/headings, columns/rows, task parts,
+reading order, and their text/response associations. Unclear structure or reading
+order is explicitly unknown; the prompt forbids invented layout, boxes,
+coordinates, or verified geometry. A physical source page is identified only
+when known, otherwise unknown; a visible printed page number is separate and
+does not establish the physical source page. These are textual observations,
+not a new structured generic layout contract. Assessment-specific consumers may
+derive bounded advisory layout metadata from them under their own contracts.
 Hosts adopting this observation prompt must use a new extraction configuration
 revision; `vision-image-v1` versions image preparation, not prompt behavior.
 Synthetic request tests verify these instructions reach the provider, not remote

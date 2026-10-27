@@ -2311,6 +2311,27 @@ export function workbookContractTests(
         const args = JSON.parse(
           JSON.stringify({
             submissionId: submission.id,
+            layout: {
+              version: 1,
+              provenance: 'observed',
+              sections: [
+                {
+                  id: 'wire-section',
+                  label: 'Observed part',
+                  columns: 2,
+                  readingOrder: 'rows',
+                  source: { evidenceId: evidence.id, page: 1 },
+                },
+              ],
+              placements: [
+                {
+                  questionId: 'q1',
+                  sectionId: 'wire-section',
+                  row: 0,
+                  column: 1,
+                },
+              ],
+            },
             questions: [
               {
                 id: 'q1',
@@ -2452,6 +2473,24 @@ export function workbookContractTests(
         expect(imported.kind).toBe('preserved');
         if (imported.kind !== 'preserved')
           throw new Error('Expected preserved analysis');
+        const importedHistory = await f.service.getWorkbookTimeline({
+          ...request,
+          activityId: activity.id,
+        });
+        const importedBody = importedHistory.attempts[0].revisions.find(
+          (r) => r.id === imported.revisionId,
+        )?.assessment;
+        expect(importedBody?.layout).toMatchObject({
+          version: 1,
+          provenance: 'observed',
+          sections: [
+            {
+              id: 'wire-section',
+              source: { assetId: submission.pages[0].assetId, page: 1 },
+            },
+          ],
+          placements: [{ questionId: 'q1', row: 0, column: 1 }],
+        });
         const saved = await f.service.getWorkbookPreservationState({
           ...request,
           activityId: activity.id,
@@ -2487,11 +2526,30 @@ export function workbookContractTests(
           expectedHeadId: reviewed.id,
           requestKey: 'retention-release',
         });
-        // A genuinely new interpretation is still imported as provisional.
+        expect(reviewed.assessment.layout).toEqual(importedBody?.layout);
+        // Invalid advisory layout must not cause generic schema rejection or lose marks.
+        args.layout = 'malformed optional layout';
         await generate();
-        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
-          'preserved',
-        );
+        const malformedLayoutImport =
+          await preserveWorkbookIntakeAnalysis(preservation);
+        expect(malformedLayoutImport.kind).toBe('preserved');
+        if (malformedLayoutImport.kind !== 'preserved')
+          throw new Error('Answers were discarded for layout');
+        const layoutHistory = await f.service.getWorkbookTimeline({
+          ...request,
+          activityId: activity.id,
+        });
+        const fallback = layoutHistory.attempts[0].revisions.find(
+          (r) => r.id === malformedLayoutImport.revisionId,
+        )?.assessment;
+        expect(fallback?.questions).toHaveLength(1);
+        expect(fallback?.questions[0].result).toBe('correct');
+        expect(fallback?.layout).toBeUndefined();
+        expect(fallback?.layoutOmission).toBe('invalid');
+        expect(
+          layoutHistory.attempts[0].revisions.find((r) => r.id === reviewed.id)
+            ?.assessment.layout,
+        ).toEqual(importedBody?.layout);
         await f.service.captureWorkbookWork({
           ...request,
           activityId: activity.id,

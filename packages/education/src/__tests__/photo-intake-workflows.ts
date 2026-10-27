@@ -1132,6 +1132,88 @@ export function photoIntakeTests(
       await f.finish();
     }
   });
+  it('returns the exact latest cover-context workbook ID without making learning evidence', async () => {
+    const f = await fixture();
+    try {
+      const photo = await f.as(f.parent, () =>
+        f.service.retainWorkbookPhotoIntake({
+          ...f.parent,
+          itemId: 'header-cover',
+          pages: f.pages,
+        }),
+      );
+      expect(photo.workbookId).toBeNull();
+      const req = { ...f.parent, intakeId: photo.id };
+      const first = await f.as(f.parent, () =>
+        f.service.resolveWorkbookPhotoIntake({
+          ...req,
+          requestKey: 'cover-first',
+          identification: f.identification,
+        }),
+      );
+      expect(first.workbookId).toEqual(expect.any(String));
+      expect(first.activity).toBeNull();
+      expect(first.submissionId).toBeNull();
+      const second = await f.as(f.parent, () =>
+        f.service.resolveWorkbookPhotoIntake({
+          ...req,
+          requestKey: 'cover-second',
+          identification: {
+            ...f.identification,
+            workbook: {
+              workbookKey: 'exact-second-copy',
+              title: 'Second book',
+              edition: '2',
+            },
+          },
+        }),
+      );
+      expect(second.workbookId).toEqual(expect.any(String));
+      expect(second.workbookId).not.toBe(first.workbookId);
+      expect(
+        (await f.as(f.parent, () => f.service.getWorkbookPhotoIntake(req)))
+          .workbookId,
+      ).toBe(second.workbookId);
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookPhotoIntake({ ...f.own, intakeId: photo.id }),
+        ).rejects.toThrow(),
+      );
+      await f.as(f.parent, () =>
+        expect(
+          f.service.getWorkbookPhotoIntake({
+            ...req,
+            learnerId: String(f.sibling.id),
+          }),
+        ).rejects.toThrow(),
+      );
+      expect(
+        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent)),
+      ).toEqual([]);
+      expect(
+        Number(
+          (await f.db.query('SELECT COUNT(*) AS count FROM submissions'))
+            .rows[0].count,
+        ),
+      ).toBe(0);
+      expect(
+        Number(
+          (await f.db.query('SELECT COUNT(*) AS count FROM grades')).rows[0]
+            .count,
+        ),
+      ).toBe(0);
+      const unresolved = await f.as(f.parent, () =>
+        f.service.resolveWorkbookPhotoIntake({
+          ...req,
+          requestKey: 'cover-uncertain',
+          identification: { kind: 'uncertain', workState: 'unknown' },
+        }),
+      );
+      expect(unresolved.workbookId).toBeNull();
+    } finally {
+      await f.finish();
+    }
+  });
   it('deduplicates receipt and cover decisions and keeps context separate from immutable book identity', async () => {
     const f = await fixture();
     try {

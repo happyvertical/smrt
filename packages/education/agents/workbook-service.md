@@ -270,3 +270,44 @@ allowed non-none reason and both point fields null. This is not a conversion of
 provider output: contradictory results remain refused. Mapping certainty remains
 independent. Visible but overwritten/ambiguous responses can stay unassessed while
 other clearly visible questions are assessed in the same valid proposal.
+
+### Observed assessment layout
+
+Optional `WorkbookAssessment.layout` version 1 describes observed sections in source
+order and zero-based row/column question placements. It is advisory, with fixed
+`provenance: 'observed'`; it never establishes identity or verified geometry.
+Sections reference a retained source asset and a physical one-based observed page,
+or null when unknown. A whole-file PDF anchor may support an observed page within
+its retained page count while keeping its original anchor page null. Every placed
+question must anchor the section's exact source. Multiple question IDs may share a
+cell. When every placement in a cell has an explicit `part`, sort by part then
+original question array index for ties. If any placement in that cell omits
+`part`, the whole cell follows original question array order. Partial placement is valid. Missing `readingOrder` preserves original
+question order for a flattened display.
+
+The browser-safe `normalizeWorkbookObservedLayout` copies only bounded known
+fields: at most 32 sections and 200 placements, 1–8 columns, rows 0–199, parts
+0–31, section IDs up to 64 characters and labels up to 200. Duplicate section IDs
+or question placements, invalid source/page/placement references and malformed
+metadata discard the complete optional layout and retain `layoutOmission: 'invalid'`.
+Valid answers and normal assessment validation remain independent. Owning analysis
+and guardian writes both normalize against the current capture's source hashes;
+a correction cannot inherit a previous capture's source layout. Default guardian
+copies retain valid layout and safe omission markers. Bodies remain immutable JSON
+inside existing revision privacy and exact release boundaries; no migration or
+additional learner visibility is introduced.
+
+Focused shared SQLite/PostgreSQL cases live in
+`src/__tests__/workbook-layout-workflows.ts`, with SQLite in
+`workbook-layout-service.test.ts` and isolated PostgreSQL in
+`workbook-layout.optional.test.ts`. Pure bounds/reference cases are in
+`workbook-layout.test.ts`. Integration runs the PostgreSQL wrapper under its
+existing isolated database lifecycle.
+
+Generation carries optional `layout` as advisory JSON so malformed presentation
+cannot make valid question answers fail the generic schema. Its described wire
+shape uses original evidence IDs; the bridge maps those IDs to retained assets
+and then calls the strict owner normalizer. Within existing transport/JSON resource
+limits, wrong types, unknown versions and conflicting metadata are omitted with
+only the safe marker, while answers retain their normal strict validation. Layout
+never establishes a question ID, a source authorization or a verified region.

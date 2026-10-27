@@ -256,15 +256,46 @@ export class WorkbookPhotoService extends WorkbookService {
     request: PhotoRequest,
   ): Promise<WorkbookPhotoIntakeView> {
     const row = await this.receipt(request);
-    const decisions = (await this.decisions(request)).map(
+    const decisionRows = await this.decisions(request);
+    const decisions = decisionRows.map(
       (r) => JSON.parse(r.bodyJson) as Decision,
     );
-    const resolution = decisions
-      .filter(
-        (d): d is Extract<Decision, { type: 'resolve' }> =>
-          d.type === 'resolve',
-      )
-      .at(-1);
+    const resolutionRow = decisionRows.findLast(
+      (r) => (JSON.parse(r.bodyJson) as Decision).type === 'resolve',
+    );
+    const resolution = resolutionRow
+      ? (JSON.parse(resolutionRow.bodyJson) as Extract<
+          Decision,
+          { type: 'resolve' }
+        >)
+      : undefined;
+    let workbookId: string | null = null;
+    if (resolutionRow) {
+      const context = await (
+        await WorkbookContextRevisionCollection.create({ db: this.db })
+      ).get(
+        {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          decisionId: String(resolutionRow.id),
+        },
+        { cache: false },
+      );
+      if (context) {
+        const book = await (
+          await WorkbookCollection.create({ db: this.db })
+        ).get(
+          {
+            id: context.workbookId,
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+          },
+          { cache: false },
+        );
+        if (!book) throw new LearnerAuthorizationError();
+        workbookId = String(book.id);
+      }
+    }
     const proposal = decisions
       .filter(
         (d): d is Extract<Decision, { type: 'proposal' }> =>
@@ -287,6 +318,7 @@ export class WorkbookPhotoService extends WorkbookService {
     return {
       id: String(row.id),
       itemId: row.itemId,
+      workbookId,
       learnerId: row.learnerId,
       status: capture
         ? 'captured'

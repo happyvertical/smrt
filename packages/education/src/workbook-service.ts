@@ -33,6 +33,7 @@ import {
   type WorkbookTimeline,
   workbookAggregateFeedback,
 } from './workbook-contracts.js';
+import { normalizeWorkbookObservedLayout } from './workbook-layout.js';
 import {
   type Workbook,
   type WorkbookActivity,
@@ -1246,6 +1247,17 @@ export class WorkbookService extends SubmissionService {
         })),
       };
       validateWorkbookAssessment(assessment);
+      const normalizedLayout = normalizeWorkbookObservedLayout(
+        assessment.layout,
+        assessment.questions,
+        JSON.parse(attempt.sourceHashes),
+      );
+      delete assessment.layout;
+      // Retain only the safe omission code on a default guardian copy.
+      const omitted = assessment.layoutOmission === 'invalid';
+      delete assessment.layoutOmission;
+      Object.assign(assessment, normalizedLayout);
+      if (!assessment.layout && omitted) assessment.layoutOmission = 'invalid';
       // This method returns its raw revision to the caller. A learner cannot
       // use it to probe hidden identities or obtain a new guardian-source body.
       if (
@@ -1323,6 +1335,17 @@ export class WorkbookService extends SubmissionService {
       nonempty(decisionReason, 'guardian decision reason');
       // Guardian may explicitly correct transcription, result or mapping.
       validateWorkbookAssessment(assessment);
+      const normalizedLayout = normalizeWorkbookObservedLayout(
+        assessment.layout,
+        assessment.questions,
+        JSON.parse(attempt.sourceHashes),
+      );
+      delete assessment.layout;
+      // Retain only the safe omission code on a default guardian copy.
+      const omitted = assessment.layoutOmission === 'invalid';
+      delete assessment.layoutOmission;
+      Object.assign(assessment, normalizedLayout);
+      if (!assessment.layout && omitted) assessment.layoutOmission = 'invalid';
       assessment.aggregate = aggregateWorkbookQuestions(assessment.questions);
       if (
         JSON.stringify(assessment.vocabulary) !==

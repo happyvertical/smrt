@@ -8,6 +8,8 @@ import {
   ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
 
+import { normalizeWorkbookObservedLayout } from './workbook-layout.js';
+
 export { requireIngestionMemoryLimit } from './ingestion-isolation.js';
 
 /** Immutable operator configuration; never populated from upload/model metadata. */
@@ -422,6 +424,40 @@ export function educationIntakeHandlers(input: {
         : ['submissionId', 'score', 'feedback'],
       properties: {
         submissionId: idSchema,
+        ...(workbook
+          ? {
+              layout: {
+                description:
+                  'Optional observed presentation only; omit if unknown. Shape: version1, provenance observed; sections in observed order {id,label?,columns1..8,readingOrder? rows|columns,source:{evidenceId:original evidence ID,page:physical source page1based or null unknown}}; placements {questionId,sectionId,row0based,column0based,part?0..31}. Up to32sections/200placements/200rows. Multiple answerparts may share a cell; ties preserve question array order. Printed page numbers are not source page indices. Never infer from IDs or claim verified coordinates. Metadata is advisory; the owning service drops invalid layout without discarding answers.',
+                examples: [
+                  {
+                    version: 1,
+                    provenance: 'observed',
+                    sections: [
+                      {
+                        id: 'section-a',
+                        label: 'Visible heading',
+                        columns: 2,
+                        readingOrder: 'rows',
+                        source: {
+                          evidenceId: '<original evidence id>',
+                          page: null,
+                        },
+                      },
+                    ],
+                    placements: [
+                      {
+                        questionId: '<current question id>',
+                        sectionId: 'section-a',
+                        row: 0,
+                        column: 0,
+                      },
+                    ],
+                  },
+                ],
+              },
+            }
+          : {}),
         ...(!workbook
           ? {
               score: { type: ['number', 'null'], minimum: 0, maximum: 1 },
@@ -1006,10 +1042,49 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         evidenceLimitations: [...limitations],
       } as unknown as WorkbookAssessment['questions'][number];
     });
+    let observedLayout: unknown = suggestion.args.layout;
+    if (
+      observedLayout &&
+      typeof observedLayout === 'object' &&
+      !Array.isArray(observedLayout)
+    ) {
+      const candidate = observedLayout as Record<string, unknown>;
+      if (
+        Array.isArray(candidate.sections) &&
+        candidate.sections.length <= 32
+      ) {
+        observedLayout = {
+          ...candidate,
+          sections: candidate.sections.map((section: unknown) => {
+            if (
+              !section ||
+              typeof section !== 'object' ||
+              Array.isArray(section)
+            )
+              return section;
+            const row = section as Record<string, unknown>;
+            const source = row.source as
+              | { evidenceId?: unknown; page?: unknown }
+              | undefined;
+            const index = originals.findIndex(
+              (e) => e.id === source?.evidenceId,
+            );
+            return {
+              ...row,
+              source: {
+                assetId: index >= 0 ? sources[index].assetId : '',
+                page: source?.page,
+              },
+            };
+          }),
+        };
+      }
+    }
     assessment = {
       version: 1,
       feedback: '',
       questions,
+      ...normalizeWorkbookObservedLayout(observedLayout, questions, sources),
       vocabulary: structuredClone(curated),
       provenance: {
         provider: generation.provenance.generative.provider,

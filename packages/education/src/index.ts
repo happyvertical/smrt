@@ -235,6 +235,7 @@ export {
   SubmissionIntakeBinding,
 } from './submissions.js';
 export * from './workbook-contracts.js';
+export * from './workbook-layout.js';
 export * from './workbook-models.js';
 export * from './workbook-photo-contracts.js';
 export * from './workbook-photo-models.js';
