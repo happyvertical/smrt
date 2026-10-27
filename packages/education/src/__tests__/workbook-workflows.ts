@@ -38,6 +38,7 @@ export const workbookClasses = [
   'WorkbookActivity',
   'WorkbookWorkFiling',
   'WorkbookPhotoIntake',
+  'WorkbookPhotoAsset',
   'WorkbookAttempt',
   'WorkbookAssessmentRevision',
   'WorkbookFeedbackRelease',
@@ -2082,6 +2083,7 @@ export function workbookContractTests(
   it('validates evidence-only wire JSON and keeps public ingestion workbook history after review and expiry', async () => {
     const f = await fixture();
     try {
+      expect(await f.db.tableExists('workbook_photo_assets')).toBe(true);
       const uncertainAssessment = structuredClone(f.assessment);
       uncertainAssessment.questions[0] = {
         ...uncertainAssessment.questions[0],
