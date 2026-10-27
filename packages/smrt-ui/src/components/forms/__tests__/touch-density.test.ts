@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import CollectionToolbar from '../../data/CollectionToolbar.svelte';
 import DataTable from '../../data/DataTable.svelte';
 import FilterChips from '../../nav/FilterChips.svelte';
 import Button from '../../ui/Button.svelte';
@@ -51,6 +52,7 @@ describe('touch density', () => {
     ['SegmentedControl', SegmentedControl, { options: [], label: 'Segments' }],
     ['DataTable', DataTable, { columns: [], data: [] }],
     ['Pagination', Pagination, { currentPage: 1, totalPages: 3 }],
+    ['CollectionToolbar', CollectionToolbar, {}],
   ])('%s consumes density on its target root', (_name, component, props) => {
     const { container } = render(component as typeof Input, {
       props: { ...props, density: 'touch' },
@@ -121,5 +123,22 @@ describe('touch density', () => {
     expect(
       screen.getByRole('textbox', { name: 'Local touch' }),
     ).toHaveAttribute('data-density', 'touch');
+  });
+
+  // #3874: the toolbar's own search box and view switch take its density.
+  it('CollectionToolbar passes density to its search input and view switch', () => {
+    const { container } = render(CollectionToolbar, {
+      props: { density: 'touch', views: ['list', 'table'] },
+    });
+    expect(
+      container
+        .querySelector('input[type="search"]')
+        ?.getAttribute('data-density'),
+    ).toBe('touch');
+    expect(
+      container
+        .querySelector('[role="radiogroup"]')
+        ?.getAttribute('data-density'),
+    ).toBe('touch');
   });
 });
