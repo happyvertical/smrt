@@ -116,6 +116,7 @@ export function dropUnrenderableRecipes(
   }
   if (dropped.size === 0) return [...packages];
   const out: CatalogPackage[] = [];
+  const skipped = new Set<string>();
   for (const pkg of packages) {
     const all = pkg.recipes ?? [];
     const kept = all.filter((r) => !dropped.has(r.id));
@@ -125,12 +126,22 @@ export function dropUnrenderableRecipes(
       !pkg.models.some((m) => m.exposed)
     ) {
       log(`skip ${pkg.packageName}: nothing left to pick`);
+      skipped.add(pkg.id);
       continue;
     }
     const { recipes: _recipes, ...rest } = pkg;
     out.push(kept.length > 0 ? { ...rest, recipes: kept } : rest);
   }
-  return out;
+  // A skipped package has no page, so nothing may link to it as a dependency.
+  if (skipped.size === 0) return out;
+  return out.map((pkg) =>
+    pkg.dependencies.some((id) => skipped.has(id))
+      ? {
+          ...pkg,
+          dependencies: pkg.dependencies.filter((id) => !skipped.has(id)),
+        }
+      : pkg,
+  );
 }
 
 /**
