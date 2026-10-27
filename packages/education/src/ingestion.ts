@@ -861,7 +861,9 @@ function educationEvidenceGrounding(
           ].slice(0, 1000)
         : [];
     const catalogs =
-      evidence.mediaType.startsWith('image/') && Array.isArray(result.segments)
+      typeof evidence.mediaType === 'string' &&
+      evidence.mediaType.startsWith('image/') &&
+      Array.isArray(result.segments)
         ? result.segments
             .filter((s) => s.location?.kind === 'source')
             .map((s) => normalizeObservedImageRegions(s.observedRegions))
@@ -1179,7 +1181,10 @@ export async function preserveWorkbookIntakeAnalysis(input: {
             )
               return {};
             const index = originals.findIndex(
-              (e) => e.id === r.evidenceId && e.mediaType.startsWith('image/'),
+              (e) =>
+                e.id === r.evidenceId &&
+                typeof e.mediaType === 'string' &&
+                e.mediaType.startsWith('image/'),
             );
             const catalogSource = trustedGrounding?.sources?.find(
               (source) =>

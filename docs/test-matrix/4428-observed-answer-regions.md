@@ -20,3 +20,9 @@ EXIF-oriented image sent to vision; fit-inside scaling preserves correspondence.
 Per-source catalog max64, short labels, existing total byte/token/native limits;
 assessment placements max200, one per question. Root real alignment acceptance is
 required separately; synthetic SDK tests establish framing/transport, not quality.
+
+Integration regression: region catalog discovery treats missing, null, non-string
+or non-image MIME hints as unavailable geometry, while preserving authoritative
+extraction pins and interpretation queueing. Parameterized bridge test covers all
+four fallbacks plus an image catalog positive. Core capture MIME/integrity checks
+remain strict; this affects only optional presentation metadata.
