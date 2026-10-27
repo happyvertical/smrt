@@ -10,12 +10,14 @@ import {
   ExtractionFailure,
   emptyExtraction,
   validateExtractionRequest,
+  visionImageLimits,
 } from './extraction-providers.js';
 import type {
   ExtractionAdapter,
   ExtractionRequest,
   ExtractionResult,
   ProviderIdentity,
+  VisionImageLimits,
 } from './extraction-types.js';
 import { providerIdentity } from './extraction-types.js';
 import type { AnalysisLease, IngestionService } from './server.js';
@@ -32,6 +34,8 @@ export interface ExtractionSDKConfiguration {
   speech?: { identity: ProviderIdentity; options: GetTranscriberOptions };
   vision?: { identity: ProviderIdentity; options: GetAIOptions };
   imageMode?: 'ocr' | 'vision';
+  /** Vision derivatives only. Optional bounds may tighten the safe versioned defaults. */
+  visionImageLimits?: VisionImageLimits;
   /** Maximum concurrent child processes for this adapter instance (default 1). */
   maxConcurrentProcesses?: number;
   /** The deployment enforces a native-memory ceiling outside Node (e.g. container).
@@ -51,6 +55,7 @@ export function createSDKExtractionAdapter(
   const maximum = configuration.maxConcurrentProcesses ?? 1;
   if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 32)
     throw new Error('Invalid extraction concurrency');
+  visionImageLimits(configuration.visionImageLimits);
   let running = 0;
   if (configuration.nativeMemoryIsolation !== 'host-enforced')
     throw new Error('Native memory isolation is required');
@@ -257,6 +262,38 @@ function validateAndNormalizeExtractionOutput(
       ([key, value]) =>
         result.limits[key as keyof typeof result.limits] !== value,
     ) ||
+    (result.imagePreparations !== undefined &&
+      (!Array.isArray(result.imagePreparations) ||
+        result.imagePreparations.some(
+          (image) =>
+            image.policy !== 'vision-image-v1' ||
+            !location(image.location) ||
+            !['source', 'page'].includes(image.location.kind) ||
+            !Number.isSafeInteger(image.sourceOrientation) ||
+            image.sourceOrientation < 1 ||
+            image.sourceOrientation > 8 ||
+            !Number.isSafeInteger(image.maxEdge) ||
+            image.maxEdge < 256 ||
+            image.maxEdge > 2048 ||
+            !Number.isSafeInteger(image.maxEncodedBytes) ||
+            image.maxEncodedBytes < 1024 ||
+            image.maxEncodedBytes > 512 * 1024 ||
+            ![
+              image.sourceWidth,
+              image.sourceHeight,
+              image.width,
+              image.height,
+              image.encodedBytes,
+            ].every((value) => Number.isSafeInteger(value) && value > 0) ||
+            image.sourceWidth * image.sourceHeight > request.limits.maxPixels ||
+            image.width > image.maxEdge ||
+            image.height > image.maxEdge ||
+            image.encodedBytes > image.maxEncodedBytes ||
+            !['jpeg', 'png'].includes(image.format) ||
+            (image.format === 'png'
+              ? image.quality !== null
+              : ![80, 85].includes(image.quality ?? 0)),
+        ))) ||
     !Array.isArray(result.segments) ||
     !Array.isArray(result.errors) ||
     !Array.isArray(result.omitted) ||
@@ -312,6 +349,24 @@ function validateAndNormalizeExtractionOutput(
   // Structural typing permits extra host fields. Never persist them as identity.
   for (const segment of result.segments)
     segment.provenance = providerIdentity(segment.provenance);
+  if (result.imagePreparations)
+    result.imagePreparations = result.imagePreparations.map((image) => ({
+      policy: image.policy,
+      maxEdge: image.maxEdge,
+      maxEncodedBytes: image.maxEncodedBytes,
+      sourceOrientation: image.sourceOrientation,
+      sourceWidth: image.sourceWidth,
+      sourceHeight: image.sourceHeight,
+      width: image.width,
+      height: image.height,
+      format: image.format,
+      quality: image.quality,
+      encodedBytes: image.encodedBytes,
+      location:
+        image.location.kind === 'page'
+          ? { kind: 'page', page: image.location.page }
+          : { kind: 'source' },
+    }));
   result.capabilities = result.capabilities.map((capability) => ({
     ...providerIdentity(capability),
     confidence: capability.confidence,

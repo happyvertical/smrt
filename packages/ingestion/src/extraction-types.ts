@@ -50,6 +50,25 @@ export interface ExtractionSegment {
   provenance: ProviderIdentity;
   kind: 'text' | 'transcript' | 'observation';
 }
+/** Trusted vision-only bounds; callers may tighten the safe defaults. */
+export interface VisionImageLimits {
+  maxEdge?: number;
+  maxEncodedBytes?: number;
+}
+export interface VisionImagePreparation {
+  policy: 'vision-image-v1';
+  maxEdge: number;
+  maxEncodedBytes: number;
+  sourceOrientation: number;
+  location: EvidenceLocation;
+  sourceWidth: number;
+  sourceHeight: number;
+  width: number;
+  height: number;
+  format: 'jpeg' | 'png';
+  quality: number | null;
+  encodedBytes: number;
+}
 export interface ExtractionResult {
   status: 'complete' | 'partial' | 'failed' | 'unsupported';
   evidence: IntakeEvidenceDTO;
@@ -60,6 +79,8 @@ export interface ExtractionResult {
     ocrOutputFormat: 'json';
   };
   limits: ExtractionLimits;
+  /** Provider derivative only; immutable evidence still identifies the raw original. */
+  imagePreparations?: VisionImagePreparation[];
   segments: ExtractionSegment[];
   /** Full provider transcript when timed segments are also returned. */
   transcriptText?: string;
