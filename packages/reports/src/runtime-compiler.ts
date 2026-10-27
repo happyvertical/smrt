@@ -33,7 +33,8 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface, SqlAdapterType } from '@happyvertical/sql';
 import { buildAggregate } from './aggregate.js';
-import { adapterTypeFromDb, tenantColumn } from './refresh.js';
+import { adapterTypeFromDb } from './refresh.js';
+import { tenantColumn } from './registry-columns.js';
 import { describeRuntimeReportSourceFields } from './runtime-dimensions.js';
 import {
   assertRuntimeReportFilterOperator,

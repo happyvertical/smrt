@@ -7,6 +7,7 @@ import type {
   ReportAggregateFn,
   ReportBucketFieldMetadata,
   ReportFieldMetadata,
+  ReportOperand,
   ReportOptions,
   ReportTimeBucketUnit,
 } from './types.js';
@@ -46,8 +47,23 @@ function registerReportField(metadata: ReportFieldMetadata) {
   }) as PropertyDecorator;
 }
 
-export function groupBy(sourceColumn?: string): PropertyDecorator {
-  return registerReportField({ kind: 'group', sourceColumn });
+/**
+ * Group by a source column (`'status'`), a joined model's column
+ * (`'wo.title'`), or a value computed from each row (`{ expr }`).
+ */
+export function groupBy(
+  sourceColumnOrExpr?: string | { expr: ReportOperand },
+): PropertyDecorator {
+  if (typeof sourceColumnOrExpr === 'object' && sourceColumnOrExpr !== null) {
+    return registerReportField({
+      kind: 'group',
+      expr: sourceColumnOrExpr.expr,
+    });
+  }
+  return registerReportField({
+    kind: 'group',
+    sourceColumn: sourceColumnOrExpr,
+  });
 }
 
 function bucket(
@@ -70,10 +86,17 @@ export const quarter = (sourceColumn: string) =>
   bucket('quarter', sourceColumn);
 export const year = (sourceColumn: string) => bucket('year', sourceColumn);
 
-export interface AggregateDecoratorOptions {
+export interface AggregateMeasureOptions {
+  distinct?: boolean;
+  /** Aggregate a computed value of each row instead of a column. */
+  expr?: ReportOperand;
+  /** Aggregate only the rows this predicate holds for (a filtered count or sum). */
+  filter?: ReportOperand;
+}
+
+export interface AggregateDecoratorOptions extends AggregateMeasureOptions {
   fn: ReportAggregateFn;
   column?: string;
-  distinct?: boolean;
 }
 
 export function aggregate(
@@ -83,13 +106,23 @@ export function aggregate(
     kind: 'aggregate',
     fn: options.fn,
     column: options.column,
+    ...(options.expr ? { expr: options.expr } : {}),
+    ...(options.filter ? { filter: options.filter } : {}),
     distinct: options.distinct,
   } satisfies ReportAggregateFieldMetadata);
 }
 
 function aggregateDecorator(fn: ReportAggregateFn) {
-  return (column?: string, options: { distinct?: boolean } = {}) =>
-    aggregate({ fn, column, distinct: options.distinct });
+  return (
+    columnOrOptions?: string | AggregateMeasureOptions,
+    options: AggregateMeasureOptions = {},
+  ) => {
+    const column =
+      typeof columnOrOptions === 'string' ? columnOrOptions : undefined;
+    const resolved =
+      typeof columnOrOptions === 'object' ? columnOrOptions : options;
+    return aggregate({ fn, column, ...resolved });
+  };
 }
 
 export const sum = aggregateDecorator('sum');
@@ -100,20 +133,16 @@ export const max = aggregateDecorator('max');
 export function count(): PropertyDecorator;
 export function count(
   column: string,
-  options?: { distinct?: boolean },
+  options?: AggregateMeasureOptions,
 ): PropertyDecorator;
-export function count(options: { distinct?: boolean }): PropertyDecorator;
+export function count(options: AggregateMeasureOptions): PropertyDecorator;
 export function count(
-  columnOrOptions?: string | { distinct?: boolean },
-  options: { distinct?: boolean } = {},
+  columnOrOptions?: string | AggregateMeasureOptions,
+  options: AggregateMeasureOptions = {},
 ): PropertyDecorator {
   const column =
     typeof columnOrOptions === 'string' ? columnOrOptions : undefined;
   const resolvedOptions =
     typeof columnOrOptions === 'object' ? columnOrOptions : options;
-  return aggregate({
-    fn: 'count',
-    column,
-    distinct: resolvedOptions.distinct,
-  });
+  return aggregate({ fn: 'count', column, ...resolvedOptions });
 }

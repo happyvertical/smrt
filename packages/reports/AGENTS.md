@@ -122,6 +122,7 @@ See [core recipes](../core/agents/recipes.md).
 
 - Report cache tables are normal `@smrt()` tables. Runtime refresh must not create schema.
 - Store report metadata under field `_meta.__report`; scanner and runtime decorators must stay aligned.
+- Joins, row expressions and filtered measures (#3903) compile to the SDK's `AggregateSpec` (`fromAlias`, `joins`, `expr`, `filter`); expressions are literal data nodes because the scanner reads decorator arguments statically. Qualify every source column with `src` once a report joins (refresh filters do), put the tenant match in the join's `ON`, and keep joined reports on `rebuild`.
 - Keep SQL generation portable. Use the SDK `buildAggregate()`/`bucketExpr()` helpers for time buckets and `$N` placeholders.
 - Do not add a local aggregate SQL builder here; the implementation lives in `@happyvertical/sql`.
 - Refresh runtime tables are schema-managed. Runtime refresh must fail clearly when `_smrt_report_runs`, `_smrt_report_watermarks`, or `_smrt_report_locks` have not been migrated.

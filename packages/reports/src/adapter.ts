@@ -24,6 +24,7 @@ import {
   type ReportLifecycleOptions,
   type ReportLifecycleSnapshot,
 } from './lifecycle.js';
+import { fieldPolicy } from './registry-columns.js';
 import type {
   ReportAggregateFn,
   ReportDefinition,
@@ -405,29 +406,6 @@ function registeredClass(
   );
 }
 
-function fieldPolicy(field: RegistryField | undefined): {
-  sensitive: boolean;
-  readPermission?: string;
-} {
-  const meta = field?._meta ?? {};
-  const sensitivity = [field?.sensitivity, meta.sensitivity].find(
-    (value): value is string => typeof value === 'string',
-  );
-  return {
-    sensitive:
-      field?.sensitive === true ||
-      meta.sensitive === true ||
-      sensitivity === 'sensitive' ||
-      sensitivity === 'secret',
-    readPermission:
-      typeof field?.readPermission === 'string'
-        ? field.readPermission
-        : typeof meta.readPermission === 'string'
-          ? meta.readPermission
-          : undefined,
-  };
-}
-
 function descriptorMetadata(field: RegistryField | undefined): {
   format?: string;
   sensitivity?: ReportColumnSensitivity;
@@ -472,6 +450,11 @@ function queryType(type: string | undefined): DataQueryFieldDescriptor['type'] {
   }
 }
 
+/** `alias.fieldName` as `alias.field_name`; a bare name as its column. */
+function columnRef(ref: string): string {
+  return ref.split('.').map(toSnakeCase).join('.');
+}
+
 function configuredTenantField(configured?: string): string | undefined {
   return configured ? toSnakeCase(configured) : undefined;
 }
@@ -489,9 +472,14 @@ function reportColumn(
   const policy = fieldPolicy(registryField);
   // A descriptor is an exposure boundary. Without a principal/permission
   // context, sensitive, permission-gated, and non-column fields fail closed.
+  // A column that reads a joined model's field is as restricted as that field.
+  const relatedRestricted = (field.related ?? []).some(
+    (related) => related.sensitive || related.readPermission,
+  );
   if (
     policy.sensitive ||
     policy.readPermission ||
+    relatedRestricted ||
     !isColumnBackedField(registryField)
   ) {
     return undefined;
@@ -525,18 +513,16 @@ function reportColumn(
           ? (['group'] as const)
           : []),
     ],
-    ...(report.kind === 'group'
-      ? { sourceColumn: toSnakeCase(report.sourceColumn ?? field.fieldName) }
+    ...(report.kind === 'group' && !report.expr
+      ? { sourceColumn: columnRef(report.sourceColumn ?? field.fieldName) }
       : {}),
     ...(report.kind === 'bucket'
-      ? { bucket: report.unit, sourceColumn: toSnakeCase(report.sourceColumn) }
+      ? { bucket: report.unit, sourceColumn: columnRef(report.sourceColumn) }
       : {}),
     ...(report.kind === 'aggregate'
       ? {
           aggregate: report.fn,
-          ...(report.column
-            ? { sourceColumn: toSnakeCase(report.column) }
-            : {}),
+          ...(report.column ? { sourceColumn: columnRef(report.column) } : {}),
           ...(report.distinct === undefined
             ? {}
             : { distinct: report.distinct }),
