@@ -415,6 +415,9 @@ export class TaskRunner extends EventEmitter {
       await this.shutdownPromise;
     } finally {
       this.shutdownPromise = null;
+      // The drain also waited for an in-flight poll, whose own surplus
+      // release may have failed after the flush above: flush again (#3148).
+      await this.retryUnreleasedSurplus();
       // Stop off-loop lease renewal (thread) and main-loop renewal (timer) only
       // AFTER the drain, so a still-running handler kept its lease fresh.
       await this.stopLivenessThread();
@@ -512,8 +515,12 @@ export class TaskRunner extends EventEmitter {
     const generation = this.pollGeneration;
     if (!this.collection || !this.db) return true;
 
+    // stop() may begin while any await below is pending; it waits for this
+    // poll, so bail out instead of claiming work after shutdown began (#3148).
     await this.recoverStaleJobs();
+    if (generation !== this.pollGeneration) return false;
     await this.retryUnreleasedSurplus();
+    if (generation !== this.pollGeneration) return false;
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -569,8 +576,9 @@ export class TaskRunner extends EventEmitter {
    * touched, in chunked statements.
    *
    * A failed release keeps the ids; it is retried at the start of every poll
-   * and once more by `stop()`. If the process dies first, stale recovery fails
-   * those rows as orphaned (it does not requeue them).
+   * and by `stop()` both before and after its drain. If the process dies
+   * first, stale recovery fails those rows as orphaned (it does not requeue
+   * them).
    */
   private async releaseSurplusClaims(
     surplus: SmrtJob[],
