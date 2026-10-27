@@ -8,6 +8,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -214,9 +215,9 @@ export class Customer extends SmrtObject {
   }
 
   /** Save with a final contacts normalization against direct assignment. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.contacts = normalizePartyContacts(this.contacts);
-    return super.save() as Promise<this>;
+    return super.save(options) as Promise<this>;
   }
 
   /**

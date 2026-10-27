@@ -42,6 +42,8 @@ export interface Props {
   controller?: DataTableController;
   /** Registers this toolbar only when explicitly supplied. */
   dataSurface?: CollectionToolbarDataSurfaceOptions;
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** CSS class to apply to the toolbar container. */
   class?: string;
 }
@@ -61,6 +63,7 @@ let {
   onviewchange,
   controller,
   dataSurface,
+  density,
   class: className = '',
 }: Props = $props();
 
@@ -260,9 +263,10 @@ onDestroy(() => surfaceRegistration?.cleanup());
   class:toolbar--highlighted={surfaceHighlighted}
   role="search"
   tabindex="-1" data-smrt-component="CollectionToolbar"
+  data-density={density}
 >
   <div class="search">
-    <Input type="search" name="collection-search" aria-label={searchLabel} placeholder={searchPlaceholder} value={controllerState?.search ?? search} oninput={(event) => changeSearch(event.currentTarget.value)} />
+    <Input type="search" name="collection-search" {density} aria-label={searchLabel} placeholder={searchPlaceholder} value={controllerState?.search ?? search} oninput={(event) => changeSearch(event.currentTarget.value)} />
   </div>
   {#if filters}<div class="filters">{@render filters()}</div>{/if}
   {#if resultCount !== undefined}<span class="count" aria-live="polite">{resultCount} {resultCount === 1 ? 'result' : 'results'}</span>{/if}
@@ -270,7 +274,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
   {#if selectedCount > 0 && bulkActions}<div class="bulk"><span>{selectedCount} selected</span>{@render bulkActions()}</div>{/if}
   {#if actions}<div class="actions">{@render actions()}</div>{/if}
   {#if viewOptions.length > 1}
-    <SegmentedControl label="View" options={viewOptions} value={view} interaction={false} onvaluechange={changeView} />
+    <SegmentedControl label="View" {density} options={viewOptions} value={view} interaction={false} onvaluechange={changeView} />
   {/if}
 </div>
 
@@ -284,5 +288,8 @@ onDestroy(() => surfaceRegistration?.cleanup());
   .bulk { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
   .count { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
   .spacer { flex: 1; }
+  /* Controls a host renders in the filters/actions snippets inherit it too. */
+  .toolbar[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  .toolbar[data-density='comfortable'] { --smrt-control-target-min: 0px; }
 }
 </style>

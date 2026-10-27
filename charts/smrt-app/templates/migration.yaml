@@ -1,0 +1,89 @@
+{{- if eq .Values.release.phase "migrate" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migration-{{ .Values.release.id }}-{{ .Values.release.attempt }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        smrt.happyvertical.com/release: {{ .Values.release.id | quote }}
+        smrt.happyvertical.com/attempt: {{ .Values.release.attempt | quote }}
+        smrt.happyvertical.com/runtime: {{ .Values.target.migration | toJson | sha256sum | trunc 63 | quote }}
+        smrt.happyvertical.com/component: migration
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.target.migration.serviceAccountName }}
+      serviceAccountName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.target.migration.podSecurityContext }}
+      securityContext: {{ . | toJson }}
+      {{- end }}
+      restartPolicy: Never
+      terminationGracePeriodSeconds: {{ .Values.target.migration.terminationGracePeriodSeconds }}
+      containers:
+        - name: migration
+          image: {{ .Values.target.migration.image | quote }}
+          command: {{ .Values.target.migration.command | toJson }}
+          env:
+            - name: SMRT_RELEASE_ID
+              value: {{ .Values.release.id | quote }}
+            - name: SMRT_RELEASE_ATTEMPT
+              value: {{ .Values.release.attempt | quote }}
+            - name: SMRT_APP_NAME
+              value: {{ .Values.app.name | quote }}
+            - name: SMRT_APP_ENVIRONMENT
+              value: {{ .Values.app.environment | quote }}
+            {{- range .Values.target.migration.env }}
+            - {{ . | toJson }}
+            {{- end }}
+          resources: {{ .Values.target.migration.resources | toJson }}
+          {{- with .Values.target.migration.securityContext }}
+          securityContext: {{ . | toJson }}
+          {{- end }}
+          {{- if or .Values.target.migration.scratch .Values.target.migration.observerAccess }}
+          volumeMounts:
+          {{- range .Values.target.migration.scratch }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath | quote }}
+          {{- end }}
+          {{- if .Values.target.migration.observerAccess }}
+            - name: smrt-observer
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+          {{- end }}
+          {{- end }}
+      {{- if or .Values.target.migration.scratch .Values.target.migration.observerAccess }}
+      volumes:
+      {{- range .Values.target.migration.scratch }}
+        - name: {{ .name }}
+          emptyDir: {{ omit . "name" "mountPath" | toJson }}
+      {{- end }}
+      {{- if .Values.target.migration.observerAccess }}
+        - name: smrt-observer
+          projected:
+            defaultMode: 420
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: {fieldPath: metadata.namespace}
+                    - path: pod-name
+                      fieldRef: {fieldPath: metadata.name}
+                    - path: pod-uid
+                      fieldRef: {fieldPath: metadata.uid}
+      {{- end }}
+      {{- end }}
+{{- end }}

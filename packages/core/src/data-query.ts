@@ -11,6 +11,7 @@
  */
 
 import type {
+  DataQueryAllowedValue,
   DataQueryCondition,
   DataQueryConsistency,
   DataQueryFacetRequest,
@@ -47,6 +48,25 @@ export const MAX_DATA_QUERY_CURSOR_LENGTH = 2_048;
 export const MAX_DATA_QUERY_JSON_DEPTH = 16;
 export const MAX_DATA_QUERY_JSON_CONTAINER_ITEMS = 1_000;
 export const MAX_DATA_QUERY_JSON_STRING_LENGTH = 65_536;
+/**
+ * Bounds for host-declared allowed field values (#4381). The count matches
+ * {@link MAX_DATA_QUERY_IN_VALUES} so a whole declared set fits one `in`.
+ */
+export const MAX_DATA_QUERY_FIELD_VALUES = 100;
+export const MAX_DATA_QUERY_FIELD_VALUE_LENGTH = 256;
+export const MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH = 128;
+export const MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH = 512;
+/**
+ * Allowed values listed in a rejected-filter message and its
+ * `details.allowedValues` before truncation, so neither grows with the set.
+ */
+const MAX_LISTED_ALLOWED_VALUES = 20;
+/**
+ * Control (C0/C1/DEL), format (bidi overrides/isolates, zero-width, BOM),
+ * lone-surrogate, and line/paragraph-separator characters: none belongs in
+ * schema text an agent reads, and bidi controls can disguise a value.
+ */
+const UNSAFE_SCHEMA_TEXT = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
 
 const FILTER_OPERATORS = new Set<DataQueryFilterOperator>([
   'eq',
@@ -378,7 +398,16 @@ function normalizeFieldDescriptor(value: unknown): DataQueryFieldDescriptor {
   const object = plainObject(value, 'Data query schema field');
   exactKeys(
     object,
-    ['id', 'type', 'projectable', 'sortable', 'facetable', 'filterOperators'],
+    [
+      'id',
+      'type',
+      'projectable',
+      'sortable',
+      'facetable',
+      'filterOperators',
+      'values',
+      'valuesEnforced',
+    ],
     'Data query schema field',
   );
   const id = stringValue(object.id, 'Data query field id');
@@ -417,6 +446,24 @@ function normalizeFieldDescriptor(value: unknown): DataQueryFieldDescriptor {
     typeof object.sortable === 'boolean' ? object.sortable : undefined;
   const facetable =
     typeof object.facetable === 'boolean' ? object.facetable : undefined;
+  const values =
+    object.values === undefined
+      ? undefined
+      : normalizeDataQueryFieldValues(
+          object.values,
+          type as DataQueryFieldDescriptor['type'],
+          id,
+        );
+  if (object.valuesEnforced !== undefined) {
+    if (typeof object.valuesEnforced !== 'boolean') {
+      return fail(`Data query field ${id} valuesEnforced must be boolean`);
+    }
+    if (!values) {
+      return fail(`Data query field ${id} valuesEnforced requires values`);
+    }
+  }
+  // Enforcement is the default, so only the advisory form is kept.
+  const advisory = values !== undefined && object.valuesEnforced === false;
   return {
     id,
     type: type as DataQueryFieldDescriptor['type'],
@@ -424,7 +471,131 @@ function normalizeFieldDescriptor(value: unknown): DataQueryFieldDescriptor {
     ...(sortable === undefined ? {} : { sortable }),
     ...(facetable === undefined ? {} : { facetable }),
     ...(filterOperators ? { filterOperators } : {}),
+    ...(values ? { values } : {}),
+    ...(advisory ? { valuesEnforced: false } : {}),
   };
+}
+
+function schemaText(value: unknown, label: string, maxLength: number): string {
+  const text = stringValue(value, label, maxLength);
+  if (UNSAFE_SCHEMA_TEXT.test(text)) {
+    return fail(
+      `${label} cannot contain control, format, or bidirectional characters`,
+    );
+  }
+  return text;
+}
+
+/**
+ * Validate a field's host-declared allowed values (#4381): a non-empty,
+ * bounded, duplicate-free list whose values match the field type, with
+ * optional label/description text free of control and bidi characters.
+ * Declaration order is preserved. Throws {@link DataQueryValidationError}.
+ */
+export function normalizeDataQueryFieldValues(
+  value: unknown,
+  type: DataQueryFieldDescriptor['type'],
+  fieldId: string,
+): DataQueryAllowedValue[] {
+  const label = `Data query field ${fieldId} values`;
+  if (type !== 'string' && type !== 'number' && type !== 'boolean') {
+    return fail(
+      `${label} are only supported on string, number, or boolean fields`,
+    );
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    return fail(`${label} must be a non-empty array`);
+  }
+  if (value.length > MAX_DATA_QUERY_FIELD_VALUES) {
+    return fail(
+      `${label} cannot exceed ${MAX_DATA_QUERY_FIELD_VALUES} entries`,
+    );
+  }
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    const entryLabel = `${label}[${index}]`;
+    const object = plainObject(entry, entryLabel);
+    exactKeys(object, ['value', 'label', 'description'], entryLabel);
+    const raw = object.value;
+    let allowed: string | number | boolean;
+    if (type === 'string') {
+      allowed = schemaText(
+        raw,
+        `${entryLabel} value`,
+        MAX_DATA_QUERY_FIELD_VALUE_LENGTH,
+      );
+    } else if (type === 'number') {
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        return fail(`${entryLabel} value must be a finite number`);
+      }
+      allowed = raw;
+    } else {
+      if (typeof raw !== 'boolean') {
+        return fail(`${entryLabel} value must be a boolean`);
+      }
+      allowed = raw;
+    }
+    const key = signature(allowed);
+    if (seen.has(key)) return fail(`${label} must be unique`);
+    seen.add(key);
+    const valueLabel =
+      object.label === undefined
+        ? undefined
+        : schemaText(
+            object.label,
+            `${entryLabel} label`,
+            MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH,
+          );
+    const description =
+      object.description === undefined
+        ? undefined
+        : schemaText(
+            object.description,
+            `${entryLabel} description`,
+            MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH,
+          );
+    return {
+      value: allowed,
+      ...(valueLabel === undefined ? {} : { label: valueLabel }),
+      ...(description === undefined ? {} : { description }),
+    };
+  });
+}
+
+/**
+ * Reject an equality-family filter value outside a field's enforced closed
+ * set with a message the caller can act on. `null` stays allowed, and an
+ * advisory set (`valuesEnforced: false`) accepts any value.
+ */
+function assertDeclaredValue(
+  scalar: DataQueryScalar,
+  descriptor: DataQueryFieldDescriptor,
+  label: string,
+): void {
+  if (
+    scalar === null ||
+    !descriptor.values ||
+    descriptor.valuesEnforced === false
+  ) {
+    return;
+  }
+  if (descriptor.values.some((entry) => entry.value === scalar)) return;
+  const allowed = descriptor.values.map((entry) => entry.value);
+  const shown = allowed.slice(0, MAX_LISTED_ALLOWED_VALUES);
+  const listed = shown.map((entry) => JSON.stringify(entry)).join(', ');
+  const more =
+    allowed.length > MAX_LISTED_ALLOWED_VALUES
+      ? `, and ${allowed.length - MAX_LISTED_ALLOWED_VALUES} more`
+      : '';
+  fail(
+    `${label} is not an allowed value for ${descriptor.id}; use one of: ${listed}${more}`,
+    'DATA_QUERY_VALUE_NOT_ALLOWED',
+    {
+      field: descriptor.id,
+      allowedValues: shown,
+      allowedValueCount: allowed.length,
+    },
+  );
 }
 
 /** Validate and canonicalize trusted adapter query policy before use. */
@@ -642,13 +813,12 @@ function normalizeFilter(
           `Data query ${operator} value cannot exceed ${MAX_DATA_QUERY_IN_VALUES} items`,
         );
       }
-      const values = object.value.map((entry, index) =>
-        scalarForField(
-          entry,
-          descriptor,
-          `Data query ${operator} value ${index}`,
-        ),
-      );
+      const values = object.value.map((entry, index) => {
+        const entryLabel = `Data query ${operator} value ${index}`;
+        const scalar = scalarForField(entry, descriptor, entryLabel);
+        assertDeclaredValue(scalar, descriptor, entryLabel);
+        return scalar;
+      });
       const canonicalValues = [
         ...new Map(values.map((entry) => [signature(entry), entry])).values(),
       ].sort((left, right) =>
@@ -664,6 +834,9 @@ function normalizeFilter(
       descriptor,
       `Data query ${operator} value`,
     );
+    if (operator === 'eq' || operator === 'ne') {
+      assertDeclaredValue(scalar, descriptor, `Data query ${operator} value`);
+    }
     if (operator === 'like' && descriptor.type !== 'string') {
       return fail('Data query like is only available for string fields');
     }

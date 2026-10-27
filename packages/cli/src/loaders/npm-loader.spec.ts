@@ -5,12 +5,12 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import * as fastGlob from 'fast-glob';
+import * as tinyglobby from 'tinyglobby';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock modules
 vi.mock('node:fs');
-vi.mock('fast-glob');
+vi.mock('tinyglobby');
 
 describe('NPM Loader', () => {
   beforeEach(() => {
@@ -83,7 +83,7 @@ describe('NPM Loader', () => {
         '/node_modules/@org/templates/template-name/template.config.js',
       ];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { findTemplateInPackages } = await import('./npm-loader.js');
       const result = await findTemplateInPackages('template-name');
@@ -96,7 +96,7 @@ describe('NPM Loader', () => {
         '/node_modules/@org/template-name/template.config.js',
       ];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { findTemplateInPackages } = await import('./npm-loader.js');
       const result = await findTemplateInPackages('template-name');
@@ -107,7 +107,7 @@ describe('NPM Loader', () => {
     it('should find template in unscoped package', async () => {
       const mockMatches = ['/node_modules/template-name/template.config.js'];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { findTemplateInPackages } = await import('./npm-loader.js');
       const result = await findTemplateInPackages('template-name');
@@ -116,7 +116,7 @@ describe('NPM Loader', () => {
     });
 
     it('should return null if no template found', async () => {
-      vi.mocked(fastGlob.default).mockResolvedValue([]);
+      vi.mocked(tinyglobby.glob).mockResolvedValue([]);
 
       const { findTemplateInPackages } = await import('./npm-loader.js');
       const result = await findTemplateInPackages('nonexistent');
@@ -130,7 +130,7 @@ describe('NPM Loader', () => {
         '/node_modules/@org2/templates/name/template.config.js',
       ];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { findTemplateInPackages } = await import('./npm-loader.js');
       const result = await findTemplateInPackages('name');
@@ -148,7 +148,7 @@ describe('NPM Loader', () => {
         '/node_modules/template2/template.config.js',
       ];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { discoverInstalledTemplates } = await import('./npm-loader.js');
 
@@ -168,7 +168,7 @@ describe('NPM Loader', () => {
     it.skip('should handle template loading errors gracefully', async () => {
       const mockMatches = ['/node_modules/broken-template/template.config.js'];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { discoverInstalledTemplates } = await import('./npm-loader.js');
 
@@ -191,7 +191,7 @@ describe('NPM Loader', () => {
         '/node_modules/@org/templates/name/template.config.js',
       ];
 
-      vi.mocked(fastGlob.default).mockResolvedValue(mockMatches);
+      vi.mocked(tinyglobby.glob).mockResolvedValue(mockMatches);
 
       const { discoverInstalledTemplates } = await import('./npm-loader.js');
 

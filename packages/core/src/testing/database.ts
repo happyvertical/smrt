@@ -43,6 +43,31 @@ type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
 };
 
+/**
+ * Strip crash durability from a fresh local file-backed SQLite test database.
+ *
+ * Opening with `__smrtSkipVitestSchemaPreparation` also bypasses smrt-vitest's
+ * speed pragmas (#2221), so every commit here would otherwise fsync: on a
+ * loaded host that made a single ingestion fixture take 15 s. Mirrors
+ * smrt-vitest's `applySqliteSpeedPragmas()`; best-effort, never fails setup.
+ */
+async function applySqliteTestPragmas(
+  db: DatabaseInterface,
+  type: string | undefined,
+  url: string,
+): Promise<void> {
+  if ((type ?? 'sqlite') !== 'sqlite') return;
+  if (/^(:memory:|memory$|file::memory:|https?:\/\/|libsql:\/\/)/.test(url))
+    return;
+  try {
+    await db.query('PRAGMA synchronous = OFF');
+    await db.query('PRAGMA journal_mode = MEMORY');
+    await db.query('PRAGMA temp_store = MEMORY');
+  } catch {
+    // An adapter that rejects pragmas keeps its defaults.
+  }
+}
+
 function resolveSTIBaseRegistration(className: string, stiBaseName: string) {
   const registered = ObjectRegistry.getClass(className);
 
@@ -388,6 +413,7 @@ export async function getTestDatabase(
       url,
       __smrtSkipVitestSchemaPreparation: true,
     } as TestDatabaseConnectionOptions));
+  if (!existingDb) await applySqliteTestPragmas(db, type, url);
 
   // Initialize system tables (same as production)
   if (includeSystemTables) {

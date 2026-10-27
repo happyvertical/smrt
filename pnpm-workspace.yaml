@@ -135,12 +135,14 @@ overrides:
   # plugin), which declare `^1.2.x`; 1.2.2 is the patch within that range.
   'source-map-js@<1.2.2': 1.2.2
   # @modelcontextprotocol/client >=2.0.0 <2.2.0 can send OAuth credentials to an
-  # authorization server chosen by the MCP server, and @modelcontextprotocol/sdk
-  # >=1.12.0 <1.31.0 has the same flaw. Workspace packages pin client exactly at
-  # 2.0.0; 2.2.0 is the first patched client release. The transitive 1.x SDK
-  # (via @happyvertical/ai) also needs 1.32.0 for GHSA-22jm-h49p-29qw:
-  # experimental tasks in >=1.24.0 <1.32.0 were not tied to their session.
-  '@modelcontextprotocol/client@>=2.0.0 <2.2.0': 2.2.0
+  # authorization server chosen by the MCP server (GHSA-6qxp-vccf-f47h), and
+  # >=2.0.0 <2.3.0 has GHSA-6prh-2h8m-c8cw; @modelcontextprotocol/sdk
+  # >=1.12.0 <1.31.0 has the first flaw. Workspace packages pin client exactly
+  # at 2.3.1 (#4175), so this override only lifts a stray transitive copy. The
+  # transitive 1.x SDK (via @happyvertical/ai) also needs 1.32.0 for
+  # GHSA-22jm-h49p-29qw: experimental tasks in >=1.24.0 <1.32.0 were not tied
+  # to their session.
+  '@modelcontextprotocol/client@>=2.0.0 <2.3.0': 2.3.1
   '@modelcontextprotocol/sdk@>=1.12.0 <1.32.0': 1.32.0
   # @modelcontextprotocol/server >=2.0.0 <2.3.0 has two high advisories
   # (GHSA-jm63-cq47-j5jp: shared transport/server state); 2.3.1 is patched.
@@ -165,9 +167,6 @@ auditConfig:
   # their audit-policy.json records for the reachability evidence and the open
   # upstream fixes they wait on.
   ignoreGhsas:
-    # braces <=3.0.3 nested-pattern stack overflow; glob patterns are code or
-    # developer config only. Upstream: micromatch/braces#72.
-    - GHSA-vfj7-8cjw-p6xm
     # http-cache-semantics <=4.2.0 max-stale shared-cache disclosure; SMRT never
     # enables got's cache. Upstream: kornelski/http-cache-semantics#58.
     - GHSA-ch52-4w7c-c8xp

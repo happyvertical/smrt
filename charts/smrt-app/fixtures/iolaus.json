@@ -1,0 +1,557 @@
+{
+  "release": {
+    "id": "release-001",
+    "phase": "maintenance",
+    "sequence": 0,
+    "attempt": 1
+  },
+  "app": {
+    "name": "iolaus",
+    "environment": "test"
+  },
+  "current": {
+    "workloads": {
+      "web": {
+        "role": "web",
+        "writer": true,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "apps/site/build"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 2,
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/health",
+            "port": 3000
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "port": 3000,
+        "service": {
+          "port": 3000
+        },
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/live",
+            "port": 3000
+          }
+        }
+      },
+      "task": {
+        "role": "task",
+        "writer": true,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "--import",
+          "tsx",
+          "apps/site/scripts/jobs-worker.ts"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 270
+      },
+      "schedule": {
+        "role": "schedule",
+        "writer": true,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "scripts/smrt-worker.mjs",
+          "schedule"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90
+      },
+      "extractor": {
+        "role": "service",
+        "writer": false,
+        "image": "ghcr.io/example/extractor@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "python",
+          "server.py"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/health",
+            "port": 8080
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "port": 8080,
+        "service": {
+          "port": 8080
+        },
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/live",
+            "port": 8080
+          }
+        }
+      },
+      "monitor": {
+        "role": "task",
+        "writer": false,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "scripts/monitor.mjs"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-monitor-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "schedule": "*/5 * * * *"
+      }
+    },
+    "migration": {
+      "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": [
+        "node",
+        "scripts/release-migrate.mjs"
+      ],
+      "env": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "app-migration-v1",
+              "key": "uri"
+            }
+          }
+        }
+      ],
+      "guard": "smrt-release-v1",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      },
+      "terminationGracePeriodSeconds": 300
+    }
+  },
+  "target": {
+    "workloads": {
+      "web": {
+        "role": "web",
+        "writer": true,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "apps/site/build"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 2,
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/health",
+            "port": 3000
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "port": 3000,
+        "service": {
+          "port": 3000
+        },
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/live",
+            "port": 3000
+          }
+        }
+      },
+      "task": {
+        "role": "task",
+        "writer": true,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "--import",
+          "tsx",
+          "apps/site/scripts/jobs-worker.ts"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 270
+      },
+      "schedule": {
+        "role": "schedule",
+        "writer": true,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "scripts/smrt-worker.mjs",
+          "schedule"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90
+      },
+      "extractor": {
+        "role": "service",
+        "writer": false,
+        "image": "ghcr.io/example/extractor@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "python",
+          "server.py"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-runtime-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/health",
+            "port": 8080
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "port": 8080,
+        "service": {
+          "port": 8080
+        },
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/live",
+            "port": 8080
+          }
+        }
+      },
+      "monitor": {
+        "role": "task",
+        "writer": false,
+        "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "command": [
+          "node",
+          "scripts/monitor.mjs"
+        ],
+        "env": [
+          {
+            "name": "DATABASE_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-monitor-v1",
+                "key": "uri"
+              }
+            }
+          }
+        ],
+        "replicas": 1,
+        "readinessProbe": {
+          "exec": {
+            "command": [
+              "node",
+              "scripts/heartbeat.mjs",
+              "--check"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "terminationGracePeriodSeconds": 90,
+        "schedule": "*/5 * * * *"
+      }
+    },
+    "migration": {
+      "image": "ghcr.io/example/iolaus-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": [
+        "node",
+        "scripts/release-migrate.mjs"
+      ],
+      "env": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "app-migration-v1",
+              "key": "uri"
+            }
+          }
+        }
+      ],
+      "guard": "smrt-release-v1",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      },
+      "terminationGracePeriodSeconds": 300
+    }
+  },
+  "maintenance": {
+    "image": "docker.io/library/nginx@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "command": [
+      "nginx",
+      "-g",
+      "daemon off;"
+    ],
+    "port": 8080,
+    "http": {
+      "path": "/",
+      "status": 503,
+      "body": "Maintenance"
+    }
+  },
+  "bindings": {
+    "database": {
+      "secretName": "app-runtime-v1",
+      "secretKey": "uri"
+    },
+    "privateBuckets": [
+      {
+        "name": "assets",
+        "secretName": "app-assets-v1",
+        "secretKey": "config"
+      }
+    ]
+  },
+  "ingress": {
+    "host": "iolaus.example.invalid",
+    "className": "nginx"
+  }
+}

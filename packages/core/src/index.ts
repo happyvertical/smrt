@@ -142,6 +142,10 @@ export {
   DEFAULT_DATA_QUERY_RESULT_BYTES,
   MAX_DATA_QUERY_CURSOR_LENGTH,
   MAX_DATA_QUERY_FACETS,
+  MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUE_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUES,
   MAX_DATA_QUERY_FILTER_DEPTH,
   MAX_DATA_QUERY_FILTERS,
   MAX_DATA_QUERY_IN_VALUES,
@@ -150,6 +154,7 @@ export {
   MAX_DATA_QUERY_REQUEST_BYTES,
   MAX_DATA_QUERY_RESULT_BYTES,
   MAX_DATA_QUERY_WARNINGS,
+  normalizeDataQueryFieldValues,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -170,6 +175,7 @@ export {
   isAbortedTransactionError,
   isDeterministicDatabaseError,
   isNotNullViolationError,
+  isTransientConnectionError,
   isTransientDatabaseError,
   isUniqueViolationError,
 } from './db-errors';
@@ -227,6 +233,7 @@ export {
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';
+export * from './external-agent-usage.js';
 // Filesystem boundary (keeps @happyvertical/files out of neutral bundles)
 export {
   createFilesystemAdapter,

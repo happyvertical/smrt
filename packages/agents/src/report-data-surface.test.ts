@@ -381,6 +381,36 @@ describe('principal-bound report data-surface tools', () => {
     });
   });
 
+  it('passes a host rowCountHint through to report discovery', async () => {
+    const run = fakeRun([DATA_DISCOVER_TOOL_SLUG]);
+    const discover = async (overrides: Record<string, unknown>) =>
+      (await toolSet({ reports: [reportDefinition(overrides)] })
+        .get(DATA_DISCOVER_TOOL_SLUG)
+        ?.execute({ run, args: {}, db: undefined })) as Array<
+        Record<string, unknown>
+      >;
+    expect((await discover({ rowCountHint: 'about 40' }))[0]).toMatchObject({
+      rowCountHint: 'about 40',
+    });
+    expect((await discover({}))[0]).not.toHaveProperty('rowCountHint');
+  });
+
+  it('forwards the data-tool catalog action to a report catalog function (#4387)', async () => {
+    const contexts: Array<{ action: string } | undefined> = [];
+    const tools = toolSet({
+      reports: (_run, context) => {
+        contexts.push(context);
+        return [reportDefinition()];
+      },
+    });
+    await tools.get(DATA_DISCOVER_TOOL_SLUG)?.execute({
+      run: fakeRun([DATA_DISCOVER_TOOL_SLUG, DATA_QUERY_TOOL_SLUG]),
+      args: {},
+      db: undefined,
+    });
+    expect(contexts).toEqual([{ action: 'discover' }]);
+  });
+
   it('keeps silent queries local and background queries authority-free', async () => {
     const queued: unknown[] = [];
     const adapter = { tenantScope: 'tenant' as const };

@@ -131,9 +131,12 @@ export type {
   ProjectGovernanceRecordKind,
   ProjectGovernanceScope,
   ProjectGovernanceVisibility,
+  ProjectQuestionAnswerSelection,
   ProjectQuestionCreateInput,
+  ProjectQuestionOption,
   ProjectQuestionStatus,
 } from './project-governance-types.js';
+export { PROJECT_QUESTION_OTHER_OPTION_ID } from './project-governance-types.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
 export { ProjectTrackerRecipe } from './recipes';
 export {

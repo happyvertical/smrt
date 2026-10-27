@@ -130,6 +130,21 @@ boundaries for mixed/scanned PDF, Unlimited-OCR, camera observations, message
 attachments, audio timestamps and malformed/partial output. These fixtures are
 not real remote-provider integrations and are not the ADR evaluation corpus.
 
+### Host OCR data
+
+`@happyvertical/pdf` probes its Kreuzberg provider on import and logs
+`Kreuzberg could not initialize Tesseract language 'eng'` when no `eng`
+traineddata is found. Ingestion's suites do not route through Kreuzberg (PDF
+extraction uses `unpdf` or injected fixtures), so on its own this warning does
+not explain a test failure. Hosts that run Kreuzberg OCR need Tesseract
+language data: install `tesseract-ocr-eng` (Debian/Ubuntu) or `tesseract`
+(Homebrew), or place `eng.traineddata` from
+[tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) in a directory
+and export `TESSDATA_PREFIX` pointing at it. The SDK checks
+`TESSDATA_PREFIX`, then `tesseract --list-langs`, then the common
+`/usr/share`, `/usr/local/share` and Homebrew `tessdata` directories; on
+hosts without those paths (for example NixOS), set `TESSDATA_PREFIX`.
+
 No live Unlimited-OCR, speech recognition or vision quality run is claimed.
 No recorded-human-audio recognition accuracy, real camera-scene quality,
 calibrated confidence, table extraction, or automatic-action acceptance is

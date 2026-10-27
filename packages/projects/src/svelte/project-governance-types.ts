@@ -2,6 +2,7 @@ import type {
   ProjectContextReference,
   ProjectDecisionOption,
   ProjectDecisionStatus,
+  ProjectQuestionOption,
   ProjectQuestionStatus,
 } from '../project-governance-types.js';
 
@@ -10,6 +11,8 @@ export interface ProjectQuestionView {
   prompt: string;
   status: ProjectQuestionStatus;
   answer?: string;
+  options?: ProjectQuestionOption[];
+  selectedOptionId?: string;
   ownerLabel?: string;
   contextReferences?: ProjectContextReference[];
   revision: number;
@@ -32,6 +35,7 @@ export interface ProjectDecisionView {
 export interface ProjectQuestionAnswerInput {
   id: string;
   answer: string;
+  selectedOptionId?: string;
   expectedRevision: number;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-sveltekit",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "description": "Minimal SvelteKit project template with s-m-r-t framework integration",
   "type": "module",
   "main": "index.js",
@@ -8,6 +8,9 @@
     ".": "./index.js",
     "./template.config.js": "./template.config.js",
     "./template/*": "./template/*"
+  },
+  "smrt": {
+    "resourceExports": ["./template/*"]
   },
   "files": [
     "CLAUDE.md",
@@ -62,7 +65,7 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "^0.89.12",
-    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/server": "^2.3.1",
     "@playwright/test": "^1.63.0",
     "@sveltejs/adapter-node": "^5.5.7",

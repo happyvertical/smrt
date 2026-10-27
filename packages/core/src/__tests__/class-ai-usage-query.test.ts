@@ -307,3 +307,41 @@ describe('SmrtClass misc accessors', () => {
     expect(() => base.destroy()).not.toThrow();
   });
 });
+
+it('keeps external measurements outside native list and summary APIs', async () => {
+  const { ExternalAgentUsageRecorder } = await import(
+    '../external-agent-usage.js'
+  );
+  const scope = {
+    tenantId: 'tenant-a',
+    workspaceId: 'workspace',
+    projectId: 'project',
+    taskId: 'task',
+    sessionId: 'session',
+    role: 'worker',
+  };
+  const before = await instance.listAiUsage();
+  const summaries = await instance.summarizeAiUsage();
+  await new ExternalAgentUsageRecorder(db, scope).record({
+    version: 1,
+    binding: scope,
+    provider: 'fixture',
+    model: 'fixture',
+    provenance: {
+      harness: 'fixture',
+      source: 'fixture.usage',
+      eventId: 'event-0',
+    },
+    observedAt: '2026-10-25T00:00:00Z',
+    sequence: 0,
+    epoch: 0,
+    basis: 'delta',
+    baseline: 'zero',
+    scope: 'exclusive',
+    inputIncludesCache: true,
+    outputIncludesReasoning: true,
+    counters: { totalTokens: 9000 },
+  });
+  expect(await instance.listAiUsage()).toEqual(before);
+  expect(await instance.summarizeAiUsage()).toEqual(summaries);
+});

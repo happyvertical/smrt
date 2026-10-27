@@ -150,6 +150,45 @@ new text, but their digests do not record it; a host that needs provenance to
 tell the two apart bumps its own `promptVersion`, which, like any configuration
 change, makes earlier attempts read as stale (`GenerationSnapshotStaleError`).
 
+Each suggestion's `explanation` is one or two plain sentences stating what the
+document is and why the handler fits, with no deliberation, self-correction or
+restating of the rules, and is bounded at 300 code points (#4331,
+`PROPOSAL_EXPLANATION_LIMIT`). Two such sentences run about 150-250
+characters; the bound keeps a verbose model from spending its output budget
+(and hitting the `length` finish reason) on prose instead of arguments. A
+reply cut at the token limit is still refused (`finish_reason`) and partial
+JSON is never salvaged; the grammar bound and the instruction are what keep
+replies under the limit. The provider schema and the validator carry the same `maxLength`, so the provider
+copy still accepts a superset of the validator (#4261), and a grammar backend
+enforces the bound while decoding. In the provider schema `explanation` is the
+last suggestion property, after `handlerId`, `handlerVersion`, `args`,
+`evidence`, `alternatives` and `missingFields`, and the top-level keys are
+`outcome`, `suggestions`, `splits` in that order; `required` lists the same
+order. That order predates #4331 and is now pinned by a test, so explanation
+prose cannot precede the arguments. xgrammar emits object properties in schema `properties` order unless
+`any_order` is set (its default is `false`, and vLLM does not set it), and
+llguidance fixes property order to the `properties` map, then `required`. A provider
+that ignores the schema can still return a longer explanation: fresh output is
+normalized after the list deduplication above and before validation, cutting
+it to 299 code points plus `…` on a code-point boundary, so a long explanation
+never fails validation (the raw output-size and SDK `output_limit` checks
+still run first). The value-free count is recorded as
+`provenance.explanationsTruncated`, absent when zero and removed with
+`duplicatesRemoved` whenever the suggestions are discarded. It counts only
+replies from providers that ignore the schema: on a grammar backend such as
+vLLM the string closes at 300 code points with no marker, and nothing is
+counted. The cut happens
+before the invented-target echo check, so an echo beyond the bound is no
+longer seen; explanation text is never a target or authority.
+
+Replay: the bound, the property order and the instruction text feed no digest.
+The response schema is built per request and never persisted; the frozen
+interpretation configuration holds versions, identities, the catalog digest and
+`limits`, none of which include the explanation bound. Stored attempts are read
+as persisted, never re-validated or re-cut, so an earlier attempt with an
+explanation of up to 2000 characters still reads, previews and replays with
+its original `output_digest`. New attempts' digests cover the bounded form.
+
 A trusted custom `ProposalGenerator` must likewise honor cancellation, bound its
 response, and explicitly declare validated `complete` or `unknown` completion.
 The SDK currently normalizes missing/unknown finish reasons to `stop`
@@ -191,7 +230,8 @@ Model output can contain only offered handler versions, schema-valid arguments,
 retained evidence locations and offered alternative handler/candidate keys.
 Candidate IDs must occur in the offered set, and evidence IDs in retained source
 results. Unknown enums, invented IDs, extra authority/tool/approval fields and
-malformed structures fail closed. Missing required fields are retained as
+malformed structures fail closed (an invented candidate target alone is dropped
+for review instead, see below). Missing required fields are retained as
 `missingFields`, with `needs_review`; values are never invented to satisfy a
 schema. Observed page/time/source granularity is preserved. Logical scan splits
 use `proposeDocumentSplits`; originals and hashes remain intact.
@@ -241,6 +281,34 @@ rejected, even when the earlier split on that evidence was dropped. Like
 `duplicatesRemoved`, `splitsDropped` is kept only on a published, validated
 reply. Stored output is never re-validated, so earlier attempts and their
 digests replay unchanged.
+
+An invented target — a value in an offered handler's candidate reference field
+that is not among the offered candidates for that field's model — no longer
+rejects the attempt (#4289). The validator drops the key from the arguments
+(no placeholder) and revalidates what remains through the required-only path
+above: a dropped required field becomes a computed `missingFields` entry, a
+dropped optional field is simply absent, and either way the suggestion is
+`needs_review` for the reviewer to choose an offered target.
+`provenance.unofferedTargetsDropped` records `{suggestions, fields}` counts
+only, never IDs, labels or field names; it is absent when nothing was dropped
+and removed whenever the suggestions are discarded. Every candidate field that
+stays in the arguments has been checked against the offered set, so no
+unoffered value survives as a target. The attempt still rejects as before for
+an unoffered handler or alternative, unknown evidence (argument or reference),
+a non-string target, a target field the handler schema does not declare in
+`properties`, any other argument error, or a drop that exposes a refusal other
+than `required`.
+
+The exact dropped value is also searched for in the kept suggestions and splits
+(JSON-escaped, keys included); an exact echo, such as the ID repeated in an
+explanation or another argument, rejects the attempt. This guard fails closed
+on short or common values: a dropped `"1"` or `"a"` almost always occurs
+somewhere else in the output, so such a reply rejects rather than being kept.
+It is an exact-match check, not a general leak filter: a case variant, a
+reformatted copy or a fragment of the ID in free text (an explanation or a
+text argument) is not detected and may reach the reviewer as ordinary model
+prose. Free text is never a target and never authority; only the checked
+candidate fields are.
 
 A rejected reply ends the attempt as `provider_error` with the `malformed_output`
 warning and a bounded, value-free `provenance.failure` `{category, reason}` (#4207).
@@ -361,6 +429,44 @@ phrase. Transport failures through the OpenAI SDK already carried
 `code API_ERROR`. The adapter now raises `ProposalResponseError` with a fixed
 problem, and other non-SDK errors contribute the transport facts above. The
 category is unchanged (`unavailable`).
+
+### Host suggestion review (`reviewSuggestion`)
+
+A host's own checks on a generated suggestion (a label that is not the invoice
+date, an amount that is not in the document) can hold it and leave a record a
+reviewer sees:
+
+```ts
+proposals: {
+  // ...
+  reviewSuggestion: ({ suggestion, handler, evidence }) => ({
+    hold: true,                        // optional; forces needs_review
+    reasons: ['total_not_in_text'],    // optional; <= 8 codes, /^[a-z][a-z0-9_.-]{0,47}$/
+    prefilled: ['billDate'],           // optional; names declared in handler.argsSchema.properties
+  }),
+},
+```
+
+The hook is trusted, server-only and optional. It runs once per validated
+suggestion, after validation and before the decision gate, with deep copies of
+the suggestion, its offered handler and the retained evidence text. It cannot
+change `args`, `missingFields`, evidence or the outcome except through `hold`,
+and it can never upgrade: `hold` sets the suggestion (and a `proposals` outcome)
+to `needs_review`; absent or `hold: false` leaves the validator's disposition.
+
+The result is stored as `suggestion.hostReview` (`{held, reasons, prefilled}`)
+and counted in `provenance.hostReview` (`{annotated, held}`); both are absent
+when the hook records nothing. Values cannot be stored: unknown keys, free-text
+or over-long reasons, `prefilled` names that are not argument names, and any
+reason code containing one of the suggestion's own argument values (3+
+characters) make the result invalid. An invalid result, a throw, a rejection or
+a hook slower than `limits.timeoutMs` holds the suggestion with the fixed code
+`host_review_invalid` or `host_review_failed`; the error text is discarded.
+`ReviewView` shows "Checked by the shop: ..." under the arguments.
+
+Like `failureCapture`, the hook is not public read configuration and never enters
+frozen configuration or digests. Hosts keep it synchronous-cheap: it runs inside
+the generation lease.
 
 ### Failed-attempt capture (opt-in, #4285)
 

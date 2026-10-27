@@ -151,3 +151,66 @@ it('automatically emits static analytics only after persisted question/decision 
     ['project_decision_resolved', undefined],
   ]);
 });
+
+it('requires explicit choice, displays recommendation only, and always offers Other text', async () => {
+  const onanswer = vi.fn();
+  const { container } = render(ProjectQuestionsAndDecisions, {
+    props: {
+      questions: [
+        {
+          id: 'choices',
+          prompt: 'How often?',
+          status: 'open',
+          revision: 1,
+          canResolve: true,
+          options: [
+            { id: '15min', label: '15 minutes', recommended: true },
+            { id: 'hourly', label: 'Hourly' },
+          ],
+        },
+      ],
+      onanswer,
+    },
+  });
+  const radios = screen.getAllByRole('radio') as HTMLInputElement[];
+  expect(radios).toHaveLength(3);
+  expect(
+    radios.every(
+      (radio) =>
+        radio.dataset.smrtComponent === 'Input' &&
+        radio.name === 'selectedOptionId' &&
+        radio.required,
+    ),
+  ).toBe(true);
+  expect(radios.every((radio) => !radio.checked)).toBe(true);
+  expect(screen.getByLabelText('Other answer')).toBeVisible();
+  expect(screen.getByText('Recommended')).toBeVisible();
+  expect(onanswer).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Save answer' }));
+  expect(onanswer).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('radio', { name: /15 minutes/ }));
+  expect(onanswer).not.toHaveBeenCalled();
+  expect(radios.map((radio) => radio.checked)).toEqual([true, false, false]);
+  await userEvent.click(screen.getByRole('button', { name: 'Save answer' }));
+  expect(onanswer).toHaveBeenLastCalledWith({
+    id: 'choices',
+    answer: '15 minutes',
+    selectedOptionId: '15min',
+    expectedRevision: 1,
+  });
+  onanswer.mockClear();
+  await userEvent.click(
+    screen.getByRole('radio', { name: 'Other', exact: true }),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Save answer' }));
+  expect(onanswer).not.toHaveBeenCalled();
+  await userEvent.type(screen.getByLabelText('Other answer'), 'Twice daily');
+  await userEvent.click(screen.getByRole('button', { name: 'Save answer' }));
+  expect(onanswer).toHaveBeenCalledWith({
+    id: 'choices',
+    answer: 'Twice daily',
+    selectedOptionId: 'other',
+    expectedRevision: 1,
+  });
+  await expectNoA11yViolations(container);
+});

@@ -84,13 +84,18 @@ jobs:
           echo "trusted=$trusted run=$run"
 
   postgres:
-    name: Registered PostgreSQL Suites
+    name: Registered PostgreSQL Suites (${{ matrix.shard }})
     needs: scope
     if: needs.scope.outputs.run == 'true'
     # GitHub-hosted Ubuntu supports service containers for the isolated suite.
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # One shared service. CI_POSTGRES_BASE_URL keeps
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [ingestion, remaining]
+    # Each shard owns its service. CI_POSTGRES_BASE_URL keeps
     # scripts/run-with-ci-postgres.mjs on its managed path, so each package
     # still gets its own uniquely named database, dropped afterwards.
     services:
@@ -152,8 +157,12 @@ jobs:
 
       # --continue: one package's failure must not hide another's result.
       - name: Run registered PostgreSQL suites
-        run: pnpm turbo run test:postgres --concurrency=2 --continue --summarize
+        run: |
+          set -euo pipefail
+          node scripts/postgres-test-shard.mjs "$POSTGRES_SHARD" | \
+            xargs -r pnpm turbo run test:postgres --concurrency=2 --continue --summarize
         env:
+          POSTGRES_SHARD: ${{ matrix.shard }}
           CI_POSTGRES_BASE_URL: postgresql://smrt_ci:smrt_ci@127.0.0.1:5432/postgres
           CI_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,8 +170,11 @@ jobs:
 
       - name: Report per-package results
         if: always()
+        env:
+          POSTGRES_SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
+          echo "## PostgreSQL shard: $POSTGRES_SHARD" >> "$GITHUB_STEP_SUMMARY"
           if [ -d .turbo/runs ]; then
             node scripts/postgres-lane-summary.mjs | tee -a "$GITHUB_STEP_SUMMARY"
           else

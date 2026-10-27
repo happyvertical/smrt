@@ -1,5 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import {
@@ -868,6 +875,81 @@ describe('SMRT knowledge index', () => {
       'packages/demo/package.json',
       'packages/demo/package.json',
     ]);
+  });
+
+  describe('package files entries ignored as build outputs', () => {
+    const demoDir = () => join(rootDir, 'packages', 'demo');
+
+    async function missingFilesEntries(
+      files: string[],
+      gitignore?: string,
+    ): Promise<string[]> {
+      const pkgPath = join(demoDir(), 'package.json');
+      const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+      pkg.files = [...pkg.files, ...files];
+      await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+      if (gitignore !== undefined) {
+        await writeFile(join(demoDir(), '.gitignore'), gitignore);
+      }
+      const result = await checkKnowledgeFreshness({ rootDir });
+      return result.issues
+        .filter((issue) => issue.code === 'package-files-entry-missing')
+        .map((issue) => issue.message);
+    }
+
+    const missing = (entry: string) =>
+      `package.json files entry "${entry}" does not exist`;
+
+    it.each([
+      ['app', 'app\n'],
+      ['app', '/app\n'],
+      ['app', 'app/\n'],
+      ['app', '# build output\n/app/\n'],
+      ['app', 'app\r\nother\r\n'],
+      ['app', 'app  \t\n'],
+      ['./app', 'app\n'],
+      ['app/', 'app\n'],
+      ['app', '!app\napp\n'],
+    ])('skips missing entry %j ignored by %j', async (entry, gitignore) => {
+      expect(
+        await missingFilesEntries([entry, 'missing-source'], gitignore),
+      ).toEqual([missing('missing-source')]);
+    });
+
+    it.each([
+      ['a later negation', 'app\n!app\n'],
+      ['a non-top-level pattern', 'build/app\n'],
+      ['a dot-name (the rule that rejects . and ..)', '.\n..\n.app\n'],
+      ['leading whitespace, which git treats as part of the name', ' app\n'],
+    ])('still reports a missing entry after %s', async (_case, gitignore) => {
+      const entry = gitignore.includes('.app') ? '.app' : 'app';
+      expect(await missingFilesEntries([entry], gitignore)).toEqual([
+        missing(entry),
+      ]);
+    });
+
+    it('still reports a missing entry when the package has no .gitignore', async () => {
+      expect(await missingFilesEntries(['app'])).toEqual([missing('app')]);
+    });
+
+    it('treats a .gitignore that is a directory as ignoring nothing', async () => {
+      await mkdir(join(demoDir(), '.gitignore'));
+      expect(await missingFilesEntries(['app'])).toEqual([missing('app')]);
+    });
+
+    it.skipIf(process.getuid?.() === 0)(
+      'treats a permission-denied .gitignore as ignoring nothing',
+      async () => {
+        const path = join(demoDir(), '.gitignore');
+        await writeFile(path, 'app\n');
+        await chmod(path, 0o000);
+        try {
+          expect(await missingFilesEntries(['app'])).toEqual([missing('app')]);
+        } finally {
+          await chmod(path, 0o644);
+        }
+      },
+    );
   });
 
   it('checks staged files when changed mode is enabled', async () => {

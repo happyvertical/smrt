@@ -1,0 +1,6 @@
+apiVersion: v2
+name: smrt-app
+description: Explicit maintenance-window releases for existing application bindings
+type: application
+version: 0.2.0
+appVersion: "1"

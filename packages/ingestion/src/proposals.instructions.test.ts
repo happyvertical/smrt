@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GenerationOutput } from './proposal-dto.js';
+import { PROPOSAL_EXPLANATION_LIMIT } from './proposal-validation.js';
 import { proposalInstructions, proposalInstructionsFor } from './proposals.js';
 
 describe('proposal instructions', () => {
@@ -77,6 +78,20 @@ describe('proposal instructions', () => {
     // Smoke check that the fixed text stays generic: no host domain words.
     expect(proposalInstructions).not.toMatch(
       /\b(vendors?|invoices?|bills?|shops?|purchase orders?|customers?)\b/i,
+    );
+  });
+
+  it('asks for a short, plain explanation written after the fields (#4331)', () => {
+    expect(proposalInstructions).toContain(
+      'Write explanation last, as one or two plain sentences of at most 300 characters stating what the document is and why the handler fits; no deliberation, self-correction or restating of these rules.',
+    );
+    // The stated bound is the enforced one.
+    expect(proposalInstructions).toContain(
+      `at most ${PROPOSAL_EXPLANATION_LIMIT} characters`,
+    );
+    expect(proposalInstructions).not.toContain('${');
+    expect(proposalInstructions).not.toMatch(
+      /\b(vendors?|invoices?|bills?|shops?|purchase orders?|customers?|receipts?|totals?|cents)\b/i,
     );
   });
 

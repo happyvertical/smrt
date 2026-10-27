@@ -136,6 +136,14 @@ these globs with
 `turbo run build typecheck test --dry=json` on a clean tree and again after
 `turbo run build typecheck`: every task hash must match.
 
+The generated `src/types/virtual-modules.d.ts` is also a build output, not a
+source input. The root generate/build/test/typecheck tasks exclude that exact
+path, and build caching restores it. Otherwise the first build creates an input
+that invalidates the next build and its consumers (#4306). Handwritten
+declarations remain inputs; source and core generator changes still invalidate
+the dependent tasks. `scripts/turbo-generated-inputs.test.mjs` exercises real
+Turbo hashes and cache restoration in an isolated workspace.
+
 The `turbogha_` pool shares the repository's 10 GiB Actions cache quota with
 `mobile.yml`'s Gradle entries (about 3.8 GiB when this lane was added) and
 the pnpm-store and Playwright entries of `setup-environment` under
@@ -164,6 +172,15 @@ CI runs on GitHub-hosted `ubuntu-latest` runners, which never set
 `CI_ONNX_DEPS_READY`, so jobs that run `pnpm install` provision ONNX system
 dependencies through apt (#3653). Jobs with `install-deps: 'false'` skip the
 step entirely: without an install they never load `onnxruntime-node`.
+
+Before apt runs, `scripts/configure-ubuntu-apt-mirrors.mjs` routes the hosted
+runner's standard Ubuntu mirror-list entries to the canonical Ubuntu HTTPS
+archive/security endpoints. Azure mirror downloads exhausted the six-minute
+visual-job budget before project installation on #4399. Only known Ubuntu
+entries in `apt-mirrors.txt` and `apt-security-mirrors.txt` change; custom mirrors,
+distribution suites, components, signing keys and required packages are preserved.
+Missing mirror-list files leave other runner configurations unchanged. Unexpected
+filesystem failures stop setup; the visual-job budget and apt retries stay intact.
 
 Each `apt-get update` attempt is bounded at two minutes and is tried up to
 three times with a 10 s / 20 s backoff; `apt-get install` gets ten minutes per
@@ -279,6 +296,20 @@ three deterministic shards.
 `affected-core-tests`; the matrices shard disjoint package sets, while a
 failing core shard already fails `Required CI`.
 
+The affected workbench browser lane also starts after its scope decision,
+without waiting for package tests: it builds its own consumer fixture and
+does not consume their outputs. The #4306 baseline measured only 2–3 seconds
+of hosted runner queueing. Full mode still waits for the shared build cache.
+This removes a serial dependency, not a validation requirement; both lanes
+must still succeed when selected.
+
+`CI Control Plane Regression` runs the root script tests and packed export
+verifier tests on every trusted PR and merge group. It builds core's dependency
+closure for the production-manifest regression first. `Required CI` rejects
+a failed, cancelled, or unexpectedly skipped regression job. The job also
+publishes an exact-base/head impact inventory for comparison with the existing
+lanes. This inventory is diagnostic: it does not yet authorize skipping them.
+
 Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
 Both used to run in both lanes while the merge group re-ran them in full
 regardless, so the PR copies were duplicate fleet occupancy rather than the
@@ -371,15 +402,19 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
   them unless every changed file is Markdown or under `docs/`; merge groups and
   every other event always run them. External fork PRs never execute trusted
   PR-head code.
-- **Registered PostgreSQL Suites** runs on `ubuntu-latest` with one shared
-  PostgreSQL 18 service.
-  `pnpm turbo run test:postgres --concurrency=2 --continue --summarize` runs
-  every package's suite even after one fails, and
+- **Registered PostgreSQL Suites** uses two `ubuntu-latest` jobs, each with
+  its own PostgreSQL 18 service: ingestion and every remaining registered
+  suite. The selector discovers workspaces through pnpm and partitions the
+  complete registry; it does not skip unaffected packages. The #4306 sample
+  measured ingestion at 20m17s within a 33m23s execution step, with only
+  seconds of runner queueing. Isolating it removes contention without
+  dropping coverage. Both jobs retain `--concurrency=2 --continue --summarize`,
+  run every selected package even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
   summary.
 - **`postgres-required`** (hosted) is the lane's single aggregate status and
   the context the ruleset requires. It always reports: it passes when `scope` skipped the suites for a
-  docs-only PR, and fails when the suites did not succeed or the PR is from a
+  docs-only PR, and fails when either matrix shard did not succeed or the PR is from a
   fork (the same policy `Required CI` applies).
 
 The suites connect as `smrt_ci`, created per run as `LOGIN CREATEDB CREATEROLE
@@ -428,13 +463,18 @@ Merging a pull request advances `main` once and does not invoke the publisher.
 `.github/workflows/on-merge-main.yml` runs daily at 07:17 UTC and can also be
 dispatched manually for an urgent release. Each run versions every eligible
 commit since the previous release, so a group of merged pull requests produces
-one release commit and tag. The workflow checks for active merge-group runs and
+one release commit and tag. With `CI_RELEASE_WINDOW_ENABLED=true`, the
+[bounded release window](release-window.md) closes durable admissions,
+drains its finite admitted set, and reserves the source snapshot through
+primary publication and ref recording. Activation requires the reviewed
+App permissions and rules in that guide; the flag alone grants no authority.
+Without that configured window, the workflow checks for active merge-group runs and
 queue refs before starting and again before the irreversible registry and Git
 release phase. An API error or non-idle queue fails closed and defers the
 release. Once registry publication begins, the matching `main` and tag update
 must complete so the registry and Git release cannot be stranded out of sync.
 To publish a specific cohort immediately, let every pull request in the cohort
-merge and the queue drain before dispatching `on-merge-main.yml`; do not enqueue
+merge and the queue drain before dispatching `on-merge-main.yml`; in legacy mode do not enqueue
 new work while that release is publishing.
 
 Do not restore a `push` trigger on the batch workflow. A release commit changes
@@ -443,7 +483,12 @@ therefore cancels or restarts validation for entries still in the queue (#2174).
 
 Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
-SHA-256. Profiles and Sales validation additionally install each exact tarball
+SHA-256. Packed entrypoints that statically reach Svelte runtime or components
+must declare an effective `svelte` export condition. Its source target may differ
+from a compiled default target. Plain JavaScript
+data subpaths remain valid without it. The packed Vite 7/8 HTTP regression
+remains the behavioral check for shared SSR context; static verification does
+not replace it. Profiles and Sales validation additionally install each exact tarball
 into an isolated consumer, run the built CLI to generate `.smrt/register.js`,
 and import the generated file so every manifest-advertised root import is
 proven against the publish artifact. The planner's tarball is checked offline
@@ -469,6 +514,17 @@ merge-group Publish Dry Run runs the same gate on its versioned archive and
 tarballs (#4061), so a failure that depends on the release environment (a
 restored archive with no dev build, an unpublished version, no credentials)
 ejects the merge group instead of blocking the next release.
+The two `pack-release-1` and `pack-release-2` jobs each expose their own
+immutable upload ID, digest and attempt. `validate-release-shards` requires both
+successful results and complete, distinct artifact identities before Planner or
+publishing can proceed. All downloads use producer IDs, so with the window flag
+off, retrying only a failed consumer reuses successful attempt-1 uploads, and
+retrying one failed pack preserves its successful sibling's upload. No wildcard,
+latest-artifact selection or overwrite is used. With the window flag on, early
+read-only assertions retain the original owner, source, phase and deadline;
+changed-attempt retries cannot take over, and publication recovery follows the
+[original-owner procedure](release-window.md#reconciliation-and-recovery).
+
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
@@ -492,8 +548,9 @@ commit must not fill in the remaining packages under that same version: the
 artifacts would come from different source trees. Keep the npm collision guard,
 apply the interrupted run's exact generated version patch to reserve that
 version in Git, and let the next merge publish the complete package set at a new
-version. The version patch is retained for 30 days so this recovery remains
-available after the short-lived build and package artifacts expire.
+version. The version patch, workspace and pack artifacts are retained for
+30 days. With the release-window flag on, use the original-owner recovery
+procedure instead; never generate a replacement candidate or clear its fence.
 
 Documentation installs as an isolated workspace under `docs/`. Its pnpm build
 policy explicitly allows the `core-js` and `sharp` install scripts required by

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-analytics",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "smrtJsdoc": "strict",
   "description": "Analytics integration models for SMRT framework",
   "type": "module",
@@ -73,7 +73,6 @@
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.8",
     "@types/node": "24.13.6",
-    "fast-glob": "3.3.3",
     "svelte-check": "^4.7.6",
     "svelte": "^5.57.1",
     "typescript": "6.0.3",

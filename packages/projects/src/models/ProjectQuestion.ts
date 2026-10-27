@@ -9,11 +9,14 @@ import type {
   ProjectContextReference,
   ProjectGovernanceActorType,
   ProjectGovernanceVisibility,
+  ProjectQuestionOption,
   ProjectQuestionStatus,
 } from '../project-governance-types.js';
 import {
   parseContextReferences,
+  parseQuestionOptions,
   serializeContextReferences,
+  serializeQuestionOptions,
 } from './project-governance-validation.js';
 
 export interface ProjectQuestionOptions
@@ -22,6 +25,8 @@ export interface ProjectQuestionOptions
   visibility?: ProjectGovernanceVisibility;
   prompt?: string;
   answer?: string;
+  questionOptions?: ProjectQuestionOption[] | string;
+  selectedOptionId?: string;
   status?: ProjectQuestionStatus;
   ownerType?: ProjectGovernanceActorType | '';
   ownerId?: string;
@@ -56,6 +61,13 @@ export class ProjectQuestion extends SmrtPolymorphicAssociation {
 
   answer = '';
 
+  /** JSON authored choices; getOptions() includes implicit Other. */
+  @field({ default: '[]' })
+  questionOptions = '[]';
+
+  @field({ default: '' })
+  selectedOptionId = '';
+
   @field({ required: true })
   status: ProjectQuestionStatus = 'open';
 
@@ -79,6 +91,12 @@ export class ProjectQuestion extends SmrtPolymorphicAssociation {
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.prompt !== undefined) this.prompt = options.prompt;
     if (options.answer !== undefined) this.answer = options.answer;
+    if (options.questionOptions !== undefined)
+      this.questionOptions = Array.isArray(options.questionOptions)
+        ? serializeQuestionOptions(options.questionOptions)
+        : options.questionOptions;
+    if (options.selectedOptionId !== undefined)
+      this.selectedOptionId = options.selectedOptionId;
     if (options.status !== undefined) this.status = options.status;
     if (options.ownerType !== undefined) this.ownerType = options.ownerType;
     if (options.ownerId !== undefined) this.ownerId = options.ownerId;
@@ -91,6 +109,15 @@ export class ProjectQuestion extends SmrtPolymorphicAssociation {
     if (options.answeredAt !== undefined) this.answeredAt = options.answeredAt;
   }
 
+  getOptions(): ProjectQuestionOption[] {
+    const options = parseQuestionOptions(this.questionOptions);
+    return options.length ? [...options, { id: 'other', label: 'Other' }] : [];
+  }
+
+  setOptions(value: ProjectQuestionOption[]): void {
+    this.questionOptions = serializeQuestionOptions(value);
+  }
+
   getContextReferences(): ProjectContextReference[] {
     return parseContextReferences(this.contextReferences);
   }
@@ -100,6 +127,16 @@ export class ProjectQuestion extends SmrtPolymorphicAssociation {
   }
 
   protected override async validateBeforeSave(): Promise<void> {
+    this.questionOptions = serializeQuestionOptions(
+      parseQuestionOptions(this.questionOptions),
+    );
+    if (typeof this.selectedOptionId !== 'string')
+      throw new TypeError('Project question selected option id must be text.');
+    if (
+      this.selectedOptionId &&
+      !this.getOptions().some((option) => option.id === this.selectedOptionId)
+    )
+      throw new TypeError('Project question answer must match an option id.');
     this.prompt = this.prompt.trim();
     this.answer = this.answer.trim();
     this.ownerId = this.ownerId.trim();

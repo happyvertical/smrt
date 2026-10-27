@@ -1,0 +1,918 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,30}$",
+          "maxLength": 20
+        },
+        "phase": {
+          "enum": [
+            "maintenance",
+            "stopped",
+            "migrate",
+            "verify",
+            "active"
+          ]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999
+        }
+      },
+      "required": [
+        "id",
+        "phase",
+        "sequence",
+        "attempt"
+      ]
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,30}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,30}$"
+        }
+      },
+      "required": [
+        "name",
+        "environment"
+      ]
+    },
+    "current": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "$ref": "#/definitions/runtime"
+        }
+      ]
+    },
+    "target": {
+      "$ref": "#/definitions/runtime"
+    },
+    "maintenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "status": {
+              "const": 503
+            },
+            "body": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9 ._-]{1,120}$"
+            }
+          },
+          "required": [
+            "path",
+            "status",
+            "body"
+          ]
+        }
+      },
+      "required": [
+        "image",
+        "command",
+        "port",
+        "http"
+      ]
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,30}$"
+            },
+            "secretKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "secretName",
+            "secretKey"
+          ]
+        },
+        "privateBuckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,30}$"
+              },
+              "secretName": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,30}$"
+              },
+              "secretKey": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name",
+              "secretName",
+              "secretKey"
+            ]
+          }
+        }
+      },
+      "required": [
+        "database",
+        "privateBuckets"
+      ]
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "className": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,30}$"
+        },
+        "tlsSecretName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,30}$"
+        }
+      },
+      "required": [
+        "host",
+        "className"
+      ]
+    }
+  },
+  "required": [
+    "release",
+    "app",
+    "current",
+    "target",
+    "maintenance",
+    "bindings",
+    "ingress"
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "image": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$"
+    },
+    "environment": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "valueFrom": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "secretKeyRef": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,30}$"
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "name",
+                  "key"
+                ]
+              }
+            },
+            "required": [
+              "secretKeyRef"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "valueFrom"
+        ]
+      }
+    },
+    "probe": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "httpGet": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^/"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "path",
+                "port"
+              ]
+            },
+            "initialDelaySeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "periodSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "successThreshold": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "httpGet"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "exec": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "initialDelaySeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "periodSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "successThreshold": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "exec"
+          ]
+        }
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "minLength": 1
+            },
+            "memory": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "minLength": 1
+            },
+            "memory": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        }
+      },
+      "required": [
+        "requests",
+        "limits"
+      ]
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "web",
+            "task",
+            "schedule",
+            "background",
+            "service"
+          ]
+        },
+        "writer": {
+          "type": "boolean"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "env": {
+          "$ref": "#/definitions/environment"
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "port"
+          ]
+        },
+        "readinessProbe": {
+          "$ref": "#/definitions/probe"
+        },
+        "livenessProbe": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "httpGet": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "pattern": "^/"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "port"
+                  ]
+                }
+              },
+              "required": [
+                "httpGet"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "exec": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "command": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "command"
+                  ]
+                }
+              },
+              "required": [
+                "exec"
+              ]
+            }
+          ]
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scratch": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,30}$",
+                "not": {
+                  "const": "smrt-observer"
+                }
+              },
+              "mountPath": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9_][A-Za-z0-9_./-]*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "^/(var|run|proc|sys|dev)(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.{1,2}(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "//"
+                    }
+                  }
+                ]
+              },
+              "sizeLimit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "medium": {
+                "enum": [
+                  "",
+                  "Memory"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "mountPath"
+            ]
+          }
+        },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startupProbe": {
+          "$ref": "#/definitions/probe"
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "operator": {
+                "enum": [
+                  "Exists",
+                  "Equal"
+                ]
+              },
+              "value": {
+                "type": "string"
+              },
+              "effect": {
+                "enum": [
+                  "NoSchedule",
+                  "PreferNoSchedule",
+                  "NoExecute"
+                ]
+              },
+              "tolerationSeconds": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "operator"
+            ]
+          }
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/podSecurityContext"
+        },
+        "securityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "serviceAccountName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        }
+      },
+      "required": [
+        "role",
+        "writer",
+        "image",
+        "command",
+        "env",
+        "replicas",
+        "readinessProbe",
+        "resources",
+        "terminationGracePeriodSeconds"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "schedule",
+                  "background"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "replicas": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "schedule"
+            ]
+          },
+          "then": {
+            "properties": {
+              "replicas": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "service"
+            ]
+          },
+          "then": {
+            "required": [
+              "port"
+            ]
+          }
+        }
+      ]
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "env": {
+          "$ref": "#/definitions/environment"
+        },
+        "guard": {
+          "const": "smrt-release-v1"
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/podSecurityContext"
+        },
+        "securityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "serviceAccountName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "scratch": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,30}$",
+                "not": {
+                  "const": "smrt-observer"
+                }
+              },
+              "mountPath": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9_][A-Za-z0-9_./-]*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "^/(var|run|proc|sys|dev)(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.{1,2}(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "//"
+                    }
+                  }
+                ]
+              },
+              "sizeLimit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "medium": {
+                "enum": [
+                  "",
+                  "Memory"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "mountPath"
+            ]
+          }
+        },
+        "observerAccess": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "image",
+        "command",
+        "env",
+        "guard",
+        "resources",
+        "terminationGracePeriodSeconds"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "observerAccess": {
+                "const": true
+              }
+            },
+            "required": [
+              "observerAccess"
+            ]
+          },
+          "then": {
+            "required": [
+              "serviceAccountName"
+            ]
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workloads": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 30,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,30}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/workload"
+          }
+        },
+        "migration": {
+          "$ref": "#/definitions/migration"
+        }
+      },
+      "required": [
+        "workloads",
+        "migration"
+      ]
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsNonRoot": {
+          "const": true
+        },
+        "runAsUser": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "runAsGroup": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "fsGroup": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "supplementalGroups": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        },
+        "seccompProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "RuntimeDefault"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      },
+      "required": [
+        "runAsNonRoot",
+        "runAsUser",
+        "runAsGroup",
+        "seccompProfile"
+      ]
+    },
+    "securityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "const": false
+        },
+        "readOnlyRootFilesystem": {
+          "const": true
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "drop": {
+              "const": [
+                "ALL"
+              ]
+            }
+          },
+          "required": [
+            "drop"
+          ]
+        }
+      },
+      "required": [
+        "allowPrivilegeEscalation",
+        "readOnlyRootFilesystem",
+        "capabilities"
+      ]
+    }
+  }
+}

@@ -465,6 +465,34 @@ describe('dock browser tools (#2908)', () => {
 });
 
 describe('readAssistantTurnResult (#2908)', () => {
+  it('forwards capReason on done (#4379)', async () => {
+    const { encodeAssistantTurnEvent } = await import(
+      '../../../../assistant-turn-events.js'
+    );
+    const { readAssistantTurnResult } = await import(
+      '../assistant-transport.js'
+    );
+    const response = new Response(
+      encodeAssistantTurnEvent({
+        type: 'done',
+        stoppedReason: 'empty',
+        capReason: 'max_steps',
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+    const done: unknown[] = [];
+    await readAssistantTurnResult(response, {
+      mapMessage: (wire: { id: string; role: string; content: string }) =>
+        message(wire.id, wire.role as AssistantMessage['role'], wire.content),
+      onEvent: (event) => {
+        if (event.type === 'done') done.push(event);
+      },
+    });
+    expect(done).toEqual([
+      { type: 'done', stoppedReason: 'empty', capReason: 'max_steps' },
+    ]);
+  });
+
   it('maps a streamed suspension and persisted messages into a send result', async () => {
     const { encodeAssistantTurnEvent } = await import(
       '../../../../assistant-turn-events.js'

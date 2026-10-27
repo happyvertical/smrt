@@ -43,6 +43,14 @@ async function runActionSystemDependencies(directory) {
   const bin = join(directory, 'bin');
   const installMarker = join(directory, 'install-ran');
   const projectMarker = join(directory, 'project-ran');
+  const mirrorMarker = join(directory, 'mirrors-configured');
+  const workspace = join(directory, 'workspace');
+  await mkdir(join(workspace, 'scripts'), { recursive: true });
+  await writeFile(join(workspace, 'scripts/run-bounded-command.mjs'), await readFile(helper));
+  await writeFile(
+    join(workspace, 'scripts/configure-ubuntu-apt-mirrors.mjs'),
+    `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(mirrorMarker)}, 'configured');\n`,
+  );
   await mkdir(bin);
   await writeFile(join(bin, 'dpkg'), '#!/bin/sh\nexit 1\n');
   await writeFile(join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n');
@@ -63,13 +71,14 @@ async function runActionSystemDependencies(directory) {
       cwd: root,
       env: {
         ...process.env,
-        GITHUB_WORKSPACE: root.pathname,
+        GITHUB_WORKSPACE: workspace,
         PATH: `${bin}:${process.env.PATH}`,
         SMRT_INSTALL_MARKER: installMarker,
         SMRT_PROJECT_MARKER: projectMarker,
       },
     });
   } catch (error) {
+    assert.equal(await readFile(mirrorMarker, 'utf8'), 'configured');
     await Promise.all([doesNotExist(installMarker), doesNotExist(projectMarker)]);
     return error;
   }

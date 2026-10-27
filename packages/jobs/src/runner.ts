@@ -160,6 +160,30 @@ const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
 const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
 /** Ids per surplus-release statement, well under driver bind-parameter caps. */
 const SURPLUS_RELEASE_CHUNK = 500;
+/** Upper bound on a handler error's `retryAfterMs` hint (#3308). */
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Retry hints a handler error may carry (#3308): `retryable: false` for an
+ * error a retry cannot fix (bad credentials, unknown model), `retryAfterMs`
+ * for a provider-given reset time. Both are read from the error itself.
+ */
+function errorRetryHints(error: unknown): {
+  retryable: boolean;
+  retryAfterMs: number | null;
+} {
+  if (!error || typeof error !== 'object') {
+    return { retryable: true, retryAfterMs: null };
+  }
+  const hints = error as { retryable?: unknown; retryAfterMs?: unknown };
+  const retryAfterMs =
+    typeof hints.retryAfterMs === 'number' &&
+    Number.isFinite(hints.retryAfterMs) &&
+    hints.retryAfterMs > 0
+      ? Math.min(hints.retryAfterMs, MAX_RETRY_AFTER_MS)
+      : null;
+  return { retryable: hints.retryable !== false, retryAfterMs };
+}
 
 /**
  * Raised when a job exceeds its timeout under `timeoutBehavior` `'fail'`/`'kill'`.
@@ -391,6 +415,9 @@ export class TaskRunner extends EventEmitter {
       await this.shutdownPromise;
     } finally {
       this.shutdownPromise = null;
+      // The drain also waited for an in-flight poll, whose own surplus
+      // release may have failed after the flush above: flush again (#3148).
+      await this.retryUnreleasedSurplus();
       // Stop off-loop lease renewal (thread) and main-loop renewal (timer) only
       // AFTER the drain, so a still-running handler kept its lease fresh.
       await this.stopLivenessThread();
@@ -488,8 +515,12 @@ export class TaskRunner extends EventEmitter {
     const generation = this.pollGeneration;
     if (!this.collection || !this.db) return true;
 
+    // stop() may begin while any await below is pending; it waits for this
+    // poll, so bail out instead of claiming work after shutdown began (#3148).
     await this.recoverStaleJobs();
+    if (generation !== this.pollGeneration) return false;
     await this.retryUnreleasedSurplus();
+    if (generation !== this.pollGeneration) return false;
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -545,8 +576,9 @@ export class TaskRunner extends EventEmitter {
    * touched, in chunked statements.
    *
    * A failed release keeps the ids; it is retried at the start of every poll
-   * and once more by `stop()`. If the process dies first, stale recovery fails
-   * those rows as orphaned (it does not requeue them).
+   * and by `stop()` both before and after its drain. If the process dies
+   * first, stale recovery fails those rows as orphaned (it does not requeue
+   * them).
    */
   private async releaseSurplusClaims(
     surplus: SmrtJob[],
@@ -977,9 +1009,19 @@ export class TaskRunner extends EventEmitter {
     // (no `.message`) would otherwise persist an empty `last_error`.
     const safeMessage = redactErrorForPersistence(error);
 
-    if (!isTimeout && decision.shouldRetry && job.attempts < job.maxAttempts) {
+    // The handler's own hints win over the strategy: `retryable: false` is
+    // terminal, and `retryAfterMs` is a floor on the strategy's backoff.
+    const hints = errorRetryHints(error);
+    const delay = Math.max(decision.delay, hints.retryAfterMs ?? 0);
+
+    if (
+      !isTimeout &&
+      hints.retryable &&
+      decision.shouldRetry &&
+      job.attempts < job.maxAttempts
+    ) {
       // Schedule retry
-      const nextRunAt = new Date(Date.now() + decision.delay);
+      const nextRunAt = new Date(Date.now() + delay);
 
       // Conditional: don't resurrect a row that recovery already failed.
       const applied = await this.writeOwnedJob(jobId, {
@@ -1003,9 +1045,9 @@ export class TaskRunner extends EventEmitter {
         level: 'warn',
         stage: 'retrying',
         message: `Retrying job after failure: ${safeMessage}`,
-        data: { delay: decision.delay, attempts: job.attempts },
+        data: { delay, attempts: job.attempts },
       });
-      this.emit('job:retrying', job, error, decision.delay);
+      this.emit('job:retrying', job, error, delay);
     } else {
       // Job failed permanently
       const completedAt = new Date();

@@ -15,6 +15,7 @@ import {
   compileReportDefinition,
   getReportGroupingColumns,
 } from './compiler.js';
+import { fieldColumn, tenantColumn } from './registry-columns.js';
 import {
   assertReportTablesReady,
   REPORT_LOCKS_TABLE,
@@ -168,40 +169,6 @@ function sourceClassName(source: ReportSource): string {
   return source.name;
 }
 
-async function fieldColumn(
-  className: string,
-  requested: string,
-): Promise<string | null> {
-  const fields = await ObjectRegistry.getAllFields(className);
-  const requestedColumn = toSnakeCase(requested);
-
-  for (const [fieldName] of fields.entries()) {
-    if (fieldName === requested || toSnakeCase(fieldName) === requestedColumn) {
-      return requestedColumn;
-    }
-  }
-
-  return null;
-}
-
-export async function tenantColumn(className: string): Promise<string | null> {
-  const registered = ObjectRegistry.getClass(className);
-  const configuredField = registered?.tenantScopedConfig?.field;
-  if (configuredField) {
-    return toSnakeCase(configuredField);
-  }
-
-  const fields = await ObjectRegistry.getAllFields(className);
-  for (const [fieldName, field] of fields.entries()) {
-    if (field?._meta?.__tenancy?.isTenantIdField) {
-      return toSnakeCase(fieldName);
-    }
-  }
-
-  const tenantIdField = await fieldColumn(className, 'tenantId');
-  return tenantIdField;
-}
-
 async function resolveScope(
   definition: ReportDefinition,
   options: ReportRefreshOptions,
@@ -265,12 +232,27 @@ function withRefreshFilters(
   scope: RefreshScope,
   extraWhere: Record<string, unknown> = {},
 ): AggregateSpec {
+  // The source's own columns (tenant, soft delete, watermark) are qualified by
+  // its alias once the query joins other tables, which have columns of the same
+  // names.
+  const qualify = (conditions: Record<string, unknown>) =>
+    spec.fromAlias
+      ? Object.fromEntries(
+          Object.entries(conditions).map(([key, value]) => [
+            `${spec.fromAlias}.${key}`,
+            value,
+          ]),
+        )
+      : conditions;
   return {
     ...spec,
-    where: andWhere(spec.where, {
-      ...tenantWhere(scope),
-      ...extraWhere,
-    }),
+    where: andWhere(
+      spec.where,
+      qualify({
+        ...tenantWhere(scope),
+        ...extraWhere,
+      }),
+    ),
   };
 }
 
@@ -950,7 +932,13 @@ async function refreshReportOnce(
 
   const definition = await buildReportDefinition(reportCtor);
   const reportTable = getReportTableName(reportCtor);
-  const requestedMode = options.mode ?? definition.refresh?.mode ?? 'rebuild';
+  // A joined row's change does not move the source watermark, so incremental
+  // cannot see it. A joined report always rebuilds, whatever the trigger
+  // (schedule, change or job) defaulted to; declaring `incremental` on one is
+  // refused when its definition is built.
+  const requestedMode: ReportRefreshMode = definition.joins?.length
+    ? 'rebuild'
+    : (options.mode ?? definition.refresh?.mode ?? 'rebuild');
   const exists = await tableExists(options.db, reportTable);
   if (!exists) {
     throw new Error(

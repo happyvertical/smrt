@@ -5,6 +5,12 @@ import PlanPickerI18n from './__tests__/PlanPickerI18n.svelte';
 import PlanPicker, { type PlanPickerPlan } from './PlanPicker.svelte';
 import planPickerSource from './PlanPicker.svelte?raw';
 
+// Keep exact amounts and wording while allowing the host's USD symbol (e.g. US$).
+const usdFormat = new Intl.NumberFormat(undefined, {
+  style: 'currency',
+  currency: 'USD',
+});
+
 describe('PlanPicker', () => {
   it('renders pricing labels from the host translation snapshot', () => {
     const { body } = render(PlanPickerI18n, {
@@ -33,8 +39,8 @@ describe('PlanPicker', () => {
     });
     expect(body).toContain('Gratuit');
     expect(body).toContain('Prix libre');
-    expect(body).toContain('Au moins $5.00 par mois');
-    expect(body).toContain('Suggestion $15.00 par mois');
+    expect(body).toContain(`Au moins ${usdFormat.format(5)} par mois`);
+    expect(body).toContain(`Suggestion ${usdFormat.format(15)} par mois`);
     expect(body).not.toContain('Pay what you can');
     expect(body).not.toContain('Suggested');
   });
@@ -66,8 +72,8 @@ describe('PlanPicker', () => {
     });
     expect(body).toContain('Free');
     expect(body).toContain('Pay what you can');
-    expect(body).toContain('Minimum $5.00 / month');
-    expect(body).toContain('Suggested $15.00 / month');
+    expect(body).toContain(`Minimum ${usdFormat.format(5)} / month`);
+    expect(body).toContain(`Suggested ${usdFormat.format(15)} / month`);
     expect(body).not.toContain('$0.00');
   });
 

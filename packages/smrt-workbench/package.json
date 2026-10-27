@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-workbench",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "smrtJsdoc": "strict",
   "description": "Shared SMRT package and project workbench",
   "type": "module",
@@ -61,8 +61,8 @@
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "2.69.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "fast-glob": "3.3.3",
     "svelte": "^5.57.1",
+    "tinyglobby": "0.2.17",
     "tsx": "^4.23.13",
     "vite": "8.1.6"
   },

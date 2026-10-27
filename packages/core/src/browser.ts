@@ -158,6 +158,10 @@ export {
   DEFAULT_DATA_QUERY_RESULT_BYTES,
   MAX_DATA_QUERY_CURSOR_LENGTH,
   MAX_DATA_QUERY_FACETS,
+  MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUE_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUES,
   MAX_DATA_QUERY_FILTER_DEPTH,
   MAX_DATA_QUERY_FILTERS,
   MAX_DATA_QUERY_IN_VALUES,
@@ -166,6 +170,7 @@ export {
   MAX_DATA_QUERY_REQUEST_BYTES,
   MAX_DATA_QUERY_RESULT_BYTES,
   MAX_DATA_QUERY_WARNINGS,
+  normalizeDataQueryFieldValues,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -191,6 +196,7 @@ export {
   isAbortedTransactionError,
   isDeterministicDatabaseError,
   isNotNullViolationError,
+  isTransientConnectionError,
   isTransientDatabaseError,
   isUniqueViolationError,
 } from './db-errors';
@@ -570,6 +576,7 @@ export {
 // NOTE: Generators (CLI, REST, MCP) are excluded from browser builds
 // Use the main entry point for Node.js applications that need generators
 
+export * from './external-agent-usage.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,

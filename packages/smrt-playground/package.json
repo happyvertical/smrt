@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-playground",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "smrtJsdoc": "strict",
   "description": "Shared playground discovery, runtime, and host components for SMRT UI packages",
   "type": "module",
@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-ui": "workspace:*",
-    "fast-glob": "3.3.3",
+    "tinyglobby": "0.2.17",
     "tsx": "^4.23.13"
   },
   "peerDependencies": {

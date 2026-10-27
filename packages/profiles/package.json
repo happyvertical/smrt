@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-profiles",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -53,7 +53,6 @@
     "@faker-js/faker": "^10.6.0",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
-    "fast-glob": "3.3.3",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"

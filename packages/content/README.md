@@ -736,7 +736,8 @@ also get standard CRUD + custom collection-level endpoints.
 Browser QA: `pnpm test:e2e` builds package dependencies and runs Playwright.
 Playwright resets its fixture-owned `.smrt/e2e-playwright.db`, builds the app
 with the normal SvelteKit toolchain, and serves compiled assets with Vite preview
-on `127.0.0.1:4173`. App output stays in `.svelte-kit/output/`, separate from the
+on `127.0.0.1:4173` by default (`SMRT_CONTENT_E2E_PORT` selects another port).
+App output stays in `.svelte-kit/output/`, separate from the
 published library's `dist/`. Build failures or an occupied port fail startup.
 The six maintained scenarios retain their authorization and behavior assertions;
 failure traces, screenshots, and videos remain available for diagnosis.

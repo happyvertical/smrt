@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-content",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "smrtJsdoc": "strict",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
@@ -43,6 +43,7 @@
     },
     "./workbench": {
       "types": "./dist/workbench.d.ts",
+      "svelte": "./dist/workbench.js",
       "import": "./dist/workbench.js"
     }
   },

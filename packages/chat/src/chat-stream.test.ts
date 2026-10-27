@@ -21,6 +21,7 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  CHAT_STREAM_TIMEOUT_ERROR,
   type ChatStreamContext,
   type ChatStreamEvent,
   ChatStreamUnauthorizedError,
@@ -33,6 +34,10 @@ import {
   type ConversationPersona,
 } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
+import {
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  FALLBACK_HISTORY_PLACEHOLDER,
+} from './tool-loop.js';
 
 // ---------------------------------------------------------------------------
 // Mock AI boundary
@@ -188,6 +193,158 @@ describe('runChatConversationStream — plain path', () => {
       type: 'error',
       error: 'provider exploded',
     });
+  });
+
+  function scriptedStreamAI(
+    attempts: Array<{ chunks: string[]; finish?: 'stop' }>,
+  ): AIInterface & { options: ChatOptions[] } {
+    const options: ChatOptions[] = [];
+    return {
+      options,
+      async *stream(_messages: AIMessage[], o: ChatOptions) {
+        const attempt = attempts[Math.min(options.length, attempts.length - 1)];
+        options.push(o);
+        for (const chunk of attempt?.chunks ?? []) yield chunk;
+        if (attempt?.finish) o.onFinishReason?.(attempt.finish);
+      },
+    } as unknown as AIInterface & { options: ChatOptions[] };
+  }
+
+  const doneContent = (events: ChatStreamEvent[]) => {
+    const done = events.at(-1) as {
+      type: string;
+      message?: { content: string };
+    };
+    expect(done.type).toBe('done');
+    return done.message?.content;
+  };
+
+  it('retries a blank stream once and then answers with the fallback, never empty (#4379)', async () => {
+    const ai = scriptedStreamAI([{ chunks: [], finish: 'stop' }]);
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai, requestTimeoutMs: 9_000 },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(ai.options).toHaveLength(2);
+    expect(ai.options.map((o) => o.timeout)).toEqual([9_000, 9_000]);
+    expect(doneContent(events)).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
+
+    const configured = await collect(
+      runChatConversationStream({
+        context: {
+          ai: scriptedStreamAI([{ chunks: [' '], finish: 'stop' }]),
+          emptyAnswerFallback: 'Nothing came back.',
+        },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(configured)).toBe('Nothing came back.');
+  });
+
+  it('recovers when the retry answers', async () => {
+    const events = await collect(
+      runChatConversationStream({
+        context: {
+          ai: scriptedStreamAI([
+            { chunks: [] },
+            { chunks: ['Hi there'], finish: 'stop' },
+          ]),
+        },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(events)).toBe('Hi there');
+  });
+
+  it('reports two quiet stream ends as a timeout only for an SDK that reports finish reasons (#4379)', async () => {
+    // This boundary finished a reply before, so it populates finish reasons.
+    const ai = scriptedStreamAI([
+      { chunks: ['Earlier.'], finish: 'stop' },
+      { chunks: [] },
+    ]);
+    await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'first' }],
+      }),
+    );
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(events.at(-1)).toEqual({
+      type: 'error',
+      error: CHAT_STREAM_TIMEOUT_ERROR,
+    });
+  });
+
+  it('needs both attempts quiet: quiet then a finished blank gets the fallback (#4379)', async () => {
+    const ai = scriptedStreamAI([
+      { chunks: ['Earlier.'], finish: 'stop' },
+      { chunks: [] },
+      { chunks: [], finish: 'stop' },
+    ]);
+    await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'first' }],
+      }),
+    );
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(events)).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
+  });
+
+  it('drops a stored fallback reply from the history the browser sends (#4379)', async () => {
+    const seen: AIMessage[][] = [];
+    const ai = {
+      async *stream(messages: AIMessage[], o: ChatOptions) {
+        seen.push(messages);
+        yield 'ok';
+        o.onFinishReason?.('stop');
+      },
+    } as unknown as AIInterface;
+    await collect(
+      runChatConversationStream({
+        context: { ai, emptyAnswerFallback: 'No luck.' },
+        messages: [
+          { role: 'user', content: 'q1' },
+          { role: 'assistant', content: DEFAULT_EMPTY_ANSWER_FALLBACK },
+          { role: 'user', content: 'q2' },
+          { role: 'assistant', content: 'No luck.' },
+          { role: 'user', content: 'q3' },
+          { role: 'assistant', content: 'A real answer.' },
+          { role: 'user', content: 'q4' },
+        ],
+      }),
+    );
+    expect(seen[0]?.map((m) => [m.role, m.content])).toEqual([
+      ['user', 'q1'],
+      ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
+      ['user', 'q2'],
+      ['assistant', FALLBACK_HISTORY_PLACEHOLDER],
+      ['user', 'q3'],
+      ['assistant', 'A real answer.'],
+      ['user', 'q4'],
+    ]);
+  });
+
+  it('gives a blank, reason-less stream the fallback when the SDK never reports finish reasons', async () => {
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai: scriptedStreamAI([{ chunks: [] }]) },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(doneContent(events)).toBe(DEFAULT_EMPTY_ANSWER_FALLBACK);
   });
 
   it('threads prior turns as history and answers the latest user message', async () => {

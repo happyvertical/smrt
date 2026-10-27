@@ -41,6 +41,7 @@ export type {
 // Cross-package identity & tenancy data contracts (zero-runtime structural
 // interfaces; runtime classes live in smrt-users / smrt-profiles)
 export type {
+  DataQueryAllowedValue,
   DataQueryCondition,
   DataQueryConsistency,
   DataQueryConsistencyMode,

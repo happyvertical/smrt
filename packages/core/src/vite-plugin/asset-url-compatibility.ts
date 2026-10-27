@@ -1,4 +1,33 @@
-import type { Plugin } from 'vite';
+import { resolve } from 'node:path';
+import { importProjectVite } from '../utils/import-project-vite.js';
+import type {
+  SmrtAwaitable,
+  SmrtHookContext,
+  SmrtVitePlugin,
+} from './plugin-contract.js';
+
+/** An external transform is preserved verbatim, including its source map. */
+interface AssetTransform {
+  filter: { code?: string | RegExp };
+  handler(
+    this: SmrtHookContext,
+    code: string,
+    id: string,
+    options?: { ssr?: boolean },
+  ): SmrtAwaitable<
+    string | { code?: string; map?: object | string | null } | null | void
+  >;
+}
+
+function isAssetTransform(value: unknown): value is AssetTransform {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { filter?: unknown; handler?: unknown };
+  return (
+    !!candidate.filter &&
+    typeof candidate.filter === 'object' &&
+    typeof candidate.handler === 'function'
+  );
+}
 
 // Returning true on exhaustion is conservative: only a complete walk may prove
 // that comment/string matches cannot require Vite's asset transform.
@@ -45,34 +74,39 @@ const unsafeAssetFilter = /new\s+URL.+import\.meta\.url/s;
  * resolution and rewriting. Vite 8 and unrecognized filter shapes are untouched.
  * Install once in root plugins; existing worker plugin factories are preserved.
  */
-export function smrtAssetUrlCompatibility(): Plugin {
+export function smrtAssetUrlCompatibility(): SmrtVitePlugin {
   let supportedVite = false;
-  const createPlugin = (includeWorkers: boolean): Plugin => ({
+  const createPlugin = (includeWorkers: boolean): SmrtVitePlugin => ({
     name: 'smrt-asset-url-compatibility',
     ...(includeWorkers
       ? ({
           async config(config) {
-            const { version } = await import('vite');
+            const { version } = await importProjectVite(
+              resolve(process.cwd(), config.root ?? '.'),
+              'Asset URL compatibility',
+            );
             supportedVite = version.startsWith('7.');
             if (!supportedVite) return;
             const existing = config.worker?.plugins;
-            return {
-              worker: {
-                plugins: (...args) => [
-                  existing?.(...args) ?? [],
-                  createPlugin(false),
-                ],
-              },
+            // Mutate the config using Vite's supported config-hook contract.
+            // Foreign worker plugins remain opaque pass-through values; only
+            // the appended SMRT plugin is authored against our hook contract.
+            config.worker = {
+              ...config.worker,
+              plugins: (...args) => [
+                existing?.(...args) ?? [],
+                createPlugin(false),
+              ],
             };
           },
-        } satisfies Partial<Plugin>)
+        } satisfies Partial<SmrtVitePlugin>)
       : {}),
     configResolved(config) {
       if (!supportedVite) return;
       for (const plugin of config.plugins) {
         if (plugin.name !== 'vite:asset-import-meta-url') continue;
         const transform = plugin.transform;
-        if (!transform || typeof transform !== 'object') continue;
+        if (!isAssetTransform(transform)) continue;
         const filter = transform.filter;
         const code = filter?.code;
         if (

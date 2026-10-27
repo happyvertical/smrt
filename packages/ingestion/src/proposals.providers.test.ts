@@ -14,6 +14,10 @@ import {
   UNPORTABLE_SCHEMA_KEYWORDS,
 } from './proposal-sdk.js';
 import {
+  PROPOSAL_EXPLANATION_LIMIT,
+  suggestionSchema,
+} from './proposal-validation.js';
+import {
   ProposalResponseError,
   providerFailureReason,
   rawProviderOutput,
@@ -453,6 +457,83 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       ajv.validate(portableResponseSchema(schemas.oneOfBesideAnyOf), 2),
     ).toBe(false);
   });
+  it('orders the fields before a bounded explanation, equal to the validator bound (#4331)', () => {
+    const schema = proposalResponseSchema(offeredInput) as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    // xgrammar (vLLM's default `any_order: false`) and llguidance emit object
+    // properties in the schema's `properties` order, so this is decode order.
+    expect(Object.keys(schema.properties)).toEqual([
+      'outcome',
+      'suggestions',
+      'splits',
+    ]);
+    expect(schema.required).toEqual(['outcome', 'suggestions', 'splits']);
+    const variant = (
+      schema.properties.suggestions as {
+        items: {
+          anyOf: Array<{
+            properties: Record<string, unknown>;
+            required: string[];
+          }>;
+        };
+      }
+    ).items.anyOf[0];
+    const order = [
+      'handlerId',
+      'handlerVersion',
+      'args',
+      'evidence',
+      'alternatives',
+      'missingFields',
+      'explanation',
+    ];
+    expect(Object.keys(variant.properties)).toEqual(order);
+    // llama.cpp-style converters put required properties first; every
+    // suggestion property is required, in the same order.
+    expect(variant.required).toEqual(order);
+    expect(variant.properties.explanation).toEqual({
+      type: 'string',
+      maxLength: PROPOSAL_EXPLANATION_LIMIT,
+    });
+    // Equal bounds keep the #4261 superset invariant for the explanation:
+    // whatever the validator accepts, the grammar can produce.
+    const validator = suggestionSchema({
+      maxHandlers: 5,
+      maxCandidates: 5,
+      maxSuggestions: 5,
+      maxInputBytes: 10000,
+      maxOutputBytes: 10000,
+      maxQueryLength: 1000,
+      timeoutMs: 1000,
+    }).properties.suggestions.items.properties.explanation;
+    expect(validator.maxLength).toBe(
+      (variant.properties.explanation as { maxLength: number }).maxLength,
+    );
+    const ajv = new Ajv({ strict: false, validateFormats: false });
+    const reply = (explanation: string) => ({
+      outcome: 'needs_review',
+      suggestions: [
+        {
+          handlerId: 'identify-assignment',
+          handlerVersion: '1',
+          args: { lessonId: 'lesson-id' },
+          evidence: [
+            { evidenceId: 'evidence-1', location: { kind: 'source' } },
+          ],
+          alternatives: [],
+          missingFields: [],
+          explanation,
+        },
+      ],
+      splits: [],
+    });
+    const atLimit = '\u{1F600}'.repeat(PROPOSAL_EXPLANATION_LIMIT);
+    expect(ajv.validate(schema, reply(atLimit))).toBe(true);
+    expect(ajv.validate(schema, reply(`${atLimit}x`))).toBe(false);
+  });
+
   it('does not narrow an object to {} when patternProperties is stripped (#4260)', () => {
     const metadata = {
       type: 'object',

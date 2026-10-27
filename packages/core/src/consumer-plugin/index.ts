@@ -6,7 +6,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
-import type { ConfigEnv, Plugin } from 'vite';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -22,6 +21,10 @@ import type {
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import type {
+  SmrtConfigEnv,
+  SmrtVitePlugin,
+} from '../vite-plugin/plugin-contract.js';
 import {
   clearGeneratedSvelteKitRouteFiles,
   reconcileSvelteKitRouteGitignore,
@@ -435,7 +438,7 @@ async function assertConsumerSvelteKitFormerRouteRootsAreSafe(
   userConfig: unknown,
   projectRoot: string,
   routesDir: readonly string[],
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<void> {
   if (routesDir.length === 0) return;
   const activeParticipants = await activeSvelteKitRouteParticipants(
@@ -460,7 +463,7 @@ async function reconcileConsumerSvelteKitRouteRoots(
   projectRoot: string,
   routesDir: string[],
   afterReconciled: () => void,
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<void> {
   const remaining = new Set(routesDir);
   const reconcileOne = (routesDir: string) => {
@@ -698,7 +701,9 @@ function selectConsumerRouteManifest(
 /**
  * Consumer plugin for projects that use SMRT packages
  */
-export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
+export function smrtConsumer(
+  options: SmrtConsumerOptions = {},
+): SmrtVitePlugin {
   const {
     packages = [],
     generateTypes = true,
@@ -955,7 +960,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     typesGenerated = true;
   }
 
-  const plugin: Plugin = {
+  const plugin: SmrtVitePlugin = {
     name: 'smrt-consumer',
 
     // SvelteKit inventories routes in its config hook. Run before it so a

@@ -187,7 +187,12 @@ describe('EditForm', () => {
     await userEvent.selectOptions(status, 'paid');
     const total = screen.getByLabelText(/Total amount/);
     expect(total).toHaveAttribute('readonly');
-    expect(total).toHaveValue('$5,134.50');
+    expect(total).toHaveValue(
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+      }).format(5134.5),
+    );
     expect(screen.getAllByText('Worked out from the line items.')).toHaveLength(
       2,
     );

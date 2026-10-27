@@ -6608,9 +6608,10 @@ export function proposalSuite(
                   location: candidate.evidence[0].segments[0].location,
                 },
               ],
-              alternatives: [],
+              // Normalization counts survive the discard below (#4331 review).
+              alternatives: [`${CREATE}@1`, `${CREATE}@1`],
               missingFields: [],
-              explanation: 'Split from retained text.',
+              explanation: `Split from retained text. ${'x'.repeat(400)}`,
             },
           ],
           // The corrected split's pages, but an invalid group (repeated page).
@@ -6631,6 +6632,10 @@ export function proposalSuite(
       expect(result.provenance.splitsDropped).toEqual({
         count: 1,
         checks: ['split_groups'],
+      });
+      expect(result.provenance).toMatchObject({
+        duplicatesRemoved: 1,
+        explanationsTruncated: 1,
       });
     });
     function chooseCreate(
@@ -7049,11 +7054,14 @@ export function proposalSuite(
         };
         const suggestion = value.suggestions[0];
         if (kind === 'handler') suggestion.handlerId = '@evil/app:execute';
+        // An invented target is dropped for review only when nothing else is
+        // wrong (#4289); beside another argument error it still rejects.
         if (kind === 'target') {
           suggestion.handlerId = ATTACH;
           suggestion.args = {
             contentId: randomUUID(),
             evidenceId: args[0].evidence[0].evidenceId,
+            sudo: true,
           };
         }
         if (kind === 'evidence')
@@ -7194,18 +7202,23 @@ export function proposalSuite(
         ).rows[0].output_digest,
       ).toBe(intakeBindingDigest(published));
     });
-    it('records duplicatesRemoved and splitsDropped only for a published, validated reply (#4286/#4288 review)', async () => {
+    it('records duplicatesRemoved, splitsDropped and explanationsTruncated only for a published, validated reply (#4286/#4288/#4331 review)', async () => {
       const duplicate = (unoffered: boolean) => {
         chooseCreate();
         const original = calls.getMockImplementation()!;
         calls.mockImplementation(async (...args) => {
           const response = await original(...args);
           const value = response.output as {
-            suggestions: Array<{ handlerId: string; alternatives: string[] }>;
+            suggestions: Array<{
+              handlerId: string;
+              alternatives: string[];
+              explanation: string;
+            }>;
             splits: Array<{ evidenceId: string; groups: number[][] }>;
           };
           const [suggestion] = value.suggestions;
           suggestion.alternatives = [`${CREATE}@1`, `${CREATE}@1`];
+          suggestion.explanation = `Request form. ${'x'.repeat(400)}`;
           if (unoffered) suggestion.handlerId = 'unoffered';
           value.splits = [
             { evidenceId: args[0].evidence[0].evidenceId, groups: [[9]] },
@@ -7222,10 +7235,14 @@ export function proposalSuite(
       expect(rejected.output.provenance).not.toHaveProperty(
         'duplicatesRemoved',
       );
+      expect(rejected.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
       duplicate(false);
       const measured = await generate();
       expect(measured.output.provenance.duplicatesRemoved).toBe(1);
       expect(measured.output.provenance.splitsDropped?.count).toBe(1);
+      expect(measured.output.provenance.explanationsTruncated).toBe(1);
       const published = (
         await service.getCompletedAnalysis(
           measured.itemId,
@@ -7240,7 +7257,10 @@ export function proposalSuite(
       expect(limited.output.suggestions).toEqual([]);
       expect(limited.output.provenance).not.toHaveProperty('duplicatesRemoved');
       expect(limited.output.provenance).not.toHaveProperty('splitsDropped');
-      // A malformed decision-gate answer after validation clears both counts.
+      expect(limited.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+      // A malformed decision-gate answer after validation clears every count.
       configuration.limits.maxOutputBytes = maxOutputBytes;
       configuration.decision = {
         identity,
@@ -7254,6 +7274,69 @@ export function proposalSuite(
       expect(gated.output.warnings).toContain('malformed_output');
       expect(gated.output.provenance).not.toHaveProperty('duplicatesRemoved');
       expect(gated.output.provenance).not.toHaveProperty('splitsDropped');
+      expect(gated.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+    });
+    it('cuts an over-long explanation instead of rejecting and records only the count (#4331)', async () => {
+      const verbose = (unoffered: boolean) => {
+        chooseCreate();
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          const value = response.output as {
+            suggestions: Array<{ handlerId: string; explanation: string }>;
+          };
+          value.suggestions[0].explanation = `Request form. Wait, ${'the rules say '.repeat(30)}`;
+          if (unoffered) value.suggestions[0].handlerId = 'unoffered';
+          return response;
+        });
+      };
+      chooseCreate();
+      const clean = await generate();
+      expect(clean.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+      verbose(false);
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      expect(input.output.provenance.failure).toBeUndefined();
+      expect(input.output.provenance.explanationsTruncated).toBe(1);
+      const [suggestion] = input.output.suggestions;
+      expect(Array.from(suggestion.explanation).length).toBeLessThanOrEqual(
+        300,
+      );
+      expect(suggestion.explanation).toMatch(/^Request form\. Wait, /);
+      expect(suggestion.explanation.endsWith('\u2026')).toBe(true);
+      const published = (
+        await service.getCompletedAnalysis(input.itemId, input.lease.attemptId)
+      ).result;
+      // The stored digest covers the bounded form; replay reads it as stored.
+      expect(
+        (
+          await db.query(
+            'SELECT output_digest FROM intake_analysis_attempts WHERE id=?',
+            [input.lease.attemptId],
+          )
+        ).rows[0].output_digest,
+      ).toBe(intakeBindingDigest(published));
+      // Discarded suggestions take the count with them.
+      verbose(true);
+      const rejected = await generate();
+      expect(rejected.output.outcome).toBe('provider_error');
+      expect(rejected.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
+      verbose(false);
+      const maxOutputBytes = configuration.limits.maxOutputBytes;
+      configuration.limits.maxOutputBytes =
+        Buffer.byteLength(JSON.stringify(published)) - 1;
+      const limited = await generate();
+      configuration.limits.maxOutputBytes = maxOutputBytes;
+      expect(limited.output.warnings).toContain('output_limit');
+      expect(limited.output.provenance).not.toHaveProperty(
+        'explanationsTruncated',
+      );
     });
     it('drops an invalid split and keeps the suggestions instead of failing the attempt (#4288)', async () => {
       chooseCreate();
@@ -7578,6 +7661,568 @@ export function proposalSuite(
       expect((await db.query('SELECT id FROM intake_actions')).rows).toEqual(
         [],
       );
+    });
+    describe('host suggestion review hook', () => {
+      it('presents bounded explanations to the host and retains both normalization records on replay', async () => {
+        chooseCreate();
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await original(...args);
+          const generated = response.output as {
+            suggestions: Array<{ explanation: string }>;
+          };
+          generated.suggestions[0].explanation = 'x'.repeat(350);
+          return response;
+        });
+        const seen = vi.fn();
+        configuration.reviewSuggestion = ({ suggestion }) => {
+          seen(suggestion.explanation);
+          return { hold: true, reasons: ['check_required'] };
+        };
+        const input = await generate();
+        expect(seen).toHaveBeenCalledWith(`${'x'.repeat(299)}…`);
+        expect(input.output.provenance.explanationsTruncated).toBe(1);
+        expect(input.output.provenance.hostReview).toEqual({
+          annotated: 1,
+          held: 1,
+        });
+        expect(input.output.suggestions[0].disposition).toBe('needs_review');
+        expect(await output(input.lease)).toEqual(input.output);
+      });
+      it('holds with a value-free failure code when an asynchronous host check never settles', async () => {
+        chooseCreate();
+        configuration.limits.timeoutMs = 20;
+        configuration.reviewSuggestion = () => new Promise(() => {});
+        const input = await generate();
+        expect(input.output.suggestions[0]).toMatchObject({
+          disposition: 'needs_review',
+          hostReview: {
+            held: true,
+            reasons: ['host_review_failed'],
+            prefilled: [],
+          },
+        });
+        expect(input.output.automaticActionEligible).toBe(false);
+      });
+      it('is absent by default: no annotation, no provenance entry', async () => {
+        chooseCreate();
+        const input = await generate();
+        expect(input.output.suggestions[0].disposition).toBe(
+          'ready_for_review',
+        );
+        expect(input.output.suggestions[0]).not.toHaveProperty('hostReview');
+        expect(input.output.provenance).not.toHaveProperty('hostReview');
+      });
+      it('holds at needs_review and records value-free annotations, replayable', async () => {
+        chooseCreate();
+        const seen = vi.fn();
+        configuration.reviewSuggestion = async ({
+          suggestion,
+          handler,
+          evidence,
+        }) => {
+          seen({ handler: handler.id, text: !!evidence[0].segments[0].text });
+          suggestion.args.title = 'mutated copy';
+          return {
+            hold: true,
+            reasons: ['total_not_in_text'],
+            prefilled: ['title'],
+          };
+        };
+        const input = await generate();
+        expect(seen).toHaveBeenCalledWith({ handler: CREATE, text: true });
+        expect(input.output.outcome).toBe('needs_review');
+        expect(input.output.suggestions[0]).toMatchObject({
+          disposition: 'needs_review',
+          args: { title: 'Draft', body: 'Body' },
+          hostReview: {
+            held: true,
+            reasons: ['total_not_in_text'],
+            prefilled: ['title'],
+          },
+        });
+        expect(input.output.provenance.hostReview).toEqual({
+          annotated: 1,
+          held: 1,
+        });
+        expect(await output(input.lease)).toEqual(input.output);
+        expect(input.output.automaticActionEligible).toBe(false);
+      });
+      it('annotates without holding and never upgrades a needs_review suggestion', async () => {
+        chooseCreate();
+        configuration.reviewSuggestion = () => ({ prefilled: ['body'] });
+        const annotated = await generate();
+        expect(annotated.output.suggestions[0].disposition).toBe(
+          'ready_for_review',
+        );
+        expect(annotated.output.suggestions[0].hostReview).toEqual({
+          held: false,
+          reasons: [],
+          prefilled: ['body'],
+        });
+        expect(annotated.output.provenance.hostReview).toEqual({
+          annotated: 1,
+          held: 0,
+        });
+        chooseCreate({ body: 'Body' });
+        const originalCalls = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const response = await originalCalls(...args);
+          const value = response.output as {
+            suggestions: Array<{ missingFields: string[] }>;
+          };
+          value.suggestions[0].missingFields = ['title'];
+          return response;
+        });
+        configuration.reviewSuggestion = () => ({ hold: false });
+        const missing = await generate();
+        expect(missing.output.suggestions[0].disposition).toBe('needs_review');
+        expect(missing.output.suggestions[0]).not.toHaveProperty('hostReview');
+      });
+      it.each([
+        [
+          'a throw',
+          () => {
+            throw new Error('document text SECRET-4400');
+          },
+          'host_review_failed',
+        ],
+        [
+          'a rejection',
+          async () => Promise.reject(new Error('x')),
+          'host_review_failed',
+        ],
+        ['an unknown key', () => ({ note: 'Draft' }), 'host_review_invalid'],
+        [
+          'a non-argument field',
+          () => ({ prefilled: ['nope'] }),
+          'host_review_invalid',
+        ],
+        [
+          'free text reason',
+          () => ({ reasons: ['Not the invoice date'] }),
+          'host_review_invalid',
+        ],
+        [
+          'too many reasons',
+          () => ({ reasons: Array.from({ length: 9 }, (_, i) => `r${i}`) }),
+          'host_review_invalid',
+        ],
+        [
+          'a reason echoing an argument value',
+          () => ({ reasons: ['bad_draft_value'] }),
+          'host_review_invalid',
+        ],
+        ['a non-boolean hold', () => ({ hold: 'yes' }), 'host_review_invalid'],
+      ] as const)('holds with a fixed code on %s', async (_label, hook, code) => {
+        chooseCreate();
+        configuration.reviewSuggestion = hook as never;
+        const input = await generate();
+        expect(input.output.suggestions[0]).toMatchObject({
+          disposition: 'needs_review',
+          hostReview: { held: true, reasons: [code], prefilled: [] },
+        });
+        expect(JSON.stringify(input.output)).not.toContain('SECRET-4400');
+      });
+      it('does not enter the frozen configuration or read configuration', async () => {
+        chooseCreate();
+        configuration.reviewSuggestion = () => ({ hold: true });
+        expect(
+          JSON.stringify(proposalReadConfiguration(configuration)),
+        ).not.toContain('reviewSuggestion');
+      });
+    });
+    describe('invented candidate targets (#4289)', () => {
+      const INVENTED = 'ffffffff-4289-4289-8289-invented0042';
+      // ATTACH with the model's invented document ID in its required
+      // candidate field; `edit` adjusts the suggestion before it returns.
+      function invent(
+        edit: (suggestion: {
+          handlerId: string;
+          args: Record<string, unknown>;
+          missingFields: string[];
+          explanation: string;
+        }) => void = () => {},
+      ) {
+        calls.mockImplementation(async (input) => {
+          const suggestion = {
+            handlerId: ATTACH,
+            handlerVersion: '1',
+            args: {
+              contentId: INVENTED,
+              evidenceId: input.evidence[0].evidenceId,
+            } as Record<string, unknown>,
+            evidence: [
+              {
+                evidenceId: input.evidence[0].evidenceId,
+                location: input.evidence[0].segments[0].location,
+              },
+            ],
+            alternatives: [],
+            missingFields: [] as string[],
+            explanation: 'Attach to the named document.',
+          };
+          edit(suggestion);
+          return {
+            completion: 'complete' as const,
+            output: {
+              outcome: 'proposals',
+              suggestions: [suggestion],
+              splits: [],
+            },
+          };
+        });
+      }
+      // Every stored row of every table, so a trace anywhere fails.
+      async function storedRows() {
+        const tables = (
+          await db.query(
+            dialect === 'postgres'
+              ? "SELECT tablename AS name FROM pg_tables WHERE schemaname='public'"
+              : "SELECT name FROM sqlite_master WHERE type='table'",
+          )
+        ).rows.map((row) => String(row.name));
+        expect(tables).toContain('intake_analysis_attempts');
+        const dump: unknown[] = [];
+        for (const table of tables)
+          dump.push((await db.query(`SELECT * FROM "${table}"`)).rows);
+        return JSON.stringify(dump);
+      }
+      function promotingDecision() {
+        configuration.decision = {
+          identity,
+          client: {
+            getCapabilities: async () => ({ decisions: true }),
+            decide: async (raw) => {
+              const request = raw as DecisionRequest;
+              const answers: Record<string, unknown> = {};
+              for (const [key, question] of Object.entries(request.questions)) {
+                if (question.type === 'predicate')
+                  answers[key] = { type: 'predicate', probability: 0.99 };
+                else if (question.type === 'score')
+                  answers[key] = {
+                    type: 'score',
+                    score: 0,
+                    confidence: 1,
+                    levels: question.criteria,
+                    probabilities: { '0': 1, '1': 0, '2': 0 },
+                  };
+                else {
+                  const choices = Object.keys(question.criteria);
+                  answers[key] = {
+                    type: 'choice',
+                    choice: `${ATTACH}@1`,
+                    confidence: 1,
+                    probabilities: Object.fromEntries(
+                      choices.map((choice) => [
+                        choice,
+                        choice === `${ATTACH}@1` ? 1 : 0,
+                      ]),
+                    ),
+                  };
+                }
+              }
+              return {
+                answers,
+                provenance: {
+                  provider: identity.provider,
+                  model: identity.model,
+                },
+                usage: {},
+              };
+            },
+          },
+        };
+      }
+      const generatedPreview = (input: Awaited<ReturnType<typeof generate>>) =>
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: randomUUID(),
+              expectedRevision: 0,
+              requestId: randomUUID(),
+            },
+          ],
+        });
+      it('drops an invented required target, marks it missing and leaves no trace of it', async () => {
+        const offered = await document('Offered destination');
+        promotingDecision();
+        invent();
+        const input = await generate();
+        expect(input.output.outcome).toBe('proposals');
+        expect(input.output.provenance.failure).toBeUndefined();
+        expect(input.output.provenance.decision.configured).toBe(true);
+        expect(input.output.automaticActionEligible).toBe(false);
+        expect(
+          input.output.offered
+            .flatMap((entry) => entry.candidates)
+            .map((candidate) => candidate.id),
+        ).toContain(String(offered.id));
+        expect(input.output.suggestions[0]).toMatchObject({
+          handlerId: ATTACH,
+          missingFields: ['contentId'],
+          disposition: 'needs_review',
+        });
+        expect(input.output.suggestions[0].args).not.toHaveProperty(
+          'contentId',
+        );
+        expect(input.output.provenance.unofferedTargetsDropped).toEqual({
+          suggestions: 1,
+          fields: 1,
+        });
+        // Replay: the immutable snapshot reads back unchanged.
+        expect(await output(input.lease)).toEqual(input.output);
+        // The generated arguments alone never preview, persist or execute.
+        await expect(generatedPreview(input)).rejects.toBeInstanceOf(
+          HandlerArgumentsInvalidError,
+        );
+        expect(
+          (await db.query('SELECT id FROM intake_proposals')).rows,
+        ).toHaveLength(0);
+        expect(await storedRows()).not.toContain(INVENTED);
+        // The reviewer chooses an offered target; the full arguments are
+        // revalidated, so the invented one cannot come back this way.
+        const actionId = await service.createAction(input.itemId, 'human', {
+          origin: 'generated-proposal',
+          intentionKey: 'human',
+        });
+        const preview = (contentId: string) =>
+          service.previewProposal({
+            itemId: input.itemId,
+            actionId,
+            attemptId: input.lease.attemptId,
+            expectedRevision: 0,
+            requestId: randomUUID(),
+            handlerId: ATTACH,
+            handlerVersion: '1',
+            args: { ...input.output.suggestions[0].args, contentId },
+          });
+        // Reviewer preview revalidates the chosen target in the handler: an
+        // ID that does not exist, or a real document outside the caller's
+        // tenant, is refused as unavailable before anything is recorded.
+        await expect(preview(randomUUID())).rejects.toThrow(
+          /^Target unavailable$/,
+        );
+        await expect(
+          preview(String((await document('Foreign', randomUUID())).id)),
+        ).rejects.toThrow(/^Target unavailable$/);
+        expect(
+          (await db.query('SELECT id FROM intake_proposals')).rows,
+        ).toHaveLength(0);
+        const review = await preview(String(offered.id));
+        expect(review.state).toBe('waiting_review');
+        await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
+        expect(
+          (await db.query('SELECT id FROM intake_executions')).rows,
+        ).toHaveLength(0);
+      });
+      it('drops an invented optional target and still needs review', async () => {
+        const offered = await document('Offered destination');
+        handlers[1].argsSchema = {
+          ...handlers[1].argsSchema,
+          required: ['evidenceId'],
+        };
+        invent();
+        const input = await generate();
+        expect(input.output.outcome).toBe('proposals');
+        expect(input.output.suggestions[0]).toMatchObject({
+          missingFields: [],
+          disposition: 'needs_review',
+        });
+        expect(input.output.suggestions[0].args).not.toHaveProperty(
+          'contentId',
+        );
+        expect(input.output.provenance.unofferedTargetsDropped).toEqual({
+          suggestions: 1,
+          fields: 1,
+        });
+        expect(input.output.provenance).not.toHaveProperty(
+          'missingFieldsCorrection',
+        );
+        expect(input.output.automaticActionEligible).toBe(false);
+        expect(await storedRows()).not.toContain(INVENTED);
+        // A reviewer who supplies a target goes through full revalidation:
+        // an unoffered one is refused, an offered one previews for review.
+        const actionId = await service.createAction(input.itemId, 'human', {
+          origin: 'generated-proposal',
+          intentionKey: 'human',
+        });
+        const preview = (contentId: string) =>
+          service.previewProposal({
+            itemId: input.itemId,
+            actionId,
+            attemptId: input.lease.attemptId,
+            expectedRevision: 0,
+            requestId: randomUUID(),
+            handlerId: ATTACH,
+            handlerVersion: '1',
+            args: { ...input.output.suggestions[0].args, contentId },
+          });
+        // Reviewer preview revalidates the chosen target in the handler: an
+        // ID that does not exist, or a real document outside the caller's
+        // tenant, is refused as unavailable before anything is recorded.
+        await expect(preview(randomUUID())).rejects.toThrow(
+          /^Target unavailable$/,
+        );
+        await expect(
+          preview(String((await document('Foreign', randomUUID())).id)),
+        ).rejects.toThrow(/^Target unavailable$/);
+        expect(
+          (await db.query('SELECT id FROM intake_proposals')).rows,
+        ).toHaveLength(0);
+        const review = await preview(String(offered.id));
+        expect(review.state).toBe('waiting_review');
+        await expect(service.authorizeAutomatic(actionId)).rejects.toThrow();
+        expect(
+          (await db.query('SELECT id FROM intake_executions')).rows,
+        ).toHaveLength(0);
+      });
+      it('keeps an invented target beside a required miss for review', async () => {
+        invent((suggestion) => {
+          delete suggestion.args.evidenceId;
+        });
+        const input = await generate();
+        expect(input.output.suggestions[0]).toMatchObject({
+          missingFields: ['contentId', 'evidenceId'],
+          disposition: 'needs_review',
+        });
+        expect(input.output.suggestions[0].args).toEqual({});
+        expect(input.output.provenance.missingFieldsCorrection).toEqual({
+          suggestions: 1,
+          added: 2,
+          removed: 0,
+        });
+        expect(input.output.provenance.unofferedTargetsDropped).toEqual({
+          suggestions: 1,
+          fields: 1,
+        });
+        expect(await storedRows()).not.toContain(INVENTED);
+      });
+      it('is deterministic across attempts for the same reply', async () => {
+        invent();
+        const first = await generate();
+        const second = await generate();
+        // Only the per-item evidence ID differs between the two items.
+        const normalized = (generated: typeof first) =>
+          JSON.stringify(generated.output.suggestions).replaceAll(
+            String(generated.output.suggestions[0].args.evidenceId),
+            'evidence',
+          );
+        expect(normalized(second)).toBe(normalized(first));
+        expect(first.output.suggestions[0].args).not.toHaveProperty(
+          'contentId',
+        );
+        expect(second.output.provenance.unofferedTargetsDropped).toEqual(
+          first.output.provenance.unofferedTargetsDropped,
+        );
+      });
+      it.each([
+        [
+          'an unoffered handler',
+          (suggestion: { handlerId: string }) => {
+            suggestion.handlerId = '@evil/app:execute';
+          },
+        ],
+        [
+          'another argument error',
+          (suggestion: { args: Record<string, unknown> }) => {
+            suggestion.args.evidenceId = 4417;
+          },
+        ],
+        [
+          'unknown argument evidence',
+          (suggestion: { args: Record<string, unknown> }) => {
+            suggestion.args.evidenceId = randomUUID();
+          },
+        ],
+        [
+          'an echo in the explanation',
+          (suggestion: { explanation: string }) => {
+            suggestion.explanation = `Attach to ${INVENTED}.`;
+          },
+        ],
+      ])('still rejects an invented target beside %s', async (_name, edit) => {
+        invent(edit as never);
+        const input = await generate();
+        expect(input.output.outcome).toBe('provider_error');
+        expect(input.output.suggestions).toEqual([]);
+        expect(input.output.warnings).toContain('malformed_output');
+        expect(input.output.provenance).not.toHaveProperty(
+          'unofferedTargetsDropped',
+        );
+        expect(input.output.provenance.failure?.reason).not.toContain('4417');
+        expect(await storedRows()).not.toContain(INVENTED);
+        expect((await db.query('SELECT id FROM intake_actions')).rows).toEqual(
+          [],
+        );
+      });
+      it('drops the count when a later stage fails the attempt', async () => {
+        invent();
+        configuration.decision = {
+          identity,
+          client: {
+            getCapabilities: async () => ({ decisions: true }),
+            decide: async () => ({
+              answers: {},
+              provenance: {
+                provider: identity.provider,
+                model: identity.model,
+              },
+              usage: {},
+            }),
+          },
+        };
+        const input = await generate();
+        expect(input.output.outcome).toBe('provider_error');
+        expect(input.output.suggestions).toEqual([]);
+        expect(input.output.provenance).not.toHaveProperty(
+          'unofferedTargetsDropped',
+        );
+      });
+      it('drops the count in the output-limit fallback', async () => {
+        invent();
+        const measured = await generate();
+        expect(
+          measured.output.provenance.unofferedTargetsDropped,
+        ).toBeDefined();
+        const published = (
+          await service.getCompletedAnalysis(
+            measured.itemId,
+            measured.lease.attemptId,
+          )
+        ).result;
+        configuration.limits.maxOutputBytes =
+          Buffer.byteLength(JSON.stringify(published)) - 30;
+        const limited = await generate();
+        expect(limited.output.warnings).toContain('output_limit');
+        expect(limited.output.suggestions).toEqual([]);
+        expect(limited.output.provenance).not.toHaveProperty(
+          'unofferedTargetsDropped',
+        );
+      });
+      it('drops the count when a human split is not respected', async () => {
+        chooseCreate();
+        const input = await generate(await source(100000, true));
+        const evidence = await service.getEvidence(input.itemId);
+        const split = await service.reviseLogicalSplit({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          evidenceId: evidence[0].id,
+          groups: [[1], [2]],
+          requestId: 'split-4289',
+        });
+        const next = await reextractPDF(input.itemId, split.revision);
+        invent();
+        await service.generateProposals(next.lease);
+        const result = await output(next.lease);
+        expect(result.warnings).toContain('human_split_not_respected');
+        expect(result.suggestions).toEqual([]);
+        expect(result.provenance).not.toHaveProperty('unofferedTargetsDropped');
+      });
     });
     it.each([
       'unknown',

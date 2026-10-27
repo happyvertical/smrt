@@ -839,7 +839,7 @@ async function sqliteProcessRace(signal: AbortSignal) {
       if (args.operation === 'vote') await runtime.polls.vote(args.id, 'parks');
       else if (args.operation === 'close') await runtime.polls.close(args.id);
       else await runtime.reactions.setReaction('app:Article', args.id, 'like', true);
-    } catch (error) { process.stderr.write(error.message); process.exitCode = 1; }
+    } catch (error) { console.error(error); process.exitCode = 1; }
     finally { await runtime.database.close?.(); }
   `;
   async function race(operations: Array<{ operation: string; id: string }>) {

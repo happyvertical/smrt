@@ -1,0 +1,41 @@
+{{- if gt (len .Release.Name) 20 }}{{ fail "Helm release name must be at most 20 characters" }}{{ end }}
+{{- $root := . }}
+{{- $runtimeImages := dict }}
+{{- $migrationSecrets := dict }}
+{{- range .Values.target.migration.env }}
+{{- if hasPrefix "SMRT_" .name }}{{ fail "SMRT_ migration environment names are reserved for release identity" }}{{ end }}
+{{- $_ := set $migrationSecrets .valueFrom.secretKeyRef.name true }}
+{{- end }}
+{{- if hasKey $migrationSecrets .Values.bindings.database.secretName }}{{ fail "database binding must use runtime credentials, not migration credentials" }}{{ end }}
+{{- range $runtime := list .Values.current .Values.target }}
+{{- if $runtime }}
+{{- $webs := 0 }}
+{{- range $name, $w := $runtime.workloads }}
+{{- if has $name (list "maintenance" "inventory") }}{{ fail "reserved workload name" }}{{ end }}
+{{- if eq $w.role "web" }}
+{{- $webs = add1 $webs }}
+{{- if not $w.service }}{{ fail "web workloads require service" }}{{ end }}
+{{- end }}
+{{- if and $w.schedule $w.service }}{{ fail "CronJobs cannot expose a service" }}{{ end }}
+{{- range $w.env }}
+{{- if hasKey $migrationSecrets .valueFrom.secretKeyRef.name }}{{ fail "runtime and migration credentials must use different Secrets" }}{{ end }}
+{{- end }}
+{{- end }}
+{{- if ne $webs 1 }}{{ fail "each runtime must declare exactly one web workload" }}{{ end }}
+{{- end }}
+{{- end }}
+{{- range .Values.target.workloads }}{{ $_ := set $runtimeImages .image true }}{{ end }}
+{{- if not (hasKey $runtimeImages .Values.target.migration.image) }}{{ fail "migration must use a target workload image" }}{{ end }}
+{{- if empty .Values.target.migration.env }}{{ fail "migration-only credentials are required" }}{{ end }}
+
+{{- range $runtime := list .Values.current .Values.target }}
+{{- if $runtime }}
+{{- range $w := append (values $runtime.workloads) $runtime.migration }}
+{{- $names := dict }}{{ $paths := dict }}
+{{- range $w.scratch }}
+{{- if or (hasKey $names .name) (hasKey $paths .mountPath) }}{{ fail "scratch names and mount paths must be unique" }}{{ end }}
+{{- $_ := set $names .name true }}{{ $_ := set $paths .mountPath true }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

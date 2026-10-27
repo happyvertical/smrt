@@ -159,6 +159,13 @@ cache whole-plan results, or change database pool defaults.
 
 ### Generate metadata and migrate
 
+The Vite integrations support Vite 5–8. Install Vite in the consuming build
+project. s-m-r-t's plugin declarations use a structural contract independent of
+Vite's bundler types; build-time Vite loading resolves from the project root.
+Core keeps Vite development-only, so server consumers need no build tool and
+different Vite peer contexts cannot duplicate the s-m-r-t runtime registry.
+`node scripts/verify-packed-vite-peer.mjs` verifies the packed consumer contract.
+
 Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
 directory containing your objects:
 
@@ -585,7 +592,7 @@ file has run.
 | Export | Description |
 |--------|------------|
 | `DispatchBus` | Persistent message bus with wildcard subscriptions |
-| `createDispatchBus` | Factory function for DispatchBus |
+| `createDispatchBus` | Factory function for DispatchBus; retries a transient connection failure at startup (`startupRetry`, default 5 attempts from 500 ms, `false` to disable) |
 | `Dispatch` | Dispatch record model |
 | `DispatchSubscription` | Persistent subscription model |
 
@@ -680,6 +687,7 @@ instead of matching messages.
 | `isAbortedTransactionError` | Statement issued inside an aborted PostgreSQL transaction (`25P02`) |
 | `isDeterministicDatabaseError` | A retry cannot change the outcome |
 | `isTransientDatabaseError` | Contention or availability; a retry may succeed |
+| `isTransientConnectionError` | The connection itself dropped, was refused, or the server could not accept it yet (class `08`, `57P01`–`57P03`, `53300`, `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`); an unresolvable or unreachable host is not retried |
 | `DatabaseErrorKind` | Union of classification kinds |
 | `DatabaseErrorClassification` | Structured result of `classifyDatabaseError` |
 
@@ -817,3 +825,19 @@ Consumer integration tests create disposable applications in
 compiler configuration and aliases. Core's production, test typecheck, and
 declaration builds exclude these directories, including leftovers from an
 interrupted test run; the authored consumer integration tests remain included.
+
+
+## External agent measurements
+
+`ExternalAgentUsageRecorder` persists validated provider counters on the existing
+AI usage store, with trusted tenant/project/task/session ownership bindings,
+immutable replay-safe sequences and nullable unknown counters.
+`summarizeExternalAgentUsage` returns per-session projections separately from
+hosted AI billing. See the [contract and validation design](../../docs/implementation/external-agent-usage-test-design.md).
+
+The initial contract supports one task, provider, model, and counter semantic per
+real native harness session. Rebinding an existing session fails closed. A new
+task requires a real fresh session or future explicit attribution-span support;
+never invent session IDs or reset a cumulative baseline to count prior work twice.
+Only adapter-proven exclusive structured measurements are supported. Call
+`ensureSystemTables(db)` before entering a caller-owned transaction.

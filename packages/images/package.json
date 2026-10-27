@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-images",
-  "version": "0.57.30",
+  "version": "0.57.32",
   "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -28,6 +28,7 @@
     },
     "./workbench": {
       "types": "./dist/workbench.d.ts",
+      "svelte": "./dist/workbench.js",
       "import": "./dist/workbench.js"
     },
     "./svelte": {

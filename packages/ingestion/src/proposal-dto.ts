@@ -64,6 +64,24 @@ export interface GeneratedSuggestion {
   missingFields: string[];
   explanation: string;
   disposition: 'ready_for_review' | 'needs_review';
+  /**
+   * Host annotation recorded by `ProposalConfiguration.reviewSuggestion`;
+   * absent when the host recorded nothing. Value-free by construction.
+   */
+  hostReview?: HostSuggestionReview;
+}
+/**
+ * What the application's own checks recorded about one suggestion: which
+ * argument fields it filled itself and bounded reason codes, never values.
+ * `held` forces `needs_review`; a host can never upgrade a disposition.
+ */
+export interface HostSuggestionReview {
+  /** The host held the suggestion at `needs_review`. */
+  held: boolean;
+  /** Bounded codes (`^[a-z][a-z0-9_.-]{0,47}$`, at most 8). */
+  reasons: string[];
+  /** Argument field names (declared in the handler's `argsSchema`) the host filled itself. */
+  prefilled: string[];
 }
 /**
  * Value-free record that the validator replaced model-declared `missingFields`
@@ -76,6 +94,16 @@ export interface MissingFieldsCorrection {
   added: number;
   /** Declared fields that were not actually missing. */
   removed: number;
+}
+/**
+ * Value-free record that the validator dropped invented targets from offered
+ * candidate fields (#4289): counts only, never IDs, labels or field names.
+ */
+export interface UnofferedTargetsDropped {
+  /** Suggestions that had at least one target dropped. */
+  suggestions: number;
+  /** Candidate fields whose unoffered value was dropped. */
+  fields: number;
 }
 export interface GenerationOutput {
   version: 1;
@@ -128,6 +156,11 @@ export interface GenerationOutput {
      */
     duplicatesRemoved?: number;
     /**
+     * Suggestion explanations cut to the explanation bound before validation
+     * (#4331); a count only, absent when none were.
+     */
+    explanationsTruncated?: number;
+    /**
      * Split proposals dropped because they failed a fixed check, named here
      * (#4288); never page numbers or evidence ids. Absent when none were.
      */
@@ -139,6 +172,13 @@ export interface GenerationOutput {
     failure?: { category: string; reason: string };
     /** Present only when a declaration was corrected; absent output is unchanged. */
     missingFieldsCorrection?: MissingFieldsCorrection;
+    /** Present only when an invented target was dropped; absent output is unchanged. */
+    unofferedTargetsDropped?: UnofferedTargetsDropped;
+    /**
+     * Counts of suggestions the host's `reviewSuggestion` hook annotated or
+     * held; absent when it recorded nothing or is not configured.
+     */
+    hostReview?: { annotated: number; held: number };
   };
   automaticActionEligible: false;
 }

@@ -62,15 +62,76 @@ const rows = await reports.list({ orderBy: 'issued_month DESC' });
 | Decorator | Meaning |
 | --- | --- |
 | `@report({ source, ... })` | Declare the source and refresh policy |
-| `@groupBy(column?)` | Group by a source column |
+| `@groupBy(column?)` | Group by a source column, a joined column (`'wo.title'`), or `{ expr }` |
 | `@minute()` through `@year()` | Bucket a source timestamp |
-| `@sum()`, `@avg()`, `@min()`, `@max()` | Aggregate a source column |
-| `@count()` | Count rows or distinct values |
+| `@sum()`, `@avg()`, `@min()`, `@max()` | Aggregate a source or joined column, or a row `{ expr }`, optionally `{ filter }`ed |
+| `@count()` | Count rows or distinct values, optionally `{ filter }`ed |
 | `@aggregate()` | Define a custom supported aggregate shape |
 
 Every non-system report field must be a grouping key, time bucket, or aggregate.
 Metadata is stored under the field's `_meta.__report` contract so scanner and
 runtime compilation stay aligned.
+
+## Joins, row expressions and filtered measures
+
+A report can read a related model, compute a value from each row, and count
+only the rows a condition holds for. Each compiles to the SQL aggregate API in
+`@happyvertical/sql`; nothing is built as SQL text here.
+
+```ts
+@report({
+  source: AttendanceSegment,
+  // Many-to-one: AttendanceSegment.workRefId holds a WorkOrder id.
+  joins: { wo: { source: WorkOrder, on: 'workRefId' } },
+})
+class LabourByWorkOrder extends SmrtReport {
+  @groupBy() workRefId = '';
+  @groupBy('wo.title') workOrder = '';
+  @max('wo.estimatedHours') estimatedHours = 0;
+
+  // A row expression: seconds from createdAt to claimedAt, averaged.
+  @avg({ expr: { op: 'secondsBetween', later: { col: 'claimedAt' }, earlier: { col: 'createdAt' } } })
+  avgResponseSeconds = 0;
+
+  // A filtered count: one number rather than a two-row grouping.
+  @count({ filter: { op: 'eq', left: { col: 'halted' }, right: { value: true } } })
+  haltedSegments = 0;
+}
+```
+
+- **Joins** are many-to-one, keyed `alias: { source, on, to?, type? }`. `on` is a
+  field of the report source; `to` is the related field it points at (default
+  `id`) and must identify one related row per tenant, or source rows repeat.
+  `type` is `left` (default, keeps a source row whose related row is gone) or
+  `inner`. Aliases are lower-case identifiers and not `src`. Reference a joined
+  field as `alias.field` in `@groupBy`, the aggregate and bucket decorators,
+  expressions and `where`.
+- **Tenancy is built into the join.** When the related model is tenant-scoped the
+  join also matches `tenant_id` between the two rows, so an id that points at
+  another tenant's row never matches. A tenant-scoped join from a source with no
+  tenant field is refused. Soft-deleted related rows never match.
+- **Field policy follows the data.** A report column that reads a joined field
+  marked sensitive or `readPermission`-gated is withheld from the adapter
+  descriptor exactly as that field would be.
+- **Expressions are data, written as literals** (the manifest scanner reads
+  decorator arguments statically, so builder calls would be dropped): `{ col }`,
+  `{ value }`, `add`/`sub`/`mul`/`div`, `secondsBetween`, `eq`/`ne`/`lt`/`lte`/
+  `gt`/`gte`, `and`/`or`/`not`, `isNull`/`isNotNull` and `coalesce`. A `col`
+  names a model field, never a SQL column. `div` returns NULL for a zero
+  divisor. `expr` and `filter` work with `count`, `sum`, `avg`, `min` and `max`.
+- **Joined reports refresh by rebuild only.** A change to a joined row does not
+  move the source's watermark, so declaring `mode: 'incremental'` is refused and
+  any trigger that asks for an incremental refresh (a schedule, `onChange`, a
+  job) is run as a rebuild. List the joined models in `refresh.onChange` to
+  rebuild when they change. Rows whose tenant is `NULL` (the global slice) do not
+  match tenant-scoped related rows, because `NULL = NULL` is not true in SQL.
+- **Saved views and snapshots notice definition changes.** A column's expression, filter and the joins it reads are part of its descriptor (`semantics`) and so of the report definition fingerprint; changing one invalidates stored views and export snapshots. Reports without joins or expressions keep their existing fingerprints.
+- **No drilldown by joined or computed keys.** A row grouped by a joined column or
+  a computed value cannot be bound back to source rows by a source column, so
+  `buildReportDrilldownQuery()` refuses such reports.
+
+The runtime-report grammar stays closed: runtime reports have no joins or
+expressions.
 
 ## Refresh modes
 
