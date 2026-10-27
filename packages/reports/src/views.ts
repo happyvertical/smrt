@@ -432,6 +432,8 @@ export function reportDefinitionFingerprint(
       ...(column.semantics ? { semantics: column.semantics } : {}),
     })),
     schema: descriptor.schema,
+    // Only present for joined reports, so other fingerprints do not move.
+    ...(descriptor.semantics ? { semantics: descriptor.semantics } : {}),
   };
   return (
     'rv1_' +

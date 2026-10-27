@@ -132,6 +132,12 @@ export interface ReportAdapterDescriptor {
   queryExecution: ReportQueryExecutionDescriptor;
   dataTable: ReportDataTableDescriptor;
   drilldown: ReportDrilldownDescriptor;
+  /**
+   * Present when the report joins other models: every join and the report's
+   * `where`/`having`, canonically rendered, so a changed join changes the
+   * definition fingerprint even when no visible column reads it. Opaque.
+   */
+  semantics?: string;
   refresh: ReportRefreshDescriptor;
 }
 
@@ -1029,6 +1035,15 @@ export async function buildReportAdapterDescriptor(
     },
     dataTable,
     drilldown: drilldownDescriptor(columns, definition.sourceClassName),
+    ...(definition.joins?.length
+      ? {
+          semantics: canonical({
+            joins: definition.joins,
+            where: definition.where,
+            having: definition.having,
+          }),
+        }
+      : {}),
     refresh: refreshDescriptor(definition.refresh, options.refreshPermission),
   };
 }

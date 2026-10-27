@@ -632,6 +632,19 @@ describe('report joins and row expressions (#3903)', () => {
     if (halted) halted.semantics = halted.semantics?.replace('true', 'false');
     expect(reportDefinitionFingerprint(changed)).not.toBe(before);
     expect(reportDefinitionFingerprint(descriptor)).toBe(before);
+
+    // A join no visible column reads still shapes every row.
+    const rejoined = structuredClone(descriptor);
+    rejoined.semantics = rejoined.semantics?.replace('"left"', '"inner"');
+    expect(descriptor.semantics).toContain('"left"');
+    expect(reportDefinitionFingerprint(rejoined)).not.toBe(before);
+  });
+
+  it('adds nothing to the descriptor of a report without joins', async () => {
+    const descriptor = await buildReportAdapterDescriptor(
+      JoinIncrementalReportNoJoins(),
+    );
+    expect(descriptor.semantics).toBeUndefined();
   });
 });
 
