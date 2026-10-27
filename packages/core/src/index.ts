@@ -175,6 +175,7 @@ export {
   isAbortedTransactionError,
   isDeterministicDatabaseError,
   isNotNullViolationError,
+  isTransientConnectionError,
   isTransientDatabaseError,
   isUniqueViolationError,
 } from './db-errors';
