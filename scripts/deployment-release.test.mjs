@@ -335,7 +335,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
       return JSON.stringify(doc.spec.values);
     }
     if (args.includes('create'))
-      return JSON.stringify({ items: all.filter((o) => o.kind === 'Ingress') });
+      return JSON.stringify({ items: config.fixtureRenderedResources ?? all.filter((o) => o.kind === 'Ingress') });
     if (args.includes('ocirepository'))
       return JSON.stringify({
         ...source,
@@ -549,6 +549,9 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       'observer-ca',
       'pod-admission',
       'pod-permission',
+      'pod-sa-drift',
+      'controller-sa-drift',
+      'controller-token-volume',
     ]) {
       const calls = [];
       const command = async (name, args, input) => {
@@ -594,7 +597,9 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         if (args.includes('configmap') && args.includes('kube-root-ca.crt')) return JSON.stringify({ data: failure === 'observer-ca' ? {} : { 'ca.crt': '-----BEGIN CERTIFICATE-----fixture' } });
         if (args.includes('create') && args.includes('--dry-run=server')) {
           if (failure === 'pod-admission') throw new Error('denied');
-          return input;
+          const admitted = JSON.parse(input);
+          if (failure === 'pod-sa-drift') admitted.spec.serviceAccountName = 'alternate';
+          return JSON.stringify(admitted);
         }
         if (args.includes('can-i'))
           return (failure === 'observer-permission' && args.includes('--as=system:serviceaccount:test:observer')) ||
@@ -607,7 +612,12 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
             : 'yes';
         if (args.includes('apply')) {
           if (failure === 'admission') throw new Error('admission denied');
-          return '';
+          const admitted = JSON.parse(input);
+          if (admitted.spec?.template) {
+            if (failure === 'controller-sa-drift') admitted.spec.template.spec.serviceAccountName = 'alternate';
+            if (failure === 'controller-token-volume') admitted.spec.template.spec.volumes = [{ name: 'injected', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }];
+          }
+          return JSON.stringify(admitted);
         }
         if (args.includes('create'))
           return JSON.stringify({
@@ -728,7 +738,7 @@ test('retained terminal declared CronJob Pods are drained; active or terminating
   }
 });
 test('migration attempt completion binds actual Pod image; failure cannot retry implicitly', async () => {
-  for (const failure of [null, 'job', 'image']) {
+  for (const failure of [null, 'job', 'image', 'controller-token-volume', 'controller-sa-drift']) {
     const { adapter, doc } = liveFixture('migrate', ({ all }) => {
       const labels = all[0].metadata.labels;
       const name = 'example-migration-release-1-1';
@@ -761,6 +771,14 @@ test('migration attempt completion binds actual Pod image; failure cannot retry 
           ],
         },
       });
+      if (failure === 'controller-token-volume' || failure === 'controller-sa-drift') {
+        const jobSpec = all.find((o) => o.kind === 'Job').spec.template.spec;
+        const podSpec = all.find((o) => o.kind === 'Pod').spec;
+        for (const spec of [jobSpec, podSpec]) {
+          if (failure === 'controller-sa-drift') spec.serviceAccountName = 'alternate';
+          else spec.volumes = [{ name: 'token', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }];
+        }
+      }
     });
     assert.equal((await adapter.observe(doc, 'abc')).proven, !failure);
   }
@@ -1747,4 +1765,65 @@ test('active scheduled Pods retain the rendered service-account and security env
   await assert.doesNotReject(() => verifyRuntime(doc, all));
   all[2].spec.serviceAccountName = 'privileged-other';
   await assert.rejects(() => verifyRuntime(doc, all), /Pod security or credential envelope/);
+  all[2].spec.serviceAccountName = 'schedule-runtime';
+  for (const spec of [all[0].spec.jobTemplate.spec.template.spec, all[1].spec.template.spec, all[2].spec])
+    spec.volumes = [{ name: 'token', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }];
+  await assert.rejects(() => verifyRuntime(doc, all), /Pod security or credential envelope/);
+});
+
+test('implicit default service account, API defaults and unsupported host/confinement changes fail closed', async () => {
+  const { verifyPodEnvelope } = await import('./deployment/live.mjs');
+  const desired = { automountServiceAccountToken: false, containers: [{ image }] };
+  assert.doesNotThrow(() => verifyPodEnvelope({ ...structuredClone(desired), serviceAccountName: 'default', hostUsers: true }, desired));
+  assert.doesNotThrow(() => verifyPodEnvelope(structuredClone(desired), { ...desired, serviceAccountName: 'default', hostUsers: true }));
+  assert.doesNotThrow(() => verifyPodEnvelope({ ...structuredClone(desired), hostUsers: false }, { ...desired, hostUsers: false }));
+  for (const change of [
+    (p) => { p.serviceAccountName = 'alternate'; },
+    (p) => { p.hostUsers = false; },
+    (p) => { p.shareProcessNamespace = true; },
+    (p) => { p.securityContext = { seccompProfile: { type: 'Unconfined' } }; },
+    (p) => { p.securityContext = { appArmorProfile: { type: 'Unconfined' } }; },
+    (p) => { p.securityContext = { seLinuxOptions: { type: 'spc_t' } }; },
+    (p) => { p.containers[0].ports = [{ containerPort: 8080, hostPort: 8080 }]; },
+    (p) => { p.containers[0].securityContext = { seccompProfile: { type: 'Unconfined' } }; },
+    (p) => { p.containers[0].securityContext = { appArmorProfile: { type: 'Unconfined' } }; },
+    (p) => { p.containers[0].securityContext = { seLinuxOptions: { type: 'spc_t' } }; },
+  ]) {
+    const actual = structuredClone(desired);
+    change(actual);
+    assert.throws(() => verifyPodEnvelope(actual, desired), DeploymentError);
+  }
+  assert.throws(() => verifyPodEnvelope({ ...structuredClone(desired), hostUsers: true }, { ...desired, hostUsers: false }), DeploymentError);
+});
+
+test('live runtime controller and matching Pods cannot jointly inject account or projected credentials', async () => {
+  for (const change of [
+    (spec) => { spec.serviceAccountName = 'alternate'; },
+    (spec) => { spec.volumes = [{ name: 'token', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }]; },
+  ]) {
+    const all = objects();
+    change(all[0].spec.template.spec);
+    change(all[2].spec);
+    await assert.rejects(() => verifyRuntime(document('verify'), all), /Pod security or credential envelope/);
+    const live = liveFixture('verify', ({ all }) => {
+      change(all[0].spec.template.spec);
+      change(all[2].spec);
+    });
+    assert.equal((await live.adapter.observe(live.doc, 'abc')).proven, false);
+  }
+});
+
+test('live inventory binds maintenance controller envelope to the original rendered template', async () => {
+  for (const inject of [false, true]) {
+    const live = liveFixture('stopped', ({ all, config }) => {
+      const desired = {
+        kind: 'Deployment', metadata: { name: 'example-maintenance', labels: { ...all[0].metadata.labels } },
+        spec: { replicas: 1, template: { spec: { automountServiceAccountToken: false, containers: [{ image }] } } },
+      };
+      config.fixtureRenderedResources = [structuredClone(desired), structuredClone(all[0])];
+      all.push(desired);
+      if (inject) desired.spec.template.spec.volumes = [{ name: 'token', projected: { sources: [{ serviceAccountToken: { path: 'token' } }] } }];
+    });
+    assert.equal((await live.adapter.observe(live.doc, 'abc')).proven, !inject);
+  }
 });

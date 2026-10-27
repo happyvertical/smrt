@@ -49,3 +49,11 @@ identity; unit tests use deterministic Kubernetes responses. Exact command:
 `node --test scripts/deployment-chart.test.mjs scripts/deployment-release.test.mjs`.
 Disposable exercise is the separate real-container execution gate for non-root,
 seccomp, dropped capabilities, read-only root and scratch under real controllers.
+
+Accepted independent-review regressions additionally cover omitted/default SA
+normalization versus admission/live alternate accounts; SSA controller mutation
+and jointly injected controller/Pod credential volumes on runtime, migration and
+scheduled paths; and rendered maintenance-controller envelope drift. Pod escape
+cases cover host ports, process-namespace sharing, pod/container unconfined
+seccomp/AppArmor and unsupported SELinux. `hostUsers` omitted/true is the semantic
+Kubernetes default, with explicit false-to-true drift separately refused.

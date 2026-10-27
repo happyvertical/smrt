@@ -88,3 +88,15 @@ It compares projected Pod name/UID from bounded non-secret logs against the actu
 Kubernetes Pod, verifies scratch writes and root-write refusal, checks runtime
 Pods have no projected credentials, and checks missing-SA/denied-read RBAC failures.
 It does not substitute those file checks for the application's TLS API observation.
+
+Admission and live proofs compare controller templates with the original rendered
+security/account/volume envelope before trusting their Pods. Standalone runtime
+proofs also bind that envelope to declared workload values. Omitted service
+accounts mean `default`; an injected alternate account refuses. Controller
+server dry runs request JSON and inspect the admitted template, so controller
+webhooks cannot silently introduce credential volumes for a later Pod to inherit.
+Host ports, shared process namespaces, unsupported SELinux options and unconfined
+pod/container seccomp or AppArmor profiles refuse. Kubernetes `hostUsers` defaults
+to true: omitted and explicit true have the same meaning. The chart exposes no
+user-namespace override; the verifier still binds an explicitly false expected
+value when checking a supplied template. It does not reject standard API defaults.

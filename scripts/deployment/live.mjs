@@ -91,8 +91,33 @@ export function containsDesired(actual, desired) {
 // privilege escapes to the rendered single-container identity.
 export function verifyPodEnvelope(actual, desired) {
   demand(
-    containsDesired(actual, desired) &&
+    actual &&
+      desired &&
+      containsDesired(
+        {
+          ...actual,
+          serviceAccountName: actual.serviceAccountName ?? 'default',
+          hostUsers: actual.hostUsers ?? true,
+        },
+        {
+          ...desired,
+          serviceAccountName: desired.serviceAccountName ?? 'default',
+          hostUsers: desired.hostUsers ?? true,
+        },
+      ) &&
       actual.automountServiceAccountToken === false &&
+      (actual.serviceAccountName ?? 'default') ===
+        (desired.serviceAccountName ?? 'default') &&
+      (actual.hostUsers ?? true) === (desired.hostUsers ?? true) &&
+      !actual.shareProcessNamespace &&
+      !actual.securityContext?.seLinuxOptions &&
+      !actual.securityContext?.windowsOptions?.hostProcess &&
+      [
+        actual.securityContext?.seccompProfile,
+        actual.securityContext?.appArmorProfile,
+      ].every(
+        (profile) => profile === undefined || profile.type === 'RuntimeDefault',
+      ) &&
       !actual.hostNetwork &&
       !actual.hostPID &&
       !actual.hostIPC &&
@@ -104,10 +129,16 @@ export function verifyPodEnvelope(actual, desired) {
       !actual.ephemeralContainers?.length &&
       actual.containers?.length === 1 &&
       (actual.volumes ?? []).length === (desired.volumes ?? []).length &&
-      actual.containers.every((container) => {
+      actual.containers.every((container, index) => {
         const security = container.securityContext ?? {};
         return (
           !security.privileged &&
+          !security.seLinuxOptions &&
+          !container.ports?.some((port) => port.hostPort || port.hostIP) &&
+          (container.volumeMounts ?? []).length ===
+            (desired.containers[index].volumeMounts ?? []).length &&
+          (security.appArmorProfile === undefined ||
+            security.appArmorProfile.type === 'RuntimeDefault') &&
           security.allowPrivilegeEscalation !== true &&
           security.procMount !== 'Unmasked' &&
           !security.windowsOptions?.hostProcess &&
@@ -124,6 +155,74 @@ export function verifyPodEnvelope(actual, desired) {
       }),
     'Pod security or credential envelope differs from rendered template',
   );
+}
+const podTemplate = (resource) =>
+  resource.kind === 'CronJob'
+    ? resource.spec?.jobTemplate?.spec?.template
+    : resource.spec?.template;
+function verifyControllerEnvelope(actual, desired) {
+  const template = podTemplate(desired);
+  if (template) verifyPodEnvelope(podTemplate(actual)?.spec, template.spec);
+}
+// Standalone runtime proofs also bind security/account/volume fields directly to
+// declared values. The full rendered object is independently checked by provePhase.
+function declaredPodEnvelope(workload) {
+  const mounts = (workload.scratch ?? []).map(({ name, mountPath }) => ({
+    name,
+    mountPath,
+  }));
+  const volumes = (workload.scratch ?? []).map(
+    ({ name, mountPath, ...emptyDir }) => ({ name, emptyDir }),
+  );
+  if (workload.observerAccess) {
+    mounts.push({
+      name: 'smrt-observer',
+      mountPath: '/var/run/secrets/kubernetes.io/serviceaccount',
+      readOnly: true,
+    });
+    volumes.push({
+      name: 'smrt-observer',
+      projected: {
+        defaultMode: 420,
+        sources: [
+          { serviceAccountToken: { path: 'token', expirationSeconds: 600 } },
+          {
+            configMap: {
+              name: 'kube-root-ca.crt',
+              items: [{ key: 'ca.crt', path: 'ca.crt' }],
+            },
+          },
+          {
+            downwardAPI: {
+              items: [
+                ['namespace', 'metadata.namespace'],
+                ['pod-name', 'metadata.name'],
+                ['pod-uid', 'metadata.uid'],
+              ].map(([path, fieldPath]) => ({ path, fieldRef: { fieldPath } })),
+            },
+          },
+        ],
+      },
+    });
+  }
+  return {
+    automountServiceAccountToken: false,
+    ...(workload.serviceAccountName
+      ? { serviceAccountName: workload.serviceAccountName }
+      : {}),
+    ...(workload.podSecurityContext
+      ? { securityContext: workload.podSecurityContext }
+      : {}),
+    containers: [
+      {
+        ...(workload.securityContext
+          ? { securityContext: workload.securityContext }
+          : {}),
+        ...(mounts.length ? { volumeMounts: mounts } : {}),
+      },
+    ],
+    ...(volumes.length ? { volumes } : {}),
+  };
 }
 const digest = (image) => image?.match(/sha256:[a-f0-9]{64}/)?.[0];
 export async function run(command, args, input) {
@@ -456,7 +555,15 @@ export function createLiveAdapter(config, command = run, request = fetch) {
           `--as=system:serviceaccount:${namespace}:${runtime.migration.serviceAccountName}`,
         ];
         demand(
-          (await kube(...observer, 'auth', 'can-i', 'get', `configmap/${document.metadata.name}-maintenance`)).trim() === 'yes',
+          (
+            await kube(
+              ...observer,
+              'auth',
+              'can-i',
+              'get',
+              `configmap/${document.metadata.name}-maintenance`,
+            )
+          ).trim() === 'yes',
           'Observer permission denied: get named maintenance ConfigMap',
           'RBAC_DENIED',
         );
@@ -683,7 +790,7 @@ export function createLiveAdapter(config, command = run, request = fetch) {
           );
         }
         try {
-          await command(
+          const admitted = await command(
             'kubectl',
             [
               '--namespace',
@@ -694,11 +801,15 @@ export function createLiveAdapter(config, command = run, request = fetch) {
               '--dry-run=server',
               // Same established reconciler manager, dry run only; never force field ownership.
               '--field-manager=helm-controller',
+              '-o',
+              'json',
               '-f',
               '-',
             ],
             JSON.stringify(resource),
           );
+          if (template)
+            verifyControllerEnvelope(JSON.parse(admitted), resource);
         } catch {
           throw new DeploymentError(
             `Admission preflight failed: phase ${phase} ${safeReference(resourceName)} namespace ${safeReference(namespace)}`,
@@ -884,6 +995,7 @@ export function createLiveAdapter(config, command = run, request = fetch) {
           containsDesired(actual.metadata.labels, desired.metadata.labels),
         'Live rendered resource/configuration differs from exact phase',
       );
+      verifyControllerEnvelope(actual, desired);
     }
     const owned = (object) =>
       object.metadata.labels?.['app.kubernetes.io/instance'] ===
@@ -1053,6 +1165,10 @@ export function createLiveAdapter(config, command = run, request = fetch) {
           job.spec.template.spec.containers[0].image ===
             v.target.migration.image,
         'Migration Job image mismatch',
+      );
+      verifyPodEnvelope(
+        job.spec.template.spec,
+        declaredPodEnvelope(v.target.migration),
       );
       const migrationPods = all.filter(
         (o) =>
@@ -1262,6 +1378,10 @@ export async function verifyRuntime(document, all) {
         cron.spec.concurrencyPolicy === 'Forbid',
       'Schedule state mismatch',
     );
+    verifyPodEnvelope(
+      cron.spec.jobTemplate.spec.template.spec,
+      declaredPodEnvelope(workload),
+    );
     const container = cron.spec.jobTemplate.spec.template.spec.containers;
     demand(
       container.length === 1 &&
@@ -1323,6 +1443,10 @@ export async function verifyRuntime(document, all) {
         deployment.status?.replicas === workload.replicas,
       'Runtime generation is not ready',
       'READINESS',
+    );
+    verifyPodEnvelope(
+      deployment.spec?.template?.spec,
+      declaredPodEnvelope(workload),
     );
     const rs = all.filter(
       (o) =>
