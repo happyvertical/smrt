@@ -177,7 +177,6 @@ export default defineConfig({
         /^vite\//,
         'chokidar',
         'fsevents',
-        'fast-glob',
         'micromatch',
         'picomatch',
         'braces',

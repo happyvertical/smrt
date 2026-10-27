@@ -9,7 +9,7 @@ import {
   resolve,
 } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import fg from 'fast-glob';
+import { glob } from 'tinyglobby';
 import { coercePlaygroundModules } from './runtime.js';
 import type {
   DiscoveredInstalledPlayground,
@@ -81,8 +81,9 @@ export async function discoverWorkspacePlaygrounds(
   workspaceRoot: string,
   packagesPattern = 'packages/*/src/svelte/playground.ts',
 ): Promise<DiscoveredWorkspacePlayground[]> {
-  const matches = await fg(packagesPattern, {
+  const matches = await glob(packagesPattern, {
     cwd: workspaceRoot,
+    expandDirectories: false,
     absolute: true,
   });
 

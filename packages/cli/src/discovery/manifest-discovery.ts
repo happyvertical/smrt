@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectDefinition } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import glob from 'fast-glob';
+import { glob } from 'tinyglobby';
 import { resolveManifestEntryPackageName } from './manifest-identity.js';
 
 const logger = createLogger({ level: 'info' });
@@ -210,6 +210,7 @@ async function findPackageManifests(
     // (which create symlinks in node_modules) are discovered.
     const packageJsonFiles = await glob('**/package.json', {
       cwd: nodeModulesPath,
+      expandDirectories: false,
       ignore: ['**/node_modules/**'],
       absolute: true,
       followSymbolicLinks: true,

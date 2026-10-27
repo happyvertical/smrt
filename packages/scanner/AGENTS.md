@@ -6,7 +6,7 @@ executes the source.
 
 ## Key Exports
 
-- `OxcScanner` — class that globs `.ts` files (`fast-glob`) and parses each into
+- `OxcScanner` — class that globs `.ts` files (`tinyglobby`) and parses each into
   raw class/field/method metadata. `scan()` parses; `scanAndResolve()` parses
   then resolves inheritance in one call.
 - `InheritanceResolver` — resolves class inheritance chains across files
@@ -241,7 +241,7 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 
 ## How It Works
 
-1. `fast-glob` finds `.ts` files matching include/exclude patterns.
+1. `tinyglobby` finds `.ts` files matching include/exclude patterns.
 2. `oxc-parser` parses each file's AST (TS-ESTree shape).
 3. Extracts: `@smrt()` config, class hierarchy, field defaults (0 vs 0.0
    heuristic, including negative initializers via `UnaryExpression` unwrap),

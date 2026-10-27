@@ -207,7 +207,6 @@
     "@noble/hashes": "^2.4.0",
     "@oxc-project/runtime": "^0.150.0",
     "cheerio": "^1.2.0",
-    "fast-glob": "3.3.3",
     "import-meta-resolve": "4.2.0",
     "minimatch": "10.2.6",
     "oxc-transform": "0.150.0",

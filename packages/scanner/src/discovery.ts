@@ -1,5 +1,5 @@
 import { isAbsolute, resolve, sep, win32 } from 'node:path';
-import fg from 'fast-glob';
+import { glob } from 'tinyglobby';
 
 const MANDATORY_DISCOVERY_EXCLUDES: readonly string[] = Object.freeze([
   '**/node_modules/**',
@@ -22,10 +22,11 @@ export async function discoverSourceFiles(
   options: SourceDiscoveryOptions,
 ): Promise<string[]> {
   const cwd = resolve(options.cwd);
-  return fg(
+  return glob(
     options.include.map((pattern) => relativeGlobToCwd(pattern, cwd)),
     {
       cwd,
+      expandDirectories: false,
       ignore: [
         ...options.exclude.map((pattern) => relativeGlobToCwd(pattern, cwd)),
         ...MANDATORY_DISCOVERY_EXCLUDES,
@@ -67,8 +68,9 @@ export function relativeGlobToCwd(pattern: string, cwd: string): string {
     }
   }
 
-  // fast-glob requires slash separators even when an absolute pattern points
-  // outside cwd and therefore cannot be made relative.
+  // tinyglobby (like fast-glob before it) requires slash separators even when
+  // an absolute pattern points outside cwd and therefore cannot be made
+  // relative.
   const slashAuthoredWindows = /^[A-Za-z]:\//.test(pattern);
   return windowsAbsolute && !slashAuthoredWindows
     ? normalizeGlobSeparators(pattern, '\\')

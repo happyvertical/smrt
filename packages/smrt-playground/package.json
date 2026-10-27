@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-ui": "workspace:*",
-    "fast-glob": "3.3.3",
+    "tinyglobby": "0.2.17",
     "tsx": "^4.23.13"
   },
   "peerDependencies": {

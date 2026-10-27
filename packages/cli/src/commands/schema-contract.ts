@@ -4,7 +4,7 @@ import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import glob from 'fast-glob';
+import { glob } from 'tinyglobby';
 import type { DiscoveredManifest } from '../discovery/manifest-discovery.js';
 
 export type { SchemaContractConfig };
@@ -320,9 +320,9 @@ export async function assertNoUnsupportedMigrationFiles(
   );
   const files = await glob(['*.sql', '*.ts'], {
     cwd: directory,
+    expandDirectories: false,
     absolute: false,
     onlyFiles: true,
-    suppressErrors: true,
     ignore: ['*.d.ts'],
   });
 
