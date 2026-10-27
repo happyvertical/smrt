@@ -24,7 +24,7 @@ import {
   resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
 } from '@happyvertical/smrt-core/generators/custom-action';
-import fg from 'fast-glob';
+import { glob, globSync } from 'tinyglobby';
 import { coerceWorkbenchModules } from './runtime.js';
 import type {
   DiscoveredWorkbenchTarget,
@@ -1352,8 +1352,9 @@ function readApiSummary(
 }
 
 async function collectRouteFiles(packageDir: string): Promise<string[]> {
-  return fg(['src/routes/**/*.{ts,svelte}', 'routes/**/*.{ts,svelte}'], {
+  return glob(['src/routes/**/*.{ts,svelte}', 'routes/**/*.{ts,svelte}'], {
     cwd: packageDir,
+    expandDirectories: false,
     absolute: true,
     onlyFiles: true,
     ignore: ['**/node_modules/**', '**/.svelte-kit/**'],
@@ -1361,8 +1362,9 @@ async function collectRouteFiles(packageDir: string): Promise<string[]> {
 }
 
 async function collectMigrations(packageDir: string): Promise<string[]> {
-  return fg(['migrations/**/*', 'src/migrations/**/*'], {
+  return glob(['migrations/**/*', 'src/migrations/**/*'], {
     cwd: packageDir,
+    expandDirectories: false,
     absolute: true,
     onlyFiles: true,
     ignore: ['**/node_modules/**'],
@@ -1373,7 +1375,7 @@ async function collectExamples(
   packageDir: string,
   docs: WorkbenchDocumentSummary[],
 ): Promise<WorkbenchExampleSummary[]> {
-  const fileMatches = await fg(
+  const fileMatches = await glob(
     [
       'examples/**/*.{ts,tsx,svelte,md}',
       'src/**/*.{example,stories}.{ts,tsx,svelte}',
@@ -1381,6 +1383,7 @@ async function collectExamples(
     ],
     {
       cwd: packageDir,
+      expandDirectories: false,
       absolute: true,
       onlyFiles: true,
       ignore: ['**/node_modules/**', '**/dist/**', '**/.svelte-kit/**'],
@@ -1496,8 +1499,9 @@ async function summarizePackage(
 async function discoverWorkspacePackageDirs(
   workspaceRoot: string,
 ): Promise<WorkbenchPackageDir[]> {
-  const packageJsonPaths = await fg('packages/*/package.json', {
+  const packageJsonPaths = await glob('packages/*/package.json', {
     cwd: workspaceRoot,
+    expandDirectories: false,
     absolute: true,
     onlyFiles: true,
   });
@@ -1587,8 +1591,9 @@ function resolvePackageByName(
     return null;
   }
 
-  const packageJsonPaths = fg.sync('*/package.json', {
+  const packageJsonPaths = globSync('*/package.json', {
     cwd: packagesDir,
+    expandDirectories: false,
     absolute: true,
     onlyFiles: true,
   });
@@ -1684,8 +1689,9 @@ export async function discoverWorkspaceWorkbenches(
   workspaceRoot: string,
   packagesPattern = 'packages/*/src/workbench.ts',
 ): Promise<DiscoveredWorkbenchTarget[]> {
-  const matches = await fg(packagesPattern, {
+  const matches = await glob(packagesPattern, {
     cwd: workspaceRoot,
+    expandDirectories: false,
     absolute: true,
     onlyFiles: true,
   });

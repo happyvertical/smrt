@@ -271,7 +271,7 @@ export function createPackageConfig(
             'jiti',
             /^jiti\//,
             '@libsql/client',
-            'fast-glob',
+            'tinyglobby',
             'minimatch',
             'oxc-parser',
             'oxc-resolver',

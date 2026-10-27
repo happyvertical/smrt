@@ -180,7 +180,7 @@ export class OxcScanner {
   /**
    * Phase 1 — Discover and parse TypeScript files using OXC.
    *
-   * Uses `fast-glob` to enumerate matching files and then parses them in
+   * Uses `tinyglobby` to enumerate matching files and then parses them in
    * parallel with OXC (Rust).  The raw class definitions are registered with
    * the internal {@link InheritanceResolver} for use in the subsequent
    * {@link resolve} call.
@@ -431,7 +431,7 @@ export class OxcScanner {
   }
 
   /**
-   * Discover files to scan using fast-glob.
+   * Discover files to scan using tinyglobby.
    *
    * Two settings here decide whether discovery terminates at all when the
    * scanner is pointed at an application root rather than a package `src/`:
@@ -448,7 +448,7 @@ export class OxcScanner {
    * Together they were enough to exhaust a 4 GB heap on a consumer app that
    * installs the published packages (#2275).
    *
-   * Patterns are rewritten relative to `cwd` first. fast-glob matches `ignore`
+   * Patterns are rewritten relative to `cwd` first. tinyglobby matches `ignore`
    * in whatever space the patterns use, so an absolute pattern would hand
    * `**\/.*\/**` the project's own ancestors — a checkout under `~/.worktrees`
    * or `~/.cache` would then match nothing at all, silently.

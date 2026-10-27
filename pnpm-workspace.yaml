@@ -165,9 +165,6 @@ auditConfig:
   # their audit-policy.json records for the reachability evidence and the open
   # upstream fixes they wait on.
   ignoreGhsas:
-    # braces <=3.0.3 nested-pattern stack overflow; glob patterns are code or
-    # developer config only. Upstream: micromatch/braces#72.
-    - GHSA-vfj7-8cjw-p6xm
     # http-cache-semantics <=4.2.0 max-stale shared-cache disclosure; SMRT never
     # enables got's cache. Upstream: kornelski/http-cache-semantics#58.
     - GHSA-ch52-4w7c-c8xp

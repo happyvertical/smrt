@@ -65,7 +65,6 @@ export default defineConfig({
 
         // External dependencies to externalize
         /^@modelcontextprotocol\//,
-        'fast-glob',
         'fdir',
         'picomatch',
         'tinyglobby',
