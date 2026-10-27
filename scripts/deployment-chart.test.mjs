@@ -45,7 +45,7 @@ test('representative fixtures lint strictly and chart packages independently', (
     execFileSync(helm, ['lint', '--strict', chart, '-f', join(chart, 'fixtures', `${app}.json`)]);
   }
   execFileSync(helm, ['package', chart, '--destination', scratch]);
-  assert.ok(readFileSync(join(scratch, 'smrt-app-0.1.0.tgz')).length > 0);
+  assert.ok(readFileSync(join(scratch, 'smrt-app-0.2.0.tgz')).length > 0);
 });
 
 test('current entire pod spec survives maintenance and target starts only after migration', () => {
@@ -187,3 +187,51 @@ for (const [name, change] of [
     assert.throws(() => render(values));
   });
 }
+
+test('bounded security envelope and migration-only observer projection survive rendering', () => {
+  const base = phaseValues(fixture(), 'migrate');
+  const security = {
+    podSecurityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: { type: 'RuntimeDefault' } },
+    securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
+    serviceAccountName: 'app-runtime',
+    scratch: [{ name: 'tmp', mountPath: '/tmp', sizeLimit: '16Mi' }],
+  };
+  Object.assign(base.current.workloads.web, security);
+  Object.assign(base.target.migration, security, { serviceAccountName: 'app-observer', observerAccess: true });
+  const docs = documents(base);
+  const runtime = resource(docs, 'Deployment', 'fixture-web').spec.template.spec;
+  const migration = resource(docs, 'Job', `fixture-migration-${base.release.id}-${base.release.attempt}`).spec.template.spec;
+  for (const pod of [runtime, migration]) {
+    assert.equal(pod.automountServiceAccountToken, false);
+    assert.deepEqual(pod.securityContext, security.podSecurityContext);
+    assert.deepEqual(pod.containers[0].securityContext, security.securityContext);
+    assert.deepEqual(pod.volumes[0], { name: 'tmp', emptyDir: { sizeLimit: '16Mi' } });
+  }
+  assert.equal(runtime.serviceAccountName, 'app-runtime');
+  assert.equal(runtime.volumes.some((v) => v.projected), false);
+  assert.equal(migration.serviceAccountName, 'app-observer');
+  const projection = migration.volumes.find((v) => v.name === 'smrt-observer').projected;
+  assert.deepEqual(projection.sources[0], { serviceAccountToken: { path: 'token', expirationSeconds: 600 } });
+  assert.deepEqual(projection.sources[1], { configMap: { name: 'kube-root-ca.crt', items: [{ key: 'ca.crt', path: 'ca.crt' }] } });
+  assert.deepEqual(projection.sources[2].downwardAPI.items.map((v) => v.path), ['namespace', 'pod-name', 'pod-uid']);
+  assert.deepEqual(migration.containers[0].volumeMounts[1], { name: 'smrt-observer', mountPath: '/var/run/secrets/kubernetes.io/serviceaccount', readOnly: true });
+  for (const mutate of [
+    (v) => { delete v.target.migration.serviceAccountName; },
+    (v) => { v.target.workloads.web.observerAccess = true; },
+    (v) => { v.target.migration.podSecurityContext.runAsUser = 0; },
+    (v) => { v.target.migration.podSecurityContext.seccompProfile.type = 'Unconfined'; },
+    (v) => { v.target.migration.securityContext.privileged = true; },
+    (v) => { v.target.migration.securityContext.allowPrivilegeEscalation = true; },
+    (v) => { v.target.migration.securityContext.capabilities.add = ['SYS_ADMIN']; },
+    (v) => { v.target.migration.scratch[0].mountPath = '/var/run'; },
+    (v) => { v.target.migration.scratch[0].mountPath = '/tmp/../var'; },
+    (v) => { v.target.migration.scratch[0].hostPath = '/'; },
+    (v) => { v.target.migration.hostNetwork = true; },
+  ]) {
+    const invalid = structuredClone(base);
+    mutate(invalid);
+    assert.throws(() => render(invalid));
+  }
+  base.target.migration.observerAccess = false;
+  assert.equal(resource(documents(base), 'Job', `fixture-migration-${base.release.id}-${base.release.attempt}`).spec.template.spec.volumes.some((v) => v.projected), false);
+});

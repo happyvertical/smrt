@@ -124,7 +124,7 @@ function objects() {
   return [
     {
       kind: 'Deployment',
-      spec: { template: { spec: { containers: [{ image }] } } },
+      spec: { template: { spec: { automountServiceAccountToken: false, containers: [{ image }] } } },
       metadata: { name: 'example-web', uid: 'deployment', generation: 2 },
       status: {
         observedGeneration: 2,
@@ -140,7 +140,7 @@ function objects() {
     {
       kind: 'Pod',
       metadata: { uid: 'pod', ownerReferences: [{ uid: 'rs' }] },
-      spec: { containers: [{ image }] },
+      spec: { automountServiceAccountToken: false, containers: [{ image }] },
       status: {
         conditions: [{ type: 'Ready', status: 'True' }],
         containerStatuses: [{ imageID: image }],
@@ -488,6 +488,8 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
   try {
     const doc = document('maintenance');
     doc.spec.serviceAccountName = 'reconciler';
+    doc.spec.values.target.migration.serviceAccountName = 'observer';
+    doc.spec.values.target.migration.observerAccess = true;
     doc.spec.chart = { spec: { chart: 'smrt-app', version: '0.1.0' } };
     doc.spec.values.ingress = { host: 'app.test', className: 'nginx' };
     const chart = join(root, 'chart.tgz');
@@ -542,6 +544,11 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       'ownership',
       'foreign-manager',
       'owned',
+      'observer-permission',
+      'observer-sa',
+      'observer-ca',
+      'pod-admission',
+      'pod-permission',
     ]) {
       const calls = [];
       const command = async (name, args, input) => {
@@ -583,8 +590,16 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
               ],
             },
           });
+        if (args.includes('serviceaccount') && args.includes('observer') && failure === 'observer-sa') throw new Error('missing');
+        if (args.includes('configmap') && args.includes('kube-root-ca.crt')) return JSON.stringify({ data: failure === 'observer-ca' ? {} : { 'ca.crt': '-----BEGIN CERTIFICATE-----fixture' } });
+        if (args.includes('create') && args.includes('--dry-run=server')) {
+          if (failure === 'pod-admission') throw new Error('denied');
+          return input;
+        }
         if (args.includes('can-i'))
-          return (failure === 'permission' &&
+          return (failure === 'observer-permission' && args.includes('--as=system:serviceaccount:test:observer')) ||
+            (failure === 'pod-permission' && args.includes('create') && args.includes('pods')) ||
+            (failure === 'permission' &&
             args.includes('configmap/example-inventory')) ||
             (failure === 'storage' && args.includes('secrets')) ||
             (failure === 'named-secret' && args.includes('secret/named-secret'))
@@ -597,6 +612,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         if (args.includes('create'))
           return JSON.stringify({
             items: [
+              { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'example-web' }, spec: { template: { metadata: { labels: { app: 'example' } }, spec: { automountServiceAccountToken: false, containers: [{ name: 'app', image }] } } } },
               {
                 apiVersion: 'v1',
                 kind: 'ConfigMap',
@@ -622,7 +638,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
             (failure !== 'ownership' ||
               (error.code === 'OWNERSHIP_CONFLICT' &&
                 error.message.includes(
-                  'configmap/example-inventory namespace test',
+                  'namespace test',
                 ))),
         );
       else {
@@ -642,7 +658,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
             )),
       ))
         assert.ok(
-          call.args.includes('--as=system:serviceaccount:test:reconciler'),
+          call.args.includes('--as=system:serviceaccount:test:reconciler') || call.args.includes('--as=system:serviceaccount:test:observer'),
         );
       for (const call of calls.filter((c) => c.args.includes('apply'))) {
         assert.ok(call.args.includes('--dry-run=server'));
@@ -722,7 +738,7 @@ test('migration attempt completion binds actual Pod image; failure cannot retry 
         spec: {
           backoffLimit: 0,
           template: {
-            spec: { restartPolicy: 'Never', containers: [{ image }] },
+            spec: { automountServiceAccountToken: false, restartPolicy: 'Never', containers: [{ image }] },
           },
         },
         status: failure === 'job' ? { failed: 1 } : { succeeded: 1 },
@@ -735,7 +751,7 @@ test('migration attempt completion binds actual Pod image; failure cannot retry 
           labels,
           ownerReferences: [{ uid: 'migration-job' }],
         },
-        spec: { restartPolicy: 'Never', containers: [{ image }] },
+        spec: { automountServiceAccountToken: false, restartPolicy: 'Never', containers: [{ image }] },
         status: {
           phase: failure === 'job' ? 'Failed' : 'Succeeded',
           containerStatuses: [
@@ -1255,7 +1271,7 @@ function failedMigrationFixture(mutate = () => {}) {
       },
       spec: {
         backoffLimit: 0,
-        template: { spec: { restartPolicy: 'Never', containers: [{ image }] } },
+        template: { spec: { automountServiceAccountToken: false, restartPolicy: 'Never', containers: [{ image }] } },
       },
       status: {
         failed: 1,
@@ -1272,7 +1288,7 @@ function failedMigrationFixture(mutate = () => {}) {
         labels,
         ownerReferences: [{ uid: 'failed-job-uid' }],
       },
-      spec: { restartPolicy: 'Never', containers: [{ image }] },
+      spec: { automountServiceAccountToken: false, restartPolicy: 'Never', containers: [{ image }] },
       status: {
         phase: 'Failed',
         containerStatuses: [
@@ -1674,4 +1690,61 @@ test('live predecessor health gates new plans while existing recovery remains av
       }
     });
   }
+});
+
+test('runtime capability validation rejects security and observer escapes', () => {
+  const doc = document();
+  const migration = doc.spec.values.target.migration;
+  migration.serviceAccountName = 'migration-observer';
+  migration.observerAccess = true;
+  migration.podSecurityContext = { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: { type: 'RuntimeDefault' } };
+  migration.securityContext = { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } };
+  migration.scratch = [{ name: 'tmp', mountPath: '/tmp' }];
+  assert.ok(validate(doc));
+  for (const change of [
+    (v) => { delete v.target.migration.serviceAccountName; },
+    (v) => { v.target.workloads.web.observerAccess = true; },
+    (v) => { v.target.migration.podSecurityContext.runAsUser = 0; },
+    (v) => { v.target.migration.securityContext.privileged = true; },
+    (v) => { v.target.migration.securityContext.capabilities.add = ['SYS_ADMIN']; },
+    (v) => { v.target.migration.scratch[0].mountPath = '/var/run'; },
+  ]) {
+    const invalid = structuredClone(doc);
+    change(invalid.spec.values);
+    assert.throws(() => validate(invalid), DeploymentError);
+  }
+});
+
+test('actual Pod observation rejects added privilege, credentials and identity changes', async () => {
+  const { verifyPodEnvelope } = await import('./deployment/live.mjs');
+  const desired = { automountServiceAccountToken: false, serviceAccountName: 'runtime', securityContext: { runAsNonRoot: true, runAsUser: 10001 }, containers: [{ name: 'app', image }] };
+  assert.doesNotThrow(() => verifyPodEnvelope(structuredClone(desired), desired));
+  for (const change of [
+    (p) => { p.serviceAccountName = 'other'; },
+    (p) => { p.securityContext.runAsUser = 10002; },
+    (p) => { p.containers[0].securityContext = { runAsUser: 0 }; },
+    (p) => { p.containers[0].securityContext = { privileged: true }; },
+    (p) => { p.volumes = [{ name: 'token', secret: { secretName: 'long-lived' } }]; },
+    (p) => { p.hostPID = true; },
+    (p) => { p.automountServiceAccountToken = true; },
+  ]) {
+    const actual = structuredClone(desired);
+    change(actual);
+    assert.throws(() => verifyPodEnvelope(actual, desired), DeploymentError);
+  }
+});
+
+test('active scheduled Pods retain the rendered service-account and security envelope', async () => {
+  const doc = document('active');
+  const workload = { ...runtime.workloads.web, schedule: '* * * * *', service: undefined, serviceAccountName: 'schedule-runtime' };
+  doc.spec.values.target.workloads = { monitor: workload };
+  const podSpec = { automountServiceAccountToken: false, serviceAccountName: 'schedule-runtime', containers: [{ image, command: workload.command }] };
+  const all = [
+    { kind: 'CronJob', metadata: { name: 'example-monitor', uid: 'cron' }, spec: { schedule: workload.schedule, suspend: false, concurrencyPolicy: 'Forbid', jobTemplate: { spec: { template: { spec: podSpec } } } } },
+    { kind: 'Job', metadata: { uid: 'job', ownerReferences: [{ uid: 'cron' }] }, spec: { template: { spec: structuredClone(podSpec) } }, status: { active: 1 } },
+    { kind: 'Pod', metadata: { ownerReferences: [{ uid: 'job' }] }, spec: structuredClone(podSpec) },
+  ];
+  await assert.doesNotReject(() => verifyRuntime(doc, all));
+  all[2].spec.serviceAccountName = 'privileged-other';
+  await assert.rejects(() => verifyRuntime(doc, all), /Pod security or credential envelope/);
 });

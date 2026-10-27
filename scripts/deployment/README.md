@@ -68,3 +68,23 @@ Image verification compares the digest in each actual Pod `imageID` with the dec
 Failed observations return `failureCode` and a safe diagnostic `failure` message, including image identity, readiness, HTTP expected/received numeric status, and named-resource permission gates. Only exported `DeploymentError` messages are public; unexpected exceptions and subprocess stderr remain redacted.
 
 Application environment entries must be exact named Secret key references; literal `value`, `envFrom`, and extra reference fields are rejected before `plan` can return content. Commands and arguments are reviewed non-secret configuration; never place credentials in them. CLI command/configuration examples are exercised by the focused CLI dispatch tests, with adapters explicitly limited to unit fixtures.
+
+Chart 0.2.0 adds bounded pod/container hardening, explicit pre-existing service
+accounts, migration emptyDir scratch and optional migration-only observer access.
+See the chart README for the exact projection and platform-owned prerequisites.
+Preflight requires reconciler `create pods` for synthetic server dry-run admission
+as well as reads of named service accounts, inherited pull Secrets and observer
+CA. The observer must have namespace-scoped `get`/`list` on all supported writer
+controllers and pods (including HPA), plus `get configmap/<releaseName>-maintenance`
+for exact responder configuration validation. Runtime API-token projection remains off.
+Actual Pod observation rejects added privilege/host access and credential volumes.
+Run `node --test scripts/deployment-chart.test.mjs scripts/deployment-release.test.mjs`
+for the focused contract suite. The disposable exercise uses non-root 10001,
+RuntimeDefault seccomp, no escalation, dropped capabilities, read-only root and
+bounded `/tmp` scratch on web, task and migration containers.
+The exercise provisions its own disposable pre-existing observer SA/Role/Binding,
+then enables the migration projection and checks every projected file is readable.
+It compares projected Pod name/UID from bounded non-secret logs against the actual
+Kubernetes Pod, verifies scratch writes and root-write refusal, checks runtime
+Pods have no projected credentials, and checks missing-SA/denied-read RBAC failures.
+It does not substitute those file checks for the application's TLS API observation.

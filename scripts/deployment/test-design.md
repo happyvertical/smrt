@@ -36,3 +36,16 @@ All tests run with `node --test scripts/deployment-release.test.mjs`. Runtime: N
 | New-release predecessor | publish a reviewed maintenance plan after active | healthy accepted exact identity/revision publishes once | unaccepted, unhealthy, stale identity/revision cannot preflight or write; unhealthy predecessor retains existing recovery | protected operator + live controller observation | Git CAS only after fresh predecessor proof | Node / no SQL | Flux/Helm/HTTP | unit adapter + CLI lifecycle | command above |
 
 | Lost acceptance during proof | source moves after initial acknowledgement or during successful/failed HTTP | unchanged accepted health failure retains recovery path | lost acceptance throws before preflight/CAS for active automatic and verify explicit recovery | protected operator + namespace read identity | acknowledgement brackets successful and failed health proof | Node / no SQL | exact source revision + live HTTP boundary | unit live-adapter lifecycle | command above |
+
+Chart 0.2.0 capability contract: chart rendering tests cover hardened runtime and
+migration identity/scratch, fixed token/CA/downward projection, default-off and
+runtime token rejection, missing explicit observer account, root IDs, unconfined
+seccomp, added privileges/capabilities, host paths and credential-shadow mounts.
+Runner tests cover matching observed Pods versus altered account/security/token
+volumes and missing observer SA/CA/RBAC or Pod-create/admission permission before
+maintenance. Actor is the runner/reconciler or dedicated observer in the release
+namespace; boundary is Helm rendering, Kubernetes auth/admission and actual Pod
+identity; unit tests use deterministic Kubernetes responses. Exact command:
+`node --test scripts/deployment-chart.test.mjs scripts/deployment-release.test.mjs`.
+Disposable exercise is the separate real-container execution gate for non-root,
+seccomp, dropped capabilities, read-only root and scratch under real controllers.

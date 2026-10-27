@@ -522,11 +522,31 @@
             "properties": {
               "name": {
                 "type": "string",
-                "pattern": "^[a-z][a-z0-9-]{0,30}$"
+                "pattern": "^[a-z][a-z0-9-]{0,30}$",
+                "not": {
+                  "const": "smrt-observer"
+                }
               },
               "mountPath": {
                 "type": "string",
-                "pattern": "^/"
+                "pattern": "^/[A-Za-z0-9_][A-Za-z0-9_./-]*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "^/(var|run|proc|sys|dev)(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.{1,2}(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "//"
+                    }
+                  }
+                ]
               },
               "sizeLimit": {
                 "type": "string",
@@ -593,6 +613,16 @@
               "operator"
             ]
           }
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/podSecurityContext"
+        },
+        "securityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "serviceAccountName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
         }
       },
       "required": [
@@ -681,6 +711,71 @@
         "terminationGracePeriodSeconds": {
           "type": "integer",
           "minimum": 1
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/podSecurityContext"
+        },
+        "securityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "serviceAccountName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "scratch": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,30}$",
+                "not": {
+                  "const": "smrt-observer"
+                }
+              },
+              "mountPath": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9_][A-Za-z0-9_./-]*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "^/(var|run|proc|sys|dev)(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.{1,2}(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "//"
+                    }
+                  }
+                ]
+              },
+              "sizeLimit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "medium": {
+                "enum": [
+                  "",
+                  "Memory"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "mountPath"
+            ]
+          }
+        },
+        "observerAccess": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
@@ -690,6 +785,25 @@
         "guard",
         "resources",
         "terminationGracePeriodSeconds"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "observerAccess": {
+                "const": true
+              }
+            },
+            "required": [
+              "observerAccess"
+            ]
+          },
+          "then": {
+            "required": [
+              "serviceAccountName"
+            ]
+          }
+        }
       ]
     },
     "runtime": {
@@ -715,6 +829,89 @@
       "required": [
         "workloads",
         "migration"
+      ]
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsNonRoot": {
+          "const": true
+        },
+        "runAsUser": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "runAsGroup": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "fsGroup": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "supplementalGroups": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        },
+        "seccompProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "RuntimeDefault"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      },
+      "required": [
+        "runAsNonRoot",
+        "runAsUser",
+        "runAsGroup",
+        "seccompProfile"
+      ]
+    },
+    "securityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "const": false
+        },
+        "readOnlyRootFilesystem": {
+          "const": true
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "drop": {
+              "const": [
+                "ALL"
+              ]
+            }
+          },
+          "required": [
+            "drop"
+          ]
+        }
+      },
+      "required": [
+        "allowPrivilegeEscalation",
+        "readOnlyRootFilesystem",
+        "capabilities"
       ]
     }
   }

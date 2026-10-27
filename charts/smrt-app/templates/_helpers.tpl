@@ -14,6 +14,9 @@ smrt.happyvertical.com/sequence: {{ .Values.release.sequence | quote }}
   command: {{ $w.command | toJson }}
   env: {{ $w.env | toJson }}
   resources: {{ $w.resources | toJson }}
+  {{- with $w.securityContext }}
+  securityContext: {{ . | toJson }}
+  {{- end }}
   readinessProbe: {{ $w.readinessProbe | toJson }}
   {{- with $w.startupProbe }}
   startupProbe: {{ . | toJson }}
@@ -34,6 +37,12 @@ smrt.happyvertical.com/sequence: {{ .Values.release.sequence | quote }}
 {{- end }}
 {{- define "smrt.pod" -}}
 automountServiceAccountToken: false
+{{- with .workload.serviceAccountName }}
+serviceAccountName: {{ . | quote }}
+{{- end }}
+{{- with .workload.podSecurityContext }}
+securityContext: {{ . | toJson }}
+{{- end }}
 terminationGracePeriodSeconds: {{ .workload.terminationGracePeriodSeconds }}
 {{- with .workload.tolerations }}
 tolerations: {{ . | toJson }}

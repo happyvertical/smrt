@@ -1,6 +1,6 @@
 # SMRT application chart
 
-Chart `0.1.0` renders the maintenance-window contract described in
+Chart `0.2.0` renders the maintenance-window contract described in
 [the deployment guide](../../docs/content/deployment.md). It creates application
 Deployments, Services, CronJobs, one static responder, an Ingress, an inventory
 ConfigMap, and a retained migration Job. Existing databases, private buckets and
@@ -102,3 +102,46 @@ replaced with durable phase execution, and worker heartbeat/readiness plus drain
 proof added. Work's runner combines task and scheduling execution and is modeled
 as a singleton background workload; its independent Studio deployment stays
 externally owned. Both examples require actual adoption PRs and rollout evidence.
+
+### Pod hardening and migration observation (chart 0.2.0)
+
+Named workloads and migration accept optional `serviceAccountName`,
+`podSecurityContext`, and `securityContext`. These are bounded fields, not raw
+PodSpec fragments. A supplied pod context requires `runAsNonRoot: true`, positive
+`runAsUser`/`runAsGroup`, and `seccompProfile: {type: RuntimeDefault}`; optional
+`fsGroup` and `supplementalGroups` must also be positive IDs. A supplied container
+context requires `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
+and `capabilities: {drop: [ALL]}`. Unknown fields and privilege/host escape settings
+are rejected. Existing snapshots may omit these fields. Migration now accepts the
+same `scratch` emptyDir declarations as named workloads. Scratch names/paths must
+be unique; host/system roots and traversal paths cannot shadow credentials.
+
+`target.migration.observerAccess: true` requires an explicit pre-existing migration
+`serviceAccountName`. It adds a read-only projection at
+`/var/run/secrets/kubernetes.io/serviceaccount` containing `token`, `ca.crt`,
+`namespace`, `pod-name`, and `pod-uid`. The native service-account token requests
+600 seconds; Kubernetes rotates it, so callbacks must reread the token for fresh
+requests. The API server controls its effective validity. CA comes from the
+namespace's pre-existing `kube-root-ca.crt` ConfigMap. Verify TLS normally. Runtime
+observer access and arbitrary projections are unsupported. Automatic service
+account token mounting remains false on every pod, including migration.
+
+The platform owns these service accounts, their read-only observer RBAC, root CA,
+and any inherited image-pull Secret references. The runner requires observer
+`get`/`list` on pods, deployments, replica sets, jobs, cron jobs, stateful sets,
+daemon sets and horizontal pod autoscalers in the release namespace, plus bounded
+`get configmap/<releaseName>-maintenance` to validate the responder config. It reads
+all declared service accounts and inherited pull-secret references before
+maintenance. The chart inventory lists service accounts, observer identities and
+CA ConfigMaps; it creates none of these platform resources.
+
+Preflight also creates synthetic Pods with `kubectl create --dry-run=server`
+under the reconciler identity using each phase's exact template. This requires
+namespace-scoped `create pods`; RBAC cannot restrict that grant to dry runs.
+Random fresh names prevent adopting existing Pods. Nothing is persisted. Admission
+identity can differ from the actual workload controller, and policies can change;
+this is current evidence, not a guarantee of future admission. Actual observed
+Pods must preserve the rendered security, service-account, scratch and credential
+projection envelope. Qualify real execution under the hardened settings with the
+disposable deployment exercise before adoption. Version 0.2.0 is a new artifact;
+published chart 0.1.0 must never be overwritten.

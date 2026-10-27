@@ -3,7 +3,7 @@
  * installing the pinned tools/controllers and capturing stdout/stderr evidence.
  */
 import assert from 'node:assert/strict';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
@@ -115,9 +115,19 @@ async function s3(endpoint, method, path, body = '') {
   }, signal: AbortSignal.timeout(10000) });
 }
 const resources = { requests: { cpu: '25m', memory: '32Mi' }, limits: { cpu: '500m', memory: '256Mi' } };
+const observerProbe = `set -eu
+observer=/var/run/secrets/kubernetes.io/serviceaccount
+for file in token ca.crt namespace pod-name pod-uid; do test -s "$observer/$file"; done
+test "$(id -u)" = 10001
+test "$(cat "$observer/namespace")" = '${namespace}'
+printf 'observer-pod-name:%s\\nobserver-pod-uid:%s\\n' "$(cat "$observer/pod-name")" "$(cat "$observer/pod-uid")"
+echo scratch > /tmp/observer-scratch
+rm /tmp/observer-scratch
+if touch /smrt-root-probe 2>/dev/null; then echo root-write-unexpected; exit 81; fi
+`;
 function runtime(version, broken = false) {
   const web = { role: 'web', writer: true, image: version === 'old' ? images.nginxOld : images.nginxNew,
-    command: ['sh', '-c', `printf 'server { listen 8080; location = /health { return 200 "ready"; } location / { return ${broken ? 500 : 200} "${version}-release"; } }' > /etc/nginx/conf.d/default.conf; exec nginx -g 'daemon off;'`],
+    command: ['sh', '-c', `printf 'pid /tmp/nginx.pid; error_log stderr; events {} http { access_log off; client_body_temp_path /tmp/client; proxy_temp_path /tmp/proxy; fastcgi_temp_path /tmp/fastcgi; uwsgi_temp_path /tmp/uwsgi; scgi_temp_path /tmp/scgi; server { listen 8080; location = /health { return 200 "ready"; } location / { return ${broken ? 500 : 200} "${version}-release"; } } }' > /tmp/nginx.conf; exec nginx -p /tmp -c /tmp/nginx.conf -e stderr -g 'daemon off;'`],
     env: [], replicas: 1, port: 8080, service: { port: 8080 }, readinessProbe: { httpGet: { path: '/health', port: 8080 } }, resources, terminationGracePeriodSeconds: 10 };
   const writer = { role: 'task', writer: true, image: images.postgres,
     command: ['sh', '-c', 'trap "exit 0" TERM INT; while :; do psql -v ON_ERROR_STOP=1 -c "INSERT INTO writer_ticks DEFAULT VALUES"; sleep 1 & wait $!; done'],
@@ -142,11 +152,20 @@ BEGIN;
 INSERT INTO phase_ledger(id) VALUES ('repair-step') ON CONFLICT DO NOTHING;
 COMMIT;
 SQL`], env: ['PGHOST', 'PGUSER', 'PGDATABASE', 'PGPASSWORD'].map((name) => envRef(name, 'migration-v1')), guard: 'smrt-release-v1', resources, terminationGracePeriodSeconds: 30 };
+  const envelope = {
+    podSecurityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: { type: 'RuntimeDefault' } },
+    securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
+    scratch: [{ name: 'tmp', mountPath: '/tmp', sizeLimit: '16Mi' }],
+  };
+  Object.assign(web, structuredClone(envelope));
+  Object.assign(writer, structuredClone(envelope));
+  Object.assign(migration, structuredClone(envelope), { serviceAccountName: 'exercise-observer', observerAccess: true });
+  migration.command[2] = observerProbe + migration.command[2];
   return { workloads: { web, writer }, migration };
 }
 let sequence = 0;
 const bootstrapRuntime = runtime('old');
-bootstrapRuntime.migration.command = ['sh', '-c', 'psql -v ON_ERROR_STOP=1 -c "SELECT 1"'];
+bootstrapRuntime.migration.command = ['sh', '-c', observerProbe + 'psql -v ON_ERROR_STOP=1 -c "SELECT 1"'];
 let values = { release: { id: 'bootstrap-001', phase: 'maintenance', sequence, attempt: 1 }, app: { name: 'fixture', environment: 'isolated' }, current: false, target: bootstrapRuntime,
   maintenance: { image: images.nginxOld, command: ['nginx', '-g', 'daemon off;'], port: 8080, http: { path: '/', status: 503, body: 'Maintenance' } },
   bindings: { database: { secretName: 'runtime-v1', secretKey: 'pghost' }, privateBuckets: [{ name: 'assets', secretName: 'bucket-v1', secretKey: 'endpoint' }] },
@@ -275,6 +294,12 @@ function snapshot(existing) {
 function preflightObjects(objects, serviceAccount = 'exercise-reconciler') {
   const before = objects.map((object) => snapshot(existingOwnedResource(object, serviceAccount)));
   try {
+    for (const object of objects) {
+      const template = object.kind === 'CronJob' ? object.spec?.jobTemplate?.spec?.template : object.spec?.template;
+      if (template) {
+        k(['-n', namespace, '--as', `system:serviceaccount:${namespace}:${serviceAccount}`, 'create', '--dry-run=server', '-f', '-'], { apiVersion: 'v1', kind: 'Pod', metadata: { ...template.metadata, name: `smrt-preflight-${randomUUID()}`, namespace }, spec: template.spec });
+      }
+    }
     k(['-n', namespace, '--as', `system:serviceaccount:${namespace}:${serviceAccount}`, 'apply', '--server-side', '--dry-run=server', '--field-manager=helm-controller', '-f', '-'], { apiVersion: 'v1', kind: 'List', items: objects });
   } finally {
     for (let i = 0; i < objects.length; i++) {
@@ -350,6 +375,15 @@ try {
     pg, service('postgres', 5432), bucket, service('bucket', 9000), registry, service('registry', 5000),
     resource('v1', 'ServiceAccount', 'traefik', {}),
     resource('v1', 'ServiceAccount', 'exercise-reconciler', {}, namespace),
+    resource('v1', 'ServiceAccount', 'exercise-observer', { automountServiceAccountToken: false }, namespace),
+    resource('rbac.authorization.k8s.io/v1', 'Role', 'exercise-observer', { rules: [
+      { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] },
+      { apiGroups: [''], resources: ['configmaps'], resourceNames: ['exercise-maintenance'], verbs: ['get'] },
+      { apiGroups: ['apps'], resources: ['deployments', 'replicasets', 'statefulsets', 'daemonsets'], verbs: ['get', 'list'] },
+      { apiGroups: ['batch'], resources: ['jobs', 'cronjobs'], verbs: ['get', 'list'] },
+      { apiGroups: ['autoscaling'], resources: ['horizontalpodautoscalers'], verbs: ['get', 'list'] },
+    ] }, namespace),
+    resource('rbac.authorization.k8s.io/v1', 'RoleBinding', 'exercise-observer', { roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'exercise-observer' }, subjects: [{ kind: 'ServiceAccount', name: 'exercise-observer', namespace }] }, namespace),
     resource('v1', 'ServiceAccount', 'denied-reconciler', {}, namespace),
     resource('rbac.authorization.k8s.io/v1', 'Role', 'denied-reconciler', { rules: [
       { apiGroups: [''], resources: ['secrets', 'configmaps', 'services'], verbs: ['get', 'list', 'watch'] },
@@ -360,6 +394,7 @@ try {
     resource('rbac.authorization.k8s.io/v1', 'RoleBinding', 'denied-reconciler', { roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'denied-reconciler' }, subjects: [{ kind: 'ServiceAccount', name: 'denied-reconciler', namespace }] }, namespace),
     resource('rbac.authorization.k8s.io/v1', 'Role', 'exercise-reconciler', { rules: [
       { apiGroups: [''], resources: ['secrets', 'configmaps', 'services'], verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'] },
+      { apiGroups: [''], resources: ['pods'], verbs: ['create'] },
       { apiGroups: [''], resources: ['pods', 'endpoints', 'serviceaccounts'], verbs: ['get', 'list', 'watch'] },
       { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'] },
       { apiGroups: ['apps'], resources: ['replicasets'], verbs: ['get', 'list', 'watch'] },
@@ -403,10 +438,10 @@ try {
   assert.equal((await s3(bucketEndpoint, 'PUT', '/assets/sentinel', 'preserve-object')).status, 200);
   const endpoint = await forward('traefik', 8080);
   const registryEndpoint = await forward('registry', 5000);
-  execFileSync(helm, ['push', join(scratch, 'smrt-app-0.1.0.tgz'), `oci://${new URL(registryEndpoint).host}/charts`, '--plain-http'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync(helm, ['push', join(scratch, 'smrt-app-0.2.0.tgz'), `oci://${new URL(registryEndpoint).host}/charts`, '--plain-http'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   // Helm may write the receipt to stderr; inspect the registry manifest itself
   // to bind the OCIRepository to the exact published artifact digest.
-  const receipt = await fetch(`${registryEndpoint}/v2/charts/smrt-app/manifests/0.1.0`, { headers: { Accept: 'application/vnd.oci.image.manifest.v1+json' } });
+  const receipt = await fetch(`${registryEndpoint}/v2/charts/smrt-app/manifests/0.2.0`, { headers: { Accept: 'application/vnd.oci.image.manifest.v1+json' } });
   assert.equal(receipt.status, 200, 'published chart manifest exists');
   const chartDigest = receipt.headers.get('docker-content-digest');
   assert.match(chartDigest, /^sha256:[a-f0-9]{64}$/);
@@ -435,11 +470,30 @@ try {
   await reconcile('stopped'); await stopped();
   await reconcile('migrate');
   await until('bootstrap validation Job completes', () => get('job', 'exercise-migration-bootstrap-001-1').status?.succeeded === 1);
+  const bootstrapPods = JSON.parse(k(['-n', namespace, 'get', 'pods', '-l', 'job-name=exercise-migration-bootstrap-001-1', '-o', 'json'])).items;
+  assert.equal(bootstrapPods.length, 1);
+  const observerPod = bootstrapPods[0];
+  const observerLog = migrationLogs('exercise-migration-bootstrap-001-1');
+  assert.ok(observerLog.includes(`observer-pod-name:${observerPod.metadata.name}`));
+  assert.ok(observerLog.includes(`observer-pod-uid:${observerPod.metadata.uid}`), 'actual projected Pod UID matches Kubernetes identity');
+  assert.equal(observerPod.spec.serviceAccountName, 'exercise-observer');
+  assert.equal(observerPod.spec.automountServiceAccountToken, false);
+  assert.equal(k(['-n', namespace, '--as', `system:serviceaccount:${namespace}:exercise-observer`, 'auth', 'can-i', 'list', 'pods']).trim(), 'yes');
+  assert.throws(() => k(['-n', namespace, '--as', `system:serviceaccount:${namespace}:denied-reconciler`, 'auth', 'can-i', 'list', 'pods']), (error) => String(error.stdout).trim() === 'no', 'observer without Pod-list RBAC fails closed');
+  assert.throws(() => get('serviceaccount', 'missing-observer'), 'absent observer SA is not silently accepted');
   await reconcile('verify');
   await http(endpoint, 503, 'Maintenance', true);
   await reconcile('active');
   await http(endpoint, 200, 'old-release');
   await until('old writer inserts data', () => Number(sql('SELECT count(*) FROM writer_ticks')) > 0);
+  for (const name of ['web', 'writer']) {
+    const spec = get('deployment', `exercise-${name}`).spec.template.spec;
+    assert.equal(spec.automountServiceAccountToken, false);
+    assert.equal(spec.volumes.some((volume) => volume.projected), false, 'runtime does not receive API credentials');
+    const runtimePods = JSON.parse(k(['-n', namespace, 'get', 'pods', '-l', `app.kubernetes.io/instance=exercise,smrt.happyvertical.com/workload=${name}`, '-o', 'json'])).items;
+    assert.equal(runtimePods.length, 1);
+    for (const pod of runtimePods) assert.equal(pod.spec.volumes.some((volume) => volume.projected), false);
+  }
   note('old runtime serving, database and S3 sentinel objects present');
   const oldRuntime = structuredClone(bootstrapRuntime);
   await dryRunAllPhases({ ...values, current: oldRuntime, target: runtime('new', true), release: { ...values.release, id: 'exercise-001', attempt: 1, sequence: sequence + 1 } });

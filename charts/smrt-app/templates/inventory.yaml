@@ -1,10 +1,15 @@
 {{- $resources := list }}
 {{- $secrets := list }}
 {{- $known := dict }}
+{{- $accounts := dict "default" true }}
+{{- $observers := dict }}
 {{- $root := . }}
 {{- range $runtime := list .Values.current .Values.target }}
 {{- if $runtime }}
+{{- $_ := set $accounts (default "default" $runtime.migration.serviceAccountName) true }}
+{{- if $runtime.migration.observerAccess }}{{ $_ := set $observers $runtime.migration.serviceAccountName true }}{{ end }}
 {{- range $name, $w := $runtime.workloads }}
+{{- $_ := set $accounts (default "default" $w.serviceAccountName) true }}
 {{- $kind := "Deployment" }}{{ $api := "apps/v1" }}
 {{- if $w.schedule }}{{ $kind = "CronJob" }}{{ $api = "batch/v1" }}{{ end }}
 {{- $key := printf "%s/%s" $kind $name }}
@@ -41,4 +46,4 @@ metadata:
   labels:
 {{ include "smrt.labels" . | indent 4 }}
 data:
-  inventory.json: {{ dict "version" 1 "resources" $resources "secrets" $secrets "requirements" (dict "rbac" (list (dict "apiGroup" "apps" "resource" "deployments" "verbs" (list "get" "list" "watch" "create" "patch" "update" "delete")) (dict "apiGroup" "batch" "resource" "jobs" "verbs" (list "get" "list" "watch" "create" "delete")) (dict "apiGroup" "batch" "resource" "cronjobs" "verbs" (list "get" "list" "watch" "create" "patch" "update" "delete")) (dict "apiGroup" "" "resource" "pods" "verbs" (list "get" "list" "watch")) (dict "apiGroup" "" "resource" "secrets" "verbs" (list "get")) (dict "apiGroup" "" "resource" "services" "verbs" (list "get" "create" "patch" "update" "delete")) (dict "apiGroup" "" "resource" "configmaps" "verbs" (list "get" "create" "patch" "update" "delete")) (dict "apiGroup" "networking.k8s.io" "resource" "ingresses" "verbs" (list "get" "create" "patch" "update" "delete"))) "helmStorage" (dict "namespace" .Release.Namespace "resource" "secrets" "namePattern" (printf "sh.helm.release.v1.%s.v*" .Release.Name) "verbs" (list "get" "list" "watch" "create" "update" "patch" "delete")) "admission" (list "server-side dry-run of every phase under the Flux Helm controller identity" "immutable versioned Secret references" "protected phase writes" "no external autoscaler or unmanaged writer")) | toJson | quote }}
+  inventory.json: {{ dict "version" 1 "serviceAccounts" (keys $accounts | sortAlpha) "observerServiceAccounts" (keys $observers | sortAlpha) "observerConfigMaps" (ternary (list "kube-root-ca.crt" (printf "%s-maintenance" .Release.Name)) (list) (gt (len $observers) 0)) "resources" $resources "secrets" $secrets "requirements" (dict "rbac" (list (dict "apiGroup" "apps" "resource" "deployments" "verbs" (list "get" "list" "watch" "create" "patch" "update" "delete")) (dict "apiGroup" "batch" "resource" "jobs" "verbs" (list "get" "list" "watch" "create" "delete")) (dict "apiGroup" "batch" "resource" "cronjobs" "verbs" (list "get" "list" "watch" "create" "patch" "update" "delete")) (dict "apiGroup" "" "resource" "pods" "verbs" (list "get" "list" "watch")) (dict "apiGroup" "" "resource" "secrets" "verbs" (list "get")) (dict "apiGroup" "" "resource" "services" "verbs" (list "get" "create" "patch" "update" "delete")) (dict "apiGroup" "" "resource" "configmaps" "verbs" (list "get" "create" "patch" "update" "delete")) (dict "apiGroup" "networking.k8s.io" "resource" "ingresses" "verbs" (list "get" "create" "patch" "update" "delete"))) "helmStorage" (dict "namespace" .Release.Namespace "resource" "secrets" "namePattern" (printf "sh.helm.release.v1.%s.v*" .Release.Name) "verbs" (list "get" "list" "watch" "create" "update" "patch" "delete")) "admission" (list "server-side dry-run of every phase under the Flux Helm controller identity" "immutable versioned Secret references" "protected phase writes" "no external autoscaler or unmanaged writer")) | toJson | quote }}

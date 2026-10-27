@@ -64,3 +64,10 @@ validation. Full validation follows root `AGENTS.md` and `TESTING_STANDARD.md`;
 heavy work uses the prescribed cluster-test workflow. The integration owner must
 record disposable teardown even on failure. Do not replace failed documented
 commands with a different toolchain and report green.
+
+| Chart 0.2.0 boundary | Positive / negative | Actor and evidence |
+| --- | --- | --- |
+| Security and observer schema/render | Bounded non-root contexts, scratch and explicit observer SA render; root/privilege/unknown fields, runtime observer or missing SA fail | Helm; `node --test scripts/deployment-chart.test.mjs` |
+| Platform preflight | Declared SA/CA/read-only RBAC and synthetic Pod admission pass; missing SA/CA/RBAC/create permission/admission fail before maintenance | Runner, reconciler and observer; `node --test scripts/deployment-release.test.mjs` |
+| Actual Pod envelope | Exact account/security/volumes pass; changed IDs, account, added token volumes or host/privilege escape fail | Actual Pod identity; same runner suite |
+| Hardened execution | Web/task/migration execute with non-root 10001, RuntimeDefault, dropped ALL, no escalation, read-only root and `/tmp` emptyDir | Existing disposable deployment exercise; integration owner runs isolated stack |
