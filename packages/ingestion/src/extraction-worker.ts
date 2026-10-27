@@ -33,6 +33,8 @@ process.once(
         });
       const providers: ExtractionProviders = {
         imageMode: configuration.imageMode,
+        visionImageLimits: configuration.visionImageLimits,
+        observeAnswerRegions: configuration.observeAnswerRegions,
       };
       const mime = request.evidence.mediaType
         .split(';')[0]

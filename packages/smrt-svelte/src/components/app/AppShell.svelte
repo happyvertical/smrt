@@ -22,6 +22,7 @@ import { formatSortableAnnouncement } from '../sortable/announce.js';
 import { createSortable } from '../sortable/controller.svelte.js';
 import AdminShell from '../workspace/admin-shell/AdminShell.svelte';
 import AppScopePanel from '../workspace/admin-shell/AppScopePanel.svelte';
+import { setAdminShell } from '../workspace/admin-shell/context.js';
 import {
   applyShellLayout,
   normalizeShellLayout,
@@ -282,8 +283,9 @@ interface Props {
   phoneDock?: 'sheet' | 'drawer';
   /**
    * Render the shell chrome (default). `false` mounts only the Provider and
-   * ThemeProvider around `children`: no navigation, sidebars, header, or
-   * footer, so a host can show the first-run setup route chrome-free.
+   * ThemeProvider around `children`, retaining the canonical shell and layout
+   * contexts: no navigation, sidebars, header, or footer. Hosts can compose
+   * their own chrome and still render ShellSettingsPage against the same state.
    */
   chrome?: boolean;
   children: Snippet;
@@ -458,6 +460,9 @@ const shell = untrack(() =>
     layoutPanels: normalizeShellLayout(layout).panels,
   }),
 );
+// Context belongs to the state owner, including hosts that supply their own chrome.
+setAdminShell(shell);
+
 // Hosts that pass only `onlayoutchange` own persistence but not the value:
 // keep it in memory so edits show at once.
 let localLayout = $state<ShellLayout | undefined>();

@@ -367,7 +367,7 @@ describe('local application runtime', () => {
     );
     expect(profile.rows[0]).toMatchObject({
       _meta_type: '@happyvertical/smrt-profiles:Person',
-      tenant_id: null,
+      tenant_id: claim.tenantId,
       name: 'Will Griffin',
       email: 'will@example.com',
     });
@@ -437,6 +437,11 @@ describe('local application runtime', () => {
       ...input,
       password: 'a durable owner password',
     });
+    const profile = await initialized.runtime.db.query(
+      'SELECT tenant_id FROM profiles WHERE id = ?',
+      claim.profileId,
+    );
+    expect(profile.rows[0]?.tenant_id).toBe(claim.tenantId);
     const passwords = await PasswordCredentialService.create({
       db: initialized.runtime.db,
     });
@@ -529,6 +534,11 @@ describe('local application runtime', () => {
       });
 
       expect(claim.tenantId).toBe(seededId);
+      const profile = await db.query(
+        'SELECT tenant_id FROM profiles WHERE id = ?',
+        claim.profileId,
+      );
+      expect(profile.rows[0]?.tenant_id).toBe(seededId);
       const tenants = await db.query('SELECT id, slug, name FROM tenants');
       expect(tenants.rows).toEqual([
         { id: seededId, slug: 'shop', name: 'Shop' },

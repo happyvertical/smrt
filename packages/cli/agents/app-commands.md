@@ -126,3 +126,10 @@ Tests: `src/app/__tests__/` (primitives, operations in-process, real CLI
 process, and the template's portability-asset suite ported verbatim); lock,
 lease, state-custody, and readiness cases (including review findings R1, R3,
 T2) live in app-runtime's `src/operator-primitives.test.ts`.
+
+`smrt app migrate --relax-columns` explicitly forwards constraint relaxation to
+`db:migrate` under the same operation lock and writer-lease refusal. Without the
+flag, live constraints remain protected. SQLite ordinary inline NOT NULL
+relaxation uses the tracker-owned atomic rebuild; see the core schema-paths
+contract for unsupported shapes and FK validation. Unknown migrate options fail
+before touching local custody or starting the child command.

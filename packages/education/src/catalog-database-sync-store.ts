@@ -1,4 +1,5 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { normalizeCatalogRepresentation } from './catalog-capability.js';
 import {
   CatalogResourceCollection,
   CatalogSyncStateCollection,
@@ -111,6 +112,9 @@ export class CatalogDatabaseSyncStore implements CatalogSyncStore {
       resourceType: record.resourceType ?? '',
       parentStableId: record.parentStableId ?? '',
       availableFormats: json(record.availableFormats ?? []),
+      representation: json(
+        normalizeCatalogRepresentation(record.representation),
+      ),
       licenseEvidence: json(record.licenseEvidence),
       licenseState: record.licenseEvidence.state,
       visibility: record.visibility,

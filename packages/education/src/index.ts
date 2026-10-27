@@ -24,6 +24,11 @@ export type {
 } from './catalog-acquisition-service.js';
 export { CatalogAcquisitionService } from './catalog-acquisition-service.js';
 export {
+  CatalogRepresentationError,
+  evaluateCatalogAcquisitionCapability,
+  normalizeCatalogRepresentation,
+} from './catalog-capability.js';
+export {
   CatalogAcquisitionCollection,
   CatalogProviderCollection,
   CatalogResourceCollection,
@@ -32,10 +37,12 @@ export {
 } from './catalog-collections.js';
 export type {
   CatalogAcquireAdapter,
+  CatalogAcquisitionCapabilityDecision,
   CatalogActor,
   CatalogLicenseEvidence,
   CatalogLicenseState,
   CatalogOperation,
+  CatalogResourceRepresentation,
   CatalogSourceRecord,
   CatalogSyncAdapter,
   CatalogSyncCheckpoint,
@@ -209,6 +216,7 @@ export type {
 export {
   SubmissionService,
   SubmissionStorageCleanupError,
+  WorkbookWorkflowRequiredError,
 } from './submission-service.js';
 export type {
   ExternalCompletionReporter,
@@ -226,3 +234,11 @@ export {
   SubmissionAsset,
   SubmissionIntakeBinding,
 } from './submissions.js';
+export { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
+export * from './workbook-contracts.js';
+export * from './workbook-layout.js';
+export * from './workbook-models.js';
+export * from './workbook-photo-contracts.js';
+export * from './workbook-photo-models.js';
+export { WorkbookPhotoService } from './workbook-photo-service.js';
+export { WorkbookService } from './workbook-service.js';

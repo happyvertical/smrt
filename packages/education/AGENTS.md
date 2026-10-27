@@ -3,7 +3,8 @@
 Catalog objects are optional-tenant scoped and have no generated REST, CLI, MCP,
 or AI surface. Applications use `CatalogService`, supplying their actor-bound
 authorization decision and the trusted `TenantCollection.withTenantCatalogReadScope`
-adapter from smrt-users. That read scope may widen only an allowlisted catalog
+adapter from smrt-users. Catalog authorization receives the exact shared collection
+executor; live session/permission checks must use that executor. That read scope may widen only an allowlisted catalog
 collection's `list` to self, ancestors, and globals; it never authorizes a get,
 write, raw query, sibling, or descendant read.
 
@@ -26,6 +27,12 @@ files after rollback; never expose source URIs or accept learner grade patches.
 
 Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.
+
+Physical workbook capture, immutable assessment/feedback history and descriptive
+evidence use [WorkbookService](agents/workbook-service.md). Keep provisional
+sharing separate from guardian Grade authority. Photo-first receipt/context
+capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
+never create learning evidence, and blank exercises need explicit work intent.
 
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and

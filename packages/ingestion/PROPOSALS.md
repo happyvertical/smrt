@@ -133,11 +133,16 @@ absent or no offered candidate matches. On required-only schema refusals, the
 validator computes the absent required set and corrects a mismatched model
 declaration; the instruction guides the model without making its declaration
 authoritative. Absent optional fields stay out
-of both `args` and `missingFields`. The model prefers `no_action` when no
+of both `args` and `missingFields`, rather than being sent as null (unless the field explicitly permits null). Suggestion objects contain exactly the required envelope keys, with handler arguments nested only inside `args`. Alternatives mean genuinely competing OTHER choices, not a list of offered choices: use `[]` when none exist and never list the selected handler itself. The SDK response schema excludes that handler key from each suggestion variant while retaining other handler and candidate keys (#4395). Existing malformed or ambiguous outputs remain refused/pending; no self-alternative is stripped after generation. The model prefers `no_action` when no
 offered handler's description fits the document's role, and `unknown` when the
 evidence cannot be interpreted (#4290). Domain routing, such as which received
 documents an application ignores, belongs in host handler descriptions or
-reviewer guidance, not in this text. The text is not persisted. It is not part
+reviewer guidance, not in this text. Keep these shared instructions concise: the
+maintained reference host pins the complete SDK request to an 8 KiB wire/input
+budget. That budget includes schema and transport overhead; adding repeated prose
+can prevent a valid small request from reaching its provider. The frozen
+evaluation checks the real envelope without raising its budget (#4395).
+The text is not persisted. It is not part
 of the frozen interpretation configuration, the input, catalog or output
 digests, or the stored generation output, so a package release that changes it
 leaves stored attempts readable and previewable unchanged. New attempts send the
@@ -686,3 +691,51 @@ Interpretation output uses the exported `GenerationAnalysisOutput` wrapper at
 An explicit feedback `retrieve` denial omits optional examples and feedback
 provenance and continues generation. Item/execution denials, unexpected failures,
 and revocation after examples were selected still fail closed before disclosure.
+
+## Storage-safe provider text (#4393)
+
+After the normal output-byte ceiling, generation validates decoded JSON object
+keys and nested string values for PostgreSQL's unsupported NUL and unpaired
+UTF-16 surrogate characters. A refusal is `malformed_output` with a fixed,
+value-free reason, before either accepted or refused suggestion arguments can be
+retained. Provider content is never stripped, repaired or treated as authority.
+Literal backslash-u text and valid supplementary Unicode remain unchanged.
+
+The generic `completeAnalysis` publication boundary independently checks the
+whole result, including provider metadata and diagnostics. An invalid result
+records the exact current fenced attempt as `needs_attention/malformed_output`
+on the same authorized executor and completes its dispatch; it produces no
+completed analysis, proposal or execution. Originals remain readable, and a
+fresh authorized analysis revision can retry without rewriting the failed one.
+Existing byte limits and current authority/fence checks still apply.
+
+Optional failed-attempt capture uses the existing private, reviewer-authorized
+host redaction policy. Unsupported generated JSON can be retained there as its
+JSON-escaped diagnostic representation; it is never copied into a successful
+proposal or returned in ordinary snapshot payloads. Without an enabled redactor,
+no raw diagnostic text is retained. Shared foundation/proposal tests exercise
+SQLite and actual PostgreSQL JSONB writes, invalid keys and values, lone high/low
+surrogates, valid emoji/literal escapes, source retention, retry and capture policy.
+
+
+## Descriptive candidate context
+
+A discovery candidate may include optional `context`, a plain JSON object of
+untrusted descriptive data. It is never instructions or new authority. Keep the
+label concise: context does not create extra entity choices. Validation rejects
+non-JSON values, lossy coercions, unsafe Unicode, cycles, depth over32 and context
+exceeding the existing `maxInputBytes`. The complete offered input still uses the
+same total byte budget. Invalid authorized context fails closed; denied candidates
+and their context never reach generation. Absent context preserves the old wire.
+
+Context is snapshotted and included in the candidate key/digest and generator
+contract. Hosts must bind any context changes to their current target revision;
+current target checks retain their existing live executor/authorization boundary.
+Education binds canonical same-capture prompt context to its target revision digest.
+
+The engine exposes read-only `HandlerContext.analysisRevision` and forwards the
+same current item revision to target authorization on its shared executor. This
+pin comes from the owned intake row, not handler arguments, browser input or model
+output. An owner may use it to avoid treating that generation's own materialized
+result as an independent change to its input context; ordinary unrelated changes
+and current authority/revision checks still invalidate stale snapshots.

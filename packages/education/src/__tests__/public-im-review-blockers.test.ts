@@ -1101,3 +1101,76 @@ describe('round6 malformed descendant owner invariants', () => {
     }
   });
 });
+
+describe('format-neutral strict local role boundary', () => {
+  const nonPdf = `<a class="im-c-filetype--docx" href="${IM_ASSET_ORIGIN}/${id}">docx</a>`;
+  const guarded = (inner: string) =>
+    `<div class="im-c-row__flex-resource">${inner}</div>`;
+  for (const level of [1, 2, 3, 4, 5, 6])
+    for (const position of ['before', 'after']) {
+      it(`denies DOCX with malformed nested h${level} ${position} link without any asset request`, async () => {
+        const malformed = `<div><h${level}>Teacher Guide</div>`;
+        const html = page(
+          guarded(
+            `<h4>Student Task Statements</h4>${position === 'before' ? malformed : ''}${nonPdf}${position === 'after' ? malformed : ''}`,
+          ),
+        );
+        const f = setup({ [lesson]: html });
+        const result = await f.adapter.enumerate({
+          cursor: cursor(),
+          checkpoint,
+        });
+        expect(
+          result.records.filter((r) => r.visibility === 'catalog'),
+        ).toHaveLength(0);
+        expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+          'GET',
+        ]);
+      });
+    }
+  it.each([
+    'Teacher Guide',
+    'Unknown role',
+  ])('keeps %s DOCX denied with no HEAD/GET', async (label) => {
+    const f = setup({ [lesson]: page(guarded(`<h4>${label}</h4>${nonPdf}`)) });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((r) => r.visibility === 'catalog'),
+    ).toHaveLength(0);
+    expect(f.fetch).toHaveBeenCalledOnce();
+  });
+  it('denies the same asset in conflicting student DOCX and teacher PDF roles', async () => {
+    const html = page(
+      guarded(`<h4>Student Task Statements</h4>${nonPdf}`) +
+        guarded(`<h4>Teacher Guide</h4>${link()}`),
+    );
+    expect(parseImFirstEditionPage(html, lesson).artifacts).toMatchObject([
+      { allowed: false },
+    ]);
+    const f = setup({ [lesson]: html });
+    const result = await f.adapter.enumerate({ cursor: cursor(), checkpoint });
+    expect(
+      result.records.filter((r) => r.visibility === 'catalog'),
+    ).toHaveLength(0);
+    expect(f.fetch).toHaveBeenCalledOnce();
+  });
+  it('preserves exact local table/block positives independent of icon and rejects nested/lexically malformed ownership', () => {
+    for (const body of [
+      guarded(`<h4>Student Task Statements</h4>${nonPdf}`),
+      `<table><tr><td>Family Materials</td><td>${nonPdf}</td></tr></table>`,
+    ])
+      expect(
+        parseImFirstEditionPage(page(body), lesson).artifacts[0]?.allowed,
+      ).toBe(true);
+    for (const body of [
+      guarded(`<div><h4>Student Task Statements</h4></div>${nonPdf}`),
+      guarded(
+        `<h4>Student Task Statements</h4><span data-x=<h4>Teacher</span>${nonPdf}`,
+      ),
+      guarded(`<h4>Student Task Statements${nonPdf}`),
+    ])
+      expect(
+        parseImFirstEditionPage(page(body), lesson).artifacts[0]?.allowed,
+      ).toBe(false);
+  });
+});

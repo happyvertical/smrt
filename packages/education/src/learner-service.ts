@@ -23,6 +23,7 @@ import type {
   Learner,
   LessonProgress,
 } from './learners.js';
+import { WorkbookActivityCollection } from './workbook-models.js';
 
 /** Inputs are identifiers, never an authority claim or model patch. */
 export interface LearnerRequest {
@@ -144,6 +145,8 @@ export class LearnerService {
     | undefined;
   private writeFailure: { error: unknown } | undefined;
   private writeTail: Promise<void> = Promise.resolve();
+  private compositeTail: Promise<void> = Promise.resolve();
+  private composingMutation = false;
   private postgres: boolean;
   /** A trusted host transaction; capture/storage is forbidden on this scope. */
   protected executorBorrowed = false;
@@ -179,6 +182,7 @@ export class LearnerService {
           // committing. A swallowed mutation failure still aborts the unit.
           if (service.transactionState === 'active')
             service.transactionState = 'draining';
+          await service.compositeTail;
           await service.writeTail;
           if (service.writeFailure) throw service.writeFailure.error;
           return result;
@@ -186,6 +190,7 @@ export class LearnerService {
           // Queued operations must not begin after failure; an operation already
           // running must settle before rollback can release its database handle.
           service.transactionState = 'aborting';
+          await service.compositeTail;
           await service.writeTail;
           throw error;
         } finally {
@@ -215,6 +220,7 @@ export class LearnerService {
     try {
       const result = await operation(service);
       service.transactionState = 'draining';
+      await service.compositeTail;
       await service.writeTail;
       if (service.writeFailure) throw service.writeFailure.error;
       return result;
@@ -240,9 +246,53 @@ export class LearnerService {
 
   // Concurrent calls on one connection must observe earlier writes in that same
   // transaction. Cross-transaction arbitration still uses database row locks.
+  /** Serialize a composite domain mutation which calls ordinary queued writes.
+   * The separate queue avoids waiting on the same queue from inside itself;
+   * both queues share abort/commit draining and poison-on-failure semantics.
+   * Composite operations must not call other composite mutations.
+   */
+  protected composeMutation<T>(
+    operation: (service: this) => Promise<T>,
+  ): Promise<T> {
+    if (!this.transactionState)
+      return this.withTransaction((service) =>
+        service.composeMutation(operation),
+      );
+    if (this.transactionState !== 'active')
+      return Promise.reject(new Error('Learner transaction scope is closed'));
+    const result = this.compositeTail.then(async () => {
+      if (
+        this.transactionState === 'aborting' ||
+        this.transactionState === 'closed'
+      )
+        throw (
+          this.writeFailure?.error ??
+          new Error('Learner transaction scope is closed')
+        );
+      this.composingMutation = true;
+      try {
+        return await operation(this);
+      } catch (error) {
+        this.writeFailure ??= { error };
+        this.transactionState = 'aborting';
+        throw error;
+      } finally {
+        this.composingMutation = false;
+      }
+    });
+    this.compositeTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   protected mutate<T>(operation: (service: this) => Promise<T>): Promise<T> {
     if (!this.transactionState) return this.withTransaction(operation);
-    if (this.transactionState !== 'active')
+    if (
+      this.transactionState !== 'active' &&
+      !(this.transactionState === 'draining' && this.composingMutation)
+    )
       return Promise.reject(new Error('Learner transaction scope is closed'));
     const result = this.writeTail.then(async () => {
       if (
@@ -689,6 +739,41 @@ export class LearnerService {
     return enrollment;
   }
 
+  /** Existing non-workbook consumers need not migrate optional workbook tables. */
+  protected async findWorkbookActivity(
+    request: LearnerRequest,
+    selector: { enrollmentId?: string; lessonId?: string },
+  ) {
+    if (!(await this.db.tableExists('workbook_activities'))) return null;
+    return (await WorkbookActivityCollection.create({ db: this.db })).get(
+      { tenantId: request.tenantId, learnerId: request.learnerId, ...selector },
+      { cache: false },
+    );
+  }
+
+  /** Compatibility progress never transports a workbook learner's feedback. */
+  protected async projectProgress(
+    request: LearnerRequest,
+    row: LessonProgress,
+  ): Promise<LessonProgressView> {
+    const view = progressView(row);
+    const learner = await this.db.get('learners', {
+      id: request.learnerId,
+      tenant_id: request.tenantId,
+    });
+    if (
+      learner?.user_id !== request.actorUserId ||
+      !(await this.findWorkbookActivity(request, { lessonId: row.lessonId }))
+    )
+      return view;
+    return {
+      ...view,
+      bestScore: null,
+      completedAt: null,
+      status: view.status === 'complete' ? 'submitted' : view.status,
+    };
+  }
+
   async listProgress(
     request: LearnerRequest & { enrollmentId: string },
   ): Promise<LessonProgressView[]> {
@@ -702,19 +787,20 @@ export class LearnerService {
         section.lessons.map(({ lesson }) => lesson.id),
       ),
     );
-    return (
-      await (
-        await LessonProgressCollection.create({ db: this.db })
-      ).list({
-        where: {
-          enrollmentId: String(enrollment.id),
-          learnerId: request.learnerId,
-          tenantId: request.tenantId,
-        },
-      })
-    )
-      .filter((progress) => lessons.has(progress.lessonId))
-      .map(progressView);
+    const rows = await (
+      await LessonProgressCollection.create({ db: this.db })
+    ).list({
+      where: {
+        enrollmentId: String(enrollment.id),
+        learnerId: request.learnerId,
+        tenantId: request.tenantId,
+      },
+    });
+    return Promise.all(
+      rows
+        .filter((progress) => lessons.has(progress.lessonId))
+        .map((progress) => this.projectProgress(request, progress)),
+    );
   }
 
   /** All exact-tenant enrollments visible to this learner or authorized guardian. */
@@ -780,7 +866,14 @@ export class LearnerService {
           learnerId: request.learnerId,
         },
       });
-      const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
+      const byLesson = new Map(
+        await Promise.all(
+          progresses.map(
+            async (row) =>
+              [row.lessonId, await this.projectProgress(request, row)] as const,
+          ),
+        ),
+      );
       const lesson = catalog.sections
         .flatMap((section) => section.lessons.map(({ lesson }) => lesson))
         .find((candidate) => {
@@ -793,7 +886,7 @@ export class LearnerService {
       const progress = byLesson.get(String(lesson.id));
       result.push({
         enrollment: enrollmentView(enrollment),
-        progress: progress ? progressView(progress) : null,
+        progress: progress ?? null,
         lesson: {
           id: String(lesson.id),
           title: lesson.title,
@@ -837,21 +930,26 @@ export class LearnerService {
       },
     });
     const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
-    return catalog.sections.flatMap((section) =>
-      section.lessons.map(({ lesson }) => ({
-        enrollment: enrollmentView(enrollment),
-        progress: byLesson.get(String(lesson.id))
-          ? progressView(byLesson.get(String(lesson.id))!)
-          : null,
-        lesson: {
-          id: String(lesson.id),
-          title: lesson.title,
-          kind: lesson.constructor.name,
-          requiresOnlineResource:
-            catalog.course.modality === 'online' ||
-            lesson.constructor.name === 'Video',
-        },
-      })),
+    return Promise.all(
+      catalog.sections.flatMap((section) =>
+        section.lessons.map(async ({ lesson }) => ({
+          enrollment: enrollmentView(enrollment),
+          progress: byLesson.get(String(lesson.id))
+            ? await this.projectProgress(
+                request,
+                byLesson.get(String(lesson.id))!,
+              )
+            : null,
+          lesson: {
+            id: String(lesson.id),
+            title: lesson.title,
+            kind: lesson.constructor.name,
+            requiresOnlineResource:
+              catalog.course.modality === 'online' ||
+              lesson.constructor.name === 'Video',
+          },
+        })),
+      ),
     );
   }
 
@@ -886,9 +984,10 @@ export class LearnerService {
       if (existing) {
         if (existing.learnerId !== enrollment.learnerId)
           throw new LearnerAuthorizationError();
-        return progressView(existing);
+        return service.projectProgress(request, existing);
       }
-      return progressView(
+      return service.projectProgress(
+        request,
         await progress.create({
           tenantId: request.tenantId,
           enrollmentId: String(enrollment.id),

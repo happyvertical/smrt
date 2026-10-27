@@ -1,3 +1,9 @@
+import {
+  CATALOG_REPRESENTATION_MEDIA_TYPES,
+  catalogRepresentationFormat,
+  catalogRepresentationMediaType,
+  normalizeCatalogRepresentation,
+} from '../catalog-capability.js';
 import type {
   CatalogAcquireAdapter,
   CatalogSourceRecord,
@@ -79,14 +85,18 @@ function cursor(value?: string): Cursor {
     throw new Error('Duplicate cursor paths.');
   return x;
 }
-function validators(
-  response: Response,
-  cap: number,
-): Omit<Revision, 'v' | 'page'> {
+function observedMetadata(response: Response) {
   const etag = response.headers.get('etag') ?? '';
   const lengthText = response.headers.get('content-length') ?? '';
   const length = Number(lengthText);
   const modified = response.headers.get('last-modified') ?? '';
+  const header = response.headers.get('content-type');
+  const mediaType =
+    header === null ? null : catalogRepresentationMediaType(header);
+  const format =
+    mediaType === null
+      ? 'unknown'
+      : (catalogRepresentationFormat(mediaType) ?? 'unknown');
   if (
     response.headers.has('content-encoding') &&
     response.headers.get('content-encoding') !== 'identity'
@@ -96,18 +106,25 @@ function validators(
     !/^"[\x21\x23-\x7e]{1,200}"$/.test(etag) ||
     !/^[1-9][0-9]*$/.test(lengthText) ||
     !Number.isSafeInteger(length) ||
-    length > cap ||
     !modified ||
     !Number.isFinite(Date.parse(modified)) ||
-    modified.length > 100 ||
-    !/^application\/pdf(?:\s*;|$)/i.test(
-      response.headers.get('content-type') ?? '',
-    )
+    modified.length > 100
   )
     throw new Error(
-      'PDF metadata requires a strong ETag, bounded length, Last-Modified, and PDF content type.',
+      'Metadata requires a strong ETag, positive safe length, and valid Last-Modified metadata.',
     );
-  return { etag, length, modified };
+  return { etag, length, modified, format, mediaType } as const;
+}
+function validators(
+  response: Response,
+  cap: number,
+): Omit<Revision, 'v' | 'page'> {
+  const { format, mediaType, ...metadata } = observedMetadata(response);
+  if (format !== 'pdf' || metadata.length > cap)
+    throw new Error(
+      'Selected representation requires PDF content type and bounded length.',
+    );
+  return metadata;
 }
 async function readBody(response: Response, cap: number): Promise<Uint8Array> {
   const declared = response.headers.get('content-length');
@@ -190,7 +207,9 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             headers: {
               'accept-encoding': 'identity',
               accept: url.startsWith(IM_ASSET_ORIGIN)
-                ? 'application/pdf'
+                ? method === 'HEAD'
+                  ? Object.values(CATALOG_REPRESENTATION_MEDIA_TYPES).join(', ')
+                  : 'application/pdf'
                 : 'text/html',
               ...headers,
             },
@@ -344,8 +363,45 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                 `${IM_ASSET_ORIGIN}/${asset.id}`,
                 'HEAD',
               );
-              const metadata = validators(response, pdfCap);
-              const pinned: Revision = { v: 1, page: revision, ...metadata };
+              const { format, mediaType, ...metadata } =
+                observedMetadata(response);
+              const representation = normalizeCatalogRepresentation({
+                format,
+                mediaType,
+                byteLength: metadata.length,
+                validators: {
+                  etag: metadata.etag,
+                  lastModified: metadata.modified,
+                },
+                acquisition:
+                  format === 'unknown'
+                    ? {
+                        status: 'unknown-format',
+                        reason:
+                          mediaType === null
+                            ? 'missing-content-type'
+                            : 'unrecognized-content-type',
+                      }
+                    : format !== 'pdf'
+                      ? { status: 'unsupported-format' }
+                      : {
+                          status:
+                            metadata.length <= pdfCap
+                              ? 'supported'
+                              : 'size-limit',
+                          maxBytes: pdfCap,
+                        },
+              });
+              // Retain the published PDF revision encoding; capability limits are not content identity.
+              const pinned =
+                format === 'pdf'
+                  ? { v: 1, page: revision, ...metadata }
+                  : {
+                      v: 2,
+                      page: revision,
+                      ...metadata,
+                      mediaType,
+                    };
               const grade = page.band.startsWith('k5')
                 ? page.course === 'kindergarten'
                   ? 'K'
@@ -368,7 +424,8 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                 language: page.band.toLowerCase().endsWith('_es') ? 'es' : 'en',
                 resourceType: 'student-material',
                 parentStableId: imStableId(path),
-                availableFormats: ['pdf'],
+                availableFormats: format === 'unknown' ? [] : [format],
+                representation,
                 visibility: 'catalog',
                 licenseEvidence: {
                   state: 'verified',
@@ -376,7 +433,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                   version: '4.0',
                   sourceUrl: IM_ORIGIN + path,
                   attribution: `${parsed.attribution}\n${IM_ORIGIN + path}\n${IM_LICENSE}`,
-                  exceptions: `${parsed.notices}\nOriginal first-edition PDF; no changes made. License: ${IM_LICENSE}`,
+                  exceptions: `${parsed.notices}\nOriginal first-edition ${format.toUpperCase()}; no changes made. License: ${IM_LICENSE}`,
                   retrievedAt: new Date().toISOString(),
                   permittedOperations: [
                     'link',
@@ -408,7 +465,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             policyExclusions.push({
               code: 'declared_scope',
               message:
-                'Public first-edition PDFs explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, other formats, teacher/login and unknown-role material are excluded; AccessIM/v.360 is excluded.',
+                'Public first-edition official CMS artifact links with observed PDF/ZIP/DOCX representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, external-host artifacts, teacher/login and unknown-role material are excluded; unknown MIME is retained with acquisition denied; malformed MIME or invalid validators pause enumeration; AccessIM/v.360 is excluded.',
             });
           return {
             records: records.sort((a, b) =>

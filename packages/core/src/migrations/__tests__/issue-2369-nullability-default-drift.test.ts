@@ -935,7 +935,7 @@ for (const { name, type, engine } of engines) {
         );
       });
 
-      it('reports nullability and default drift as manual on SQLite (no ALTER COLUMN) and leaves the rebuild seam for #2370', async () => {
+      it('keeps default/tightening drift manual and explicitly rebuilds SQLite NOT NULL relaxation', async () => {
         await db.query(
           "CREATE TABLE items (id TEXT PRIMARY KEY, status TEXT, note TEXT NOT NULL, kind TEXT DEFAULT 'a')",
         );
@@ -967,7 +967,7 @@ for (const { name, type, engine } of engines) {
           true,
         );
 
-        // … and manual (SQLite cannot relax in place) when opted in.
+        // … and executable through the owning rebuild when opted in.
         const relaxed = await comparer({ relaxColumns: true }).compare(
           manifest,
         );
@@ -975,7 +975,11 @@ for (const { name, type, engine } of engines) {
           (c) => c.name === 'note' && c.alteration === 'drop_not_null',
         ) as SchemaChange;
         expect(relaxNote.advisory).toBeUndefined();
-        expect(relaxNote.sql).toMatch(/^-- SQLite: dropping NOT NULL/);
+        expect(
+          relaxNote.sqlStatements?.some((sql) =>
+            sql.includes('_smrt_rebuild_items'),
+          ),
+        ).toBe(true);
 
         // Orchestrator: nothing executable, manual drift surfaced.
         const pending = await getPendingSchemaStatements(db, {

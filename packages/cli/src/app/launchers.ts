@@ -26,7 +26,13 @@ import { type AppContext, preparedStateRoot } from './runtime.js';
  * local writer is live, establish local storage custody without creating
  * schema or bootstrap records, then run `smrt db:migrate`.
  */
-export async function prepareMigration(context: AppContext): Promise<number> {
+export async function prepareMigration(
+  context: AppContext,
+  args: readonly string[] = [],
+): Promise<number> {
+  if (args.some((arg) => arg !== '--relax-columns') || args.length > 1) {
+    throw new AppCommandError('Usage: smrt app migrate [--relax-columns]', 2);
+  }
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   const stateRoot = preparedStateRoot(context);
   await withOperationLock(stateRoot, 'db:migrate', async () => {
@@ -54,7 +60,7 @@ export async function prepareMigration(context: AppContext): Promise<number> {
       env.DATABASE_URL = paths.database;
       env.SMRT_ASSETS_DIR = paths.assets;
     }
-    const result = context.deps.runSmrt(['db:migrate'], {
+    const result = context.deps.runSmrt(['db:migrate', ...args], {
       env,
       allowFailure: true,
     });

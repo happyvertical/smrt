@@ -1,6 +1,8 @@
+import { normalizeCatalogRepresentation } from './catalog-capability.js';
 import type {
   CatalogActor,
   CatalogLicenseEvidence,
+  CatalogResourceRepresentation,
   CatalogSourceRecord,
 } from './catalog-contracts.js';
 import { CatalogPolicy } from './catalog-policy.js';
@@ -29,6 +31,7 @@ export interface CatalogResourceView {
   resourceType?: string;
   parentStableId?: string;
   availableFormats?: string[];
+  representation?: CatalogResourceRepresentation;
   license: Pick<
     CatalogLicenseEvidence,
     | 'state'
@@ -62,6 +65,9 @@ export class CatalogReadService {
     record: CatalogSourceRecord & { id: string },
   ): CatalogResourceView {
     const { licenseEvidence } = record;
+    const representation = normalizeCatalogRepresentation(
+      record.representation,
+    );
     return {
       id: record.id,
       providerId: record.providerId,
@@ -83,6 +89,7 @@ export class CatalogReadService {
       ...(record.availableFormats
         ? { availableFormats: [...record.availableFormats] }
         : {}),
+      ...(representation ? { representation } : {}),
       license: {
         state: licenseEvidence.state,
         ...(licenseEvidence.identifier

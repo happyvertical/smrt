@@ -1,7 +1,9 @@
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { normalizeCatalogRepresentation } from './catalog-capability.js';
 import type {
   CatalogLicenseState,
+  CatalogResourceRepresentation,
   CatalogVisibility,
 } from './catalog-contracts.js';
 
@@ -31,6 +33,17 @@ export class CatalogResource extends SmrtObject {
   resourceType = '';
   parentStableId = '';
   availableFormats = '[]';
+  /** Serialized observed representation; JSON null is legacy absence. */
+  representation = 'null';
+
+  getRepresentation(): CatalogResourceRepresentation | undefined {
+    return normalizeCatalogRepresentation(this.representation);
+  }
+  setRepresentation(value: CatalogResourceRepresentation | undefined): void {
+    this.representation = JSON.stringify(
+      normalizeCatalogRepresentation(value) ?? null,
+    );
+  }
   licenseEvidence = '{}';
   licenseState: CatalogLicenseState = 'unknown';
   visibility: CatalogVisibility = 'catalog';

@@ -137,6 +137,34 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       records: [],
     });
   });
+  it('preserves published PDF v1 revision encoding across acquisition-cap changes', async () => {
+    const f = fixture();
+    const record = await discover(f);
+    expect(JSON.parse(record.revision)).toEqual({
+      v: 1,
+      page: expect.stringMatching(/^[a-f0-9]{64}$/),
+      etag: metadata.etag,
+      length: pdf.length,
+      modified: metadata['last-modified'],
+    });
+    const lower = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch: f.fetch,
+      maxPdfBytes: 5,
+    });
+    const page = await lower.enumerate({ cursor: start(), checkpoint });
+    expect(
+      page.records.find((r) => r.stableId === record.stableId)?.revision,
+    ).toBe(record.revision);
+    await expect(lower.acquire(acquireInput(record))).rejects.toThrow(
+      'revision',
+    );
+    expect(
+      f.fetch.mock.calls.filter(
+        ([url, init]) =>
+          String(url).startsWith(IM_ASSET_ORIGIN) && init?.method === 'GET',
+      ),
+    ).toHaveLength(0);
+  });
   it('rejects invalid revision values before requesting content', async () => {
     const record = await discover();
     const f = fixture();
@@ -233,6 +261,150 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       f.fetch.mock.calls.every(([, init]) => init?.redirect === 'error'),
     ).toBe(true);
   });
+  it.each([
+    null,
+    'application/octet-stream',
+    'text/html',
+  ])('retains unknown MIME %s with sibling PDF and advances metadata without asset GET', async (mediaType) => {
+    const sibling = `${id}x`;
+    let observedMediaType = mediaType;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      const address = String(url);
+      if (address.startsWith(IM_ORIGIN))
+        return response(
+          address,
+          page(row('Learning Targets', id) + row('Student Handouts', sibling)),
+          { 'content-type': 'text/html' },
+        );
+      const headers = new Headers(metadata);
+      if (address.endsWith(id)) {
+        headers.set('content-length', '52671');
+        if (observedMediaType === null) headers.delete('content-type');
+        else headers.set('content-type', observedMediaType);
+      }
+      return response(address, null, Object.fromEntries(headers));
+    });
+    const adapter = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch,
+    });
+    const result = await adapter.enumerate({ cursor: start(), checkpoint });
+    expect(result.complete).toBe(true);
+    expect(result.paused).not.toBe(true);
+    const unknown = result.records.find((r) => r.stableId.endsWith(`#${id}`));
+    expect(unknown).toMatchObject({
+      availableFormats: [],
+      representation: {
+        format: 'unknown',
+        mediaType,
+        byteLength: 52671,
+        validators: {
+          etag: metadata.etag,
+          lastModified: metadata['last-modified'],
+        },
+        acquisition: {
+          status: 'unknown-format',
+          reason:
+            mediaType === null
+              ? 'missing-content-type'
+              : 'unrecognized-content-type',
+        },
+      },
+      licenseEvidence: {
+        state: 'verified',
+        permittedOperations: expect.arrayContaining(['print', 'download']),
+      },
+    });
+    expect(
+      result.records.find((r) => r.stableId.endsWith(`#${sibling}`))
+        ?.representation?.format,
+    ).toBe('pdf');
+    expect(
+      fetch.mock.calls.filter(
+        ([url, init]) =>
+          String(url).startsWith(IM_ASSET_ORIGIN) && init?.method !== 'HEAD',
+      ),
+    ).toHaveLength(0);
+    expect(JSON.parse(unknown?.revision ?? '{}').mediaType).toBe(mediaType);
+    if (!unknown) throw new Error('Missing retained unknown representation');
+    await expect(adapter.acquire(acquireInput(unknown))).rejects.toThrow(
+      'revision',
+    );
+    expect(fetch).toHaveBeenCalledTimes(3);
+    observedMediaType = 'application/pdf';
+    const refreshed = await adapter.enumerate({ cursor: start(), checkpoint });
+    const known = refreshed.records.find(
+      (r) => r.stableId === unknown.stableId,
+    );
+    expect(known?.representation?.format).toBe('pdf');
+    expect(known?.revision).not.toBe(unknown.revision);
+    expect(JSON.parse(known?.revision ?? '{}').v).toBe(1);
+  });
+  it.each([
+    '',
+    'bad mime',
+    'application/pdf; broken',
+    `application/${'a'.repeat(513)}`,
+  ])('pauses on malformed present MIME %s without legacy fallback', async (mediaType) => {
+    const f = fixture({ head: { 'content-type': mediaType } });
+    const result = await f.adapter.enumerate({ cursor: start(), checkpoint });
+    expect(result).toMatchObject({
+      complete: false,
+      paused: true,
+      records: [],
+      nextCursor: start(),
+    });
+    expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+      'GET',
+      'HEAD',
+    ]);
+  });
+  it('discovers no-icon DOCX links across bounded chunks and a reconstructed adapter', async () => {
+    const rows = Array.from({ length: 6 }, (_, i) =>
+      row('Student Handouts', `${id}${i}`)
+        .replace('class="im-c-filetype--pdf"', '')
+        .replace('>pdf<', '>docx<'),
+    ).join('');
+    const f = fixture({
+      html: page(rows),
+      head: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+    });
+    const first = await f.adapter.enumerate({ cursor: start(), checkpoint });
+    expect(first).toMatchObject({ complete: false });
+    expect(
+      first.records.filter((r) => r.visibility === 'catalog'),
+    ).toHaveLength(4);
+    expect(
+      f.fetch.mock.calls.filter(([, init]) => init?.method === 'HEAD'),
+    ).toHaveLength(4);
+    f.fetch.mockClear();
+    const resumed = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch: f.fetch,
+    });
+    const terminal = await resumed.enumerate({
+      cursor: first.nextCursor,
+      checkpoint,
+    });
+    expect(terminal.complete).toBe(true);
+    const all = [...first.records, ...terminal.records].filter(
+      (r) => r.visibility === 'catalog',
+    );
+    expect(new Set(all.map((r) => r.stableId)).size).toBe(6);
+    expect(
+      all.every(
+        (r) =>
+          r.representation?.format === 'docx' &&
+          r.representation.acquisition.status === 'unsupported-format',
+      ),
+    ).toBe(true);
+    expect(f.fetch.mock.calls.map(([, init]) => init?.method)).toEqual([
+      'GET',
+      'HEAD',
+      'HEAD',
+    ]);
+  });
   it('supports all three bands, supports courses, linked translations and family hierarchy without navigation cycles', () => {
     for (const [root, link] of [
       ['/k5/curriculum.html', '/K5_ES/teachers/grade-4/units.html'],
@@ -276,7 +448,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       ).children,
     ).toEqual([]);
   });
-  it('classifies explicit table and resource-block labels; teacher, unknown, nonPDF and v360 stay excluded', async () => {
+  it('classifies explicit table and resource-block labels; teacher, unknown-role nonPDF and v360 stay excluded', async () => {
     const html = page(
       row('Teacher Guide') +
         row('Unknown future role', `${id}x`) +
@@ -294,7 +466,6 @@ describe('public first-edition IM metadata and selected acquisition', () => {
         'teacher_or_unknown_role',
         'different_edition',
         'login_required',
-        'unsupported_format',
       ]),
     );
   });
@@ -410,7 +581,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     { head: { etag: 'W/"weak"' } },
     { head: { 'content-length': '-1' } },
     { head: { 'last-modified': '' } },
-    { head: { 'content-type': 'text/html' } },
+    { head: { 'content-type': 'bad mime' } },
     { status: 429 },
   ])('does not advance after unavailable/malformed HEAD %j', async (options) => {
     const result = await fixture(options).adapter.enumerate({
@@ -461,7 +632,7 @@ describe('public first-edition IM metadata and selected acquisition', () => {
     expect(result).toMatchObject({ complete: false, paused: true });
     expect(result.exclusions?.[0].message).toContain('timed out');
   });
-  it('uses generic acquisition policy/idempotence and preserves notices with one private write', async () => {
+  it('keeps a new PDF pin stable across same-adapter refresh and cached retry with one private write', async () => {
     const f = fixture();
     const resource = {
       ...(await discover(f)),
@@ -501,6 +672,9 @@ describe('public first-edition IM metadata and selected acquisition', () => {
       operation: 'print' as const,
     };
     const acquired = await service.acquire(request);
+    const refreshed = await discover(f);
+    expect(refreshed.revision).toBe(request.revision);
+    Object.assign(resource, refreshed);
     expect(await service.acquire(request)).toBe(acquired);
     expect(createAcquisition).toHaveBeenCalledTimes(1);
     expect(acquired.notices).toContain('respective licenses');

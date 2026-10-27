@@ -10,6 +10,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   CatalogAuthorizationError,
@@ -28,25 +29,77 @@ import {
   assertPersonalCopyPublicationGuard,
 } from './publication-regression.js';
 
+const catalogExecutor = {} as DatabaseInterface;
 const courses = {
+  db: catalogExecutor,
   list: async () => [
     { title: 'Open course', licenseKind: 'open-license' },
     { title: 'Family copy', licenseKind: 'personal-use-copy' },
   ],
 };
-const sections = { list: async () => [] };
-const lessons = { list: async () => [] };
-const assets = { byLeft: async () => [] };
+const sections = { db: catalogExecutor, list: async () => [] };
+const lessons = { db: catalogExecutor, list: async () => [] };
+const assets = { db: catalogExecutor, byLeft: async () => [] };
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
 
 describe('CatalogService', () => {
+  it('supplies the shared public collection executor to every authorization callback', async () => {
+    const calls: Parameters<
+      import('../catalog-service.js').CatalogAuthorizer
+    >[0][] = [];
+    const service = new CatalogService(
+      {
+        db: catalogExecutor,
+        list: async () => [{ id: 'course', licenseKind: 'open-license' }],
+      } as never,
+      sections as never,
+      lessons as never,
+      assets as never,
+      { withTenantCatalogReadScope: async (_request, callback) => callback() },
+      (request) => {
+        calls.push(request);
+        return true;
+      },
+    );
+    await service.projectCourse({
+      tenantId: 'family',
+      actorUserId: 'guardian',
+      courseId: 'course',
+      includePrivate: true,
+      includeAnswerKeys: true,
+    });
+    expect(calls.map((c) => c.action)).toEqual([
+      'education.catalog.read',
+      'education.catalog.read-private',
+      'education.catalog.answer-key.read',
+    ]);
+    expect(calls.every((c) => c.executor === catalogExecutor)).toBe(true);
+    let authorized = false;
+    const mixed = new CatalogService(
+      courses as never,
+      { ...sections, db: {} } as never,
+      lessons as never,
+      assets as never,
+      { withTenantCatalogReadScope: async (_request, callback) => callback() },
+      () => {
+        authorized = true;
+        return true;
+      },
+    );
+    await expect(
+      mixed.findVisible({ tenantId: 'family', actorUserId: 'guardian' }),
+    ).rejects.toBeInstanceOf(CatalogAuthorizationError);
+    expect(authorized).toBe(false);
+  });
+
   it('passes private exclusion into the allowlisted catalog query', async () => {
     let scopeRequest: unknown;
     let queryOptions: unknown;
     const service = new CatalogService(
       {
+        db: catalogExecutor,
         list: async (options: unknown) => {
           queryOptions = options;
           return [{ title: 'Open course', licenseKind: 'open-license' }];
@@ -193,13 +246,16 @@ describe('CatalogService projections', () => {
     };
     const service = new CatalogService(
       {
+        db: catalogExecutor,
         list: async () => [{ id: 'course-1', licenseKind: 'open-license' }],
       } as never,
       {
+        db: catalogExecutor,
         list: async () => [{ id: 'section-1', courseId: 'course-1' }],
       } as never,
-      { list: async () => [lesson] } as never,
+      { db: catalogExecutor, list: async () => [lesson] } as never,
       {
+        db: catalogExecutor,
         byLeft: async () => [
           { relationship: 'answer-key', assetId: 'answer-asset' },
           { relationship: 'printable', assetId: 'worksheet-asset' },
@@ -225,13 +281,18 @@ describe('CatalogService projections', () => {
     const lesson = { id: 'lesson-1', answerUrl: 'private-answer' };
     const service = new CatalogService(
       {
+        db: catalogExecutor,
         list: async () => [{ id: 'course-1', licenseKind: 'open-license' }],
       } as never,
       {
+        db: catalogExecutor,
         list: async () => [{ id: 'section-1', courseId: 'course-1' }],
       } as never,
-      { list: async () => [lesson] } as never,
-      { byLeft: async () => [{ relationship: 'answer-key' }] } as never,
+      { db: catalogExecutor, list: async () => [lesson] } as never,
+      {
+        db: catalogExecutor,
+        byLeft: async () => [{ relationship: 'answer-key' }],
+      } as never,
       { withTenantCatalogReadScope: async (_request, callback) => callback() },
       () => true,
     );
@@ -253,15 +314,20 @@ describe('CatalogService projections', () => {
     const calls: unknown[] = [];
     const service = new CatalogService(
       {
+        db: catalogExecutor,
         list: async () => [{ id: 'course-1', licenseKind: 'open-license' }],
       } as never,
       {
+        db: catalogExecutor,
         list: async (options: unknown) => (
           calls.push(options), [{ id: 'section-1' }]
         ),
       } as never,
-      { list: async (options: unknown) => (calls.push(options), []) } as never,
-      { byLeft: async () => [] } as never,
+      {
+        db: catalogExecutor,
+        list: async (options: unknown) => (calls.push(options), []),
+      } as never,
+      { db: catalogExecutor, byLeft: async () => [] } as never,
       { withTenantCatalogReadScope: async (_request, callback) => callback() },
       () => true,
     );
@@ -302,7 +368,7 @@ describe('CatalogService tenant integration', () => {
         courses,
         await CourseSectionCollection.create({ db }),
         await LessonCollection.create({ db }),
-        { byLeft: async () => [] } as never,
+        { db, byLeft: async () => [] } as never,
         tenants,
         () => true,
       );

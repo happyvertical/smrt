@@ -48,7 +48,8 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
     'Local: copy the private data root to a new directory',
   'export [path]': 'Write a logical, asset-aware export bundle',
   'import <path>': 'Import a logical export bundle into an empty application',
-  migrate: 'Prepare storage custody and run smrt db:migrate under the lock',
+  'migrate [--relax-columns]':
+    'Prepare storage custody and run smrt db:migrate under the lock',
   'token [list|revoke <id>] [--scopes ...]':
     'Local: issue, list, or revoke a scoped bearer token for a local MCP client',
   'worker [task|schedule]': 'Deployed: run the task or schedule worker',
@@ -207,7 +208,7 @@ export async function runAppCommand(
       io,
       deps,
     };
-    if (operation === 'migrate') return await prepareMigration(context);
+    if (operation === 'migrate') return await prepareMigration(context, args);
     if (operation === 'worker') return await runWorker(context, args);
     if (operation === 'token') return await runTokenOperation(context, args);
     if (!(APP_OPERATIONS as readonly string[]).includes(operation)) {

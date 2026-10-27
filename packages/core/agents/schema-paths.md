@@ -252,6 +252,30 @@ All the drifted columns of one table share a single rebuild: the first change
 carries the plan and the rest become `no change needed` comments that the CLI
 classifies as no-ops.
 
+### Explicit SQLite NOT NULL relaxation (#4413)
+
+`relaxColumns: true` / `smrt db:migrate --relax-columns` also supports removing
+an ordinary inline `NOT NULL` clause on a manifest-declared column. The local
+application entry point forwards `smrt app migrate --relax-columns` under its
+existing operation lock and refuses a live application writer. The programmatic
+`migrateSmrtSchemas` / `getPendingSchemaStatements` entry points accept the same
+explicit `relaxColumns` option. Defaults remain advisory; this does not relax
+orphan columns or change SQLite defaults/tightening behavior.
+
+The rebuild preserves live DDL, indexes/triggers and assigned rowids. Named
+NOT NULL constraints, `ON CONFLICT`, AUTOINCREMENT tables, primary/generated target columns, missing
+clauses and tables shadowing every rowid alias refuse rather than guessing.
+A nullable-relaxation rebuild emits `PRAGMA foreign_keys = OFF` as a tracker
+handoff: `MigrationTracker` suspends FK enforcement **before** opening its
+transaction, verifies suspension on both the base and transaction connection,
+and checks `PRAGMA foreign_key_check` before commit. This avoids inbound FK
+`ON DELETE` actions and preserves referencing rows. An active borrowed transaction
+that cannot suspend enforcement, a mismatched transaction connection or an
+adapter without transactions refuses. FK and legacy rename settings are restored
+in `finally`, including after rollback. Run this maintenance operation with
+exclusive access to the SQLite connection. Type-only rebuilds retain the older
+inbound-FK refusal described above.
+
 ## What the differ compares (#2369)
 
 `SchemaComparer` (`src/migrations/differ.ts`) compares each manifest column's

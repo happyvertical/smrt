@@ -1,0 +1,202 @@
+import type {
+  CatalogAcquisitionCapabilityDecision,
+  CatalogResourceRepresentation,
+  CatalogSourceRecord,
+} from './catalog-contracts.js';
+
+/** Closed observed MIME mapping; icons and file names never establish a format. */
+export const CATALOG_REPRESENTATION_MEDIA_TYPES = {
+  pdf: 'application/pdf',
+  zip: 'application/zip',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+} as const;
+/** Bound and validate a complete Content-Type before retaining its canonical token. */
+export function catalogRepresentationMediaType(value: string): string {
+  const token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+  const quoted = '"(?:[\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\x20-\\x7e])*"';
+  const syntax = new RegExp(
+    `^${token}/${token}(?:[ \t]*;[ \t]*${token}=(?:${token}|${quoted}))*[ \t]*$`,
+  );
+  if (value.length > 512 || !syntax.test(value))
+    throw new CatalogRepresentationError();
+  return value.split(';', 1)[0].trim().toLowerCase();
+}
+export function catalogRepresentationFormat(
+  mediaType: string,
+): keyof typeof CATALOG_REPRESENTATION_MEDIA_TYPES | undefined {
+  const token = catalogRepresentationMediaType(mediaType);
+  return Object.entries(CATALOG_REPRESENTATION_MEDIA_TYPES).find(
+    ([, mime]) => mime === token,
+  )?.[0] as keyof typeof CATALOG_REPRESENTATION_MEDIA_TYPES | undefined;
+}
+
+export class CatalogRepresentationError extends Error {
+  readonly code = 'invalid-representation-metadata';
+  constructor() {
+    super('Catalog representation metadata is invalid.');
+    this.name = 'CatalogRepresentationError';
+  }
+}
+function object(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new CatalogRepresentationError();
+  return value as Record<string, unknown>;
+}
+function keys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+): void {
+  if (Object.keys(value).some((key) => !allowed.includes(key)))
+    throw new CatalogRepresentationError();
+}
+function positive(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+/** Missing/null is legacy; malformed present data always throws, never becomes absence. */
+export function normalizeCatalogRepresentation(
+  value: unknown,
+): CatalogResourceRepresentation | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'string') {
+    if (value.length > 4096) throw new CatalogRepresentationError();
+    try {
+      value = JSON.parse(value);
+    } catch {
+      throw new CatalogRepresentationError();
+    }
+    if (value === null) return undefined;
+  }
+  const record = object(value);
+  keys(record, [
+    'format',
+    'mediaType',
+    'byteLength',
+    'validators',
+    'acquisition',
+  ]);
+  if (!positive(record.byteLength)) throw new CatalogRepresentationError();
+  if (record.format === 'unknown') {
+    if (
+      record.mediaType !== null &&
+      (typeof record.mediaType !== 'string' ||
+        catalogRepresentationMediaType(record.mediaType) !== record.mediaType ||
+        catalogRepresentationFormat(record.mediaType) !== undefined)
+    )
+      throw new CatalogRepresentationError();
+  } else if (
+    typeof record.format !== 'string' ||
+    !Object.hasOwn(CATALOG_REPRESENTATION_MEDIA_TYPES, record.format) ||
+    CATALOG_REPRESENTATION_MEDIA_TYPES[
+      record.format as keyof typeof CATALOG_REPRESENTATION_MEDIA_TYPES
+    ] !== record.mediaType
+  )
+    throw new CatalogRepresentationError();
+  const validators = object(record.validators);
+  keys(validators, ['etag', 'lastModified']);
+  if (
+    typeof validators.etag !== 'string' ||
+    !/^"[\x21\x23-\x7e]{1,200}"$/.test(validators.etag) ||
+    typeof validators.lastModified !== 'string' ||
+    validators.lastModified.length > 100 ||
+    !Number.isFinite(Date.parse(validators.lastModified)) ||
+    new Date(validators.lastModified).toUTCString() !== validators.lastModified
+  )
+    throw new CatalogRepresentationError();
+  const capability = object(record.acquisition);
+  keys(
+    capability,
+    record.format === 'unknown' ? ['status', 'reason'] : ['status', 'maxBytes'],
+  );
+  let acquisition: CatalogResourceRepresentation['acquisition'];
+  if (record.format === 'unknown') {
+    const reason =
+      record.mediaType === null
+        ? 'missing-content-type'
+        : 'unrecognized-content-type';
+    if (capability.status !== 'unknown-format' || capability.reason !== reason)
+      throw new CatalogRepresentationError();
+    acquisition = { status: 'unknown-format', reason };
+  } else if (record.format !== 'pdf') {
+    if (
+      capability.status !== 'unsupported-format' ||
+      capability.maxBytes !== undefined
+    )
+      throw new CatalogRepresentationError();
+    acquisition = { status: 'unsupported-format' };
+  } else {
+    if (
+      !positive(capability.maxBytes) ||
+      (capability.status !== 'supported' &&
+        capability.status !== 'size-limit') ||
+      (capability.status === 'supported') !==
+        record.byteLength <= capability.maxBytes
+    )
+      throw new CatalogRepresentationError();
+    acquisition = {
+      status: capability.status as 'supported' | 'size-limit',
+      maxBytes: capability.maxBytes,
+    };
+  }
+  return {
+    format: record.format as CatalogResourceRepresentation['format'],
+    mediaType: record.mediaType as CatalogResourceRepresentation['mediaType'],
+    byteLength: record.byteLength,
+    validators: {
+      etag: validators.etag,
+      lastModified: validators.lastModified,
+    },
+    acquisition,
+  } as CatalogResourceRepresentation;
+}
+
+/** Read-only preselection guard for NEW downloads. It does not authorize legal use or pinned-byte printing. */
+export function evaluateCatalogAcquisitionCapability(
+  resource: Pick<CatalogSourceRecord, 'availableFormats' | 'representation'>,
+  format: string,
+  limits?: { maxBytes?: number },
+): CatalogAcquisitionCapabilityDecision {
+  let representation: CatalogResourceRepresentation | undefined;
+  try {
+    representation = normalizeCatalogRepresentation(resource.representation);
+    if (limits?.maxBytes !== undefined && !positive(limits.maxBytes))
+      throw new CatalogRepresentationError();
+  } catch {
+    return { allowed: false, reason: 'invalid-representation-metadata' };
+  }
+  if (representation?.format === 'unknown')
+    return {
+      allowed: false,
+      reason: 'unknown-format',
+      byteLength: representation.byteLength,
+    };
+  if (
+    !Array.isArray(resource.availableFormats) ||
+    !resource.availableFormats.includes(format)
+  )
+    return { allowed: false, reason: 'format-unavailable' };
+  if (!representation) return { allowed: true, verification: 'legacy' };
+  if (representation.format !== format)
+    return { allowed: false, reason: 'format-unavailable' };
+  if (representation.acquisition.status === 'unsupported-format')
+    return {
+      allowed: false,
+      reason: 'unsupported-format',
+      byteLength: representation.byteLength,
+    };
+  const maxBytes = Math.min(
+    representation.acquisition.maxBytes,
+    limits?.maxBytes ?? representation.acquisition.maxBytes,
+  );
+  if (
+    representation.acquisition.status === 'size-limit' ||
+    representation.byteLength > maxBytes
+  )
+    return {
+      allowed: false,
+      reason: 'size-limit',
+      maxBytes,
+      byteLength: representation.byteLength,
+    };
+  return { allowed: true, verification: 'observed' };
+}

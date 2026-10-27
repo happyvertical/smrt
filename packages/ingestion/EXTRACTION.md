@@ -48,7 +48,46 @@ time, falling back to actual rendered-page OCR for empty pages. Embedded text
 is not evidence that every visual element was understood. TIFF is actually
 decoded page-by-page with sharp to PNG; each result cites its original TIFF page.
 Animated non-TIFF images are unsupported. Ordinary image OCR and scene vision
-are separately configured. Speech uses source-level text unless actual segment
+are separately configured. Vision alone prepares an EXIF-oriented, full-frame
+image inside a 2048-pixel edge without cropping or upscaling. Opaque inputs use
+JPEG quality 85 (80 only when needed); alpha inputs retain transparency in PNG.
+A 512 KiB encoded-image cap bounds base64 transport to about 700 KiB per image.
+If neither high-quality JPEG encoding fits, or transparent PNG exceeds the cap,
+extraction returns `limit` before a vision provider call. It never shrinks further,
+drops a page, or silently flattens transparency. Original decode pixel limits,
+native-memory isolation, deadlines and authorization apply before downsizing.
+OCR, including PDF fallback, keeps its existing full-resolution PNG coordinates.
+
+Trusted `visionImageLimits?: {maxEdge?, maxEncodedBytes?}` may tighten defaults
+(edge 256–2048; encoded bytes 1024–524288). Adapter construction rejects expanded
+or invalid limits. Use a new extraction configuration revision when adopting this
+policy or changing its bounds. `imagePreparations` records `vision-image-v1`, the
+bounds, source dimensions/orientation, derivative dimensions/format/quality/bytes
+and source/page location. Evidence still identifies the unchanged retained bytes.
+This is lossy provider preparation, not a claim that all text detail survives.
+Small handwriting can become unreadable; the vision instruction requires honest
+unreadable observations. Vision also separates printed questions/solved examples
+from learner handwriting, preserves observed responses even when incorrect, and
+reports matching lines only with visibly traceable endpoints. Unreadable or
+uncertain responses/endpoints remain unknown; arithmetic solutions and expected
+matches must not be reported as observations. The generic scene/text instruction,
+untrusted-image instruction boundary and prohibition on actions still apply.
+Observation text preserves visible sections/headings, columns/rows, task parts,
+reading order, and their text/response associations. Unclear structure or reading
+order is explicitly unknown; the prompt forbids invented layout, boxes,
+coordinates, or verified geometry. A physical source page is identified only
+when known, otherwise unknown; a visible printed page number is separate and
+does not establish the physical source page. These are textual observations,
+not a new structured generic layout contract. Assessment-specific consumers may
+derive bounded advisory layout metadata from them under their own contracts.
+Hosts adopting this observation prompt must use a new extraction configuration
+revision; `vision-image-v1` versions image preparation, not prompt behavior.
+Synthetic request tests verify these instructions reach the provider, not remote
+recognition quality. Hosts must verify their intended model on representative
+work and retain manual access to originals. No point weights or assessment
+content may be invented to compensate for lost detail.
+
+Speech uses source-level text unless actual segment
 timestamps are returned; absent speech confidence calibration is unknown.
 
 Confidence and boxes are explicitly null unless an OCR provider advertises and
@@ -133,3 +172,24 @@ truncation only. The adapter never bypasses the SDK to recover hidden fields.
 The missing SDK metadata is tracked in [happyvertical/ocr#144](https://github.com/happyvertical/ocr/issues/144).
 AI vision retains reported truncation when supplied by its SDK. Missing provider
 cost is unknown, not zero; no cost estimate is invented.
+
+### Optional observed image regions
+
+Trusted SDK configuration `observeAnswerRegions: true` asks the SAME existing
+vision request for JSON observations plus an optional bounded region catalog.
+Default off preserves ordinary text observations. This prompt/protocol adoption
+requires a new host configurationRevision (Hearth uses
+`hearth-paper-v5-answer-regions`); no model change or extra automatic request.
+
+Catalog rectangles are approximate direct visual observations, not verified boxes:
+version1, coordinateSpace display-oriented, at most64 regions with short id/text
+and finite normalized positive `[x,y,width,height]` inside the entire upright
+EXIF-oriented uncropped image. Fit-inside resize preserves full-frame mapping;
+never infer locations from columns/task numbers. Initial source images only,
+not PDF raster fallback. Missing, uncertain or malformed catalog data is omitted
+while valid observation text survives. A catalog that alone would exceed the
+retained output byte budget is omitted. Existing total token/native/input limits
+still apply; usage includes numeric vision_* counters when the provider reports
+them. Tests prove exactly one SDK call and synthetic oriented alignment, not remote
+model quality. imagePreparations records original orientation/dimensions and sent
+format/dimensions/bytes; immutable source hashes/bytes remain unchanged.

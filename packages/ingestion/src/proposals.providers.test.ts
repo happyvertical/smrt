@@ -214,6 +214,55 @@ const feedback: FeedbackSelection = {
   ],
 };
 describe('real AI SDK transport against local HTTP fixture (not model quality)', () => {
+  it('offers only other handlers as competing alternatives (#4395)', () => {
+    const schema = proposalResponseSchema({
+      ...offeredInput,
+      offered: [
+        { ...offeredInput.offered[0], candidates: [] },
+        {
+          ...offeredInput.offered[0],
+          handler: {
+            ...offeredInput.offered[0].handler,
+            id: 'other-handler',
+            version: '2',
+          },
+          candidates: [],
+        },
+      ],
+    });
+    const variants = (
+      schema.properties as unknown as Record<
+        string,
+        { items: { anyOf: Array<{ properties: Record<string, unknown> }> } }
+      >
+    ).suggestions.items.anyOf;
+    expect(
+      (variants[0].properties.alternatives as { items: { enum: string[] } })
+        .items.enum,
+    ).toEqual(['other-handler@2']);
+    expect(
+      (variants[1].properties.alternatives as { items: { enum: string[] } })
+        .items.enum,
+    ).toEqual(['identify-assignment@1']);
+  });
+
+  it('allows only empty alternatives for one handler without candidates (#4395)', () => {
+    const schema = proposalResponseSchema({
+      ...offeredInput,
+      offered: [{ ...offeredInput.offered[0], candidates: [] }],
+    });
+    const variants = (
+      schema.properties as unknown as Record<
+        string,
+        { items: { anyOf: Array<{ properties: Record<string, unknown> }> } }
+      >
+    ).suggestions.items.anyOf;
+    expect(variants[0].properties.alternatives).toEqual({
+      type: 'array',
+      maxItems: 0,
+    });
+  });
+
   it('supplies a closed schema with record IDs for args and opaque keys for alternatives', () => {
     const schema = proposalResponseSchema({
       ...input,
@@ -263,7 +312,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     ).toContain('opaque-candidate-key');
     expect(
       (suggestion.alternatives as { items: { enum: string[] } }).items.enum,
-    ).toContain('identify-assignment@1');
+    ).not.toContain('identify-assignment@1');
     expect(
       (
         (

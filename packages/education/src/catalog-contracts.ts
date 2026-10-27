@@ -26,6 +26,48 @@ export interface CatalogLicenseEvidence {
   permittedOperations?: CatalogOperation[];
 }
 
+/** Observed bytes and NEW acquisition support; independent of legal permissions. */
+interface CatalogRepresentationMetadata {
+  byteLength: number;
+  validators: { etag: string; lastModified: string };
+}
+export type CatalogResourceRepresentation = CatalogRepresentationMetadata &
+  (
+    | {
+        format: 'pdf' | 'zip' | 'docx';
+        mediaType:
+          | 'application/pdf'
+          | 'application/zip'
+          | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        acquisition:
+          | { status: 'supported'; maxBytes: number }
+          | { status: 'unsupported-format' }
+          | { status: 'size-limit'; maxBytes: number };
+      }
+    | {
+        format: 'unknown';
+        /** Null records an absent header; otherwise the observed canonical MIME token. */
+        mediaType: string | null;
+        acquisition: {
+          status: 'unknown-format';
+          reason: 'missing-content-type' | 'unrecognized-content-type';
+        };
+      }
+  );
+export type CatalogAcquisitionCapabilityDecision =
+  | { allowed: true; verification: 'observed' | 'legacy' }
+  | {
+      allowed: false;
+      reason:
+        | 'format-unavailable'
+        | 'unsupported-format'
+        | 'unknown-format'
+        | 'size-limit'
+        | 'invalid-representation-metadata';
+      maxBytes?: number;
+      byteLength?: number;
+    };
+
 /** A provider's durable source record. It remains distinct after deduplication. */
 export interface CatalogSourceRecord {
   providerId: string;
@@ -41,6 +83,7 @@ export interface CatalogSourceRecord {
   resourceType?: string;
   parentStableId?: string;
   availableFormats?: string[];
+  representation?: CatalogResourceRepresentation;
   licenseEvidence: CatalogLicenseEvidence;
   visibility: CatalogVisibility;
 }

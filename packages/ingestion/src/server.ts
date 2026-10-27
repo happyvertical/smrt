@@ -1,3 +1,5 @@
+export { normalizeObservedImageRegions } from './observed-regions.js';
+
 import {
   createCipheriv,
   createDecipheriv,
@@ -39,6 +41,7 @@ import {
   type StoredFailureCapture,
   storedFailureCapture,
 } from './failure-capture.js';
+import { storableJSONText, storableText } from './json-storage.js';
 
 import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
@@ -473,20 +476,6 @@ function ownerKey(owner: IntakeOwner): string {
   )
     throw new Error('Invalid intake owner');
   return `${owner.kind}:${owner.id}`;
-}
-/** PostgreSQL JSON cannot hold NUL or unpaired surrogates; SQLite can. Reject
- * them at validation so both engines answer `invalid` rather than diverge. */
-function storableText(value: string): boolean {
-  if (value.includes('\u0000')) return false;
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
-      i++;
-    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
-  }
-  return true;
 }
 type ReceivedPart = IntakePart & {
   hash: string;
@@ -3454,6 +3443,10 @@ export class IngestionService {
       ) as unknown as IntakeLimits;
       if (Buffer.byteLength(serialized) > limits.maxOutputBytes)
         throw new Error('Analysis output budget exceeded');
+      // The final persistence boundary also covers arbitrary provider metadata,
+      // refused suggestion args and diagnostics, not only schema-valid args.
+      if (!storableJSONText(serialized))
+        return this.failAnalysisInScope(db, lease, 'malformed_output');
       const [analysis] = await this.rows(
         db,
         'intake_analyses',
@@ -3532,67 +3525,72 @@ export class IngestionService {
     category: IntakeFailure,
   ): Promise<boolean> {
     if (!failures.has(category)) throw new Error('Invalid analysis failure');
-    return this.tx(async (db) => {
-      await this.lock(db, lease.itemId);
-      const item = await this.item(lease.itemId, 'process', db);
-      if (item.cancelled || Number(item.analysis_revision) !== lease.revision)
-        return false;
-      const [analysis] = await this.rows(
-        db,
-        'intake_analyses',
-        'id=? AND item_id=?',
-        [lease.analysisId, lease.itemId],
-      );
-      const [attempt] = await this.rows(
-        db,
-        'intake_analysis_attempts',
-        'id=? AND analysis_id=? AND item_id=?',
-        [lease.attemptId, lease.analysisId, lease.itemId],
-      );
-      if (
-        !analysis ||
-        !attempt ||
-        Number(analysis.revision) !== lease.revision ||
-        analysis.current_attempt_id !== lease.attemptId ||
-        Number(analysis.fence) !== lease.fence ||
-        Number(attempt.fence) !== lease.fence ||
-        attempt.state !== 'running' ||
-        attempt.lease_token !== lease.token ||
-        persistedDate(attempt.lease_until) <= this.now()
-      )
-        return false;
-      await db.query(
-        "UPDATE intake_analysis_attempts SET state='needs_attention',safe_error=?,data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
-        category,
-        canonical({
-          ...object(attempt.data),
-          completedAt: this.now().toISOString(),
-        }),
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        lease.attemptId,
-      );
-      await db.query(
-        "UPDATE intake_analyses SET state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        lease.analysisId,
-      );
-      await db.query(
-        "UPDATE intake_items SET processing_state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        lease.itemId,
-      );
-      await db.query(
-        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision=?",
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        lease.itemId,
-        lease.revision,
-      );
-      return true;
-    });
+    return this.tx((db) => this.failAnalysisInScope(db, lease, category));
+  }
+  private async failAnalysisInScope(
+    db: DatabaseInterface,
+    lease: AnalysisLease,
+    category: IntakeFailure,
+  ): Promise<boolean> {
+    await this.lock(db, lease.itemId);
+    const item = await this.item(lease.itemId, 'process', db);
+    if (item.cancelled || Number(item.analysis_revision) !== lease.revision)
+      return false;
+    const [analysis] = await this.rows(
+      db,
+      'intake_analyses',
+      'id=? AND item_id=?',
+      [lease.analysisId, lease.itemId],
+    );
+    const [attempt] = await this.rows(
+      db,
+      'intake_analysis_attempts',
+      'id=? AND analysis_id=? AND item_id=?',
+      [lease.attemptId, lease.analysisId, lease.itemId],
+    );
+    if (
+      !analysis ||
+      !attempt ||
+      Number(analysis.revision) !== lease.revision ||
+      analysis.current_attempt_id !== lease.attemptId ||
+      Number(analysis.fence) !== lease.fence ||
+      Number(attempt.fence) !== lease.fence ||
+      attempt.state !== 'running' ||
+      attempt.lease_token !== lease.token ||
+      persistedDate(attempt.lease_until) <= this.now()
+    )
+      return false;
+    await db.query(
+      "UPDATE intake_analysis_attempts SET state='needs_attention',safe_error=?,data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+      category,
+      canonical({
+        ...object(attempt.data),
+        completedAt: this.now().toISOString(),
+      }),
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      lease.attemptId,
+    );
+    await db.query(
+      "UPDATE intake_analyses SET state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      lease.analysisId,
+    );
+    await db.query(
+      "UPDATE intake_items SET processing_state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      lease.itemId,
+    );
+    await db.query(
+      "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision=?",
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      lease.itemId,
+      lease.revision,
+    );
+    return true;
   }
   /** Cancel pending processing immediately; original receipt remains ready. */
   async cancel(itemId: string): Promise<void> {

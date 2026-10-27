@@ -4,6 +4,7 @@ import { intakeBindingDigest } from './execution.js';
 import type { IntakeValues } from './execution-dto.js';
 import { proposeDocumentSplits, SplitGroupError } from './extraction.js';
 import type { ExtractionResult } from './extraction-types.js';
+import { storableJSONText } from './json-storage.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type {
   GeneratedSuggestion,
@@ -151,6 +152,72 @@ export function text(value: unknown, max = 512): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max)
     throw new Error('Invalid proposal string');
   return value;
+}
+/** Data only: reject lossy JSON coercions, unsafe Unicode and excessive shape.
+ * The caller also counts the complete offered input against maxInputBytes. */
+export function candidateContext(
+  value: unknown,
+  maxBytes: number,
+): IntakeValues {
+  const fail = (): never => {
+    throw new Error('Invalid candidate context');
+  };
+  const seen = new Set<object>();
+  let nodes = 0;
+  const visit = (entry: unknown, depth: number): void => {
+    if (++nodes > maxBytes || depth > 32) fail();
+    if (
+      entry === null ||
+      typeof entry === 'string' ||
+      typeof entry === 'boolean'
+    )
+      return;
+    if (typeof entry === 'number' && Number.isFinite(entry)) return;
+    if (typeof entry !== 'object' || !entry) {
+      fail();
+      return;
+    }
+    if (seen.has(entry)) fail();
+    seen.add(entry);
+    if (Object.getOwnPropertySymbols(entry).length) fail();
+    if (Array.isArray(entry)) {
+      if (Object.getPrototypeOf(entry) !== Array.prototype) fail();
+      if (Object.keys(entry).length !== entry.length) fail();
+      for (const [key, descriptor] of Object.entries(
+        Object.getOwnPropertyDescriptors(entry),
+      )) {
+        if (
+          key !== 'length' &&
+          (!/^(?:0|[1-9][0-9]*)$/.test(key) ||
+            Number(key) >= entry.length ||
+            !descriptor.enumerable ||
+            !('value' in descriptor))
+        )
+          fail();
+      }
+      for (const child of entry) visit(child, depth + 1);
+    } else {
+      if (
+        Object.getPrototypeOf(entry) !== Object.prototype &&
+        Object.getPrototypeOf(entry) !== null
+      )
+        fail();
+      for (const descriptor of Object.values(
+        Object.getOwnPropertyDescriptors(entry),
+      )) {
+        if (!descriptor.enumerable || !('value' in descriptor)) fail();
+        visit(descriptor.value, depth + 1);
+      }
+      if (Object.getOwnPropertySymbols(entry).length) fail();
+    }
+    seen.delete(entry);
+  };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail();
+  visit(value, 0);
+  const serialized = JSON.stringify(value);
+  if (Buffer.byteLength(serialized) > maxBytes || !storableJSONText(serialized))
+    fail();
+  return JSON.parse(serialized) as IntakeValues;
 }
 export function safeUsage(value: unknown): Record<string, number> {
   if (!value || typeof value !== 'object') return {};

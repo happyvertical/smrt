@@ -346,13 +346,6 @@ export function parseImFirstEditionPage(
         });
         continue;
       }
-      if (!/im-c-filetype--pdf|>\s*pdf\s*</i.test(anchor[0])) {
-        exclusions.push({
-          code: 'unsupported_format',
-          message: `Non-PDF artifact ${id}.`,
-        });
-        continue;
-      }
       const label = localLabels.get(anchor.index) ?? '';
       const allowed =
         /^(Student Task Statements|Student Handouts|Cumulative Practice Problems|Family Support Materials|Family Materials|Learning Targets|Student Task Statement Cover Page)$/i.test(

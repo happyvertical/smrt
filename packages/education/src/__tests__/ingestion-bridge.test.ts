@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@happyvertical/smrt-ingestion/server', () => ({
+vi.mock('@happyvertical/smrt-ingestion/server', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@happyvertical/smrt-ingestion/server')
+  >()),
   extractAnalysis: vi.fn(async () => true),
 }));
 
@@ -133,7 +136,20 @@ describe('education ingestion capture boundary', () => {
 });
 
 describe('education analysis job', () => {
-  it('queues interpretation using authoritative extraction pin and never executes actions', async () => {
+  it.each([
+    undefined,
+    null,
+    42,
+    'application/pdf',
+    'image/png',
+  ])('queues interpretation using authoritative extraction pin and optional region MIME hint %s without actions', async (mediaType) => {
+    const observedRegions = {
+      version: 1,
+      coordinateSpace: 'display-oriented',
+      regions: [
+        { id: 'r1', text: 'Visible answer', rect: [0.2, 0.3, 0.1, 0.1] },
+      ],
+    };
     const ingestion = {
       claimAnalysis: vi.fn(async () => ({ attemptId: 'attempt' })),
       getAnalysisInput: vi.fn(async () => ({
@@ -141,7 +157,27 @@ describe('education analysis job', () => {
       })),
       getCompletedAnalysis: vi.fn(async () => ({
         attemptId: 'attempt',
-        result: { status: 'completed' },
+        evidence: [
+          { id: 'source-image', contentHash: 'a'.repeat(64), mediaType },
+        ],
+        result: {
+          status: 'completed',
+          output: {
+            results: [
+              {
+                evidence: { id: 'source-image', contentHash: 'a'.repeat(64) },
+                capabilities: [{ location: 'source', boxes: false }],
+                segments: [
+                  {
+                    location: { kind: 'source' },
+                    boxes: null,
+                    observedRegions,
+                  },
+                ],
+              },
+            ],
+          },
+        },
       })),
       prepareGeneration: vi.fn(async () => ({
         stage: 'interpret',
@@ -160,7 +196,22 @@ describe('education analysis job', () => {
     expect(result).toEqual({ kind: 'generation_queued', revision: 2 });
     expect(ingestion.analyze).toHaveBeenCalledWith(
       'item',
-      { stage: 'interpret', pin: 'frozen' },
+      {
+        stage: 'interpret',
+        pin: 'frozen',
+        educationEvidenceGrounding: {
+          version: 1,
+          extractionAttemptId: 'attempt',
+          sources: [
+            {
+              evidenceId: 'source-image',
+              sha256: 'a'.repeat(64),
+              pages: [],
+              ...(mediaType === 'image/png' ? { observedRegions } : {}),
+            },
+          ],
+        },
+      },
       'education:interpret:attempt',
     );
   });

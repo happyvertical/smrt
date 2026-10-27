@@ -192,7 +192,7 @@ export async function assertRefreshAndPrivacy(f: Fixture): Promise<void> {
     courses,
     await CourseSectionCollection.create({ db: f.db }),
     lessons,
-    { byLeft: async () => [] } as never,
+    { db: f.db, byLeft: async () => [] } as never,
     f.tenants,
     () => true,
   );

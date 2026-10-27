@@ -55,3 +55,49 @@ pauses for unconfirmed coverage, without inventing an operational failure or
 withdrawing unseen rows. In Drive's catalog adapter, definite unsupported or
 out-of-boundary shortcut omissions are policy; missing revisions and inaccessible
 targets remain operational failures. The direct Drive discovery API is unchanged.
+
+
+Observed representation metadata and legal permissions are separate. Use the
+public `evaluateCatalogAcquisitionCapability` on a fresh record before creating
+new selection/file state, then apply `CatalogPolicy` independently. The
+`representation` serialized JSON field uses a nullable TEXT column (existing rows
+remain SQL NULL; new model/store values use JSON null); apply its
+additive manifest migration before runtime use. Missing/null remains legacy,
+but malformed present metadata must never be erased into legacy absence:
+`normalizeCatalogRepresentation` and the model getter throw a typed error and
+the evaluator returns an explicit denial. Known ZIP/DOCX and over-cap PDF metadata
+are retained; technical acquisition restrictions never remove legal evidence.
+Current configured limits may tighten a recorded limit. Existing pinned-byte
+retries retain their actor/selection/revision/legal checks and do not become
+unavailable merely because future acquisition limits tightened.
+
+
+The public IM adapter enumerates strictly hosted artifact links independent of
+icons; only actual PDF/ZIP/DOCX MIME is recognized and only PDF is acquirable.
+An eligible public HEAD with valid size and strong validators retains an explicit
+`format: 'unknown'` representation when Content-Type is absent (`mediaType: null`,
+`missing-content-type`) or syntactically valid but unrecognized (the bounded
+canonical MIME token, `unrecognized-content-type`). Its acquisition status is
+`unknown-format`, `availableFormats` is empty, and the public evaluator denies
+before new selections, files or asset GETs. Legal evidence, size and validators
+remain intact and metadata enumeration advances. Unknown MIME does not establish
+technical support or change legal permission. Malformed present MIME and invalid
+validators still pause without advancing. Unknown revisions encode MIME absence
+or the observed token, so later recognition changes identity; ordinary PDF v1
+revision encoding remains stable. Role/local ownership/malformed
+markup checks apply to every format; external hosts remain outside coverage.
+Expanded parsed inventory changes page fingerprints once: old offset cursors
+must pause, never be reinterpreted against a different artifact list.
+
+Recovery is quiescent **operator-only**, using existing public
+`CatalogDatabaseSyncStore.getCheckpoint/saveCheckpoint`; see the concrete
+[procedure](../README.md#recovering-an-old-partial-inventory-after-a-semantic-scope-change).
+Fence/disable/drain every catalog producer, automatic continuation and job across
+every pod/process and await all in-flight successes/failures before the fresh
+paused/expected-run check and reset; browser Stop/paused status is insufficient.
+Keep writers fenced through reset. Preserve rows, bounded ledger/counts,
+last-success time and private bytes; use a fresh run UUID/no cursor/imported0,
+incomplete/unpaused state. Only actual terminal success may later withdraw.
+This is not an ordinary UI restart or multi-writer CAS guarantee. Old catalog
+retries can be stale while already assigned private files remain unchanged;
+new current-adapter pins remain stable on a same-adapter semantic refresh.
