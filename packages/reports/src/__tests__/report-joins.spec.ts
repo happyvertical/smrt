@@ -7,7 +7,10 @@ import {
 import { disableTenancy } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildReportAdapterDescriptor } from '../adapter.js';
+import {
+  buildReportAdapterDescriptor,
+  buildReportDrilldownQuery,
+} from '../adapter.js';
 import { buildReportDefinition, compileReportDefinition } from '../compiler.js';
 import { refreshReport } from '../refresh.js';
 import { SmrtReport } from '../report.js';
@@ -500,20 +503,66 @@ describe('report joins and row expressions (#3903)', () => {
     expect(spec.select).toEqual([{ column: 'work_ref_id', as: 'work_ref_id' }]);
   });
 
-  it('refuses an incremental refresh, declared or requested, because a joined row does not move the watermark', async () => {
+  it('refuses to declare incremental refresh on a joined report', async () => {
     await expect(buildReportDefinition(JoinIncrementalReport)).rejects.toThrow(
       /cannot refresh incrementally/,
     );
+  });
+
+  it('rebuilds a joined report when a trigger asks for incremental, so scheduled and on-change refreshes work', async () => {
     const db = await setupDb();
+    await workOrder(db, {
+      id: 'wo-1',
+      tenantId: 'tenant-a',
+      title: 'Gate',
+      hours: 4,
+    });
+    await segment(db, {
+      id: 's1',
+      tenantId: 'tenant-a',
+      workRefId: 'wo-1',
+      hours: 1,
+    });
+
+    const result = await refreshReport(JoinLabourReport, {
+      db,
+      tenantId: 'tenant-a',
+      mode: 'incremental',
+      lock: false,
+      trackRuns: false,
+    });
+
+    expect(result.mode).toBe('rebuild');
+    const { rows } = await db.query(
+      'SELECT work_title FROM join_labour_reports',
+    );
+    expect(rows).toEqual([{ work_title: 'Gate' }]);
+
+    // The joined row changing is picked up, which an incremental pass would miss.
+    await db.update('join_work_orders', { id: 'wo-1' }, { title: 'Gate v2' });
+    await refreshReport(JoinLabourReport, {
+      db,
+      tenantId: 'tenant-a',
+      mode: 'incremental',
+      lock: false,
+      trackRuns: false,
+    });
+    expect(
+      (await db.query('SELECT work_title FROM join_labour_reports')).rows,
+    ).toEqual([{ work_title: 'Gate v2' }]);
+  });
+
+  it('does not offer drilldown for a report grouped by a joined column', async () => {
+    const descriptor = await buildReportAdapterDescriptor(JoinLabourReport);
+    expect(descriptor.drilldown.fields.map((f) => f.sourceColumn)).toEqual([
+      'work_ref_id',
+    ]);
     await expect(
-      refreshReport(JoinLabourReport, {
-        db,
-        tenantId: 'tenant-a',
-        mode: 'incremental',
-        lock: false,
-        trackRuns: false,
+      buildReportDrilldownQuery(JoinLabourReport, {
+        work_ref_id: 'wo-1',
+        work_title: 'Gate',
       }),
-    ).rejects.toThrow(/cannot refresh incrementally/);
+    ).rejects.toThrow(/groups by a joined or computed value/);
   });
 
   it('rejects a column that names an undeclared join alias', async () => {

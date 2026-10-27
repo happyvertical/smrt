@@ -898,7 +898,9 @@ function drilldownDescriptor(
           sourceColumn: string;
         } =>
           (column.kind === 'group' || column.kind === 'bucket') &&
-          typeof column.sourceColumn === 'string',
+          typeof column.sourceColumn === 'string' &&
+          // A joined column is not a column of the source model.
+          !column.sourceColumn.includes('.'),
       )
       .map((column) => ({
         id: column.id,
@@ -994,6 +996,23 @@ export async function buildReportDrilldownQuery(
   row: Readonly<Record<string, unknown>>,
   options: ReportAdapterOptions = {},
 ): Promise<ReportDrilldownQuery> {
+  const definition = await buildReportDefinition(reportCtor);
+  // A row grouped by a joined column or a computed value cannot be bound back
+  // to source rows by a plain source column; a handoff missing that constraint
+  // would match every source row of the group's other keys.
+  const unbindable = definition.fields.find(
+    (field) =>
+      (field.report?.kind === 'group' &&
+        (field.report.expr || field.report.sourceColumn?.includes('.'))) ||
+      (field.report?.kind === 'bucket' &&
+        field.report.sourceColumn.includes('.')),
+  );
+  if (unbindable) {
+    throw new DataQueryValidationError(
+      `Report drilldown is not available for ${definition.reportClassName}: ${unbindable.fieldName} groups by a joined or computed value`,
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
   const descriptor = await buildReportAdapterDescriptor(reportCtor, options);
   const constraints = descriptor.drilldown.fields.map((field) => {
     if (!Object.hasOwn(row, field.id)) {

@@ -120,8 +120,14 @@ class LabourByWorkOrder extends SmrtReport {
   names a model field, never a SQL column. `div` returns NULL for a zero
   divisor. `expr` and `filter` work with `count`, `sum`, `avg`, `min` and `max`.
 - **Joined reports refresh by rebuild only.** A change to a joined row does not
-  move the source's watermark, so `mode: 'incremental'` is refused. List the
-  joined models in `refresh.onChange` to rebuild when they change.
+  move the source's watermark, so declaring `mode: 'incremental'` is refused and
+  any trigger that asks for an incremental refresh (a schedule, `onChange`, a
+  job) is run as a rebuild. List the joined models in `refresh.onChange` to
+  rebuild when they change. Rows whose tenant is `NULL` (the global slice) do not
+  match tenant-scoped related rows, because `NULL = NULL` is not true in SQL.
+- **No drilldown by joined or computed keys.** A row grouped by a joined column or
+  a computed value cannot be bound back to source rows by a source column, so
+  `buildReportDrilldownQuery()` refuses such reports.
 
 The runtime-report grammar stays closed: runtime reports have no joins or
 expressions.

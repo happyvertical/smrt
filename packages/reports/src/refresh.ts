@@ -932,13 +932,13 @@ async function refreshReportOnce(
 
   const definition = await buildReportDefinition(reportCtor);
   const reportTable = getReportTableName(reportCtor);
-  const requestedMode = options.mode ?? definition.refresh?.mode ?? 'rebuild';
-  if (requestedMode === 'incremental' && definition.joins?.length) {
-    throw new Error(
-      `${reportCtor.name} joins other models and cannot refresh incrementally: ` +
-        `a change to a joined row does not move the source watermark. Use mode: 'rebuild'.`,
-    );
-  }
+  // A joined row's change does not move the source watermark, so incremental
+  // cannot see it. A joined report always rebuilds, whatever the trigger
+  // (schedule, change or job) defaulted to; declaring `incremental` on one is
+  // refused when its definition is built.
+  const requestedMode: ReportRefreshMode = definition.joins?.length
+    ? 'rebuild'
+    : (options.mode ?? definition.refresh?.mode ?? 'rebuild');
   const exists = await tableExists(options.db, reportTable);
   if (!exists) {
     throw new Error(
