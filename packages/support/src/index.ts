@@ -40,6 +40,7 @@ export {
   type SupportPrincipal,
   supportPrincipalFromPermissions,
 } from './permissions.js';
+export { SupportTicketsRecipe } from './recipes.js';
 export * from './services/index.js';
 export * from './types.js';
 
