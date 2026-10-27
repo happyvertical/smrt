@@ -3,12 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { LearnerRequest } from '../learner-service.js';
 import { WORKBOOK_MATH_VOCABULARY } from '../workbook-contracts.js';
 import {
   WorkbookActivityCollection,
   WorkbookCollection,
+  WorkbookWorkFiling,
   WorkbookWorkFilingCollection,
 } from '../workbook-models.js';
 import { WorkbookPhotoIntakeCollection } from '../workbook-photo-models.js';
@@ -479,6 +480,201 @@ it('defaults legacy inserts to identified work while retaining the ordinary work
       pageLabel: 'Page 2',
       filing: { state: 'identified' },
     });
+  } finally {
+    await f.close();
+  }
+});
+
+it('creates optional manual book metadata atomically without a canonical lesson or title-based merge', async () => {
+  const f = await fixture();
+  try {
+    const work = await f.as(f.parent, () =>
+      f.service.resolveUnfiled(f.request),
+    );
+    const capture = {
+      ...f.parent,
+      activityId: work.id,
+      intakeItemId: 'unfiled-photo',
+      requestKey: 'work',
+      pages: [
+        {
+          name: 'p.png',
+          mimeType: 'image/png' as const,
+          data: Buffer.from('visible original work'),
+        },
+      ],
+    };
+    const attempt = await f.as(f.parent, () =>
+      f.service.captureWorkbookWork(capture),
+    );
+    const before = await f.as(f.parent, () =>
+      f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+    );
+    const activityBefore = await f.db.get('workbook_activities', {
+      id: work.id,
+    });
+    const file = {
+      ...f.parent,
+      activityId: work.id,
+      newWorkbook: {
+        title: 'Manually named book',
+        edition: '2026',
+        workbookKey: 'explicit-family-copy',
+      },
+      expectedRevisionId: null,
+      requestKey: 'new-book',
+      reason: 'Optional guardian filing',
+    };
+    await f.as(f.own, () =>
+      expect(
+        f.service.fileWorkbookWork({ ...file, ...f.own }),
+      ).rejects.toThrow(),
+    );
+    await f.as(f.parent, () =>
+      expect(
+        f.service.fileWorkbookWork({
+          ...file,
+          learnerId: String(f.sibling.id),
+        }),
+      ).rejects.toThrow(),
+    );
+    expect(
+      await f.db.get('workbooks', { learner_id: f.parent.learnerId }),
+    ).toBeFalsy();
+    const filed = await f.as(f.parent, () => f.service.fileWorkbookWork(file));
+    expect(filed).toMatchObject({
+      id: work.id,
+      title: 'Manually named book',
+      edition: '2026',
+      enrollmentId: work.enrollmentId,
+      lessonId: work.lessonId,
+      reviewRequired: true,
+      policyVersion: 1,
+      filing: { state: 'filed', canonicalActivityId: null },
+    });
+    expect(
+      await f.as(f.parent, () => f.service.fileWorkbookWork(file)),
+    ).toEqual(filed);
+    expect(
+      (
+        await f.as(f.parent, () =>
+          f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+        )
+      ).attempts,
+    ).toEqual(before.attempts);
+    expect(await f.db.get('workbook_activities', { id: work.id })).toEqual(
+      activityBefore,
+    );
+    expect(
+      (
+        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent))
+      ).map((a) => a.id),
+    ).toEqual([work.id]);
+    expect(
+      (
+        await f.as(f.parent, () =>
+          f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+        )
+      ).attempts[0].id,
+    ).toBe(attempt.id);
+    for (const metadata of [
+      { ...file.newWorkbook, title: 'Changed title' },
+      { ...file.newWorkbook, edition: '2027' },
+      { ...file.newWorkbook, workbookKey: 'different-key' },
+    ]) {
+      await f.as(f.parent, () =>
+        expect(
+          f.service.fileWorkbookWork({ ...file, newWorkbook: metadata }),
+        ).rejects.toThrow('retry changed'),
+      );
+    }
+    const next = {
+      ...file,
+      expectedRevisionId: filed.filing?.revisionId ?? null,
+      requestKey: 'conflict',
+    };
+    await f.as(f.parent, () =>
+      expect(
+        f.service.fileWorkbookWork({
+          ...next,
+          newWorkbook: { ...file.newWorkbook, edition: '2027' },
+        }),
+      ).rejects.toThrow('another title or edition'),
+    );
+    await f.as(f.parent, () =>
+      expect(
+        f.service.fileWorkbookWork({
+          ...next,
+          workbookId: filed.filing?.workbookId ?? 'missing',
+        }),
+      ).rejects.toThrow('exactly one'),
+    );
+    await f.as(f.parent, () =>
+      expect(
+        f.service.fileWorkbookWork({ ...next, canonicalActivityId: work.id }),
+      ).rejects.toThrow('canonical activity'),
+    );
+    await f.as(f.parent, () =>
+      expect(
+        f.service.fileWorkbookWork({
+          ...next,
+          expectedRevisionId: null,
+          newWorkbook: { title: 'Should not exist' },
+        }),
+      ).rejects.toThrow('head changed'),
+    );
+    expect(
+      await f.db.get('workbooks', { title: 'Should not exist' }),
+    ).toBeFalsy();
+    const failed = vi
+      .spyOn(WorkbookWorkFiling.prototype, 'save')
+      .mockRejectedValueOnce(new Error('injected filing failure'));
+    try {
+      await f.as(f.parent, () =>
+        expect(
+          f.service.fileWorkbookWork({
+            ...next,
+            requestKey: 'rollback-book',
+            newWorkbook: { title: 'Rolled back book' },
+          }),
+        ).rejects.toThrow('injected filing failure'),
+      );
+    } finally {
+      failed.mockRestore();
+    }
+    expect(
+      await f.db.get('workbooks', { title: 'Rolled back book' }),
+    ).toBeFalsy();
+    expect(
+      (
+        await f.as(f.parent, () =>
+          f.service.getWorkbookActivity({ ...f.parent, activityId: work.id }),
+        )
+      ).filing?.revisionId,
+    ).toBe(filed.filing?.revisionId);
+    const duplicateTitle = await f.as(f.parent, () =>
+      f.service.fileWorkbookWork({
+        ...next,
+        requestKey: 'separate-manual-copy',
+        newWorkbook: { title: 'Manually named book', edition: '2026' },
+      }),
+    );
+    expect(duplicateTitle.filing?.workbookId).not.toBe(
+      filed.filing?.workbookId,
+    );
+    expect(duplicateTitle.workbookKey).toMatch(/^manual:/);
+    expect(
+      (
+        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent))
+      ).map((a) => a.id),
+    ).toEqual([work.id]);
+    expect(
+      (
+        await f.as(f.parent, () =>
+          f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+        )
+      ).attempts,
+    ).toEqual(before.attempts);
   } finally {
     await f.close();
   }

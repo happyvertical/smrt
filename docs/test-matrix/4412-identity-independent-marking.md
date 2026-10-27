@@ -34,3 +34,19 @@ independent high-risk review and retrying both retained real uploads.
   migration unit/CLI proof separately. Root owns full installed upgrade/re-diff,
   supported PostgreSQL lanes and integrated validation/review.
 - Durable evidence and exact command/exit metadata: external session evidence/4412.
+
+## Accepted later-filing delta
+
+The first candidate required an existing book. A family with no book records must
+be able to supply optional title/edition after marking without a cover re-upload
+or a fabricated canonical page. Extend the owning filing transaction with exactly
+one existing `workbookId` or `newWorkbook:{title,edition?,workbookKey?}`. Default
+manual keys are opaque per activity/request, never title-derived merge authority.
+
+Proof: zero books -> marked work -> atomic new metadata-only book + filing, same
+activity/submission/attempt/revisions/episode/policy; no new activity. Stable retry
+replays, changed title/edition/key conflicts; explicit existing-key identity mismatch
+fails; no automatic title merge. Child/foreign/stale-head requests create nothing.
+Inject filing failure after book creation and prove transaction rollback removes
+both new book and association, preserving old work/history. Root owns final UI
+acceptance and integrated review on the amended/new candidate.

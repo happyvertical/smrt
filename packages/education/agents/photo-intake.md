@@ -221,3 +221,14 @@ receive `capture_kind='identified'` through the declared database default; the
 workbook FK becomes nullable and photo-intake FK plus filing table are added.
 Old populated SQLite requires the explicit supported nullability-relaxation
 migration described by #4413; no runtime DDL or manual SQL workaround is allowed.
+
+When no book record exists, the same optional filing operation accepts
+`newWorkbook:{title,edition?,workbookKey?}` instead of `workbookId`. Exactly one is
+required. Parents need only title/edition; an omitted key becomes an opaque stable
+manual identity for this work/request, never an automatic title-based match.
+An explicit existing key must retain its exact title/edition. New metadata cannot
+also claim `canonicalActivityId`. Book creation and filing share the guardian's
+serialized transaction: stale/unauthorized/conflicting requests create nothing,
+and a later failure rolls both back. No cover re-upload, canonical lesson,
+submission replacement or second assessment is needed. New books keep the default
+review policy; filing never changes the source attempt's captured policy.

@@ -241,25 +241,11 @@ export function photoIntakeTests(
       const conceptsBefore = await f.as(f.parent, () =>
         f.service.getConceptEvidenceSummary(marking),
       );
-      const cover = await f.receive('later-real-book-cover');
-      await f.as(f.parent, () =>
-        f.service.resolveWorkbookPhotoIntake({
-          ...f.parent,
-          intakeId: cover.id,
-          requestKey: 'cover',
-          identification: f.identification,
-        }),
-      );
-      const book = (
-        await f.as(f.parent, () =>
-          f.service.listWorkbookPhotoWorkbooks(f.parent),
-        )
-      )[0];
       const filed = await f.as(f.parent, () =>
         f.service.fileWorkbookWork({
           ...f.parent,
           activityId: activity.id,
-          workbookId: book.id,
+          newWorkbook: { title: 'Arithmetic', edition: '1' },
           expectedRevisionId: null,
           requestKey: 'file-real-book',
           reason: 'Guardian files existing work',

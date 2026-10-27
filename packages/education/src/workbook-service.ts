@@ -349,7 +349,8 @@ export class WorkbookService extends SubmissionService {
   /** Append a filing association without modifying capture policy or learning history. */
   async fileWorkbookWork(
     request: ActivityRequest & {
-      workbookId: string;
+      workbookId?: string;
+      newWorkbook?: { title: string; edition?: string; workbookKey?: string };
       canonicalActivityId?: string;
       expectedRevisionId: string | null;
       requestKey: string;
@@ -367,7 +368,43 @@ export class WorkbookService extends SubmissionService {
         throw new Error('Only unfiled captured work can be filed');
       nonempty(request.requestKey, 'filing request key');
       nonempty(request.reason, 'filing reason');
-      nonempty(request.workbookId, 'filing workbook');
+      const createsBook = request.newWorkbook !== undefined;
+      if ((request.workbookId !== undefined) === createsBook)
+        throw new Error(
+          'Choose exactly one existing workbook or new workbook metadata',
+        );
+      let newBook:
+        | { workbookKey: string; title: string; edition: string }
+        | undefined;
+      if (createsBook) {
+        const metadata = request.newWorkbook;
+        if (
+          !metadata ||
+          typeof metadata !== 'object' ||
+          Array.isArray(metadata)
+        )
+          throw new Error('Invalid new workbook metadata');
+        nonempty(metadata.title, 'new workbook title');
+        if (
+          metadata.edition !== undefined &&
+          (typeof metadata.edition !== 'string' ||
+            metadata.edition.length > 200)
+        )
+          throw new Error('Invalid new workbook edition');
+        if (metadata.workbookKey !== undefined)
+          nonempty(metadata.workbookKey, 'new workbook key');
+        if (request.canonicalActivityId !== undefined)
+          throw new Error(
+            'New workbook metadata cannot claim a canonical activity',
+          );
+        newBook = {
+          workbookKey:
+            metadata.workbookKey ??
+            `manual:${digest([request.tenantId, request.learnerId, request.activityId, request.requestKey])}`,
+          title: metadata.title,
+          edition: metadata.edition ?? '',
+        };
+      } else nonempty(request.workbookId as string, 'filing workbook');
       if (request.canonicalActivityId !== undefined)
         nonempty(request.canonicalActivityId, 'filing activity');
       if (
@@ -378,6 +415,7 @@ export class WorkbookService extends SubmissionService {
         throw new Error('Invalid expected filing revision');
       const payload = {
         workbookId: request.workbookId,
+        ...(newBook ? { newWorkbook: newBook } : {}),
         canonicalActivityId: request.canonicalActivityId ?? null,
         previousRevisionId: request.expectedRevisionId,
         actorUserId: request.actorUserId,
@@ -404,19 +442,43 @@ export class WorkbookService extends SubmissionService {
       const head = await service.filingHead(row);
       if ((head ? String(head.id) : null) !== request.expectedRevisionId)
         throw new Error('Workbook filing head changed');
-      if (
-        !(await (
-          await WorkbookCollection.create({ db: service.db })
-        ).get(
+      const books = await WorkbookCollection.create({ db: service.db });
+      let targetBook: Workbook | null;
+      if (newBook) {
+        targetBook = await books.get(
+          {
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+            workbookKey: newBook.workbookKey,
+          },
+          { cache: false },
+        );
+        if (
+          targetBook &&
+          (targetBook.title !== newBook.title ||
+            targetBook.edition !== newBook.edition)
+        )
+          throw new Error(
+            'Workbook key already names another title or edition',
+          );
+        targetBook ??= await books.create({
+          _insertOnly: true,
+          slug: `workbook-${digest([request.tenantId, request.learnerId, newBook.workbookKey])}`,
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          ...newBook,
+        });
+      } else
+        targetBook = await books.get(
           {
             id: request.workbookId,
             tenantId: request.tenantId,
             learnerId: request.learnerId,
           },
           { cache: false },
-        ))
-      )
-        throw new LearnerAuthorizationError();
+        );
+      if (!targetBook) throw new LearnerAuthorizationError();
+      const targetWorkbookId = String(targetBook.id);
       if (request.canonicalActivityId) {
         const target = await service.activity(
           { ...request, activityId: request.canonicalActivityId },
@@ -424,14 +486,18 @@ export class WorkbookService extends SubmissionService {
         );
         if (
           target.row.captureKind !== 'identified' ||
-          target.row.workbookId !== request.workbookId ||
+          target.row.workbookId !== targetWorkbookId ||
           target.row.id === row.id
         )
           throw new Error('Workbook filing target mismatch');
       }
       await filings.create({
         _insertOnly: true,
-        ...payload,
+        workbookId: targetWorkbookId,
+        canonicalActivityId: payload.canonicalActivityId,
+        previousRevisionId: payload.previousRevisionId,
+        actorUserId: payload.actorUserId,
+        reason: payload.reason,
         tenantId: request.tenantId,
         learnerId: request.learnerId,
         sourceActivityId: request.activityId,
