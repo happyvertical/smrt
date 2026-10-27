@@ -439,6 +439,9 @@ let prevPrimaryColor = untrack(() => primaryColor);
 let prevBorderRadius = untrack(() => borderRadius);
 let prevDensity = untrack(() => density);
 let prevContrast = untrack(() => contrast);
+let prevOverrides = untrack(() => overrides);
+let prevPersist = untrack(() => persist);
+let prevStorageKey = untrack(() => storageKey);
 let rootEl = $state<HTMLElement | undefined>();
 
 $effect(() => {
@@ -497,17 +500,34 @@ $effect(() => {
   }
 });
 
-// Sync overrides prop to state
+// Same guard as above (#3873): writing `config.x` reads `config`, so an
+// unguarded sync re-ran on every updateConfig() and wrote the prop back over
+// the programmatic value.
 $effect(() => {
-  config.overrides = overrides;
+  if (overrides !== prevOverrides) {
+    prevOverrides = overrides;
+    untrack(() => {
+      config.overrides = overrides;
+    });
+  }
 });
 
 $effect(() => {
-  config.persist = persist;
+  if (persist !== prevPersist) {
+    prevPersist = persist;
+    untrack(() => {
+      config.persist = persist;
+    });
+  }
 });
 
 $effect(() => {
-  config.storageKey = storageKey;
+  if (storageKey !== prevStorageKey) {
+    prevStorageKey = storageKey;
+    untrack(() => {
+      config.storageKey = storageKey;
+    });
+  }
 });
 </script>
 

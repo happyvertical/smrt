@@ -399,3 +399,20 @@ describe('ThemeProvider premium features (#3869)', () => {
     expect(root.hasAttribute('data-smrt-theme-changing')).toBe(false);
   });
 });
+
+describe('ThemeProvider updateConfig (#3873)', () => {
+  it('keeps programmatic overrides and storageKey instead of re-syncing the props', async () => {
+    mockSystemDark(false);
+    const { default: Harness } = await import(
+      './theme-update-config.fixture.svelte'
+    );
+    const { getByTestId } = render(Harness);
+
+    await waitFor(() => {
+      expect(JSON.parse(getByTestId('config').textContent ?? '{}')).toEqual({
+        overrides: { '--smrt-color-primary': 'red' },
+        storageKey: 'child-theme',
+      });
+    });
+  });
+});
