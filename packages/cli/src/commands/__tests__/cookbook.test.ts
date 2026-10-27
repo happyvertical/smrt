@@ -403,6 +403,82 @@ describe('cookbook apply', () => {
     expect(existsSync(join(dir, '.git'))).toBe(false);
   });
 
+  describe("leaves the template repository's own metadata behind (#4239)", () => {
+    function addRepositoryMetadata(repo: string) {
+      mkdirSync(join(repo, '.agents'), { recursive: true });
+      writeFileSync(join(repo, '.agents', 'project.yaml'), 'tracker: x\n');
+      mkdirSync(join(repo, '.github', 'workflows'), { recursive: true });
+      writeFileSync(join(repo, '.github', 'workflows', 'ci.yml'), 'on: push\n');
+      writeFileSync(join(repo, 'AGENTS.md'), '# template repository\n');
+      writeFileSync(join(repo, 'CLAUDE.md'), '@AGENTS.md\n');
+      writeFileSync(join(repo, 'renovate.json'), '{}\n');
+      // The same names below the root are the app's own and still ship.
+      mkdirSync(join(repo, 'src', '.github'), { recursive: true });
+      writeFileSync(join(repo, 'src', '.github', 'keep.md'), 'x');
+      writeFileSync(join(repo, 'src', 'AGENTS.md'), '# app notes\n');
+    }
+
+    function expectLeftBehind(dir: string) {
+      for (const name of [
+        '.agents',
+        '.github',
+        'AGENTS.md',
+        'CLAUDE.md',
+        'renovate.json',
+      ]) {
+        expect(existsSync(join(dir, name)), name).toBe(false);
+      }
+      expect(existsSync(join(dir, 'src', '.github', 'keep.md'))).toBe(true);
+      expect(existsSync(join(dir, 'src', 'AGENTS.md'))).toBe(true);
+      expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
+    }
+
+    const skipped = [
+      '.agents',
+      '.github',
+      'AGENTS.md',
+      'CLAUDE.md',
+      'renovate.json',
+    ];
+
+    it('from a fetched or plain-directory template', async () => {
+      addRepositoryMetadata(template);
+      const dir = join(work, 'no-repo-metadata');
+      const { result } = await apply('yoga-studio', dir);
+      expect(result.plan.skippedTemplateFiles).toEqual(skipped);
+      expectLeftBehind(dir);
+    });
+
+    it('from a local git template', async () => {
+      const repo = join(work, 'git-template-metadata');
+      writeTemplate(repo);
+      rmSync(join(repo, '.git'), { recursive: true, force: true });
+      addRepositoryMetadata(repo);
+      const sh = (...args: string[]) =>
+        execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
+      sh('init', '-q');
+      sh('add', '.');
+      const dir = join(work, 'no-repo-metadata-git');
+      const { result } = await apply('yoga-studio', dir, { template: repo });
+      expect(result.plan.skippedTemplateFiles).toEqual(skipped);
+      expectLeftBehind(dir);
+    });
+
+    it('plans the skip in a dry run, and an update never reports one', async () => {
+      addRepositoryMetadata(template);
+      const dir = join(work, 'dry-metadata');
+      const { result } = await apply('yoga-studio', dir, { dryRun: true });
+      expect(result.plan.skippedTemplateFiles).toEqual(skipped);
+      expect(existsSync(dir)).toBe(false);
+
+      const project = join(work, 'existing');
+      await apply('yoga-studio', project);
+      const { result: update } = await apply('yoga-studio', project);
+      expect(update.plan.mode).toBe('update');
+      expect(update.plan.skippedTemplateFiles).toEqual([]);
+    });
+  });
+
   it('is idempotent and preserves user edits when re-applying an edited cookbook', async () => {
     const dir = join(work, 'idem');
     await apply('yoga-studio', dir);

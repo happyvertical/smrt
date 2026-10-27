@@ -118,6 +118,9 @@ export function printApplyResult(
   for (const file of plan.removedLockfiles) {
     log(`  - ${file} (resolved the template's pins; the install re-resolves)`);
   }
+  for (const file of plan.skippedTemplateFiles) {
+    log(`  - ${file} (the template repository's own metadata, not copied)`);
+  }
   for (const [name, range] of Object.entries(plan.addDependencies)) {
     log(`  + ${name}@${range}`);
   }

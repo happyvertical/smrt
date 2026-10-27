@@ -42,6 +42,10 @@ object that is not in its package's manifest, or a policy field the object lacks
   untracked-but-unignored files (`git ls-files -co --exclude-standard`), so git-ignored generated output
   (e.g. a stale `src/routes/api/notes`) never reaches the project; uncommitted edits still apply, which
   `git archive HEAD` would drop. A non-git directory is copied whole minus `.git`/`node_modules`.
+  Whatever the source, the template repository's own metadata at its root (`.agents/`, `.github/`,
+  `AGENTS.md`, `CLAUDE.md`, `renovate.json`) is not copied: it names the template's tracker, forge and CI,
+  so an agent in the new project would work against the template repository (#4239). The plan lists it
+  as `skippedTemplateFiles`.
   `package.json` `name` becomes the slug of `cookbook.name` when set, else of the target directory's
   basename (never the template's name: the runtime derives the app identity, hence the OS data
   directory, from it), under the template's npm scope, else `@smrt-app` (`scopedProjectName`): SMRT
