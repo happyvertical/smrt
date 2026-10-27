@@ -57,3 +57,16 @@ scheduled paths; and rendered maintenance-controller envelope drift. Pod escape
 cases cover host ports, process-namespace sharing, pod/container unconfined
 seccomp/AppArmor and unsupported SELinux. `hostUsers` omitted/true is the semantic
 Kubernetes default, with explicit false-to-true drift separately refused.
+
+## Migration application settings (chart 0.2.1)
+
+| Behavior/invariant | Reachable trigger and positive case | Negative/failure case | Actor/context | Executor/runtime/edge | Level and validation |
+| --- | --- | --- | --- | --- | --- |
+| Application migration configuration remains usable without release identity override | A migration wrapper requires `SMRT_RUNTIME_PROFILE` and `SMRT_APP_ID`; named Secret refs render in all five phases and reach the migration Job unchanged | All four injected identity names, an unknown `SMRT_` name and lookalike plural names are rejected | Trusted release-document author; migration-only configuration, separate from runtime credentials | Helm template against the actual chart; no database transaction or application mutation (N/A); public values input boundary | `node --test scripts/deployment-chart.test.mjs`; new positive fails on 0.2.0, passes on head; exact Iolaus qualifier values also render |
+| Release identity authority remains chart-owned | The four injected values match the reviewed release/app document and appear once | Author-supplied Secret refs cannot override release ID, attempt, app name or environment | Chart-owned identity versus application configuration | Parsed real Kubernetes Job output; existing schema rejects inline values and unknown fields | Same real Helm suite; existing malformed-input/secret-separation cases retained |
+
+This patch changes validation of two exact names only. Pod construction, registry
+access, service-account permissions, lifecycle transitions, schema/data ownership
+and provider effects are unchanged. Actual chart publication still requires the
+repository's disposable deployment exercise; real downstream qualification and
+platform readiness remain separate rollout gates.

@@ -1,6 +1,6 @@
 # SMRT application chart
 
-Chart `0.2.0` renders the maintenance-window contract described in
+Chart `0.2.1` renders the maintenance-window contract described in
 [the deployment guide](../../docs/content/deployment.md). It creates application
 Deployments, Services, CronJobs, one static responder, an Ingress, an inventory
 ConfigMap, and a retained migration Job. Existing databases, private buckets and
@@ -79,7 +79,11 @@ preflight until that wrapper and its platform fencing are verified. Migration an
 runtime credentials must use different Secrets; read-only monitor credentials
 should also have database-enforced read-only permissions. The chart injects only
 non-secret migration identity variables `SMRT_RELEASE_ID`, `SMRT_RELEASE_ATTEMPT`,
-`SMRT_APP_NAME` and `SMRT_APP_ENVIRONMENT`; the `SMRT_` namespace is reserved there.
+`SMRT_APP_NAME` and `SMRT_APP_ENVIRONMENT`. Those names and other `SMRT_`
+names remain reserved in migration configuration, except the exact application
+settings `SMRT_RUNTIME_PROFILE` and `SMRT_APP_ID`. Chart 0.2.1 permits these two
+settings through named migration Secret keys so a wrapper can select its runtime
+profile and application identity; neither setting replaces release identity.
 Migration pod identity remains stable across phase sequence changes.
 
 `<helm-release>-inventory` contains `data["inventory.json"]`: version 1, the union
@@ -143,5 +147,5 @@ identity can differ from the actual workload controller, and policies can change
 this is current evidence, not a guarantee of future admission. Actual observed
 Pods must preserve the rendered security, service-account, scratch and credential
 projection envelope. Qualify real execution under the hardened settings with the
-disposable deployment exercise before adoption. Version 0.2.0 is a new artifact;
-published chart 0.1.0 must never be overwritten.
+disposable deployment exercise before adoption. Version 0.2.1 is a new artifact;
+published charts 0.1.0 and 0.2.0 must never be overwritten.
