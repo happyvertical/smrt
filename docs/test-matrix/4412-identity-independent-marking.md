@@ -85,3 +85,15 @@ history; later private head/reanalysis remains hidden while already published
 historical snapshots stay visible. Corrupt/cyclic ancestry fails closed without a
 lifetime-depth cutoff. Delivery acknowledgment uses the same learner visibility.
 Own-origin feedback/correction behavior and all existing schema/identity guards stay.
+
+## Marking-certainty wire consistency
+
+Real acceptance exposed a valid question transcription paired with incompatible
+`result=correct, markingCertainty=uncertain`; the unchanged assessment validator
+correctly rejects this. Make the offered schema/prompt express that existing rule:
+uncertain marking uses unassessed, a non-none allowed reason and both points null.
+The existing oneOf assessed branch can allow only clear/unknown certainty, so no
+new unsupported schema keyword is needed. Keep all schema/validator refusals; do
+not rewrite original/output data. Public ingestion preview and actual offered
+synthetic generation contract must reject correct+uncertain and accept proper
+unassessed+uncertain; ordinary clear/unknown assessment remains compatible.

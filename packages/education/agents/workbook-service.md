@@ -263,3 +263,10 @@ revision writes/returns cannot probe or replay guardian-origin private content;
 authorized guardians retain processing/history access, and own-origin correction
 marking remains supported once ancestral source identity is published. Schema,
 ID collision/remapping rules and immutable stored history remain unchanged.
+
+The offered marking schema mirrors the assessment validator: assessed results use
+`markingCertainty` clear/unknown; `uncertain` marking requires `unassessed`, an
+allowed non-none reason and both point fields null. This is not a conversion of
+provider output: contradictory results remain refused. Mapping certainty remains
+independent. Visible but overwritten/ambiguous responses can stay unassessed while
+other clearly visible questions are assessed in the same valid proposal.

@@ -19,6 +19,7 @@ import {
 import { LearnerService } from '../learner-service.js';
 import { SubmissionService } from '../submission-service.js';
 import {
+  validateWorkbookAssessment,
   WORKBOOK_MATH_VOCABULARY,
   type WorkbookAssessment,
 } from '../workbook-contracts.js';
@@ -2081,6 +2082,27 @@ export function workbookContractTests(
   it('validates evidence-only wire JSON and keeps public ingestion workbook history after review and expiry', async () => {
     const f = await fixture();
     try {
+      const uncertainAssessment = structuredClone(f.assessment);
+      uncertainAssessment.questions[0] = {
+        ...uncertainAssessment.questions[0],
+        result: 'correct',
+        points: 1,
+        possiblePoints: 1,
+        markingCertainty: 'uncertain',
+      };
+      expect(() => validateWorkbookAssessment(uncertainAssessment)).toThrow(
+        'Uncertain marking must remain unassessed',
+      );
+      const honestUnassessed = structuredClone(uncertainAssessment);
+      honestUnassessed.questions[0] = {
+        ...honestUnassessed.questions[0],
+        result: 'unassessed',
+        reason: 'illegible',
+        points: null,
+        possiblePoints: null,
+      };
+      expect(() => validateWorkbookAssessment(honestUnassessed)).not.toThrow();
+
       await f.as(f.parent, async () => {
         const activity = await f.service.resolveWorkbookActivity({
           ...f.create,
@@ -2172,34 +2194,58 @@ export function workbookContractTests(
             promptVersion: 'retention-test',
             generator: {
               identity: { provider: 'fixture', model: 'fixture', version: '1' },
-              generate: async (input) => ({
-                completion: 'complete',
-                output: {
-                  outcome: 'proposals',
-                  suggestions: [
-                    {
-                      handlerId,
-                      handlerVersion: '1',
-                      args: {
-                        ...args,
-                        submissionId: input.offered.find(
-                          (entry) => entry.handler.id === handlerId,
-                        )?.candidates[0].id,
-                      },
-                      evidence: [
-                        {
-                          evidenceId: input.evidence[0].evidenceId,
-                          location: { kind: 'source' },
+              generate: async (input) => {
+                const offered = input.offered.find(
+                  (entry) => entry.handler.id === handlerId,
+                );
+                const offeredProperties = offered?.handler.argsSchema
+                  .properties as Record<string, unknown> | undefined;
+                const questions = offeredProperties?.questions as unknown as {
+                  items: {
+                    oneOf: Array<{
+                      properties: {
+                        result: { enum?: string[] };
+                        markingCertainty?: { enum: string[] };
+                      };
+                    }>;
+                  };
+                };
+                const assessed = questions.items.oneOf.find((branch) =>
+                  branch.properties.result.enum?.includes('correct'),
+                );
+                expect(assessed?.properties.markingCertainty?.enum).toEqual([
+                  'clear',
+                  'unknown',
+                ]);
+                return {
+                  completion: 'complete',
+                  output: {
+                    outcome: 'proposals',
+                    suggestions: [
+                      {
+                        handlerId,
+                        handlerVersion: '1',
+                        args: {
+                          ...args,
+                          submissionId: input.offered.find(
+                            (entry) => entry.handler.id === handlerId,
+                          )?.candidates[0].id,
                         },
-                      ],
-                      alternatives: [],
-                      missingFields: [],
-                      explanation: 'Synthetic evidence',
-                    },
-                  ],
-                  splits: [],
-                },
-              }),
+                        evidence: [
+                          {
+                            evidenceId: input.evidence[0].evidenceId,
+                            location: { kind: 'source' },
+                          },
+                        ],
+                        alternatives: [],
+                        missingFields: [],
+                        explanation: 'Synthetic evidence',
+                      },
+                    ],
+                    splits: [],
+                  },
+                };
+              },
             },
             limits: {
               maxHandlers: 10,
@@ -2282,22 +2328,25 @@ export function workbookContractTests(
             ],
           }),
         );
+        const wireActionId = await ingestion.createAction(
+          receipt.itemId,
+          'wire',
+          { purpose: 'wire-schema-validation' },
+        );
+        let wireRevision = 0;
         const preview = async (key: string, payload: typeof args) => {
-          const actionId = await ingestion.createAction(
-            receipt.itemId,
-            'wire',
-            { key },
-          );
-          return ingestion.previewProposal({
+          const result = await ingestion.previewProposal({
             itemId: receipt.itemId,
             attemptId: lease.attemptId,
-            actionId,
-            expectedRevision: 0,
+            actionId: wireActionId,
+            expectedRevision: wireRevision,
             requestId: key,
             handlerId,
             handlerVersion: '1',
             args: payload,
           });
+          wireRevision = result.revision;
+          return result;
         };
         expect((await preview('evidence-only', args)).revision).toBeGreaterThan(
           0,
@@ -2307,6 +2356,25 @@ export function workbookContractTests(
         await expect(
           preview('invalid-reason', invalidReason),
         ).rejects.toThrow();
+        const uncertainCorrect = structuredClone(args);
+        uncertainCorrect.questions[0].markingCertainty = 'uncertain';
+        await expect(
+          preview('uncertain-cannot-be-correct', uncertainCorrect),
+        ).rejects.toThrow();
+        const uncertainUnassessed = structuredClone(uncertainCorrect);
+        uncertainUnassessed.questions[0].result = 'unassessed';
+        uncertainUnassessed.questions[0].reason = 'illegible';
+        uncertainUnassessed.questions[0].points = null;
+        uncertainUnassessed.questions[0].possiblePoints = null;
+        expect(
+          (await preview('uncertain-unassessed', uncertainUnassessed)).revision,
+        ).toBeGreaterThan(0);
+        const unknownCertainty = structuredClone(args);
+        unknownCertainty.questions[0].markingCertainty = 'unknown';
+        expect(
+          (await preview('unknown-certainty-assessed', unknownCertainty))
+            .revision,
+        ).toBeGreaterThan(0);
         const extraPage = structuredClone(args);
         extraPage.questions[0].anchors[0].page = 0;
         await expect(preview('no-page-selector', extraPage)).rejects.toThrow();
