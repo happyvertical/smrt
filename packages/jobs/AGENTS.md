@@ -18,7 +18,7 @@ Status: `pending → running → completed/failed/cancelled`.
 
 ## TaskRunner
 
-Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 20× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`. Every delay is capped at the effective worker lease TTL, including an oversized base interval; recovery sweep spacing stays TTL-bounded (plus query/event-loop time). Polling intervals must be finite positive milliseconds within the Node timer range.
+Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 20× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`. Every delay is capped at the effective worker lease TTL, including an oversized base interval; recovery sweep spacing stays TTL-bounded (plus query/event-loop time). Polling intervals must be finite positive milliseconds within the Node timer range. `stop()` waits (within `shutdownTimeout`) for an in-flight poll as well as active jobs; a poll that resumes after `stop()` began returns before claiming, and over-claimed rows are released both before and after the drain (#3148).
 
 1. `start()` calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
 2. Polls `claimReady()` to atomically claim at most the free slots (`concurrency - active`) of pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`). On PostgreSQL the candidates come from a `MATERIALIZED` CTE joined to the UPDATE; never claim with `WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` — a nested-loop semi join rescans it per outer row and takes the whole backlog (#3145). The runner also never starts more than the free slots and returns any surplus claim to `pending` with its attempt restored
@@ -31,7 +31,7 @@ Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), 
 5. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method
 6. Calls the requested method on the initialized instance
 7. Terminal/retry writes are **conditional** (`WHERE worker_id=? AND status='running'`) so a recovered row is never stomped
-8. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure
+8. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure. A handler error's own hints win (#3308): `error.retryable === false` fails the job terminally; a positive `error.retryAfterMs` (capped at 24 h) is a floor on the strategy's delay
 9. Events: `job:started`, `job:completed`, `job:failed`, `job:retrying`, `runner:started/stopped`
 
 A rejection from `processJob` can never escape the poll loop: the caller attaches `.catch(e => emit('runner:error', e))` and the error path (`handleJobError`) is itself try/caught, so a failure-path write that rejects is surfaced as a `runner:error` event instead of crashing the worker with an unhandled rejection.

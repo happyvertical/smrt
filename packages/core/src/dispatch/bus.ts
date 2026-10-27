@@ -26,6 +26,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { isTransientConnectionError } from '../db-errors.js';
 import { getDatabase } from '../host.js';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 import { runSerializedAgainstSystemTableBootstrap } from '../system/bootstrap.js';
@@ -50,6 +51,7 @@ import {
 } from './tenant-resolver.js';
 import type {
   DispatchBusOptions,
+  DispatchBusStartupRetry,
   DispatchCleanupOptions,
   DispatchCleanupResult,
   DispatchEmitOptions,
@@ -873,7 +875,41 @@ export class DispatchBus {
 }
 
 /**
+ * Run one startup step, retrying it with exponential backoff while it fails
+ * with a transient connection error (#3657). Anything else, or the last
+ * attempt's failure, is thrown as is.
+ */
+async function withStartupRetry<T>(
+  step: () => Promise<T>,
+  retry: DispatchBusStartupRetry | false | undefined,
+): Promise<T> {
+  const attempts =
+    retry === false ? 1 : Math.max(1, Math.floor(retry?.attempts ?? 5));
+  const maxDelayMs = retry ? (retry.maxDelayMs ?? 5000) : 5000;
+  let delayMs = retry ? (retry.initialDelayMs ?? 500) : 500;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await step();
+    } catch (error) {
+      if (attempt >= attempts || !isTransientConnectionError(error)) {
+        throw error;
+      }
+      const wait = Math.min(delayMs, maxDelayMs);
+      logger.warn(
+        `DispatchBus: transient connection failure during startup (attempt ${attempt} of ${attempts}); retrying in ${wait} ms`,
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      delayMs *= 2;
+    }
+  }
+}
+
+/**
  * Create a DispatchBus instance
+ *
+ * Opening the database and `initialize()` are retried on a transient
+ * connection failure; see {@link DispatchBusOptions.startupRetry}.
  *
  * @param options - Bus configuration
  * @returns Initialized DispatchBus
@@ -894,10 +930,14 @@ export async function createDispatchBus(
     // `DispatchBusOptions.db` does not admit a bare string, but this branch is
     // live code and must not be the one unbounded pool a reader finds while
     // auditing this file (#2377).
-    db = await getDatabase(
-      applyPostgresRuntimeTimeouts({
-        url: dbConfig,
-      }) as Parameters<typeof getDatabase>[0],
+    db = await withStartupRetry(
+      () =>
+        getDatabase(
+          applyPostgresRuntimeTimeouts({
+            url: dbConfig,
+          }) as Parameters<typeof getDatabase>[0],
+        ),
+      options.startupRetry,
     );
   } else if ('query' in dbConfig) {
     // Already a DatabaseInterface (has query method)
@@ -906,18 +946,24 @@ export async function createDispatchBus(
     // Database config object - use getDatabase with type and url.
     // Bounded like every other runtime pool so a dispatch-bus connection is
     // not the one unbounded PostgreSQL client in the process (#2377).
-    db = await getDatabase(
-      applyPostgresRuntimeTimeouts({
-        type: dbConfig.type as 'sqlite' | 'postgres' | 'duckdb',
-        url: dbConfig.url,
-      }) as Parameters<typeof getDatabase>[0],
+    db = await withStartupRetry(
+      () =>
+        getDatabase(
+          applyPostgresRuntimeTimeouts({
+            type: dbConfig.type as 'sqlite' | 'postgres' | 'duckdb',
+            url: dbConfig.url,
+          }) as Parameters<typeof getDatabase>[0],
+        ),
+      options.startupRetry,
     );
   } else {
     throw new Error('Invalid database configuration for DispatchBus');
   }
 
   const bus = new DispatchBus(db);
-  await bus.initialize();
+  // initialize() sets `initialized` only on success and its DDL is idempotent
+  // and serialized, so a retry after a dropped connection starts it over.
+  await withStartupRetry(() => bus.initialize(), options.startupRetry);
 
   return bus;
 }

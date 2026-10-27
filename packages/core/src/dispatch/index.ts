@@ -63,6 +63,7 @@ export {
 // Types
 export type {
   DispatchBusOptions,
+  DispatchBusStartupRetry,
   DispatchCleanupOptions,
   DispatchCleanupResult,
   DispatchEmitOptions,

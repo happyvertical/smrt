@@ -592,7 +592,7 @@ file has run.
 | Export | Description |
 |--------|------------|
 | `DispatchBus` | Persistent message bus with wildcard subscriptions |
-| `createDispatchBus` | Factory function for DispatchBus |
+| `createDispatchBus` | Factory function for DispatchBus; retries a transient connection failure at startup (`startupRetry`, default 5 attempts from 500 ms, `false` to disable) |
 | `Dispatch` | Dispatch record model |
 | `DispatchSubscription` | Persistent subscription model |
 
@@ -687,6 +687,7 @@ instead of matching messages.
 | `isAbortedTransactionError` | Statement issued inside an aborted PostgreSQL transaction (`25P02`) |
 | `isDeterministicDatabaseError` | A retry cannot change the outcome |
 | `isTransientDatabaseError` | Contention or availability; a retry may succeed |
+| `isTransientConnectionError` | The connection itself dropped, was refused, or the server could not accept it yet (class `08`, `57P01`–`57P03`, `53300`, `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`); an unresolvable or unreachable host is not retried |
 | `DatabaseErrorKind` | Union of classification kinds |
 | `DatabaseErrorClassification` | Structured result of `classifyDatabaseError` |
 
