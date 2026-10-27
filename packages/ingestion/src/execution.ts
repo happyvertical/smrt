@@ -520,12 +520,14 @@ export class IntakeExecutionService {
       db,
       scope: this.scope,
       itemId: String(item.id),
+      analysisRevision: Number(item.analysis_revision),
       policy,
       assertTarget: async (model, targetId, revision) => {
         await this.config.assertTarget({
           db,
           scope: this.scope,
           itemId: String(item.id),
+          analysisRevision: Number(item.analysis_revision),
           model,
           id: targetId,
           ...(revision === undefined ? {} : { revision }),
@@ -615,6 +617,7 @@ export class IntakeExecutionService {
                   db,
                   scope: this.scope,
                   itemId,
+                  analysisRevision: context.analysisRevision,
                   model,
                   id,
                 }),
@@ -1167,6 +1170,7 @@ export class IntakeExecutionService {
               db,
               scope: this.scope,
               itemId,
+              analysisRevision: Number(bound.item.analysis_revision),
               model: target.model,
               id: target.id,
             });
@@ -2253,6 +2257,7 @@ export class IntakeExecutionService {
         db,
         scope: this.scope,
         itemId: String(item.id),
+        analysisRevision: Number(item.analysis_revision),
         model,
         id: result[field] as string,
       });
@@ -2291,6 +2296,7 @@ export class IntakeExecutionService {
         db,
         scope: this.scope,
         itemId: String(bound.item.id),
+        analysisRevision: Number(bound.item.analysis_revision),
         model,
         id: result[field] as string,
       });
@@ -2595,6 +2601,7 @@ export class IntakeExecutionService {
                   db: this.db,
                   scope: this.scope,
                   itemId: String(send.bound.item.id),
+                  analysisRevision: Number(send.bound.item.analysis_revision),
                   model,
                   id: targetId,
                   ...(revision === undefined ? {} : { revision }),
@@ -3618,7 +3625,11 @@ export class IntakeExecutionService {
       ...this.config,
       assertTarget: async (target) => {
         try {
-          return await this.config.assertTarget(target);
+          const item = await this.item(target.db, target.itemId);
+          return await this.config.assertTarget({
+            ...target,
+            analysisRevision: Number(item.analysis_revision),
+          });
         } catch {
           throw new IntakeAccessDeniedError();
         }

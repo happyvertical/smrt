@@ -443,6 +443,128 @@ export function workbookContractTests(
     }
   });
 
+  it.each([
+    true,
+    false,
+  ])('keeps own-source canonical guardian edits private until exact release (gate %s)', async (reviewRequired) => {
+    const f = await fixture();
+    try {
+      let target = f.attempt;
+      if (!reviewRequired) {
+        await f.as(f.parent, () =>
+          f.service.setWorkbookFeedbackPolicy({
+            ...f.parent,
+            activityId: f.activity.id,
+            expectedPolicyVersion: 1,
+            reviewRequired: false,
+          }),
+        );
+        target = await f.as(f.own, () =>
+          f.service.captureWorkbookWork({
+            ...f.capture,
+            requestKey: 'context-own-gate-off',
+            intakeItemId: 'context-own-gate-off',
+            previousSubmissionId: f.attempt.submissionId,
+          }),
+        );
+      }
+      const req = { ...f.request, submissionId: target.submissionId };
+      const [source] = await f.as(f.parent, () =>
+        f.service.getWorkbookSourceAnchors(req),
+      );
+      const assessment = structuredClone(f.assessment);
+      assessment.questions[0].anchors = [
+        { ...source, page: 1, rect: [0, 0, 1, 1] },
+      ];
+      const ai = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...req,
+          requestKey: 'context-ai',
+          assessment,
+        }),
+      );
+      const ownContext = () =>
+        f.as(f.own, () =>
+          f.service.getWorkbookQuestionContext({ ...req, ...f.own }),
+        );
+      if (reviewRequired) await expect(ownContext()).rejects.toThrow();
+      else expect((await ownContext()).kind).toBe('same_capture');
+      const corrected = structuredClone(assessment);
+      corrected.questions[0].prompt =
+        'Private guardian transcription with a hint';
+      const guardian = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...req,
+          revisionId: ai.id,
+          expectedHeadId: null,
+          requestKey: 'context-guardian',
+          assessment: corrected,
+          decisionReason: 'Correct transcription',
+        }),
+      );
+      const handler = educationIntakeHandlers({
+        submissions: f.service,
+        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        submissionId: target.submissionId,
+        workbookActivityId: f.activity.id,
+      }).find((h) => h.id.endsWith('review-submission'))!;
+      const discover = () =>
+        f.as(f.own, () =>
+          handler.discovery!.candidates!(
+            '',
+            {
+              db: f.db,
+              scope: { tenantId: f.own.tenantId, actorId: f.own.actorUserId },
+              policy: { requireReview: true },
+            } as unknown as Parameters<
+              NonNullable<NonNullable<typeof handler.discovery>['candidates']>
+            >[1],
+            { limit: 10 },
+          ),
+        );
+      await expect(ownContext()).rejects.toThrow();
+      await expect(discover()).rejects.toThrow();
+      await f.as(f.parent, () =>
+        f.service.releaseWorkbookFeedback({
+          ...req,
+          revisionId: guardian.id,
+          expectedHeadId: guardian.id,
+          requestKey: 'context-release',
+        }),
+      );
+      expect((await ownContext()).questions).toEqual([
+        {
+          id: corrected.questions[0].id,
+          prompt: corrected.questions[0].prompt,
+        },
+      ]);
+      expect(JSON.stringify((await discover()).items[0].context)).toContain(
+        corrected.questions[0].prompt,
+      );
+      const later = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...req,
+          revisionId: guardian.id,
+          expectedHeadId: guardian.id,
+          requestKey: 'context-later-private',
+          assessment: corrected,
+        }),
+      );
+      expect(later.id).not.toBe(guardian.id);
+      await expect(ownContext()).rejects.toThrow();
+      await expect(discover()).rejects.toThrow();
+      const parentContext = await f.as(f.parent, () =>
+        f.service.getWorkbookQuestionContext(req),
+      );
+      if (parentContext.kind !== 'same_capture')
+        throw new Error('Missing canonical capture');
+      expect(parentContext.questions[0].prompt).toBe(
+        corrected.questions[0].prompt,
+      );
+    } finally {
+      await f.close();
+    }
+  });
   it('resolves explicit identity, denies sibling/foreign/learner planning, deduplicates capture and rolls back failed units', async () => {
     const f = await fixture();
     try {
@@ -1441,6 +1563,7 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       const original = structuredClone(f.assessment);
+      original.provenance.analysisRevision = 2;
       original.questions[0].prompt = '7 - 4 = 2';
       original.questions[0].answer = '2';
       original.questions.push({
@@ -1457,8 +1580,8 @@ export function workbookContractTests(
           assessment: original,
         }),
       );
-      const reread = await f.as(f.own, () =>
-        f.service.getWorkbookQuestionContext({ ...f.request, ...f.own }),
+      const reread = await f.as(f.parent, () =>
+        f.service.getWorkbookQuestionContext({ ...f.request, ...f.parent }),
       );
       expect(reread).toEqual({
         kind: 'same_capture',
@@ -1524,16 +1647,19 @@ export function workbookContractTests(
       expect(handler.description).toContain('current captured evidence');
       const rereadHandler = educationIntakeHandlers({
         submissions: f.service,
-        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        request: { ...f.parent, enrollmentId: f.activity.enrollmentId },
         submissionId: f.attempt.submissionId,
         workbookActivityId: f.activity.id,
       }).find((h) => h.id.endsWith('review-submission'))!;
-      const sameCaptureCandidates = await f.as(f.own, () =>
+      const sameCaptureCandidates = await f.as(f.parent, () =>
         rereadHandler.discovery!.candidates!(
           '',
           {
             db: f.db,
-            scope: { tenantId: f.own.tenantId, actorId: f.own.actorUserId },
+            scope: {
+              tenantId: f.parent.tenantId,
+              actorId: f.parent.actorUserId,
+            },
             policy: { requireReview: true },
           } as unknown as Parameters<
             NonNullable<
@@ -1597,15 +1723,31 @@ export function workbookContractTests(
       ).rejects.toThrow('Duplicate or empty question id');
       // Printed IDs, not array position, establish correspondence.
       corrected.questions.reverse();
+      corrected.provenance.analysisRevision = 2;
       const retained = await record(corrected, 'current-answers');
       expect(retained.assessment.questions.map((q) => q.answer)).toEqual([
         'triangle',
         '3',
       ]);
       expect((await record(corrected, 'current-answers')).id).toBe(retained.id);
+      // Different intake items may share revision2. Exclude only this capture's
+      // materialization, never the predecessor's identity with that same number.
       expect(
-        await f.as(f.own, () =>
-          f.service.getWorkbookQuestionContext({ ...request, ...f.own }),
+        await f.as(f.parent, () =>
+          f.service.getWorkbookQuestionContext({
+            ...request,
+            ...f.parent,
+            analysisRevision: 2,
+          }),
+        ),
+      ).toEqual({
+        kind: 'identity_only',
+        questions: [{ id: 'p7:q1' }, { id: 'p7:q2' }],
+      });
+
+      expect(
+        await f.as(f.parent, () =>
+          f.service.getWorkbookQuestionContext({ ...request, ...f.parent }),
         ),
       ).toEqual({
         kind: 'same_capture',
@@ -2537,6 +2679,28 @@ export function workbookContractTests(
         expect(imported.kind).toBe('preserved');
         if (imported.kind !== 'preserved')
           throw new Error('Expected preserved analysis');
+        const afterPreservation = await Promise.allSettled([
+          ingestion.getCompletedAnalysis(receipt.itemId),
+          ingestion.previewGeneratedProposals({
+            itemId: receipt.itemId,
+            attemptId: generation.attemptId,
+            selections: [
+              {
+                index: 0,
+                intentionKey: 'post-preserve',
+                expectedRevision: 0,
+                requestId: 'post-preserve',
+              },
+            ],
+          }),
+        ]);
+        expect(
+          afterPreservation.map((result) =>
+            result.status === 'fulfilled'
+              ? 'fulfilled'
+              : result.reason?.constructor.name,
+          ),
+        ).toEqual(['fulfilled', 'fulfilled']);
         const importedHistory = await f.service.getWorkbookTimeline({
           ...request,
           activityId: activity.id,

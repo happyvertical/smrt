@@ -626,3 +626,10 @@ Context is snapshotted and included in the candidate key/digest and generator
 contract. Hosts must bind any context changes to their current target revision;
 current target checks retain their existing live executor/authorization boundary.
 Education binds canonical same-capture prompt context to its target revision digest.
+
+The engine exposes read-only `HandlerContext.analysisRevision` and forwards the
+same current item revision to target authorization on its shared executor. This
+pin comes from the owned intake row, not handler arguments, browser input or model
+output. An owner may use it to avoid treating that generation's own materialized
+result as an independent change to its input context; ordinary unrelated changes
+and current authority/revision checks still invalidate stale snapshots.

@@ -11,6 +11,8 @@ export interface HandlerContext {
   db: DatabaseInterface;
   scope: Readonly<IngestionScope>;
   itemId: string;
+  /** Owning item interpretation revision; never supplied by browser arguments. */
+  readonly analysisRevision?: number;
   principal?: PrincipalRun;
   policy: Readonly<IntakePolicy>;
   /** Must check current tenant/confidential ownership and optionally CAS revision. */
@@ -134,6 +136,8 @@ export interface IntakeExecutionOptions {
     db: DatabaseInterface;
     scope: Readonly<IngestionScope>;
     itemId: string;
+    /** Current owning item revision, pinned by the engine on this executor. */
+    analysisRevision?: number;
     model: string;
     id: string;
     revision?: string;

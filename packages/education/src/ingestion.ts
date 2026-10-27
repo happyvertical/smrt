@@ -504,6 +504,7 @@ export function educationIntakeHandlers(input: {
               ...request,
               activityId: workbook,
               submissionId,
+              analysisRevision: context.analysisRevision,
             });
           });
         }
@@ -537,6 +538,7 @@ export function educationIntakeHandlers(input: {
               ...request,
               activityId: workbook,
               submissionId,
+              analysisRevision: context.analysisRevision,
             });
             return `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(current)}`;
           })
@@ -619,7 +621,15 @@ export function educationIntakeTargetResolver(input: {
   request: LearnerRequest & { enrollmentId: string };
   submissionId?: string;
 }): import('@happyvertical/smrt-ingestion/execution').IntakeExecutionOptions['assertTarget'] {
-  return async ({ db, scope, itemId, model, id, revision }) => {
+  return async ({
+    db,
+    scope,
+    itemId,
+    analysisRevision,
+    model,
+    id,
+    revision,
+  }) => {
     const { request, submissions } = input;
     if (
       scope.tenantId !== request.tenantId ||
@@ -667,6 +677,7 @@ export function educationIntakeTargetResolver(input: {
                 ...request,
                 activityId: attempt.activityId,
                 submissionId: id,
+                analysisRevision,
               });
               return `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(context)}`;
             }

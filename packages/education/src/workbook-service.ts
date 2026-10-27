@@ -981,29 +981,68 @@ export class WorkbookService extends SubmissionService {
    * A correction without its own revision receives IDs only. Both paths retain
    * the same source/revision and full ancestry visibility checks as identity. */
   async getWorkbookQuestionContext(
-    request: AttemptRequest,
+    request: AttemptRequest & { analysisRevision?: number },
   ): Promise<
     | { kind: 'same_capture'; questions: { id: string; prompt: string }[] }
     | { kind: 'identity_only'; questions: { id: string }[] }
   > {
-    const ids = await this.getWorkbookQuestionIdentity(request);
     const { attempt, learner } = await this.attempt(
       request,
       'education.learner.submit',
     );
-    const revision = await this.identityRevision(request, attempt);
-    if (!revision) return { kind: 'identity_only', questions: ids };
-    if (
-      learner.userId === request.actorUserId &&
-      !(await this.questionIdentityVisible(request, attempt, revision))
-    )
-      throw new LearnerAuthorizationError();
-    return {
-      kind: 'same_capture',
-      questions: revisionView(revision).assessment.questions.map(
-        ({ id, prompt }) => ({ id, prompt }),
-      ),
-    };
+    // A generation's own materialization must not change its input context.
+    // Only this attempt's AI from that exact item revision is excluded; never
+    // guardian decisions, predecessor AI or unrelated later interpretations.
+    const revision = await this.identityRevision(
+      request,
+      attempt,
+      request.analysisRevision,
+    );
+    if (revision) {
+      if (
+        learner.userId === request.actorUserId &&
+        !(await this.revisionPayloadVisible(request, attempt, revision))
+      )
+        throw new LearnerAuthorizationError();
+      return {
+        kind: 'same_capture',
+        questions: revisionView(revision).assessment.questions.map(
+          ({ id, prompt }) => ({ id, prompt }),
+        ),
+      };
+    }
+    if (!attempt.previousAttemptId)
+      return { kind: 'identity_only', questions: [] };
+    const questions = await this.getWorkbookQuestionIdentity(request);
+    return { kind: 'identity_only', questions };
+  }
+  private async revisionPayloadVisible(
+    request: LearnerRequest,
+    attempt: WorkbookAttempt,
+    revision: WorkbookAssessmentRevision,
+  ): Promise<boolean> {
+    const photo = await this.workbookPhotoSource(request, {
+      submissionId: attempt.submissionId,
+    });
+    const release = await (
+      await WorkbookFeedbackReleaseCollection.create({ db: this.db })
+    ).get(
+      {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        attemptId: String(attempt.id),
+        revisionId: String(revision.id),
+      },
+      { cache: false },
+    );
+    return (
+      !!(
+        release ||
+        (!photo.guardianOrigin &&
+          !attempt.reviewRequired &&
+          revision.kind === 'ai')
+      ) && (await this.questionIdentityVisible(request, attempt, revision))
+    );
   }
   private async revisions(request: LearnerRequest, attemptId: string) {
     return (
@@ -1020,8 +1059,15 @@ export class WorkbookService extends SubmissionService {
   private async identityRevision(
     request: LearnerRequest,
     attempt: WorkbookAttempt,
+    excludeAnalysisRevision?: number,
   ): Promise<WorkbookAssessmentRevision | undefined> {
-    const rows = await this.revisions(request, String(attempt.id));
+    const rows = (await this.revisions(request, String(attempt.id))).filter(
+      (row) =>
+        row.kind !== 'ai' ||
+        excludeAnalysisRevision === undefined ||
+        revisionView(row).assessment.provenance.analysisRevision !==
+          excludeAnalysisRevision,
+    );
     return (
       rows.filter((r) => r.kind === 'guardian').at(-1) ??
       rows.filter((r) => r.kind === 'ai')[0]

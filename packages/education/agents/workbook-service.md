@@ -324,3 +324,13 @@ own revision receives predecessor IDs only; predecessor prompts are never copied
 Exact source/revision and full correction-ancestry visibility apply to both paths,
 including own-learner reads. No historical rows are rewritten and absent layout
 remains valid. `getWorkbookQuestionIdentity` remains the IDs-only public API.
+
+Canonical prompts follow ordinary assessment payload visibility, including
+captured review policy and exact guardian revision release even for learner-owned
+sources; source/ancestry authorization alone does not publish guardian edits.
+For ingestion callbacks only, the engine supplies current `analysisRevision` from
+its owned item row. Context selection ignores AI materialized by that exact
+current-attempt revision, so preserving a proposal does not invalidate its own
+completed snapshot or preview. It never ignores guardian decisions, predecessor
+revisions or another interpretation. Direct reads omit this engine pin and retain
+normal current revision visibility; browser/upload fields cannot supply the pin.
