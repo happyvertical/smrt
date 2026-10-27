@@ -22,6 +22,7 @@ import {
   type StripeAdapterOptions,
   type StripeApplicationFee,
   type StripeConnectAccountStatus,
+  type StripeDispute,
   type StripeRefundPaymentInput,
 } from '@happyvertical/payments/stripe';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
@@ -39,6 +40,7 @@ import {
   type TenantPaymentEnvironment,
   writeTenantPaymentAccount,
 } from './models/TenantPaymentAccount.js';
+import { TenantPaymentDisputeCollection } from './models/TenantPaymentDispute.js';
 import {
   TenantPaymentWebhookEventCollection,
   type TenantPaymentWebhookOutcome,
@@ -67,7 +69,8 @@ export type ConnectedPaymentGateway = Pick<
   | 'createStandardAccount'
   | 'createOnboardingLink'
   | 'getAccountCapabilities'
->;
+> &
+  Partial<Pick<StripeAdapter, 'getDispute'>>;
 
 /** Why a connected-payments command refused. Messages never carry secrets. */
 export type ConnectedPaymentErrorCode =
@@ -84,7 +87,9 @@ export type ConnectedPaymentErrorCode =
   | 'AMOUNT_MISMATCH'
   | 'REFUND_EXCEEDS_PAYMENT'
   | 'REFUND_FAILED'
-  | 'REFUND_NOT_RECORDED';
+  | 'REFUND_NOT_RECORDED'
+  | 'DISPUTE_NOT_RECORDED'
+  | 'DISPUTE_UNSUPPORTED';
 
 /** A refused connected-payments command. */
 export class ConnectedPaymentError extends Error {
@@ -109,6 +114,8 @@ export interface ConnectedSettlementAccounts {
   receivablesAccountId: string;
   /** Expense account for the platform's application fee (debit). */
   applicationFeeAccountId: string;
+  /** Expense for provider dispute fees; required when balance evidence includes fees. */
+  disputeFeeAccountId?: string;
 }
 
 /** Host lookup of a tenant's settlement accounts. */
@@ -994,7 +1001,13 @@ export async function handleConnectedPaymentWebhook(
     tenantId,
     providerAccountId,
   };
-  if (seen)
+  // Earlier releases acknowledged disputes as ignored. A verified redelivery
+  // must repair that historical inbox record after reconciliation succeeds.
+  const replayIgnoredDispute =
+    seen?.outcome === 'ignored' &&
+    endpoint === 'connect' &&
+    event.type.startsWith('charge.dispute.');
+  if (seen && !replayIgnoredDispute)
     return {
       ...base,
       outcome: seen.outcome,
@@ -1002,6 +1015,7 @@ export async function handleConnectedPaymentWebhook(
       ...(seen.paymentIntentId
         ? { paymentIntentId: seen.paymentIntentId }
         : {}),
+      ...(seen.paymentId ? { paymentId: seen.paymentId } : {}),
       // A redelivery still carries the fee, so a host that failed to book it
       // the first time can book it now.
       ...(seen.applicationFeeJson
@@ -1028,6 +1042,22 @@ export async function handleConnectedPaymentWebhook(
   ) {
     const { raw: _raw, ...applicationFee } = detail.applicationFee;
     result = { outcome: 'application_fee', applicationFee };
+  } else if (
+    endpoint === 'connect' &&
+    event.type.startsWith('charge.dispute.')
+  ) {
+    if (!event.dispute)
+      throw invalid('Provider dispute event has no typed dispute');
+    result = await applyDisputeUpdate({
+      db,
+      gateway: input.gateway,
+      tenantId,
+      providerAccountId,
+      backendId,
+      environment,
+      dispute: event.dispute,
+      resolveSettlementAccounts: input.resolveSettlementAccounts,
+    });
   } else if (
     endpoint === 'connect' &&
     (event.type.startsWith('charge.refund.') ||
@@ -1057,22 +1087,28 @@ export async function handleConnectedPaymentWebhook(
   }
 
   await withSystemContext(async () => {
-    const record = await events.build({
-      id: recordId,
-      backendId,
-      environment,
-      eventId: event.id,
-      eventType: event.type,
-      endpoint,
-      tenantId,
-      providerAccountId,
-      outcome: result.outcome,
-      paymentIntentId: result.paymentIntentId ?? '',
-      applicationFeeJson: result.applicationFee
-        ? JSON.stringify(result.applicationFee)
-        : '',
-      processedAt: new Date(),
-    });
+    const record =
+      seen ??
+      (await events.build({
+        id: recordId,
+        backendId,
+        environment,
+        eventId: event.id,
+        eventType: event.type,
+        endpoint,
+        tenantId,
+        providerAccountId,
+        outcome: result.outcome,
+        paymentIntentId: result.paymentIntentId ?? '',
+        paymentId: result.paymentId ?? '',
+        applicationFeeJson: result.applicationFee
+          ? JSON.stringify(result.applicationFee)
+          : '',
+        processedAt: new Date(),
+      }));
+    record.outcome = result.outcome;
+    record.paymentId = result.paymentId ?? '';
+    record.processedAt = new Date();
     await record.save();
   });
   return { ...base, ...result, duplicate: false };
@@ -1684,6 +1720,252 @@ async function applyRefundUpdate(args: {
         resolveSettlementAccounts: args.resolveSettlementAccounts,
       });
     return { outcome: 'refund_updated' as const, paymentId: refund.id! };
+  });
+}
+
+/** Re-read and atomically project a dispute without changing settled money history. */
+async function applyDisputeUpdate(args: {
+  db: DatabaseInterface;
+  gateway: ConnectedPaymentGateway;
+  tenantId: string;
+  providerAccountId: string;
+  backendId: string;
+  environment: TenantPaymentEnvironment;
+  dispute: StripeDispute;
+  resolveSettlementAccounts: ResolveConnectedSettlementAccounts;
+}): Promise<{ outcome: TenantPaymentWebhookOutcome; paymentId: string }> {
+  const readDispute = args.gateway.getDispute?.bind(args.gateway);
+  if (!readDispute)
+    throw new ConnectedPaymentError(
+      'CONFIGURATION',
+      'Dispute reconciliation requires gateway.getDispute',
+    );
+  return tenantCommand(args.tenantId, async () => {
+    if (!args.db.transaction)
+      throw invalid('Dispute reconciliation requires transactions');
+    return args.db.transaction(async (db) => {
+      // Routing happened before this transaction. Fence the current mapping too,
+      // so a concurrent explicit relink cannot authorize the former account.
+      const account = await findTenantAccount({
+        db,
+        tenantId: args.tenantId,
+        backendId: args.backendId,
+        environment: args.environment,
+      });
+      if (!account || account.providerAccountId !== args.providerAccountId)
+        throw new ConnectedPaymentError(
+          'ACCOUNT_NOT_OWNED',
+          'Dispute account is no longer held by this tenant',
+        );
+      await account.claimRevision(account.updated_at!);
+      // Optional webhook linkage is not authoritative: hydrate it before routing.
+      const routed = await readDispute(args.dispute.id, {
+        stripeAccount: args.providerAccountId,
+        expectedLivemode: args.environment === 'live',
+      });
+      if (
+        routed.id !== args.dispute.id ||
+        routed.chargeId !== args.dispute.chargeId ||
+        routed.account !== args.providerAccountId ||
+        routed.livemode !== (args.environment === 'live')
+      )
+        throw new ConnectedPaymentError(
+          'PAYMENT_NOT_OWNED',
+          'Dispute read does not match the connected account',
+        );
+      const payments = await PaymentCollection.create({ db });
+      const refs = [routed.paymentIntentId, routed.chargeId].filter(
+        (v): v is string => !!v,
+      );
+      const matches = new Map<string, Payment>();
+      for (const ref of refs) {
+        for (const payment of await payments.list({
+          where: {
+            backendTxRef: ref,
+            backendId: args.backendId,
+            connectedAccountId: args.providerAccountId,
+            kind: 'payment',
+          },
+        }))
+          matches.set(payment.id!, payment);
+      }
+      const payment = matches.size === 1 ? [...matches.values()][0] : undefined;
+      if (
+        !payment ||
+        !sameTenant(payment.tenantId, args.tenantId) ||
+        !payment.journalId ||
+        ![PaymentStatus.COMPLETED, PaymentStatus.REFUNDED].includes(
+          payment.status,
+        )
+      )
+        throw new ConnectedPaymentError(
+          'DISPUTE_NOT_RECORDED',
+          'Dispute has no unique settled payment in this tenant and account',
+        );
+      // A provider read after this write fence prevents concurrent old snapshots
+      // from replacing newer evidence. All ledger/state writes use this executor.
+      await payment.claimRevision(payment.updated_at!);
+      const dispute = await readDispute(args.dispute.id, {
+        stripeAccount: args.providerAccountId,
+        expectedLivemode: args.environment === 'live',
+      });
+      if (
+        dispute.id !== args.dispute.id ||
+        dispute.account !== args.providerAccountId ||
+        dispute.livemode !== (args.environment === 'live') ||
+        dispute.chargeId !== args.dispute.chargeId ||
+        (dispute.paymentIntentId !== payment.backendTxRef &&
+          dispute.chargeId !== payment.backendTxRef)
+      )
+        throw new ConnectedPaymentError(
+          'PAYMENT_NOT_OWNED',
+          'Authoritative dispute does not match the routed payment',
+        );
+      if (
+        dispute.currency !== payment.currency ||
+        dispute.amount > payment.amount
+      )
+        throw new ConnectedPaymentError(
+          'AMOUNT_MISMATCH',
+          'Dispute amount or currency differs from its settlement',
+        );
+      if (dispute.status === 'unknown')
+        throw new ConnectedPaymentError(
+          'DISPUTE_UNSUPPORTED',
+          'Unknown provider dispute status requires operator reconciliation',
+        );
+      const id = await deterministicId([
+        'tenant-payment-dispute',
+        args.backendId,
+        args.environment,
+        args.providerAccountId,
+        dispute.id,
+      ]);
+      const disputes = await TenantPaymentDisputeCollection.create({ db });
+      const prior = await disputes.get({ id });
+      if (
+        prior &&
+        (prior.paymentId !== payment.id ||
+          prior.providerAccountId !== args.providerAccountId ||
+          prior.tenantId !== args.tenantId)
+      )
+        throw new ConnectedPaymentError(
+          'PAYMENT_NOT_OWNED',
+          'Dispute identity cannot change',
+        );
+      const previous = prior
+        ? (JSON.parse(prior.snapshotJson) as StripeDispute)
+        : undefined;
+      if (
+        previous &&
+        (previous.chargeId !== dispute.chargeId ||
+          previous.amount !== dispute.amount ||
+          previous.currency !== dispute.currency)
+      )
+        throw invalid('Previously recorded dispute identity changed');
+      const evidence = (tx: StripeDispute['balanceTransactions'][number]) =>
+        JSON.stringify([
+          tx.id,
+          tx.amount,
+          tx.fee,
+          tx.net,
+          tx.currency,
+          new Date(tx.createdAt).toISOString(),
+          tx.type,
+          tx.reportingCategory ?? '',
+        ]);
+      const current = new Map(
+        dispute.balanceTransactions.map((tx) => [tx.id, tx]),
+      );
+      if (current.size !== dispute.balanceTransactions.length)
+        throw invalid('Duplicate dispute balance evidence');
+      for (const old of previous?.balanceTransactions ?? []) {
+        const next = current.get(old.id);
+        if (!next || evidence(next) !== evidence(old))
+          throw invalid('Previously posted dispute balance evidence changed');
+      }
+      const accounts = await args.resolveSettlementAccounts({
+        tenantId: args.tenantId,
+        currency: payment.currency,
+      });
+      const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
+      const journals = await JournalCollection.create({ db });
+      for (const tx of dispute.balanceTransactions) {
+        if (
+          tx.currency !== payment.currency ||
+          tx.type !== 'adjustment' ||
+          (tx.reportingCategory &&
+            !['dispute', 'dispute_reversal'].includes(tx.reportingCategory)) ||
+          ![tx.amount, tx.fee, tx.net].every(Number.isSafeInteger) ||
+          tx.net !== tx.amount - tx.fee ||
+          !Number.isSafeInteger(tx.amount - tx.fee) ||
+          Math.abs(tx.amount) > payment.amount
+        )
+          throw new ConnectedPaymentError(
+            'DISPUTE_UNSUPPORTED',
+            'Unsupported dispute balance evidence requires operator reconciliation',
+          );
+        if (previous?.balanceTransactions.some((old) => old.id === tx.id))
+          continue;
+        if (tx.fee && !accounts.disputeFeeAccountId)
+          throw new ConnectedPaymentError(
+            'CONFIGURATION',
+            'Dispute fees require disputeFeeAccountId',
+          );
+        const journalId = await deterministicId([
+          'tenant-payment-dispute-balance',
+          args.backendId,
+          args.environment,
+          args.providerAccountId,
+          tx.id,
+        ]);
+        // Identity is provider balance transaction, never webhook delivery.
+        if (await journals.get({ id: journalId }))
+          throw invalid(
+            'Dispute balance transaction is already owned by another projection',
+          );
+        if (!tx.amount && !tx.fee) continue;
+        const journal = await journals.create({
+          id: journalId,
+          tenantId: args.tenantId,
+          ledgerId: accounts.ledgerId || null,
+          date: tx.createdAt,
+          description: `Connected dispute ${dispute.id}`,
+          sourceModule: 'smrt-commerce',
+          sourceRef: id,
+        });
+        const entry = async (accountId: string, signedDebit: number) => {
+          if (signedDebit)
+            await journal.addEntry({
+              accountId,
+              currency: payment.currency,
+              debit: Math.max(signedDebit, 0),
+              credit: Math.max(-signedDebit, 0),
+              memo: `Dispute balance ${tx.id}`,
+            });
+        };
+        await entry(accounts.cashAccountId, tx.net);
+        await entry(accounts.receivablesAccountId, -tx.amount);
+        if (tx.fee) await entry(accounts.disputeFeeAccountId!, tx.fee);
+        await journal.post();
+      }
+      const record =
+        prior ??
+        (await disputes.create({
+          id,
+          tenantId: args.tenantId,
+          backendId: args.backendId,
+          environment: args.environment,
+          providerAccountId: args.providerAccountId,
+          disputeId: dispute.id,
+          paymentId: payment.id!,
+        }));
+      record.status = dispute.status;
+      const { raw: _raw, ...snapshot } = dispute;
+      record.snapshotJson = JSON.stringify(snapshot);
+      await record.save();
+      return { outcome: 'dispute_updated' as const, paymentId: payment.id! };
+    });
   });
 }
 

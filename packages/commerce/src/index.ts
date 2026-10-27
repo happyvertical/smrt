@@ -346,6 +346,7 @@ export {
   type TenantPaymentAccountOptions,
   type TenantPaymentAccountStatus,
   type TenantPaymentCapabilitySnapshot,
+  TenantPaymentDispute,
   type TenantPaymentEnvironment,
   TenantPaymentWebhookEvent,
   type TenantPaymentWebhookOutcome,

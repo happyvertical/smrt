@@ -67,6 +67,8 @@ function accountBody(account: FixtureAccount) {
 /** In-memory Stripe API replay plus webhook signing for tests. */
 export class StripeConnectFixture {
   readonly requests: RecordedRequest[] = [];
+  /** Authoritative dispute reads, keyed by account and provider id. */
+  readonly disputes = new Map<string, Record<string, unknown>>();
   private readonly accounts = new Map<string, FixtureAccount>();
   private readonly sessions = new Map<string, FixtureSession>();
   private sequence = 0;
@@ -162,6 +164,12 @@ export class StripeConnectFixture {
       body,
     });
 
+    if (method === 'GET' && path.startsWith('/disputes/')) {
+      const dispute = this.disputes.get(`${stripeAccount}:${path.slice(10)}`);
+      return dispute
+        ? json(200, dispute)
+        : json(404, { error: { message: 'No such dispute' } });
+    }
     const idempotencyKey = headers.get('Idempotency-Key');
     if (
       method === 'POST' &&

@@ -25,9 +25,14 @@ import {
   type IsolatedTestDbResult,
 } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { InvoiceCollection } from '../../collections/InvoiceCollection.js';
+import { InvoiceLineItemCollection } from '../../collections/InvoiceLineItemCollection.js';
+import { PaymentAllocationCollection } from '../../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../../collections/PaymentCollection.js';
 import { PaymentIntentCollection } from '../../collections/PaymentIntentCollection.js';
+import { PayoutCollection } from '../../collections/PayoutCollection.js';
 import { TenantPaymentAccountCollection } from '../../collections/TenantPaymentAccountCollection.js';
+import { VendorCollection } from '../../collections/VendorCollection.js';
 import {
   type ConnectedSettlementAccounts,
   createConnectedCheckout,
@@ -43,7 +48,14 @@ import {
   setTenantPaymentFeePolicy,
 } from '../../connected-payments.js';
 import { withConnectedPaymentAuthority } from '../../connected-payments-internal.js';
-import { PaymentIntentStatus, PaymentStatus } from '../../types/index.js';
+import { TenantPaymentDisputeCollection } from '../../models/TenantPaymentDispute.js';
+import { TenantPaymentWebhookEventCollection } from '../../models/TenantPaymentWebhookEvent.js';
+import { ensureTenantTaxCodes } from '../../tax/standard-codes.js';
+import {
+  InvoiceStatus,
+  PaymentIntentStatus,
+  PaymentStatus,
+} from '../../types/index.js';
 import {
   StripeConnectFixture,
   TEST_SECRET_KEY,
@@ -51,10 +63,18 @@ import {
 
 const CLASSES = [
   'TenantPaymentAccount',
+  'TenantPaymentDispute',
   'TenantPaymentWebhookEvent',
   'PaymentIntent',
   'Payment',
   'PaymentAllocation',
+  'Payout',
+  'Vendor',
+  'InvoiceLineItem',
+  'TaxCode',
+  'TaxComponent',
+  'TaxSettings',
+  'DocumentTax',
   'Invoice',
   'Customer',
   'Contract',
@@ -95,6 +115,7 @@ export function connectedPaymentsContract(
         };
         ledgers.set(tenantId, {
           ledgerId: '',
+          disputeFeeAccountId: await make('6200', 'Dispute fees', 'expense'),
           cashAccountId: await make('1000', 'Stripe balance', 'asset'),
           receivablesAccountId: await make('1200', 'Receivables', 'asset'),
           applicationFeeAccountId: await make(
@@ -193,6 +214,425 @@ export function connectedPaymentsContract(
         }),
       };
     }
+
+    async function disputedCheckout() {
+      const account = stripe.accountId('riverbenddispute');
+      await connect(bakery, account);
+      const quote = await checkout(bakery);
+      const settled = await deliverCompleted(
+        quote.intent.paymentOptions[0]!.memo!,
+        account,
+      );
+      const pi = stripe.session(quote.intent.paymentOptions[0]!.memo!)
+        .payment_intent as string;
+      const dispute = {
+        id: `dp_${stripe.run}`,
+        object: 'dispute',
+        charge: `ch_${stripe.run}`,
+        payment_intent: pi,
+        amount: 10000,
+        currency: 'usd',
+        status: 'needs_response',
+        livemode: false,
+        created: 1700000000,
+        balance_transactions: [
+          {
+            id: `txn_${stripe.run}`,
+            object: 'balance_transaction',
+            amount: -10000,
+            fee: 1500,
+            net: -11500,
+            currency: 'usd',
+            created: 1700000000,
+            type: 'adjustment',
+            reporting_category: 'dispute',
+          },
+        ],
+      };
+      stripe.disputes.set(`${account}:${dispute.id}`, dispute);
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account,
+        object: dispute,
+      });
+      const deliver = (delivery = event, gateway = stripe.adapter()) =>
+        handleConnectedPaymentWebhook({
+          db,
+          gateway,
+          environment: 'test',
+          payload: delivery.payload,
+          signature: delivery.signature,
+          resolveSettlementAccounts,
+        });
+      return { account, quote, settled, dispute, event, deliver };
+    }
+
+    it('reconciles bakery dispute withdrawals and reinstatements once despite duplicate and reordered events', async () => {
+      const ctx = await disputedCheckout();
+      // Signed account routing overrides an unrelated ambient host context.
+      expect(
+        (await withTenant({ tenantId: toolLibrary }, () => ctx.deliver()))
+          .outcome,
+      ).toBe('dispute_updated');
+      expect((await ctx.deliver()).duplicate).toBe(true);
+      await withTenant({ tenantId: bakery }, async () => {
+        const journals = await JournalCollection.create({ db });
+        expect(await journals.count()).toBe(2);
+        const records = await (
+          await TenantPaymentDisputeCollection.create({ db })
+        ).list({});
+        expect(records).toHaveLength(1);
+        const journal = (
+          await journals.list({ where: { sourceRef: records[0]!.id! } })
+        )[0]!;
+        const entries = await (
+          await JournalEntryCollection.create({ db })
+        ).list({ where: { journalId: journal.id! } });
+        expect(entries.map((e) => [e.accountId, e.debit, e.credit])).toEqual(
+          expect.arrayContaining([
+            [ledgers.get(bakery)!.cashAccountId, 0, 11500],
+            [ledgers.get(bakery)!.receivablesAccountId, 10000, 0],
+            [ledgers.get(bakery)!.disputeFeeAccountId, 1500, 0],
+          ]),
+        );
+        await expect(records[0]!.delete()).rejects.toThrow('cannot be deleted');
+        records[0]!.status = 'won';
+        await expect(records[0]!.save()).rejects.toThrow(
+          'only by connected-payments',
+        );
+      });
+      ctx.dispute.status = 'won';
+      ctx.dispute.balance_transactions.push({
+        ...ctx.dispute.balance_transactions[0]!,
+        id: `txn_won${stripe.run}`,
+        amount: 10000,
+        fee: -1500,
+        net: 11500,
+        reporting_category: 'dispute_reversal',
+      });
+      // Old event snapshot delivered under a fresh event id still reads won.
+      const delayed = stripe.event({
+        type: 'charge.dispute.updated',
+        account: ctx.account,
+        object: JSON.parse(ctx.event.payload).data.object,
+      });
+      expect((await ctx.deliver(delayed)).outcome).toBe('dispute_updated');
+      for (const type of [
+        'charge.dispute.closed',
+        'charge.dispute.funds_reinstated',
+      ]) {
+        const notice = stripe.event({
+          type,
+          account: ctx.account,
+          object: ctx.dispute,
+        });
+        expect((await ctx.deliver(notice)).outcome).toBe('dispute_updated');
+      }
+      await withTenant({ tenantId: bakery }, async () => {
+        expect(await (await JournalCollection.create({ db })).count()).toBe(3);
+        const records = await (
+          await TenantPaymentDisputeCollection.create({ db })
+        ).list({});
+        expect(records[0]!.status).toBe('won');
+        const payment = await (await PaymentCollection.create({ db })).get({
+          id: ctx.settled.result.paymentId!,
+        });
+        expect(payment!.status).toBe(PaymentStatus.COMPLETED);
+        expect(payment!.amount).toBe(10000);
+      });
+      expect(
+        stripe
+          .requestsTo(`/disputes/${ctx.dispute.id}`)
+          .every((r) => r.stripeAccount === ctx.account),
+      ).toBe(true);
+    });
+
+    it('serializes concurrent dispute delivery and records status without inventing balance movement', async () => {
+      const ctx = await disputedCheckout();
+      const withdrawal = ctx.dispute.balance_transactions;
+      ctx.dispute.balance_transactions = [];
+      expect((await ctx.deliver()).outcome).toBe('dispute_updated');
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1),
+      );
+      ctx.dispute.balance_transactions = withdrawal;
+      const event = stripe.event({
+        type: 'charge.dispute.funds_withdrawn',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      const results = await Promise.allSettled([
+        ctx.deliver(event),
+        ctx.deliver(event),
+      ]);
+      expect(results.some((result) => result.status === 'fulfilled')).toBe(
+        true,
+      );
+      // A competing revision/snapshot conflict is retryable; committed money is once.
+      expect((await ctx.deliver(event)).outcome).toBe('dispute_updated');
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(2),
+      );
+    });
+
+    it('preserves allocated invoice and externally confirmed supplier payout history after a chargeback', async () => {
+      const ctx = await disputedCheckout();
+      const history = await withTenant({ tenantId: bakery }, async () => {
+        await ensureTenantTaxCodes(db, bakery);
+        const invoices = await InvoiceCollection.create({ db });
+        const invoice = await invoices.create({
+          currency: 'USD',
+          invoiceNumber: 'SHARE-1',
+        });
+        await (await InvoiceLineItemCollection.create({ db })).create({
+          invoiceId: invoice.id!,
+          quantity: 1,
+          unitPrice: 10000,
+          description: 'Bread share',
+        });
+        const issued = await invoices.get(
+          { id: invoice.id! },
+          { cache: false },
+        );
+        issued!.status = InvoiceStatus.SENT;
+        await issued!.save();
+        const allocations = await PaymentAllocationCollection.create({ db });
+        const [allocation] = await allocations.allocatePayment({
+          paymentId: ctx.settled.result.paymentId!,
+          allocations: [
+            { id: randomUUID(), invoiceId: invoice.id!, amount: 10000 },
+          ],
+        });
+        const vendor = await (await VendorCollection.create({ db })).create({
+          name: 'Flour mill',
+        });
+        const payment = await (await PaymentCollection.create({ db })).get({
+          id: ctx.settled.result.paymentId!,
+        });
+        const payout = await (
+          await PayoutCollection.create({ db })
+        ).createFromPayment({
+          payment: payment!,
+          vendorId: vendor.id!,
+          operatorFee: 500,
+        });
+        await payout.save();
+        payout.markSent('external-bank-remittance');
+        await payout.save();
+        payout.markConfirmed();
+        await payout.save();
+        return {
+          invoiceId: invoice.id!,
+          allocation: allocation!.toJSON(),
+          payout: payout.toJSON(),
+          payment: payment!.toJSON(),
+        };
+      });
+      await ctx.deliver();
+      await withTenant({ tenantId: bakery }, async () => {
+        const allocation = (
+          await (
+            await PaymentAllocationCollection.create({ db })
+          ).list({ where: { paymentId: ctx.settled.result.paymentId! } })
+        )[0]!;
+        const payout = (
+          await (
+            await PayoutCollection.create({ db })
+          ).list({ where: { paymentId: ctx.settled.result.paymentId! } })
+        )[0]!;
+        expect(allocation.toJSON()).toEqual(history.allocation);
+        expect(payout.toJSON()).toEqual(history.payout);
+        const payment = await (await PaymentCollection.create({ db })).get({
+          id: ctx.settled.result.paymentId!,
+        });
+        expect(payment!.journalId).toBe(history.payment.journalId);
+        expect(payment!.status).toBe(history.payment.status);
+        expect(
+          (await (
+            await InvoiceCollection.create({ db })
+          ).get({ id: history.invoiceId }))!.amountPaid,
+        ).toBe(10000);
+      });
+    });
+
+    it('refuses a relink that lands after signed account routing', async () => {
+      const ctx = await disputedCheckout();
+      const replacement = stripe.accountId('replacementbakery');
+      stripe.addAccount(replacement, true, {
+        smrt_tenant_id: bakery,
+        smrt_environment: 'test',
+      });
+      const gateway = stripe.adapter();
+      const resolve = gateway.resolveConnectWebhookEvent.bind(gateway);
+      vi.spyOn(gateway, 'resolveConnectWebhookEvent').mockImplementationOnce(
+        async (...args) => {
+          const routed = await resolve(...args);
+          await linkTenantPaymentAccount({
+            db,
+            gateway,
+            tenantId: bakery,
+            environment: 'test',
+            providerAccountId: replacement,
+            replace: true,
+          });
+          return routed;
+        },
+      );
+      await expect(ctx.deliver(ctx.event, gateway)).rejects.toMatchObject({
+        code: 'ACCOUNT_NOT_OWNED',
+      });
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1),
+      );
+    });
+
+    it('hydrates optional event payment linkage and fails closed for missing fee accounts and unsupported evidence', async () => {
+      const ctx = await disputedCheckout();
+      const legacyGateway = stripe.adapter();
+      Object.defineProperty(legacyGateway, 'getDispute', { value: undefined });
+      await expect(ctx.deliver(ctx.event, legacyGateway)).rejects.toMatchObject(
+        { code: 'CONFIGURATION' },
+      );
+      const noLink = { ...ctx.dispute, payment_intent: undefined };
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: noLink,
+      });
+      const accounts = ledgers.get(bakery)!;
+      const feeAccount = accounts.disputeFeeAccountId;
+      delete accounts.disputeFeeAccountId;
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'CONFIGURATION',
+      });
+      accounts.disputeFeeAccountId = feeAccount;
+      ctx.dispute.balance_transactions[0]!.type = 'future_balance_kind';
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_UNSUPPORTED',
+      });
+      ctx.dispute.balance_transactions[0]!.type = 'adjustment';
+      expect((await ctx.deliver(event)).outcome).toBe('dispute_updated');
+    });
+
+    it('rolls back partial dispute journals and retries after provider, ledger and inbox failures', async () => {
+      const ctx = await disputedCheckout();
+      const gateway = stripe.adapter();
+      vi.spyOn(gateway, 'getDispute').mockRejectedValueOnce(
+        new Error('provider unavailable'),
+      );
+      await expect(ctx.deliver(ctx.event, gateway)).rejects.toThrow(
+        'provider unavailable',
+      );
+      const { TenantPaymentDispute } = await import(
+        '../../models/TenantPaymentDispute.js'
+      );
+      const projection = vi
+        .spyOn(TenantPaymentDispute.prototype, 'save')
+        .mockRejectedValueOnce(new Error('projection interrupted'));
+      await expect(ctx.deliver()).rejects.toThrow('projection interrupted');
+      projection.mockRestore();
+      const { Journal } = await import('@happyvertical/smrt-ledgers');
+      const posting = vi
+        .spyOn(Journal.prototype, 'post')
+        .mockRejectedValueOnce(new Error('ledger interrupted'));
+      await expect(ctx.deliver()).rejects.toThrow('ledger interrupted');
+      posting.mockRestore();
+      await withTenant({ tenantId: bakery }, async () => {
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1);
+        expect(
+          await (await TenantPaymentDisputeCollection.create({ db })).count(),
+        ).toBe(0);
+      });
+      const { TenantPaymentWebhookEvent } = await import(
+        '../../models/TenantPaymentWebhookEvent.js'
+      );
+      const inbox = vi
+        .spyOn(TenantPaymentWebhookEvent.prototype, 'save')
+        .mockRejectedValueOnce(new Error('inbox interrupted'));
+      await expect(ctx.deliver()).rejects.toThrow('inbox interrupted');
+      inbox.mockRestore();
+      expect((await ctx.deliver()).duplicate).toBe(false);
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(2),
+      );
+    });
+
+    it('repairs historically ignored signed disputes and refuses changed or unknown evidence', async () => {
+      const ctx = await disputedCheckout();
+      const { deterministicId } = await import('../../billing/units.js');
+      await withSystemContext(async () => {
+        const row = await (
+          await TenantPaymentWebhookEventCollection.create({ db })
+        ).build({
+          id: await deterministicId([
+            'tenant-payment-webhook-event',
+            'stripe',
+            'test',
+            JSON.parse(ctx.event.payload).id,
+          ]),
+          backendId: 'stripe',
+          environment: 'test',
+          tenantId: bakery,
+          providerAccountId: ctx.account,
+          eventId: JSON.parse(ctx.event.payload).id,
+          eventType: 'charge.dispute.created',
+          outcome: 'ignored',
+        });
+        await row.save();
+      });
+      expect((await ctx.deliver()).duplicate).toBe(false);
+      expect((await ctx.deliver()).outcome).toBe('dispute_updated');
+      ctx.dispute.balance_transactions[0]!.fee = 1600;
+      ctx.dispute.balance_transactions[0]!.net = -11600;
+      const event = stripe.event({
+        type: 'charge.dispute.updated',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      await expect(ctx.deliver(event)).rejects.toThrow('evidence changed');
+      ctx.dispute.status = 'future_status';
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_UNSUPPORTED',
+      });
+    });
+
+    it('refuses cross-account, cross-tenant, malformed and environment-mismatched disputes', async () => {
+      const ctx = await disputedCheckout();
+      const other = stripe.accountId('tooldispute');
+      await connect(toolLibrary, other);
+      stripe.disputes.set(`${other}:${ctx.dispute.id}`, ctx.dispute);
+      const hostile = stripe.event({
+        type: 'charge.dispute.created',
+        account: other,
+        object: ctx.dispute,
+      });
+      await expect(ctx.deliver(hostile)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      await expect(
+        ctx.deliver({ ...ctx.event, signature: 'invalid' }),
+      ).rejects.toThrow();
+      const live = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        livemode: true,
+        object: { ...ctx.dispute, livemode: true },
+      });
+      await expect(ctx.deliver(live)).rejects.toThrow();
+      const malformed = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: { ...ctx.dispute, balance_transactions: [{}] },
+      });
+      await expect(ctx.deliver(malformed)).rejects.toThrow();
+      ctx.dispute.currency = 'cad';
+      await expect(ctx.deliver()).rejects.toMatchObject({
+        code: 'AMOUNT_MISMATCH',
+      });
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1),
+      );
+    });
 
     it('freezes the bakery agreement version independently of purchase identity and live policy', async () => {
       const accountId = stripe.accountId('riverbendbakery');

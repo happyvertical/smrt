@@ -64,6 +64,7 @@ export {
   type TenantPaymentCapabilitySnapshot,
   type TenantPaymentEnvironment,
 } from './TenantPaymentAccount.js';
+export { TenantPaymentDispute } from './TenantPaymentDispute.js';
 export {
   TenantPaymentWebhookEvent,
   type TenantPaymentWebhookOutcome,
