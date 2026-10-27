@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.57.33
+
+### Patch Changes
+
+- ### Features
+  
+  - add pod hardening and migration observer access (#4414) (deployment)
+  - joins, row expressions and filtered measures in declared reports (#3903) (#4410) (reports)
+  - integrate four Chad tool-loop and query PRs (#4402) (chat,agents,core)
+  - consolidate seven Chad PRs with Codex review (#4399) (release)
+  
+  ### Bug Fixes
+  
+  - isolate SMRT-only private fence verification (#4429) (release)
+  - patch train 3 - job retry hints, stop/poll race, dispatch-bus startup retry (#4421) (jobs,core)
+  - replace fast-glob with tinyglobby to drop braces (#4420) (scanner,cli)
+  - raise @modelcontextprotocol/client to 2.3.1 (#4419) (deps)
+  - patch train 1 for save options, theme overrides, toolbar density (#4411) (commerce,smrt-ui)
+  - unblock protected chart publication through GHCR (#4394) (deployment)
+- @happyvertical/smrt-config@0.57.33
+  - @happyvertical/smrt-scanner@0.57.33
+  - @happyvertical/smrt-types@0.57.33
+
 ## 0.57.32
 
 ### Patch Changes
