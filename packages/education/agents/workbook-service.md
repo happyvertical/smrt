@@ -31,6 +31,9 @@ The workbook review-required policy defaults on and is shared by its pages.
 `setWorkbookFeedbackPolicy` uses expected policy version; existing capture snapshots
 remain unchanged. Policy changes cannot erase prior disclosure. Guarded capture,
 policy and decision writes serialize on the learner within the active transaction.
+Ingestion target resolution acquires that learner lock before the enrollment lock,
+matching capture/review order. Guardian apply follows authorized timeline cursors
+when locating a preserved assessment on an older attempt.
 Composite mutations also use the education transaction's serialized composite
 queue, allowing inherited queued capture/review writes without queue recursion.
 Any swallowed mutation error still aborts the complete transaction and file rollback

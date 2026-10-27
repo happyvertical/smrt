@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +9,7 @@ import {
   ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { GradeCollection, SubmissionCollection } from '../collections.js';
 import {
   captureEducationIntake,
@@ -144,6 +145,134 @@ export function workbookContractTests(
     const environment = await createDb();
     return workbookFixture(environment.db, environment.cleanup);
   };
+  it('locks learner before enrollment when resolving an intake target', async () => {
+    const f = await fixture();
+    const calls: string[] = [];
+    const query = f.db.query.bind(f.db);
+    const spy = vi.spyOn(f.db, 'query').mockImplementation((...args) => {
+      const match = String(args[0]).match(
+        /^UPDATE (learners|enrollments) SET id=id/,
+      );
+      if (match) calls.push(match[1]);
+      return query(...args);
+    });
+    try {
+      const resolver = educationIntakeTargetResolver({
+        submissions: f.service,
+        request: { ...f.parent, enrollmentId: f.activity.enrollmentId },
+        submissionId: f.attempt.submissionId,
+      });
+      await f.as(f.parent, () =>
+        resolver({
+          db: f.db,
+          scope: {
+            tenantId: f.parent.tenantId,
+            actorId: f.parent.actorUserId,
+            confidentialScopeId: f.activity.enrollmentId,
+          },
+          itemId: f.capture.intakeItemId,
+          model: '@happyvertical/smrt-education:Submission',
+          id: f.attempt.submissionId,
+        }),
+      );
+      expect(calls.slice(0, 2)).toEqual(['learners', 'enrollments']);
+      calls.length = 0;
+      await expect(
+        resolver({
+          db: f.db,
+          scope: {
+            tenantId: 'foreign',
+            actorId: f.parent.actorUserId,
+            confidentialScopeId: f.activity.enrollmentId,
+          },
+          itemId: f.capture.intakeItemId,
+          model: '@happyvertical/smrt-education:Submission',
+          id: f.attempt.submissionId,
+        }),
+      ).rejects.toThrow('scope mismatch');
+      expect(calls).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      await f.close();
+    }
+  });
+  it('applies a preserved historical assessment beyond the first timeline page', async () => {
+    const f = await fixture();
+    try {
+      const args = { submissionId: f.attempt.submissionId };
+      const revision = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...f.request,
+          actorUserId: f.own.actorUserId,
+          requestKey: 'historical-analysis',
+          assessment: {
+            ...f.assessment,
+            provenance: {
+              ...f.assessment.provenance,
+              proposalDigest: createHash('sha256')
+                .update(JSON.stringify(args))
+                .digest('hex'),
+            },
+          },
+        }),
+      );
+      // Keep the preserved proposal older than the public timeline's 25-row page.
+      let previousSubmissionId = f.attempt.submissionId;
+      for (let index = 0; index < 26; index++) {
+        const next = await f.as(f.parent, () =>
+          f.service.captureWorkbookWork({
+            ...f.capture,
+            ...f.parent,
+            previousSubmissionId,
+            requestKey: `newer-capture-${index}`,
+            intakeItemId: `newer-intake-${index}`,
+          }),
+        );
+        previousSubmissionId = next.submissionId;
+      }
+      expect(
+        (
+          await f.as(f.parent, () => f.service.getWorkbookTimeline(f.request))
+        ).attempts.some((a) => a.submissionId === f.attempt.submissionId),
+      ).toBe(false);
+      const handler = educationIntakeHandlers({
+        submissions: f.service,
+        request: { ...f.parent, enrollmentId: f.activity.enrollmentId },
+        submissionId: f.attempt.submissionId,
+        workbookActivityId: f.activity.id,
+      }).find((h) => h.id.endsWith('review-submission'))!;
+      if (handler.execution.kind !== 'database')
+        throw new Error('Expected database');
+      const apply = handler.execution.apply;
+      const context = {
+        db: f.db,
+        itemId: f.capture.intakeItemId,
+        scope: { tenantId: f.parent.tenantId, actorId: f.parent.actorUserId },
+        policy: { requireReview: true },
+        assertTarget: async () => {},
+      };
+      await expect(
+        f.as(f.parent, () => apply(args, context as never)),
+      ).resolves.toEqual({ submissionId: f.attempt.submissionId });
+      const historical = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({
+          ...f.request,
+          revisionId: revision.id,
+        }),
+      );
+      expect(historical.attempts[0].revisions[0].kind).toBe('guardian');
+      await expect(
+        f.as(f.own, () =>
+          apply(args, {
+            ...context,
+            scope: { ...context.scope, actorId: f.own.actorUserId },
+          } as never),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await f.close();
+    }
+  });
   it.each([
     true,
     false,

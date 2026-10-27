@@ -574,13 +574,23 @@ export function educationIntakeHandlers(input: {
         if (workbook) {
           await bound(context, async (service) => {
             const workbooks = service as WorkbookService;
-            const timeline = await workbooks.getWorkbookTimeline({
-              ...request,
-              activityId: workbook,
-            });
-            const attempt = timeline.attempts.find(
-              (entry) => entry.submissionId === submissionId,
-            );
+            let cursor: string | undefined;
+            let attempt:
+              | Awaited<
+                  ReturnType<WorkbookService['getWorkbookTimeline']>
+                >['attempts'][number]
+              | undefined;
+            do {
+              const timeline = await workbooks.getWorkbookTimeline({
+                ...request,
+                activityId: workbook,
+                ...(cursor ? { cursor } : {}),
+              });
+              attempt = timeline.attempts.find(
+                (entry) => entry.submissionId === submissionId,
+              );
+              cursor = timeline.nextCursor ?? undefined;
+            } while (!attempt && cursor);
             const proposal = attempt?.revisions.find(
               (revision) =>
                 revision.kind === 'ai' &&
@@ -642,6 +652,12 @@ export function educationIntakeTargetResolver(input: {
       scope.actorId !== request.actorUserId
     )
       throw new Error('Education intake scope mismatch');
+    // Match workbook capture/review ordering: learner first, then enrollment.
+    await db.query(
+      'UPDATE learners SET id=id WHERE id=? AND tenant_id=?',
+      request.learnerId,
+      request.tenantId,
+    );
     await db.query(
       'UPDATE enrollments SET id=id WHERE id=? AND tenant_id=?',
       request.enrollmentId,
