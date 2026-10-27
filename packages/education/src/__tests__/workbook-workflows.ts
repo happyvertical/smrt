@@ -1217,6 +1217,224 @@ export function workbookContractTests(
       await f.close();
     }
   });
+  it('assesses unnumbered visible tasks without weakening stable correction identities', async () => {
+    const f = await fixture();
+    try {
+      const offered = async (submissionId: string) => {
+        const handler = educationIntakeHandlers({
+          submissions: f.service,
+          request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+          submissionId,
+          workbookActivityId: f.activity.id,
+        }).find((h) => h.id.endsWith('review-submission'));
+        if (!handler?.discovery?.candidates)
+          throw new Error('No review discovery');
+        const candidates = await f.as(f.own, () =>
+          handler.discovery!.candidates!(
+            '',
+            {
+              db: f.db,
+              scope: { tenantId: f.own.tenantId, actorId: f.own.actorUserId },
+              policy: { requireReview: true },
+            } as unknown as Parameters<
+              NonNullable<NonNullable<typeof handler.discovery>['candidates']>
+            >[1],
+            { limit: 100 },
+          ),
+        );
+        return { handler, label: candidates.items[0].label };
+      };
+      const initial = await offered(f.attempt.submissionId);
+      expect(initial.label.toLowerCase()).toContain('unnumbered');
+      expect(initial.label).toContain('u:');
+      expect(initial.handler.description.toLowerCase()).toContain('unnumbered');
+      expect(initial.handler.description).toContain('output-array position');
+      const base = f.assessment.questions[0];
+      const assessment: WorkbookAssessment = {
+        ...structuredClone(f.assessment),
+        provenance: {
+          ...f.assessment.provenance,
+          analysisId: 'unnumbered-visible',
+        },
+        questions: [
+          { ...base, id: 'q1', points: null, possiblePoints: null },
+          {
+            ...base,
+            id: 'u:match-seventy-five-cents:1',
+            prompt: 'Match seventy-five cents',
+            answer: 'Visible line reaches145c',
+            result: 'incorrect',
+            reason: 'none',
+            points: null,
+            possiblePoints: null,
+            conceptIds: [],
+            feedback:
+              'The observed connection does not match the printed amount.',
+          },
+          {
+            ...base,
+            id: 'u:match-one-dollar-forty-five:1',
+            prompt: 'Match one dollar forty-five',
+            answer: '',
+            result: 'unassessed',
+            reason: 'illegible',
+            points: null,
+            possiblePoints: null,
+            conceptIds: [],
+            feedback: 'The visible endpoint is unreadable.',
+            markingCertainty: 'uncertain',
+            evidenceLimitations: ['Connection endpoint is not visible.'],
+          },
+        ],
+      };
+      const record = (
+        body: WorkbookAssessment,
+        key: string,
+        submissionId = f.attempt.submissionId,
+      ) =>
+        f.as(f.own, () =>
+          f.service.recordWorkbookAnalysis({
+            ...f.request,
+            ...f.own,
+            submissionId,
+            requestKey: key,
+            assessment: body,
+          }),
+        );
+      const first = await record(assessment, 'unnumbered-first');
+      expect(first.assessment.aggregate).toMatchObject({
+        incorrect: 2,
+        unassessed: 1,
+        score: null,
+      });
+      expect((await record(assessment, 'unnumbered-first')).id).toBe(first.id);
+      for (const questions of [
+        assessment.questions.map((q, index) =>
+          index === 1 ? { ...q, id: '' } : q,
+        ),
+        assessment.questions.map((q, index) =>
+          index === 1 ? { ...q, id: undefined as unknown as string } : q,
+        ),
+        assessment.questions.map((q, index) =>
+          index === 1 ? { ...q, id: 'q1' } : q,
+        ),
+        assessment.questions.map((q, index) =>
+          index === 1 ? { ...q, id: 'u:different-task:1' } : q,
+        ),
+        assessment.questions.map((q, index) =>
+          index === 1 ? { ...q, prompt: 'A different task' } : q,
+        ),
+      ])
+        await expect(
+          record({ ...assessment, questions }, 'invalid-identity'),
+        ).rejects.toThrow();
+      const reordered = {
+        ...assessment,
+        provenance: {
+          ...assessment.provenance,
+          analysisId: 'unnumbered-reordered',
+        },
+        questions: [...assessment.questions].reverse(),
+      };
+      const second = await record(reordered, 'unnumbered-reordered');
+      expect(second.assessment.questions.map((q) => q.id)).toEqual(
+        reordered.questions.map((q) => q.id),
+      );
+      const correction = await f.as(f.own, () =>
+        f.service.captureWorkbookWork({
+          ...f.capture,
+          requestKey: 'unnumbered-correction',
+          intakeItemId: 'unnumbered-correction',
+          previousSubmissionId: f.attempt.submissionId,
+          pages: [
+            {
+              ...f.capture.pages[0],
+              data: Buffer.from('new visible responses'),
+            },
+          ],
+        }),
+      );
+      expect(correction.episodeId).toBe(f.attempt.episodeId);
+      const known = await offered(correction.submissionId);
+      expect(known.label).toContain('u:match-seventy-five-cents:1');
+      expect(known.label).toContain('exact question ID set');
+      expect(known.label).not.toContain('Visible line reaches145c');
+      expect(known.label).not.toContain('8+7');
+      const [source] = await f.as(f.own, () =>
+        f.service.getWorkbookSourceAnchors({
+          ...f.request,
+          ...f.own,
+          submissionId: correction.submissionId,
+        }),
+      );
+      const corrected: WorkbookAssessment = {
+        ...assessment,
+        provenance: {
+          ...assessment.provenance,
+          analysisId: 'unnumbered-corrected',
+          inputHash: source.sha256,
+        },
+        questions: assessment.questions.map((q) => ({
+          ...q,
+          anchors: [{ ...source, page: 1, rect: [0, 0, 1, 1] }],
+          ...(q.id === 'q1'
+            ? {
+                answer: '15',
+                result: 'correct' as const,
+                feedback: 'Current response is correct.',
+              }
+            : q.id === 'u:match-seventy-five-cents:1'
+              ? {
+                  answer: 'Visible line reaches75c',
+                  result: 'correct' as const,
+                  feedback: 'Current visible connection matches.',
+                }
+              : {
+                  answer: '',
+                  result: 'unassessed' as const,
+                  reason: 'not_present' as const,
+                  feedback:
+                    'Current capture does not establish this task correspondence.',
+                }),
+        })),
+      };
+      const result = await record(
+        corrected,
+        'unnumbered-current-answers',
+        correction.submissionId,
+      );
+      expect(result.assessment.aggregate).toMatchObject({
+        correct: 2,
+        unassessed: 1,
+        score: null,
+      });
+      expect(result.assessment.questions.map((q) => q.id)).toEqual(
+        assessment.questions.map((q) => q.id),
+      );
+      expect(
+        result.assessment.questions.find(
+          (q) => q.id === 'u:match-seventy-five-cents:1',
+        )?.answer,
+      ).toBe('Visible line reaches75c');
+      await expect(
+        record(
+          { ...corrected, questions: corrected.questions.slice(1) },
+          'missing-known-id',
+          correction.submissionId,
+        ),
+      ).rejects.toThrow('question identity');
+      const timeline = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({ ...f.request }),
+      );
+      expect(timeline.attempts).toHaveLength(2);
+      expect(timeline.attempts[0].previousAttemptId).toBe(f.attempt.id);
+      expect(timeline.attempts[1].revisions.map((r) => r.id)).toContain(
+        first.id,
+      );
+    } finally {
+      await f.close();
+    }
+  });
   it('uses current correction text without carrying historical equation or prose answers into generation', async () => {
     const f = await fixture();
     try {

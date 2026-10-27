@@ -64,7 +64,9 @@ capture's reanalysis only. Correction transcriptions come from the new capture,
 so earlier answer-bearing prompts cannot override corrected work. Immutable
 historical prompts remain unchanged. The public `getWorkbookQuestionIdentity`
 returns IDs only: historical prompt text can itself include a learner response.
-Handlers map IDs by printed number/occurrence/subpart, never array position, and
+Handlers use printed number/occurrence/subpart when present; unnumbered tasks use
+answer-free printed-task slugs with visible-task occurrence/subpart, never output
+array position or learner answers. They
 read prompt, answer, feedback and marks exclusively from current evidence. New
 prompts should contain printed task text without the learner response. An absent
 or ambiguously matched known question is unassessed/not_present with an explicit
@@ -218,3 +220,22 @@ The same attempt/assessment/review/release and concept-evidence contracts apply.
 Append-only filing changes display association only; it never moves immutable
 learning evidence or changes captured review policy. Ordinary identified workbook
 identity and generated-surface restrictions remain unchanged.
+
+### Unnumbered visible questions
+
+A printed question number is not required for marking. On the first valid
+assessment, an unnumbered task may use `u:<short printed-task slug>:<occurrence/subpart>`
+from current answer-free task text and unambiguous visible task identity. The
+occurrence distinguishes tasks in the source, never positions in a generated
+questions array. Responses, computed solutions and changing evidence UUIDs cannot
+supply identity. Printed IDs remain useful where present; both forms share the
+existing nonempty/unique ID schema and 200-character bound.
+
+Once preserved, the exact ID set remains pinned on reanalysis and correction.
+Reordering output does not renumber tasks. A cropped, duplicate or illegible task
+whose correspondence cannot be established remains `unassessed/not_present` with
+a limitation on its known ID; it cannot be silently relabeled as another task.
+Historical IDs are correspondence hints, not evidence of current responses.
+Missing IDs, collisions, changed ID sets and same-capture prompt remapping still
+fail closed. The framework never inserts omitted provider IDs or parses prose to
+repair malformed proposals.

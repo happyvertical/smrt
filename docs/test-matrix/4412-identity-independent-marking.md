@@ -50,3 +50,18 @@ fails; no automatic title merge. Child/foreign/stale-head requests create nothin
 Inject filing failure after book creation and prove transaction rollback removes
 both new book and association, preserving old work/history. Root owns final UI
 acceptance and integrated review on the amended/new candidate.
+
+## Accepted unnumbered-question delta
+
+Printed question numbers are optional identity hints, not an assessment prerequisite.
+Initial unnumbered task IDs use answer-free printed task slugs plus visible-task
+occurrence/subpart (u:<task>:<occurrence/subpart>). Output-array position, observed
+responses, computed solutions and changing evidence UUIDs never establish identity.
+Known ID sets remain exact on reanalysis/correction; ambiguous/absent correspondence
+is unassessed/not_present with a limitation. No missing-ID repair or schema relaxation.
+
+Red/green shared SQLite/PostgreSQL workflow: mixed printed/unnumbered tasks with
+partial unknown feedback, actual offered initial/correction ID guidance, stable
+retry/reordered response, new correction answers and unchanged practice episode;
+missing/duplicate/remapped IDs and same-capture ID/prompt remapping still refuse.
+Root owns real provider synthetic and retained-photo quality acceptance.
