@@ -174,3 +174,50 @@ Hosts may opt into `listWorkbookPhotoIntakes(request, { newestFirst: true })`
 for a current inbox. Default ordering remains unchanged and both orders keep the
 1,000-row display bound and the same per-receipt visibility checks. Exact selected
 receipt reads remain independent of either display window.
+
+## Marking before filing
+
+Completed learner work does not require a printed lesson number or workbook
+identity. Identification `kind:'work', workState:'completed'` deliberately omits
+`workbook`, `activity` and `workbookId`. Its confidence concerns observable learner
+completion/material kind, independently of bibliographic identity. Printed worked
+examples, answer keys, blank pages and uncertain material are not completed learner
+work. `kind:'lesson'` retains the existing strict printed identity contract.
+
+Confident work preservation creates one receipt-bound **unfiled** work unit.
+`processWorkbookPhotoAnalysis` captures it and returns the existing
+`capture/assessmentRequired` result. Queue the normal assessment stage on that
+same receipt, submission and returned activity/enrollment IDs; do not re-upload or
+create another receipt. Visible responses can be assessed while illegible or
+ambiguous responses remain unassessed. The extraction observation contract keeps
+printed examples separate from learner marks and reports matching endpoints only
+when observed. Adopt it with a new extraction configuration revision.
+
+The internal private Course/Enrollment/Worksheet are routing records, not a claim
+about a canonical book or lesson. `WorkbookActivity.workbookId` is null only for
+explicit `captureKind:'unfiled'` with an exact owned `photoIntakeId`; all ordinary
+identified activity invariants remain. No Workbook is invented. Activity DTO
+`filing.state` is `unfiled`, `filed` or `identified`; empty workbook title/key/edition
+on unfiled work are intentional. Use the work label as the primary display.
+`listWorkbookActivities` includes these work units. Exact
+`getWorkbookPhotoTimeline({...request,intakeId,limit?,cursor?,revisionId?})`
+returns existing authorized feedback/history; the normal activity timeline also
+works. `getWorkbookActivity` refreshes exact filing presentation without loading
+history. The receipt view refreshes filing rather than replaying its old label.
+
+Optional guardian `fileWorkbookWork({...request,activityId,workbookId,
+canonicalActivityId?,expectedRevisionId,requestKey,reason})` appends an association
+to a real authorized workbook and optionally a real identified activity. Initial
+expected revision is null. Stable retries replay their original accepted result;
+changed retries/stale heads conflict. Filing does not move or recreate activity,
+submission, attempt, assessment, release, source or correction episode IDs. It
+cannot change captured review policy, create a Grade, duplicate concept evidence,
+or release guardian-origin material. Future corrections continue against the
+original work-unit ID and explicit current predecessor. Existing identified
+captures cannot be retargeted through filing.
+
+Apply normal manifest migrations before using this contract. Existing activities
+receive `capture_kind='identified'` through the declared database default; the
+workbook FK becomes nullable and photo-intake FK plus filing table are added.
+Old populated SQLite requires the explicit supported nullability-relaxation
+migration described by #4413; no runtime DDL or manual SQL workaround is allowed.

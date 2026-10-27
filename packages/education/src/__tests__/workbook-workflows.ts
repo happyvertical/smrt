@@ -35,6 +35,8 @@ export const workbookClasses = [
   'Tag',
   'Workbook',
   'WorkbookActivity',
+  'WorkbookWorkFiling',
+  'WorkbookPhotoIntake',
   'WorkbookAttempt',
   'WorkbookAssessmentRevision',
   'WorkbookFeedbackRelease',

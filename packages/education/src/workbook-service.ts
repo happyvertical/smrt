@@ -44,6 +44,8 @@ import {
   WorkbookCollection,
   WorkbookFeedbackDeliveryCollection,
   WorkbookFeedbackReleaseCollection,
+  type WorkbookWorkFiling,
+  WorkbookWorkFilingCollection,
 } from './workbook-models.js';
 
 type ActivityRequest = LearnerRequest & { activityId: string };
@@ -130,40 +132,314 @@ export class WorkbookService extends SubmissionService {
       { cache: false },
     );
     if (!row) throw new LearnerAuthorizationError();
-    const workbook = await (
-      await WorkbookCollection.create({ db: this.db })
-    ).get(
-      {
-        id: row.workbookId,
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-      },
-      { cache: false },
-    );
-    if (!workbook) throw new LearnerAuthorizationError();
+    const workbook = row.workbookId
+      ? await (await WorkbookCollection.create({ db: this.db })).get(
+          {
+            id: row.workbookId,
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+          },
+          { cache: false },
+        )
+      : null;
+    if (row.captureKind === 'unfiled') {
+      if (
+        row.workbookId !== null ||
+        !row.photoIntakeId ||
+        !(await this.db.get('workbook_photo_intakes', {
+          id: row.photoIntakeId,
+          tenant_id: request.tenantId,
+          learner_id: request.learnerId,
+        }))
+      )
+        throw new LearnerAuthorizationError();
+    } else if (!workbook) throw new LearnerAuthorizationError();
     await this.requireEnrollment(
       { ...request, enrollmentId: row.enrollmentId },
       action,
     );
     return { row, workbook, learner };
   }
-  private activityView(
+  private async filingHead(
     row: WorkbookActivity,
-    book: Workbook,
-  ): WorkbookActivityView {
+  ): Promise<WorkbookWorkFiling | null> {
+    if (row.captureKind !== 'unfiled') return null;
+    const rows = await (
+      await WorkbookWorkFilingCollection.create({ db: this.db })
+    ).list({
+      where: {
+        tenantId: row.tenantId,
+        learnerId: row.learnerId,
+        sourceActivityId: String(row.id),
+      },
+    });
+    const superseded = new Set(rows.map((r) => r.previousRevisionId));
+    const heads = rows.filter((r) => !superseded.has(String(r.id)));
+    if (heads.length > 1)
+      throw new Error('Workbook filing history has conflicting heads');
+    return heads[0] ?? null;
+  }
+  private async activityView(
+    row: WorkbookActivity,
+    book: Workbook | null,
+    replay?: WorkbookWorkFiling,
+  ): Promise<WorkbookActivityView> {
+    const head = replay ?? (await this.filingHead(row));
+    const projectedBook = head
+      ? await (await WorkbookCollection.create({ db: this.db })).get(
+          {
+            id: head.workbookId,
+            tenantId: row.tenantId,
+            learnerId: row.learnerId,
+          },
+          { cache: false },
+        )
+      : book;
+    const target = head?.canonicalActivityId
+      ? await (await WorkbookActivityCollection.create({ db: this.db })).get(
+          {
+            id: head.canonicalActivityId,
+            tenantId: row.tenantId,
+            learnerId: row.learnerId,
+            workbookId: head.workbookId,
+          },
+          { cache: false },
+        )
+      : null;
+    if (head && (!projectedBook || (head.canonicalActivityId && !target)))
+      throw new LearnerAuthorizationError();
     return {
       id: String(row.id),
       learnerId: row.learnerId,
-      workbookKey: book.workbookKey,
-      title: book.title,
-      edition: book.edition,
-      pageKey: row.pageKey,
-      pageLabel: row.pageLabel,
+      workbookKey: projectedBook?.workbookKey ?? '',
+      title: projectedBook?.title ?? '',
+      edition: projectedBook?.edition ?? '',
+      pageKey: target?.pageKey ?? row.pageKey,
+      pageLabel: target?.pageLabel ?? row.pageLabel,
       enrollmentId: row.enrollmentId,
       lessonId: row.lessonId,
-      reviewRequired: book.reviewRequired,
-      policyVersion: book.policyVersion,
+      reviewRequired: book?.reviewRequired ?? true,
+      policyVersion: book?.policyVersion ?? 1,
+      filing: {
+        state:
+          row.captureKind === 'unfiled'
+            ? head
+              ? 'filed'
+              : 'unfiled'
+            : 'identified',
+        workbookId: projectedBook ? String(projectedBook.id) : null,
+        canonicalActivityId: target ? String(target.id) : null,
+        revisionId: head ? String(head.id) : null,
+      },
     };
+  }
+  async getWorkbookActivity(
+    request: ActivityRequest,
+  ): Promise<WorkbookActivityView> {
+    const { row, workbook } = await this.activity(request);
+    return this.activityView(row, workbook);
+  }
+  /** Receipt-bound technical routing only; the caller already owns the surrounding mutation. */
+  protected async resolveUnfiledWorkbookActivityInScope(
+    request: LearnerRequest & { intakeId: string },
+    action:
+      | 'education.learner.submit'
+      | 'education.learner.plan' = 'education.learner.submit',
+  ): Promise<WorkbookActivityView> {
+    const learner = await this.requireActor(request, action);
+    await this.serialize(request);
+    const receipt = await this.db.get('workbook_photo_intakes', {
+      id: request.intakeId,
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+    });
+    if (
+      !receipt ||
+      (learner.userId === request.actorUserId &&
+        receipt.actor_user_id !== request.actorUserId)
+    )
+      throw new LearnerAuthorizationError();
+    const activities = await WorkbookActivityCollection.create({ db: this.db });
+    const existing = await activities.get(
+      {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        captureKind: 'unfiled',
+        photoIntakeId: request.intakeId,
+      },
+      { cache: false },
+    );
+    if (existing) {
+      const found = await this.activity(
+        { ...request, activityId: String(existing.id) },
+        action,
+      );
+      return this.activityView(found.row, found.workbook);
+    }
+    const key = digest([request.tenantId, request.learnerId, request.intakeId]);
+    const course = await (
+      await CourseCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      slug: `captured-work-${key}`,
+      tenantId: request.tenantId,
+      title: 'Captured work',
+      licenseKind: 'personal-use-copy',
+      sourceKey: 'unfiled-work',
+      sourceRef: request.intakeId,
+      modality: 'printable',
+    });
+    const section = await (
+      await CourseSectionCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      slug: `captured-section-${key}`,
+      tenantId: request.tenantId,
+      courseId: String(course.id),
+      title: 'Captured work',
+    });
+    const curriculum = await (
+      await CurriculumCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      slug: `captured-plan-${key}`,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      title: 'Captured work',
+    });
+    const enrollment = await (
+      await EnrollmentCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      curriculumId: String(curriculum.id),
+      courseId: String(course.id),
+      status: 'active',
+    });
+    const lesson = await (
+      await WorksheetCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      slug: `captured-sheet-${key}`,
+      tenantId: request.tenantId,
+      sectionId: String(section.id),
+      title: 'Captured work',
+      completionRule: 'submit',
+    });
+    const row = await activities.create({
+      _insertOnly: true,
+      slug: `captured-work-${key}`,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      captureKind: 'unfiled',
+      photoIntakeId: request.intakeId,
+      workbookId: null,
+      enrollmentId: String(enrollment.id),
+      lessonId: String(lesson.id),
+      pageKey: `receipt:${request.intakeId}`,
+      pageLabel: 'Captured work',
+    });
+    await this.requireEnrollment(
+      { ...request, enrollmentId: row.enrollmentId },
+      action,
+    );
+    return this.activityView(row, null);
+  }
+  /** Append a filing association without modifying capture policy or learning history. */
+  async fileWorkbookWork(
+    request: ActivityRequest & {
+      workbookId: string;
+      canonicalActivityId?: string;
+      expectedRevisionId: string | null;
+      requestKey: string;
+      reason: string;
+    },
+  ): Promise<WorkbookActivityView> {
+    return this.composeMutation(async (service) => {
+      await service.requireActor(request, 'education.learner.plan');
+      await service.serialize(request);
+      const { row, workbook } = await service.activity(
+        request,
+        'education.learner.plan',
+      );
+      if (row.captureKind !== 'unfiled')
+        throw new Error('Only unfiled captured work can be filed');
+      nonempty(request.requestKey, 'filing request key');
+      nonempty(request.reason, 'filing reason');
+      nonempty(request.workbookId, 'filing workbook');
+      if (request.canonicalActivityId !== undefined)
+        nonempty(request.canonicalActivityId, 'filing activity');
+      if (
+        request.expectedRevisionId !== null &&
+        (typeof request.expectedRevisionId !== 'string' ||
+          !request.expectedRevisionId)
+      )
+        throw new Error('Invalid expected filing revision');
+      const payload = {
+        workbookId: request.workbookId,
+        canonicalActivityId: request.canonicalActivityId ?? null,
+        previousRevisionId: request.expectedRevisionId,
+        actorUserId: request.actorUserId,
+        reason: request.reason,
+      };
+      const hash = digest(payload);
+      const filings = await WorkbookWorkFilingCollection.create({
+        db: service.db,
+      });
+      const prior = await filings.get(
+        {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          sourceActivityId: request.activityId,
+          requestKey: request.requestKey,
+        },
+        { cache: false },
+      );
+      if (prior) {
+        if (prior.digest !== hash)
+          throw new Error('Workbook filing retry changed');
+        return service.activityView(row, workbook, prior);
+      }
+      const head = await service.filingHead(row);
+      if ((head ? String(head.id) : null) !== request.expectedRevisionId)
+        throw new Error('Workbook filing head changed');
+      if (
+        !(await (
+          await WorkbookCollection.create({ db: service.db })
+        ).get(
+          {
+            id: request.workbookId,
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+          },
+          { cache: false },
+        ))
+      )
+        throw new LearnerAuthorizationError();
+      if (request.canonicalActivityId) {
+        const target = await service.activity(
+          { ...request, activityId: request.canonicalActivityId },
+          'education.learner.plan',
+        );
+        if (
+          target.row.captureKind !== 'identified' ||
+          target.row.workbookId !== request.workbookId ||
+          target.row.id === row.id
+        )
+          throw new Error('Workbook filing target mismatch');
+      }
+      await filings.create({
+        _insertOnly: true,
+        ...payload,
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        sourceActivityId: request.activityId,
+        requestKey: request.requestKey,
+        digest: hash,
+      });
+      return service.activityView(row, workbook);
+    });
   }
   /** Explicit keys distinguish editions, repeated printed labels and page sides. */
   async resolveWorkbookActivity(
@@ -352,7 +628,7 @@ export class WorkbookService extends SubmissionService {
         ...request,
         activityId: String(row.id),
       });
-      result.push(this.activityView(row, found.workbook));
+      result.push(await this.activityView(row, found.workbook));
     }
     return result;
   }
@@ -369,6 +645,8 @@ export class WorkbookService extends SubmissionService {
         request,
         'education.learner.plan',
       );
+      if (!workbook || row.captureKind === 'unfiled')
+        throw new Error('Unfiled work has no workbook policy');
       if (
         typeof request.reviewRequired !== 'boolean' ||
         workbook.policyVersion !== request.expectedPolicyVersion
@@ -439,6 +717,17 @@ export class WorkbookService extends SubmissionService {
         request,
         'education.learner.submit',
       );
+      if (row.captureKind === 'unfiled' && !request.previousSubmissionId) {
+        const receipt = await service.db.get('workbook_photo_intakes', {
+          id: row.photoIntakeId,
+          tenant_id: request.tenantId,
+          learner_id: request.learnerId,
+        });
+        if (!receipt || request.intakeItemId !== receipt.item_id)
+          throw new Error(
+            'Unfiled capture requires its original photo receipt',
+          );
+      }
       const assistance = request.assistance ?? 'unknown';
       if (!['independent', 'assisted', 'unknown'].includes(assistance))
         throw new Error('Invalid assistance');
@@ -510,8 +799,8 @@ export class WorkbookService extends SubmissionService {
         submissionId: submission.id,
         previousAttemptId: previous ? String(previous.id) : null,
         episodeId: previous?.episodeId ?? id,
-        reviewRequired: workbook.reviewRequired,
-        policyVersion: workbook.policyVersion,
+        reviewRequired: workbook?.reviewRequired ?? true,
+        policyVersion: workbook?.policyVersion ?? 1,
         assistance,
         actorUserId: request.actorUserId,
         capturedAt: submission.submittedAt,
@@ -1145,7 +1434,7 @@ export class WorkbookService extends SubmissionService {
       });
     }
     return {
-      activity: this.activityView(row, workbook),
+      activity: await this.activityView(row, workbook),
       attempts,
       nextCursor:
         start + limit < all.length ? String(all[start + limit - 1].id) : null,

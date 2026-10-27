@@ -207,3 +207,14 @@ integrated review. Synthetic provider DTO tests establish transfer integrity, no
 real handwriting accuracy. Actual provider/sample and app restart/retention
 acceptance remain separate integration evidence. Family deletion/export/backup
 policy and automatic lesson generation are not implemented by this milestone.
+
+## Identity-independent work
+
+[Photo intake](photo-intake.md#marking-before-filing) may own an explicit unfiled
+work unit. Its nullable workbook FK is constrained to an exact retained receipt;
+private enrollment/worksheet routing is technical rather than bibliographic.
+The same attempt/assessment/review/release and concept-evidence contracts apply.
+`filing` is optional on legacy-shaped DTOs and explicit on current projections.
+Append-only filing changes display association only; it never moves immutable
+learning evidence or changes captured review policy. Ordinary identified workbook
+identity and generated-surface restrictions remain unchanged.

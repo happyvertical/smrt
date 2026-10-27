@@ -84,7 +84,7 @@ const schema = {
       properties: {
         kind: {
           type: 'string',
-          enum: ['lesson', 'cover', 'reference', 'uncertain'],
+          enum: ['lesson', 'work', 'cover', 'reference', 'uncertain'],
         },
         workState: { type: 'string', enum: ['blank', 'completed', 'unknown'] },
         notes: string,
@@ -157,7 +157,7 @@ export function workbookPhotoIntakeHandlers(input: {
       id: WORKBOOK_PHOTO_HANDLER,
       version: '1',
       description:
-        'Classify current photos as lesson, cover, reference (including contents/answer keys), or uncertain; no marks or learning observations. args has exactly identification, confidence, identityEvidence, lessonEvidence, optional workbookId. identification has kind, workState, optional workbook, activity, notes. workbook has workbookKey, title, optional edition, publisher, isbn; activity has pageKey and pageLabel. Existing book: choose exact candidate id as workbookId AND copy its workbookKey, title and edition into required identification.workbook. This is existing identity, not a new book. A unique current title+edition can match retained publisher context; publisher/ISBN need not reappear. Do not copy candidate context into identityEvidence: quote only current photos. Conflicting identity, duplicate candidates, title-only or page-only matches stay uncertain; never choose the first candidate. For a new book transcribe current visible ISBN or publisher/title/edition; workbookKey is a proposed hint, never merge authority. Lesson activity requires a printed lesson identifier: pageKey=lesson:<identifier>, lessonEvidence quotes it; page number alone is insufficient. Multiple pages may share one lesson. Distinguish blank, completed and unknown work; only completed learner work is an attempt. Cover/reference omit activity and use empty lessonEvidence. identityEvidence items are nonempty single-line exact visible quotes. Plain text only, no control sentinels. Omit absent optional fields, never null/placeholders or extra fields. If identity/classification is ambiguous use uncertain confidence; omit unknown workbook.',
+        'Classify photos as work, lesson, cover, reference (contents/answer keys), or uncertain. Visible completed learner responses use work even without book/lesson identity: workState=completed; omit workbook/activity/workbookId; lessonEvidence="". Confidence concerns visible material/completion, not missing identity. Printed examples/answer keys alone are not learner completion. Partial/unreadable answers can be unassessed later. Blank/unknown completion never auto-marks. For lesson/cover/reference identity: existing book selects exact workbookId AND copies candidate workbookKey/title/edition into identification.workbook. Unique current title+edition can match retained publisher context; publisher/ISBN need not reappear. identityEvidence quotes ONLY current photos, never candidate context. Conflicts, duplicate candidates or title/page-only matches cannot establish identity. New book needs visible ISBN or publisher/title/edition; workbookKey is a hint, never merge authority. Lesson activity requires printed lesson identifier: pageKey=lesson:<identifier>, pageLabel printed label, lessonEvidence quotes it; page number alone is insufficient. Multiple pages can share a lesson. Cover/reference omit activity. Missing book/lesson alone uses work, not uncertain. Ambiguous material/completion uses uncertain confidence. args: identification, confidence, identityEvidence, lessonEvidence, optional workbookId. identification: kind, workState, optional workbook, activity, notes. workbook: workbookKey,title, optional edition,publisher,isbn. activity: pageKey,pageLabel. Single-line visible quotes only; no controls/placeholders. Omit absent optional fields, never null or extra keys. Classify only; no marks or learning observations.',
       operation: { model: MODEL, action: 'get', version: '1' },
       capability: { effect: 'read', idempotent: true, openWorld: false },
       argsSchema: schema,
@@ -435,8 +435,8 @@ export async function processWorkbookPhotoAnalysis(
   const intake = await preserveWorkbookPhotoIdentification(input);
   const capture =
     intake.status === 'resolved' &&
-    intake.identification?.kind === 'lesson' &&
-    intake.identification.workState === 'completed'
+    ['lesson', 'work'].includes(intake.identification?.kind ?? '') &&
+    intake.identification?.workState === 'completed'
       ? await input.workbooks.captureWorkbookPhotoIntake({
           ...input.request,
           requestKey: `photo:${intake.itemId}`,

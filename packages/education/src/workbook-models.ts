@@ -82,7 +82,12 @@ export class WorkbookCollection extends SmrtCollection<Workbook> {
 export class WorkbookActivity extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Workbook', { required: true }) workbookId = '';
+  @foreignKey('Workbook', { nullable: true }) workbookId: string | null = null;
+  @field({ type: 'text', required: true, default: 'identified' })
+  captureKind = 'identified';
+  @foreignKey('WorkbookPhotoIntake', { nullable: true }) photoIntakeId:
+    | string
+    | null = null;
   @foreignKey('Enrollment', { required: true }) enrollmentId = '';
   @foreignKey('Lesson', { required: true }) lessonId = '';
   pageKey = '';
@@ -100,7 +105,29 @@ export class WorkbookActivity extends SmrtObject {
     if (!this.tenantId.trim()) throw new Error('Workbook requires tenant');
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook history is immutable');
-    if (
+    if (!['identified', 'unfiled'].includes(this.captureKind))
+      throw new Error('Invalid workbook capture kind');
+    if (this.captureKind === 'unfiled') {
+      if (
+        this.workbookId !== null ||
+        !this.photoIntakeId ||
+        !(await this.db.get('workbook_photo_intakes', {
+          id: this.photoIntakeId,
+          tenant_id: this.tenantId,
+          learner_id: this.learnerId,
+        }))
+      )
+        throw new Error('Unfiled work requires an exact owned photo receipt');
+      if (
+        await this.db.get(this.tableName, {
+          tenant_id: this.tenantId,
+          photo_intake_id: this.photoIntakeId,
+        })
+      )
+        throw new Error('Photo receipt already has a work unit');
+    } else if (
+      this.photoIntakeId !== null ||
+      !this.workbookId ||
       !(await this.db.get('workbooks', {
         id: this.workbookId,
         tenant_id: this.tenantId,
@@ -116,11 +143,125 @@ export class WorkbookActivity extends SmrtObject {
       }))
     )
       throw new Error('Workbook enrollment mismatch');
+    if (this.captureKind === 'unfiled') {
+      const enrollment = await this.db.get('enrollments', {
+        id: this.enrollmentId,
+        tenant_id: this.tenantId,
+        learner_id: this.learnerId,
+      });
+      const lesson = await this.db.get('lessons', {
+        id: this.lessonId,
+        tenant_id: this.tenantId,
+      });
+      const section =
+        lesson &&
+        (await this.db.get('course_sections', {
+          id: lesson.section_id,
+          tenant_id: this.tenantId,
+          course_id: enrollment?.course_id,
+        }));
+      if (
+        !section ||
+        !(await this.db.get('courses', {
+          id: enrollment?.course_id,
+          tenant_id: this.tenantId,
+          license_kind: 'personal-use-copy',
+          source_key: 'unfiled-work',
+          source_ref: this.photoIntakeId,
+        }))
+      )
+        throw new Error(
+          'Unfiled work requires exact private technical routing',
+        );
+    }
     return super.save();
   }
 }
 export class WorkbookActivityCollection extends SmrtCollection<WorkbookActivity> {
   static readonly _itemClass = WorkbookActivity;
+}
+
+/** Append-only association; the source work unit and its routing never move. */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'workbook_work_filings',
+  conflictColumns: ['tenant_id', 'source_activity_id', 'request_key'],
+  ...closed,
+})
+export class WorkbookWorkFiling extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('WorkbookActivity', { required: true }) sourceActivityId = '';
+  @foreignKey('Workbook', { required: true }) workbookId = '';
+  @foreignKey('WorkbookActivity', { nullable: true }) canonicalActivityId:
+    | string
+    | null = null;
+  @foreignKey('WorkbookWorkFiling', { nullable: true }) previousRevisionId:
+    | string
+    | null = null;
+  actorUserId = '';
+  requestKey = '';
+  reason = '';
+  digest = '';
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    optionsFor(this, options);
+  }
+  override async delete(): Promise<void> {
+    throw new Error('Workbook history is immutable');
+  }
+  override async save(): Promise<this> {
+    if (this.id && (await this.db.get(this.tableName, { id: this.id })))
+      throw new Error('Workbook history is immutable');
+    const owner = { tenant_id: this.tenantId, learner_id: this.learnerId };
+    if (
+      !this.tenantId ||
+      !this.actorUserId ||
+      !this.requestKey.trim() ||
+      !this.reason.trim() ||
+      !/^[a-f0-9]{64}$/.test(this.digest) ||
+      !(await this.db.get('workbook_activities', {
+        ...owner,
+        id: this.sourceActivityId,
+        capture_kind: 'unfiled',
+        workbook_id: null,
+      })) ||
+      !(await this.db.get('workbooks', { ...owner, id: this.workbookId }))
+    )
+      throw new Error('Workbook filing ownership mismatch');
+    if (
+      this.canonicalActivityId &&
+      (this.canonicalActivityId === this.sourceActivityId ||
+        !(await this.db.get('workbook_activities', {
+          ...owner,
+          id: this.canonicalActivityId,
+          workbook_id: this.workbookId,
+          capture_kind: 'identified',
+        })))
+    )
+      throw new Error('Workbook filing target mismatch');
+    if (
+      this.previousRevisionId &&
+      !(await this.db.get(this.tableName, {
+        ...owner,
+        id: this.previousRevisionId,
+        source_activity_id: this.sourceActivityId,
+      }))
+    )
+      throw new Error('Workbook filing predecessor mismatch');
+    if (
+      await this.db.get(this.tableName, {
+        ...owner,
+        source_activity_id: this.sourceActivityId,
+        previous_revision_id: this.previousRevisionId,
+      })
+    )
+      throw new Error('Workbook filing predecessor already superseded');
+    return super.save();
+  }
+}
+export class WorkbookWorkFilingCollection extends SmrtCollection<WorkbookWorkFiling> {
+  static readonly _itemClass = WorkbookWorkFiling;
 }
 
 /** Education-owned private workbook record. Mutations go through WorkbookService. */

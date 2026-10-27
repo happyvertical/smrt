@@ -26,6 +26,25 @@ it('emits every concrete photo ownership and provenance column in the manifest s
       'body_json',
     ],
     WorkbookContextRevision: ['workbook_id', 'decision_id', 'metadata_json'],
+    WorkbookActivity: [
+      'workbook_id',
+      'capture_kind',
+      'photo_intake_id',
+      'enrollment_id',
+      'lesson_id',
+      'page_key',
+      'page_label',
+    ],
+    WorkbookWorkFiling: [
+      'source_activity_id',
+      'workbook_id',
+      'canonical_activity_id',
+      'previous_revision_id',
+      'actor_user_id',
+      'request_key',
+      'reason',
+      'digest',
+    ],
   };
   for (const [name, ownColumns] of Object.entries(tables)) {
     const object = manifest.objects[`@happyvertical/smrt-education:${name}`];
@@ -45,6 +64,35 @@ it('emits every concrete photo ownership and provenance column in the manifest s
       column: 'id',
     });
   }
+  const activity =
+    manifest.objects['@happyvertical/smrt-education:WorkbookActivity'].schema
+      .columns;
+  expect(activity.workbook_id).toMatchObject({
+    type: 'UUID',
+    notNull: false,
+    foreignKey: { table: 'workbooks', column: 'id' },
+  });
+  expect(activity.photo_intake_id).toMatchObject({
+    type: 'UUID',
+    notNull: false,
+    foreignKey: { table: 'workbook_photo_intakes', column: 'id' },
+  });
+  expect(
+    activity.capture_kind.defaultValue ?? activity.capture_kind.default,
+  ).toBe('identified');
+  const filing =
+    manifest.objects['@happyvertical/smrt-education:WorkbookWorkFiling'].schema
+      .columns;
+  expect(filing.source_activity_id).toMatchObject({
+    type: 'UUID',
+    notNull: true,
+    foreignKey: { table: 'workbook_activities', column: 'id' },
+  });
+  expect(filing.canonical_activity_id).toMatchObject({
+    type: 'UUID',
+    notNull: false,
+    foreignKey: { table: 'workbook_activities', column: 'id' },
+  });
   expect(manifest.objects).not.toHaveProperty(
     '@happyvertical/smrt-education:PhotoHistory',
   );

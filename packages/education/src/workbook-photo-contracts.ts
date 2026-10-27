@@ -1,7 +1,7 @@
 import type { WorkbookActivityView } from './workbook-contracts.js';
 /** Activity keys identify a printed lesson, potentially spanning multiple pages. */
 export interface WorkbookPhotoIdentification {
-  kind: 'lesson' | 'cover' | 'reference' | 'uncertain';
+  kind: 'lesson' | 'work' | 'cover' | 'reference' | 'uncertain';
   workbook?: {
     workbookKey: string;
     title: string;
@@ -46,7 +46,9 @@ export function validateWorkbookPhotoIdentification(
     typeof x === 'string' && x.length <= maximum && (!required || !!x.trim());
   if (
     !value ||
-    !['lesson', 'cover', 'reference', 'uncertain'].includes(value.kind) ||
+    !['lesson', 'work', 'cover', 'reference', 'uncertain'].includes(
+      value.kind,
+    ) ||
     (value.workState !== undefined &&
       !['blank', 'completed', 'unknown'].includes(value.workState)) ||
     (value.notes !== undefined && !text(value.notes, false, 2000))
@@ -54,11 +56,19 @@ export function validateWorkbookPhotoIdentification(
     throw new Error('Invalid photo identification');
   if (
     value.kind !== 'uncertain' &&
+    value.kind !== 'work' &&
     (!value.workbook ||
       !text(value.workbook.workbookKey, true) ||
       !text(value.workbook.title, true))
   )
     throw new Error('Workbook identity required');
+  if (
+    value.kind === 'work' &&
+    (value.workState !== 'completed' || value.workbook || value.activity)
+  )
+    throw new Error(
+      'Unfiled work requires observed completion and no claimed identity',
+    );
   if (
     value.workbook &&
     Object.values(value.workbook).some((x) => x !== undefined && !text(x))

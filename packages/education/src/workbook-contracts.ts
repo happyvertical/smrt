@@ -150,6 +150,12 @@ export interface WorkbookAssessment {
   };
 }
 export interface WorkbookActivityView {
+  filing?: {
+    state: 'unfiled' | 'filed' | 'identified';
+    workbookId: string | null;
+    canonicalActivityId: string | null;
+    revisionId: string | null;
+  };
   id: string;
   learnerId: string;
   workbookKey: string;

@@ -94,6 +94,465 @@ export function photoIntakeTests(
       },
     };
   }
+  it('marks visible completed work before identity and preserves its lineage when filed later', async () => {
+    const f = await fixture();
+    try {
+      const photo = await f.receive('visible-work-no-book-or-lesson');
+      const req = { ...f.own, intakeId: photo.id };
+      const proposal: WorkbookPhotoProposal = {
+        identification: { kind: 'work', workState: 'completed' },
+        confidence: 'confident',
+        identityEvidence: [],
+        lessonEvidence: '',
+      };
+      const resolved = await f.as(f.own, () =>
+        f.service[preservePhotoProposal]({
+          ...req,
+          requestKey: 'identify-visible-work',
+          proposal,
+          provenance: { revision: 1 },
+          sourceHashes: photo.originals.map((o) => o.sha256),
+          allowAutomaticResolution: true,
+        }),
+      );
+      expect(resolved.status).toBe('resolved');
+      expect(resolved.identification?.workbook).toBeUndefined();
+      expect(resolved.activity?.filing?.state).toBe('unfiled');
+      expect(
+        await f.as(f.own, () => f.service.listWorkbookPhotoWorkbooks(f.own)),
+      ).toEqual([]);
+      const attempt = await f.as(f.own, () =>
+        f.service.captureWorkbookPhotoIntake({
+          ...req,
+          requestKey: 'capture-visible-work',
+        }),
+      );
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.captureWorkbookPhotoIntake({
+              ...req,
+              requestKey: 'capture-visible-work',
+            }),
+          )
+        ).id,
+      ).toBe(attempt.id);
+      const captured = await f.as(f.own, () =>
+        f.service.getWorkbookPhotoIntake(req),
+      );
+      if (!captured.activity) throw new Error('No durable work unit');
+      const activity = captured.activity;
+      expect(activity.workbookKey).toBe('');
+      expect(activity.title).toBe('');
+      const marking = {
+        ...f.parent,
+        activityId: activity.id,
+        submissionId: attempt.submissionId,
+      };
+      const anchors = await f.as(f.parent, () =>
+        f.service.getWorkbookSourceAnchors(marking),
+      );
+      const assessment: WorkbookAssessment = {
+        version: 1,
+        feedback: 'Visible work only',
+        questions: [
+          {
+            id: 'q1',
+            prompt: '2 + 2',
+            answer: '4',
+            result: 'correct',
+            reason: 'none',
+            feedback: 'Correct visible response',
+            points: null,
+            possiblePoints: null,
+            anchors: [
+              {
+                assetId: anchors[0].assetId,
+                sha256: anchors[0].sha256,
+                page: 1,
+                rect: [0, 0, 1, 1],
+              },
+            ],
+            conceptIds: ['math.addition'],
+          },
+          {
+            id: 'q2',
+            prompt: 'Visible matching task',
+            answer: '',
+            result: 'unassessed',
+            reason: 'illegible',
+            feedback: 'Connection endpoint unreadable',
+            points: null,
+            possiblePoints: null,
+            anchors: [
+              {
+                assetId: anchors[0].assetId,
+                sha256: anchors[0].sha256,
+                page: 1,
+                rect: [0, 0, 1, 1],
+              },
+            ],
+            conceptIds: [],
+            markingCertainty: 'uncertain',
+          },
+        ],
+        provenance: {
+          provider: 'fixture',
+          model: 'fixture',
+          configurationVersion: '1',
+          rubricVersion: '1',
+          inputHash: anchors[0].sha256,
+          analysisId: 'unfiled-visible-analysis',
+        },
+        vocabulary: WORKBOOK_MATH_VOCABULARY,
+      };
+      const ai = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...marking,
+          requestKey: 'unfiled-ai',
+          assessment,
+        }),
+      );
+      const before = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({ ...marking, limit: 1 }),
+      );
+      expect(before.attempts[0].revisions[0].id).toBe(ai.id);
+      expect(before.attempts[0].reviewRequired).toBe(true);
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.getSubmission({
+              ...f.parent,
+              enrollmentId: activity.enrollmentId,
+              submissionId: attempt.submissionId,
+            }),
+          )
+        ).grade,
+      ).toBeNull();
+      const reviewed = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...marking,
+          revisionId: ai.id,
+          expectedHeadId: null,
+          requestKey: 'review-unfiled',
+          assessment,
+        }),
+      );
+      const conceptsBefore = await f.as(f.parent, () =>
+        f.service.getConceptEvidenceSummary(marking),
+      );
+      const cover = await f.receive('later-real-book-cover');
+      await f.as(f.parent, () =>
+        f.service.resolveWorkbookPhotoIntake({
+          ...f.parent,
+          intakeId: cover.id,
+          requestKey: 'cover',
+          identification: f.identification,
+        }),
+      );
+      const book = (
+        await f.as(f.parent, () =>
+          f.service.listWorkbookPhotoWorkbooks(f.parent),
+        )
+      )[0];
+      const filed = await f.as(f.parent, () =>
+        f.service.fileWorkbookWork({
+          ...f.parent,
+          activityId: activity.id,
+          workbookId: book.id,
+          expectedRevisionId: null,
+          requestKey: 'file-real-book',
+          reason: 'Guardian files existing work',
+        }),
+      );
+      expect(filed.id).toBe(activity.id);
+      expect(filed.filing?.state).toBe('filed');
+      expect(filed.enrollmentId).toBe(activity.enrollmentId);
+      expect(filed.lessonId).toBe(activity.lessonId);
+      expect(
+        await f.as(f.parent, () =>
+          f.service.getConceptEvidenceSummary(marking),
+        ),
+      ).toEqual(conceptsBefore);
+      const after = await f.as(f.parent, () =>
+        f.service.getWorkbookTimeline({ ...marking, limit: 1 }),
+      );
+      expect(after.attempts[0].id).toBe(attempt.id);
+      expect(after.attempts[0].submissionId).toBe(attempt.submissionId);
+      expect(after.attempts[0].revisions.map((r) => r.id)).toContain(ai.id);
+      expect(after.attempts[0].revisions.map((r) => r.id)).toContain(
+        reviewed.id,
+      );
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.getWorkbookPhotoIntake({
+              ...f.parent,
+              intakeId: photo.id,
+            }),
+          )
+        ).activity?.filing?.state,
+      ).toBe('filed');
+      const original = await f.as(f.parent, () =>
+        f.service.readWorkbookPhotoOriginal({
+          ...f.parent,
+          intakeId: photo.id,
+          assetId: photo.originals[0].assetId,
+        }),
+      );
+      expect(Buffer.from(original.data)).toEqual(f.pages[0].data);
+    } finally {
+      await f.finish();
+    }
+  });
+  it('keeps guardian-origin unfiled work private until its exact explicit release', async () => {
+    const f = await fixture();
+    try {
+      const photo = await f.as(f.parent, () =>
+        f.service.retainWorkbookPhotoIntake({
+          ...f.parent,
+          itemId: 'guardian-unfiled',
+          pages: f.pages,
+        }),
+      );
+      const req = { ...f.parent, intakeId: photo.id };
+      const resolved = await f.as(f.parent, () =>
+        f.service.resolveWorkbookPhotoIntake({
+          ...req,
+          requestKey: 'observed-work',
+          identification: { kind: 'work', workState: 'completed' },
+        }),
+      );
+      if (!resolved.activity) throw new Error('Missing unfiled activity');
+      const activity = resolved.activity;
+      const attempt = await f.as(f.parent, () =>
+        f.service.captureWorkbookPhotoIntake({ ...req, requestKey: 'capture' }),
+      );
+      const marking = {
+        ...f.parent,
+        activityId: activity.id,
+        submissionId: attempt.submissionId,
+      };
+      const [source] = await f.as(f.parent, () =>
+        f.service.getWorkbookSourceAnchors(marking),
+      );
+      const assessment: WorkbookAssessment = {
+        version: 1,
+        feedback: 'Guardian-private visible work',
+        questions: [
+          {
+            id: 'q1',
+            prompt: '2 + 2',
+            answer: '4',
+            result: 'correct',
+            reason: 'none',
+            feedback: 'Correct response',
+            points: null,
+            possiblePoints: null,
+            anchors: [
+              {
+                assetId: source.assetId,
+                sha256: source.sha256,
+                page: 1,
+                rect: [0, 0, 1, 1],
+              },
+            ],
+            conceptIds: ['math.addition'],
+          },
+        ],
+        provenance: {
+          provider: 'fixture',
+          model: 'fixture',
+          configurationVersion: '1',
+          rubricVersion: '1',
+          inputHash: source.sha256,
+          analysisId: 'private-unfiled-analysis',
+        },
+        vocabulary: WORKBOOK_MATH_VOCABULARY,
+      };
+      const ai = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...marking,
+          requestKey: 'assessment',
+          assessment,
+        }),
+      );
+      const child = {
+        ...f.own,
+        enrollmentId: activity.enrollmentId,
+        submissionId: attempt.submissionId,
+      };
+      const base = new SubmissionService(
+        f.db,
+        ({ own, relationshipTypeId }) =>
+          own || relationshipTypeId === f.guardianType.id,
+        () => true,
+        { storage: f.storage },
+      );
+      const before = await f.as(f.own, () => base.getSubmission(child));
+      expect(before.awaitingParentRelease).toBe(true);
+      expect(before.pages).toEqual([]);
+      expect(before.grade).toBeNull();
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookTimeline({
+              ...f.own,
+              activityId: activity.id,
+            }),
+          )
+        ).attempts[0].revisions,
+      ).toEqual([]);
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookPhotoIntake({ ...f.own, intakeId: photo.id }),
+        ).rejects.toThrow(),
+      );
+      await f.as(f.own, () =>
+        expect(
+          f.service.readWorkbookPhotoOriginal({
+            ...f.own,
+            intakeId: photo.id,
+            assetId: photo.originals[0].assetId,
+          }),
+        ).rejects.toThrow(),
+      );
+      const reviewed = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...marking,
+          revisionId: ai.id,
+          expectedHeadId: null,
+          requestKey: 'review',
+          assessment,
+        }),
+      );
+      await f.as(f.parent, () =>
+        f.service.releaseWorkbookFeedback({
+          ...marking,
+          revisionId: reviewed.id,
+          expectedHeadId: reviewed.id,
+          requestKey: 'release',
+        }),
+      );
+      expect(
+        (await f.as(f.own, () => base.getSubmission(child))).pages,
+      ).toHaveLength(1);
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookPhotoTimeline({
+              ...f.own,
+              intakeId: photo.id,
+              limit: 1,
+            }),
+          )
+        ).attempts[0].revisions.map((r) => r.id),
+      ).toContain(reviewed.id);
+      expect(
+        Buffer.from(
+          (
+            await f.as(f.own, () =>
+              f.service.readWorkbookPhotoOriginal({
+                ...f.own,
+                intakeId: photo.id,
+                assetId: photo.originals[0].assetId,
+              }),
+            )
+          ).data,
+        ),
+      ).toEqual(f.pages[0].data);
+      const later = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...marking,
+          requestKey: 'later-unreleased',
+          assessment: {
+            ...assessment,
+            provenance: {
+              ...assessment.provenance,
+              analysisId: 'later-unreleased-analysis',
+            },
+          },
+        }),
+      );
+      const visible = await f.as(f.own, () =>
+        f.service.getWorkbookPhotoTimeline({
+          ...f.own,
+          intakeId: photo.id,
+          limit: 1,
+        }),
+      );
+      expect(visible.attempts[0].revisions.map((r) => r.id)).not.toContain(
+        later.id,
+      );
+      expect(visible.attempts[0].revisions.map((r) => r.id)).toContain(
+        reviewed.id,
+      );
+    } finally {
+      await f.finish();
+    }
+  });
+
+  it('does not confuse uncertain material, blank pages or claimed identity with unfiled completed work', async () => {
+    const f = await fixture();
+    try {
+      const photo = await f.receive('uncertain-unfiled');
+      const req = {
+        ...f.own,
+        intakeId: photo.id,
+        sourceHashes: photo.originals.map((o) => o.sha256),
+        provenance: { revision: 1 },
+        allowAutomaticResolution: true,
+      };
+      const pending = await f.as(f.own, () =>
+        f.service[preservePhotoProposal]({
+          ...req,
+          requestKey: 'uncertain-classification',
+          proposal: {
+            identification: { kind: 'work', workState: 'completed' },
+            confidence: 'uncertain',
+            identityEvidence: [],
+            lessonEvidence: '',
+          },
+        }),
+      );
+      expect(pending.status).toBe('pending');
+      expect(pending.activity).toBeNull();
+      await f.as(f.own, () =>
+        expect(
+          f.service.captureWorkbookPhotoIntake({
+            ...f.own,
+            intakeId: photo.id,
+            requestKey: 'not-completed',
+          }),
+        ).rejects.toThrow(),
+      );
+      for (const identification of [
+        { kind: 'work', workState: 'blank' },
+        { kind: 'work', workState: 'unknown' },
+        {
+          kind: 'work',
+          workState: 'completed',
+          workbook: { workbookKey: 'invented', title: 'Invented' },
+        },
+      ] as WorkbookPhotoIdentification[]) {
+        await f.as(f.parent, () =>
+          expect(
+            f.service.resolveWorkbookPhotoIntake({
+              ...f.parent,
+              intakeId: photo.id,
+              requestKey: 'bad-work',
+              identification,
+            }),
+          ).rejects.toThrow('Unfiled work'),
+        );
+      }
+      expect(
+        await f.as(f.own, () => f.service.listWorkbookActivities(f.own)),
+      ).toEqual([]);
+    } finally {
+      await f.finish();
+    }
+  });
   it('authorizes an exact durable receipt beyond the inbox window without weakening ownership or privacy', async () => {
     const f = await fixture();
     try {

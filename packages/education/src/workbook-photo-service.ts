@@ -126,8 +126,8 @@ export class WorkbookPhotoService extends WorkbookService {
         intakeItemId: row.itemId,
       });
       if (
-        resolution?.identification.kind !== 'lesson' ||
-        !resolution.activity ||
+        !['lesson', 'work'].includes(resolution?.identification.kind ?? '') ||
+        !resolution?.activity ||
         !source.released
       )
         throw new LearnerAuthorizationError();
@@ -295,7 +295,12 @@ export class WorkbookPhotoService extends WorkbookService {
           : 'pending',
       identification: resolution?.identification ?? null,
       proposal: proposal?.proposal ?? null,
-      activity: resolution?.activity ?? null,
+      activity: resolution?.activity
+        ? await this.getWorkbookActivity({
+            ...request,
+            activityId: resolution.activity.id,
+          })
+        : null,
       submissionId: capture?.submissionId ?? null,
       originals: links
         .sort((a, b) => a.position - b.position)
@@ -464,6 +469,11 @@ export class WorkbookPhotoService extends WorkbookService {
       throw new Error('Captured photo identity is immutable');
     let activity: WorkbookPhotoIntakeView['activity'] = null;
     let workbookId: string | null = null;
+    if (request.identification.kind === 'work')
+      activity = await this.resolveUnfiledWorkbookActivityInScope(
+        request,
+        action,
+      );
     const identity = request.identification.workbook;
     if (identity && request.identification.kind !== 'uncertain') {
       const books = await WorkbookCollection.create({ db: this.db });
@@ -564,6 +574,21 @@ export class WorkbookPhotoService extends WorkbookService {
         return service.getWorkbookPhotoIntake(request);
       const identification = structuredClone(request.proposal.identification);
       const book = identification.workbook;
+      // Material/completion confidence is independent of bibliographic identity.
+      // Existing book/lesson matching below remains unchanged and cannot merge work.
+      if (
+        request.allowAutomaticResolution === true &&
+        request.proposal.confidence === 'confident' &&
+        identification.kind === 'work'
+      )
+        return service.resolvePhoto(
+          {
+            ...request,
+            requestKey: `auto:${hash(request.requestKey)}`,
+            identification,
+          },
+          'education.learner.submit',
+        );
       if (
         request.allowAutomaticResolution !== true ||
         request.proposal.confidence !== 'confident' ||
@@ -660,6 +685,22 @@ export class WorkbookPhotoService extends WorkbookService {
       );
     });
   }
+  /** Exact authorized receipt history; filing does not move the stable work unit. */
+  async getWorkbookPhotoTimeline(
+    request: PhotoRequest & {
+      limit?: number;
+      cursor?: string;
+      revisionId?: string;
+    },
+  ) {
+    const intake = await this.getWorkbookPhotoIntake(request);
+    if (!intake.activity || !intake.submissionId)
+      throw new Error('Photo work has not been captured');
+    return this.getWorkbookTimeline({
+      ...request,
+      activityId: intake.activity.id,
+    });
+  }
   async captureWorkbookPhotoIntake(
     request: PhotoRequest & {
       requestKey: string;
@@ -674,10 +715,13 @@ export class WorkbookPhotoService extends WorkbookService {
       await service.authorizePhotoIntake(request);
       await service.lockPhoto(request);
       const view = await service.getWorkbookPhotoIntake(request);
-      if (!view.activity || view.identification?.kind !== 'lesson')
-        throw new Error('Photo intake has no resolved lesson');
       if (
-        view.identification.workState !== 'completed' &&
+        !view.activity ||
+        !['lesson', 'work'].includes(view.identification?.kind ?? '')
+      )
+        throw new Error('Photo intake has no captured-work classification');
+      if (
+        view.identification?.workState !== 'completed' &&
         request.completedWork !== true
       )
         throw new Error(

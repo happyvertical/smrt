@@ -66,7 +66,16 @@ bounds, source dimensions/orientation, derivative dimensions/format/quality/byte
 and source/page location. Evidence still identifies the unchanged retained bytes.
 This is lossy provider preparation, not a claim that all text detail survives.
 Small handwriting can become unreadable; the vision instruction requires honest
-unreadable observations. Hosts must verify their intended model on representative
+unreadable observations. Vision also separates printed questions/solved examples
+from learner handwriting, preserves observed responses even when incorrect, and
+reports matching lines only with visibly traceable endpoints. Unreadable or
+uncertain responses/endpoints remain unknown; arithmetic solutions and expected
+matches must not be reported as observations. The generic scene/text instruction,
+untrusted-image instruction boundary and prohibition on actions still apply.
+Hosts adopting this observation prompt must use a new extraction configuration
+revision; `vision-image-v1` versions image preparation, not prompt behavior.
+Synthetic request tests verify these instructions reach the provider, not remote
+recognition quality. Hosts must verify their intended model on representative
 work and retain manual access to originals. No point weights or assessment
 content may be invented to compensate for lost detail.
 
