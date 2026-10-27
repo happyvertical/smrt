@@ -35,13 +35,27 @@ export class Qualification extends SmrtObject {
   @tenantId() tenantId = '';
   /** Lowercase kebab-case, unique per tenant: `first-aid`. */
   key = '';
+  @field({
+    description: 'What the qualification is called, such as First aid.',
+  })
   name = '';
-  @field({ type: 'text' }) kind: QualificationKind = 'certification';
+  @field({
+    type: 'text',
+    description:
+      'The sort of qualification, such as a certificate or a licence.',
+  })
+  kind: QualificationKind = 'certification';
+  @field({ description: 'Who gives it out.' })
   issuingBody = '';
   /** Whether held qualifications of this kind expire. */
+  @field({ description: 'Whether it has to be renewed.' })
   expires = false;
   /** Default validity in months, applied when a grant gives no expiry. */
-  @field({ type: 'integer', nullable: true })
+  @field({
+    type: 'integer',
+    nullable: true,
+    description: 'How many months it lasts once given.',
+  })
   validityMonths: number | null = null;
   /** Whether a held qualification belongs to the person or the employment. */
   @field({ type: 'text' }) scope: QualificationScope = 'person';
@@ -113,17 +127,30 @@ const FROZEN_WHEN_REVOKED = [
 })
 export class HeldQualification extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey(Qualification, { onDelete: 'RESTRICT' }) qualificationId = '';
+  @field({ description: 'The qualification this person holds.' })
+  @foreignKey(Qualification, { onDelete: 'RESTRICT' })
+  qualificationId = '';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     onDelete: 'RESTRICT',
   })
   profileId = '';
   @foreignKey('Employment', { nullable: true, onDelete: 'RESTRICT' })
   employmentId: string | null = null;
-  @field({ type: 'text' }) issuedOn: IsoDate = '';
-  @field({ type: 'text', nullable: true }) expiresOn: IsoDate | null = null;
+  @field({ type: 'text', description: 'The day it was given.' })
+  issuedOn: IsoDate = '';
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'The day it runs out. Empty if it does not.',
+  })
+  expiresOn: IsoDate | null = null;
+  @field({ description: 'The number printed on the certificate.' })
   certificateNumber = '';
-  @field({ type: 'text' }) status: HeldQualificationStatus = 'valid';
+  @field({
+    type: 'text',
+    description: 'Whether it is valid, expired or withdrawn.',
+  })
+  status: HeldQualificationStatus = 'valid';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     nullable: true,
     onDelete: 'RESTRICT',

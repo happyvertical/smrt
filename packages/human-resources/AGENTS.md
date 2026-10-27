@@ -296,3 +296,5 @@ pnpm --filter @happyvertical/smrt-human-resources typecheck
 
 Build before `test`: `src/__tests__/employment-extension.test.ts` reads
 `dist/manifest.json`.
+
+- **Recipe `human-resources.people`** (`src/recipes.ts`, help in `src/people.recipe.md`) declares the feature in the manifest. The models are deliberately closed (no generated surface), and the planner catalog drops a recipe whose menu opens a model that is not exposed, so it does not appear in the planner until a surface is exposed. Do not open the closed surface to change that without a decision (see smrt#4409).
