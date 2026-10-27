@@ -96,8 +96,18 @@ signature, resolveSettlementAccounts })`:
    public SDK (`gateway.getDispute`, optional for older custom gateways but
    required for dispute delivery), scoped to the verified account and environment. They locate one
    settled payment in that tenant by provider payment-intent/charge reference;
-   a missing settlement refuses delivery (`DISPUTE_NOT_RECORDED`) so it can be
-   retried after settlement. Unknown statuses or balance transaction kinds,
+   when none exists, `gateway.lookupCheckout` resolves authoritative ownership
+   by PaymentIntent/Charge in that same account and environment. Only a complete
+   provider `no_match` is acknowledged as `dispute_reported`, without any journal
+   or dispute projection. A matched quote must belong to a persisted intent in
+   that tenant/account/environment (and match the saved session when present);
+   a missing local settlement then refuses delivery (`DISPUTE_NOT_RECORDED`)
+   until settlement arrives, including when checkout creation lost its response
+   and saved no option. Unknown quote/tenant/account/environment, conflicting
+   session identity, ambiguous or incomplete lookup and provider failure refuse
+   delivery. An older custom gateway without `lookupCheckout` refuses this
+   zero-settlement case with `CONFIGURATION`; it never guesses from absent rows.
+   Unknown statuses or balance transaction kinds,
    currency conversions, changed evidence and missing fee configuration refuse
    delivery for operator reconciliation. No dispute is acknowledged as ignored.
 6. The event id is stored only after processing succeeds; a refusal throws,

@@ -70,7 +70,7 @@ export type ConnectedPaymentGateway = Pick<
   | 'createOnboardingLink'
   | 'getAccountCapabilities'
 > &
-  Partial<Pick<StripeAdapter, 'getDispute'>>;
+  Partial<Pick<StripeAdapter, 'getDispute' | 'lookupCheckout'>>;
 
 /** Why a connected-payments command refused. Messages never carry secrets. */
 export type ConnectedPaymentErrorCode =
@@ -1733,7 +1733,7 @@ async function applyDisputeUpdate(args: {
   environment: TenantPaymentEnvironment;
   dispute: StripeDispute;
   resolveSettlementAccounts: ResolveConnectedSettlementAccounts;
-}): Promise<{ outcome: TenantPaymentWebhookOutcome; paymentId: string }> {
+}): Promise<{ outcome: TenantPaymentWebhookOutcome; paymentId?: string }> {
   const readDispute = args.gateway.getDispute?.bind(args.gateway);
   if (!readDispute)
     throw new ConnectedPaymentError(
@@ -1773,6 +1773,11 @@ async function applyDisputeUpdate(args: {
           'PAYMENT_NOT_OWNED',
           'Dispute read does not match the connected account',
         );
+      if (routed.status === 'unknown')
+        throw new ConnectedPaymentError(
+          'DISPUTE_UNSUPPORTED',
+          'Unknown provider dispute status requires operator reconciliation',
+        );
       const payments = await PaymentCollection.create({ db });
       const refs = [routed.paymentIntentId, routed.chargeId].filter(
         (v): v is string => !!v,
@@ -1788,6 +1793,72 @@ async function applyDisputeUpdate(args: {
           },
         }))
           matches.set(payment.id!, payment);
+      }
+      if (matches.size === 0) {
+        const lookupCheckout = args.gateway.lookupCheckout?.bind(args.gateway);
+        if (!lookupCheckout)
+          throw new ConnectedPaymentError(
+            'CONFIGURATION',
+            'Unsettled dispute ownership requires gateway.lookupCheckout',
+          );
+        // Absence of a local Payment is not absence of an owned checkout: the
+        // provider may have collected before its settlement delivery reached us.
+        const lookup = await lookupCheckout({
+          paymentIntentId: routed.paymentIntentId,
+          chargeId: routed.chargeId,
+          livemode: args.environment === 'live',
+          stripeAccount: args.providerAccountId,
+        });
+        if (
+          // The SDK's provider id stays stripe even with a host backend alias.
+          lookup.backendId !== CONNECTED_PAYMENTS_DEFAULT_BACKEND ||
+          lookup.accountId !== args.providerAccountId ||
+          lookup.livemode !== (args.environment === 'live') ||
+          lookup.chargeId !== routed.chargeId ||
+          (routed.paymentIntentId !== undefined &&
+            lookup.paymentIntentId !== routed.paymentIntentId)
+        )
+          throw new ConnectedPaymentError(
+            'PAYMENT_NOT_OWNED',
+            'Checkout ownership evidence does not match the disputed payment',
+          );
+        if (lookup.status === 'no_match')
+          return { outcome: 'dispute_reported' as const };
+        if (lookup.status !== 'matched')
+          throw new ConnectedPaymentError(
+            'DISPUTE_NOT_RECORDED',
+            'Dispute checkout ownership is indeterminate; retry or investigate',
+          );
+        if (
+          lookup.clientReferenceId !== undefined &&
+          lookup.clientReferenceId !== lookup.quoteId
+        )
+          throw new ConnectedPaymentError(
+            'PAYMENT_NOT_OWNED',
+            'Checkout ownership references disagree',
+          );
+        // A provider quote is correlation evidence, never authority to read
+        // another tenant's intent. A lost create response may leave no option.
+        const intents = await PaymentIntentCollection.create({ db });
+        const intent = isUuid(lookup.quoteId)
+          ? await intents.get({ id: lookup.quoteId })
+          : null;
+        const option = intent?.getOption(args.backendId);
+        if (
+          !intent ||
+          !sameTenant(intent.tenantId, args.tenantId) ||
+          intent.connectedAccountId !== args.providerAccountId ||
+          intent.connectedEnvironment !== args.environment ||
+          (option?.memo !== undefined && option.memo !== lookup.checkoutId)
+        )
+          throw new ConnectedPaymentError(
+            'QUOTE_NOT_OWNED',
+            'Disputed checkout does not belong to the connected account tenant',
+          );
+        throw new ConnectedPaymentError(
+          'DISPUTE_NOT_RECORDED',
+          'Owned disputed checkout has not settled locally; retry after settlement',
+        );
       }
       const payment = matches.size === 1 ? [...matches.values()][0] : undefined;
       if (

@@ -30,6 +30,7 @@ export type TenantPaymentWebhookOutcome =
   | 'refund_reported'
   | 'refund_updated'
   | 'dispute_updated'
+  | 'dispute_reported'
   | 'late_payment'
   | 'ignored';
 

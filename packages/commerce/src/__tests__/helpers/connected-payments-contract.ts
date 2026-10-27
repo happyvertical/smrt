@@ -5,7 +5,10 @@
  * test keys only.
  */
 import { randomUUID } from 'node:crypto';
-import { PaymentNotOwnedError } from '@happyvertical/payments';
+import {
+  PaymentNotOwnedError,
+  PaymentProviderError,
+} from '@happyvertical/payments';
 import { StripeAdapter } from '@happyvertical/payments/stripe';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
@@ -347,6 +350,297 @@ export function connectedPaymentsContract(
       ).toBe(true);
     });
 
+    it('reports a foreign Standard-account dispute once without posting despite unrelated local checkouts', async () => {
+      const ctx = await disputedCheckout();
+      await checkout(bakery, 'other-unpaid-checkout');
+      ctx.dispute.payment_intent = `pi_external${stripe.run}`;
+      ctx.dispute.charge = `ch_external${stripe.run}`;
+      stripe.externalPayments.set(
+        `${ctx.account}:${ctx.dispute.payment_intent}`,
+        {
+          id: ctx.dispute.payment_intent,
+          object: 'payment_intent',
+          livemode: false,
+        },
+      );
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      ctx.dispute.status = 'future_status';
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_UNSUPPORTED',
+      });
+      ctx.dispute.status = 'needs_response';
+      expect((await ctx.deliver(event)).outcome).toBe('dispute_reported');
+      expect((await ctx.deliver(event)).duplicate).toBe(true);
+      // Direct charges predating PaymentIntents cannot be SMRT checkouts either.
+      Reflect.deleteProperty(ctx.dispute, 'payment_intent');
+      ctx.dispute.charge = `ch_externallegacy${stripe.run}`;
+      const legacy = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      expect((await ctx.deliver(legacy)).outcome).toBe('dispute_reported');
+      await withTenant({ tenantId: bakery }, async () => {
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1);
+        expect(
+          await (await TenantPaymentDisputeCollection.create({ db })).count(),
+        ).toBe(0);
+      });
+      const reads = stripe.requests.filter(
+        (request) =>
+          request.path.startsWith('/charges/') ||
+          request.path.startsWith('/payment_intents/') ||
+          (request.path === '/checkout/sessions' && request.method === 'GET'),
+      );
+      expect(reads.length).toBeGreaterThan(0);
+      expect(
+        reads.every((request) => request.stripeAccount === ctx.account),
+      ).toBe(true);
+    });
+
+    it('retains an owned out-of-order dispute and reconciles it after checkout settlement', async () => {
+      const ctx = await disputedCheckout();
+      const quote = await checkout(bakery, 'owned-not-settled');
+      const session = stripe.completeSession(
+        quote.intent.paymentOptions[0]!.memo!,
+      );
+      ctx.dispute.payment_intent = session.payment_intent as string;
+      ctx.dispute.charge = `ch_outoforder${stripe.run}`;
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      await deliverCompleted(session.id as string, ctx.account);
+      expect((await ctx.deliver(event)).outcome).toBe('dispute_updated');
+      expect((await ctx.deliver(event)).duplicate).toBe(true);
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(3),
+      );
+    });
+
+    it('retains ownership when checkout creation lost its response and saved no option', async () => {
+      const ctx = await disputedCheckout();
+      stripe.loseNextCheckoutResponse = true;
+      await expect(checkout(bakery, 'owned-lost-response')).rejects.toThrow();
+      const intent = await withTenant(
+        { tenantId: bakery },
+        async () =>
+          (
+            await (
+              await PaymentIntentCollection.create({ db })
+            ).list({ where: { idempotencyKey: 'owned-lost-response' } })
+          )[0]!,
+      );
+      expect(intent.paymentOptions).toHaveLength(0);
+      const session = stripe
+        .sessionsForAccount(ctx.account)
+        .find((session) => session.client_reference_id === intent.id)!;
+      stripe.completeSession(session.id as string);
+      ctx.dispute.payment_intent = session.payment_intent as string;
+      ctx.dispute.charge = `ch_lostresponse${stripe.run}`;
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      // Re-drive creation recovers the provider's same session and then settlement.
+      await checkout(bakery, 'owned-lost-response');
+      await deliverCompleted(session.id as string, ctx.account);
+      expect((await ctx.deliver(event)).outcome).toBe('dispute_updated');
+    });
+
+    it('refuses ambiguous or foreign-tenant checkout ownership and retries provider lookup failure', async () => {
+      const ctx = await disputedCheckout();
+      const quote = await checkout(bakery, 'ownership-candidate');
+      const session = stripe.completeSession(
+        quote.intent.paymentOptions[0]!.memo!,
+      );
+      ctx.dispute.payment_intent = session.payment_intent as string;
+      ctx.dispute.charge = `ch_ambiguous${stripe.run}`;
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      stripe.failNextOwnershipRead = true;
+      await expect(ctx.deliver(event)).rejects.toThrow();
+      const duplicate = await checkout(bakery, 'second-ownership-candidate');
+      const duplicateSession = stripe.completeSession(
+        duplicate.intent.paymentOptions[0]!.memo!,
+      );
+      duplicateSession.payment_intent = session.payment_intent;
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      duplicateSession.payment_intent = `pi_other${stripe.run}`;
+      session.metadata = {};
+      session.client_reference_id = null;
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      const otherAccount = stripe.accountId('ownershiptool');
+      await connect(toolLibrary, otherAccount);
+      const foreign = await checkout(toolLibrary, 'foreign-ownership');
+      session.client_reference_id = foreign.intent.id;
+      session.metadata = { quoteId: foreign.intent.id };
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'QUOTE_NOT_OWNED',
+      });
+      session.client_reference_id = quote.intent.id;
+      session.metadata = { quoteId: quote.intent.id };
+      await expect(ctx.deliver(event)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      await withTenant({ tenantId: bakery }, async () => {
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1);
+        expect(
+          await (await TenantPaymentDisputeCollection.create({ db })).count(),
+        ).toBe(0);
+      });
+    });
+
+    it('refuses mismatched lookup scope, conflicting session evidence and unavailable custom lookup', async () => {
+      const ctx = await disputedCheckout();
+      ctx.dispute.payment_intent = `pi_customexternal${stripe.run}`;
+      ctx.dispute.charge = `ch_customexternal${stripe.run}`;
+      const event = stripe.event({
+        type: 'charge.dispute.created',
+        account: ctx.account,
+        object: ctx.dispute,
+      });
+      const gateway = stripe.adapter();
+      const scope = {
+        backendId: 'stripe',
+        accountId: ctx.account,
+        livemode: false,
+        paymentIntentId: ctx.dispute.payment_intent,
+        chargeId: ctx.dispute.charge,
+        status: 'no_match' as const,
+      };
+      const lookup = vi.spyOn(gateway, 'lookupCheckout');
+      for (const mismatched of [
+        { ...scope, backendId: 'another-provider' },
+        { ...scope, accountId: stripe.accountId('notbakery') },
+        { ...scope, livemode: true },
+        { ...scope, paymentIntentId: `pi_wrong${stripe.run}` },
+        { ...scope, chargeId: `ch_wrong${stripe.run}` },
+      ]) {
+        lookup.mockResolvedValueOnce(mismatched);
+        await expect(ctx.deliver(event, gateway)).rejects.toMatchObject({
+          code: 'PAYMENT_NOT_OWNED',
+        });
+      }
+      lookup.mockResolvedValueOnce({
+        ...scope,
+        status: 'indeterminate',
+        reason: 'pagination_limit',
+      });
+      await expect(ctx.deliver(event, gateway)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      lookup.mockResolvedValueOnce({
+        ...scope,
+        status: 'matched',
+        checkoutId: `cs_wrong${stripe.run}`,
+        quoteId: ctx.quote.intent.id!,
+      });
+      await expect(ctx.deliver(event, gateway)).rejects.toMatchObject({
+        code: 'QUOTE_NOT_OWNED',
+      });
+      lookup.mockResolvedValueOnce({
+        ...scope,
+        status: 'matched',
+        checkoutId: ctx.quote.intent.paymentOptions[0]!.memo!,
+        quoteId: ctx.quote.intent.id!,
+        clientReferenceId: randomUUID(),
+      });
+      await expect(ctx.deliver(event, gateway)).rejects.toMatchObject({
+        code: 'PAYMENT_NOT_OWNED',
+      });
+      for (const wrongScope of [
+        {
+          connectedAccountId: stripe.accountId('formerbakery'),
+          connectedEnvironment: 'test' as const,
+        },
+        {
+          connectedAccountId: ctx.account,
+          connectedEnvironment: 'live' as const,
+        },
+      ]) {
+        const intent = await withTenant({ tenantId: bakery }, () =>
+          withConnectedPaymentAuthority(bakery, async () =>
+            (await PaymentIntentCollection.create({ db })).create({
+              tenantId: bakery,
+              offeringRef: 'wrong-scope',
+              licenseeEmail: 'scope@example.org',
+              idempotencyKey: randomUUID(),
+              usdPriceLocked: 10000,
+              connectedAmount: 10000,
+              connectedCurrency: 'USD',
+              ...wrongScope,
+            }),
+          ),
+        );
+        lookup.mockResolvedValueOnce({
+          ...scope,
+          status: 'matched',
+          checkoutId: `cs_wrongscope${stripe.run}`,
+          quoteId: intent.id!,
+        });
+        await expect(ctx.deliver(event, gateway)).rejects.toMatchObject({
+          code: 'QUOTE_NOT_OWNED',
+        });
+      }
+      Object.defineProperty(gateway, 'lookupCheckout', { value: undefined });
+      await expect(ctx.deliver(event, gateway)).rejects.toMatchObject({
+        code: 'CONFIGURATION',
+      });
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1),
+      );
+    });
+
+    it('retains refusal for ambiguous local payments without negative ownership lookup', async () => {
+      const ctx = await disputedCheckout();
+      await withTenant({ tenantId: bakery }, () =>
+        withConnectedPaymentAuthority(bakery, async () => {
+          await (await PaymentCollection.create({ db })).create({
+            tenantId: bakery,
+            amount: 10000,
+            currency: 'USD',
+            backendId: 'stripe',
+            backendTxRef: ctx.dispute.payment_intent,
+            connectedAccountId: ctx.account,
+          });
+        }),
+      );
+      const gateway = stripe.adapter();
+      Object.defineProperty(gateway, 'lookupCheckout', {
+        value: () => {
+          throw new Error(
+            'Ambiguous local matches must not use negative lookup',
+          );
+        },
+      });
+      await expect(ctx.deliver(ctx.event, gateway)).rejects.toMatchObject({
+        code: 'DISPUTE_NOT_RECORDED',
+      });
+      await withTenant({ tenantId: bakery }, async () =>
+        expect(await (await JournalCollection.create({ db })).count()).toBe(1),
+      );
+    });
+
     it('serializes concurrent dispute delivery and records status without inventing balance movement', async () => {
       const ctx = await disputedCheckout();
       const withdrawal = ctx.dispute.balance_transactions;
@@ -606,9 +900,10 @@ export function connectedPaymentsContract(
         account: other,
         object: ctx.dispute,
       });
-      await expect(ctx.deliver(hostile)).rejects.toMatchObject({
-        code: 'DISPUTE_NOT_RECORDED',
-      });
+      // The scoped SDK lookup cannot retrieve this other account's PI.
+      await expect(ctx.deliver(hostile)).rejects.toBeInstanceOf(
+        PaymentProviderError,
+      );
       await expect(
         ctx.deliver({ ...ctx.event, signature: 'invalid' }),
       ).rejects.toThrow();
