@@ -1277,6 +1277,10 @@ export class ManifestAdapter {
     field: RawFieldDefinition,
   ): Record<string, unknown> | null {
     if (decorator.name === 'groupBy') {
+      const options = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      if (options && typeof options.expr === 'object' && options.expr) {
+        return { kind: 'group', expr: options.expr };
+      }
       return {
         kind: 'group',
         sourceColumn: stripQuotes(decorator.arguments[0]?.trim()) ?? field.name,
@@ -1309,6 +1313,7 @@ export class ManifestAdapter {
         kind: 'aggregate',
         fn: parsed.fn,
         ...(typeof parsed.column === 'string' ? { column: parsed.column } : {}),
+        ...this.reportOperandOptions(parsed),
         ...(typeof parsed.distinct === 'boolean'
           ? { distinct: parsed.distinct }
           : {}),
@@ -1317,14 +1322,19 @@ export class ManifestAdapter {
 
     const aggregateNames = new Set(['sum', 'avg', 'min', 'max']);
     if (aggregateNames.has(decorator.name)) {
-      const column = stripQuotes(decorator.arguments[0]?.trim());
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
+      const firstOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
       );
+      const column = firstOptions
+        ? undefined
+        : stripQuotes(decorator.arguments[0]?.trim());
+      const parsedOptions =
+        firstOptions ?? this.parseFieldDecoratorOptions(decorator.arguments[1]);
       return {
         kind: 'aggregate',
         fn: decorator.name,
         ...(column ? { column } : {}),
+        ...this.reportOperandOptions(parsedOptions),
         ...(typeof parsedOptions?.distinct === 'boolean'
           ? { distinct: parsedOptions.distinct }
           : {}),
@@ -1343,6 +1353,7 @@ export class ManifestAdapter {
         kind: 'aggregate',
         fn: 'count',
         ...(column ? { column } : {}),
+        ...this.reportOperandOptions(options),
         ...(typeof options?.distinct === 'boolean'
           ? { distinct: options.distinct }
           : {}),
@@ -1350,6 +1361,20 @@ export class ManifestAdapter {
     }
 
     return null;
+  }
+
+  /** The `expr` and `filter` of an aggregate decorator: literal expression nodes. */
+  private reportOperandOptions(
+    options: FieldDecoratorOptions | null | undefined,
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of ['expr', 'filter'] as const) {
+      const value = options?.[key];
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        out[key] = value;
+      }
+    }
+    return out;
   }
 
   private parseFieldDecoratorOptions(

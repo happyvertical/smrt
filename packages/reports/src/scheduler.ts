@@ -36,7 +36,8 @@ import {
   validateColumnName,
 } from '@happyvertical/sql';
 import { buildReportDefinition } from './compiler.js';
-import { refreshReport, tenantColumn } from './refresh.js';
+import { refreshReport } from './refresh.js';
+import { tenantColumn } from './registry-columns.js';
 import {
   assertReportTablesReady,
   REPORT_SCHEDULER_TABLES,

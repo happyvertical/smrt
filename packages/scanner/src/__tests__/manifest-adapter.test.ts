@@ -499,6 +499,74 @@ describe('ManifestAdapter', () => {
           distinct: true,
         });
       });
+
+      const reportField = (name: string, decorator: string, args: string[]) =>
+        ({
+          name,
+          accessibility: 'public',
+          typeAnnotation: 'number',
+          initializer: '0',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: 0,
+          decorators: [{ name: decorator, arguments: args }],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        }) as RawFieldDefinition;
+
+      it('parses a filtered count as literal expression nodes', () => {
+        const result = adapter.convertField(
+          reportField('halted', 'count', [
+            "{ filter: { op: 'eq', left: { col: 'halted' }, right: { value: true } } }",
+          ]),
+        );
+
+        expect(result?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'count',
+          filter: { op: 'eq', left: { col: 'halted' }, right: { value: true } },
+        });
+      });
+
+      it('parses an aggregate over a row expression and a joined column', () => {
+        const expr =
+          "{ op: 'secondsBetween', later: { col: 'claimedAt' }, earlier: { col: 'createdAt' } }";
+        const avg = adapter.convertField(
+          reportField('response', 'avg', [`{ expr: ${expr} }`]),
+        );
+        expect(avg?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'avg',
+          expr: {
+            op: 'secondsBetween',
+            later: { col: 'claimedAt' },
+            earlier: { col: 'createdAt' },
+          },
+        });
+
+        const joined = adapter.convertField(
+          reportField('estimate', 'max', ["'wo.estimatedHours'"]),
+        );
+        expect(joined?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'max',
+          column: 'wo.estimatedHours',
+        });
+      });
+
+      it('parses a group key computed from a row expression', () => {
+        const result = adapter.convertField(
+          reportField('overdue', 'groupBy', [
+            "{ expr: { op: 'gt', left: { col: 'dueAt' }, right: { col: 'doneAt' } } }",
+          ]),
+        );
+
+        expect(result?._meta?.__report).toEqual({
+          kind: 'group',
+          expr: { op: 'gt', left: { col: 'dueAt' }, right: { col: 'doneAt' } },
+        });
+      });
     });
 
     describe('negative numeric defaults (0 vs 0.0 heuristic)', () => {

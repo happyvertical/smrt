@@ -51,6 +51,10 @@ export {
   compileReportSpec,
   getReportGroupingColumns,
 } from './compiler.js';
+export type {
+  AggregateDecoratorOptions,
+  AggregateMeasureOptions,
+} from './decorators.js';
 export {
   aggregate,
   avg,
@@ -256,12 +260,16 @@ export type {
   ReportFieldDefinition,
   ReportFieldMetadata,
   ReportGroupFieldMetadata,
+  ReportJoinDefinition,
+  ReportJoinOptions,
+  ReportOperand,
   ReportOptions,
   ReportRefreshConfig,
   ReportRefreshMode,
   ReportRefreshOptions,
   ReportRefreshResult,
   ReportRefreshTrigger,
+  ReportRelatedFieldPolicy,
   ReportSource,
   ReportTimeBucketUnit,
 } from './types.js';
