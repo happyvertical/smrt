@@ -50,3 +50,7 @@ imports `@happyvertical/smrt-sales` directly.
   Legacy rows migrate with `tenant_id = NULL` (global) — see `MIGRATION.md`.
 - **Do not add models here**: new commission features belong in
   `packages/sales/src/commissions/`.
+
+## Recipe
+
+The `affiliates.referrals` recipe is declared in `@happyvertical/smrt-sales` (`src/referrals/recipes.ts`), not here: this package has no models.

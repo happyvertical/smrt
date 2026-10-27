@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -68,12 +69,16 @@ export class Referrer extends SmrtObject {
   earnerId: string = '';
 
   /** Human-readable display name for portals and operator views. */
+  @field({ description: 'The name you know this affiliate by.' })
   displayName: string = '';
 
   /**
    * Role lifecycle: `pending` (default, awaiting approval) → `active` /
    * `suspended`. Only active referrers should receive new links/agreements.
    */
+  @field({
+    description: 'Whether this affiliate is approved to send you referrals.',
+  })
   status: ReferrerStatus = 'pending';
 
   /**

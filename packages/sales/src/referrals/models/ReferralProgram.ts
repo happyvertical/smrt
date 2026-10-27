@@ -40,10 +40,14 @@ export class ReferralProgram extends SmrtObject {
   tenantId: string | null = null;
 
   /** Stable program key within the tenant (natural-key component). */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'A short name for the program, used in links and reports.',
+  })
   key: string = '';
 
   /** Human-readable program name. */
+  @field({ description: 'What you call this program.' })
   name: string = '';
 
   /**
@@ -51,6 +55,9 @@ export class ReferralProgram extends SmrtObject {
    * `archived`. Applications gate intake on `active`; this module records
    * the status without enforcing transition edges.
    */
+  @field({
+    description: 'Whether the program is in draft, running or finished.',
+  })
   status: ReferralProgramStatus = 'draft';
 
   /**
