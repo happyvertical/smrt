@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { authorizeRelease, main as authorizeMain } from './authorize-release.mjs';
+import { main as publishCurrentMain } from './publish-current-release.mjs';
 import { REPOSITORY } from './release-admission.mjs';
 import { createReleaseAdmissionState, transitionReleaseAdmission as transition } from './release-admission-state.mjs';
 import { verifyPublishArtifacts } from './publish-artifacts-lib.mjs';
@@ -121,11 +123,11 @@ function fixture({ wrongVersion = false, wrongBundle = false, wrongParent = fals
       return state;
     } },
   };
-  const store = { async read() { return { state: structuredClone(state) }; } };
+  const store = { async read() { return { revision: String(state.revision), state: structuredClone(state) }; }, async compareAndSwap(revision, next) { assert.equal(revision, String(state.revision)); state = next; return true; } };
   return {
-    directory, marker, repoRoot, git, release, owner, responses, archives, events, published, io,
+    directory, marker, repoRoot, git, release, owner, responses, archives, events, published, io, store, forge,
     run: (extra = {}) => recoverRelease({ store, forge, repoRoot, owner, readToken: 'read', writeToken: 'write', io, ...extra }),
-    get state() { return state; },
+    get state() { return state; }, set state(value) { state = value; },
     set mainSha(value) { mainSha = value; }, set tag(value) { tag = value; },
     set failPackage(value) { failPackage = value; }, set failCompletion(value) { failCompletion = value; },
     cleanup() { rmSync(directory, { recursive: true, force: true }); },
@@ -274,4 +276,110 @@ test('CLI accepts only original owner selectors and rejects artifact/head/run ov
   for (const argv of [['--head', 'a'], ['--artifact-id', '3'], ['--owner-run-id', '42'], ['--owner-run-id', '0', '--owner-run-attempt', '2'], ['--owner-run-id', '42', '--owner-run-id', '43']]) {
     await assert.rejects(main(argv, env));
   }
+});
+
+
+test('active publication consumes exact authorized original bytes; recovery still requires original termination', async () => {
+  const f = fixture();
+  try {
+    f.state = { ...f.state, phase: 'publishing' };
+    f.responses.get(`actions/runs/${owner.runId}/attempts/${owner.runAttempt}`).status = 'in_progress';
+    await assert.rejects(f.run(), /completed before recovery/);
+    await assert.rejects(f.run({ activeOwner: { ...owner, runAttempt: 99 } }), /exact authorized current/);
+    assert.equal(f.events.length, 0);
+    const result = await f.run({ activeOwner: owner });
+    assert.equal(result.phase, 'open');
+    assert.equal(existsSync(f.marker), false, 'candidate install script never executes');
+  } finally { f.cleanup(); }
+});
+
+function qualifyingAuthorization(f) {
+  const now = Date.now();
+  let state = createReleaseAdmissionState({ repository: REPOSITORY });
+  state = transition(state, { type: 'close', owner, nowMs: now, timeoutMs: 60_000 });
+  f.state = transition(state, { type: 'freeze', owner, nowMs: now, main: { authenticated: true, repository: REPOSITORY, protected: true, ref: 'refs/heads/main', sha: f.release.snapshotSha } });
+  f.responses.get(`actions/runs/${owner.runId}/attempts/${owner.runAttempt}`).status = 'in_progress';
+  const bypass_actors = [{ actor_id: 2315871, actor_type: 'Integration', bypass_mode: 'always' }];
+  const rules = [
+    { id: 10, target: 'branch', enforcement: 'active', bypass_actors, conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } }, rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Release Admission', integration_id: 2315871 }] } }, { type: 'merge_queue', parameters: { max_entries_to_build: 1, max_entries_to_merge: 1 } }] },
+    { id: 11, target: 'branch', enforcement: 'active', bypass_actors, conditions: { ref_name: { include: ['refs/heads/hv-release-admission'], exclude: [] } }, rules: ['creation', 'update', 'deletion', 'non_fast_forward'].map(type => ({ type })) },
+  ];
+  for (const r of rules) { const redacted = structuredClone(r); delete redacted.bypass_actors; f.responses.set(`rulesets/${r.id}`, redacted); }
+  f.forge.privateRules = async () => structuredClone(rules);
+  f.forge.list = async path => path === 'rulesets' ? rules : f.release.recoveryArtifacts.map(a => structuredClone(f.responses.get(`actions/artifacts/${a.id}`)));
+  return (extra = {}) => authorizeRelease({ store: f.store, forge: f.forge, owner, sourceSha: f.release.snapshotSha, version: f.release.version, releaseCommitSha: f.release.releaseCommitSha, repoRoot: f.repoRoot, readToken: 'read', expectedArtifacts: f.release.recoveryArtifacts, io: { ...f.io, controller: undefined }, ...extra });
+}
+
+test('isolated authorization verifies real ZIPs, bundle and packs before private fence CAS without candidate execution', async () => {
+  const f = fixture();
+  try {
+    const authorize = qualifyingAuthorization(f);
+    await authorize();
+    assert.equal(f.state.phase, 'publishing');
+    assert.deepEqual(f.state.release, f.release);
+    assert.equal(f.events.includes('publish'), false);
+    assert.equal(f.events.includes('push'), false);
+    assert.equal(existsSync(f.marker), false);
+    assert.equal(f.git('rev-parse', 'HEAD'), f.release.snapshotSha);
+  } finally { f.cleanup(); }
+});
+
+test('isolated authorization refuses changed private bypass or artifact bytes before crossing publication boundary', async () => {
+  for (const defect of ['private', 'bytes', 'owner', 'producer']) {
+    const f = fixture();
+    try {
+      const authorize = qualifyingAuthorization(f);
+      if (defect === 'private') f.forge.privateRules = async () => { throw new Error('private fence changed'); };
+      if (defect === 'bytes') f.archives.set(1, Buffer.from('corrupted bundle ZIP'));
+      if (defect === 'producer') f.responses.get('actions/artifacts/2').id = 99;
+      await assert.rejects(authorize(defect === 'owner' ? { owner: { ...owner, runAttempt: 99 } } : {}));
+      assert.equal(f.state.phase, 'qualifying');
+      assert.equal(f.events.includes('publish'), false);
+      assert.equal(existsSync(f.marker), false);
+    } finally { f.cleanup(); }
+  }
+});
+
+
+test('active publication never turns a completed attempt or recovery state into a live owner', async () => {
+  for (const mode of ['completed', 'recovery']) {
+    const f = fixture();
+    try {
+      if (mode === 'completed') f.state = { ...f.state, phase: 'publishing' };
+      else f.responses.get(`actions/runs/${owner.runId}/attempts/${owner.runAttempt}`).status = 'in_progress';
+      await assert.rejects(f.run({ activeOwner: owner }), /exact authorized current/);
+      assert.equal(f.events.length, 0);
+    } finally { f.cleanup(); }
+  }
+});
+
+test('privileged authorization and active publishing CLIs reject non-main or non-owner workflows before credentials', async () => {
+  const env = { GITHUB_REPOSITORY: REPOSITORY, GITHUB_REF: 'refs/heads/main', GITHUB_WORKFLOW_REF: `${REPOSITORY}/.github/workflows/on-merge-main.yml@refs/heads/main`, GITHUB_RUN_ID: '42', GITHUB_RUN_ATTEMPT: '2' };
+  for (const changed of [{ GITHUB_REPOSITORY: 'other/repo' }, { GITHUB_REF: 'refs/heads/candidate' }, { GITHUB_WORKFLOW_REF: `${REPOSITORY}/.github/workflows/publish.yml@refs/heads/main` }, { GITHUB_RUN_ATTEMPT: 'bad' }]) {
+    await assert.rejects(authorizeMain({ ...env, ...changed }));
+    await assert.rejects(publishCurrentMain({ ...env, ...changed }));
+  }
+});
+
+
+test('Git-tree manifest symlinks cannot expose host files during isolated authorization', async () => {
+  const f = fixture();
+  try {
+    const authorize = qualifyingAuthorization(f);
+    const restore = f.io.restore;
+    const target = join(f.directory, 'host-data.json');
+    writeFileSync(target, '{"fixed":[]}');
+    const io = { ...f.io, controller: undefined, restore(options) {
+      const restored = restore(options);
+      const path = join(restored.candidateRoot, '.changeset', 'config.json');
+      rmSync(path); symlinkSync(target, path);
+      return restored;
+    } };
+    let privateReads = 0;
+    f.forge.privateRules = async () => { privateReads++; throw new Error('must not get here'); };
+    await assert.rejects(authorize({ io }), /metadata config must be a regular file/);
+    assert.equal(privateReads, 0);
+    assert.equal(f.state.phase, 'qualifying');
+    assert.equal(f.events.includes('publish'), false);
+  } finally { f.cleanup(); }
 });

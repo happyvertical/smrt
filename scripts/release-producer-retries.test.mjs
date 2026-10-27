@@ -130,7 +130,7 @@ for (const [label, attempts] of [['successful attempt-1 producers and consumer a
       assert.deepEqual(downloadedIds(name, needs, 2), [prep['workspace-artifact-id']]);
     }
     assert.deepEqual(downloadedIds('planner-release-gate', needs, 2), [prep['workspace-artifact-id'], ...packs]);
-    assert.deepEqual(downloadedIds('publish-release', needs, 2), [prep['patch-artifact-id'], prep['workspace-artifact-id'], ...packs]);
+    for (const publisher of ['publish-release', 'seal-release']) assert.deepEqual(downloadedIds(publisher, needs, 2), [prep['patch-artifact-id'], prep['workspace-artifact-id'], ...packs]);
     assert.equal(new Set(packs).size, 2, 'separate pack producers cannot collide');
   });
 }
@@ -163,7 +163,7 @@ test('attempt mixing is allowed only outside the reserved release window', () =>
 });
 
 test('reserved-window consumer guards precede all downloads without granting Planner write access', () => {
-  for (const name of ['pack-release-1', 'pack-release-2', 'planner-release-gate', 'publish-release']) {
+  for (const name of ['pack-release-1', 'pack-release-2', 'planner-release-gate', 'seal-release']) {
     const source = job(name);
     const guard = source.indexOf('name: Verify reserved release snapshot');
     assert.ok(guard > source.indexOf('uses: actions/checkout@'));

@@ -121,27 +121,26 @@ function trustedNpm(repoRoot) {
   };
 }
 
-/** All injected IO belongs to the trusted adapter/tests, never to artifact data. */
-export async function recoverRelease({ store, forge, owner: requestedOwner, repoRoot = process.cwd(), readToken, writeToken, io = {} }) {
-  const current = (await store.read())?.state;
-  validateReleaseAdmissionState(current);
-  check(current.repository === REPOSITORY && ['publishing', 'recovery'].includes(current.phase) && current.release, 'No owned publication is available for recovery');
-  const { owner, release } = current;
-  check(!requestedOwner || sameOwner(requestedOwner, owner), 'Recovery owner differs from original run/attempt');
+// Candidate Git trees may contain symlinks even though the outer ZIP rejects
+// them. Never follow one while reading manifests in a privileged control job.
+function checkCandidateMetadata(root) {
+  for (const directory of ['.changeset', 'packages']) {
+    check(lstatSync(join(root, directory), { throwIfNoEntry: false })?.isDirectory(), 'Candidate metadata directory must not be a symlink');
+  }
+  check(lstatSync(join(root, '.changeset', 'config.json'), { throwIfNoEntry: false })?.isFile(), 'Candidate metadata config must be a regular file');
+  for (const entry of readdirSync(join(root, 'packages'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifest = lstatSync(join(root, 'packages', entry.name, 'package.json'), { throwIfNoEntry: false });
+    check(!manifest || manifest.isFile(), 'Candidate package metadata must be a regular file');
+  }
+}
+
+/** Immutable artifact consumption shared by isolated authorization and publication.
+ * No candidate-owned code, hooks, filters, installs or npm lifecycle scripts run. */
+export async function withReleaseArtifacts({ forge, owner, release, repoRoot, readToken, io = {}, consume }) {
   const bound = validateReleaseRecoveryArtifacts(release.recoveryArtifacts);
   const expectedNames = [`release-candidate-${owner.runId}-${owner.runAttempt}`, ...[1, 2].map((shard) => `publish-release-pack-${owner.runId}-${owner.runAttempt}-${shard}`)];
-  check(JSON.stringify(bound.map((artifact) => artifact.name).sort()) === JSON.stringify([...expectedNames].sort()), 'Original recovery artifact inventory mismatch');
-  const run = await forge.request(`actions/runs/${owner.runId}/attempts/${owner.runAttempt}`);
-  const workflow = await forge.request(`actions/workflows/${run.workflow_id}`);
-  check(run.id === owner.runId && run.run_attempt === owner.runAttempt && run.repository?.full_name === REPOSITORY && run.head_repository?.full_name === REPOSITORY && run.path === RELEASE_WORKFLOW && workflow.path === RELEASE_WORKFLOW, 'Unverifiable original release run/attempt');
-  check(run.status === 'completed', 'Originating release attempt must be completed before recovery');
-  async function refs() {
-    const [main, tag] = await Promise.all([forge.main(), forge.request(`git/ref/tags/v${release.version}`, { missing: true })]);
-    check(main.protected === true && [release.snapshotSha, release.releaseCommitSha].includes(main.commit?.sha), 'Main differs from frozen source or original release');
-    check(tag === null || (tag.object?.type === 'commit' && tag.object.sha === release.releaseCommitSha), 'Release tag differs from original release');
-    return main.commit.sha === release.releaseCommitSha && tag !== null;
-  }
-  await refs();
+  check(JSON.stringify(bound.map((artifact) => artifact.name).sort()) === JSON.stringify([...expectedNames].sort()), 'Original artifact inventory mismatch');
   const metadata = await Promise.all(bound.map(async (artifact) => {
     const fetched = await forge.request(`actions/artifacts/${artifact.id}`);
     check(fetched.id === artifact.id && fetched.name === artifact.name && fetched.digest === artifact.digest && fetched.expired === false && fetched.workflow_run?.id === owner.runId && Number.isSafeInteger(fetched.size_in_bytes) && fetched.size_in_bytes > 0 && fetched.size_in_bytes <= MAX_ARCHIVE_BYTES, 'Original recovery artifact metadata/identity/expiry mismatch');
@@ -163,9 +162,41 @@ export async function recoverRelease({ store, forge, owner: requestedOwner, repo
     const bundlePath = join(temporary, 'candidate-artifact', 'release-candidate.bundle');
     check(JSON.stringify(readdirSync(join(temporary, 'candidate-artifact'))) === JSON.stringify(['release-candidate.bundle']) && lstatSync(bundlePath).isFile(), 'Original release candidate bundle is missing');
     restored = await (io.restore ?? restoreRecoveryCandidate)({ repoRoot, bundlePath, candidateRoot: join(temporary, 'candidate'), release });
+    checkCandidateMetadata(restored.candidateRoot);
     const verify = (directory) => (io.verify ?? verifyPublishArtifacts)(directory, restored.candidateRoot);
     const inventory = verify(artifactDir);
     check(inventory.releaseVersion === release.version && inventory.packages.length > 0, 'Recovered artifact release version/inventory mismatch');
+    return await consume({ artifactDir, inventory, verify, restored });
+  } finally {
+    try { await restored?.cleanup(); } finally { rmSync(temporary, { recursive: true, force: true }); }
+  }
+}
+
+/** All injected IO belongs to the trusted adapter/tests, never to artifact data. */
+export async function recoverRelease({ store, forge, owner: requestedOwner, repoRoot = process.cwd(), readToken, writeToken, activeOwner, io = {} }) {
+  const current = (await store.read())?.state;
+  validateReleaseAdmissionState(current);
+  check(current.repository === REPOSITORY && ['publishing', 'recovery'].includes(current.phase) && current.release, 'No owned publication is available for recovery');
+  const { owner, release } = current;
+  check(!requestedOwner || sameOwner(requestedOwner, owner), 'Recovery owner differs from original run/attempt');
+  const bound = validateReleaseRecoveryArtifacts(release.recoveryArtifacts);
+  const expectedNames = [`release-candidate-${owner.runId}-${owner.runAttempt}`, ...[1, 2].map((shard) => `publish-release-pack-${owner.runId}-${owner.runAttempt}-${shard}`)];
+  check(JSON.stringify(bound.map((artifact) => artifact.name).sort()) === JSON.stringify([...expectedNames].sort()), 'Original recovery artifact inventory mismatch');
+  const run = await forge.request(`actions/runs/${owner.runId}/attempts/${owner.runAttempt}`);
+  const workflow = await forge.request(`actions/workflows/${run.workflow_id}`);
+  check(run.id === owner.runId && run.run_attempt === owner.runAttempt && run.repository?.full_name === REPOSITORY && run.head_repository?.full_name === REPOSITORY && run.path === RELEASE_WORKFLOW && workflow.path === RELEASE_WORKFLOW, 'Unverifiable original release run/attempt');
+  if (activeOwner) {
+    check(sameOwner(activeOwner, owner) && current.phase === 'publishing' && run.status === 'in_progress', 'Active publisher must be the exact authorized current run/attempt');
+  } else check(run.status === 'completed', 'Originating release attempt must be completed before recovery');
+  async function refs() {
+    const [main, tag] = await Promise.all([forge.main(), forge.request(`git/ref/tags/v${release.version}`, { missing: true })]);
+    check(main.protected === true && [release.snapshotSha, release.releaseCommitSha].includes(main.commit?.sha), 'Main differs from frozen source or original release');
+    check(tag === null || (tag.object?.type === 'commit' && tag.object.sha === release.releaseCommitSha), 'Release tag differs from original release');
+    return main.commit.sha === release.releaseCommitSha && tag !== null;
+  }
+  await refs();
+  return withReleaseArtifacts({ forge, owner, release, repoRoot, readToken, io,
+    consume: async ({ artifactDir, inventory, verify, restored }) => {
     const push = (dryRun) => (io.push ?? pushReleaseRefs)({ dryRun, baseBranch: 'main', githubToken: writeToken, releaseVersion: release.version,
       spawn: (command, args, options) => spawnSync(command, gitArgs(['-c', `remote.origin.url=https://github.com/${REPOSITORY}.git`, '-c', `remote.origin.pushurl=https://github.com/${REPOSITORY}.git`, '-c', 'push.followTags=false', '-c', 'credential.helper=', ...args]), { ...options, cwd: restored.candidateRoot, env: { ...options.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }),
     });
@@ -178,9 +209,8 @@ export async function recoverRelease({ store, forge, owner: requestedOwner, repo
     check(sameOwner(latest?.owner, owner) && ['publishing', 'recovery'].includes(latest?.phase) && JSON.stringify(latest.release) === JSON.stringify(release), 'Recovery ownership/release changed during resume');
     const controller = io.controller ?? createController({ store, forge, verifyArtifacts: verify });
     return await controller.complete(owner, { artifactDir });
-  } finally {
-    try { await restored?.cleanup(); } finally { rmSync(temporary, { recursive: true, force: true }); }
-  }
+    },
+  });
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
