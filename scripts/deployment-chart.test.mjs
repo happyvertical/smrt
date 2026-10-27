@@ -45,7 +45,7 @@ test('representative fixtures lint strictly and chart packages independently', (
     execFileSync(helm, ['lint', '--strict', chart, '-f', join(chart, 'fixtures', `${app}.json`)]);
   }
   execFileSync(helm, ['package', chart, '--destination', scratch]);
-  assert.ok(readFileSync(join(scratch, 'smrt-app-0.2.0.tgz')).length > 0);
+  assert.ok(readFileSync(join(scratch, 'smrt-app-0.2.1.tgz')).length > 0);
 });
 
 test('current entire pod spec survives maintenance and target starts only after migration', () => {
@@ -121,6 +121,40 @@ test('migration is ordinary retained single-attempt Job with separated credentia
   next.release.attempt = 2;
   assert.ok(resource(documents(next), 'Job', 'fixture-migration-release-001-2'));
 });
+
+test('migration preserves application SMRT settings without overriding release identity', () => {
+  const base = fixture();
+  const settings = ['SMRT_RUNTIME_PROFILE', 'SMRT_APP_ID'].map((name) => ({
+    name,
+    valueFrom: { secretKeyRef: { name: 'migration-config-v1', key: name } },
+  }));
+  base.target.migration.env.push(...settings);
+  for (const phase of ['maintenance', 'stopped', 'migrate', 'verify', 'active']) {
+    const docs = documents(phaseValues(base, phase));
+    if (phase !== 'migrate') continue;
+    const env = resource(docs, 'Job', 'fixture-migration-release-001-1')
+      .spec.template.spec.containers[0].env;
+    assert.deepEqual(env.filter(({ name }) => settings.some((setting) => setting.name === name)), settings);
+    assert.equal(new Set(env.map(({ name }) => name)).size, env.length);
+    for (const [name, value] of Object.entries({
+      SMRT_RELEASE_ID: base.release.id,
+      SMRT_RELEASE_ATTEMPT: String(base.release.attempt),
+      SMRT_APP_NAME: base.app.name,
+      SMRT_APP_ENVIRONMENT: base.app.environment,
+    })) assert.deepEqual(env.find((entry) => entry.name === name), { name, value });
+  }
+});
+
+for (const name of ['SMRT_RELEASE_ID', 'SMRT_RELEASE_ATTEMPT', 'SMRT_APP_NAME',
+  'SMRT_APP_ENVIRONMENT', 'SMRT_UNKNOWN', 'SMRT_APP_IDS', 'SMRT_RUNTIME_PROFILES']) {
+  test(`migration rejects reserved or unrecognized SMRT setting: ${name}`, () => {
+    const base = phaseValues(fixture(), 'migrate');
+    base.target.migration.env.push({ name, valueFrom: {
+      secretKeyRef: { name: 'migration-config-v1', key: name },
+    } });
+    assert.throws(() => render(base), /SMRT_ migration environment names are reserved for release identity/);
+  });
+}
 
 test('entire future inventory and named secret bindings are visible before maintenance', () => {
   const base = fixture();

@@ -3,7 +3,7 @@
 {{- $runtimeImages := dict }}
 {{- $migrationSecrets := dict }}
 {{- range .Values.target.migration.env }}
-{{- if hasPrefix "SMRT_" .name }}{{ fail "SMRT_ migration environment names are reserved for release identity" }}{{ end }}
+{{- if and (hasPrefix "SMRT_" .name) (not (has .name (list "SMRT_RUNTIME_PROFILE" "SMRT_APP_ID"))) }}{{ fail "SMRT_ migration environment names are reserved for release identity" }}{{ end }}
 {{- $_ := set $migrationSecrets .valueFrom.secretKeyRef.name true }}
 {{- end }}
 {{- if hasKey $migrationSecrets .Values.bindings.database.secretName }}{{ fail "database binding must use runtime credentials, not migration credentials" }}{{ end }}

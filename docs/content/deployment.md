@@ -260,3 +260,12 @@ changes mean preflight cannot guarantee future admission. Actual Pod proofs bind
 the rendered account, security and credential/scratch volumes. Adoption requires
 real hardened-container exercise evidence and a separately published 0.2.0 chart;
 this source change does not replace the published 0.1.0 artifact.
+
+
+Chart 0.2.1 fixes migration configuration for wrappers that require
+`SMRT_RUNTIME_PROFILE` and `SMRT_APP_ID`: these exact application settings may
+reference migration Secret keys. The chart still owns `SMRT_RELEASE_ID`,
+`SMRT_RELEASE_ATTEMPT`, `SMRT_APP_NAME` and `SMRT_APP_ENVIRONMENT`; all other
+`SMRT_` migration configuration names remain reserved. Adopting 0.2.1 requires
+a separately published artifact and its verified digest; the published 0.2.0
+artifact is immutable.
