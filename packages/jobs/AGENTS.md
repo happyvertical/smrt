@@ -31,7 +31,7 @@ Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), 
 5. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method
 6. Calls the requested method on the initialized instance
 7. Terminal/retry writes are **conditional** (`WHERE worker_id=? AND status='running'`) so a recovered row is never stomped
-8. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure
+8. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure. A handler error's own hints win (#3308): `error.retryable === false` fails the job terminally; a positive `error.retryAfterMs` (capped at 24 h) is a floor on the strategy's delay
 9. Events: `job:started`, `job:completed`, `job:failed`, `job:retrying`, `runner:started/stopped`
 
 A rejection from `processJob` can never escape the poll loop: the caller attaches `.catch(e => emit('runner:error', e))` and the error path (`handleJobError`) is itself try/caught, so a failure-path write that rejects is surfaced as a `runner:error` event instead of crashing the worker with an unhandled rejection.
