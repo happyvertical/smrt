@@ -6,6 +6,7 @@ import type { HandlerContext } from '@happyvertical/smrt-ingestion/execution';
 import { IngestionService } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it, vi } from 'vitest';
+import { educationIntakeHandlers } from '../ingestion.js';
 import { SubmissionService } from '../submission-service.js';
 import {
   WORKBOOK_MATH_VOCABULARY,
@@ -473,6 +474,412 @@ export function photoIntakeTests(
       expect(visible.attempts[0].revisions.map((r) => r.id)).toContain(
         reviewed.id,
       );
+    } finally {
+      await f.finish();
+    }
+  });
+
+  it('withholds semantic identities through full correction ancestry until exact source publication', async () => {
+    const f = await fixture();
+    try {
+      const photo = await f.as(f.parent, () =>
+        f.service.retainWorkbookPhotoIntake({
+          ...f.parent,
+          itemId: 'private-semantic-source',
+          pages: f.pages,
+        }),
+      );
+      const resolved = await f.as(f.parent, () =>
+        f.service.resolveWorkbookPhotoIntake({
+          ...f.parent,
+          intakeId: photo.id,
+          requestKey: 'work',
+          identification: { kind: 'work', workState: 'completed' },
+        }),
+      );
+      if (!resolved.activity) throw new Error('Missing activity');
+      const activity = resolved.activity;
+      const original = await f.as(f.parent, () =>
+        f.service.captureWorkbookPhotoIntake({
+          ...f.parent,
+          intakeId: photo.id,
+          requestKey: 'capture',
+        }),
+      );
+      const semanticId = 'u:parent-only-printed-task:1';
+      const request = (actor: typeof f.own, submissionId: string) => ({
+        ...actor,
+        activityId: activity.id,
+        submissionId,
+      });
+      const assessmentFor = async (
+        submissionId: string,
+        analysisId: string,
+      ): Promise<WorkbookAssessment> => {
+        const [source] = await f.as(f.parent, () =>
+          f.service.getWorkbookSourceAnchors(request(f.parent, submissionId)),
+        );
+        return {
+          version: 1,
+          feedback: 'Current work only',
+          questions: [
+            {
+              id: semanticId,
+              prompt: 'Current task',
+              answer: '',
+              result: 'unassessed',
+              reason: 'missing_context',
+              feedback: 'Current response needs review',
+              points: null,
+              possiblePoints: null,
+              anchors: [
+                {
+                  assetId: source.assetId,
+                  sha256: source.sha256,
+                  page: 1,
+                  rect: [0, 0, 1, 1],
+                },
+              ],
+              conceptIds: [],
+            },
+          ],
+          provenance: {
+            provider: 'fixture',
+            model: 'fixture',
+            configurationVersion: '1',
+            rubricVersion: '1',
+            inputHash: source.sha256,
+            analysisId,
+          },
+          vocabulary: WORKBOOK_MATH_VOCABULARY,
+        };
+      };
+      const originalAssessment = await assessmentFor(
+        original.submissionId,
+        'private-source-ai',
+      );
+      const ai = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...request(f.parent, original.submissionId),
+          requestKey: 'private-ai',
+          assessment: originalAssessment,
+        }),
+      );
+      expect(
+        await f.as(f.parent, () =>
+          f.service.getWorkbookQuestionIdentity(
+            request(f.parent, original.submissionId),
+          ),
+        ),
+      ).toEqual([{ id: semanticId }]);
+      const redacted = await f.as(f.own, () =>
+        f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+      );
+      expect(redacted.attempts[0].submissionId).toBe(original.submissionId);
+      expect(redacted.attempts[0].revisions).toEqual([]);
+      await f.as(f.own, () =>
+        expect(
+          f.service.recordWorkbookAnalysis({
+            ...request(f.own, original.submissionId),
+            requestKey: 'private-ai',
+            assessment: originalAssessment,
+          }),
+        ).rejects.toThrow(),
+      );
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, original.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
+      const discover = async (submissionId: string) => {
+        const handler = educationIntakeHandlers({
+          submissions: f.service,
+          request: { ...f.own, enrollmentId: activity.enrollmentId },
+          submissionId,
+          workbookActivityId: activity.id,
+        }).find((h) => h.id.endsWith('review-submission'));
+        if (!handler?.discovery?.candidates)
+          throw new Error('Missing discovery');
+        const candidates = handler.discovery.candidates;
+        return f.as(f.own, () =>
+          candidates(
+            '',
+            {
+              db: f.db,
+              scope: { tenantId: f.own.tenantId, actorId: f.own.actorUserId },
+              policy: { requireReview: true },
+            } as unknown as Parameters<typeof candidates>[1],
+            { limit: 100 },
+          ),
+        );
+      };
+      await expect(discover(original.submissionId)).rejects.toThrow();
+      const correction = (
+        actor: typeof f.own,
+        previousSubmissionId: string,
+        key: string,
+      ) =>
+        f.as(actor, () =>
+          f.service.captureWorkbookWork({
+            ...actor,
+            activityId: activity.id,
+            requestKey: key,
+            intakeItemId: key,
+            previousSubmissionId,
+            pages: [
+              {
+                name: 'current.png',
+                mimeType: 'image/png',
+                data: Buffer.from(`current work ${key}`),
+              },
+            ],
+          }),
+        );
+      await expect(
+        correction(f.own, original.submissionId, 'blocked-child-correction'),
+      ).rejects.toThrow();
+      const first = await correction(
+        f.parent,
+        original.submissionId,
+        'trusted-correction-1',
+      );
+      const firstAssessment = await assessmentFor(
+        first.submissionId,
+        'first-correction-ai',
+      );
+      const firstAI = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...request(f.parent, first.submissionId),
+          requestKey: 'first-ai',
+          assessment: firstAssessment,
+        }),
+      );
+      await f.as(f.parent, () =>
+        f.service.releaseWorkbookFeedback({
+          ...request(f.parent, first.submissionId),
+          revisionId: firstAI.id,
+          expectedHeadId: null,
+          requestKey: 'release-other-attempt',
+        }),
+      );
+      const second = await correction(
+        f.parent,
+        first.submissionId,
+        'trusted-correction-2',
+      );
+      const secondAssessment = await assessmentFor(
+        second.submissionId,
+        'second-correction-ai',
+      );
+      const secondAI = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...request(f.parent, second.submissionId),
+          requestKey: 'second-ai',
+          assessment: secondAssessment,
+        }),
+      );
+      await f.as(f.parent, () =>
+        f.service.releaseWorkbookFeedback({
+          ...request(f.parent, second.submissionId),
+          revisionId: secondAI.id,
+          expectedHeadId: null,
+          requestKey: 'release-second-attempt',
+        }),
+      );
+      expect(second.episodeId).toBe(original.episodeId);
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, second.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
+      await expect(discover(second.submissionId)).rejects.toThrow();
+      await expect(
+        correction(f.own, second.submissionId, 'blocked-grandchild-correction'),
+      ).rejects.toThrow();
+      const hidden = await f.as(f.own, () =>
+        f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+      );
+      expect(hidden.attempts.flatMap((a) => a.revisions)).toEqual([]);
+      await f.as(f.own, () =>
+        expect(
+          f.service.recordWorkbookAnalysis({
+            ...request(f.own, second.submissionId),
+            requestKey: 'second-ai',
+            assessment: secondAssessment,
+          }),
+        ).rejects.toThrow(),
+      );
+      await f.as(f.own, () =>
+        expect(
+          f.service.acknowledgeWorkbookFeedbackDelivery({
+            ...request(f.own, second.submissionId),
+            revisionId: secondAI.id,
+            requestKey: 'hidden-delivery',
+          }),
+        ).rejects.toThrow(),
+      );
+      // A matching release on the exact original revision publishes its identity;
+      // already released descendant snapshots then become legitimately readable.
+      await f.as(f.parent, () =>
+        f.service.releaseWorkbookFeedback({
+          ...request(f.parent, original.submissionId),
+          revisionId: ai.id,
+          expectedHeadId: null,
+          requestKey: 'publish-exact-source',
+        }),
+      );
+      expect(
+        await f.as(f.own, () =>
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, original.submissionId),
+          ),
+        ),
+      ).toEqual([{ id: semanticId }]);
+      expect(
+        await f.as(f.own, () =>
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, second.submissionId),
+          ),
+        ),
+      ).toEqual([{ id: semanticId }]);
+      expect((await discover(second.submissionId)).items[0].label).toContain(
+        semanticId,
+      );
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookTimeline({
+              ...f.own,
+              activityId: activity.id,
+            }),
+          )
+        ).attempts
+          .find((a) => a.id === second.id)
+          ?.revisions.map((r) => r.id),
+      ).toContain(secondAI.id);
+      await f.as(f.own, () =>
+        f.service.acknowledgeWorkbookFeedbackDelivery({
+          ...request(f.own, second.submissionId),
+          revisionId: secondAI.id,
+          requestKey: 'visible-delivery',
+        }),
+      );
+      const ownCorrection = await correction(
+        f.own,
+        second.submissionId,
+        'own-current-correction',
+      );
+      expect(ownCorrection).toMatchObject({
+        episodeId: original.episodeId,
+        previousAttemptId: second.id,
+        activityId: activity.id,
+      });
+      expect(
+        await f.as(f.own, () =>
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, ownCorrection.submissionId),
+          ),
+        ),
+      ).toEqual([{ id: semanticId }]);
+      const ownAssessment = await assessmentFor(
+        ownCorrection.submissionId,
+        'own-current-analysis',
+      );
+      const ownAI = await f.as(f.own, () =>
+        f.service.recordWorkbookAnalysis({
+          ...request(f.own, ownCorrection.submissionId),
+          requestKey: 'own-current-analysis',
+          assessment: ownAssessment,
+        }),
+      );
+      expect(ownAI.assessment.questions[0].id).toBe(semanticId);
+      // Any old release is insufficient for a newly selected private head.
+      const privateHead = await f.as(f.parent, () =>
+        f.service.reviewWorkbookAssessment({
+          ...request(f.parent, original.submissionId),
+          revisionId: ai.id,
+          expectedHeadId: null,
+          requestKey: 'private-new-head',
+          assessment: originalAssessment,
+        }),
+      );
+      const later = await f.as(f.parent, () =>
+        f.service.recordWorkbookAnalysis({
+          ...request(f.parent, original.submissionId),
+          requestKey: 'private-later-ai',
+          assessment: {
+            ...originalAssessment,
+            provenance: {
+              ...originalAssessment.provenance,
+              analysisId: 'private-later-ai',
+            },
+          },
+        }),
+      );
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, original.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
+      const after = await f.as(f.own, () =>
+        f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+      );
+      expect(
+        after.attempts
+          .find((a) => a.id === original.id)
+          ?.revisions.map((r) => r.id),
+      ).toEqual([ai.id]);
+      expect(
+        after.attempts
+          .find((a) => a.id === second.id)
+          ?.revisions.map((r) => r.id),
+      ).toContain(secondAI.id);
+      expect(
+        after.attempts.flatMap((a) => a.revisions).map((r) => r.id),
+      ).not.toContain(later.id);
+      await f.as(f.parent, () =>
+        f.service.releaseWorkbookFeedback({
+          ...request(f.parent, original.submissionId),
+          revisionId: privateHead.id,
+          expectedHeadId: privateHead.id,
+          requestKey: 'publish-exact-head',
+        }),
+      );
+      expect(
+        await f.as(f.own, () =>
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, original.submissionId),
+          ),
+        ),
+      ).toEqual([{ id: semanticId }]);
+      // Deliberate corrupt-fixture cycle must not bypass or loop the guard.
+      await f.db.query(
+        'UPDATE workbook_attempts SET previous_attempt_id=? WHERE id=?',
+        [second.id, first.id],
+      );
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionIdentity(
+            request(f.own, second.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookTimeline({
+              ...f.own,
+              activityId: activity.id,
+            }),
+          )
+        ).attempts.find((a) => a.id === second.id)?.revisions,
+      ).toEqual([]);
     } finally {
       await f.finish();
     }

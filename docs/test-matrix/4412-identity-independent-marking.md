@@ -65,3 +65,23 @@ partial unknown feedback, actual offered initial/correction ID guidance, stable
 retry/reordered response, new correction answers and unchanged practice episode;
 missing/duplicate/remapped IDs and same-capture ID/prompt remapping still refuse.
 Root owns real provider synthetic and retained-photo quality acceptance.
+
+## Accepted P1 semantic identity privacy correction
+
+Finding d9578661a04aa9c55a99634854817a31074fdc0db7d5d7e84969d1c2ca2331f5
+(review-unfiled-4412 round1, b0). Own-learner submit ownership alone cannot expose
+semantic IDs from guardian-origin unreleased source. Direct identity/discovery
+requires the selected source attempt/revision release, not any release. Every
+correction ancestor is scoped to the same learner/tenant/activity/episode; semantic
+IDs from each guardian-origin ancestor must be published by a matching immutable
+ID set on an exact released ancestor revision. Another attempt's release grants
+nothing about hidden ancestors. No aliases, rewritten IDs or retroactive row edits.
+
+Shared SQLite/PostgreSQL red/green: redacted timeline supplies IDs but identity API,
+discovery and child correction capture deny hidden source; authorized guardian can
+process; trusted multi-hop correction cannot launder hidden IDs by releasing its
+own revision. Exact original publication permits legitimate own correction and
+history; later private head/reanalysis remains hidden while already published
+historical snapshots stay visible. Corrupt/cyclic ancestry fails closed without a
+lifetime-depth cutoff. Delivery acknowledgment uses the same learner visibility.
+Own-origin feedback/correction behavior and all existing schema/identity guards stay.

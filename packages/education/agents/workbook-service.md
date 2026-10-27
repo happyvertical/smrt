@@ -239,3 +239,27 @@ Historical IDs are correspondence hints, not evidence of current responses.
 Missing IDs, collisions, changed ID sets and same-capture prompt remapping still
 fail closed. The framework never inserts omitted provider IDs or parses prose to
 repair malformed proposals.
+
+### Semantic identity visibility
+
+Question IDs can contain printed task text. Own-learner identity reads and
+operation discovery therefore require release of the **selected exact revision**
+on a guardian-origin source attempt. An unrelated revision or another attempt's
+release is insufficient. Ordinary own-origin IDs remain available for legitimate
+current-work marking and corrections without exposing withheld grades/feedback.
+
+Correction ancestry is checked completely under the same tenant, learner,
+activity and practice episode. Each guardian-origin ancestor must have an exact
+released revision publishing the compatible immutable ID set before a descendant
+can expose those semantic IDs. Matching published ID sets preserve already public
+historical snapshots after a later private head, without aliases or rewritten IDs.
+Missing, corrupt or cyclic ancestry fails closed; there is no depth cutoff that
+silently skips earlier source guards. Current descendant release never grants
+rights to a hidden ancestor.
+
+The same boundary governs child correction capture, timeline payloads and delivery
+acknowledgments, including legacy/trusted-produced descendants. Raw provisional
+revision writes/returns cannot probe or replay guardian-origin private content;
+authorized guardians retain processing/history access, and own-origin correction
+marking remains supported once ancestral source identity is published. Schema,
+ID collision/remapping rules and immutable stored history remain unchanged.

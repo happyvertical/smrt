@@ -801,13 +801,22 @@ export class WorkbookService extends SubmissionService {
         db: service.db,
       });
       let previous: WorkbookAttempt | null = null;
-      if (request.previousSubmissionId)
-        previous = (
-          await service.attempt(
-            { ...request, submissionId: request.previousSubmissionId },
-            'education.learner.submit',
-          )
-        ).attempt;
+      if (request.previousSubmissionId) {
+        const predecessor = await service.attempt(
+          { ...request, submissionId: request.previousSubmissionId },
+          'education.learner.submit',
+        );
+        previous = predecessor.attempt;
+        if (
+          predecessor.learner.userId === request.actorUserId &&
+          !(await service.questionIdentityVisible(
+            request,
+            previous,
+            await service.identityRevision(request, previous),
+          ))
+        )
+          throw new LearnerAuthorizationError();
+      }
       const capture = {
         ...request,
         enrollmentId: row.enrollmentId,
@@ -936,7 +945,10 @@ export class WorkbookService extends SubmissionService {
   async getWorkbookQuestionIdentity(
     request: AttemptRequest,
   ): Promise<{ id: string }[]> {
-    const { attempt } = await this.attempt(request, 'education.learner.submit');
+    const { attempt, learner } = await this.attempt(
+      request,
+      'education.learner.submit',
+    );
     const sourceId = attempt.previousAttemptId ?? String(attempt.id);
     const source = await (
       await WorkbookAttemptCollection.create({ db: this.db })
@@ -949,11 +961,15 @@ export class WorkbookService extends SubmissionService {
       },
       { cache: false },
     );
-    if (!source) throw new LearnerAuthorizationError();
-    const rows = await this.revisions(request, String(source.id));
-    const revision =
-      rows.filter((r) => r.kind === 'guardian').at(-1) ??
-      rows.filter((r) => r.kind === 'ai')[0];
+    if (!source || source.episodeId !== attempt.episodeId)
+      throw new LearnerAuthorizationError();
+    const revision = await this.identityRevision(request, source);
+    if (
+      revision &&
+      learner.userId === request.actorUserId &&
+      !(await this.questionIdentityVisible(request, source, revision))
+    )
+      throw new LearnerAuthorizationError();
     return revision
       ? revisionView(revision).assessment.questions.map((q) => ({
           id: q.id,
@@ -971,6 +987,103 @@ export class WorkbookService extends SubmissionService {
       },
       orderBy: 'recordedAt',
     });
+  }
+  private async identityRevision(
+    request: LearnerRequest,
+    attempt: WorkbookAttempt,
+  ): Promise<WorkbookAssessmentRevision | undefined> {
+    const rows = await this.revisions(request, String(attempt.id));
+    return (
+      rows.filter((r) => r.kind === 'guardian').at(-1) ??
+      rows.filter((r) => r.kind === 'ai')[0]
+    );
+  }
+  /** Call after actor/resource authorization, only for own-learner projections.
+   * Semantic IDs are source content. A descendant release cannot publish a
+   * hidden ancestor; exact published ID sets keep old public snapshots usable. */
+  private async questionIdentityVisible(
+    request: LearnerRequest,
+    attempt: WorkbookAttempt,
+    revision: WorkbookAssessmentRevision | undefined,
+    proposedIds?: readonly string[],
+  ): Promise<boolean> {
+    if (revision && revision.attemptId !== String(attempt.id)) return false;
+    const identity = (row: WorkbookAssessmentRevision) =>
+      JSON.stringify(
+        revisionView(row)
+          .assessment.questions.map((q) => q.id)
+          .sort(),
+      );
+    const ids = revision
+      ? identity(revision)
+      : proposedIds
+        ? JSON.stringify([...proposedIds].sort())
+        : null;
+    const released = async (
+      source: WorkbookAttempt,
+      row: WorkbookAssessmentRevision,
+    ) =>
+      !!(await (
+        await WorkbookFeedbackReleaseCollection.create({ db: this.db })
+      ).get(
+        {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          attemptId: String(source.id),
+          revisionId: String(row.id),
+        },
+        { cache: false },
+      ));
+    const attempts = await WorkbookAttemptCollection.create({ db: this.db });
+    const seen = new Set<string>();
+    let current: WorkbookAttempt | null = attempt;
+    while (current) {
+      if (
+        seen.has(String(current.id)) ||
+        current.tenantId !== request.tenantId ||
+        current.learnerId !== request.learnerId ||
+        current.activityId !== attempt.activityId ||
+        current.episodeId !== attempt.episodeId
+      )
+        return false;
+      seen.add(String(current.id));
+      const photo = await this.workbookPhotoSource(request, {
+        submissionId: current.submissionId,
+      });
+      if (photo.guardianOrigin) {
+        if (current.id === attempt.id) {
+          if (!revision || !(await released(current, revision))) return false;
+        } else {
+          if (ids === null) return false;
+          let published = false;
+          for (const ancestor of await this.revisions(
+            request,
+            String(current.id),
+          )) {
+            if (
+              identity(ancestor) === ids &&
+              (await released(current, ancestor))
+            ) {
+              published = true;
+              break;
+            }
+          }
+          if (!published) return false;
+        }
+      }
+      if (!current.previousAttemptId) return true;
+      current = await attempts.get(
+        {
+          id: current.previousAttemptId,
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          activityId: attempt.activityId,
+        },
+        { cache: false },
+      );
+      if (!current) return false;
+    }
+    return false;
   }
   private async validateAssessment(
     request: AttemptRequest,
@@ -1117,7 +1230,7 @@ export class WorkbookService extends SubmissionService {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.submit');
       await service.serialize(request);
-      const { attempt } = await service.attempt(
+      const { attempt, learner } = await service.attempt(
         request,
         'education.learner.submit',
       );
@@ -1133,6 +1246,18 @@ export class WorkbookService extends SubmissionService {
         })),
       };
       validateWorkbookAssessment(assessment);
+      // This method returns its raw revision to the caller. A learner cannot
+      // use it to probe hidden identities or obtain a new guardian-source body.
+      if (
+        learner.userId === request.actorUserId &&
+        !(await service.questionIdentityVisible(
+          request,
+          attempt,
+          undefined,
+          assessment.questions.map((q) => q.id),
+        ))
+      )
+        throw new LearnerAuthorizationError();
       const aggregate = aggregateWorkbookQuestions(assessment.questions);
       assessment.aggregate = aggregate;
       assessment.feedback = workbookAggregateFeedback(aggregate);
@@ -1351,7 +1476,8 @@ export class WorkbookService extends SubmissionService {
         !revision ||
         ((attempt.reviewRequired || photo.guardianOrigin) &&
           !releases.length) ||
-        (revision.kind !== 'ai' && !releases.length)
+        (revision.kind !== 'ai' && !releases.length) ||
+        !(await service.questionIdentityVisible(request, attempt, revision))
       )
         throw new LearnerAuthorizationError();
       const deliveries = await WorkbookFeedbackDeliveryCollection.create({
@@ -1460,12 +1586,18 @@ export class WorkbookService extends SubmissionService {
       const photo = await this.workbookPhotoSource(request, {
         submissionId: attempt.submissionId,
       });
-      const visible = revisions.filter(
-        (r) =>
+      const visible: WorkbookAssessmentRevision[] = [];
+      for (const revision of revisions) {
+        if (
           !own ||
-          releases.some((rel) => rel.revisionId === r.id) ||
-          (!photo.guardianOrigin && !attempt.reviewRequired && r.kind === 'ai'),
-      );
+          ((releases.some((rel) => rel.revisionId === revision.id) ||
+            (!photo.guardianOrigin &&
+              !attempt.reviewRequired &&
+              revision.kind === 'ai')) &&
+            (await this.questionIdentityVisible(request, attempt, revision)))
+        )
+          visible.push(revision);
+      }
       const deliveries = await (
         await WorkbookFeedbackDeliveryCollection.create({ db: this.db })
       ).list({
