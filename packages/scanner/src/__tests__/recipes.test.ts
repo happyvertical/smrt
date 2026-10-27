@@ -502,6 +502,27 @@ export class B extends SmrtRecipe {
       expect(text).toMatch(/id `shop.dup` is already declared by/);
     });
 
+    it('accepts a hyphenated package prefix and rejects a stray hyphen', async () => {
+      const ok = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'human-resources.people'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+}`);
+      expect(ok).not.toMatch(/must be dotted lowercase segments/);
+      for (const id of [
+        '-hr.people',
+        'human--resources.people',
+        'hr-.people',
+      ]) {
+        const bad = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = '${id}'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+}`);
+        expect(bad).toMatch(/must be dotted lowercase segments/);
+      }
+    });
+
     it('rejects a malformed id', async () => {
       const text = await errorsFor(`
 export class A extends SmrtRecipe {

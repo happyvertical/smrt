@@ -88,8 +88,13 @@ function isCoreSpecifier(source: string): boolean {
   return source === CORE_SPECIFIER || source.startsWith(`${CORE_SPECIFIER}/`);
 }
 
-/** `commerce.sales`: dotted, lowercase, at least two segments. */
-const RECIPE_ID_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z0-9][a-z0-9_-]*)+$/;
+/**
+ * `commerce.sales`: dotted, lowercase, at least two segments. The first
+ * segment is a package short name, so it may be hyphenated
+ * (`human-resources.people`).
+ */
+const RECIPE_ID_PATTERN =
+  /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z0-9][a-z0-9_-]*)+$/;
 const RECIPE_ID_MAX_LENGTH = 128;
 
 const FIELD_OPTION_KEYS = new Set([
