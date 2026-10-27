@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { Cookbook } from '@happyvertical/smrt-types';
 
 export const COOKBOOK_CONFIG_FILE = 'smrt.cookbook.json';
@@ -51,6 +51,22 @@ const LOCKFILES = [
   'bun.lock',
   'bun.lockb',
 ] as const;
+
+/**
+ * The template repository's own metadata, at its root (#4239). It names the
+ * template's tracker, forge, memory bank and CI, so a coding agent in the new
+ * project would file and claim work against the template repository.
+ */
+const TEMPLATE_REPOSITORY_FILES = [
+  '.agents',
+  '.github',
+  'AGENTS.md',
+  'CLAUDE.md',
+  'renovate.json',
+] as const;
+
+const isTemplateRepositoryFile = (path: string): boolean =>
+  (TEMPLATE_REPOSITORY_FILES as readonly string[]).includes(path.split('/')[0]);
 
 interface PackageJson {
   name?: string;
@@ -101,6 +117,8 @@ export interface ApplyPlan {
   repinnedDependencies: Record<string, { from: string; to: string }>;
   /** Template lockfiles dropped because they resolve the replaced pins. */
   removedLockfiles: string[];
+  /** Template repository metadata not copied into the new project (#4239). */
+  skippedTemplateFiles: string[];
   config: 'create' | 'update' | 'unchanged';
 }
 
@@ -414,12 +432,17 @@ function copyTemplate(template: AcquiredTemplate, targetDir: string): void {
   if (!template.files) {
     cpSync(template.root, targetDir, {
       recursive: true,
-      filter: (src) => !skip(basename(src)) && refuseLink(src),
+      filter: (src) =>
+        !skip(basename(src)) &&
+        !isTemplateRepositoryFile(
+          relative(template.root, src).split(sep).join('/'),
+        ) &&
+        refuseLink(src),
     });
     return;
   }
   for (const file of template.files) {
-    if (file.split('/').some(skip)) continue;
+    if (file.split('/').some(skip) || isTemplateRepositoryFile(file)) continue;
     const from = join(template.root, file);
     refuseLink(from);
     const to = join(targetDir, file);
@@ -497,6 +520,15 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
         smrtVersion,
       ));
     }
+    const skippedTemplateFiles =
+      mode === 'new'
+        ? TEMPLATE_REPOSITORY_FILES.filter((name) => {
+            const { root, files } = template as AcquiredTemplate;
+            return files
+              ? files.some((file) => file.split('/')[0] === name)
+              : existsSync(join(root, name));
+          })
+        : [];
     // The template's lockfile resolves the ranges just replaced; keeping it
     // would let the install (or a later frozen one) restore them.
     // What the new project receives from the template: a local git
@@ -557,6 +589,7 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       smrtVersion,
       repinnedDependencies,
       removedLockfiles,
+      skippedTemplateFiles,
       config,
     };
 
