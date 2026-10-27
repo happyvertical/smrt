@@ -29,6 +29,7 @@ import type {
   ReportAggregateFn,
   ReportDefinition,
   ReportFieldDefinition,
+  ReportJoinDefinition,
   ReportRefreshConfig,
   ReportTimeBucketUnit,
 } from './types.js';
@@ -79,6 +80,13 @@ export interface ReportColumnDescriptor
   bucket?: ReportTimeBucketUnit;
   aggregate?: ReportAggregateFn;
   distinct?: boolean;
+  /**
+   * A canonical rendering of what the column computes beyond a plain source
+   * column: its row expression and filter, and the joins it reads. It exists
+   * so a changed definition changes the report fingerprint; consumers treat it
+   * as opaque.
+   */
+  semantics?: string;
 }
 
 export interface ReportRefreshDescriptor {
@@ -451,6 +459,49 @@ function queryType(type: string | undefined): DataQueryFieldDescriptor['type'] {
 }
 
 /** `alias.fieldName` as `alias.field_name`; a bare name as its column. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object)
+      .filter((key) => object[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(object[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/** What a column computes beyond a plain source column, for the fingerprint. */
+function columnSemantics(
+  field: ReportFieldDefinition,
+  joins: readonly ReportJoinDefinition[],
+): string | undefined {
+  const report = field.report;
+  if (!report) return undefined;
+  const expr =
+    report.kind === 'aggregate' || report.kind === 'group'
+      ? report.expr
+      : undefined;
+  const filter = report.kind === 'aggregate' ? report.filter : undefined;
+  const text = canonical([expr, filter]);
+  const aliases = new Set(
+    [...text.matchAll(/"col":"([a-z][a-z0-9_]*)\./g)].map((match) => match[1]),
+  );
+  const own =
+    report.kind === 'group'
+      ? report.sourceColumn
+      : report.kind === 'bucket'
+        ? report.sourceColumn
+        : report.column;
+  if (own?.includes('.')) aliases.add(own.split('.')[0]);
+  const used = joins
+    .filter((join) => aliases.has(join.alias))
+    .map((join) => ({ ...join }));
+  if (!expr && !filter && used.length === 0) return undefined;
+  return canonical({ expr, filter, joins: used });
+}
+
 function columnRef(ref: string): string {
   return ref.split('.').map(toSnakeCase).join('.');
 }
@@ -468,6 +519,7 @@ function isColumnBackedField(field: RegistryField | undefined): boolean {
 function reportColumn(
   field: ReportFieldDefinition,
   registryField: RegistryField | undefined,
+  joins: readonly ReportJoinDefinition[] = [],
 ): ReportColumnDescriptor | undefined {
   const policy = fieldPolicy(registryField);
   // A descriptor is an exposure boundary. Without a principal/permission
@@ -530,6 +582,8 @@ function reportColumn(
       : {}),
     ...descriptorMetadata(registryField),
   };
+  const semantics = columnSemantics(field, joins);
+  if (semantics) base.semantics = semantics;
   return base;
 }
 
@@ -931,7 +985,9 @@ export async function buildReportAdapterDescriptor(
   const columns = [
     identityColumn(),
     ...definition.fields
-      .map((field) => reportColumn(field, fields.get(field.fieldName)))
+      .map((field) =>
+        reportColumn(field, fields.get(field.fieldName), definition.joins),
+      )
       .filter((field): field is ReportColumnDescriptor => Boolean(field)),
   ].sort((left, right) => left.id.localeCompare(right.id));
   const schema: DataQuerySchema = {

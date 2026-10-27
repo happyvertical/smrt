@@ -427,6 +427,9 @@ export function reportDefinitionFingerprint(
       bucket: column.bucket ?? null,
       aggregate: column.aggregate ?? null,
       distinct: column.distinct ?? null,
+      // Only present when set, so reports without joins or expressions keep
+      // the fingerprint their stored views were bound to.
+      ...(column.semantics ? { semantics: column.semantics } : {}),
     })),
     schema: descriptor.schema,
   };

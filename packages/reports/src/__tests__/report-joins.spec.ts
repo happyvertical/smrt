@@ -14,6 +14,7 @@ import {
 import { buildReportDefinition, compileReportDefinition } from '../compiler.js';
 import { refreshReport } from '../refresh.js';
 import { SmrtReport } from '../report.js';
+import { reportDefinitionFingerprint } from '../views.js';
 
 class JoinWorkOrder extends SmrtObject {}
 class JoinSegment extends SmrtObject {}
@@ -615,6 +616,22 @@ describe('report joins and row expressions (#3903)', () => {
       kind: 'aggregate',
       aggregate: 'count',
     });
+  });
+
+  it('binds the definition fingerprint to expressions, filters and joins', async () => {
+    const descriptor = await buildReportAdapterDescriptor(JoinLabourReport);
+    const column = (id: string) => descriptor.columns.find((c) => c.id === id);
+    expect(column('halted_segments')?.semantics).toContain('"halted"');
+    expect(column('work_title')?.semantics).toContain('"join_work_orders"');
+    // A plain source column carries nothing extra, so existing fingerprints hold.
+    expect(column('work_ref_id')?.semantics).toBeUndefined();
+
+    const before = reportDefinitionFingerprint(descriptor);
+    const changed = structuredClone(descriptor);
+    const halted = changed.columns.find((c) => c.id === 'halted_segments');
+    if (halted) halted.semantics = halted.semantics?.replace('true', 'false');
+    expect(reportDefinitionFingerprint(changed)).not.toBe(before);
+    expect(reportDefinitionFingerprint(descriptor)).toBe(before);
   });
 });
 

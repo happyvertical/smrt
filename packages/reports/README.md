@@ -125,6 +125,7 @@ class LabourByWorkOrder extends SmrtReport {
   job) is run as a rebuild. List the joined models in `refresh.onChange` to
   rebuild when they change. Rows whose tenant is `NULL` (the global slice) do not
   match tenant-scoped related rows, because `NULL = NULL` is not true in SQL.
+- **Saved views and snapshots notice definition changes.** A column's expression, filter and the joins it reads are part of its descriptor (`semantics`) and so of the report definition fingerprint; changing one invalidates stored views and export snapshots. Reports without joins or expressions keep their existing fingerprints.
 - **No drilldown by joined or computed keys.** A row grouped by a joined column or
   a computed value cannot be bound back to source rows by a source column, so
   `buildReportDrilldownQuery()` refuses such reports.
