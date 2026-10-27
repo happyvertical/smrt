@@ -977,6 +977,34 @@ export class WorkbookService extends SubmissionService {
         }))
       : [];
   }
+  /** Canonical transcriptions only for this exact capture, never its predecessor.
+   * A correction without its own revision receives IDs only. Both paths retain
+   * the same source/revision and full ancestry visibility checks as identity. */
+  async getWorkbookQuestionContext(
+    request: AttemptRequest,
+  ): Promise<
+    | { kind: 'same_capture'; questions: { id: string; prompt: string }[] }
+    | { kind: 'identity_only'; questions: { id: string }[] }
+  > {
+    const ids = await this.getWorkbookQuestionIdentity(request);
+    const { attempt, learner } = await this.attempt(
+      request,
+      'education.learner.submit',
+    );
+    const revision = await this.identityRevision(request, attempt);
+    if (!revision) return { kind: 'identity_only', questions: ids };
+    if (
+      learner.userId === request.actorUserId &&
+      !(await this.questionIdentityVisible(request, attempt, revision))
+    )
+      throw new LearnerAuthorizationError();
+    return {
+      kind: 'same_capture',
+      questions: revisionView(revision).assessment.questions.map(
+        ({ id, prompt }) => ({ id, prompt }),
+      ),
+    };
+  }
   private async revisions(request: LearnerRequest, attemptId: string) {
     return (
       await WorkbookAssessmentRevisionCollection.create({ db: this.db })

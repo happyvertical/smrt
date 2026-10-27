@@ -5,6 +5,7 @@ import type { ExtractionResult } from './extraction-types.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type { GenerationOutput } from './proposal-dto.js';
 import {
+  candidateContext,
   dedupeGeneratedLists,
   describeSchemaErrors,
   missingRequiredFields,
@@ -971,4 +972,67 @@ describe('mismatched missingFields regression (#4284 QA)', () => {
       removed: declared.filter((field) => field !== 'vendorId').length,
     });
   });
+});
+
+describe('bounded descriptive candidate context', () => {
+  it('copies JSON without changing text, including valid emoji, and bounds serialized bytes', () => {
+    const value = {
+      questions: [{ id: 'q1', prompt: 'Printed task 😀' }],
+      page: null,
+    };
+    expect(candidateContext(value, 1000)).toEqual(value);
+    expect(candidateContext(value, 1000)).not.toBe(value);
+    expect(() => candidateContext(value, 10)).toThrow('candidate context');
+  });
+  it.each([
+    undefined,
+    [],
+    'text',
+    { value: undefined },
+    { value: Number.NaN },
+    { value: () => 1 },
+    { value: new Date() },
+    { value: '\u0000' },
+    { value: '\ud800' },
+    { ['\u0000']: 'value' },
+  ])('refuses non-JSON or database-unsafe data %#', (value) => {
+    expect(() => candidateContext(value, 1000)).toThrow('candidate context');
+  });
+  it('refuses cycles, excessive depth, sparse arrays and getters', () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    let deep: Record<string, unknown> = {};
+    for (let i = 0; i < 40; i++) deep = { deep };
+    for (const value of [
+      cycle,
+      deep,
+      { values: Array(2) },
+      {
+        get value() {
+          throw new Error('getter ran');
+        },
+      },
+    ])
+      expect(() => candidateContext(value, 10000)).toThrow('candidate context');
+  });
+});
+
+it('rejects executable or lossy array properties before invoking them', () => {
+  const hook = () => {
+    throw new Error('must not execute');
+  };
+  const toJSON: unknown[] = [];
+  Object.defineProperty(toJSON, 'toJSON', { value: hook });
+  const getter: unknown[] = [0];
+  Object.defineProperty(getter, '0', { enumerable: true, get: hook });
+  const symbol: unknown[] = [];
+  Object.defineProperty(symbol, Symbol('secret'), { value: 1 });
+  const inherited: unknown[] = [];
+  Object.setPrototypeOf(inherited, { toJSON: hook });
+  const extra: unknown[] = [];
+  Object.defineProperty(extra, 'extra', { value: 1 });
+  for (const values of [toJSON, getter, symbol, inherited, extra])
+    expect(() => candidateContext({ values }, 1000)).toThrow(
+      'candidate context',
+    );
 });

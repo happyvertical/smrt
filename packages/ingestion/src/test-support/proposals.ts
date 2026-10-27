@@ -6850,6 +6850,55 @@ export function proposalSuite(
       expect(prompt).not.toContain('foreign-secret');
       expect(prompt).not.toContain('confidential-secret');
     });
+    it('binds bounded candidate context without inventing candidate alternatives', async () => {
+      const permitted = await document('Context target');
+      let data = { questions: [{ id: 'q1', prompt: 'x'.repeat(1500) }] };
+      handlers[1].discovery!.candidates = async () => ({
+        items: [
+          {
+            model: DOCUMENT,
+            id: String(permitted.id),
+            revision: permitted.updated_at!.toISOString(),
+            label: 'Context target',
+            context: data,
+          },
+        ],
+        hasMore: false,
+      });
+      const input = await source();
+      const find = () =>
+        service.findCandidates({
+          itemId: input.itemId,
+          handlerId: ATTACH,
+          handlerVersion: '1',
+          query: '',
+        });
+      const first = await find();
+      expect(first.items).toHaveLength(1);
+      expect(first.items[0].context).toEqual(data);
+      const key = first.items[0].key;
+      data = { questions: [{ id: 'q1', prompt: 'different' }] };
+      expect((await find()).items[0].key).not.toBe(key);
+      chooseCreate();
+      const pending = await generation(input);
+      await service.generateProposals(pending.lease);
+      const sent = calls.mock.calls[0][0];
+      const offered = sent.offered.find(
+        (entry: { handler: { id: string } }) => entry.handler.id === ATTACH,
+      )!;
+      expect(offered.candidates).toHaveLength(1);
+      expect(offered.candidates[0].context).toEqual(data);
+      expect(JSON.stringify(sent)).toContain('untrusted descriptive data');
+      expect(
+        (await output(pending.lease)).offered.find(
+          (entry) => entry.handler.id === ATTACH,
+        )?.candidates[0].context,
+      ).toEqual(data);
+      data = {
+        questions: [{ id: 'q1', prompt: 'x'.repeat(limits.maxInputBytes + 1) }],
+      };
+      await expect(find()).rejects.toThrow('candidate context');
+    });
     it('denies callback-injected foreign targets before ranking/model input', async () => {
       const foreign = await document('secret-label', randomUUID());
       handlers[1].discovery!.candidates = async () => ({
@@ -6859,6 +6908,7 @@ export function proposalSuite(
             id: String(foreign.id),
             revision: foreign.updated_at!.toISOString(),
             label: 'secret-label',
+            context: { private: 'secret-context' },
           },
         ],
         hasMore: false,
@@ -6869,6 +6919,7 @@ export function proposalSuite(
         [],
       );
       expect(JSON.stringify(calls.mock.calls)).not.toContain('secret-label');
+      expect(JSON.stringify(calls.mock.calls)).not.toContain('secret-context');
     });
     it('marks candidate truncation as explicit needs review', async () => {
       await document('One');

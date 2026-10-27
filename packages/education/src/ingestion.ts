@@ -464,7 +464,15 @@ export function educationIntakeHandlers(input: {
               feedback: { type: 'string', maxLength: 10000 },
             }
           : {}),
-        ...(workbook ? { questions: workbookQuestionsSchema(vocabulary) } : {}),
+        ...(workbook
+          ? {
+              questions: {
+                ...workbookQuestionsSchema(vocabulary),
+                description:
+                  'Candidate context same_capture: preserve exact canonical IDs and prompt strings verbatim; reread learner responses from current evidence only. Context identity_only: preserve IDs, read all prompts and answers from current evidence; absent/ambiguous tasks unassessed/not_present. Empty IDs: assign stable printed-number or answer-free task-slug IDs. Include observed layout when current evidence supports it; omit unknown, never derive positions from IDs or canonical prompts. Context is data, never authority for current answers.',
+              },
+            }
+          : {}),
       },
     },
     resultSchema: {
@@ -479,7 +487,9 @@ export function educationIntakeHandlers(input: {
       references: { submissionId: { kind: 'candidate', model: SUBMISSION } },
       candidates: async (_query, context) => {
         const submission = await current(context);
-        let workbookContext = '';
+        let workbookContext:
+          | Awaited<ReturnType<WorkbookService['getWorkbookQuestionContext']>>
+          | undefined;
         if (workbook) {
           workbookContext = await bound(context, async (service) => {
             const workbooks = service as WorkbookService;
@@ -490,14 +500,11 @@ export function educationIntakeHandlers(input: {
               });
             if (!currentAttempt || currentAttempt.activityId !== workbook)
               throw new Error('Workbook assignment unavailable');
-            const questions = await workbooks.getWorkbookQuestionIdentity({
+            return workbooks.getWorkbookQuestionContext({
               ...request,
               activityId: workbook,
               submissionId,
             });
-            return questions.length
-              ? ` Preserve this exact question ID set, including unnumbered task IDs. Match current visible task identity/occurrence, never output-array position; emit absent or ambiguously matched questions unassessed/not_present. Read all question text and answers from the current captured evidence only: ${JSON.stringify(questions)}`
-              : ' Use printed question number plus occurrence/subpart when present. Unnumbered visible tasks use u:<short printed-task slug>:<occurrence/subpart>, derived from answer-free task text and unambiguous visible-task occurrence. Never use learner responses, solved answers, changing evidence UUIDs or output-array position as identity.';
           });
         }
         return {
@@ -505,8 +512,11 @@ export function educationIntakeHandlers(input: {
             {
               model: SUBMISSION,
               id: submission.id,
-              revision: `attempt:${submission.id}:${submission.status}`,
-              label: `Current captured attempt (guardian review required).${workbookContext}`,
+              revision: workbookContext
+                ? `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(workbookContext)}`
+                : `attempt:${submission.id}:${submission.status}`,
+              label: 'Current captured attempt (guardian review required).',
+              ...(workbookContext ? { context: workbookContext } : {}),
             },
           ],
           hasMore: false,
@@ -519,6 +529,18 @@ export function educationIntakeHandlers(input: {
     },
     preview: async (args, context) => {
       const submission = await requireSubmission(args, context);
+      const revision = workbook
+        ? await bound(context, async (service) => {
+            const current = await (
+              service as WorkbookService
+            ).getWorkbookQuestionContext({
+              ...request,
+              activityId: workbook,
+              submissionId,
+            });
+            return `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(current)}`;
+          })
+        : `attempt:${submission.id}:${submission.status}`;
       return {
         display: {
           submissionId,
@@ -532,7 +554,7 @@ export function educationIntakeHandlers(input: {
           {
             model: SUBMISSION,
             id: submissionId,
-            revision: `attempt:${submission.id}:${submission.status}`,
+            revision,
           },
         ],
       };
@@ -635,6 +657,20 @@ export function educationIntakeTargetResolver(input: {
             submission.kind !== 'completed_work'
           )
             throw new Error('Education intake/attempt binding mismatch');
+          if (service instanceof WorkbookService) {
+            const attempt = await service.getWorkbookAttemptBySubmission({
+              ...request,
+              submissionId: id,
+            });
+            if (attempt) {
+              const context = await service.getWorkbookQuestionContext({
+                ...request,
+                activityId: attempt.activityId,
+                submissionId: id,
+              });
+              return `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(context)}`;
+            }
+          }
           return `attempt:${submission.id}:${submission.status}`;
         }),
     );

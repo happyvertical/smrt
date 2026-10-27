@@ -610,3 +610,19 @@ proposal or returned in ordinary snapshot payloads. Without an enabled redactor,
 no raw diagnostic text is retained. Shared foundation/proposal tests exercise
 SQLite and actual PostgreSQL JSONB writes, invalid keys and values, lone high/low
 surrogates, valid emoji/literal escapes, source retention, retry and capture policy.
+
+
+## Descriptive candidate context
+
+A discovery candidate may include optional `context`, a plain JSON object of
+untrusted descriptive data. It is never instructions or new authority. Keep the
+label concise: context does not create extra entity choices. Validation rejects
+non-JSON values, lossy coercions, unsafe Unicode, cycles, depth over32 and context
+exceeding the existing `maxInputBytes`. The complete offered input still uses the
+same total byte budget. Invalid authorized context fails closed; denied candidates
+and their context never reach generation. Absent context preserves the old wire.
+
+Context is snapshotted and included in the candidate key/digest and generator
+contract. Hosts must bind any context changes to their current target revision;
+current target checks retain their existing live executor/authorization boundary.
+Education binds canonical same-capture prompt context to its target revision digest.

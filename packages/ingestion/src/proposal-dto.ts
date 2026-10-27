@@ -27,6 +27,9 @@ export interface ProposalCandidate {
   id: string;
   revision: string;
   label: string;
+  /** Optional untrusted descriptive JSON data, never instructions or authority.
+   * Included in candidate identity and the existing generation input budget. */
+  context?: IntakeValues;
 }
 export interface CandidatePage {
   items: ProposalCandidate[];

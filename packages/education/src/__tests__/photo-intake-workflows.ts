@@ -593,6 +593,22 @@ export function photoIntakeTests(
           ),
         ).rejects.toThrow(),
       );
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionContext(
+            request(f.own, original.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.getWorkbookQuestionContext(
+              request(f.parent, original.submissionId),
+            ),
+          )
+        ).kind,
+      ).toBe('same_capture');
       const discover = async (submissionId: string) => {
         const handler = educationIntakeHandlers({
           submissions: f.service,
@@ -722,6 +738,13 @@ export function photoIntakeTests(
           }),
         ).rejects.toThrow(),
       );
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionContext(
+            request(f.own, second.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
       // A matching release on the exact original revision publishes its identity;
       // already released descendant snapshots then become legitimately readable.
       await f.as(f.parent, () =>
@@ -746,9 +769,18 @@ export function photoIntakeTests(
           ),
         ),
       ).toEqual([{ id: semanticId }]);
-      expect((await discover(second.submissionId)).items[0].label).toContain(
-        semanticId,
-      );
+      expect(
+        (
+          await f.as(f.own, () =>
+            f.service.getWorkbookQuestionContext(
+              request(f.own, original.submissionId),
+            ),
+          )
+        ).kind,
+      ).toBe('same_capture');
+      expect(
+        JSON.stringify((await discover(second.submissionId)).items[0].context),
+      ).toContain(semanticId);
       expect(
         (
           await f.as(f.own, () =>
@@ -827,6 +859,14 @@ export function photoIntakeTests(
           ),
         ).rejects.toThrow(),
       );
+      await f.as(f.own, () =>
+        expect(
+          f.service.getWorkbookQuestionContext(
+            request(f.own, original.submissionId),
+          ),
+        ).rejects.toThrow(),
+      );
+      await expect(discover(original.submissionId)).rejects.toThrow();
       const after = await f.as(f.own, () =>
         f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
       );

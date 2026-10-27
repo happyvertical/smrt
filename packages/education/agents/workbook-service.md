@@ -311,3 +311,16 @@ and then calls the strict owner normalizer. Within existing transport/JSON resou
 limits, wrong types, unknown versions and conflicting metadata are omitted with
 only the safe marker, while answers retain their normal strict validation. Layout
 never establishes a question ID, a source authorization or a verified region.
+
+
+### Same-capture reread context
+
+`getWorkbookQuestionContext` returns authorized canonical `{id,prompt}` only
+from the exact current attempt's identity revision. Generation preserves those
+strings verbatim for the existing strict same-capture prompt invariant, while
+rereading learner responses and any observed layout from current evidence. This
+context is not an answer key or authority for answers. A correction without its
+own revision receives predecessor IDs only; predecessor prompts are never copied.
+Exact source/revision and full correction-ancestry visibility apply to both paths,
+including own-learner reads. No historical rows are rewritten and absent layout
+remains valid. `getWorkbookQuestionIdentity` remains the IDs-only public API.

@@ -1244,11 +1244,11 @@ export function workbookContractTests(
             { limit: 100 },
           ),
         );
-        return { handler, label: candidates.items[0].label };
+        return { handler, label: JSON.stringify(candidates.items[0].context) };
       };
       const initial = await offered(f.attempt.submissionId);
-      expect(initial.label.toLowerCase()).toContain('unnumbered');
-      expect(initial.label).toContain('u:');
+      expect(initial.label).toContain('identity_only');
+      expect(initial.label).toContain('"questions":[]');
       expect(initial.handler.description.toLowerCase()).toContain('unnumbered');
       expect(initial.handler.description).toContain('output-array position');
       const base = f.assessment.questions[0];
@@ -1359,7 +1359,7 @@ export function workbookContractTests(
       expect(correction.episodeId).toBe(f.attempt.episodeId);
       const known = await offered(correction.submissionId);
       expect(known.label).toContain('u:match-seventy-five-cents:1');
-      expect(known.label).toContain('exact question ID set');
+      expect(known.label).toContain('identity_only');
       expect(known.label).not.toContain('Visible line reaches145c');
       expect(known.label).not.toContain('8+7');
       const [source] = await f.as(f.own, () =>
@@ -1457,6 +1457,26 @@ export function workbookContractTests(
           assessment: original,
         }),
       );
+      const reread = await f.as(f.own, () =>
+        f.service.getWorkbookQuestionContext({ ...f.request, ...f.own }),
+      );
+      expect(reread).toEqual({
+        kind: 'same_capture',
+        questions: original.questions.map(({ id, prompt }) => ({ id, prompt })),
+      });
+      for (const override of [
+        { learnerId: String(f.sibling.id) },
+        { tenantId: String(f.foreign.tenantId) },
+      ])
+        await f.as(f.own, () =>
+          expect(
+            f.service.getWorkbookQuestionContext({
+              ...f.request,
+              ...f.own,
+              ...override,
+            }),
+          ).rejects.toThrow(),
+        );
       const correction = await f.as(f.own, () =>
         f.service.captureWorkbookWork({
           ...f.capture,
@@ -1473,6 +1493,11 @@ export function workbookContractTests(
         f.service.getWorkbookQuestionIdentity({ ...request, ...f.own }),
       );
       expect(ids).toEqual([{ id: 'p7:q1' }, { id: 'p7:q2' }]);
+      expect(
+        await f.as(f.own, () =>
+          f.service.getWorkbookQuestionContext({ ...request, ...f.own }),
+        ),
+      ).toEqual({ kind: 'identity_only', questions: ids });
       const handler = educationIntakeHandlers({
         submissions: f.service,
         request: { ...f.own, enrollmentId: f.activity.enrollmentId },
@@ -1492,11 +1517,39 @@ export function workbookContractTests(
           { limit: 100 },
         ),
       );
-      const label = candidates.items[0].label;
+      const label = JSON.stringify(candidates.items[0].context);
       expect(label).toContain('p7:q1');
       expect(label).not.toContain('7 - 4');
       expect(label).not.toContain('circle');
       expect(handler.description).toContain('current captured evidence');
+      const rereadHandler = educationIntakeHandlers({
+        submissions: f.service,
+        request: { ...f.own, enrollmentId: f.activity.enrollmentId },
+        submissionId: f.attempt.submissionId,
+        workbookActivityId: f.activity.id,
+      }).find((h) => h.id.endsWith('review-submission'))!;
+      const sameCaptureCandidates = await f.as(f.own, () =>
+        rereadHandler.discovery!.candidates!(
+          '',
+          {
+            db: f.db,
+            scope: { tenantId: f.own.tenantId, actorId: f.own.actorUserId },
+            policy: { requireReview: true },
+          } as unknown as Parameters<
+            NonNullable<
+              NonNullable<typeof rereadHandler.discovery>['candidates']
+            >
+          >[1],
+          { limit: 100 },
+        ),
+      );
+      expect(sameCaptureCandidates.items[0].context).toEqual(reread);
+      expect(JSON.stringify(rereadHandler.argsSchema)).toContain(
+        'preserve exact canonical IDs and prompt strings verbatim',
+      );
+      expect(JSON.stringify(rereadHandler.argsSchema)).toContain(
+        'never derive positions',
+      );
       const sources = await f.as(f.parent, () =>
         f.service.getWorkbookSourceAnchors(request),
       );
@@ -1550,6 +1603,17 @@ export function workbookContractTests(
         '3',
       ]);
       expect((await record(corrected, 'current-answers')).id).toBe(retained.id);
+      expect(
+        await f.as(f.own, () =>
+          f.service.getWorkbookQuestionContext({ ...request, ...f.own }),
+        ),
+      ).toEqual({
+        kind: 'same_capture',
+        questions: corrected.questions.map(({ id, prompt }) => ({
+          id,
+          prompt,
+        })),
+      });
       await expect(
         record(
           {
@@ -2527,6 +2591,18 @@ export function workbookContractTests(
           requestKey: 'retention-release',
         });
         expect(reviewed.assessment.layout).toEqual(importedBody?.layout);
+        // Legacy same-capture prompts are authoritative only for transcription;
+        // a new interpretation appends without changing the old assessment.
+        expect(
+          await f.service.getWorkbookQuestionContext({
+            ...request,
+            activityId: activity.id,
+            submissionId: submission.id,
+          }),
+        ).toEqual({
+          kind: 'same_capture',
+          questions: [{ id: 'q1', prompt: '2 + 3' }],
+        });
         // Invalid advisory layout must not cause generic schema rejection or lose marks.
         args.layout = 'malformed optional layout';
         await generate();
