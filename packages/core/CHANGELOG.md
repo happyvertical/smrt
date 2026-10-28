@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.36
+
+### Patch Changes
+
+- ### Features
+  
+  - reconcile disputes with verified checkout ownership (#4423) (commerce)
+  
+  ### Other Changes
+  
+  - docs: describe business objects and generated interfaces (#4434) (core)
+- @happyvertical/smrt-config@0.57.36
+  - @happyvertical/smrt-scanner@0.57.36
+  - @happyvertical/smrt-types@0.57.36
+
 ## 0.57.35
 
 ### Patch Changes
