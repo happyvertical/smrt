@@ -1291,12 +1291,7 @@ export function createSmrtCollection<TData extends object>(
     // `subscribeChanges` exactly — projecting to plain DTOs so the engine's
     // virtual props never cross the seam.
     snapshot: () => listOrderedRows(),
-    subscribe: (callback) => {
-      const subscription = collection.subscribeChanges((changes: unknown) =>
-        callback(projectChanges(changes)),
-      );
-      return { unsubscribe: () => subscription.unsubscribe() };
-    },
+    subscribe: (callback) => subscribeWithListOrder(callback),
   };
 
   // contributeCacheKey (#1755): fold each capability's returned segments into
@@ -1612,6 +1607,50 @@ export function createSmrtCollection<TData extends object>(
     });
   }
 
+  // Engine row changes do not cover a revalidation that returns the same rows
+  // in a different order (the adapter only writes rows that changed), yet
+  // `toArray` follows that order. Watch the cached list result and notify
+  // subscribers (and so persistence flush) when the relative order of rows
+  // present both before and after differs. An empty payload marks a pure
+  // reorder; adds/removes are already reported by the engine.
+  function subscribeWithListOrder(
+    callback: (changes: unknown) => void,
+  ): SmrtWebSubscription {
+    const idsOf = (): string[] => {
+      const listed = queryClient.getQueryData<Row[]>(queryKey);
+      return Array.isArray(listed)
+        ? listed.map((row) => String((row as Record<string, unknown>)[idField]))
+        : [];
+    };
+    let lastIds = idsOf();
+    const subscription = collection.subscribeChanges((changes: unknown) =>
+      callback(projectChanges(changes)),
+    );
+    const unwatch = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated') return;
+      if (JSON.stringify(event.query.queryKey) !== JSON.stringify(queryKey)) {
+        return;
+      }
+      const nextIds = idsOf();
+      const before = new Set(lastIds);
+      const after = new Set(nextIds);
+      const common = (ids: string[], other: Set<string>) =>
+        ids.filter((id) => other.has(id));
+      const prev = common(lastIds, after);
+      const next = common(nextIds, before);
+      lastIds = nextIds;
+      if (prev.length > 1 && prev.some((id, index) => id !== next[index])) {
+        callback(projectChanges([]));
+      }
+    });
+    return {
+      unsubscribe: () => {
+        unwatch();
+        subscription.unsubscribe();
+      },
+    };
+  }
+
   // Wrap the engine collection in the SMRT-owned public surface. The wrapper
   // projects rows to plain DTOs at every read boundary (toArray/get and change
   // payloads) so the engine's virtual props never escape, and confines the
@@ -1670,10 +1709,7 @@ export function createSmrtCollection<TData extends object>(
       }
     },
     subscribeChanges(callback) {
-      const subscription = collection.subscribeChanges((changes: unknown) =>
-        callback(projectChanges(changes)),
-      );
-      return { unsubscribe: () => subscription.unsubscribe() };
+      return subscribeWithListOrder(callback);
     },
     insert(row) {
       return collection.insert(row) as unknown as SmrtWebTransaction;

@@ -6,7 +6,7 @@
  * client-data engine collection, transactions, live state — is real.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createDefinitionFetchers,
   createSmrtCollection,
@@ -546,6 +546,35 @@ describe('hydration seeding (#1761)', () => {
       'local-1',
     ]);
 
+    await collection.cleanup();
+  });
+
+  it('notifies subscribers when a revalidation only reorders identical rows', async () => {
+    const scripted = makeScriptedFetchers([
+      { id: 'p3', name: 'third' },
+      { id: 'p1', name: 'first' },
+      { id: 'p2', name: 'second' },
+    ]);
+    const collection = createSmrtCollection(
+      productDefinition('products-list-reorder-only'),
+      {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 0,
+        initialData: [
+          { id: 'p1', name: 'first' },
+          { id: 'p2', name: 'second' },
+          { id: 'p3', name: 'third' },
+        ],
+      },
+    );
+    const notified = vi.fn();
+    const sub = collection.subscribeChanges(notified);
+
+    await collection.preload();
+    await vi.waitFor(() => expect(notified).toHaveBeenCalled());
+    expect(collection.toArray.map((row) => row.id)).toEqual(['p3', 'p1', 'p2']);
+
+    sub.unsubscribe();
     await collection.cleanup();
   });
 
