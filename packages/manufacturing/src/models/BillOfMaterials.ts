@@ -61,7 +61,10 @@ export class BillOfMaterials extends SmrtObject {
    * `@happyvertical/smrt-products`, usually an `Assembly`. Cross-package
    * id, intentionally not a `@foreignKey()`.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The assembly this list of parts is for.',
+  })
   productId: string = '';
 
   /**
@@ -70,7 +73,11 @@ export class BillOfMaterials extends SmrtObject {
    * `version` is an integer and `0` is reserved by convention for unsaved
    * scratch rows.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The revision number, so you can change a list and keep the old one.',
+  })
   version: number = 1;
 
   /**
@@ -78,6 +85,7 @@ export class BillOfMaterials extends SmrtObject {
    * runs. Optional — older BOMs imported from legacy systems may have no
    * effective date on file.
    */
+  @field({ description: 'The day this list starts to be used.' })
   effectiveDate: Date | null = null;
 
   /**
@@ -87,13 +95,17 @@ export class BillOfMaterials extends SmrtObject {
    * Most queries that pick "the BOM to use right now" should filter for
    * `status: 'active'`.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Whether this list is a draft, in use or retired.',
+  })
   status: BomStatus = 'draft';
 
   /**
    * Optional free-form notes shown in admin UIs (revision reason, source
    * document reference, sign-off chain, etc.).
    */
+  @field({ description: 'Anything people making it should know.' })
   notes: string = '';
 
   /**
