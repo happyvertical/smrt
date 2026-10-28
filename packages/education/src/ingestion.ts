@@ -8,6 +8,7 @@ import {
   normalizeObservedImageRegions,
   ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
+import { intakeOriginalEvidence } from './intake-original-evidence.js';
 import { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
 
 import { normalizeWorkbookObservedLayout } from './workbook-layout.js';
@@ -1001,9 +1002,9 @@ export async function preserveWorkbookIntakeAnalysis(input: {
     activityId,
     submissionId,
   });
-  const originals = snapshot.evidence
-    .filter((e) => e.parentEvidenceId === null)
-    .sort((a, b) => a.partId.localeCompare(b.partId));
+  const originals = intakeOriginalEvidence(snapshot.evidence).filter(
+    (e) => e.mediaType !== 'application/json',
+  );
   if (
     originals.length !== sources.length ||
     originals.some((e, i) => e.contentHash !== sources[i].sha256)

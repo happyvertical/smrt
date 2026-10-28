@@ -11,6 +11,7 @@ import {
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import { processEducationAnalysis } from './ingestion.js';
+import { intakeOriginalEvidence } from './intake-original-evidence.js';
 import type { LearnerRequest } from './learner-service.js';
 import type { SubmissionPage } from './submission-service.js';
 import {
@@ -414,9 +415,8 @@ export async function preserveWorkbookPhotoIdentification(input: {
       generation.suggestions.length === 1 &&
       suggestions[0].alternatives.length === 0 &&
       generation.splits.length === 0,
-    sourceHashes: snapshot.evidence
-      .filter((e) => e.parentEvidenceId === null)
-      .sort((a, b) => a.partId.localeCompare(b.partId))
+    sourceHashes: intakeOriginalEvidence(snapshot.evidence)
+      .filter((e) => e.mediaType !== 'application/json')
       .map((e) => e.contentHash),
     provenance: {
       attemptId: snapshot.attemptId,

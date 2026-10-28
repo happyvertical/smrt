@@ -71,7 +71,9 @@ retained immutable originals remain available for such an explicit workflow.
 Source-tree retention includes image/PDF attachments beneath metadata envelopes.
 A supported-media descendant of another supported original (for example a PDF's
 page thumbnail) stays in the evidence graph but is not duplicated as learner
-work. The immutable graph retains only IDs, parent IDs, media types and hashes;
+work. Photo identification and captured-work analysis preservation use this same
+original-selection convention, so retained attachment hashes remain authoritative
+after adoption and retries. The immutable graph retains only IDs, parent IDs, media types and hashes;
 it does not copy email bodies, arbitrary headers or credentials into public
 source metadata. A source image such as an email logo is not automatically
 classified as completed work. Whole-document attribution/classification remains

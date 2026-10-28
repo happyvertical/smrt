@@ -6,6 +6,7 @@ import { AssetStore, createAssetRuntime } from '@happyvertical/smrt-assets';
 import { IngestionService } from '@happyvertical/smrt-ingestion/server';
 import { ProfileRelationshipCollection } from '@happyvertical/smrt-profiles';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { PDFDocument } from 'pdf-lib';
 import { expect, it, vi } from 'vitest';
 import { familyIntakeScopeId } from '../family-intake-contracts.js';
 import {
@@ -19,9 +20,17 @@ import {
 } from '../family-intake-models.js';
 import { FamilyIntakeService } from '../family-intake-service.js';
 import {
+  educationIntakeHandlers,
+  preserveWorkbookIntakeAnalysis,
+} from '../ingestion.js';
+import {
   WORKBOOK_MATH_VOCABULARY,
   type WorkbookAssessment,
 } from '../workbook-contracts.js';
+import {
+  preserveWorkbookPhotoIdentification,
+  workbookPhotoIntakeHandlers,
+} from '../workbook-photo-ingestion.js';
 import {
   WorkbookPhotoAssetCollection,
   WorkbookPhotoIntakeCollection,
@@ -725,6 +734,9 @@ export function familyIntakeTests(
             retainFamilyIntakeReceipt({ ...input, itemId: view.itemId }),
           ).rejects.toThrow();
           allowed = true;
+          const attachmentPdf = await PDFDocument.create();
+          attachmentPdf.addPage([100, 100]);
+          const wrappedPdfBytes = Buffer.from(await attachmentPdf.save());
           const wrappedParts = [
             {
               partId: 'email',
@@ -739,7 +751,7 @@ export function familyIntakeTests(
               parentPartId: 'email',
               mediaType: 'application/pdf',
               filename: 'work.pdf',
-              bytes: Buffer.from('original pdf attachment'),
+              bytes: wrappedPdfBytes,
             },
             {
               partId: 'image',
@@ -798,6 +810,216 @@ export function familyIntakeTests(
             photoIntakeId: null,
             revision: 0,
           });
+          const wrappedSelection = { ...f.parent, intakeId: wrapped.intake.id };
+          await f.service.assignFamilyIntake({
+            ...wrappedSelection,
+            requestKey: 'wrapped-assign',
+            expectedRevision: 0,
+            reason: 'Guardian identifies attachments',
+          });
+          const wrappedAdopted = await f.service.adoptFamilyIntake({
+            ...wrappedSelection,
+            requestKey: 'wrapped-adopt',
+            expectedRevision: 1,
+          });
+          if (!wrappedAdopted.photoIntakeId)
+            throw new Error('Missing wrapped photo');
+          const wrappedPhoto = {
+            ...f.parent,
+            intakeId: wrappedAdopted.photoIntakeId,
+          };
+          const attachmentEvidence = await ingestion.getEvidence(
+            wrapped.intake.itemId,
+          );
+          const photoHandler = workbookPhotoIntakeHandlers({
+            workbooks: f.service,
+            request: f.parent,
+          })[0];
+          const photoProposal = {
+            identification: { kind: 'work', workState: 'completed' },
+            confidence: 'confident',
+            identityEvidence: [],
+            lessonEvidence: '',
+          };
+          let snapshot = {
+            itemId: wrapped.intake.itemId,
+            attemptId: 'wrapped-photo-analysis',
+            revision: 2,
+            inputDigest: 'a'.repeat(64),
+            outputDigest: 'b'.repeat(64),
+            evidenceDigest: 'c'.repeat(64),
+            configuration: { stage: 'interpret' },
+            evidence: attachmentEvidence,
+            result: {
+              status: 'completed',
+              provider: 'fixture',
+              model: 'fixture',
+              output: {
+                proposals: {
+                  version: 1,
+                  outcome: 'proposals',
+                  suggestions: [
+                    {
+                      handlerId: photoHandler.id,
+                      args: photoProposal,
+                      missingFields: [],
+                      alternatives: [],
+                    },
+                  ],
+                  offered: [{ handler: photoHandler }],
+                  splits: [],
+                  provenance: {
+                    generative: { provider: 'fixture', model: 'fixture' },
+                    configurationVersion: '1',
+                    promptVersion: '1',
+                  },
+                },
+              },
+            },
+          };
+          const completed = vi
+            .spyOn(ingestion, 'getCompletedAnalysis')
+            .mockImplementation(
+              async () =>
+                snapshot as unknown as Awaited<
+                  ReturnType<IngestionService['getCompletedAnalysis']>
+                >,
+            );
+          const itemState = vi
+            .spyOn(ingestion, 'getItem')
+            .mockImplementation(
+              async () =>
+                ({ analysisRevision: snapshot.revision }) as Awaited<
+                  ReturnType<IngestionService['getItem']>
+                >,
+            );
+          try {
+            const preservePhoto = {
+              ingestion,
+              scope,
+              workbooks: f.service,
+              request: wrappedPhoto,
+            };
+            const identified =
+              await preserveWorkbookPhotoIdentification(preservePhoto);
+            expect(identified.identification).toEqual(
+              photoProposal.identification,
+            );
+            expect(
+              (await preserveWorkbookPhotoIdentification(preservePhoto)).id,
+            ).toBe(identified.id);
+            expect(identified.originals.map((o) => o.sha256)).toEqual(
+              wrapped.intake.originals.map((o) => o.sha256),
+            );
+            const capture = {
+              ...wrappedPhoto,
+              requestKey: 'wrapped-manual-capture',
+            };
+            const attempt = await f.service.captureWorkbookPhotoIntake(capture);
+            expect(
+              (await f.service.captureWorkbookPhotoIntake(capture)).id,
+            ).toBe(attempt.id);
+            const captured =
+              await f.service.getWorkbookPhotoIntake(wrappedPhoto);
+            if (!captured.activity)
+              throw new Error('Missing wrapped captured activity');
+            const reviewHandler = educationIntakeHandlers({
+              submissions: f.service,
+              request: {
+                ...f.parent,
+                enrollmentId: captured.activity.enrollmentId,
+              },
+              submissionId: attempt.submissionId,
+              workbookActivityId: captured.activity.id,
+            }).find((h) => h.id.endsWith('review-submission'));
+            if (!reviewHandler) throw new Error('Missing review handler');
+            const evidence = attachmentEvidence.find(
+              (e) => e.partId === 'image',
+            );
+            if (!evidence) throw new Error('Missing image attachment');
+            snapshot = {
+              ...snapshot,
+              attemptId: 'wrapped-workbook-analysis',
+              revision: 4,
+              result: {
+                ...snapshot.result,
+                output: {
+                  proposals: {
+                    ...snapshot.result.output.proposals,
+                    suggestions: [
+                      {
+                        handlerId: reviewHandler.id,
+                        args: {
+                          submissionId: attempt.submissionId,
+                          score: 0,
+                          feedback: 'Visible attachment work',
+                          questions: [
+                            {
+                              id: 'q1',
+                              prompt: '2 + 2',
+                              answer: '4',
+                              result: 'correct',
+                              reason: 'none',
+                              feedback: 'Correct response',
+                              points: null,
+                              possiblePoints: null,
+                              anchors: [
+                                {
+                                  evidenceId: evidence.id,
+                                  page: 1,
+                                  rect: [0, 0, 1, 1],
+                                },
+                              ],
+                              conceptIds: ['math.addition'],
+                            },
+                          ],
+                        },
+                        missingFields: [],
+                        alternatives: [],
+                      },
+                    ],
+                    offered: [{ handler: reviewHandler }],
+                  },
+                },
+              },
+            } as unknown as typeof snapshot;
+            const preservation = {
+              ingestion,
+              workbooks: f.service,
+              request: {
+                ...f.parent,
+                enrollmentId: captured.activity.enrollmentId,
+              },
+              activityId: captured.activity.id,
+              submissionId: attempt.submissionId,
+            };
+            const preserved =
+              await preserveWorkbookIntakeAnalysis(preservation);
+            expect(preserved.kind).toBe('preserved');
+            if (preserved.kind !== 'preserved')
+              throw new Error('Missing preserved analysis');
+            expect(await preserveWorkbookIntakeAnalysis(preservation)).toEqual({
+              kind: 'retained',
+              revisionId: preserved.revisionId,
+            });
+            const timeline = await f.service.getWorkbookTimeline({
+              ...f.parent,
+              activityId: captured.activity.id,
+            });
+            expect(timeline.attempts).toHaveLength(1);
+            expect(timeline.attempts[0].revisions).toHaveLength(1);
+            const anchors = await f.service.getWorkbookSourceAnchors({
+              ...f.parent,
+              activityId: captured.activity.id,
+              submissionId: attempt.submissionId,
+            });
+            expect(anchors.map((a) => a.sha256)).toEqual(
+              wrapped.intake.originals.map((o) => o.sha256),
+            );
+          } finally {
+            completed.mockRestore();
+            itemState.mockRestore();
+          }
           const mixed = {
             ...receive,
             deliveryKey: 'mixed-pdf-tiff',

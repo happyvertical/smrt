@@ -10,6 +10,10 @@ import {
   familyIntakeScopeId,
 } from './family-intake-contracts.js';
 import type { FamilyIntakeService } from './family-intake-service.js';
+import {
+  intakeOriginalEvidence,
+  supportedIntakeOriginal,
+} from './intake-original-evidence.js';
 import type { SubmissionPage } from './submission-service.js';
 
 type Input = {
@@ -70,27 +74,8 @@ export async function retainFamilyIntakeReceipt(
       sha256: e.contentHash,
     })),
   };
-  const supported = (type: string) =>
-    ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'].includes(type);
-  const byId = new Map(evidence.map((e) => [e.id, e]));
-  const originalEvidence = evidence
-    .filter((e) => {
-      // A PDF/image's child rendition is provenance, not another work page.
-      // Metadata parents (for example an email envelope) do not hide attachments.
-      let parentId = e.parentEvidenceId;
-      const visited = new Set([e.id]);
-      while (parentId) {
-        if (visited.has(parentId))
-          throw new Error('Invalid family evidence lineage');
-        visited.add(parentId);
-        const parent = byId.get(parentId);
-        if (!parent) throw new Error('Incomplete family evidence lineage');
-        if (supported(parent.mediaType)) return false;
-        parentId = parent.parentEvidenceId;
-      }
-      return true;
-    })
-    .sort((a, b) => a.partId.localeCompare(b.partId));
+  const supported = supportedIntakeOriginal;
+  const originalEvidence = intakeOriginalEvidence(evidence);
   if (
     originalEvidence.some(
       (e) => e.mediaType !== 'application/json' && !supported(e.mediaType),
