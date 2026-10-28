@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.57.36",
+  "version": "0.57.37",
   "description": "Core SMRT framework for business objects, persistence, and generated REST, CLI, MCP, and AI interfaces",
   "author": "HappyVertical",
   "type": "module",
