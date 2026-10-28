@@ -482,6 +482,41 @@ describe('assistant turn', () => {
       expect(ran).toEqual(['data.discover']);
     });
 
+    it('reports an unregistered tool call without echoing its name (#4453)', async () => {
+      const sentence = 'Let me think about which tool to use here';
+      const ran: string[] = [];
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([
+            calls([sentence, {}, 'bad'], ['data-discover', {}, 'good']),
+            text('Done.'),
+          ]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'go',
+          extraTools: [readTool(ran)],
+          describeTool: (name) => (name === 'data.discover' ? 'Looking' : name),
+        }),
+      );
+      const results = events.flatMap((e) =>
+        e.type === 'step' && e.step.kind === 'tool_result' ? [e.step] : [],
+      );
+      const bad = results.find((r) => r.callId === 'bad');
+      expect(bad).toMatchObject({
+        tool: 'unknown_tool',
+        label: 'Unknown tool',
+        ok: false,
+      });
+      expect(
+        JSON.stringify(events.filter((e) => e.type !== 'token')),
+      ).not.toContain('which tool');
+      expect(results.find((r) => r.callId === 'good')).toMatchObject({
+        tool: 'data.discover',
+        label: 'Looking',
+      });
+    });
+
     it('does not offer a server tool missing from the principal allow-list', async () => {
       const ran: string[] = [];
       const ai = scriptedAI([calls(['data-discover', {}]), text('no tools')]);

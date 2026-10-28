@@ -469,6 +469,11 @@ export interface AssistantTurnState {
   continuationId?: string;
 }
 
+/** `tool` of a step for a call whose name is not a registered tool (#4453). */
+export const UNKNOWN_TOOL_STEP_NAME = 'unknown_tool';
+/** `label` of that step; the model's requested name is never echoed. */
+export const UNKNOWN_TOOL_STEP_LABEL = 'Unknown tool';
+
 /** What {@link runAssistantTurn} returns when its generator completes. */
 export interface AssistantTurnResult {
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
@@ -784,6 +789,9 @@ async function runTurn<M>(
     return label;
   };
 
+  // Names the model called that resolved to a registered tool. A step for any
+  // other name must not echo model-chosen text as its tool or label (#4453).
+  const registered = new Set<string>();
   const sendAgentReply = author
     ? (await import('./services/ChatService.js')).sendAgentReply
     : null;
@@ -840,6 +848,7 @@ async function runTurn<M>(
         return;
       }
       if (event.type === 'tool_call') {
+        registered.add(event.slug);
         let label = labelFor(event.slug);
         try {
           label = describe(event.slug, event.args) || label;
@@ -863,13 +872,14 @@ async function runTurn<M>(
         }
         return;
       }
+      const known = registered.has(event.slug);
       emit({
         type: 'step',
         step: {
           kind: 'tool_result',
           callId: event.callId,
-          tool: event.slug,
-          label: labelFor(event.slug),
+          tool: known ? event.slug : UNKNOWN_TOOL_STEP_NAME,
+          label: known ? labelFor(event.slug) : UNKNOWN_TOOL_STEP_LABEL,
           ok: event.ok,
           ...(event.error ? { error: event.error } : {}),
         },
