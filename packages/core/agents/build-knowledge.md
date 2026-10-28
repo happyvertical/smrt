@@ -129,6 +129,21 @@ map and root together, preserving exact target matching. Plain server entries
 remain external; do not fix peer-context resolution by deduplicating app
 packages or bundling every server export (#4318).
 
+The same server/component split applies to consumer development SSR (#4475).
+Vite's dev import analysis ignores a resolver's `external` flag, so broad
+`noExternal` alone creates another module instance even when native Node and
+Vite resolve the identical file. That duplicates module-local enablement and
+interceptors while an AsyncLocalStorage singleton can still appear shared.
+The consumer resolver records only exact server entry files selected through
+the importer's installed export map. Its dev SSR environment `fetchModule`
+transport returns those files as native external modules; component barrels,
+Svelte and CSS continue through Vite. Production keeps bare external imports.
+Never externalize the complete component-bearing package or switch its mutable
+runtime flags to globals to mask duplicate execution. The real `createServer` /
+`ssrLoadModule` regression in `selective-ssr-dev.test.ts` initializes native
+server state and verifies root/subpath reads plus direct and transitive peer
+Svelte/CSS compilation in one dev request.
+
 Not covered by contract: a package whose root is a Svelte entry AND whose
 `@smrt()` objects are exported only from that root. The object loop must then
 import the root (it is the only module exporting the constructors) — statically
