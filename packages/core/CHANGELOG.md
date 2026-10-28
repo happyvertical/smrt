@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.57.35
+
+### Patch Changes
+
+- ### Features
+  
+  - ui-only exposure; Employees and Qualifications recipes (#4447) (recipes)
+  - assemblies and production recipes (#4439) (manufacturing)
+  - recipes for support, affiliates and human resources (#4438)
+  
+  ### Bug Fixes
+  
+  - patch train 4 - skip template repo metadata, guard svelte conditions (#4436) (cli,packages)
+  - allow required application settings in chart migrations (#4433) (deploy)
+- @happyvertical/smrt-config@0.57.35
+  - @happyvertical/smrt-scanner@0.57.35
+  - @happyvertical/smrt-types@0.57.35
+
 ## 0.57.34
 
 ### Patch Changes
