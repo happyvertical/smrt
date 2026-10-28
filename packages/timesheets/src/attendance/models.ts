@@ -6,6 +6,7 @@ import {
   isPostgresDatabase,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
@@ -80,13 +81,13 @@ export class AttendancePunch extends SmrtObject {
   /** Unique while open; closed rows retain independent non-null slots on every dialect. */
   @field({ required: true }) openSlot = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     return saveWithPunchLock(this, this.id, this.tenantId, () =>
-      this.saveConsistent(),
+      this.saveConsistent(options),
     );
   }
 
-  private async saveConsistent(): Promise<this> {
+  private async saveConsistent(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId || !this.profileId)
       throw new Error('Attendance requires tenantId and profileId.');
     if (
@@ -193,7 +194,7 @@ export class AttendancePunch extends SmrtObject {
     }
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -222,13 +223,13 @@ export class AttendanceBreak extends SmrtObject {
   kind = '';
   @field({ required: true }) openSlot = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     return saveWithPunchLock(this, this.punchId, this.tenantId, () =>
-      this.saveConsistent(),
+      this.saveConsistent(options),
     );
   }
 
-  private async saveConsistent(): Promise<this> {
+  private async saveConsistent(options?: SmrtSaveOptions): Promise<this> {
     this.kind ??= '';
     if (
       !this.tenantId ||
@@ -305,7 +306,7 @@ export class AttendanceBreak extends SmrtObject {
       throw new Error('Break must not overlap a work segment.');
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
-    return super.save();
+    return super.save(options);
   }
 
   override async delete(): Promise<void> {
@@ -393,13 +394,13 @@ export class AttendanceSegment extends SmrtObject {
   reviewRequired = false;
   @field({ required: true }) openSlot = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     return saveWithPunchLock(this, this.punchId, this.tenantId, () =>
-      this.saveConsistent(),
+      this.saveConsistent(options),
     );
   }
 
-  private async saveConsistent(): Promise<this> {
+  private async saveConsistent(options?: SmrtSaveOptions): Promise<this> {
     if (
       !this.tenantId ||
       !this.punchId ||
@@ -490,7 +491,7 @@ export class AttendanceSegment extends SmrtObject {
     this.durationSeconds = this.endedAt ? Math.round((end - start) / 1000) : 0;
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
-    return super.save();
+    return super.save(options);
   }
 
   override async delete(): Promise<void> {
@@ -577,9 +578,9 @@ export class AttendanceReplay extends SmrtObject {
     this.outcome = JSON.stringify(value);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.getOutcome();
-    return super.save();
+    return super.save(options);
   }
 }
 

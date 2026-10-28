@@ -3,6 +3,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import {
@@ -225,11 +226,11 @@ export class FieldPolicySuggestion extends SmrtObject {
     };
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await this.assertRowOwnedByAmbientContext('save');
     await this.validateFieldPolicySuggestion();
     this.applyActiveKey();
-    return super.save();
+    return super.save(options);
   }
 
   /**

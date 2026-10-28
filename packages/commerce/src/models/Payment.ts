@@ -12,6 +12,7 @@ import {
   foreignKey,
   type SmrtDeleteOptions,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { Journal } from '@happyvertical/smrt-ledgers';
@@ -483,11 +484,17 @@ export class Payment extends SmrtObject {
    *    (REST/MCP/CLI/direct). Fixtures/migrations that need a completed payment
    *    must drive it through `recordPayment()` (or start non-COMPLETED).
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     return this.withTransaction(async () => {
       if (this.kind !== 'payment' && this.kind !== 'refund')
         throw new Error('Payment kind must be payment or refund');
-      await claimAllocationParent(this, 'payment');
+      // The claim is the compare-and-swap against the caller's revision (it
+      // advances the stored revision), so the guarded save below must expect
+      // the revision the claim just wrote, not the caller's pre-claim one.
+      const callerRevision = options?.expectedUpdatedAt;
+      await claimAllocationParent(this, 'payment', callerRevision);
+      if (callerRevision !== undefined && this.updated_at)
+        options = { ...options, expectedUpdatedAt: this.updated_at };
       // Whole minor units on every surface (#2401). `amount` is what
       // `PaymentAllocation.save()` and `Payout.assertCappedBySourcePayment()` cap
       // against with exact integer comparisons, so a fractional major-unit write
@@ -603,7 +610,7 @@ export class Payment extends SmrtObject {
 
       try {
         await assertAllocationParent(this, 'payment');
-        const result = (await super.save()) as this;
+        const result = (await super.save(options)) as this;
         loadedPaymentStatus.set(this, this.status);
         return result;
       } finally {

@@ -454,6 +454,12 @@ export interface SchemaChange {
    * under `emptyTextAsNull` (#3226). Printed by `db:diff`/`db:migrate`.
    */
   note?: string;
+  /**
+   * On an `add_index` that is really an `ALTER INDEX ... RENAME`: the live
+   * index name being renamed to `name`. The DDL is unchanged; reporting
+   * (`db:diff`, `db:migrate`) uses it to say "rename" instead of "create".
+   */
+  renamedFrom?: string;
   /** Generated SQL statement */
   sql?: string;
   /**

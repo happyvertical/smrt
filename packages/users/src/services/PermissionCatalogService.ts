@@ -20,6 +20,7 @@ import {
   type Permission,
   parsePermissionSlug,
 } from '../models/Permission.js';
+import { withoutListBounds } from './authorization-read-options.js';
 
 export type PermissionCatalogSource = 'manifest' | 'config' | 'runtime';
 
@@ -985,7 +986,9 @@ export class PermissionCatalogService {
 
   async syncPermissionCatalog(): Promise<PermissionCatalogSyncResult> {
     const catalog = this.getCatalog();
-    const permissions = await PermissionCollection.create(this.options);
+    const permissions = await PermissionCollection.create(
+      withoutListBounds(this.options),
+    );
 
     const created: string[] = [];
     const unchanged: string[] = [];

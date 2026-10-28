@@ -44,6 +44,8 @@ export interface AppliedBody {
   mode: 'new' | 'update';
   installed: boolean;
   added: string[];
+  /** Template-repository files left out of the new project. */
+  skippedTemplateFiles: string[];
   nextSteps: string[];
 }
 
@@ -94,6 +96,11 @@ export function createCookbookApplier(
         cliVersion: cliVersion(),
       });
       for (const warning of result.warnings) log(`warning: ${warning}`);
+      if (result.plan.skippedTemplateFiles.length > 0) {
+        log(
+          `Left out of the new project (the template repository's own files): ${result.plan.skippedTemplateFiles.join(', ')}`,
+        );
+      }
       return {
         ok: true,
         status: 200,
@@ -104,6 +111,7 @@ export function createCookbookApplier(
           mode: result.plan.mode,
           installed: result.installed,
           added: Object.keys(result.plan.addDependencies),
+          skippedTemplateFiles: result.plan.skippedTemplateFiles,
           nextSteps: result.nextSteps,
         },
       };

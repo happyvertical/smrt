@@ -323,6 +323,27 @@ describe('Issue #2367: collection query bounds', () => {
       );
     });
 
+    it('splits comma-separated orderBy strings and tolerates empty terms (#3268)', async () => {
+      const desc = await collection.list({
+        orderBy: 'category ASC, label DESC',
+      });
+      expect(desc.map((w) => w.label)).toEqual([
+        'widget-4',
+        'widget-3',
+        'widget-2',
+        'widget-1',
+        'widget-0',
+      ]);
+      await expect(
+        collection.list({
+          orderBy: ['category ASC, label DESC NULLS LAST,', ' , id ASC'],
+        }),
+      ).resolves.toHaveLength(5);
+      await expect(
+        collection.list({ limit: 1, orderBy: 'label ASC,' }),
+      ).resolves.toHaveLength(1);
+    });
+
     it('rejects a malformed NULLS placement', async () => {
       await expect(
         collection.list({ orderBy: 'label ASC NULLS MIDDLE' }),

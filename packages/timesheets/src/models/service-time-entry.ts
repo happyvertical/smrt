@@ -5,6 +5,7 @@ import {
   method,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -195,7 +196,7 @@ export class ServiceTimeEntry extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const hours = this.durationHoursExact();
     if (hours !== null) {
       if (
@@ -236,7 +237,7 @@ export class ServiceTimeEntry extends SmrtObject {
         );
       }
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedStatus.set(this, this.status);
     return result;
   }

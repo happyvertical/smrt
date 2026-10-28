@@ -3,6 +3,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
   ValidationError,
 } from '@happyvertical/smrt-core';
@@ -129,7 +130,7 @@ export class ServiceChargeSnapshot extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertSnapshotMinorUnits('ServiceChargeSnapshot', this.amount);
     const current = commercialSnapshot(
       this as unknown as Record<string, unknown>,
@@ -143,7 +144,7 @@ export class ServiceChargeSnapshot extends SmrtObject {
       throw new Error(
         'ServiceChargeSnapshot is immutable; append an upstream adjustment instead.',
       );
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     chargeSnapshot.set(this, current);
     return result;
   }
@@ -194,7 +195,7 @@ export class ServiceCompensationSnapshot extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertSnapshotMinorUnits('ServiceCompensationSnapshot', this.amount);
     const current = commercialSnapshot(
       this as unknown as Record<string, unknown>,
@@ -208,7 +209,7 @@ export class ServiceCompensationSnapshot extends SmrtObject {
       throw new Error(
         'ServiceCompensationSnapshot is immutable; create explicit settlement evidence instead.',
       );
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     compensationSnapshot.set(this, current);
     return result;
   }

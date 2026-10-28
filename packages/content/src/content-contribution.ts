@@ -22,6 +22,7 @@ import {
 } from './content-contribution-config';
 import type { ContentContributionRevision } from './content-contribution-revision';
 import type { ContentContributor } from './content-contributor';
+import { resolveContentMetaType } from './content-types';
 
 export interface ContentContributionAttachmentInput {
   filename: string;
@@ -604,6 +605,7 @@ export class ContentContribution extends SmrtObject {
     const content = await contents.create({
       tenantId: this.tenantId,
       type: promotion.targetContentType,
+      _meta_type: resolveContentMetaType(promotion.targetContentType),
       variant: promotion.targetContentVariant || null,
       source: 'contribution',
       status: options.targetStatus || promotion.targetContentStatus || 'draft',

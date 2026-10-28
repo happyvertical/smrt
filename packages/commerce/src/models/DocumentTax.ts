@@ -4,6 +4,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -221,7 +222,7 @@ export class DocumentTax extends SmrtObject {
     }
   }
 
-  override async save(): Promise<this> {
+  override async save(_options?: SmrtSaveOptions): Promise<this> {
     throw new MoneyValidationError(
       'FROZEN_DOCUMENT',
       'DocumentTax rows are derived and cannot be saved directly',
@@ -238,7 +239,10 @@ export class DocumentTax extends SmrtObject {
   }
 
   /** @internal Aggregate persistence only. */
-  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE) {
       throw new MoneyValidationError(
         'FROZEN_DOCUMENT',
@@ -246,7 +250,7 @@ export class DocumentTax extends SmrtObject {
       );
     }
     this.assertValidDerivedRow();
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 
   /** @internal Aggregate persistence only. */

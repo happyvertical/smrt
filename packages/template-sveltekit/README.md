@@ -1,7 +1,7 @@
 # @happyvertical/smrt-template-sveltekit
 
 The minimal “learn and build from the ground up” SvelteKit template for
-s-m-r-t 0.43.10. The package exports `copyTemplate()`, `getTemplatePath()`, and
+s-m-r-t. The package exports `copyTemplate()`, `getTemplatePath()`, and
 `templateInfo` and is the `sveltekit` template used by `smrt gnode create`.
 
 ## 1. Install and run
@@ -16,9 +16,8 @@ cp .env.example .env
 pnpm app:install
 ```
 
-Run the copy command from the monorepo root. The public 0.43.10 CLI advertises
-`gnode create`, but its command dispatcher currently rejects `gnode`; this
-package's tested `copyTemplate()` export is the working scaffold path.
+Run the copy command from the monorepo root. `smrt gnode create
+--template=sveltekit` uses the same `copyTemplate()` export.
 
 Generated projects require Node.js 26.0.0 or newer and pnpm 11.25.0. They pin
 all directly used `@happyvertical/smrt-*` packages to the current monorepo
@@ -160,13 +159,12 @@ The generated-project README shows the current hydration pattern:
 basePath: '/api' })` followed by `liveCollection()`. The root layout's
 read-only WebMCP registration does not materialize live collections.
 
-## 10. Graduate to smrt-saas-starter
+## 10. Graduate to smrt-start
 
 Use this template for learning and focused, ground-up applications. Choose
-`smrt-saas-starter` when the baseline should already contain production-shaped
-onboarding, billing/subscriptions, workers, provider configuration, deployment
-infrastructure, and mobile applications. This package intentionally avoids
-becoming a second SaaS starter.
+[`smrt-start`](https://github.com/happyvertical/smrt-start), the canonical
+application template, when you want a production-shaped baseline. This package
+intentionally avoids becoming a second production starter.
 
 The generated project has one canonical `runtime.profile` and deterministic
 `app:*` operations. Local state stays outside source. The production baseline

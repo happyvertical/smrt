@@ -3,6 +3,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -110,7 +111,7 @@ export class Submission extends SmrtObject {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       learner_id: this.learnerId,
       lesson_id: this.lessonId,
@@ -153,7 +154,7 @@ export class Submission extends SmrtObject {
       throw new Error(
         'Submission requires its tenant learner, lesson, and progress record',
       );
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -176,7 +177,7 @@ export class SubmissionIntakeBinding extends SmrtObject {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId?.trim() || !this.intakeItemId?.trim())
       throw new Error('Submission intake binding requires tenant and item');
     if (this.intakeItemId.length > 200)
@@ -189,7 +190,7 @@ export class SubmissionIntakeBinding extends SmrtObject {
       }))
     )
       throw new Error('Submission intake binding must match its submission');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -213,9 +214,9 @@ export class ScannedSubmission extends Submission {
     this.extracted = stringifyJsonObject(value, 'Extracted answers');
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     requireNonnegativeInteger(this.pageCount, 'Page count');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -231,10 +232,10 @@ export class ExternalCompletion extends Submission {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     requireEnum(this.reportedBy, ['learner', 'guardian', 'source']);
     requireScore(this.reportedScore, 'Reported score');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -262,7 +263,7 @@ export class SubmissionAsset extends SmrtObject {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       submission_id: this.submissionId,
       asset_id: this.assetId,
@@ -290,7 +291,7 @@ export class SubmissionAsset extends SmrtObject {
       }))
     )
       throw new Error('Submission assets must be owned by the learner profile');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -325,7 +326,7 @@ export class Grade extends SmrtObject {
     this.rubricResults = stringifyJsonObject(value, 'Rubric results');
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       submission_id: this.submissionId,
     });
@@ -349,6 +350,6 @@ export class Grade extends SmrtObject {
       this.pointsEarned > this.pointsPossible
     )
       throw new Error('Points earned cannot exceed points possible');
-    return super.save();
+    return super.save(options);
   }
 }

@@ -15,6 +15,7 @@ import TextareaInput from '../TextareaInput.svelte';
 import TextInput from '../TextInput.svelte';
 
 let {
+  formId = undefined,
   onsubmit = undefined,
   method = undefined,
   action = undefined,
@@ -52,6 +53,7 @@ let {
   onnoteschange = undefined,
   onnumberchange = undefined,
 }: {
+  formId?: string;
   onsubmit?: (data: Record<string, unknown>) => void;
   method?: 'GET' | 'POST';
   action?: string;
@@ -106,7 +108,7 @@ function mutateSubject() {
 }
 </script>
 
-<Form {onsubmit} {method} {action} {webmcp} {interactionRegistry} subject={mutableSubject}>
+<Form {formId} {onsubmit} {method} {action} {webmcp} {interactionRegistry} subject={mutableSubject}>
 	<fieldset disabled={fieldsetDisabled}>
 	<TextInput
 		name="fullname"

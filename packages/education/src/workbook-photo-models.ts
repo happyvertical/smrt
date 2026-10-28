@@ -4,6 +4,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -46,9 +47,9 @@ export class WorkbookPhotoIntake extends SmrtObject {
   itemId = '';
   actorUserId = '';
   contentDigest = '';
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await assertPhotoHistory(this);
-    return super.save();
+    return super.save(options);
   }
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -91,7 +92,7 @@ export class WorkbookPhotoAsset extends SmrtObject {
       ),
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await assertPhotoHistory(this);
     if (
       !(await this.db.get('workbook_photo_intakes', {
@@ -115,7 +116,7 @@ export class WorkbookPhotoAsset extends SmrtObject {
       }))
     )
       throw new Error('Photo original must be an owned private asset');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookPhotoAssetCollection extends SmrtCollection<WorkbookPhotoAsset> {
@@ -148,7 +149,7 @@ export class WorkbookPhotoDecision extends SmrtObject {
       ),
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await assertPhotoHistory(this);
     if (
       !(await this.db.get('workbook_photo_intakes', {
@@ -158,7 +159,7 @@ export class WorkbookPhotoDecision extends SmrtObject {
       }))
     )
       throw new Error('Photo decision ownership mismatch');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookPhotoDecisionCollection extends SmrtCollection<WorkbookPhotoDecision> {
@@ -189,7 +190,7 @@ export class WorkbookContextRevision extends SmrtObject {
       ),
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await assertPhotoHistory(this);
     if (
       !(await this.db.get('workbooks', {
@@ -207,7 +208,7 @@ export class WorkbookContextRevision extends SmrtObject {
       }))
     )
       throw new Error('Workbook context decision ownership mismatch');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookContextRevisionCollection extends SmrtCollection<WorkbookContextRevision> {

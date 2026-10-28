@@ -3,7 +3,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type Address,
@@ -200,10 +206,10 @@ export class Fulfillment extends SmrtObject {
    * forged `status` written via raw mass-assignment on the open
    * `api:{create,update}` surface. See S5 audit #1390 follow-up.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedFulfillmentStatus.set(this, this.status);
     return result;
   }

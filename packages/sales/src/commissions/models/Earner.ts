@@ -21,6 +21,7 @@ import {
   crossPackageRef,
   field,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -238,9 +239,9 @@ export class Earner extends SmrtObject {
    * a stored destination must be valid and match `payoutMethod`, and an
    * active Stripe Connect / crypto earner must have a destination.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.assertPayoutTerms();
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 
   private assertPayoutTerms(): void {

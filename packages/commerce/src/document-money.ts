@@ -6,6 +6,7 @@ import {
 import type { HistoricalSalesMoneySnapshot } from './historical-sales-types.js';
 /** Transactional Invoice money aggregate persistence. */
 
+import type { SmrtSaveOptions } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { CustomerCollection } from './collections/CustomerCollection.js';
@@ -1364,7 +1365,10 @@ export async function getInvoiceMoneyFacts(
 }
 
 /** Persist an invoice and recompute its complete money aggregate. */
-export async function saveInvoice(input: Invoice): Promise<Invoice> {
+export async function saveInvoice(
+  input: Invoice,
+  options?: SmrtSaveOptions,
+): Promise<Invoice> {
   const priorRevision = input.updated_at;
   try {
     return await withDocumentMoneyTransaction(input.db, async (tx) =>
@@ -1497,7 +1501,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             );
             invoice.partyTaxId = customer?.taxId ?? '';
           }
-          return invoice.saveDerived(DOCUMENT_MONEY_WRITE);
+          return invoice.saveDerived(DOCUMENT_MONEY_WRITE, options);
         }
         if (invoice.tenantId !== existing.tenantId)
           throw new MoneyValidationError(
@@ -1572,7 +1576,10 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             FROZEN_INVOICE_FIELDS,
             'Invoice',
           );
-          const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
+          const saved = await invoice.saveDerived(
+            DOCUMENT_MONEY_WRITE,
+            options,
+          );
           if (locked.source)
             await refreshIssuedCreditBalance(tx, locked.source);
           return saved;
@@ -1595,7 +1602,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           invoice.partyTaxId = customer?.taxId ?? '';
           invoice.moneySnapshotId = snapshotId;
         }
-        const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
+        const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE, options);
         if (locked.source) await refreshIssuedCreditBalance(tx, locked.source);
         return saved;
       }),
@@ -1609,6 +1616,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
 /** Persist a line and recompute its complete invoice aggregate. */
 export async function saveInvoiceLineItem(
   input: InvoiceLineItem,
+  options?: SmrtSaveOptions,
 ): Promise<InvoiceLineItem> {
   return withDocumentMoneyObjectTransaction(input, async (line, tx) => {
     const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
@@ -1666,9 +1674,9 @@ export async function saveInvoiceLineItem(
         FROZEN_LINE_FIELDS,
         'Invoice line',
       );
-      return line.saveDerived(DOCUMENT_MONEY_WRITE);
+      return line.saveDerived(DOCUMENT_MONEY_WRITE, options);
     }
-    await line.saveDerived(DOCUMENT_MONEY_WRITE);
+    await line.saveDerived(DOCUMENT_MONEY_WRITE, options);
     const priorAggregate = aggregateSignature(invoice);
     await recomputeInvoiceAggregate(tx, invoice, settings);
     if (aggregateSignature(invoice) !== priorAggregate) {

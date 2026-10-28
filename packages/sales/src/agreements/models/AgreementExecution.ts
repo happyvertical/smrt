@@ -4,6 +4,7 @@ import {
   crossPackageRef,
   field,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -210,7 +211,7 @@ export class AgreementExecution extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const captured = persistedExecutionIdentity.get(this);
     if (captured) {
       this.assertBoundValueUnchanged(
@@ -242,7 +243,7 @@ export class AgreementExecution extends SmrtObject {
         this.serializeAuditTrailEvidence(),
       );
     }
-    const saved = (await super.save()) as this;
+    const saved = (await super.save(options)) as this;
     persistedExecutionIdentity.set(this, this.captureIdentity());
     return saved;
   }
