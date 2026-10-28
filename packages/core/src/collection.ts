@@ -1798,9 +1798,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       const columnName = this.toDbColumnName(fieldName);
       const quotedColumn = this.quoteProjectionIdentifier(columnName);
+      const declaredType = String(
+        schema?.columns[columnName]?.type,
+      ).toUpperCase();
+      // DuckDB's JS binding returns native UUIDs as lossy `{ hugeint }`
+      // doubles that cannot be repaired after the read (#4459). A default
+      // `id` is a native UUID on DuckDB even when a manifest declares it TEXT,
+      // so cast it in the read; casting VARCHAR to VARCHAR is a no-op.
+      const isDefaultTextId =
+        columnName === 'id' &&
+        !customPrimaryKey &&
+        (declaredType === 'TEXT' || declaredType === 'UNDEFINED');
       const selectValue =
         this.getDatabaseEngine() === 'duckdb' &&
-        String(schema?.columns[columnName]?.type).toUpperCase() === 'UUID'
+        (declaredType === 'UUID' || isDefaultTextId)
           ? `CAST(${quotedColumn} AS VARCHAR)`
           : quotedColumn;
       selectExpressions.push(
