@@ -145,8 +145,13 @@ export interface ReportJoinDefinition {
   sourceColumn: string;
   /** Column on the joined table. */
   targetColumn: string;
+  /**
+   * Compare the key as text on both sides: set when the schema types of the
+   * two key columns differ (a text reference to a uuid id).
+   */
+  keyAsText?: boolean;
   /** Tenant columns to equate, when the joined model is tenant-scoped. */
-  tenantColumns?: { source: string; joined: string };
+  tenantColumns?: { source: string; joined: string; asText?: boolean };
   /** Soft-delete column of the joined model; deleted rows never match. */
   softDeleteColumn?: string;
 }

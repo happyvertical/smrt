@@ -35,6 +35,49 @@ export async function tenantColumn(className: string): Promise<string | null> {
   return tenantIdField;
 }
 
+/**
+ * The schema SQL type of a class's column (upper-case, e.g. `UUID`, `TEXT`),
+ * or null when no schema describes it. Reads the class's built (manifest)
+ * schema, and an STI child's base schema since its columns live there; a class
+ * registered at runtime without one falls back to the table as migration
+ * assembles it from every registered class.
+ */
+export function columnSqlType(
+  className: string,
+  column: string,
+): string | null {
+  const names = [className];
+  if (ObjectRegistry.getTableStrategy(className) === 'sti') {
+    const base = ObjectRegistry.getSTIBase(className);
+    if (base) names.push(base);
+  }
+  for (const name of names) {
+    const type = ObjectRegistry.getSchema(name)?.columns?.[column]?.type;
+    if (typeof type === 'string') return type.toUpperCase();
+  }
+  const table = ObjectRegistry.getTableName(className);
+  const merged = table
+    ? ObjectRegistry.getAllSchemasAsDefinitions()[table]?.columns?.[column]
+        ?.type
+    : undefined;
+  return typeof merged === 'string' ? merged.toUpperCase() : null;
+}
+
+/**
+ * Whether two columns must be compared as text: their built-schema types are
+ * both known and differ (a text reference against a uuid id, which Postgres
+ * has no operator for). Same-typed or undescribed columns compare as they are,
+ * so their indexes still serve the join.
+ */
+export function compareAsText(
+  left: { className: string; column: string },
+  right: { className: string; column: string },
+): boolean {
+  const leftType = columnSqlType(left.className, left.column);
+  const rightType = columnSqlType(right.className, right.column);
+  return leftType !== null && rightType !== null && leftType !== rightType;
+}
+
 /** The registry field properties that decide who may read a column. */
 export interface PolicyField {
   sensitive?: boolean;
