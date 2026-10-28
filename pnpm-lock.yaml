@@ -444,6 +444,12 @@ importers:
         specifier: ^0.109.0
         version: 0.109.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

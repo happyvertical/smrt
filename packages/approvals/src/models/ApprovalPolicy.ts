@@ -51,23 +51,42 @@ export class ApprovalPolicy extends SmrtObject {
   tenantId: string = '';
 
   /** Approval kind key this row tightens. */
-  @field({ type: 'text', required: true })
+  @field({
+    type: 'text',
+    required: true,
+    description: 'The sort of approval these rules apply to.',
+  })
   kind: string = '';
 
   /** Raised quorum; `0` inherits the kind default. */
-  @field({ type: 'integer' })
+  @field({
+    type: 'integer',
+    description:
+      'How many different people must agree. Zero keeps the usual number.',
+  })
   requiredApprovals: number = 0;
 
   /** Shortened lifetime in milliseconds; `0` inherits the kind default. */
-  @field({ type: 'integer' })
+  @field({
+    type: 'integer',
+    description:
+      'How long a request stays open, in milliseconds. Zero keeps the usual time.',
+  })
   ttlMs: number = 0;
 
   /** Extra permission slug a decider must hold; empty for none. */
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description:
+      'An extra permission a decider must hold. Leave empty for none.',
+  })
   requiredPermission: string = '';
 
   /** Principal id that last wrote the row. */
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'Who last changed these rules.',
+  })
   updatedBy: string = '';
 
   constructor(options: ApprovalPolicyOptions = {}) {

@@ -78,6 +78,7 @@ export class ApprovalEvent extends SmrtObject {
    * the constraint is physical on PostgreSQL and SQLite only. Requests are
    * never deleted, so no engine can orphan an event.
    */
+  @field({ description: 'The request this entry belongs to.' })
   @foreignKey(ApprovalRequest, {
     required: true,
     readonly: true,
@@ -88,19 +89,40 @@ export class ApprovalEvent extends SmrtObject {
   requestId: string = '';
 
   /** What happened. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description:
+      'What happened: created, approved, rejected, changes requested, cancelled, expired or used.',
+  })
   type: ApprovalEventType = 'created';
 
   /** Principal id of the actor. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description: 'Who did it.',
+  })
   actorId: string = '';
 
   /** Principal type of the actor. */
-  @field({ type: 'text', readonly: true })
+  @field({
+    type: 'text',
+    readonly: true,
+    description:
+      'Whether a person, an assistant or an automated process did it.',
+  })
   actorType: ApprovalPrincipalType = 'human';
 
   /** Free-text reason (rejection note, cancellation reason, and so on). */
-  @field({ type: 'text', readonly: true })
+  @field({
+    type: 'text',
+    readonly: true,
+    description:
+      'The reason given, for example why a request was rejected or cancelled.',
+  })
   reason: string = '';
 
   /** The subject revision the request was bound to when this happened. */
@@ -119,11 +141,21 @@ export class ApprovalEvent extends SmrtObject {
   voteKey: string | null = null;
 
   /** When the event happened. */
-  @field({ type: 'datetime', readonly: true })
+  @field({
+    type: 'datetime',
+    readonly: true,
+    description: 'When it happened.',
+  })
   occurredAt: Date | null = null;
 
   /** Whether the requester used the explicit self-decision allowance. */
-  @field({ type: 'boolean', readonly: true, default: false })
+  @field({
+    type: 'boolean',
+    readonly: true,
+    default: false,
+    description:
+      'Whether the person who asked also decided, where that is allowed.',
+  })
   selfApproved: boolean = false;
 
   /** Permission checked when this self-decision was recorded. Empty otherwise. */
