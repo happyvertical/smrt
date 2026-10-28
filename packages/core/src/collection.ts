@@ -951,7 +951,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ): string {
     if (!orderBy) return '';
 
-    const orderByItems = Array.isArray(orderBy) ? orderBy : [orderBy];
+    // Each item may itself be a comma-separated list (`'a DESC, b ASC'`), so
+    // flatten, trim, and drop empty terms (a trailing comma) before parsing.
+    const orderByItems = (Array.isArray(orderBy) ? orderBy : [orderBy])
+      .flatMap((item) => String(item).split(','))
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     if (orderByItems.length === 0) return '';
 
     const itemClassName = this.getResolvedItemClassName();
