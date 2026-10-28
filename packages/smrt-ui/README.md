@@ -230,7 +230,10 @@ tone overrides the built-in domain scheme while label, size, and outline variant
 continue to work independently. Tones use the active theme's paired container
 and text tokens. Without a tone, known domain statuses retain their existing
 colors and unknown statuses retain the neutral fallback. `StatusTone` is exported
-as a TypeScript type from the package root.
+as a TypeScript type from the package root. `StatusBadge` also spreads rest
+props (`data-*`, `aria-*`, `title`, ...) onto its root `<span>`; `class` is not
+accepted. It and the other display components are importable from
+`@happyvertical/smrt-ui/display` as well as the package root.
 
 ### Touch targets for Checkbox, Radio and Switch
 

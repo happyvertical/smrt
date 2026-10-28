@@ -13,6 +13,22 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import StatusBadge from '../StatusBadge.svelte';
 
 describe('StatusBadge', () => {
+  it('spreads data-* and aria-* rest props onto the badge', () => {
+    render(StatusBadge, {
+      props: {
+        status: 'awaiting_cert',
+        'data-value': 'awaiting_cert',
+        'data-testid': 'badge',
+        'aria-describedby': 'why',
+      } as never,
+    });
+    const badge = screen.getByTestId('badge');
+    expect(badge.getAttribute('data-value')).toBe('awaiting_cert');
+    expect(badge.getAttribute('aria-describedby')).toBe('why');
+    expect(badge.classList.contains('status-badge')).toBe(true);
+    expect(badge.getAttribute('data-smrt-component')).toBe('StatusBadge');
+  });
+
   it.each([
     [
       'success',

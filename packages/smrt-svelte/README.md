@@ -563,6 +563,11 @@ keys the shell renders exactly as before.
 </AdminShell>
 ```
 
+`PhoneBottomBar` items take `icon` as a component, or as an icon name string
+(`iconName` is the same). A built-in shell icon name draws that icon; any other
+name goes to the bar's `iconComponent` prop with `size`, as `TenantNav`'s
+`iconComponent` does.
+
 - **`header`** is a full-width row above every edge (`#smrt-admin-shell-header`,
   `--smrt-admin-shell-header-size`, default 3.5rem). On phones it is replaced
   by `phoneTopBar` when one is given.
