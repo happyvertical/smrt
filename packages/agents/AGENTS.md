@@ -196,6 +196,16 @@ dropped (#4378). A `surfaceId` nested in `request` (or a `query` wrapper) is
 lifted; two different ids are `DATA_QUERY_SURFACE_ID_CONFLICT`, none is
 `DATA_QUERY_SURFACE_ID_REQUIRED` (400s, not denials). Every request error ends with a one-line valid example for
 the surface (placeholders only, no caller values).
+Null tests (#4448): the SMRT collection adapter (and content's mirror) adds
+`isNull`/`isNotNull` to a field's `filterOperators` when its manifest column is
+neither `notNull` nor the primary key (`nullableColumnFieldIds`,
+`NULL_TEST_FILTER_OPERATORS`), lowered to `{ field: null }` / `{ 'field !=':
+null }`; JSON fields stay unfilterable, and a null test on a UUID column skips
+the id-value check. A rejected filter that looks like a null test on a field
+declaring `isNull` (`eq`/`ne` with `null`, `"null"`, `""` or `[]`; a `not` naming
+`field`; an `exists`-style kind/operator) gets a hint naming `isNull`/
+`isNotNull` with that field, and the valid example uses it; polarity follows
+`ne` and enclosing `not`s. Grammar: [core data-query](../core/agents/data-query.md#null-tests-4448).
 Refusals (#4387: action-specific denials, the `{ action }` catalog argument,
 `onDenied`, audit `denied` entries, missing executors):
 [agents/data-surface-denials.md](agents/data-surface-denials.md).

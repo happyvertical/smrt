@@ -39,6 +39,11 @@ component tests. `./playground` supplies each screen's preview.
   totals, and dimension facets. At source-query compilation,
   dimension and bucket filters compile to `WHERE`, aggregate-measure filters
   compile to `HAVING`, and mixed `OR`/`NOT` filter scopes fail closed.
+- A column whose materialized schema column is neither `notNull` nor the
+  primary key also declares `isNull`/`isNotNull` (#4448), compiled to
+  `IS NULL`/`IS NOT NULL`. Report `ne`/`notIn` stay plain `<>` and exclude
+  nulls. The null tests are left out of `reportDefinitionFingerprint()`, so
+  views stored before them keep their binding.
 - `id` is the only row identity. It must be a non-empty persisted string and is
   never replaced by a display index or page position.
 - The descriptor is an exposure boundary. Sensitive/secret fields, fields with

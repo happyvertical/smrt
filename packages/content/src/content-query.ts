@@ -358,6 +358,34 @@ const ID_FIELD_FILTER_OPERATORS: DataQueryFilterOperator[] = [
   'notIn',
 ];
 
+/** Null tests (#4448), declared only on a field whose column can hold null. */
+const NULL_TEST_FILTER_OPERATORS: DataQueryFilterOperator[] = [
+  'isNotNull',
+  'isNull',
+];
+
+/**
+ * Declared field ids whose column can hold null (manifest schema): present,
+ * not `notNull`, and not the primary key. Mirrors `nullableColumnFieldIds`.
+ */
+function nullableColumnFieldIds(
+  qualifiedName: string,
+  fieldIds: Iterable<string>,
+): Set<string> {
+  const schema =
+    ObjectRegistry.getSchema(qualifiedName) ??
+    ObjectRegistry.getSchema(getClassName(qualifiedName));
+  const columns = schema?.columns ?? {};
+  const ids = new Set<string>();
+  for (const id of fieldIds) {
+    const column = columns[toSnakeCase(id)] ?? columns[id];
+    if (column && column.notNull !== true && column.primaryKey !== true) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
 /** Declared field ids that live in a native `UUID` column (manifest schema). */
 function uuidColumnFieldIds(
   qualifiedName: string,
@@ -437,6 +465,10 @@ async function buildQuerySchemaForClass(
     RegistryFieldLike
   >;
   const idFields = uuidColumnFieldIds(qualifiedName, registered.keys());
+  const nullableFields = nullableColumnFieldIds(
+    qualifiedName,
+    registered.keys(),
+  );
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (name.startsWith('_')) continue;
@@ -446,9 +478,14 @@ async function buildQuerySchemaForClass(
     if (isTenantField(name, field)) continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
-    const filterOperators = idFields.has(name)
+    const valueOperators = idFields.has(name)
       ? [...ID_FIELD_FILTER_OPERATORS]
       : filterOperatorsFor(type);
+    // JSON stays unfilterable: no value operator, so no null test either.
+    const filterOperators =
+      valueOperators && nullableFields.has(name)
+        ? [...valueOperators, ...NULL_TEST_FILTER_OPERATORS]
+        : valueOperators;
     fields.push({
       id: name,
       type,
@@ -555,6 +592,10 @@ function inverseOperator(
       return 'notIn';
     case 'notIn':
       return 'in';
+    case 'isNull':
+      return 'isNotNull';
+    case 'isNotNull':
+      return 'isNull';
     case 'like':
       return queryFail(
         'Content queries cannot negate a like predicate',
@@ -583,6 +624,11 @@ function conditionToDnf(
   const single = (whereKey: string, whereValue: unknown): WhereDnf => [
     [{ [whereKey]: whereValue }],
   ];
+
+  // Null tests (#4448): `{ field: null }` is IS NULL and `{ 'field !=': null }`
+  // IS NOT NULL, so each is the exact complement of the other under negation.
+  if (operator === 'isNull') return single(field, null);
+  if (operator === 'isNotNull') return single(key('!='), null);
 
   if (operator === 'in') {
     const values = (value as unknown[]) ?? [];
@@ -632,7 +678,7 @@ function conditionToDnf(
   }
 
   const suffixes: Record<
-    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn' | 'isNull' | 'isNotNull'>,
     string
   > = {
     eq: '',

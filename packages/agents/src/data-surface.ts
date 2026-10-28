@@ -362,6 +362,7 @@ export class DataSurfaceRequestError extends Error {
 const DATA_QUERY_REQUEST_SHAPE_HINT =
   'Request shape: {"mode":"rows"|"count"|"facets", "projection":[field], ' +
   '"filter":{"kind":"condition","field":f,"operator":op,"value":v} | ' +
+  '{"kind":"condition","field":f,"operator":"isNull"|"isNotNull"} | ' +
   '{"kind":"all"|"any","filters":[filter]} | {"kind":"not","filter":filter}, ' +
   '"sort":[{"field":f,"direction":"asc"|"desc"}], ' +
   '"page":{"kind":"offset","offset":0,"limit":n}, "facets":[{"field":f,"limit":n}]}. ' +
@@ -378,6 +379,17 @@ const EXECUTOR_REQUEST_ERROR_CODES = new Set([
   'DATA_QUERY_VALUE_INVALID',
   'DATA_QUERY_OPERATOR_NOT_ALLOWED',
   'DATA_QUERY_UNSUPPORTED',
+]);
+
+/**
+ * Core error codes a malformed filter raises — the only failures that can
+ * stem from a null-test attempt, so the only ones that carry its hint.
+ */
+const NULL_HINT_ERROR_CODES: ReadonlySet<string> = new Set([
+  'INVALID_DATA_QUERY',
+  'FORBIDDEN_DATA_QUERY',
+  'DATA_QUERY_OPERATOR_NOT_ALLOWED',
+  'DATA_QUERY_VALUE_NOT_ALLOWED',
 ]);
 
 function fieldList(
@@ -438,11 +450,19 @@ function validQueryExample(
     field.filterOperators?.includes('in'),
   );
   const field = inField ?? filterable[0];
-  const filter = field
-    ? inField
-      ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
-      : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(field.filterOperators?.[0])},"value":"<value>"}`
-    : '';
+  const nullTest = nullTestAttempt(request, schema);
+  const firstOperator = field?.filterOperators?.[0];
+  const filter = nullTest
+    ? `,"filter":${nullTestFilter(nullTest)}`
+    : field
+      ? inField
+        ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
+        : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(firstOperator)}${
+            firstOperator && NULL_TEST_OPERATORS.has(firstOperator)
+              ? ''
+              : ',"value":"<value>"'
+          }}`
+      : '';
   let body: string;
   if (mode === 'facets') {
     const facet = schema.fields.find((candidate) => candidate.facetable);
@@ -458,6 +478,113 @@ function validQueryExample(
 }
 
 const FILTER_KINDS = new Set(['condition', 'all', 'any', 'not']);
+
+/** Null tests (#4448): condition operators that take no value. */
+const NULL_TEST_OPERATORS: ReadonlySet<string> = new Set([
+  'isNull',
+  'isNotNull',
+]);
+
+/** Strings a model writes when it means "no value" rather than the literal text. */
+const NULL_LIKE_TEXT = /^\s*(?:null|nil|none|undefined|empty|missing)?\s*$/i;
+
+/**
+ * Operator or kind names a model reaches for when it wants a null test. Any
+ * name in this vocabulary that the field does not declare is read as one.
+ */
+const NULL_TEST_NAME =
+  /^(?:is_?)?(?:not_?)?(?:null|nil|none|empty|missing|blank|exists?|present|defined|undefined|set|unset)$/i;
+
+/** Names whose intent is "has a value", so the example uses `isNotNull`. */
+const NOT_NULL_INTENT =
+  /not_?(?:null|nil|none|empty|missing|blank)|^(?:is_?)?(?:exists?|present|defined|set)$/i;
+
+interface NullTestAttempt {
+  field: string;
+  operator: 'isNull' | 'isNotNull';
+}
+
+/**
+ * The first filter node that looks like an attempt to test a nullable field
+ * for an empty value (#4448): `eq`/`ne` with `null`, `"null"`, `""`, or `[]`;
+ * a `not` filter naming a `field` directly; or a kind/operator such as
+ * `"exists"` or `"is_null"`. Only fields that declare `isNull` in the visible
+ * schema qualify, and only the schema's field id and a fixed operator ever
+ * reach the message — never caller text.
+ */
+function nullTestAttempt(
+  request: unknown,
+  schema: DataQuerySchema,
+): NullTestAttempt | undefined {
+  let found: NullTestAttempt | undefined;
+  // `negated` counts enclosing `not` filters, so `not(eq "null")` suggests
+  // isNotNull rather than its opposite.
+  const walk = (filter: unknown, depth: number, negated: boolean) => {
+    if (found || !isRecord(filter) || depth > 16) return;
+    const descriptor =
+      typeof filter.field === 'string'
+        ? schema.fields.find((field) => field.id === filter.field)
+        : undefined;
+    if (descriptor?.filterOperators?.includes('isNull')) {
+      const operator =
+        typeof filter.operator === 'string' ? filter.operator : undefined;
+      const kind = typeof filter.kind === 'string' ? filter.kind : undefined;
+      const value = filter.value;
+      const nullLikeValue =
+        value === undefined ||
+        value === null ||
+        (typeof value === 'string' && NULL_LIKE_TEXT.test(value)) ||
+        (Array.isArray(value) && value.length === 0);
+      const declared = (name: string | undefined) =>
+        name !== undefined &&
+        (descriptor.filterOperators as readonly string[]).includes(name);
+      const nullName = (name: string | undefined) =>
+        name !== undefined && !declared(name) && NULL_TEST_NAME.test(name);
+      const attempted =
+        (kind === 'condition' &&
+          (operator === 'eq' || operator === 'ne') &&
+          nullLikeValue) ||
+        (kind === 'not' && filter.filter === undefined) ||
+        nullName(kind) ||
+        nullName(operator);
+      if (attempted) {
+        const notNull =
+          operator === 'ne' ||
+          [kind, operator].some(
+            (name) => name !== undefined && NOT_NULL_INTENT.test(name),
+          );
+        // A `not` that names the field itself negates its own operator, if any.
+        const flip = negated !== (kind === 'not' && operator !== undefined);
+        found = {
+          field: descriptor.id,
+          operator: notNull !== flip ? 'isNotNull' : 'isNull',
+        };
+        return;
+      }
+    }
+    const children = Array.isArray(filter.filters)
+      ? filter.filters
+      : [filter.filter];
+    const childNegated = filter.kind === 'not' ? !negated : negated;
+    for (const child of children) walk(child, depth + 1, childNegated);
+  };
+  walk(isRecord(request) ? request.filter : undefined, 0, false);
+  return found;
+}
+
+function nullTestFilter(attempt: NullTestAttempt): string {
+  return `{"kind":"condition","field":${JSON.stringify(attempt.field)},"operator":"${attempt.operator}"}`;
+}
+
+/** The hint naming the null-test operators for a detected attempt (#4448). */
+function nullTestHint(request: unknown, schema: DataQuerySchema): string {
+  const attempt = nullTestAttempt(request, schema);
+  if (!attempt) return '';
+  return (
+    `To test whether ${attempt.field} is empty, use operator "isNull" with no value ` +
+    `(or "isNotNull" for rows that have one): ${nullTestFilter(attempt)}. `
+  );
+}
 
 /**
  * A targeted hint when a filter's `kind` is not one of the four (#4378):
@@ -485,7 +612,9 @@ function filterKindHint(request: unknown): string {
   return (
     'A filter kind is condition, all, any or not. ' +
     (operators.length > 0
-      ? `${operators.join(', ')} is an operator: use {"kind":"condition","field":f,"operator":${JSON.stringify(operators[0])},"value":v}. `
+      ? `${operators.join(', ')} is an operator: use {"kind":"condition","field":f,"operator":${JSON.stringify(operators[0])}${
+          NULL_TEST_OPERATORS.has(operators[0]) ? '' : ',"value":v'
+        }}. `
       : '') +
     (logical
       ? 'For OR use {"kind":"any","filters":[...]}; for AND use {"kind":"all","filters":[...]}. '
@@ -505,6 +634,11 @@ function explainRequestError(
   surfaceId: string,
 ): DataSurfaceRequestError {
   const reason = error.publicMessage.replace(/\.?$/, '.');
+  // A rejected filter that looks like a null test on a nullable field points
+  // at isNull/isNotNull first (#4448); other request errors keep their hint.
+  const nullHint = NULL_HINT_ERROR_CODES.has(error.code)
+    ? nullTestHint(request, schema)
+    : '';
   let hint: string;
   switch (error.code) {
     case 'DATA_QUERY_FIELD_NOT_ALLOWED':
@@ -570,7 +704,7 @@ function explainRequestError(
       hint = `${filterKindHint(request)}${DATA_QUERY_REQUEST_SHAPE_HINT}`;
   }
   return new DataSurfaceRequestError(
-    `${reason} ${hint} ${validQueryExample(surfaceId, schema, request)}`,
+    `${reason} ${nullHint}${hint} ${validQueryExample(surfaceId, schema, request)}`,
     error.code,
   );
 }
@@ -1413,6 +1547,8 @@ const DATA_QUERY_OPERATORS = [
   'in',
   'notIn',
   'like',
+  'isNull',
+  'isNotNull',
 ] as const;
 
 const DATA_QUERY_SCALAR_SCHEMA = [
@@ -1460,8 +1596,9 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
             'Optional. A condition {"kind":"condition","field":f,"operator":op,"value":v}; ' +
             '{"kind":"all"|"any","filters":[...]} to AND/OR nested filters; or {"kind":"not","filter":{...}}. ' +
             'field must list op in its filterOperators (data.inspect). value is a scalar, or a non-empty array (max 100) for in/notIn. ' +
+            'isNull/isNotNull test for an empty value and take no value: {"kind":"condition","field":f,"operator":"isNull"}. ' +
             'like takes SQL wildcards (%council%) on string fields. Datetimes are RFC 3339 instants (2026-09-01T00:00:00Z). ' +
-            'String fields whose only operators are eq/ne/in/notIn hold ids: compare them with complete id values.',
+            'String fields whose only value operators are eq/ne/in/notIn (isNull/isNotNull aside) hold ids: compare them with complete id values.',
           properties: {
             kind: { type: 'string', enum: ['condition', 'all', 'any', 'not'] },
             field: { type: 'string' },
