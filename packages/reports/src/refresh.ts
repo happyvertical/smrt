@@ -755,7 +755,7 @@ async function rebuildReport(
     watermark?.softDeleteColumn ?? explicitSoftDeleteColumn ?? null;
   const deletedFilter = softDeleteColumn ? { [softDeleteColumn]: null } : {};
   const spec = withRefreshFilters(
-    compileReportDefinition(definition),
+    compileReportDefinition(definition, adapterType),
     scope,
     deletedFilter,
   );
