@@ -73,6 +73,30 @@ import { matchesToolAllowList } from './tool-allow-list.js';
 export const DEFAULT_MAX_STEPS = 8;
 
 /**
+ * Deduped repeats of one read-only call that end the tool phase (#4391): once
+ * any single call (same tool, same canonical arguments) has been deduped this
+ * many times in one {@link runToolLoop} call, the next round is the forced
+ * no-tools answer-now call (`capReason: 'repeated_calls'`).
+ */
+export const DEFAULT_MAX_REPEATED_CALLS = 2;
+/** Upper bound for {@link ToolLoopOptions.maxRepeatedCalls} (#4391). */
+export const MAX_REPEATED_CALLS_LIMIT = 16;
+
+/**
+ * Normalize {@link ToolLoopOptions.maxRepeatedCalls} (#4391): unset or not a
+ * number is {@link DEFAULT_MAX_REPEATED_CALLS}; `0` or less turns the stop
+ * off (returns 0); anything else is floored and capped at
+ * {@link MAX_REPEATED_CALLS_LIMIT}.
+ */
+export function resolveMaxRepeatedCalls(value: unknown): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return DEFAULT_MAX_REPEATED_CALLS;
+  }
+  if (value <= 0) return 0;
+  return Math.min(MAX_REPEATED_CALLS_LIMIT, Math.max(1, Math.floor(value)));
+}
+
+/**
  * A transcript message that may carry an OpenAI-style `tool_call_id` on a tool
  * observation. A structural superset of {@link AIMessage}, so the working
  * transcript stays assignable to `AIMessage[]` for `ai.chat()`.
@@ -173,6 +197,10 @@ export interface ToolFailureRecord {
  *   the deadline ({@link ToolLoopOptions.deadline}) ran out before
  *   `maxSteps`; like `max_steps`, the last round is offered no tools, so the
  *   model answers with what it has.
+ * - `repeated_calls`: one read-only call was deduped
+ *   {@link ToolLoopOptions.maxRepeatedCalls} times (#4391); like `max_steps`,
+ *   the last round is offered no tools. Repeating would not help, so this is
+ *   not a "continue" cap.
  * - `empty`: the final round had blank content and no tool calls, and one
  *   retry without tools (with {@link TOOL_LOOP_ANSWER_NOW_INSTRUCTION}) was
  *   blank too (#4379). `content` is `''`; callers store a fallback.
@@ -186,6 +214,7 @@ export type ToolLoopStopReason =
   | 'stop'
   | 'max_steps'
   | 'budget'
+  | 'repeated_calls'
   | 'no_tools'
   | 'client_tools'
   | 'cancelled'
@@ -193,7 +222,7 @@ export type ToolLoopStopReason =
   | 'timeout';
 
 /** Why the loop withdrew tools for its final round. */
-export type ToolLoopCapReason = 'max_steps' | 'budget';
+export type ToolLoopCapReason = 'max_steps' | 'budget' | 'repeated_calls';
 
 /**
  * The effect a browser-executed tool declares. Mirrors smrt-web's
@@ -345,6 +374,16 @@ export interface ToolLoopOptions {
   db?: SmrtClassOptions['db'];
   /** Max tool-executing rounds before force-termination. Default {@link DEFAULT_MAX_STEPS}. */
   maxSteps?: number;
+  /**
+   * End the tool phase once one read-only call has been deduped this many
+   * times (#4391): the next round is the forced no-tools call, and the turn
+   * reports `repeated_calls`. Counted per call (tool + canonical arguments),
+   * only for deduped repeats, within this call (a resume leg starts at zero);
+   * a write resets the counts with the dedupe cache. Default
+   * {@link DEFAULT_MAX_REPEATED_CALLS}; `0` turns it off; capped at
+   * {@link MAX_REPEATED_CALLS_LIMIT}.
+   */
+  maxRepeatedCalls?: number;
   /** Model id passed to the AI boundary. */
   model?: string;
   /** Sampling temperature. */
@@ -1017,6 +1056,7 @@ export async function runToolLoop(
     principal,
     db,
     maxSteps = DEFAULT_MAX_STEPS,
+    maxRepeatedCalls: maxRepeatedCallsOption,
     model,
     temperature,
     maxTokens,
@@ -1042,6 +1082,7 @@ export async function runToolLoop(
     postgresRls,
     permissions,
   } = options;
+  const maxRepeatedCalls = resolveMaxRepeatedCalls(maxRepeatedCallsOption);
 
   const serverNames = new Set<string>([
     ...tools.flatMap((tool) => [tool.slug, toolFunctionName(tool.slug)]),
@@ -1096,6 +1137,11 @@ export async function runToolLoop(
       // Identical read-only calls already made in this leg (#4382), keyed by
       // tool + canonical arguments. Bounded; never shared across calls.
       const priorReadOnlyCalls = new Map<string, ToolInvocation>();
+      // Deduped repeats per dedupe key (#4391); cleared with the cache.
+      const repeatCounts = new Map<string, number>();
+      // Set once a call reaches `maxRepeatedCalls` repeats: the next round
+      // is the forced no-tools call.
+      let repeatedCallsHit = false;
       /**
        * Report a failed call to the audit sink (#4383): tool, status, kind,
        * stable code and sizes only — never the arguments or the error text,
@@ -1145,6 +1191,16 @@ export async function runToolLoop(
         ...(emptyRetried ? { emptyRetried } : {}),
         ...(capReason ? { capReason } : {}),
       });
+      /**
+       * Why the forced final round withdrew tools. A stuck repeat wins: more
+       * steps or budget would only repeat the same call (#4391).
+       */
+      const capCause = (): ToolLoopCapReason =>
+        repeatedCallsHit
+          ? 'repeated_calls'
+          : executedRounds >= maxSteps
+            ? 'max_steps'
+            : 'budget';
       /** The token budget or the deadline has run out. */
       const budgetExhausted = (): boolean =>
         (maxTotalTokens !== undefined &&
@@ -1214,48 +1270,37 @@ export async function runToolLoop(
         if (signal?.aborted) return cancelled();
         const budgetSpent = budgetExhausted();
         const offerTools =
-          aiTools.length > 0 && executedRounds < maxSteps && !budgetSpent;
+          aiTools.length > 0 &&
+          executedRounds < maxSteps &&
+          !budgetSpent &&
+          !repeatedCallsHit;
         onStep?.({ type: 'round', step: executedRounds });
-        // The forced final call (step cap or spent budget, #4378): tools are
+        // The forced final call (step cap, spent budget, #4378, or a call
+        // repeated `maxRepeatedCalls` times, #4391): tools are
         // withdrawn, so tell the model to answer now instead of resending a
         // transcript that ends on tool observations with no instruction. The
         // instruction is sent on this call only; it never enters the
         // returned transcript, so stored conversations are unchanged.
         const forcedFinal = aiTools.length > 0 && !offerTools;
         const roundMessages: LoopMessage[] = forcedFinal
-          ? withAnswerNowInstruction(working)
+          ? withAnswerNowInstruction(working, capCause())
           : working;
         const outcome = await callModel(roundMessages, offerTools);
         if (outcome === 'cancelled') return cancelled();
         if (outcome === 'timeout') {
-          return timedOut(
-            false,
-            forcedFinal
-              ? executedRounds >= maxSteps
-                ? 'max_steps'
-                : 'budget'
-              : undefined,
-          );
+          return timedOut(false, forcedFinal ? capCause() : undefined);
         }
         response = outcome;
 
         const toolCalls = offerTools ? (response.toolCalls ?? []) : [];
         if (toolCalls.length === 0) {
-          const stoppedReason: ToolLoopStopReason =
-            aiTools.length === 0
-              ? 'no_tools'
-              : offerTools
-                ? 'stop'
-                : executedRounds >= maxSteps
-                  ? 'max_steps'
-                  : 'budget';
           // Why tools were withdrawn on this final round, kept even when the
           // turn then ends `empty`/`timeout` (#4379).
           const capReason: ToolLoopCapReason | undefined = forcedFinal
-            ? executedRounds >= maxSteps
-              ? 'max_steps'
-              : 'budget'
+            ? capCause()
             : undefined;
+          const stoppedReason: ToolLoopStopReason =
+            aiTools.length === 0 ? 'no_tools' : (capReason ?? 'stop');
           const first = response;
           let final = first;
           let emptyRetried = false;
@@ -1282,7 +1327,7 @@ export async function runToolLoop(
               emptyRetried = true;
               if (signal?.aborted) return cancelled();
               const outcome = await callModel(
-                withAnswerNowInstruction(working),
+                withAnswerNowInstruction(working, capReason),
                 false,
               );
               if (outcome === 'cancelled') return cancelled();
@@ -1528,6 +1573,12 @@ export async function runToolLoop(
             // result: forget every remembered read so a later identical read
             // runs fresh (#4382).
             priorReadOnlyCalls.clear();
+            repeatCounts.clear();
+          } else if (dedupeKey && invocation.deduped && maxRepeatedCalls > 0) {
+            // Only deduped repeats of this same call count (#4391).
+            const repeats = (repeatCounts.get(dedupeKey) ?? 0) + 1;
+            repeatCounts.set(dedupeKey, repeats);
+            if (repeats >= maxRepeatedCalls) repeatedCallsHit = true;
           } else if (
             dedupeKey &&
             !invocation.deduped &&
@@ -1598,18 +1649,41 @@ export async function runToolLoop(
 }
 
 /**
- * Fixed instruction added to the forced no-tools final call at the step cap
- * or when the turn budget is spent (#4378). When the transcript already ends
- * with a user message, append to a temporary copy of its content so strict
- * alternating-role templates remain valid. The instruction is constant text:
- * it never carries tool output or argument values.
+ * Fixed instruction added to the forced no-tools final call at the step cap,
+ * when the turn budget is spent (#4378), or after repeated calls (#4391).
+ * When the transcript already ends with a user message, append to a
+ * temporary copy of its content so strict alternating-role templates remain
+ * valid. The instruction is constant text: it never carries tool output or
+ * argument values.
  */
 export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
   "Tools are no longer available for this turn. Answer the user's question now " +
   'from the tool results above, without calling tools. ' +
   'If they do not answer the question, say so.';
 
-function withAnswerNowInstruction(messages: LoopMessage[]): LoopMessage[] {
+/**
+ * Sentence appended to {@link TOOL_LOOP_ANSWER_NOW_INSTRUCTION} only when the
+ * tool phase ended on `repeated_calls` (#4391): a model stuck repeating one
+ * call often holds a result that does not fit the question (an unfiltered
+ * total for a filtered count) and must not present it as the answer.
+ */
+export const TOOL_LOOP_REPEATED_CALLS_INSTRUCTION =
+  'If the results above do not match what was asked (for example, a total ' +
+  'where a filtered count was asked), say you could not get that figure ' +
+  'rather than presenting the result as the answer.';
+
+/** The answer-now instruction for a forced final call with this cap reason. */
+function answerNowInstruction(capReason?: ToolLoopCapReason): string {
+  return capReason === 'repeated_calls'
+    ? `${TOOL_LOOP_ANSWER_NOW_INSTRUCTION} ${TOOL_LOOP_REPEATED_CALLS_INSTRUCTION}`
+    : TOOL_LOOP_ANSWER_NOW_INSTRUCTION;
+}
+
+function withAnswerNowInstruction(
+  messages: LoopMessage[],
+  capReason?: ToolLoopCapReason,
+): LoopMessage[] {
+  const instruction = answerNowInstruction(capReason);
   const last = messages.at(-1);
   if (last?.role === 'user') {
     return [
@@ -1618,18 +1692,12 @@ function withAnswerNowInstruction(messages: LoopMessage[]): LoopMessage[] {
         ...last,
         content:
           typeof last.content === 'string'
-            ? `${last.content}\n\n${TOOL_LOOP_ANSWER_NOW_INSTRUCTION}`
-            : [
-                ...last.content,
-                { type: 'text', text: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
-              ],
+            ? `${last.content}\n\n${instruction}`
+            : [...last.content, { type: 'text', text: instruction }],
       },
     ];
   }
-  return [
-    ...messages,
-    { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
-  ];
+  return [...messages, { role: 'user', content: instruction }];
 }
 
 /**
@@ -1689,6 +1757,7 @@ const STOP_REASONS: ReadonlySet<string> = new Set<ToolLoopStopReason>([
   'stop',
   'max_steps',
   'budget',
+  'repeated_calls',
   'no_tools',
   'client_tools',
   'cancelled',
@@ -1710,7 +1779,11 @@ export function replyMetadataFor(
   if (result.stoppedReason && STOP_REASONS.has(result.stoppedReason)) {
     metadata.stoppedReason = result.stoppedReason;
   }
-  if (result.capReason === 'max_steps' || result.capReason === 'budget') {
+  if (
+    result.capReason === 'max_steps' ||
+    result.capReason === 'budget' ||
+    result.capReason === 'repeated_calls'
+  ) {
     metadata.capReason = result.capReason;
   }
   if (reply.fallback) metadata[FALLBACK_REPLY_METADATA_KEY] = reply.fallback;
@@ -2048,7 +2121,7 @@ function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
  * of the earlier observation.
  */
 export const TOOL_CALL_DEDUPED_NOTE =
-  'This exact call was already made in this turn; its result is above. Use it, or change the arguments.';
+  'The previous result is above. To get a different answer you must change the arguments (for example, add a filter); repeating this call will return the same result.';
 
 /**
  * Fixed note for a deduped repeat of a call that was rejected or refused

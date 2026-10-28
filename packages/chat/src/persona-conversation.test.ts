@@ -601,6 +601,37 @@ describe('persona-bound conversation', () => {
       });
     });
 
+    it('persists repeated_calls and forwards maxRepeatedCalls (#4391)', async () => {
+      const { chatService, bound, assistantMessages } = await boundSession();
+      const { ai } = makeAI((_call, offered) =>
+        offered
+          ? toolCall(toolFunctionName('conv_notes.read'), {})
+          : ({ content: 'No notes.', finishReason: 'stop' } as AIResponse),
+      );
+      const turn = await runPersonaConversationTurn({
+        ai,
+        db,
+        persona,
+        tenantId,
+        userMessage: 'q',
+        recall: false,
+        chatService,
+        session: bound,
+        maxSteps: 6,
+        maxRepeatedCalls: 1,
+      });
+      expect(turn.result).toMatchObject({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+        steps: 2,
+      });
+      const [reply] = await assistantMessages();
+      expect(reply?.getMetadata()).toEqual({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+      });
+    });
+
     it('forwards maxTotalTokens, deadline, toolChoice and requestTimeoutMs to the loop', async () => {
       const { ai, captured } = makeAI((call, offered) =>
         call === 0 && offered

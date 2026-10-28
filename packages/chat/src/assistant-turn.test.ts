@@ -1012,6 +1012,68 @@ describe('assistant turn', () => {
         false,
       );
     });
+
+    it('stops on repeated calls, persists capReason, and forwards maxRepeatedCalls (#4391)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent-repeat',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const run = (maxRepeatedCalls?: number) => {
+        const ai = scriptedAI([
+          calls(['data-discover', {}, 'd1']),
+          calls(['data-discover', {}, 'd2']),
+          calls(['data-discover', {}, 'd3']),
+          text('One surface: articles.'),
+        ]);
+        return collect(
+          runAssistantTurn({
+            ai,
+            db,
+            principal: principal(),
+            audit: () => {},
+            userMessage: 'what data is there?',
+            extraTools: [readTool([])],
+            maxSteps: 3,
+            ...(maxRepeatedCalls !== undefined ? { maxRepeatedCalls } : {}),
+            author: {
+              chatService,
+              agentSessionId: session.id as string,
+              tenantId,
+              authorInvocation: () => null,
+            },
+          }),
+        ).then((events) => ({ ai, events }));
+      };
+      const { ai, events } = await run();
+      const done = events.find((e) => e.type === 'done') as Extract<
+        AssistantTurnEvent,
+        { type: 'done' }
+      >;
+      expect(done).toMatchObject({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+        message: { content: 'One surface: articles.' },
+      });
+      // Three tool rounds hit the limit; the fourth call had no tools.
+      expect(ai.offered.at(-1)).toEqual([]);
+      const metadata = (done.message as { metadata?: unknown }).metadata;
+      expect(
+        typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
+      ).toEqual({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+      });
+
+      const off = await run(0);
+      expect(off.events.find((e) => e.type === 'done')).toMatchObject({
+        stoppedReason: 'max_steps',
+        capReason: 'max_steps',
+      });
+    });
   });
 
   describe('blank answers and timeouts (#4379)', () => {
