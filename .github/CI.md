@@ -159,10 +159,13 @@ to its S3 provider, so the workflows bound the pool themselves:
 - `merge-queue-cleanup.yml` deletes every cache entry of a
   `gh-readonly-queue/*` ref whose branch is gone. Jobs of a live merge group
   still share entries; a dead group's entries are unrestorable.
+- `turbo-cache-seed.yml` also deletes main's `<os>-pnpm-store-*` entries
+  whose key is not the current lockfile's, once the current entry exists
+  (#3122). Each lockfile change leaves one such entry, so the count is small.
 
-Both are best effort, capped per run to respect the `GITHUB_TOKEN` rate
-limit, and never fail their job; anything left idle for seven days expires on
-its own. Manual inspection remains `gh cache list --key turbogha_`.
+All three are best effort, the Turbo and queue prunes are capped per run to
+respect the `GITHUB_TOKEN` rate limit, and none fails its job; anything left
+idle for seven days expires on its own. Manual inspection remains `gh cache list --key turbogha_`.
 
 ## Job timeouts
 
