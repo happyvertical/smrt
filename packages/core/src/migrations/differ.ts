@@ -4127,6 +4127,7 @@ export class SchemaComparer {
             name: idx.name,
             index: idx,
             note: `renames ${legacyName} (same columns)`,
+            renamedFrom: legacyName,
             sql: renameSql,
             sqlStatements: [renameSql],
           });

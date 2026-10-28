@@ -416,7 +416,11 @@ export const dbDiffCommand: CLICommand = {
       if (newIndexes.length > 0) {
         console.log(`  🗂️  New indexes (${newIndexes.length}):`);
         for (const change of newIndexes) {
-          console.log(`     + ${change.name} on ${change.table}`);
+          console.log(
+            change.renamedFrom
+              ? `     ~ ${change.renamedFrom} -> ${change.name} on ${change.table}`
+              : `     + ${change.name} on ${change.table}`,
+          );
         }
         console.log();
       }

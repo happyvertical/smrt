@@ -2648,7 +2648,9 @@ export default testManifest;
               actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}${migration.note ? ` (${migration.note})` : ''}`;
             } else if (migration.type === 'add_index' && migration.index) {
               migrationSql = migration.sql || '';
-              actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+              actionDesc = migration.renamedFrom
+                ? `Renamed index ${migration.renamedFrom} -> ${migration.index.name} on ${migration.tableName}`
+                : `Created index ${migration.index.name} on ${migration.tableName}`;
             } else if (migration.type === 'drop_index' && migration.indexName) {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;

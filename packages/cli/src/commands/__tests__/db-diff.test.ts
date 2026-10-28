@@ -321,6 +321,44 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     expect(out).not.toContain('no migrations needed');
   });
 
+  function mockDiff(changes: unknown[]): void {
+    declareSchema({
+      widgets: {
+        tableName: 'widgets',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+      },
+    });
+    vi.spyOn(SchemaComparer.prototype, 'compare').mockResolvedValue({
+      has_changes: true,
+      added_tables: [],
+      dropped_tables: [],
+      orphan_tables: [],
+      changes,
+    } as never);
+  }
+
+  it('renders an index rename as ~ old -> new, not a new index (#3307)', async () => {
+    mockDiff([
+      {
+        type: 'add_index',
+        table: 'widgets',
+        name: 'widgets_tenant_id_slug_idx',
+        renamedFrom: 'widgets_slug_context_idx',
+        index: { name: 'widgets_tenant_id_slug_idx', columns: ['a'] },
+        sql: 'ALTER INDEX IF EXISTS "widgets_slug_context_idx" RENAME TO "widgets_tenant_id_slug_idx"',
+      },
+    ]);
+
+    await requireCommandHandler(dbDiffCommand)([], {});
+
+    const out = output();
+    expect(out).toContain(
+      '~ widgets_slug_context_idx -> widgets_tenant_id_slug_idx on widgets',
+    );
+    expect(out).not.toContain('+ widgets_tenant_id_slug_idx');
+  });
+
   it('lists orphan indexes to drop when --drop-indexes is set', async () => {
     await createTable('CREATE TABLE widgets (id TEXT PRIMARY KEY, name TEXT)');
     const db = await getDatabase({ type: 'sqlite', url: dbUrl });
