@@ -195,7 +195,10 @@ to burn every step to `maxSteps`. Now, once a single dedupe key (same tool,
 same canonical arguments) has been deduped `maxRepeatedCalls` times in one
 `runToolLoop` call, the rest of that round still runs — every tool call gets
 its tool result — and the next model call is the forced no-tools call with
-the same `TOOL_LOOP_ANSWER_NOW_INSTRUCTION`.
+`TOOL_LOOP_ANSWER_NOW_INSTRUCTION` plus, on this path only (and its blank
+retry), `TOOL_LOOP_REPEATED_CALLS_INSTRUCTION`: if the results do not match
+what was asked (a total where a filtered count was asked), say the figure
+could not be got rather than presenting the result as the answer.
 
 - **Option.** `maxRepeatedCalls` on `runToolLoop`, `runAssistantTurn`,
   `runPersonaConversationTurn` and `mountAssistantRoutes`. Default

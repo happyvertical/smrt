@@ -65,6 +65,7 @@ import {
   TOOL_CALL_DEDUPED_REJECTED_NOTE,
   TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+  TOOL_LOOP_REPEATED_CALLS_INSTRUCTION,
   type ToolExecutionContext,
   toolFailureAuditMetadata,
   toolFailureRecord,
@@ -1713,12 +1714,18 @@ describe('runToolLoop', () => {
       // Three tool rounds, then one no-tools call carrying the instruction.
       expect(seen.map((c) => c.tools)).toEqual([true, true, true, false]);
       const final = seen.at(-1)?.messages ?? [];
+      // The repeated-calls path adds one sentence to the same instruction.
       expect(final.at(-1)).toEqual({
         role: 'user',
-        content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+        content: `${TOOL_LOOP_ANSWER_NOW_INSTRUCTION} ${TOOL_LOOP_REPEATED_CALLS_INSTRUCTION}`,
       });
       expect(TOOL_LOOP_ANSWER_NOW_INSTRUCTION).toContain(
         'If they do not answer the question, say so.',
+      );
+      expect(TOOL_LOOP_REPEATED_CALLS_INSTRUCTION).toBe(
+        'If the results above do not match what was asked (for example, a ' +
+          'total where a filtered count was asked), say you could not get ' +
+          'that figure rather than presenting the result as the answer.',
       );
       // The returned transcript stays valid: every call has its result, and
       // the instruction is not stored.
@@ -1768,6 +1775,25 @@ describe('runToolLoop', () => {
           .filter((m) => m.role === 'tool')
           .map((m) => (m as { tool_call_id?: string }).tool_call_id),
       ).toEqual(['a', 'b', 'c']);
+    });
+
+    it('keeps the plain instruction on the max_steps path', async () => {
+      const { ai, seen } = scripted(() => toolCall('data-query', count));
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool([])],
+        principal: allow(),
+        maxSteps: 2,
+        maxRepeatedCalls: 0,
+        audit: () => {},
+      });
+      expect(result.capReason).toBe('max_steps');
+      const content = String(seen.at(-1)?.messages.at(-1)?.content);
+      expect(content).toBe(TOOL_LOOP_ANSWER_NOW_INSTRUCTION);
+      expect(content).not.toContain(TOOL_LOOP_REPEATED_CALLS_INSTRUCTION);
     });
 
     it('does not count a call with different arguments as a repeat', async () => {
