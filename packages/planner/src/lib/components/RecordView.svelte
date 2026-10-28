@@ -20,6 +20,7 @@ import {
   catalog,
   getModel,
   getModelByQualifiedName,
+  hasScreen,
 } from '../catalog/index.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { useDataSource } from '../data/context.ts';
@@ -201,7 +202,7 @@ function hrefFor(field: ScreenField, id: string): string | undefined {
   const target = targetOf(field);
   if (!target || !inApp.has(target.model)) return undefined;
   const found = getModelByQualifiedName(target.model);
-  return found?.model.exposed
+  return found && hasScreen(found.model)
     ? href(recordPath(found.pkg.id, found.model.name, id))
     : undefined;
 }
@@ -220,7 +221,7 @@ const labels = $derived(
 
 function viewAllHref(relation: ScreenRelation): string | undefined {
   const found = getModelByQualifiedName(relation.model);
-  return found?.model.exposed
+  return found && hasScreen(found.model)
     ? href(
         filteredListPath(
           found.pkg.id,

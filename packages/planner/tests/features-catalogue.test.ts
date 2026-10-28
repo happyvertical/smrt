@@ -351,3 +351,22 @@ describe('ui-only features (#4440)', () => {
     );
   });
 });
+
+describe('ui-only screens (#4440)', () => {
+  it('give record views to closed models a ui-only recipe covers', async () => {
+    const { detailOverviewModel } = await import(
+      '../src/lib/overviews/definitions.ts'
+    );
+    const { hasScreen, getModelByQualifiedName } = await import(
+      '../src/lib/catalog/index.ts'
+    );
+    const employment = getModelByQualifiedName(
+      '@happyvertical/smrt-human-resources:Employment',
+    );
+    expect(employment?.model.exposed).toBe(false);
+    expect(hasScreen(employment!.model)).toBe(true);
+    expect(
+      detailOverviewModel('detail:human-resources.Employment'),
+    ).toBeDefined();
+  });
+});

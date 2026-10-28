@@ -36,9 +36,27 @@ export function getModelByQualifiedName(
   return pkg && model ? { pkg, model } : undefined;
 }
 
+/** Models a `ui-only` recipe covers: closed to agents, with screens (smrt#4440). */
+const uiOnlyModelIds = new Set(
+  catalog.packages.flatMap((pkg) =>
+    (pkg.recipes ?? [])
+      .filter((recipe) => recipe.exposure === 'ui-only')
+      .flatMap((recipe) => recipe.models),
+  ),
+);
+
+/**
+ * Whether the model gets generated screens: exposed to agents, or closed on
+ * purpose and covered by a `ui-only` recipe. Agent tooling (connect tools,
+ * feature models) keeps asking `exposed`, which a ui-only model never is.
+ */
+export function hasScreen(model: CatalogModel): boolean {
+  return model.exposed || uiOnlyModelIds.has(model.id);
+}
+
 /** The models of a package that get generated views (and nav entries). */
 export function exposedModels(pkg: CatalogPackage): CatalogModel[] {
-  return pkg.models.filter((m) => m.exposed);
+  return pkg.models.filter(hasScreen);
 }
 
 /** Case-insensitive match on package id, description, model and field names. */
