@@ -370,3 +370,21 @@ describe('ui-only screens (#4440)', () => {
     ).toBeDefined();
   });
 });
+
+describe('ui-only child records (#4440)', () => {
+  it('show up as related records of their closed parent', async () => {
+    const { screenRelations, appModels } = await import(
+      '../src/lib/screens/relations.ts'
+    );
+    const { recipesById } = await import('../src/lib/recipes/index.ts');
+    const people = recipesById.get('human-resources.people');
+    const relations = screenRelations(
+      catalog,
+      '@happyvertical/smrt-human-resources:Employment',
+      appModels(people ? [people] : [], []),
+    );
+    expect(relations.map((r) => r.model)).toContain(
+      '@happyvertical/smrt-human-resources:EmploymentTerm',
+    );
+  });
+});
