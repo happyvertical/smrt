@@ -97,6 +97,7 @@ import {
   type ToolInvocation,
   type ToolLoopUsage,
 } from './tool-loop.js';
+import type { ChatMessageRole } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -328,7 +329,10 @@ export interface MountAssistantRoutesOptions {
   emptyAnswerFallback?: string;
   maxTokens?: number;
   temperature?: number;
-  /** Earlier messages sent with a new turn. Default 20. */
+  /**
+   * Earlier user and assistant turns sent with a new turn; persisted tool
+   * rows do not count (#4458). Default 20.
+   */
   historyLimit?: number;
   /**
    * A stored send with no reply and no recorded outcome (e.g. its process
@@ -444,6 +448,9 @@ export interface AssistantDuplicateSendWire {
 
 /** Default assistant agent id. */
 export const DEFAULT_ASSISTANT_AGENT_ID = 'smrt-assistant';
+
+/** The roles the assistant route replays as history (#4458). */
+const HISTORY_REPLAY_ROLES: readonly ChatMessageRole[] = ['user', 'assistant'];
 /** Session key isolating the dock's session from other uses of the agent id. */
 export const ASSISTANT_DOCK_SESSION_KEY = 'assistant-dock';
 /** Largest serialized `context` object a send or resume body may carry. */
@@ -1758,11 +1765,16 @@ export function mountAssistantRoutes(
     try {
       const history: AIMessage[] = [];
       if (historyLimit > 0) {
+        // `historyLimit` counts replayed turns, not raw rows (#4458): the
+        // role filter runs in SQL, so persisted tool rows never take a
+        // slot. `+ 1` covers this send, which is already stored. The read
+        // is bounded by the limit whatever the thread holds.
         const earlier = await chat.getThreadMessages({
           threadId,
           actorProfileId: principal.profileId,
           tenantId: principal.tenantId,
           limit: historyLimit + 1,
+          roles: HISTORY_REPLAY_ROLES,
         });
         for (const message of earlier) {
           if (String(message.id) === userWire.id) continue;
