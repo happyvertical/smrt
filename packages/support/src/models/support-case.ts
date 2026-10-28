@@ -72,7 +72,7 @@ export class SupportCase extends SmrtObject {
 
   @field({
     type: 'text',
-    description: 'Where the ticket stands, from new to solved.',
+    description: 'Where the ticket stands, from new to resolved.',
   })
   status: SupportCaseStatus = 'new';
 

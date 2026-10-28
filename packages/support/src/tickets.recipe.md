@@ -2,7 +2,7 @@
 
 Support keeps every request for help from a customer in one place. Each request
 is a ticket with a number, a subject, who asked, who is handling it and where
-it stands, from new to solved. Messages back and forth stay on the ticket, so
+it stands, from new to resolved. Messages back and forth stay on the ticket, so
 anyone on the team can pick it up and see what was said.
 
 ## Tasks
@@ -31,8 +31,8 @@ anyone on the team can pick it up and see what was said.
 
 ### Close a ticket
 
-Change the **{field:SupportCase.status}** to solved once the customer has what
-they need. If they write back, set it to open again and carry on.
+Change the **{field:SupportCase.status}** to resolved once the customer has what
+they need. If they write back, move it back to in progress and carry on.
 
 ### Add someone to the support team
 

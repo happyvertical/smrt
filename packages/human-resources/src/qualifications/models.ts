@@ -148,7 +148,7 @@ export class HeldQualification extends SmrtObject {
   certificateNumber = '';
   @field({
     type: 'text',
-    description: 'Whether it is valid, expired or withdrawn.',
+    description: 'Whether it is valid, expired, suspended or revoked.',
   })
   status: HeldQualificationStatus = 'valid';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {

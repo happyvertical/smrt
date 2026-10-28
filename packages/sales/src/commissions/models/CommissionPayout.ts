@@ -147,7 +147,10 @@ export class CommissionPayout extends SmrtObject {
    * {@link markProcessing} / {@link complete} / {@link fail} /
    * {@link resetFromFailed}.
    */
-  @field({ description: 'Whether the payment is waiting, sent or failed.' })
+  @field({
+    description:
+      'Whether the payment is waiting, being sent, completed or failed.',
+  })
   status: CommissionPayoutStatus = 'pending';
 
   /**

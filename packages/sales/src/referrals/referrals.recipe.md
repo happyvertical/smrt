@@ -30,10 +30,10 @@ each affiliate has earned until you pay it out.
 
 1. Open the commissions and find the affiliate.
 2. Read the **{field:Commission.amountCents}** and the **{field:Commission.status}** of each one.
-3. A commission moves from pending to approved to paid as you work through it.
+3. A commission moves from pending to approved, then payable, then paid as it is worked through.
 
 ### Pay an affiliate
 
 1. Open the payouts and choose **New**.
 2. Pick the **{field:CommissionPayout.earnerId}** and check the **{field:CommissionPayout.totalAmountCents}**.
-3. Save, then set the **{field:CommissionPayout.status}** to paid once the money has gone out.
+3. Save. The **{field:CommissionPayout.status}** shows completed once the money has gone out, or failed if it did not.
