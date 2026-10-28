@@ -37,9 +37,9 @@ function registerFixture(): void {
         tableName: 'smrt_surface_id_fixtures',
         ddl: '',
         columns: {
-          id: { type: 'UUID' },
+          id: { type: 'UUID', primaryKey: true, notNull: true },
           parent_id: { type: 'UUID' },
-          name: { type: 'TEXT' },
+          name: { type: 'TEXT', notNull: true },
         },
         indexes: [],
         version: 'test',
@@ -94,13 +94,42 @@ describe('id fields', () => {
       'ne',
       'notIn',
     ]);
+    // A nullable id column also offers the null tests (#4448).
     expect(byId.get('parentId')?.filterOperators).toEqual([
       'eq',
       'in',
       'ne',
       'notIn',
+      'isNotNull',
+      'isNull',
     ]);
     expect(byId.get('name')?.filterOperators).toContain('like');
+    expect(byId.get('name')?.filterOperators).not.toContain('isNull');
+  });
+
+  it('lowers a null test on an id column without a value check (#4448)', async () => {
+    const { result, list } = await run({
+      kind: 'any',
+      filters: [
+        { kind: 'condition', field: 'parentId', operator: 'isNull' },
+        {
+          kind: 'not',
+          filter: {
+            kind: 'condition',
+            field: 'parentId',
+            operator: 'isNull',
+          },
+        },
+      ],
+    });
+    await expect(result).resolves.toMatchObject({ rows: [] });
+    expect(list).toHaveBeenCalledOnce();
+    expect(JSON.stringify(list.mock.calls[0]?.[0]?.where)).toContain(
+      '"parentId !=":null',
+    );
+    expect(JSON.stringify(list.mock.calls[0]?.[0]?.where)).toContain(
+      '"parentId":null',
+    );
   });
 
   it('refuses a non-UUID value before the database sees it', async () => {

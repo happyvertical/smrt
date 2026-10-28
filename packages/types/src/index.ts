@@ -54,6 +54,8 @@ export type {
   DataQueryFilter,
   DataQueryFilterOperator,
   DataQueryFreshness,
+  DataQueryNullCondition,
+  DataQueryNullOperator,
   DataQueryOffsetPage,
   DataQueryPage,
   DataQueryRequest,
@@ -64,6 +66,8 @@ export type {
   DataQuerySort,
   DataQuerySortDirection,
   DataQueryTotal,
+  DataQueryValueCondition,
+  DataQueryValueOperator,
 } from './data-query.js';
 export type {
   DataSurfaceActionDescriptor,
