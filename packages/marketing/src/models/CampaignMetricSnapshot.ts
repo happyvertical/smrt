@@ -1,6 +1,12 @@
 /** Immutable period performance evidence for a campaign or campaign channel. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { CampaignMetricSnapshotOptions } from '../types.js';
 import { Campaign } from './Campaign.js';
@@ -122,7 +128,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.assertMetrics();
     await this.assertChannelMatchesCampaign();
     const captured = persistedSnapshotState.get(this);
@@ -161,7 +167,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
       }
     }
 
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedSnapshotState.set(this, this.serializeState());
     return result;
   }

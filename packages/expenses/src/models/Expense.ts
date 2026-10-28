@@ -18,6 +18,7 @@ import {
   isUniqueViolationError,
   ObjectRegistry,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import {
@@ -648,14 +649,14 @@ export class Expense extends SmrtObject {
    * Validate, enforce the review and reviewed-field locks, check the
    * commitment, then persist.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.normalize();
     this.validateShape();
-    return this.withTransaction(() => this.saveValidated());
+    return this.withTransaction(() => this.saveValidated(options));
   }
 
   /** Keep both directions of refund validation and the write on one executor. */
-  private async saveValidated(): Promise<this> {
+  private async saveValidated(options?: SmrtSaveOptions): Promise<this> {
     await this.lockRefundRows();
     const persisted = await this.readPersisted();
     // The guards below check `persisted`; pin the write to that row.
@@ -684,7 +685,7 @@ export class Expense extends SmrtObject {
 
     if (!this.recordedAt) this.recordedAt = new Date();
     try {
-      return await super.save();
+      return await super.save(options);
     } catch (error) {
       // A new expense is a plain INSERT; its only unique keys are the id and
       // the natural key, so a violation means it named an existing row.
@@ -1134,7 +1135,7 @@ export class Expense extends SmrtObject {
     }
     const contracts = await PurchaseContractCollection.create({ db: this.db });
     const commitment = await contracts.get({ id: this.commitmentId });
-    // Before super.save() the tenant interceptor has not populated tenantId
+    // Before super.save(options) the tenant interceptor has not populated tenantId
     // yet, so compare against the tenant the row is about to be written in.
     const owner = effectiveTenant(this.tenantId);
     if (!commitment || !sameTenant(commitment.tenantId, owner)) {

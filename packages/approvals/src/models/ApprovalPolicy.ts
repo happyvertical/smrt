@@ -15,6 +15,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -108,7 +109,7 @@ export class ApprovalPolicy extends SmrtObject {
    * @throws {ApprovalError} `APPROVAL_KIND_UNKNOWN`,
    *   `APPROVAL_POLICY_LOOSENS`, or `APPROVAL_INVALID`.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.requiredPermission = String(this.requiredPermission ?? '').trim();
     this.requiredApprovals = Number(this.requiredApprovals ?? 0);
     this.ttlMs = Number(this.ttlMs ?? 0);
@@ -117,6 +118,6 @@ export class ApprovalPolicy extends SmrtObject {
       ttlMs: this.ttlMs,
       requiredPermission: this.requiredPermission,
     });
-    return await super.save();
+    return await super.save(options);
   }
 }

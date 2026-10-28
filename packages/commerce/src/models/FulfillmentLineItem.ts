@@ -3,7 +3,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FulfillmentLineItemOptions } from '../types/index.js';
 
@@ -103,7 +109,7 @@ export class FulfillmentLineItem extends SmrtObject {
    * Fulfillment is fulfilling, so a valid-but-unrelated line id can't be
    * used to fulfill against the wrong order.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (
       !Number.isFinite(this.quantityFulfilled) ||
       this.quantityFulfilled <= 0
@@ -183,7 +189,7 @@ export class FulfillmentLineItem extends SmrtObject {
       }
     }
 
-    return super.save() as Promise<this>;
+    return super.save(options) as Promise<this>;
   }
 }
 

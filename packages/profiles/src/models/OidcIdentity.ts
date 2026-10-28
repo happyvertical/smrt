@@ -10,6 +10,7 @@ import {
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { Profile } from './Profile';
@@ -117,12 +118,12 @@ export class OidcIdentity extends SmrtObject {
   }
 
   /** Keep the durable key derived from its natural-key source fields. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.identityKey =
       this.issuer.trim() && this.subject.trim()
         ? OidcIdentity.buildIdentityKey(this.issuer, this.subject)
         : null;
-    return super.save();
+    return super.save(options);
   }
 
   /**

@@ -2,6 +2,7 @@
 import {
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -37,13 +38,13 @@ export class SalesGovernanceEvent extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const previous = snapshots.get(this);
     if (previous !== undefined && previous !== this.snapshot()) {
       throw new Error('Sales governance events are immutable');
     }
     assertGovernanceWrite(this.db);
-    await super.save();
+    await super.save(options);
     snapshots.set(this, this.snapshot());
     return this;
   }

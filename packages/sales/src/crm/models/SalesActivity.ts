@@ -7,6 +7,7 @@ import {
   crossPackageRef,
   field,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -171,7 +172,7 @@ export class SalesActivity extends SmrtObject {
    * opportunity and imported-history completion flows; only the Lead
    * follow-up workflow owns its task completion transition.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const persisted = await this.resolvePersistedState();
     const priorCompletedAt = persisted?.completedAt;
     const requestedCompletedAt = this.completedAt;
@@ -202,7 +203,7 @@ export class SalesActivity extends SmrtObject {
       );
     }
 
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     workflowCompletionPermits.delete(this);
     return result;
   }

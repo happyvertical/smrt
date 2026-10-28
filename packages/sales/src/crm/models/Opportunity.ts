@@ -3,7 +3,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { OpportunityOptions, OpportunityStatus } from '../types.js';
 
@@ -214,10 +220,10 @@ export class Opportunity extends SmrtObject {
    * `status` (e.g. re-opening a lost deal) is rejected here regardless of
    * how the instance was constructed.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertOpportunityStatusTransition(prior);
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedOpportunityStatus.set(this, this.status);
     return result;
   }

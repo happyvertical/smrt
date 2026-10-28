@@ -1,4 +1,10 @@
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import {
   getTenantId,
   TenantScoped,
@@ -98,7 +104,7 @@ export class TaxSettings extends SmrtObject {
       this.taxRegistrations = structuredClone(options.taxRegistrations);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (
       !['exclusive', 'inclusive', 'none'].includes(this.defaultLineAmountType)
     )
@@ -154,7 +160,7 @@ export class TaxSettings extends SmrtObject {
             'Tax setting registrations must belong to its tenant',
           );
       }
-      return (await super.save()) as this;
+      return (await super.save(options)) as this;
     });
   }
 
