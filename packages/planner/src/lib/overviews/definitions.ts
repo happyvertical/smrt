@@ -21,7 +21,7 @@ import {
   sectionOverviewDefaults,
 } from '@happyvertical/smrt-svelte/overview';
 import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
-import { catalog, getModel } from '../catalog/index.ts';
+import { catalog, getModel, hasScreen } from '../catalog/index.ts';
 import type { CatalogModel } from '../catalog/types.ts';
 import { humanize, pluralize } from '../data/format.ts';
 import { FEATURE_SECTION } from '../recipes/features.ts';
@@ -125,7 +125,7 @@ export function detailOverviewId(packageId: string, modelName: string): string {
 const BY_FRAMEWORK_ID = new Map(
   catalog.packages.flatMap((pkg) =>
     pkg.models
-      .filter((model) => model.exposed)
+      .filter(hasScreen)
       .map((model) => [
         recordOverviewId(model.id),
         { packageId: pkg.id, model },
@@ -144,14 +144,14 @@ export function detailOverviewModel(
   const [, packageId, modelName] = match ?? [];
   const model =
     packageId && modelName ? getModel(packageId, modelName) : undefined;
-  if (packageId && model?.exposed) return { packageId, model };
+  if (packageId && model && hasScreen(model)) return { packageId, model };
   return BY_FRAMEWORK_ID.get(id);
 }
 
 /** Every exposed model: the relations a detail overview's defaults cover. */
 const EXPOSED = new Set(
   catalog.packages.flatMap((pkg) =>
-    pkg.models.filter((model) => model.exposed).map((model) => model.id),
+    pkg.models.filter(hasScreen).map((model) => model.id),
   ),
 );
 

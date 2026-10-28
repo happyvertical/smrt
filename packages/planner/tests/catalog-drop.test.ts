@@ -106,3 +106,64 @@ describe('dropUnrenderableRecipes: skipped package', () => {
     expect(out[0].dependencies).toEqual(['other']);
   });
 });
+
+describe('dropUnrenderableRecipes: ui-only (#4440)', () => {
+  const closed = [model('@hr:Employment', false), model('@hr:Term', false)];
+  const uiOnly = (extra: Partial<Recipe> = {}) =>
+    recipe('hr.people', {
+      exposure: 'ui-only',
+      models: ['@hr:Employment', '@hr:Term'],
+      nav: [{ model: '@hr:Employment' } as never],
+      ...extra,
+    });
+
+  it('keeps a ui-only recipe whose menu opens closed models', () => {
+    const log: string[] = [];
+    const out = dropUnrenderableRecipes([pkg('hr', closed, [uiOnly()])], (m) =>
+      log.push(m),
+    );
+    expect(out.map((p) => p.id)).toEqual(['hr']);
+    expect(out[0].recipes?.map((r) => r.id)).toEqual(['hr.people']);
+    expect(log).toEqual([]);
+  });
+
+  it('still drops a closed-model recipe that is not marked ui-only', () => {
+    const out = dropUnrenderableRecipes([
+      pkg('hr', closed, [uiOnly({ exposure: undefined })]),
+    ]);
+    expect(out).toEqual([]);
+  });
+
+  it('drops a recipe that claims ui-only over an exposed model', () => {
+    const log: string[] = [];
+    const out = dropUnrenderableRecipes(
+      [
+        pkg(
+          'hr',
+          [model('@hr:Employment', true), model('@hr:Term', false)],
+          [uiOnly()],
+        ),
+      ],
+      (m) => log.push(m),
+    );
+    expect(out[0].recipes).toBeUndefined();
+    expect(log.join('\n')).toContain(
+      'hr.people: claims ui-only but @hr:Employment is exposed to agents',
+    );
+  });
+
+  it('keeps recipes that need a ui-only recipe', () => {
+    const out = dropUnrenderableRecipes([
+      pkg('hr', closed, [
+        uiOnly(),
+        recipe('hr.quals', {
+          exposure: 'ui-only',
+          models: ['@hr:Term'],
+          nav: [{ model: '@hr:Term' } as never],
+          requires: ['hr.people'],
+        }),
+      ]),
+    ]);
+    expect(out[0].recipes?.map((r) => r.id)).toEqual(['hr.people', 'hr.quals']);
+  });
+});

@@ -145,6 +145,7 @@ export type {
   RecipeDemoMode,
   RecipeDemoSeed,
   RecipeExportRef,
+  RecipeExposure,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeFieldVisibility,

@@ -33,6 +33,7 @@ import type {
   RecipeDefinition,
   RecipeDemoSeed,
   RecipeExportRef,
+  RecipeExposure,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeGroup,
@@ -164,6 +165,8 @@ export interface RawRecipe {
   surfaces: { value: unknown; line?: number } | null;
   providers: { value: unknown; line?: number } | null;
   runtime: { value: unknown; line?: number } | null;
+  /** `static exposure`, as authored (shape checked at resolve). */
+  exposure: { value: unknown; line?: number } | null;
   demoSeed: { value: unknown; line?: number } | null;
 }
 
@@ -557,6 +560,7 @@ export function extractRecipes(input: {
       surfaces: null,
       providers: null,
       runtime: null,
+      exposure: null,
       demoSeed: null,
     };
     const seen = new Set<string>();
@@ -657,6 +661,7 @@ export function extractRecipes(input: {
           case 'surfaces':
           case 'providers':
           case 'runtime':
+          case 'exposure':
           case 'demoSeed':
             recipe[name] = {
               value: literalValue(value, `static ${name}`),
@@ -1465,6 +1470,52 @@ function readRuntime(
   return value as RecipeRuntime;
 }
 
+/**
+ * Whether a model refuses every generated transport. The framework default for
+ * an omitted `api`, `mcp` or `cli` is full CRUD, so only an explicit
+ * `false` or `{ include: [] }` on all three counts as closed.
+ */
+function isClosedToGeneratedTransports(
+  model: ResolvedClassDefinition,
+): boolean {
+  const config = model.decoratorConfig as Record<string, unknown> | null;
+  if (!config) return false;
+  return (['api', 'mcp', 'cli'] as const).every((transport) => {
+    const value = config[transport];
+    if (value === false) return true;
+    if (!value || typeof value !== 'object') return false;
+    const include = (value as { include?: unknown }).include;
+    return Array.isArray(include) && include.length === 0;
+  });
+}
+
+/**
+ * Validate `static exposure`: only \`ui-only\`, and only on a recipe whose
+ * models are all closed to API, MCP and CLI, so the flag cannot drift from the
+ * models it describes.
+ */
+function readExposure(
+  raw: RawRecipe['exposure'],
+  models: ResolvedClassDefinition[],
+  report: Report,
+): RecipeExposure | undefined {
+  if (!raw) return undefined;
+  const { value, line } = raw;
+  if (value !== 'ui-only') {
+    report("exposure must be 'ui-only' (omit it for any other recipe)", line);
+    return undefined;
+  }
+  const open = models.filter((model) => !isClosedToGeneratedTransports(model));
+  if (open.length > 0) {
+    report(
+      `exposure 'ui-only' needs every model closed to api, mcp and cli (\`{ include: [] }\` on each), but ${open.map((m) => m.className).join(', ')} ${open.length === 1 ? 'is' : 'are'} exposed`,
+      line,
+    );
+    return undefined;
+  }
+  return 'ui-only';
+}
+
 /** Validate `static demoSeed` (#3708): a fixture export or small inline JSON. */
 function readDemoSeed(
   raw: RawRecipe['demoSeed'],
@@ -1697,6 +1748,7 @@ export function resolveRecipes(
     const surfaces = readSurfaces(raw.surfaces, report);
     const providers = readProviders(raw.providers, report);
     const runtime = readRuntime(raw.runtime, report);
+    const exposure = readExposure(raw.exposure, models, report);
     const demoSeed = readDemoSeed(raw.demoSeed, report);
 
     const help = raw.help
@@ -1723,6 +1775,7 @@ export function resolveRecipes(
       ...(surfaces ? { surfaces } : {}),
       ...(providers ? { providers } : {}),
       ...(runtime ? { runtime } : {}),
+      ...(exposure ? { exposure } : {}),
       ...(demoSeed ? { demoSeed } : {}),
     });
   }

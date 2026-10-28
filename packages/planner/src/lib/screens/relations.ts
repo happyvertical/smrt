@@ -69,8 +69,18 @@ export function screenRelations(
   inApp: ReadonlySet<string>,
 ): ScreenRelation[] {
   const parents = lineageNames(catalog, modelId);
+  // A ui-only recipe's closed models have screens too (smrt#4440).
+  const uiOnly = new Set(
+    catalog.packages.flatMap((pkg) =>
+      (pkg.recipes ?? [])
+        .filter((recipe) => recipe.exposure === 'ui-only')
+        .flatMap((recipe) => recipe.models),
+    ),
+  );
   const children = reverseLinks(catalog, modelId).filter(
-    (link) => link.model.exposed && inApp.has(link.model.id),
+    (link) =>
+      (link.model.exposed || uiOnly.has(link.model.id)) &&
+      inApp.has(link.model.id),
   );
   // Line items live inside the record: its line-items table, not a tab.
   const items = new Set(

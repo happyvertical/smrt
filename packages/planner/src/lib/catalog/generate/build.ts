@@ -86,7 +86,18 @@ export function dropUnrenderableRecipes(
     for (const id of recipe.models) {
       if (!models.has(id)) return `lists ${id}, which no package declares`;
     }
-    for (const entry of recipe.nav) {
+    if (recipe.exposure === 'ui-only') {
+      // The scanner rejects this at build time; a stale manifest could still
+      // carry it, and a recipe that says agents cannot read it must be true.
+      for (const id of recipe.models) {
+        if (models.get(id)) {
+          return `claims ui-only but ${id} is exposed to agents`;
+        }
+      }
+    }
+    // A ui-only recipe is closed on purpose: its screens do not need an
+    // exposed model (smrt#4440).
+    for (const entry of recipe.exposure === 'ui-only' ? [] : recipe.nav) {
       if (models.get(entry.model) === false) {
         return `opens ${entry.model} from the menu, which is not exposed`;
       }

@@ -297,4 +297,4 @@ pnpm --filter @happyvertical/smrt-human-resources typecheck
 Build before `test`: `src/__tests__/employment-extension.test.ts` reads
 `dist/manifest.json`.
 
-- **Recipe `human-resources.people`** (`src/recipes.ts`, help in `src/people.recipe.md`) declares the feature in the manifest. The models are deliberately closed (no generated surface), and the planner catalog drops a recipe whose menu opens a model that is not exposed, so it does not appear in the planner until a surface is exposed. Do not open the closed surface to change that without a decision (see smrt#4409).
+- **Recipes `human-resources.people` (label Employees) and `human-resources.qualifications`** (`src/recipes.ts`, help in `src/people.recipe.md` and `src/qualifications.recipe.md`) are `static exposure = 'ui-only'` (#4440): the models stay closed to API/MCP/CLI, the recipes still appear in the planner and generate screens, and the Features card says agents cannot read them. The scanner rejects `ui-only` if any model of the recipe is exposed. Never open a surface to make a recipe show up.

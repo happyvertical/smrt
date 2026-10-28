@@ -70,6 +70,8 @@ export interface FeatureCard {
   /** Ids of recipes it requires. */
   requires: string[];
   runtime: Recipe['runtime'];
+  /** Plain words when agents cannot read the feature's records (ui-only). */
+  agentAccess: string | undefined;
 }
 
 const SLOT_WORDS: Readonly<Record<string, string>> = {
@@ -248,8 +250,18 @@ export function buildFeatureCards(
       gets: featureGets(recipe),
       requires: recipe.requires,
       runtime: recipe.runtime,
+      agentAccess: agentAccessNote(recipe),
     };
   });
+}
+
+/** What a `ui-only` recipe tells the user about agents; absent for the rest. */
+export function agentAccessNote(
+  recipe: Pick<Recipe, 'exposure'>,
+): string | undefined {
+  return recipe.exposure === 'ui-only'
+    ? 'People only; agents cannot read this.'
+    : undefined;
 }
 
 /** Groups present in `cards`, by label. */

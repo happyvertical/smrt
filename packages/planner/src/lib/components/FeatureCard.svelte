@@ -43,6 +43,10 @@ const id = $derived(`feature-${card.id}`);
     {/if}
   </p>
 
+  {#if card.agentAccess}
+    <p class="meta agent-access">{card.agentAccess}</p>
+  {/if}
+
   <h4>You get</h4>
   <ul class="plain" aria-label={`${card.label}: what you get`}>
     {#each card.gets as item (`${item.kind}:${item.label}`)}

@@ -11,56 +11,40 @@ import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { Employment, EmploymentTerm } from './employment/models.js';
 import { HeldQualification, Qualification } from './qualifications/models.js';
 
-/** People: Keep a record of who works for you, in what role, and what they are certified for. */
+/**
+ * Employees: who works for you, in what role. UI-only (#4440): employment
+ * records are the most sensitive data in the box, so every model stays closed
+ * to the generated API, MCP and CLI and agents cannot read them.
+ */
 export class HumanResourcesPeopleRecipe extends SmrtRecipe {
   static id = 'human-resources.people';
   static help = './people.recipe.md';
-  static label = 'People';
+  static label = 'Employees';
   static summary =
-    'Keep a record of who works for you, in what role, and what they are certified for.';
+    'Keep a record of who works for you and in what role. Only people can see it; agents cannot read it.';
   static synonyms = [
     'hr',
     'human resources',
     'staff',
-    'employees',
+    'people',
     'team',
     'workers',
-    'certifications',
   ];
+  static exposure = 'ui-only' as const;
   static section = {
-    id: 'team',
-    label: 'Team',
+    id: 'staff',
+    label: 'Staff',
     icon: 'users',
     description: 'The people who work for you.',
   };
-  static models = [
-    Employment,
-    EmploymentTerm,
-    Qualification,
-    HeldQualification,
-  ];
+  static models = [Employment, EmploymentTerm];
   static nav = [
     {
-      label: 'People',
+      label: 'Employees',
       model: Employment,
       icon: 'users',
       description: 'Everyone who works for you, with their role and status.',
-      noun: 'person',
-    },
-    {
-      label: 'Qualifications',
-      model: Qualification,
-      icon: 'book',
-      description:
-        'The certificates, licences and training your people can hold.',
-      noun: 'qualification',
-    },
-    {
-      label: 'Held qualifications',
-      model: HeldQualification,
-      icon: 'fileText',
-      description: 'Who holds which qualification, and when it runs out.',
-      noun: 'held qualification',
+      noun: 'employee',
     },
   ];
   static options = {
@@ -85,6 +69,53 @@ export class HumanResourcesPeopleRecipe extends SmrtRecipe {
         tenantId: { visibility: 'hidden' },
       },
     },
+  } as const;
+}
+
+/**
+ * Qualifications: the certificates your people hold. UI-only for the same
+ * reason as Employees (#4440).
+ */
+export class HumanResourcesQualificationsRecipe extends SmrtRecipe {
+  static id = 'human-resources.qualifications';
+  static help = './qualifications.recipe.md';
+  static label = 'Qualifications';
+  static summary =
+    'Track the certificates and training your people hold, and when they run out. Only people can see it; agents cannot read it.';
+  static synonyms = [
+    'certifications',
+    'certificates',
+    'licences',
+    'training',
+    'first aid',
+  ];
+  static exposure = 'ui-only' as const;
+  static requires = ['human-resources.people'];
+  static section = {
+    id: 'staff',
+    label: 'Staff',
+    icon: 'users',
+    description: 'The people who work for you.',
+  };
+  static models = [Qualification, HeldQualification];
+  static nav = [
+    {
+      label: 'Qualifications',
+      model: Qualification,
+      icon: 'book',
+      description:
+        'The certificates, licences and training your people can hold.',
+      noun: 'qualification',
+    },
+    {
+      label: 'Held qualifications',
+      model: HeldQualification,
+      icon: 'fileText',
+      description: 'Who holds which qualification, and when it runs out.',
+      noun: 'held qualification',
+    },
+  ];
+  static options = {
     Qualification: {
       fields: {
         name: { order: 1 },

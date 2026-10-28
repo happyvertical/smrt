@@ -1265,6 +1265,95 @@ ${statics}
     });
   });
 
+  describe("exposure 'ui-only' (#4440)", () => {
+    const CLOSED_MODEL = `
+import { SmrtObject, smrt } from '${CORE}';
+@smrt({ api: { include: [] }, mcp: { include: [] }, cli: false })
+export class Payroll extends SmrtObject {
+  name: string = '';
+}
+`;
+    const RECIPE = (statics: string, model = 'Payroll') => `
+import { SmrtRecipe } from '${CORE}';
+import { ${model} } from './models/${model}.js';
+export class StaffRecipe extends SmrtRecipe {
+  static id = 'shop.staff';
+  static label = 'Staff';
+  static summary = 'Keep staff records.';
+  static models = [${model}];
+${statics}
+}
+`;
+
+    it('is emitted when every model is closed to api, mcp and cli', async () => {
+      write('src/models/Payroll.ts', CLOSED_MODEL);
+      write(
+        'src/recipes.ts',
+        RECIPE(`  static exposure = 'ui-only' as const;`),
+      );
+      const { results, resolved } = await scan();
+      expect(results.errors).toEqual([]);
+      expect(results.recipes[0].exposure).toBe('ui-only');
+      const manifest = new ManifestAdapter().toManifest(resolved, {
+        packageName: '@shop/pkg',
+        recipes: results.recipes,
+      });
+      expect(manifest.recipes?.[0].exposure).toBe('ui-only');
+    });
+
+    it('is omitted when not declared', async () => {
+      write('src/models/Payroll.ts', CLOSED_MODEL);
+      write('src/recipes.ts', RECIPE(''));
+      const { results } = await scan();
+      expect('exposure' in results.recipes[0]).toBe(false);
+    });
+
+    it('is rejected on a recipe with an exposed model', async () => {
+      write('src/models/Order.ts', ORDER_MODEL);
+      write(
+        'src/recipes.ts',
+        RECIPE(`  static exposure = 'ui-only' as const;`, 'Order'),
+      );
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain(
+        "exposure 'ui-only' needs every model closed",
+      );
+      expect(results.recipes[0]?.exposure).toBeUndefined();
+    });
+
+    it('is rejected when a model leaves one transport open', async () => {
+      write(
+        'src/models/Payroll.ts',
+        CLOSED_MODEL.replace('cli: false', 'cli: { include: ["list"] }'),
+      );
+      write(
+        'src/recipes.ts',
+        RECIPE(`  static exposure = 'ui-only' as const;`),
+      );
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain('Payroll is exposed');
+    });
+
+    it('is rejected on a model with no explicit closing (default is full CRUD)', async () => {
+      write('src/models/Customer.ts', CUSTOMER_MODEL);
+      write(
+        'src/recipes.ts',
+        RECIPE(`  static exposure = 'ui-only' as const;`, 'Customer'),
+      );
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain('Customer is exposed');
+    });
+
+    it('rejects any other value', async () => {
+      write('src/models/Payroll.ts', CLOSED_MODEL);
+      write('src/recipes.ts', RECIPE(`  static exposure = 'public';`));
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain(
+        "exposure must be 'ui-only'",
+      );
+    });
+  });
+
   describe('cross-recipe consistency', () => {
     const TWO = (a: string, b: string) => `
 import { SmrtRecipe } from '${CORE}';

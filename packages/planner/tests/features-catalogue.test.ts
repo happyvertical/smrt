@@ -339,3 +339,52 @@ describe('the committed catalog', () => {
     }
   });
 });
+
+describe('ui-only features (#4440)', () => {
+  it('say in plain words that agents cannot read them', () => {
+    const open = recipe('sales.orders');
+    const closed = recipe('human-resources.people', { exposure: 'ui-only' });
+    const [openCard, closedCard] = buildFeatureCards([open, closed], []);
+    expect(openCard.agentAccess).toBeUndefined();
+    expect(closedCard.agentAccess).toBe(
+      'People only; agents cannot read this.',
+    );
+  });
+});
+
+describe('ui-only screens (#4440)', () => {
+  it('give record views to closed models a ui-only recipe covers', async () => {
+    const { detailOverviewModel } = await import(
+      '../src/lib/overviews/definitions.ts'
+    );
+    const { hasScreen, getModelByQualifiedName } = await import(
+      '../src/lib/catalog/index.ts'
+    );
+    const employment = getModelByQualifiedName(
+      '@happyvertical/smrt-human-resources:Employment',
+    );
+    expect(employment?.model.exposed).toBe(false);
+    expect(hasScreen(employment!.model)).toBe(true);
+    expect(
+      detailOverviewModel('detail:human-resources.Employment'),
+    ).toBeDefined();
+  });
+});
+
+describe('ui-only child records (#4440)', () => {
+  it('show up as related records of their closed parent', async () => {
+    const { screenRelations, appModels } = await import(
+      '../src/lib/screens/relations.ts'
+    );
+    const { recipesById } = await import('../src/lib/recipes/index.ts');
+    const people = recipesById.get('human-resources.people');
+    const relations = screenRelations(
+      catalog,
+      '@happyvertical/smrt-human-resources:Employment',
+      appModels(people ? [people] : [], []),
+    );
+    expect(relations.map((r) => r.model)).toContain(
+      '@happyvertical/smrt-human-resources:EmploymentTerm',
+    );
+  });
+});

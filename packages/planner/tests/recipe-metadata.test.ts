@@ -320,3 +320,15 @@ describe('catalog assembly and local sources', () => {
     }
   });
 });
+
+describe('extractRecipeMetadata: exposure (#4440)', () => {
+  it('carries ui-only and ignores any other value', () => {
+    expect(
+      extractRecipeMetadata({ ...base, exposure: 'ui-only' }).exposure,
+    ).toBe('ui-only');
+    expect(
+      extractRecipeMetadata({ ...base, exposure: 'public' }),
+    ).not.toHaveProperty('exposure');
+    expect(extractRecipeMetadata(base)).not.toHaveProperty('exposure');
+  });
+});

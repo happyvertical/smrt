@@ -173,6 +173,14 @@ export interface RecipeProvider {
   browserOptions?: readonly string[];
 }
 
+/**
+ * Who may reach a recipe's records. `ui-only` marks a recipe whose models are
+ * closed to the generated API, MCP and CLI on purpose (employment records):
+ * a host still offers it, builds its screens, and tells the user agents cannot
+ * read it. Omitted means the recipe's models decide for themselves.
+ */
+export type RecipeExposure = 'ui-only';
+
 /** Where a recipe's runtime pieces can run. Omitted means `both`. */
 export type RecipeRuntime = 'browser' | 'server' | 'both';
 
@@ -246,6 +254,11 @@ export interface RecipeDefinition {
   providers?: RecipeProvider[];
   /** Omitted means `both`. */
   runtime?: RecipeRuntime;
+  /**
+   * `ui-only` when every model is closed to API, MCP and CLI by design; the
+   * scanner rejects it on a recipe with an exposed model. Omitted otherwise.
+   */
+  exposure?: RecipeExposure;
   /** Demo fixture reference or inline data; omitted when none. */
   demoSeed?: RecipeDemoSeed;
   /**
