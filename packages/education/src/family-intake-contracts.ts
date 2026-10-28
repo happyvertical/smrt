@@ -47,7 +47,13 @@ export interface FamilyIntakeView {
     sha256: string;
   }[];
 }
-/** A namespace, never an authorization grant. The original scope remains immutable. */
+/**
+ * A namespace, never an authorization grant. The original scope remains immutable.
+ * A host IngestionService using this scope must call the same current family
+ * authorizer (for example authorizeFamilyIntake) on every operation, including
+ * direct evidence/source reads. Actor identity or tenant membership alone is
+ * insufficient; adoption never grants a learner access to the family namespace.
+ */
 export function familyIntakeScopeId(tenantId: string): string {
   return `family-intake:${tenantId}`;
 }

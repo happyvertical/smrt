@@ -632,15 +632,23 @@ export function familyIntakeTests(
           storage: f.storage,
         });
         let allowed = true;
-        const ingestion = new IngestionService({
-          db: f.db,
-          assets,
-          scope,
-          authorize: async ({ scope: requested }) =>
-            allowed && requested.actorId === f.parent.actorUserId,
-          jobTarget: { objectType: 'unused-worker', method: 'process' },
-          purgeDerived: async () => {},
-        });
+        const forActor = (actorId: string) =>
+          new IngestionService({
+            db: f.db,
+            assets,
+            scope: { ...scope, actorId },
+            authorize: async ({ scope: requested }) => {
+              if (!allowed) return false;
+              await f.service.authorizeFamilyIntake({
+                tenantId: requested.tenantId,
+                actorUserId: requested.actorId,
+              });
+              return true;
+            },
+            jobTarget: { objectType: 'unused-worker', method: 'process' },
+            purgeDerived: async () => {},
+          });
+        const ingestion = forActor(f.parent.actorUserId);
         const dispatch = vi
           .spyOn(ingestion, 'repairDispatches')
           .mockResolvedValue(0);
@@ -846,6 +854,43 @@ export function familyIntakeTests(
               ),
             ).toEqual(part.bytes);
           }
+          const assertGenericReadDenied = async (
+            reader: IngestionService,
+            itemId: string,
+            evidenceId: string,
+          ) => {
+            await expect(reader.getEvidence(itemId)).rejects.toThrow();
+            await expect(
+              reader.readEvidence(itemId, evidenceId),
+            ).rejects.toThrow();
+            await expect(reader.getReceiptSource(itemId)).rejects.toThrow();
+          };
+          const envelope = wrapped.intake.source.evidence?.find(
+            (part) => part.partId === 'email',
+          );
+          if (!envelope) throw new Error('Missing raw source envelope');
+          expect(
+            Buffer.from(
+              await ingestion.readEvidence(
+                wrapped.intake.itemId,
+                envelope.evidenceId,
+              ),
+            ).toString(),
+          ).toContain('private envelope');
+          // Matching tenant and actor identity do not grant a child family scope.
+          await f.as(f.own, async () => {
+            const childIngestion = forActor(f.own.actorUserId);
+            await assertGenericReadDenied(
+              childIngestion,
+              wrapped.intake.itemId,
+              envelope.evidenceId,
+            );
+            await assertGenericReadDenied(
+              childIngestion,
+              genericRetry.itemId,
+              mixedEvidence[0].id,
+            );
+          });
           await ingestion.expire(view.itemId);
           const selection = { ...f.parent, intakeId: view.id };
           const retained = await f.service.getFamilyIntake(selection);
@@ -911,6 +956,18 @@ export function familyIntakeTests(
               )
             ).rows,
           ).toHaveLength(1);
+          f.revoke();
+          // Revocation also protects generic copies that never entered education.
+          await assertGenericReadDenied(
+            ingestion,
+            wrapped.intake.itemId,
+            envelope.evidenceId,
+          );
+          await assertGenericReadDenied(
+            ingestion,
+            genericRetry.itemId,
+            mixedEvidence[0].id,
+          );
         } finally {
           dispatch.mockRestore();
         }

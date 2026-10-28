@@ -34,7 +34,15 @@ no AI providers, scanner/email services or containers are required.
 Import `FamilyIntakeService`, `receiveFamilyIntake` and
 `retainFamilyIntakeReceipt` from `@happyvertical/smrt-education/ingestion`.
 The bridge uses the fixed `familyIntakeScopeId(tenantId)` namespace and public
-`getReceiptSource` to retain authoritative delivery identity. A receive that
+`getReceiptSource` to retain authoritative delivery identity. This namespace is
+never an authorization grant. The host's `IngestionService.authorize` callback
+must call the same current family authorizer on every operation, including direct
+`getEvidence`, `readEvidence` and `getReceiptSource` calls. For example, await
+`family.authorizeFamilyIntake({ tenantId: scope.tenantId, actorUserId: scope.actorId })`
+then return true; propagate denial. Actor equality or tenant membership alone is
+insufficient. This protects raw envelopes and rejected/unretained originals as
+well as adopted receipts. Adoption permits only normal authorized learner work
+reads; it never grants the learner generic family ingestion access. A receive that
 succeeds before education retention fails is repaired by retrying the same
 receipt, never by inventing another delivery identity.
 
