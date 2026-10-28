@@ -1283,7 +1283,7 @@ export async function runToolLoop(
         // returned transcript, so stored conversations are unchanged.
         const forcedFinal = aiTools.length > 0 && !offerTools;
         const roundMessages: LoopMessage[] = forcedFinal
-          ? withAnswerNowInstruction(working)
+          ? withAnswerNowInstruction(working, capCause())
           : working;
         const outcome = await callModel(roundMessages, offerTools);
         if (outcome === 'cancelled') return cancelled();
@@ -1327,7 +1327,7 @@ export async function runToolLoop(
               emptyRetried = true;
               if (signal?.aborted) return cancelled();
               const outcome = await callModel(
-                withAnswerNowInstruction(working),
+                withAnswerNowInstruction(working, capReason),
                 false,
               );
               if (outcome === 'cancelled') return cancelled();
@@ -1650,17 +1650,40 @@ export async function runToolLoop(
 
 /**
  * Fixed instruction added to the forced no-tools final call at the step cap,
- * when the turn budget is spent (#4378), or after repeated calls (#4391). When the transcript already ends
- * with a user message, append to a temporary copy of its content so strict
- * alternating-role templates remain valid. The instruction is constant text:
- * it never carries tool output or argument values.
+ * when the turn budget is spent (#4378), or after repeated calls (#4391).
+ * When the transcript already ends with a user message, append to a
+ * temporary copy of its content so strict alternating-role templates remain
+ * valid. The instruction is constant text: it never carries tool output or
+ * argument values.
  */
 export const TOOL_LOOP_ANSWER_NOW_INSTRUCTION =
   "Tools are no longer available for this turn. Answer the user's question now " +
   'from the tool results above, without calling tools. ' +
   'If they do not answer the question, say so.';
 
-function withAnswerNowInstruction(messages: LoopMessage[]): LoopMessage[] {
+/**
+ * Sentence appended to {@link TOOL_LOOP_ANSWER_NOW_INSTRUCTION} only when the
+ * tool phase ended on `repeated_calls` (#4391): a model stuck repeating one
+ * call often holds a result that does not fit the question (an unfiltered
+ * total for a filtered count) and must not present it as the answer.
+ */
+export const TOOL_LOOP_REPEATED_CALLS_INSTRUCTION =
+  'If the results above do not match what was asked (for example, a total ' +
+  'where a filtered count was asked), say you could not get that figure ' +
+  'rather than presenting the result as the answer.';
+
+/** The answer-now instruction for a forced final call with this cap reason. */
+function answerNowInstruction(capReason?: ToolLoopCapReason): string {
+  return capReason === 'repeated_calls'
+    ? `${TOOL_LOOP_ANSWER_NOW_INSTRUCTION} ${TOOL_LOOP_REPEATED_CALLS_INSTRUCTION}`
+    : TOOL_LOOP_ANSWER_NOW_INSTRUCTION;
+}
+
+function withAnswerNowInstruction(
+  messages: LoopMessage[],
+  capReason?: ToolLoopCapReason,
+): LoopMessage[] {
+  const instruction = answerNowInstruction(capReason);
   const last = messages.at(-1);
   if (last?.role === 'user') {
     return [
@@ -1669,18 +1692,12 @@ function withAnswerNowInstruction(messages: LoopMessage[]): LoopMessage[] {
         ...last,
         content:
           typeof last.content === 'string'
-            ? `${last.content}\n\n${TOOL_LOOP_ANSWER_NOW_INSTRUCTION}`
-            : [
-                ...last.content,
-                { type: 'text', text: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
-              ],
+            ? `${last.content}\n\n${instruction}`
+            : [...last.content, { type: 'text', text: instruction }],
       },
     ];
   }
-  return [
-    ...messages,
-    { role: 'user', content: TOOL_LOOP_ANSWER_NOW_INSTRUCTION },
-  ];
+  return [...messages, { role: 'user', content: instruction }];
 }
 
 /**

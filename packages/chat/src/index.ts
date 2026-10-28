@@ -290,6 +290,7 @@ export {
   TOOL_CALL_DEDUPED_REJECTED_NOTE,
   TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+  TOOL_LOOP_REPEATED_CALLS_INSTRUCTION,
   type ToolErrorKind,
   type ToolExecutionContext,
   type ToolFailureRecord,
