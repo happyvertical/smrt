@@ -2028,8 +2028,12 @@ $effect(() => {
   }
 
   /* Header */
+  /* --smrt-data-table-head-bg / -color: sunken is darker than every
+     surface-container level in both themes, so the head stays visible on a
+     surface-container-low page. */
   .data-table__head {
-    background: var(--smrt-surface-sunken);
+    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
+    color: var(--smrt-data-table-head-color, var(--smrt-color-on-surface));
   }
 
   .data-table-container--sticky .data-table__head {
@@ -2048,7 +2052,7 @@ $effect(() => {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    color: var(--smrt-color-on-surface);
+    color: inherit;
   }
 
   .data-table__cell--sortable {
@@ -2187,7 +2191,7 @@ $effect(() => {
   .data-table__cell--header.data-table__cell--pinned-start,
   .data-table__cell--header.data-table__cell--pinned-end {
     z-index: 3;
-    background: var(--smrt-surface-sunken);
+    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
   }
 
   .data-table__row--selected .data-table__cell--pinned-start,

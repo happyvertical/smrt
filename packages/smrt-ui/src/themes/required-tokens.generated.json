@@ -213,6 +213,8 @@
     "--smrt-card-shadow",
     "--smrt-content-editor-icon-size",
     "--smrt-control-hit-size",
+    "--smrt-data-table-head-bg",
+    "--smrt-data-table-head-color",
     "--smrt-popover-panel-padding",
     "--smrt-popover-panel-width",
     "--smrt-shell-title-font-family",

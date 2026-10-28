@@ -141,4 +141,7 @@ export const OVERRIDE_HOOKS = new Set([
   // SortableHeader knobs: set by a parent (JobList in another package) or by the app.
   '--smrt-sortable-header-padding',
   '--smrt-sortable-header-font-weight',
+  // DataTable head: unset keeps the sunken surface and on-surface text.
+  '--smrt-data-table-head-bg',
+  '--smrt-data-table-head-color',
 ]);
