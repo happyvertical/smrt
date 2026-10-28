@@ -27,8 +27,10 @@ it passes through and how long each takes.
 2. Set its **{field:BillOfMaterials.status}** to active when it is ready to use.
 3. The old version stays on file, so past runs still make sense.
 
-### Set up the kinds of work
+### See the kinds of work
 
-1. Open the operations and choose **New**.
-2. Type the **{field:Operation.name}** and a short **{field:Operation.code}**.
-3. Save. You can now add it as a step on a bill of materials with its **{field:RoutingStep.estimatedMinutes}**.
+Operations are set up by the manufacturing service, not by hand in the app.
+
+1. Open the operations.
+2. Read each **{field:Operation.name}** and its short **{field:Operation.code}**.
+3. The steps of a bill of materials use these, each with its **{field:RoutingStep.estimatedMinutes}**.
