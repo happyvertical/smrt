@@ -161,24 +161,44 @@ function inferAssetTypeSlug(mimeType: string): string {
 })
 export class ContentContribution extends SmrtObject {
   @foreignKey('ContentContributor', { required: true })
+  @field({ description: 'The person who sent this in.' })
   contributorId = '';
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'What kind of submission it is, such as an article or a letter.',
+  })
   contributionTypeKey = '';
 
+  @field({
+    description:
+      'Where the submission stands, from submitted to approved, rejected or published.',
+  })
   status: ContentContributionStatus = 'submitted';
   intakeDecision: ContentContributionIntakeDecision = 'accepted';
+
+  @field({ description: 'How it arrived: through the website or by email.' })
   channel: ContentContributionChannel = 'web';
+
+  @field({ description: 'The headline the contributor gave it.' })
   title = '';
+
+  @field({ description: 'A short summary of the submission.' })
   description = '';
+
+  @field({ description: 'The full text as it was sent in.' })
   body = '';
   contributorEmail = '';
+
+  @field({ description: 'The name the contributor gave.' })
   contributorName = '';
   threadKey = '';
 
   @crossPackageRef('@happyvertical/smrt-messages:Message')
   sourceMessageId = '';
 
+  @field({ description: 'Notes from your team about this submission.' })
   editorNotes = '';
 
   @foreignKey('Content', { nullable: true, onDelete: 'SET NULL' })
