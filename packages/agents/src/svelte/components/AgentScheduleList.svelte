@@ -51,15 +51,6 @@ function handleRowClick(schedule: AgentScheduleData) {
   onScheduleClick?.(schedule);
 }
 
-function handleRowKeydown(schedule: AgentScheduleData, event: KeyboardEvent) {
-  if (!onScheduleClick) return;
-  if (event.key === 'Enter' || event.key === ' ') {
-    // Prevent Space from scrolling the page when activating the row.
-    event.preventDefault();
-    onScheduleClick(schedule);
-  }
-}
-
 function handleToggle(schedule: AgentScheduleData, event: Event) {
   event.stopPropagation();
   if (schedule.enabled) {
@@ -119,16 +110,22 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
           {@const successRate = calculateSuccessRate(schedule)}
           <tr
             class="schedule-list__row"
-            onclick={() => handleRowClick(schedule)}
-            onkeydown={(event) => handleRowKeydown(schedule, event)}
-            role={onScheduleClick ? 'button' : undefined}
-            tabindex={onScheduleClick ? 0 : undefined}
           >
             <td class="schedule-list__cell">
               <ScheduleStatusBadge status={schedule.status} />
             </td>
             <td class="schedule-list__cell schedule-list__cell--agent">
-              <span class="agent-type">{schedule.agentType}</span>
+              {#if onScheduleClick}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => handleRowClick(schedule)}
+                >
+                  {schedule.agentType}
+                </Button>
+              {:else}
+                <span class="agent-type">{schedule.agentType}</span>
+              {/if}
               {#if schedule.agentId}
                 <span class="agent-id">#{schedule.agentId.slice(0, 8)}</span>
               {/if}
@@ -239,7 +236,6 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 
   .schedule-list__body tr:hover:not(.schedule-list__row--loading):not(.schedule-list__row--empty) {
     background: var(--smrt-color-surface-container-low);
-    cursor: pointer;
   }
 
   @media (prefers-reduced-motion: reduce) {
