@@ -321,6 +321,8 @@ export interface MountAssistantRoutesOptions {
   /** Model used when the request names none. */
   defaultModel?: string;
   maxSteps?: number;
+  /** Repeated-call stop (see `AssistantTurnOptions`, #4391). */
+  maxRepeatedCalls?: number;
   maxTurnTokens?: number;
   maxTurnMs?: number;
   /** Per-model-call timeout in ms (see `AssistantTurnOptions`, #4379). */
@@ -1192,6 +1194,9 @@ export function mountAssistantRoutes(
         ...(model ? { model } : {}),
         ...(options.maxSteps !== undefined
           ? { maxSteps: options.maxSteps }
+          : {}),
+        ...(options.maxRepeatedCalls !== undefined
+          ? { maxRepeatedCalls: options.maxRepeatedCalls }
           : {}),
         ...(options.maxTurnTokens !== undefined
           ? { maxTurnTokens: options.maxTurnTokens }

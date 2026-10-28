@@ -384,6 +384,12 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   continuationKey?: string;
   maxSteps?: number;
   /**
+   * Deduped repeats of one read-only call that end the tool phase (#4391;
+   * forwarded to `runToolLoop`). Default `DEFAULT_MAX_REPEATED_CALLS` (2);
+   * `0` turns it off. Counted per leg: a resume starts at zero.
+   */
+  maxRepeatedCalls?: number;
+  /**
    * Token budget for the whole turn, across every browser round trip. Once
    * spent, the model gets one last round without tools to answer, and the
    * turn ends with `stoppedReason: 'budget'`. Unset: no budget.
@@ -467,7 +473,7 @@ export interface AssistantTurnState {
 export interface AssistantTurnResult {
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
   /** Why tools were withdrawn on the final round, when they were (#4379). */
-  capReason?: 'max_steps' | 'budget';
+  capReason?: 'max_steps' | 'budget' | 'repeated_calls';
   content: string;
   loop?: ToolLoopResult;
   /** The turn's origin message (from the continuation on a resume). */
@@ -792,6 +798,9 @@ async function runTurn<M>(
     principal,
     db: options.db,
     maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
+    ...(options.maxRepeatedCalls !== undefined
+      ? { maxRepeatedCalls: options.maxRepeatedCalls }
+      : {}),
     ...(options.maxTurnTokens !== undefined
       ? { maxTotalTokens: options.maxTurnTokens, initialTokens }
       : {}),

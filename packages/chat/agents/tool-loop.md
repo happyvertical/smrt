@@ -10,8 +10,8 @@
   (`DEFAULT_MAX_STEPS = 8`; `initialSteps` counts earlier legs of a resumed
   turn). `maxTotalTokens` (with `initialTokens`) and `deadline` end the turn
   early with `stoppedReason: 'budget'`.
-- **Forced final call (#4378).** At the cap, or once the budget is spent, the
-  next round is offered no tools (`tools: undefined`, `toolChoice: 'none'`),
+- **Forced final call (#4378).** At the cap, once the budget is spent, or
+  after repeated calls (below, #4391), the next round is offered no tools (`tools: undefined`, `toolChoice: 'none'`),
   and any tool calls the model still emits are discarded. That call alone gets
   the fixed `TOOL_LOOP_ANSWER_NOW_INSTRUCTION` as a temporary `user`
   instruction. If the transcript already ends with a user turn, it is added
@@ -37,8 +37,8 @@
   `TimeoutError`, or an `AbortError` the caller's signal did not cause) ends
   `stoppedReason: 'timeout'` instead of failing or passing as an empty
   success; other errors still throw. When the final round was the forced
-  no-tools call, `capReason` (`max_steps` | `budget`) keeps that cause
-  alongside `empty`/`timeout`.
+  no-tools call, `capReason` (`max_steps` | `budget` | `repeated_calls`)
+  keeps that cause alongside `empty`/`timeout`.
 - **Quiet stream ends (older SDKs).** SDKs <= 0.108.0 can end a timed-out
   stream quietly: no text, no tool calls, no finish reason. That shape is a
   suspected timeout only for an AI boundary that has already reported a
@@ -88,7 +88,8 @@
   back at most 10× that many entries. Threads holding only replayed roles
   see the same history as before.
 - **Dock.** The `done` event's `capReason` reaches the dock, which offers
-  Continue for a capped turn even when it ended `empty` or `timeout`.
+  Continue for a `max_steps`/`budget` capped turn even when it ended `empty`
+  or `timeout` (never for `repeated_calls`, #4391).
 - **Reasoning.** `AIResponse.reasoning` (newer SDKs, sdk#1459) is read
   defensively, capped at `MAX_TOOL_LOOP_REASONING_CHARS` code points, passed
   to `onReasoning` (forwarded by both callers; a throw is ignored) and
@@ -184,6 +185,39 @@ second copy of the result.
   resume leg starts a fresh cache).
 - Deduped calls count toward the step cap: a round of repeats is still a
   round, so a model stuck repeating a call still stops at `maxSteps`.
+- The note points at the earlier result and says to change the arguments
+  (for example, add a filter), because a repeat returns the same result.
+
+## Repeated calls end the tool phase (#4391)
+
+A model stuck on one call (an unfiltered count, sent again and again) used
+to burn every step to `maxSteps`. Now, once a single dedupe key (same tool,
+same canonical arguments) has been deduped `maxRepeatedCalls` times in one
+`runToolLoop` call, the rest of that round still runs — every tool call gets
+its tool result — and the next model call is the forced no-tools call with
+the same `TOOL_LOOP_ANSWER_NOW_INSTRUCTION`.
+
+- **Option.** `maxRepeatedCalls` on `runToolLoop`, `runAssistantTurn`,
+  `runPersonaConversationTurn` and `mountAssistantRoutes`. Default
+  `DEFAULT_MAX_REPEATED_CALLS` (2); `0` (or less) turns it off; otherwise it
+  is floored and capped at `MAX_REPEATED_CALLS_LIMIT` (16). Non-numbers use
+  the default.
+- **What counts.** Only deduped repeats, counted per key: a different
+  argument is a different key, mutating and other non-dedupable calls never
+  count, and a non-read-only call clears the counts with the dedupe cache.
+  Counts live inside one `runToolLoop` call; an assistant resume leg starts
+  at zero.
+- **Report.** `stoppedReason: 'repeated_calls'` and `capReason:
+  'repeated_calls'`; `capReason` stays when the forced call then ends `empty`
+  or `timeout`. When the step cap or budget is reached in the same round,
+  `repeated_calls` wins: more steps would only repeat the call. Stored
+  replies carry it in `metadata.stoppedReason`/`metadata.capReason`, like the
+  other caps; the `done` event carries both.
+- **Dock: no Continue.** The dock records `run.stoppedReason:
+  'repeated_calls'` but does not offer Continue (`waitingFor` stays null):
+  the model already had the result it kept asking for, so another leg would
+  repeat the call. Continue stays for `max_steps` and `budget` only. Hosts
+  with their own UI should do the same.
 - The audit sink gets `action: 'chat.tool_call_deduped'` (not a fresh
   execution or failure); the persona path's tool row carries
   `toolCallData.deduped: true`.

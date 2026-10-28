@@ -37,8 +37,14 @@ function message(id: string, role: AssistantMessage['role'], content: string) {
 function scriptedTransport(
   legs: AssistantClientToolCall[][],
   finish: {
-    stoppedReason?: 'stop' | 'max_steps' | 'budget' | 'empty' | 'timeout';
-    capReason?: 'max_steps' | 'budget';
+    stoppedReason?:
+      | 'stop'
+      | 'max_steps'
+      | 'budget'
+      | 'repeated_calls'
+      | 'empty'
+      | 'timeout';
+    capReason?: 'max_steps' | 'budget' | 'repeated_calls';
     fail?: boolean;
   } = {},
 ) {
@@ -334,6 +340,26 @@ describe('assistant run', () => {
     await controller.send('look everywhere');
     expect(controller.run?.waitingFor).toBeNull();
     controller.dispose();
+  });
+
+  it('records a repeated-calls stop without offering Continue (#4391)', async () => {
+    for (const [stoppedReason, capReason] of [
+      ['repeated_calls', 'repeated_calls'],
+      ['empty', 'repeated_calls'],
+    ] as const) {
+      const transport = scriptedTransport([[call('1', NAV.name)]], {
+        stoppedReason,
+        capReason,
+      });
+      const controller = await open(transport, tools([NAV]));
+      await controller.send('how many open work orders?');
+      expect(controller.run).toMatchObject({
+        state: 'done',
+        waitingFor: null,
+        stoppedReason: 'repeated_calls',
+      });
+      controller.dispose();
+    }
   });
 
   it('fails red on an error and ends cancelled on Stop', async () => {
