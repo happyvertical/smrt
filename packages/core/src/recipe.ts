@@ -34,6 +34,7 @@
 
 import type {
   RecipeDemoSeed,
+  RecipeExposure,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeProvider,
@@ -149,6 +150,13 @@ export abstract class SmrtRecipe {
   static surfaces?: readonly RecipeSurface[];
   /** Providers and secrets the recipe needs or can use (#3708). */
   static providers?: readonly RecipeProvider[];
+  /**
+   * `'ui-only'` declares that every model of the recipe is closed to the
+   * generated API, MCP and CLI on purpose, so a host offers the recipe and its
+   * screens but tells the user agents cannot read it. The scanner rejects it
+   * when any model is exposed. Omit it for every other recipe.
+   */
+  static exposure?: RecipeExposure;
   /** Where the recipe's runtime pieces can run; omitted means `both`. */
   static runtime?: RecipeRuntime;
   /** Demo fixture data: a fixture export or small inline JSON (#3708). */

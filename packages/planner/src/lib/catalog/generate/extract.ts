@@ -314,6 +314,7 @@ const RECIPE_METADATA_KEYS = [
   'surfaces',
   'providers',
   'runtime',
+  'exposure',
   'demoSeed',
   'demo',
 ] as const;

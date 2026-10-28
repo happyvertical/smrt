@@ -142,7 +142,10 @@ export function extractBrowser(
 /** The validated non-model metadata of one raw recipe entry. */
 export function extractRecipeMetadata(
   raw: Json,
-): Pick<Recipe, 'surfaces' | 'providers' | 'runtime' | 'demoSeed' | 'demo'> {
+): Pick<
+  Recipe,
+  'surfaces' | 'providers' | 'runtime' | 'exposure' | 'demoSeed' | 'demo'
+> {
   const surfaces = Array.isArray(raw.surfaces)
     ? raw.surfaces.flatMap((s) => surface(s) ?? [])
     : [];
@@ -156,6 +159,7 @@ export function extractRecipeMetadata(
     ...(surfaces.length ? { surfaces } : {}),
     ...(providers.length ? { providers } : {}),
     ...(runtime ? { runtime } : {}),
+    ...(raw.exposure === 'ui-only' ? { exposure: 'ui-only' as const } : {}),
     ...(seed ? { demoSeed: seed } : {}),
     ...(demo ? { demo } : {}),
   };

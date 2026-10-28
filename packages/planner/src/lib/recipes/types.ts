@@ -272,6 +272,9 @@ export interface RecipeProvider {
 /** Where a recipe's runtime pieces can run. Absent means `both`. */
 export type RecipeRuntime = 'browser' | 'server' | 'both';
 
+/** `ui-only`: closed to API, MCP and CLI by design (smrt#4440). */
+export type RecipeExposure = 'ui-only';
+
 /** A demo fixture: an export reference, or small inline JSON. */
 export type RecipeDemoSeed = { export: RecipeExportRef } | { data: unknown };
 
@@ -334,6 +337,11 @@ export interface Recipe {
   /** Providers (and secret NAMES) the recipe needs or can use. */
   providers?: RecipeProvider[];
   runtime?: RecipeRuntime;
+  /**
+   * `ui-only`: every model is closed to API, MCP and CLI on purpose, so the
+   * feature has screens but agents cannot read it (smrt#4440).
+   */
+  exposure?: RecipeExposure;
   demoSeed?: RecipeDemoSeed;
   /** Browser-demo classification of this recipe on its own (smrt#3709). */
   demo?: RecipeDemo;

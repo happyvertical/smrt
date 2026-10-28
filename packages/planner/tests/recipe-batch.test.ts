@@ -33,7 +33,11 @@ describe('every recipe', () => {
       expect(found, qualified).toBeDefined();
       // A model with a screen of its own is exposed; feature recipes may also
       // list internal models (sessions, policy rows) that have none.
-      if (recipe.nav.some((entry) => entry.model === qualified)) {
+      // A ui-only recipe is closed to agents on purpose (#4440).
+      if (
+        recipe.exposure !== 'ui-only' &&
+        recipe.nav.some((entry) => entry.model === qualified)
+      ) {
         expect(found?.model.exposed, qualified).toBe(true);
       }
     }

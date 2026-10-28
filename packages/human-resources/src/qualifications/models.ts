@@ -130,6 +130,7 @@ export class HeldQualification extends SmrtObject {
   @field({ description: 'The qualification this person holds.' })
   @foreignKey(Qualification, { onDelete: 'RESTRICT' })
   qualificationId = '';
+  @field({ description: 'The person who holds it.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     onDelete: 'RESTRICT',
   })

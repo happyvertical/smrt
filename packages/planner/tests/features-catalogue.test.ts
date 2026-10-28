@@ -339,3 +339,15 @@ describe('the committed catalog', () => {
     }
   });
 });
+
+describe('ui-only features (#4440)', () => {
+  it('say in plain words that agents cannot read them', () => {
+    const open = recipe('sales.orders');
+    const closed = recipe('human-resources.people', { exposure: 'ui-only' });
+    const [openCard, closedCard] = buildFeatureCards([open, closed], []);
+    expect(openCard.agentAccess).toBeUndefined();
+    expect(closedCard.agentAccess).toBe(
+      'People only; agents cannot read this.',
+    );
+  });
+});
