@@ -1,4 +1,4 @@
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
   getTenantId,
   isSystemContext,
@@ -68,6 +68,10 @@ export class TenantSubscription extends SmrtObject {
    *   issuing `tenantId`. Used for B2C buyers, anonymous-email subscribers,
    *   agent identities, and any other caller-defined identity.
    */
+  @field({
+    description:
+      'Whether the subscriber is your own workspace (tenant) or an outside customer (external).',
+  })
   subscriberKind: SubscriberKind = 'tenant';
 
   /**
@@ -78,19 +82,44 @@ export class TenantSubscription extends SmrtObject {
    * are expected to namespace (e.g. `buyer-contact:abc123`,
    * `agent:hermes-7`, `email:foo@example.com`).
    */
+  @field({
+    description:
+      'Who the outside subscriber is, when the subscriber type is external.',
+  })
   subscriberExternalId: string = '';
 
+  @field({ description: 'The plan this subscription is for.' })
   @foreignKey('SubscriptionPlan')
   planId: string = '';
 
+  @field({
+    description:
+      'Where the subscription stands: incomplete, trialing, active, past due, unpaid or cancelled.',
+  })
   status: SubscriptionStatus = 'incomplete';
+  @field({ description: 'The day the subscription began.' })
   startedAt: Date = new Date();
+  @field({ description: 'When the current billing period began.' })
   currentPeriodStart: Date | null = null;
+  @field({
+    description:
+      'When the current billing period ends and the next one is due.',
+  })
   currentPeriodEnd: Date | null = null;
+  @field({ description: 'When the free trial ends, if there is one.' })
   trialEndsAt: Date | null = null;
+  @field({
+    description:
+      'Tick to let the subscription run out at the end of the current period instead of renewing.',
+  })
   cancelAtPeriodEnd: boolean = false;
+  @field({ description: 'When the subscription was cancelled.' })
   canceledAt: Date | null = null;
   /** Amount selected for this subscription, in integer minor units. */
+  @field({
+    description:
+      'For a pay-what-you-can plan, the amount the subscriber chose to pay, in cents.',
+  })
   agreedAmount: number | null = null;
   /**
    * The immutable `SubscriptionPlanVersion` frozen for the current period
@@ -99,6 +128,10 @@ export class TenantSubscription extends SmrtObject {
    * entitlement upgrade or an authorized {@link replacePlanVersion}. Null
    * only for subscriptions to unmigrated legacy plans with no versions.
    */
+  @field({
+    description:
+      'The version of the plan terms this subscription is held to for the current period. It is kept up to date automatically.',
+  })
   @foreignKey('SubscriptionPlanVersion')
   planVersionId: string | null = null;
   /** When {@link planVersionId} was last set. */
