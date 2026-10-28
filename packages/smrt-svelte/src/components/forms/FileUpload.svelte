@@ -51,6 +51,8 @@ export interface Props {
   capture?: 'environment' | 'user';
   /** Require at least one file for native form validation */
   required?: boolean;
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
 }
 
 let {
@@ -65,6 +67,7 @@ let {
   name,
   capture,
   required = false,
+  density,
 }: Props = $props();
 
 let isDragging = $state(false);
@@ -249,7 +252,7 @@ function formatFileSize(bytes: number): string {
 }
 </script>
 
-<div class="file-upload" class:disabled data-smrt-component="FileUpload">
+<div class="file-upload" class:disabled data-density={density} data-smrt-component="FileUpload">
   <div
     class="drop-zone"
     class:dragging={isDragging}
@@ -444,12 +447,15 @@ function formatFileSize(bytes: number): string {
     white-space: nowrap;
   }
 
+  .file-upload[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  .file-upload[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+
   .file-list__remove {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: max(28px, var(--smrt-control-target-min));
+    height: max(28px, var(--smrt-control-target-min));
     padding: 0;
     border: none;
     border-radius: var(--smrt-radius-full);

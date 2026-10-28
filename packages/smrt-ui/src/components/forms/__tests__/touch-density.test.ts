@@ -3,8 +3,11 @@ import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CollectionToolbar from '../../data/CollectionToolbar.svelte';
 import DataTable from '../../data/DataTable.svelte';
+import Drawer from '../../feedback/Drawer.svelte';
+import Modal from '../../feedback/Modal.svelte';
 import FilterChips from '../../nav/FilterChips.svelte';
 import Button from '../../ui/Button.svelte';
+import Disclosure from '../../ui/Disclosure.svelte';
 import Pagination from '../../ui/Pagination.svelte';
 import Checkbox from '../Checkbox.svelte';
 import Input from '../Input.svelte';
@@ -53,6 +56,7 @@ describe('touch density', () => {
     ['DataTable', DataTable, { columns: [], data: [] }],
     ['Pagination', Pagination, { currentPage: 1, totalPages: 3 }],
     ['CollectionToolbar', CollectionToolbar, {}],
+    ['Disclosure', Disclosure, { title: 'More' }],
   ])('%s consumes density on its target root', (_name, component, props) => {
     const { container } = render(component as typeof Input, {
       props: { ...props, density: 'touch' },
@@ -140,5 +144,19 @@ describe('touch density', () => {
         .querySelector('[role="radiogroup"]')
         ?.getAttribute('data-density'),
     ).toBe('touch');
+  });
+
+  // #3387: the dialog and the drawer built on it take a density for the close button.
+  it.each([
+    ['Modal', Modal],
+    ['Drawer', Drawer],
+  ] as const)('%s consumes density on its dialog', (_name, component) => {
+    render(component as typeof Modal, {
+      props: { open: true, title: 'Title', density: 'touch' },
+    });
+    expect(document.querySelector('dialog')).toHaveAttribute(
+      'data-density',
+      'touch',
+    );
   });
 });
