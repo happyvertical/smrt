@@ -19,7 +19,7 @@ production service, not by hand in the app. Here you follow them.
 
 Open the run and compare **{field:ProductionRun.completedQty}** with
 **{field:ProductionRun.targetQty}**. Its **{field:ProductionRun.status}** shows
-whether it is planned, under way or finished.
+whether it is planned, under way, finished or cancelled.
 
 ### See what was finished
 

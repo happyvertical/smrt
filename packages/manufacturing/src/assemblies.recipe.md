@@ -25,7 +25,8 @@ it passes through and how long each takes.
 
 1. Create a new bill of materials with a higher **{field:BillOfMaterials.version}**.
 2. Set its **{field:BillOfMaterials.status}** to active when it is ready to use.
-3. The old version stays on file, so past runs still make sense.
+3. Set the old version's **{field:BillOfMaterials.status}** to superseded so only one version is in use.
+4. The old version stays on file, so past runs still make sense.
 
 ### See the kinds of work
 

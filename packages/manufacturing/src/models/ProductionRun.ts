@@ -101,7 +101,7 @@ export class ProductionRun extends SmrtObject {
   /** Lifecycle status; see {@link ProductionRunStatus}. */
   @field({
     required: true,
-    description: 'Whether the run is planned, under way or done.',
+    description: 'Whether the run is planned, under way, done or cancelled.',
   })
   status: ProductionRunStatus = 'planned';
 
