@@ -69,7 +69,7 @@
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/conformance": "0.2.0-alpha.11",
-    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/node": "2.1.2",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
     "vite": "8.1.6",
