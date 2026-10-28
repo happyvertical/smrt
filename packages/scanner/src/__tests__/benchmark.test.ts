@@ -259,37 +259,59 @@ describe('OXC Scanner Benchmarks', () => {
     }, 10000); // Allow 10s for this test
 
     it('should scale linearly with file count', async () => {
-      const scanner = new OxcScanner({
-        cwd: tempDir,
-        include: ['**/*.ts'],
+      // Scan separate projects of increasing size (#3532). Re-scanning one tree
+      // and rescaling the time by limit/fileCount would not measure scaling.
+      const sizes = [100, 250, 500];
+      const runsPerSize = 5;
+      const roots = sizes.map((size) => {
+        const root = mkdtempSync(join(tmpdir(), `smrt-bench-scale-${size}-`));
+        generateTestProject(root, size);
+        return root;
       });
 
-      // Scan with different file limits
-      const measurements: { files: number; time: number }[] = [];
+      try {
+        const measurements: { files: number; time: number }[] = [];
 
-      for (const limit of [100, 250, 500]) {
-        const startTime = performance.now();
-        const results = await scanner.scan();
-        const elapsed = performance.now() - startTime;
+        for (const [index, root] of roots.entries()) {
+          const scanner = new OxcScanner({
+            cwd: root,
+            include: ['**/*.ts'],
+          });
 
-        // Take first N files worth of time
-        measurements.push({
-          files: Math.min(results.fileCount, limit),
-          time: elapsed * (limit / results.fileCount),
-        });
+          // Warm up the parser and file cache before timing.
+          await scanner.scan();
+
+          const times: number[] = [];
+          let fileCount = 0;
+          for (let run = 0; run < runsPerSize; run++) {
+            const startTime = performance.now();
+            const results = await scanner.scan();
+            times.push(performance.now() - startTime);
+            fileCount = results.fileCount;
+          }
+          expect(fileCount).toBe(sizes[index]);
+
+          times.sort((x, y) => x - y);
+          measurements.push({
+            files: fileCount,
+            time: times[Math.floor(times.length / 2)],
+          });
+        }
+
+        const ratio = measurements[2].time / measurements[0].time;
+        const expectedRatio = measurements[2].files / measurements[0].files;
+
+        console.log(
+          `Scaling check: ${ratio.toFixed(2)}x time for ${expectedRatio}x files`,
+        );
+
+        // Should be roughly linear (within 2x of linear)
+        expect(ratio).toBeLessThan(expectedRatio * 2);
+      } finally {
+        for (const root of roots)
+          rmSync(root, { recursive: true, force: true });
       }
-
-      // Check roughly linear scaling (within 2x expected)
-      const ratio = measurements[2].time / measurements[0].time;
-      const expectedRatio = measurements[2].files / measurements[0].files;
-
-      console.log(
-        `Scaling check: ${ratio.toFixed(2)}x time for ${expectedRatio}x files`,
-      );
-
-      // Should be roughly linear (within 2x of linear)
-      expect(ratio).toBeLessThan(expectedRatio * 2);
-    }, 15000);
+    }, 60000);
   });
 
   describe('Memory Usage', () => {
