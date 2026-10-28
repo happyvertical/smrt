@@ -7,35 +7,24 @@ anyone on the team can pick it up and see what was said.
 
 ## Tasks
 
-### Log a request for help
+Tickets and their messages are created by your support channels (email, chat
+and the like) and by the support service, not by hand in the app. Here you
+read them and see where each one stands.
 
-1. Open the list of tickets and choose **New**.
-2. Write a short **{field:SupportCase.subject}** the customer would recognise.
-3. Describe the problem in the **{field:SupportCase.description}**.
-4. Pick the **{field:SupportCase.clientProfileId}** who asked.
-5. Save. The ticket gets its number and starts as new.
+### Find a ticket
 
-### Hand a ticket to someone
+1. Open the list of tickets.
+2. Look at the **{field:SupportCase.subject}**, the **{field:SupportCase.status}** and the **{field:SupportCase.priority}** to see what needs attention.
+3. Open a ticket to see who it is **{field:SupportCase.assignedSpecialistId}** and the **{field:SupportCase.description}**.
 
-1. Open the ticket and choose Edit.
-2. Pick who it is **{field:SupportCase.assignedSpecialistId}**.
-3. Set the **{field:SupportCase.priority}** so urgent requests come first.
-4. Save. The person sees it in their list.
+### Read the history of a ticket
 
-### Reply and keep the history
-
-1. Open the list of messages and choose **New**.
-2. Pick the **{field:SupportInteraction.caseId}** the message belongs to.
-3. Write the **{field:SupportInteraction.body}**.
-4. Save. The message stays on the ticket for the next person.
-
-### Close a ticket
-
-Change the **{field:SupportCase.status}** to resolved once the customer has what
-they need. If they write back, move it back to in progress and carry on.
+1. Open the list of messages.
+2. Find the **{field:SupportInteraction.caseId}** you are interested in.
+3. Read the **{field:SupportInteraction.body}** of each message, oldest first.
 
 ### Add someone to the support team
 
 1. Open the support team and choose **New**.
 2. Type the person's **{field:SupportSpecialist.displayName}**.
-3. Save. They can now be given tickets.
+3. Save. They can now be given tickets by the support service.

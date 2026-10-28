@@ -2,8 +2,8 @@
 
 Affiliates lets partners and customers send people your way and earn a reward
 when it leads to a sale. You set up a program that says what a referral earns,
-sign up the people who will refer, record each person they send, and track what
-each affiliate has earned until you pay it out.
+sign up the people who will refer, record each person they send, and see what
+each affiliate has earned and what has been paid out.
 
 ## Tasks
 
@@ -32,8 +32,11 @@ each affiliate has earned until you pay it out.
 2. Read the **{field:Commission.amountCents}** and the **{field:Commission.status}** of each one.
 3. A commission moves from pending to approved, then payable, then paid as it is worked through.
 
-### Pay an affiliate
+### Check a payout
 
-1. Open the payouts and choose **New**.
-2. Pick the **{field:CommissionPayout.earnerId}** and check the **{field:CommissionPayout.totalAmountCents}**.
-3. Save. The **{field:CommissionPayout.status}** shows completed once the money has gone out, or failed if it did not.
+Payouts are made by the commission payout service, not by hand in the app. You
+can see what has been paid.
+
+1. Open the payouts.
+2. Read the **{field:CommissionPayout.earnerId}**, the **{field:CommissionPayout.totalAmountCents}** and the **{field:CommissionPayout.status}**.
+3. A payout is waiting, approved, being sent, then completed. It shows failed or rejected if the money did not go out.
