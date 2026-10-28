@@ -9,7 +9,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
-import { foreignKey, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import type { WordTiming } from '@happyvertical/smrt-voice';
 import {
@@ -140,17 +140,24 @@ export interface VideoShotOptions extends ContentOptions {
 })
 export class VideoShot extends Content {
   /** Sequence this shot belongs to */
+  @field({ description: 'The sequence this shot belongs to.' })
   @foreignKey(() => VideoSequence)
   sequenceId: string | null = null;
 
   /** Scene for this shot */
+  @field({ description: 'The background scene this shot is filmed in.' })
   @foreignKey(() => Scene)
   sceneId: string | null = null;
 
   /** Order within sequence */
+  @field({
+    description:
+      'The order of this shot within its sequence, counting from the start.',
+  })
   position: number = 0;
 
   /** Actual frame count of generated clip */
+  @field({ description: 'How long the finished clip runs in frames.' })
   durationInFrames: number = 0;
 
   /** Frames to skip at start (overlap handling) */
@@ -160,15 +167,21 @@ export class VideoShot extends Content {
   trimAfterFrames: number = 0;
 
   /** Script text to be spoken */
+  @field({ description: 'The words spoken in this shot.' })
   scriptText: string = '';
 
   /** Word count in the script */
   scriptWordCount: number = 0;
 
   /** Target duration in seconds */
+  @field({ description: 'How long you want the shot to be, in seconds.' })
   targetDuration: number = 30;
 
   /** Video generation status */
+  @field({
+    description:
+      'Where the shot stands: draft, queued, processing, ready, failed or published.',
+  })
   shotStatus: VideoShotStatus = 'draft';
 
   /** Generation progress (0-100) */

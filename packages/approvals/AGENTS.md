@@ -33,6 +33,7 @@ before changing a transition, the guard predicates, or the surface.
 - The event FK is physical on PostgreSQL and SQLite only: DuckDB runs an
   indexed-column UPDATE on a referenced row as delete plus insert.
 - No Node built-ins in `src/` (browser gate); use `globalThis.crypto`.
+- **Recipe `approvals.requests`** (`src/recipes.ts`, help in `src/requests.recipe.md`): lists requests, history and policies for the planner and other catalog hosts, read-only because the service is the only write path. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
 ## Validation
 

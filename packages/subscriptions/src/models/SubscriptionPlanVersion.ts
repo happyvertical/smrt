@@ -1,4 +1,4 @@
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
   TenantScoped,
   tenantId,
@@ -50,26 +50,64 @@ export class SubscriptionPlanVersion extends SmrtObject implements PlanTerms {
   tenantId: string | null = null;
 
   /** The stable tier identity this version belongs to. */
+  @field({ description: 'The plan this version belongs to.' })
   @foreignKey('SubscriptionPlan')
   planId: string = '';
 
   /** The plan's natural key, copied for auditing and resolution output. */
+  @field({
+    description: 'The plan code at the time this version was published.',
+  })
   planKey: string = '';
   /** 1-based sequence within the plan; contiguous and monotonic. */
+  @field({
+    description: 'Which version of the plan this is, counting from 1.',
+  })
   version: number = 0;
   /** Start of this version's effective interval. */
+  @field({
+    description: 'The date and time from which these terms apply.',
+  })
   effectiveFrom: Date = new Date();
   /** Plan name when this version was published (display only). */
+  @field({
+    description: 'What the plan was called when this version was published.',
+  })
   name: string = '';
+  @field({
+    description:
+      'Whether the plan was a draft, on sale (active) or archived under this version.',
+  })
   status: SubscriptionPlanStatus = 'active';
   /** Integer minor units of {@link currency}. */
+  @field({
+    description:
+      'What the plan cost each billing period under this version, in cents.',
+  })
   priceAmount: number = 0;
+  @field({ description: 'The currency the price is in, such as USD.' })
   currency: string = 'USD';
+  @field({
+    description:
+      'How often the subscriber was billed: every day, week, month or year.',
+  })
   billingInterval: BillingInterval = 'month';
+  @field({
+    description:
+      'Whether the plan was free, had a fixed price, or let the subscriber choose what to pay.',
+  })
   pricingMode: PricingMode = 'fixed';
   /** Integer minor units. */
+  @field({
+    description:
+      'For a pay-what-you-can plan, the least a subscriber could pay, in cents.',
+  })
   minimumAmount: number = 0;
   /** Integer minor units. */
+  @field({
+    description:
+      'For a pay-what-you-can plan, the amount suggested to the subscriber, in cents.',
+  })
   suggestedAmount: number = 0;
   features: string = '[]';
   thresholds: string = '[]';

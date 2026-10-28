@@ -57,6 +57,7 @@ export class Campaign extends SmrtObject {
   tenantId: string | null = null;
 
   /** Canonical commerce Customer that owns this campaign, when assigned. */
+  @field({ description: 'The customer this campaign is run for, if any.' })
   @crossPackageRef('@happyvertical/smrt-commerce:Customer', {
     nullable: true,
     validate: true,
@@ -64,25 +65,45 @@ export class Campaign extends SmrtObject {
   customerId: string | null = null;
 
   /** Stable caller-defined key used by CRM/referral systems. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'A short reference of your own for this campaign, kept the same once it is in use.',
+  })
   campaignKey: string = '';
 
-  @field({ required: true })
+  @field({ required: true, description: 'What the campaign is called.' })
   name: string = '';
 
   /** Open objective key such as `awareness` or `demand_generation`. */
+  @field({
+    description:
+      'What the campaign is meant to achieve, such as awareness or new leads.',
+  })
   objective: string = '';
 
+  @field({
+    description:
+      'Where the campaign stands, from draft through active to completed and archived.',
+  })
   status: CampaignStatus = 'draft';
 
+  @field({ description: 'When the campaign starts.' })
   startAt: Date | null = null;
 
+  @field({ description: 'When the campaign ends.' })
   endAt: Date | null = null;
 
   /** Total campaign budget in integer cents. */
+  @field({
+    description: 'The total you plan to spend on the campaign, in cents.',
+  })
   budgetCents: number = 0;
 
   /** ISO 4217 currency for every campaign/channel amount. */
+  @field({
+    description: 'The currency every amount on this campaign is in.',
+  })
   currency: string = 'USD';
 
   metadata: string = '{}';

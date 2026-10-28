@@ -42,6 +42,7 @@ export {
   OAuthState,
   type OAuthStateOptions,
 } from './oauth-state.js';
+export { SocialPostsRecipe } from './recipes.js';
 // Models
 export {
   type AccountStatus,

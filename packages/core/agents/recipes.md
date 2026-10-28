@@ -305,6 +305,12 @@ and only the keys below. Field names are checked in core
 the merged manifest, so STI-merged, tenant, and framework-base fields such as
 `parentId` are accepted along with the universal `id`, `slug`, `context`,
 `created_at`, `updated_at`; anything else fails the build.
+A package-local test that runs `applyGenerationPasses` on a single package's
+manifest must first set `manifest.smrtDependencies` to the packages whose
+models it inherits from (`['@happyvertical/smrt-core']` for `SmrtHierarchical`'s
+`parentId`, plus `@happyvertical/smrt-content` for a `Content` subclass), or
+every inherited field name in `options` is rejected; the real build reads them
+from the dependency tree (`packages/places/src/__tests__/recipes.test.ts`).
 
 ## options: curation hints, never a second schema
 

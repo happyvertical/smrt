@@ -308,6 +308,7 @@ export type {
   PublishReadinessRequirement,
 } from './publish-readiness';
 export { evaluateContentPublishReadiness } from './publish-readiness';
+export { ArticlesRecipe } from './recipes';
 export type {
   SafeRemoteFetchOptions,
   SafeRemoteFetchResult,

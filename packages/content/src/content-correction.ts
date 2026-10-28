@@ -1,6 +1,7 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -38,6 +39,7 @@ export interface ContentCorrectionOptions extends SmrtObjectOptions {
 })
 export class ContentCorrection extends SmrtObject {
   @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
+  @field({ description: 'The piece being corrected.' })
   contentId = '';
 
   @foreignKey('ContentVersion', { onDelete: 'CASCADE' })
@@ -48,17 +50,37 @@ export class ContentCorrection extends SmrtObject {
 
   @crossPackageRef('@happyvertical/smrt-facts:Fact')
   replacementFactId = '';
+  @field({
+    description:
+      'What kind of mistake it fixes: a fact, a safety concern, wording or something else.',
+  })
   correctionType: ContentCorrectionType = 'fact';
+
+  @field({
+    description:
+      'Where the correction stands: a draft, published or retracted.',
+  })
   status: ContentCorrectionStatus = 'draft';
+
+  @field({
+    description: 'A short note on what was wrong and how it was fixed.',
+  })
   summary = '';
+
+  @field({ description: 'The wording that was wrong.' })
   incorrectText = '';
+
+  @field({ description: 'The wording that replaces it.' })
   correctedText = '';
+
+  @field({ description: 'The note readers see about this correction.' })
   publicNote = '';
   metadata = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'When the correction was made public.' })
   publishedAt: Date | null = null;
   createdAt = new Date();
   updatedAt = new Date();

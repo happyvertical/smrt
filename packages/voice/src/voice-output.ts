@@ -6,7 +6,12 @@
  */
 
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
-import { crossPackageRef, foreignKey, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import type {
   WordTiming as SpeechWordTiming,
@@ -193,23 +198,27 @@ export class VoiceOutput extends Content {
   /**
    * Voice profile used for synthesis
    */
+  @field({ description: 'The voice that read the text.' })
   @foreignKey(() => VoiceProfile)
   voiceProfileId: string | null = null;
 
   /**
    * Original text that was synthesized
    */
+  @field({ description: 'The text that was read aloud.' })
   sourceText: string = '';
 
   /**
    * Asset ID of the generated audio file
    */
+  @field({ description: 'The audio file of the recording.' })
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
   audioAssetId: string | null = null;
 
   /**
    * Duration of the generated audio in seconds
    */
+  @field({ description: 'How long the recording runs, in seconds.' })
   duration: number = 0;
 
   /**

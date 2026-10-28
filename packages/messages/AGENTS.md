@@ -32,6 +32,7 @@ Multi-channel messaging with STI hierarchies for both messages and accounts. Cre
   `MessagingSettingsPanel` is the callback-driven Svelte surface.
 - Account, endpoint, and route generated surfaces are read-only. Do not add
   generated mutations around the settings service or make secret fields writable.
+- **Recipe `messages.slack`** (`src/recipes.ts`, help in `src/help/slack.md`): lists Slack messages and workspaces beside the Mailbox and Notifications recipes; workspaces stay read-only and sending goes through the senders, not generated routes. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
 ## In-app notifications (`UserNotification`)
 

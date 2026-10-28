@@ -9,7 +9,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
-import { foreignKey, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import {
   legacyVideoAssetMetaTypes,
@@ -75,19 +75,35 @@ export interface VideoSequenceOptions extends ContentOptions {
 })
 export class VideoSequence extends Content {
   /** Composition this sequence belongs to */
+  @field({ description: 'The video this sequence is part of.' })
   @foreignKey('VideoComposition')
   compositionId: string | null = null;
 
   /** Order within composition */
+  @field({
+    description:
+      'The order of this sequence within its video, counting from the start.',
+  })
   position: number = 0;
 
   /** Computed duration: sum of shot frames */
+  @field({
+    description:
+      'How long the sequence runs in frames. It adds up from its shots.',
+  })
   durationInFrames: number = 0;
 
   /** Transition type to the next sequence */
+  @field({
+    description:
+      'How this sequence hands over to the next one: a straight cut, a fade, a slide or a wipe.',
+  })
   transitionType: TransitionType = 'none';
 
   /** Overlap frames with next sequence for transition */
+  @field({
+    description: 'How many frames the hand-over to the next sequence overlaps.',
+  })
   transitionDurationFrames: number = 0;
 
   constructor(options: VideoSequenceOptions = {}) {

@@ -84,6 +84,7 @@ that reverted to DECIMAL passes every SQLite suite.
   caller-named other version needs an authorized replacement.
 - `canceled` subscriptions entitle until `currentPeriodEnd` only with
   `retainsPaidPeriod`, derived on save from an entitled pre-cancel row.
+- **Recipe `subscriptions.plans`** (`src/recipes.ts`, help in `src/plans.recipe.md`): lists plans, subscriptions, plan versions (read-only, written by `plan-versioning.ts`) and charges (read-only, written by the usage service) for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words, money fields saying "in cents"; keep them when editing the models. Reseller models and pricing rules stay out of it.
 
 ## Reseller billing (#3059)
 

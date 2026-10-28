@@ -81,50 +81,104 @@ export class ApprovalRequest extends SmrtObject {
   tenantId: string = '';
 
   /** Approval kind key, e.g. `social.post.publish`. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description: 'What sort of approval this is, such as publishing a post.',
+  })
   kind: string = '';
 
   /** Qualified subject class, e.g. `@happyvertical/smrt-social:SocialPost`. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description: 'What kind of thing the request is about.',
+  })
   subjectType: string = '';
 
   /** Subject id. Bare string: the subject table is polymorphic. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description: 'Which thing the request is about.',
+  })
   subjectId: string = '';
 
   /**
    * Hash of the exact subject revision being approved. `consume` must
    * present the same hash, so an approval never transfers to changed content.
    */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description:
+      'A fingerprint of the exact version that was put up for approval. If the thing changes, the approval no longer applies.',
+  })
   subjectRevisionHash: string = '';
 
   /** Idempotency key, unique per tenant. A replay returns the same request. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description:
+      'The reference the request is filed under, so asking twice does not open it twice.',
+  })
   requestKey: string = '';
 
   /** Principal id of the requester. The requester can never decide. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description: 'Who asked for the approval.',
+  })
   requestedBy: string = '';
 
   /** Principal type of the requester (`human`, `agent`, or `service`). */
-  @field({ type: 'text', readonly: true })
+  @field({
+    type: 'text',
+    readonly: true,
+    description:
+      'Whether a person, an assistant or an automated process asked.',
+  })
   requestedByType: ApprovalPrincipalType = 'human';
 
   /** Short human-readable description shown to deciders. */
-  @field({ type: 'text', readonly: true })
+  @field({
+    type: 'text',
+    readonly: true,
+    description: 'A short description of what needs approval.',
+  })
   summary: string = '';
 
   /** Lifecycle status. Changed only by guarded transitions. */
-  @field({ type: 'text', readonly: true })
+  @field({
+    type: 'text',
+    readonly: true,
+    description:
+      'Where the request stands: waiting, approved, rejected, changes requested, cancelled or expired.',
+  })
   status: ApprovalStatus = 'pending';
 
   /** Distinct approvers needed, fixed when the request is made. */
-  @field({ type: 'integer', readonly: true })
+  @field({
+    type: 'integer',
+    readonly: true,
+    description: 'How many different people must agree.',
+  })
   requiredApprovals: number = 1;
 
   /** Distinct approvals recorded so far. */
-  @field({ type: 'integer', readonly: true })
+  @field({
+    type: 'integer',
+    readonly: true,
+    description: 'How many people have agreed so far.',
+  })
   approvalCount: number = 0;
 
   /**
@@ -139,19 +193,35 @@ export class ApprovalRequest extends SmrtObject {
   version: number = 0;
 
   /** After this instant the request can no longer be decided or consumed. */
-  @field({ type: 'datetime', readonly: true })
+  @field({
+    type: 'datetime',
+    readonly: true,
+    description: 'The deadline. After it the request can no longer be decided.',
+  })
   expiresAt: Date | null = null;
 
   /** When the request reached a terminal decision. */
-  @field({ type: 'datetime', readonly: true })
+  @field({
+    type: 'datetime',
+    readonly: true,
+    description: 'When the request was decided.',
+  })
   decidedAt: Date | null = null;
 
   /** When the approval was consumed (single use). */
-  @field({ type: 'datetime', readonly: true })
+  @field({
+    type: 'datetime',
+    readonly: true,
+    description: 'When the approval was used to let the action go ahead.',
+  })
   consumedAt: Date | null = null;
 
   /** Principal id that consumed the approval. */
-  @field({ type: 'text', readonly: true })
+  @field({
+    type: 'text',
+    readonly: true,
+    description: 'Who used the approval.',
+  })
   consumedBy: string = '';
 
   constructor(options: ApprovalRequestOptions = {}) {
