@@ -1,6 +1,7 @@
 import { withPrivateAssetAccess } from '@happyvertical/smrt-assets';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CatalogAuthorizer } from './catalog-service.js';
+import { familyAdoptionOwner } from './family-intake-models.js';
 import {
   LearnerAuthorizationError,
   type LearnerAuthorizer,
@@ -88,6 +89,48 @@ export class WorkbookPhotoService extends WorkbookService {
       this.authorizeCatalog,
       this.photoOptions,
     ) as this;
+  }
+  /** Only an exact adopted receipt can bridge its immutable family source scope. */
+  async assertWorkbookPhotoScope(
+    request: LearnerRequest,
+    scope: {
+      tenantId: string;
+      actorId: string;
+      confidentialScopeId: string;
+    },
+    itemId: string,
+  ): Promise<void> {
+    if (
+      scope.tenantId !== request.tenantId ||
+      scope.actorId !== request.actorUserId
+    )
+      throw new LearnerAuthorizationError();
+    if (scope.confidentialScopeId === request.learnerId) return;
+    if (scope.confidentialScopeId !== `family-intake:${request.tenantId}`)
+      throw new LearnerAuthorizationError();
+    const view = await this.getWorkbookPhotoIntakeByItem({
+      ...request,
+      itemId,
+    });
+    const photo = await this.db.get('workbook_photo_intakes', {
+      id: view.id,
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      item_id: itemId,
+    });
+    if (
+      !photo?.family_intake_id ||
+      !(await this.db.get('family_intakes', {
+        id: photo.family_intake_id,
+        tenant_id: request.tenantId,
+        item_id: itemId,
+      }))
+    )
+      throw new LearnerAuthorizationError();
+    await familyAdoptionOwner(
+      this.db,
+      photo as Parameters<typeof familyAdoptionOwner>[1],
+    );
   }
   async authorizePhotoIntake(request: LearnerRequest): Promise<void> {
     await this.requireActor(request, 'education.learner.submit');
@@ -436,11 +479,41 @@ export class WorkbookPhotoService extends WorkbookService {
     const original = view.originals.find((o) => o.assetId === request.assetId);
     if (!original) throw new LearnerAuthorizationError();
     const learner = await this.requireActor(request, 'education.learner.read');
+    let ownerProfileId = learner.profileId;
+    const photo = await this.db.get('workbook_photo_intakes', {
+      id: request.intakeId,
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+    });
+    if (photo?.family_intake_id) {
+      await familyAdoptionOwner(
+        this.db,
+        photo as Parameters<typeof familyAdoptionOwner>[1],
+      );
+      const family = await this.db.get('family_intakes', {
+        id: photo.family_intake_id,
+        tenant_id: request.tenantId,
+        item_id: photo.item_id,
+      });
+      if (
+        !family ||
+        !(await this.db.get('family_intake_assets', {
+          tenant_id: request.tenantId,
+          intake_id: family.id,
+          asset_id: request.assetId,
+          sha256: original.sha256,
+          name: original.name,
+          mime_type: original.mimeType,
+        }))
+      )
+        throw new LearnerAuthorizationError();
+      ownerProfileId = family.owner_profile_id;
+    }
     return withPrivateAssetAccess(
       {
         tenantId: request.tenantId,
         actorUserId: request.actorUserId,
-        ownerProfileId: learner.profileId,
+        ownerProfileId,
         assetIds: [request.assetId],
       },
       async () => {
@@ -449,7 +522,7 @@ export class WorkbookPhotoService extends WorkbookService {
           {
             id: request.assetId,
             tenantId: request.tenantId,
-            ownerProfileId: learner.profileId,
+            ownerProfileId,
           },
           { cache: false },
         );

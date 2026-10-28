@@ -1277,6 +1277,12 @@ export async function preserveWorkbookIntakeAnalysis(input: {
 }
 
 export {
+  receiveFamilyIntake,
+  retainFamilyIntakeReceipt,
+} from './family-intake-ingestion.js';
+
+export { FamilyIntakeService } from './family-intake-service.js';
+export {
   preserveWorkbookPhotoIdentification,
   processWorkbookPhotoAnalysis,
   receiveWorkbookPhotoIntake,

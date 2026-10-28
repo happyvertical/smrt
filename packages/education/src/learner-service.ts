@@ -318,15 +318,19 @@ export class LearnerService {
     return result;
   }
 
-  protected async requireActor(
-    request: LearnerRequest,
-    action: Parameters<LearnerAuthorizer>[0]['action'],
-  ): Promise<Learner> {
+  /** Prevent escaped transaction-scoped services from using a released executor. */
+  protected assertServiceOpen(): void {
     if (
       this.transactionState === 'aborting' ||
       this.transactionState === 'closed'
     )
       throw new Error('Learner transaction scope is closed');
+  }
+  protected async requireActor(
+    request: LearnerRequest,
+    action: Parameters<LearnerAuthorizer>[0]['action'],
+  ): Promise<Learner> {
+    this.assertServiceOpen();
     const context = getCurrentTenant();
     if (
       !context ||
