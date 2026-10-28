@@ -10,7 +10,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
-import { smrt } from '@happyvertical/smrt-core';
+import { field, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import {
   legacyVideoAssetMetaTypes,
@@ -79,21 +79,39 @@ export interface VideoCompositionOptions extends ContentOptions {
 })
 export class VideoComposition extends Content {
   /** Frames per second — everything downstream is in frames */
+  @field({
+    description: 'How many frames of video play each second, usually 30.',
+  })
   fps: number = 30;
 
   /** Render width in pixels */
+  @field({
+    description: 'The width of the finished video in pixels, such as 1920.',
+  })
   width: number = 1920;
 
   /** Render height in pixels */
+  @field({
+    description: 'The height of the finished video in pixels, such as 1080.',
+  })
   height: number = 1080;
 
   /** Computed total: sum of sequences minus transition overlaps */
+  @field({
+    description:
+      'How long the whole video runs, counted in frames. It adds up from the sequences.',
+  })
   durationInFrames: number = 0;
 
   /** Render status */
+  @field({
+    description:
+      'Where the finished video stands: draft, rendering, ready or failed.',
+  })
   renderStatus: RenderStatus = 'draft';
 
   /** Render progress (0-100) */
+  @field({ description: 'How far along the render is, from 0 to 100.' })
   renderProgress: number = 0;
 
   constructor(options: VideoCompositionOptions = {}) {
