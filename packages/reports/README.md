@@ -109,14 +109,15 @@ class LabourByWorkOrder extends SmrtReport {
 - **Key types.** `on` and `to` may be the same type (uuid = uuid, text = text),
   compared as they are so their indexes serve the join, or a text field against a
   uuid one, such as a polymorphic `workRefId` string pointing at a uuid `id`.
-  When the schema types of the two columns differ the join compares both as text
+  When one column is text and the other uuid in the schema, the join compares both as text
   on PostgreSQL and DuckDB (which would otherwise refuse `text = uuid` or fail on
   a non-uuid value), so a text value that is not a uuid simply matches nothing:
   NULL on a left join, dropped on an inner one. A uuid compares in its canonical
   lower-case form, so a reference stored in upper case does not match. SQLite
   stores both as TEXT and compares them uncast. The cast column cannot use its
   index; for a large table prefer a uuid-typed reference (`@foreignKey()` or
-  `@crossPackageRef()`). The same rule applies to the tenant columns.
+  `@crossPackageRef()`). The same rule applies to the tenant columns. Other
+  type pairs (an integer against a decimal, say) are compared as they are.
 - **Tenancy is built into the join.** When the related model is tenant-scoped the
   join also matches `tenant_id` between the two rows, so an id that points at
   another tenant's row never matches. A tenant-scoped join from a source with no

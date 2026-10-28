@@ -35,47 +35,75 @@ export async function tenantColumn(className: string): Promise<string | null> {
   return tenantIdField;
 }
 
+type SchemaTables = Record<
+  string,
+  { columns?: Record<string, { type?: unknown }> }
+>;
+
 /**
- * The schema SQL type of a class's column (upper-case, e.g. `UUID`, `TEXT`),
- * or null when no schema describes it. Reads the class's built (manifest)
- * schema, and an STI child's base schema since its columns live there; a class
- * registered at runtime without one falls back to the table as migration
- * assembles it from every registered class.
+ * Reads column types for one report build. The tables come from the same
+ * merged assembly migration uses (manifest columns plus runtime overlays such
+ * as `tenantScoped`'s tenant_id), built at most once per build. If assembling
+ * them fails for a reason elsewhere in the registry, types fall back to each
+ * class's own built schema, and a column neither describes is unknown.
  */
-export function columnSqlType(
+export function columnTypeReader(): (
   className: string,
   column: string,
-): string | null {
-  const names = [className];
-  if (ObjectRegistry.getTableStrategy(className) === 'sti') {
-    const base = ObjectRegistry.getSTIBase(className);
-    if (base) names.push(base);
-  }
-  for (const name of names) {
-    const type = ObjectRegistry.getSchema(name)?.columns?.[column]?.type;
-    if (typeof type === 'string') return type.toUpperCase();
-  }
-  const table = ObjectRegistry.getTableName(className);
-  const merged = table
-    ? ObjectRegistry.getAllSchemasAsDefinitions()[table]?.columns?.[column]
-        ?.type
-    : undefined;
-  return typeof merged === 'string' ? merged.toUpperCase() : null;
+) => string | null {
+  let tables: SchemaTables | null | undefined;
+  const merged = (): SchemaTables | null => {
+    if (tables === undefined) {
+      try {
+        tables = ObjectRegistry.getAllSchemasAsDefinitions() as SchemaTables;
+      } catch {
+        tables = null;
+      }
+    }
+    return tables;
+  };
+  const upper = (type: unknown) =>
+    typeof type === 'string' ? type.toUpperCase() : null;
+
+  return (className, column) => {
+    const table = ObjectRegistry.getTableName(className);
+    const fromTable = table
+      ? upper(merged()?.[table]?.columns?.[column]?.type)
+      : null;
+    if (fromTable) return fromTable;
+    // An STI child's columns live on its base table's schema.
+    const names = [className];
+    if (ObjectRegistry.getTableStrategy(className) === 'sti') {
+      const base = ObjectRegistry.getSTIBase(className);
+      if (base) names.push(base);
+    }
+    for (const name of names) {
+      const type = upper(
+        ObjectRegistry.getSchema(name)?.columns?.[column]?.type,
+      );
+      if (type) return type;
+    }
+    return null;
+  };
 }
 
 /**
- * Whether two columns must be compared as text: their built-schema types are
- * both known and differ (a text reference against a uuid id, which Postgres
- * has no operator for). Same-typed or undescribed columns compare as they are,
- * so their indexes still serve the join.
+ * Whether two key columns must be compared as text: one is UUID and the other
+ * TEXT (a text reference against a uuid id, which Postgres has no operator
+ * for). Every other pair, same-typed, undescribed or another mismatch,
+ * compares as it is, so indexes still serve the join and numeric keys are
+ * never compared by their text form.
  */
 export function compareAsText(
+  types: (className: string, column: string) => string | null,
   left: { className: string; column: string },
   right: { className: string; column: string },
 ): boolean {
-  const leftType = columnSqlType(left.className, left.column);
-  const rightType = columnSqlType(right.className, right.column);
-  return leftType !== null && rightType !== null && leftType !== rightType;
+  const pair = [
+    types(left.className, left.column),
+    types(right.className, right.column),
+  ];
+  return pair.includes('UUID') && pair.includes('TEXT');
 }
 
 /** The registry field properties that decide who may read a column. */

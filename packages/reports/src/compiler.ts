@@ -7,6 +7,7 @@ import type {
 } from '@happyvertical/sql';
 import { getRuntimeReportOptions } from './decorators.js';
 import {
+  columnTypeReader,
   compareAsText,
   fieldColumn,
   fieldPolicy,
@@ -182,6 +183,7 @@ async function resolveJoins(
   const resolved: ReportJoinDefinition[] = [];
   if (!joins) return resolved;
   const sourceTenant = await tenantColumn(sourceName);
+  const columnType = columnTypeReader();
 
   for (const [alias, join] of Object.entries(joins)) {
     if (
@@ -237,12 +239,14 @@ async function resolveJoins(
     // as text: Postgres has no text = uuid operator, and a text value that is
     // not a uuid then matches nothing instead of failing the rebuild.
     const keyAsText = compareAsText(
+      columnType,
       { className: sourceName, column: onColumn },
       { className, column: targetColumn },
     );
     const tenantAsText =
       joinedTenant && sourceTenant
         ? compareAsText(
+            columnType,
             { className: sourceName, column: sourceTenant },
             { className, column: joinedTenant },
           )
