@@ -76,6 +76,7 @@ export {
   createSessionContinuationStore,
   DEFAULT_ASSISTANT_TURN_HEARTBEAT_MS,
   DEFAULT_CONTINUATION_TTL_MS,
+  type ProviderErrorFallback,
   runAssistantTurn,
   SESSION_CONTINUATIONS_FIELD,
 } from './assistant-turn.js';

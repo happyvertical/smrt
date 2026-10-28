@@ -471,11 +471,12 @@ export interface ShellSectionMenuEntry {
 }
 
 /**
- * A phone bottom bar entry whose icon is either a component (`icon`) or a
- * shell/host icon name (`iconName`, drawn like navigation icons; a missing
- * name draws the placeholder glyph).
+ * A phone bottom bar entry whose icon is a component, or a name (`icon` as a
+ * string, or `iconName`) drawn like navigation icons: a built-in shell icon
+ * name draws that icon, any other name goes to the bar's `iconComponent` (as in
+ * `TenantNav`). A missing name draws the placeholder glyph.
  */
 export type PhoneBottomBarEntry = Omit<PhoneBottomBarItem, 'icon'> & {
-  icon?: PhoneBottomBarItem['icon'];
+  icon?: PhoneBottomBarItem['icon'] | string;
   iconName?: string;
 };

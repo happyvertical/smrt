@@ -108,7 +108,9 @@ export type AssistantTurnStopReason =
   /** The model returned no answer, even after one retry; the reply is the fallback (#4379). */
   | 'empty'
   /** A model call timed out; the reply is the fallback (#4379). */
-  | 'timeout';
+  | 'timeout'
+  /** A model call failed and the host's `providerErrorFallback` answered (#4454). */
+  | 'provider_error';
 
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =

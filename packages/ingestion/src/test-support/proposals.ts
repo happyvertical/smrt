@@ -9412,7 +9412,10 @@ export function proposalSuite(
       ]);
       expect(generated.splits[0].digest).toHaveLength(64);
       expect(generated.outcome).toBe('proposals');
-      expect(generated.warnings).toContain('source_completion_unknown');
+      // The PDF extractor reports its own completion (page cap), and the
+      // generator finished with `stop`: neither unknown warning applies (#4452).
+      expect(generated.warnings).not.toContain('source_completion_unknown');
+      expect(generated.warnings).not.toContain('generation_completion_unknown');
       expect(generated.automaticActionEligible).toBe(false);
       expect(generated.suggestions[0].disposition).toBe('ready_for_review');
       expect(await service.getEvidence(input.itemId)).toEqual(before);
@@ -9685,7 +9688,9 @@ export function proposalSuite(
             location: { kind: 'page', page: 1 },
           },
         ]);
-        expect(input.output.warnings).toContain('source_completion_unknown');
+        expect(input.output.warnings).not.toContain(
+          'source_completion_unknown',
+        );
         expect(input.output.automaticActionEligible).toBe(false);
         const retained = (
           await db.query(

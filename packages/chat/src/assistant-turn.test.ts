@@ -482,6 +482,41 @@ describe('assistant turn', () => {
       expect(ran).toEqual(['data.discover']);
     });
 
+    it('reports an unregistered tool call without echoing its name (#4453)', async () => {
+      const sentence = 'Let me think about which tool to use here';
+      const ran: string[] = [];
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([
+            calls([sentence, {}, 'bad'], ['data-discover', {}, 'good']),
+            text('Done.'),
+          ]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'go',
+          extraTools: [readTool(ran)],
+          describeTool: (name) => (name === 'data.discover' ? 'Looking' : name),
+        }),
+      );
+      const results = events.flatMap((e) =>
+        e.type === 'step' && e.step.kind === 'tool_result' ? [e.step] : [],
+      );
+      const bad = results.find((r) => r.callId === 'bad');
+      expect(bad).toMatchObject({
+        tool: 'unknown_tool',
+        label: 'Unknown tool',
+        ok: false,
+      });
+      expect(
+        JSON.stringify(events.filter((e) => e.type !== 'token')),
+      ).not.toContain('which tool');
+      expect(results.find((r) => r.callId === 'good')).toMatchObject({
+        tool: 'data.discover',
+        label: 'Looking',
+      });
+    });
+
     it('does not offer a server tool missing from the principal allow-list', async () => {
       const ran: string[] = [];
       const ai = scriptedAI([calls(['data-discover', {}]), text('no tools')]);
@@ -1164,6 +1199,62 @@ describe('assistant turn', () => {
       expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
         true,
       );
+    });
+
+    it('stores providerErrorFallback when a model call throws (#4454)', async () => {
+      const codes: Array<string | undefined> = [];
+      const failing: Round = () => {
+        throw Object.assign(new Error('boom'), { code: 'API_ERROR' });
+      };
+      const { events, done } = await authored([failing], {
+        providerErrorFallback: (code: string | undefined) => {
+          codes.push(code);
+          return 'The assistant is unavailable right now.';
+        },
+        onError: () => {},
+      });
+      expect(codes).toEqual(['API_ERROR']);
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({
+        content: 'The assistant is unavailable right now.',
+        role: 'assistant',
+      });
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+    });
+
+    it('accepts a plain-string providerErrorFallback', async () => {
+      const { done } = await authored(
+        [
+          () => {
+            throw new Error('down');
+          },
+        ],
+        { providerErrorFallback: 'Try again later.', onError: () => {} },
+      );
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({ content: 'Try again later.' });
+    });
+
+    it('keeps the error event when no providerErrorFallback is set or it declines', async () => {
+      const failing: Round = () => {
+        throw new Error('down');
+      };
+      for (const extra of [
+        {},
+        { providerErrorFallback: () => undefined },
+        { providerErrorFallback: '  ' },
+      ]) {
+        const { events, done } = await authored([failing], {
+          ...extra,
+          onError: () => {},
+        });
+        expect(events.some((e) => e.type === 'error')).toBe(true);
+        expect(events.some((e) => e.type === 'message')).toBe(false);
+        expect(done).toBeUndefined();
+      }
     });
 
     it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {

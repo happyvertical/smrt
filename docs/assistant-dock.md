@@ -904,7 +904,12 @@ assistant works and show a status instead (Anytown's watch mode).
   without tools. If it stays blank the turn ends `stoppedReason: 'empty'`;
   a timed-out model call (`requestTimeoutMs`, or the provider's default)
   ends it `'timeout'`. Both store `emptyAnswerFallback` (default
-  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`. See
+  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`.   A model call that throws (`AIError` `API_ERROR`, a 5xx, a dropped
+  connection) is answered only when the host sets `providerErrorFallback`
+  (text, or `(code, error) => text | undefined`): the text is stored with
+  `metadata.fallback: 'provider_error'` and the turn ends
+  `stoppedReason: 'provider_error'`; unset, the turn emits an `error` event and
+  stores nothing. See
   [packages/chat/agents/tool-loop.md](../packages/chat/agents/tool-loop.md).
 - **Settle (browser).** After a step's browser tools ran, the dock waits before
   resuming: the host `settle` hook (e.g. "SvelteKit is no longer

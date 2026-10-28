@@ -527,8 +527,9 @@ export function createSDKProposalGenerator(
       }
       return {
         output,
-        // The SDK normalizes absent/unknown finish reasons to stop.
-        completion: 'unknown',
+        // Only a `stop` finish reason reaches here: `length` and every other
+        // reason were refused above, so the reply finished normally (#4452).
+        completion: 'complete',
         usage: safeUsage(response.usage),
         ...(response.model && response.model !== identity.model
           ? { responseModel: response.model }

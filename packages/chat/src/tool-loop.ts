@@ -1710,7 +1710,7 @@ export const DEFAULT_EMPTY_ANSWER_FALLBACK =
   "I couldn't produce an answer to that. Please try again, or rephrase the question.";
 
 /** Why a stored reply is the fallback text rather than a model answer. */
-export type FallbackReplyReason = 'empty' | 'timeout';
+export type FallbackReplyReason = 'empty' | 'timeout' | 'provider_error';
 
 /**
  * Metadata key marking a stored assistant message whose content is the
@@ -1753,7 +1753,7 @@ export function replyContentFor(
   return resolveTurnReply(result, fallback).content;
 }
 
-const STOP_REASONS: ReadonlySet<string> = new Set<ToolLoopStopReason>([
+const STOP_REASONS: ReadonlySet<string> = new Set<string>([
   'stop',
   'max_steps',
   'budget',
@@ -1763,6 +1763,7 @@ const STOP_REASONS: ReadonlySet<string> = new Set<ToolLoopStopReason>([
   'cancelled',
   'empty',
   'timeout',
+  'provider_error',
 ]);
 
 /**
@@ -1823,7 +1824,7 @@ export function isFallbackReply(message: {
   const value = (metadata as Record<string, unknown>)[
     FALLBACK_REPLY_METADATA_KEY
   ];
-  return value === 'empty' || value === 'timeout';
+  return value === 'empty' || value === 'timeout' || value === 'provider_error';
 }
 
 /** Cap on reasoning text surfaced by {@link runToolLoop} (#4379). */
