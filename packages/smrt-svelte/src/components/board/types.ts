@@ -85,6 +85,12 @@ export interface BoardProps<
    */
   allowSameColumnReorder?: boolean;
   /**
+   * Lane width as any CSS length (e.g. `"15rem"`). Sets the
+   * `--smrt-board-lane-width` custom property, which a host may also set from
+   * CSS. Defaults to `min(18rem, 82vw)`.
+   */
+  laneWidth?: string;
+  /**
    * In controlled mode, retain the locally reordered presentation until the
    * owner supplies a new `cards` array. The owner remains authoritative.
    */

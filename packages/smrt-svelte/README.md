@@ -10,6 +10,8 @@ typed intent and can be async—rejections restore the previous view. Set
 `optimistic` to present controlled moves while persistence is pending.
 Set `allowSameColumnReorder={false}` when an adapter persists only lane/status
 transitions rather than a position within a lane.
+Lane width defaults to `min(18rem, 82vw)`; set the `laneWidth` prop (any CSS
+length) or the `--smrt-board-lane-width` custom property to change it.
 
 ```svelte
 <script lang="ts">
