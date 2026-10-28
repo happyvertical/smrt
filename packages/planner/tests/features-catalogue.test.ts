@@ -368,7 +368,9 @@ describe('ui-only screens (#4440)', () => {
     expect(
       detailOverviewModel('detail:human-resources.Employment'),
     ).toBeDefined();
-  });
+    // The first dynamic import builds the whole catalog: ~2s alone, past the
+    // 5s default under the root suite's parallel load.
+  }, 30_000);
 });
 
 describe('ui-only child records (#4440)', () => {
