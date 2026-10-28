@@ -200,9 +200,13 @@
   ],
   "optional": [
     "--smrt-admin-shell-background",
+    "--smrt-admin-shell-band-padding-inline",
+    "--smrt-admin-shell-left-rail-padding",
+    "--smrt-admin-shell-left-rail-padding-collapsed",
     "--smrt-admin-shell-scrollbar-thumb",
     "--smrt-admin-shell-scrollbar-thumb-hover",
     "--smrt-admin-shell-scrollbar-track",
+    "--smrt-admin-shell-tenant-gap",
     "--smrt-card-background",
     "--smrt-card-border",
     "--smrt-card-divider",
