@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { catalog } from '../src/lib/catalog/index.ts';
+import {
+  catalog,
+  getModelByQualifiedName,
+  hasScreen,
+} from '../src/lib/catalog/index.ts';
 import type { CatalogPackage } from '../src/lib/catalog/types.ts';
 import {
   alsoAdds,
@@ -20,8 +24,10 @@ import {
   demoBadge,
   effectiveDemo,
 } from '../src/lib/features/demo.ts';
-import { recipes } from '../src/lib/recipes/index.ts';
+import { detailOverviewModel } from '../src/lib/overviews/definitions.ts';
+import { recipes, recipesById } from '../src/lib/recipes/index.ts';
 import type { Recipe } from '../src/lib/recipes/types.ts';
+import { appModels, screenRelations } from '../src/lib/screens/relations.ts';
 
 function recipe(id: string, extra: Partial<Recipe> = {}): Recipe {
   return {
@@ -353,13 +359,7 @@ describe('ui-only features (#4440)', () => {
 });
 
 describe('ui-only screens (#4440)', () => {
-  it('give record views to closed models a ui-only recipe covers', async () => {
-    const { detailOverviewModel } = await import(
-      '../src/lib/overviews/definitions.ts'
-    );
-    const { hasScreen, getModelByQualifiedName } = await import(
-      '../src/lib/catalog/index.ts'
-    );
+  it('give record views to closed models a ui-only recipe covers', () => {
     const employment = getModelByQualifiedName(
       '@happyvertical/smrt-human-resources:Employment',
     );
@@ -372,11 +372,7 @@ describe('ui-only screens (#4440)', () => {
 });
 
 describe('ui-only child records (#4440)', () => {
-  it('show up as related records of their closed parent', async () => {
-    const { screenRelations, appModels } = await import(
-      '../src/lib/screens/relations.ts'
-    );
-    const { recipesById } = await import('../src/lib/recipes/index.ts');
+  it('show up as related records of their closed parent', () => {
     const people = recipesById.get('human-resources.people');
     const relations = screenRelations(
       catalog,

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,11 +11,13 @@ const execFileAsync = promisify(execFile);
 const root = new URL('..', import.meta.url);
 const helper = new URL('./run-bounded-command.mjs', import.meta.url);
 
-async function run(options, command = [process.execPath, '--eval', 'process.exit(0)']) {
+async function run(options, command = [process.execPath, '--eval', 'process.exit(0)'], observeStderr) {
   try {
-    return await execFileAsync(process.execPath, [helper.pathname, ...options, '--', ...command], {
+    const execution = execFileAsync(process.execPath, [helper.pathname, ...options, '--', ...command], {
       cwd: root,
     });
+    if (observeStderr) execution.child.stderr.on('data', observeStderr);
+    return await execution;
   } catch (error) {
     return error;
   }
@@ -257,17 +260,31 @@ test('retries a failing command and succeeds when a later attempt passes', async
 test('retries a timed-out attempt and succeeds on the next', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'smrt-bounded-retry-timeout-'));
   try {
-    const { counter, command } = await flakyCommand(directory, 1, 'hang');
+    const retryGate = join(directory, 'first-attempt-timed-out');
+    const scriptPath = join(directory, 'retry-after-timeout.mjs');
+    await writeFile(scriptPath, `import { existsSync } from 'node:fs';
+if (!existsSync(${JSON.stringify(retryGate)})) {
+  const waiting = setInterval(() => { if (existsSync(${JSON.stringify(retryGate)})) clearInterval(waiting); }, 10);
+}
+`);
+    const command = [process.execPath, scriptPath];
+    let observedStderr = '';
     const result = await run(
       [
         '--stage', 'apt-get update', '--timeout-seconds', '1', '--grace-ms', '100',
         '--attempts', '2', '--backoff-seconds', '0',
       ],
       command,
+      (chunk) => {
+        // A launch deadline may expire before child JS enters under load.
+        // Open the next attempt's gate from the wrapper's actual timeout event.
+        observedStderr += chunk.toString();
+        if (observedStderr.includes('timed out after 1 seconds (attempt 1/2)')) writeFileSync(retryGate, 'retry may succeed');
+      },
     );
     assert.equal(result.code, undefined);
-    assert.equal((await readFile(counter, 'utf8')).length, 2);
     assert.match(result.stderr, /timed out after 1 seconds \(attempt 1\/2\)/);
+    assert.match(result.stderr, /will retry/);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -292,7 +309,7 @@ test('fails closed with the named stage once every attempt is exhausted', async 
 test('exits 124 when the final attempt times out', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'smrt-bounded-retry-final-timeout-'));
   try {
-    const { counter, command } = await flakyCommand(directory, 99, 'hang');
+    const { command } = await flakyCommand(directory, 99, 'hang');
     const result = await run(
       [
         '--stage', 'apt-get update', '--timeout-seconds', '1', '--grace-ms', '100',
@@ -301,7 +318,11 @@ test('exits 124 when the final attempt times out', async () => {
       command,
     );
     assert.equal(result.code, 124);
-    assert.equal((await readFile(counter, 'utf8')).length, 2);
+    // Measure bounded launches, not child-code entries before a hard deadline.
+    assert.deepEqual(
+      [...result.stderr.matchAll(/timed out after 1 seconds \(attempt (\d+)\/\d+\)/g)].map((match) => match[1]),
+      ['1', '2'],
+    );
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
