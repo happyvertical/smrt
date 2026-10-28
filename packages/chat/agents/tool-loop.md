@@ -78,6 +78,15 @@
   templates (Gemma, Anthropic) reject. Hosts should hide feedback
   controls (thumbs, corrections) on a message where `isFallbackReply` is
   true: there is no model answer to rate.
+- **History budget (#4458).** `historyLimit` counts replayed turns, not
+  raw rows, so persisted tool rows (`authorInvocation`, failed calls) never
+  take a slot. The assistant route and voice pass `roles` to
+  `getThreadMessages` / `getRoomMessages`, which filter in SQL: the read
+  returns at most `limit` rows whatever the thread holds. A fallback reply
+  is one replayed turn (its marker). The chat-stream paths cap the
+  browser's array at `MAX_CHAT_STREAM_MESSAGES` kept messages, scanning
+  back at most 10× that many entries. Threads holding only replayed roles
+  see the same history as before.
 - **Dock.** The `done` event's `capReason` reaches the dock, which offers
   Continue for a capped turn even when it ended `empty` or `timeout`.
 - **Reasoning.** `AIResponse.reasoning` (newer SDKs, sdk#1459) is read

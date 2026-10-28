@@ -621,11 +621,30 @@ function sseBody(
   });
 }
 
-/** Trim + cap the incoming messages, dropping empty/invalid entries. */
+/**
+ * How many trailing entries {@link normalizeMessages} inspects to fill
+ * {@link MAX_CHAT_STREAM_MESSAGES} kept messages (#4458): a bound on the
+ * scan, so a request padded with tool or empty entries cannot make it walk
+ * an unbounded array.
+ */
+const MAX_CHAT_STREAM_SCAN = MAX_CHAT_STREAM_MESSAGES * 10;
+
+/**
+ * Trim + cap the incoming messages, dropping empty/invalid entries. The cap
+ * counts the messages kept, not the entries sent (#4458): a client that
+ * echoes stored tool rows (or blanks) does not lose conversation turns to
+ * them. The scan walks back at most {@link MAX_CHAT_STREAM_SCAN} entries.
+ */
 function normalizeMessages(messages: ChatStreamMessage[]): ChatStreamMessage[] {
   if (!Array.isArray(messages)) return [];
   const out: ChatStreamMessage[] = [];
-  for (const message of messages.slice(-MAX_CHAT_STREAM_MESSAGES)) {
+  const stop = Math.max(0, messages.length - MAX_CHAT_STREAM_SCAN);
+  for (
+    let i = messages.length - 1;
+    i >= stop && out.length < MAX_CHAT_STREAM_MESSAGES;
+    i -= 1
+  ) {
+    const message = messages[i];
     const role = message?.role;
     if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
     const content =
@@ -640,7 +659,7 @@ function normalizeMessages(messages: ChatStreamMessage[]): ChatStreamMessage[] {
         : {}),
     });
   }
-  return out;
+  return out.reverse();
 }
 
 /**

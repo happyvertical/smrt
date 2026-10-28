@@ -24,9 +24,11 @@ import {
   CHAT_STREAM_TIMEOUT_ERROR,
   type ChatStreamContext,
   type ChatStreamEvent,
+  type ChatStreamMessage,
   ChatStreamUnauthorizedError,
   createChatStreamHandler,
   encodeChatStreamEvent,
+  MAX_CHAT_STREAM_MESSAGES,
   runChatConversationStream,
 } from './chat-stream.js';
 import {
@@ -335,6 +337,62 @@ describe('runChatConversationStream — plain path', () => {
       ['assistant', 'A real answer.'],
       ['user', 'q4'],
     ]);
+  });
+
+  it('caps history by kept messages, not echoed tool rows, within a bounded scan (#4458)', async () => {
+    const seen: AIMessage[][] = [];
+    const ai = {
+      async *stream(messages: AIMessage[], o: ChatOptions) {
+        seen.push(messages);
+        yield 'ok';
+        o.onFinishReason?.('stop');
+      },
+    } as unknown as AIInterface;
+    const run = (messages: ChatStreamMessage[]) =>
+      collect(runChatConversationStream({ context: { ai }, messages }));
+    // A client that echoes stored tool rows between each turn.
+    const tool = {
+      role: 'tool',
+      content: 'ran',
+    } as unknown as ChatStreamMessage;
+    const turns: ChatStreamMessage[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      turns.push({ role: 'user', content: `q${i}` }, tool, tool, tool, {
+        role: 'assistant',
+        content: `a${i}`,
+      });
+    }
+    await run([...turns, { role: 'user', content: 'last' }]);
+    const sent = seen[0] ?? [];
+    expect(sent).toHaveLength(MAX_CHAT_STREAM_MESSAGES);
+    expect(sent.at(-1)).toEqual({ role: 'user', content: 'last' });
+    expect(sent.at(-2)).toEqual({ role: 'assistant', content: 'a39' });
+    // Roles still alternate.
+    for (let i = 1; i < sent.length; i += 1) {
+      expect(sent[i].role).not.toBe(sent[i - 1].role);
+    }
+    // The scan stops after 10x the cap: tool padding beyond it hides older
+    // turns rather than being walked without bound.
+    const padding = Array.from(
+      { length: MAX_CHAT_STREAM_MESSAGES * 10 },
+      () => tool,
+    );
+    await run([
+      { role: 'user', content: 'old' },
+      { role: 'assistant', content: 'old answer' },
+      ...padding,
+      { role: 'user', content: 'now' },
+    ]);
+    expect(seen[1]?.map((m) => m.content)).toEqual(['now']);
+    // Without tool rows the newest messages are kept exactly as before.
+    const plain: ChatStreamMessage[] = Array.from({ length: 61 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `m${i}`,
+    }));
+    await run(plain);
+    expect(seen[2]?.map((m) => m.content)).toEqual(
+      plain.slice(-MAX_CHAT_STREAM_MESSAGES).map((m) => m.content),
+    );
   });
 
   it('gives a blank, reason-less stream the fallback when the SDK never reports finish reasons', async () => {
