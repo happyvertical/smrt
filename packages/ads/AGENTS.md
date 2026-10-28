@@ -9,6 +9,7 @@ Ad delivery with priority waterfall, weighted A/B testing, and immutable event t
 - **AdGroup**: campaign with targeting, budget, zone restrictions
 - **AdVariation** (STI): creative variant with weighted selection for A/B. `weight=2` is 2x more likely than `weight=1`. Denormalized `impressions`/`clicks` fields.
 - **AdEvent** (STI, immutable): impression/click/conversion tracking. **Create-only** — no update/delete in API/MCP. `cli: false` (high-volume).
+- **Recipe `ads.campaigns`** (`src/recipes.ts`, help in `src/campaigns.recipe.md`): lists ad campaigns, ads, ad sizes and priority tiers for the planner and other catalog hosts; `AdEvent` is left out (append-only serving log, nothing a person opens). Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
 ## Cross-Package References (all plain string IDs)
 

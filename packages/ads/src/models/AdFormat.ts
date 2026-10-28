@@ -4,6 +4,7 @@
  */
 
 import {
+  field,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -49,26 +50,34 @@ export class AdFormat extends SmrtObject {
   /**
    * Display name (e.g., "Leaderboard", "Medium Rectangle")
    */
+  @field({ description: 'What the size is called, for example Leaderboard.' })
   name: string = '';
 
   /**
    * Width in pixels
    */
+  @field({ description: 'How wide the ad is, in pixels.' })
   width: number = 0;
 
   /**
    * Height in pixels
    */
+  @field({ description: 'How tall the ad is, in pixels.' })
   height: number = 0;
 
   /**
    * Format type (banner, native, video)
    */
+  @field({
+    description:
+      'What kind of ad fits this size: a picture, a piece written to look like your own content, or a video.',
+  })
   formatType: AdFormatType = AdFormatType.BANNER;
 
   /**
    * Optional description
    */
+  @field({ description: 'A note about where this size is usually used.' })
   description: string = '';
 
   constructor(options: AdFormatOptions = {}) {
