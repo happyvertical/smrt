@@ -1612,19 +1612,34 @@ export class SchemaComparer {
         : this.plannedTables.get(foreignKey.referencesTable);
       if (plannedParent) {
         // A join cannot read a parent that this batch has not created yet.
-        // Prove the *whole child table* empty, even for a new child column:
-        // its default could otherwise create references on existing rows.
+        // Without a parent to join, prove no child row can reference it:
+        // an existing FK column must hold no non-NULL value; a new column
+        // with no default or a NULL default cannot reference anything; any
+        // other new-column default could create references on existing
+        // rows, so that case still requires the whole child table empty.
         // Keep the ordinary NOT VALID + VALIDATE below as the authoritative
         // transactional check against writes racing this read-only preflight.
         const parentColumn = plannedParent.columns[foreignKey.referencesColumn];
         let childEmpty = false;
         if (parentColumn) {
           try {
-            const result = await this.db.query(
-              `SELECT 1 FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
-            );
-            const rows = Array.isArray(result) ? result : result.rows || [];
-            childEmpty = rows.length === 0;
+            const existingColumn = Boolean(dbSchema.columns[foreignKey.column]);
+            const declaredDefault =
+              manifest.columns[foreignKey.column]?.defaultValue;
+            if (
+              !existingColumn &&
+              (declaredDefault === undefined || declaredDefault === null)
+            ) {
+              childEmpty = true;
+            } else {
+              const result = await this.db.query(
+                existingColumn
+                  ? `SELECT 1 FROM ${this.quoteIdentifier(tableName)} WHERE ${this.quoteIdentifier(foreignKey.column)} IS NOT NULL LIMIT 1`
+                  : `SELECT 1 FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
+              );
+              const rows = Array.isArray(result) ? result : result.rows || [];
+              childEmpty = rows.length === 0;
+            }
           } catch (error) {
             throw new Error(
               `[SchemaComparer] Cannot prove ${tableName} empty for planned parent ${foreignKey.referencesTable}; refusing automatic constraint addition: ${error instanceof Error ? error.message : String(error)}`,
