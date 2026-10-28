@@ -121,6 +121,19 @@ export type {
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
 export type {
+  GroupSharingAction,
+  GroupSharingAuthorizer,
+} from './group-sharing-authorization.js';
+export type {
+  AddRevisionCommentRequest,
+  ListRevisionCommentsRequest,
+  SetCommentChildVisibilityRequest,
+} from './group-sharing-comments.js';
+export * from './group-sharing-contracts.js';
+export * from './group-sharing-models.js';
+export { evaluateGroupSharingPolicy } from './group-sharing-policy.js';
+export { GroupSharingService } from './group-sharing-service.js';
+export type {
   AuthorizedCatalogFeed,
   HearthCatalogProviderId,
   OerCommonsRssConfig,
@@ -169,7 +182,11 @@ export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
-export { EducationCatalogRecipe, EducationLearnerRecipe } from './recipes.js';
+export {
+  EducationCatalogRecipe,
+  EducationLearnerRecipe,
+  EducationSupervisorRecipe,
+} from './recipes.js';
 export type {
   EasyPeasyRegistration,
   EnsureEasyPeasyCourseSourceRequest,

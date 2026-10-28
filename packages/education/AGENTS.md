@@ -37,3 +37,11 @@ never create learning evidence, and blank exercises need explicit work intent.
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.
+
+Homeschool group sharing uses [GroupSharingService](agents/group-sharing.md),
+its read-only reader and revision comment service. Group tenants never become
+family ancestors or guardians. Enumerate only the group-owned opaque roster index,
+then revalidate each exact family edge and current policy. Media delivery must call
+the reader on every request; signed storage URLs are not a sharing grant. Saved
+parent comment visibility applies on every child read. Progress with feedback
+disabled contains counts only, never correctness, scores or concept labels.
