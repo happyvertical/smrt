@@ -61,10 +61,18 @@
   `'Done.'`. The plain chat-stream path retries a blank stream once, then
   sends the fallback, or `CHAT_STREAM_TIMEOUT_ERROR` only under the
   quiet-end rule above.
+- **Provider errors (#4454).** A model call that throws is not answered by
+  default (an `error` event, nothing stored). `runAssistantTurn` /
+  `mountAssistantRoutes` take `providerErrorFallback`: text, or
+  `(code, error) => text | undefined` (blank or `undefined` declines and the
+  turn fails as before). The text is stored as the assistant row with
+  `metadata.fallback: 'provider_error'` (so `isFallbackReply` is true and
+  history skips it), the turn ends `stoppedReason: 'provider_error'`, and the
+  error still goes to `onError`. A cancelled turn is never answered this way.
 - **Stored metadata.** Every authored assistant reply carries
   `replyMetadataFor(result, reply)`: `metadata.stoppedReason` (enum),
   `metadata.capReason` when set, and `metadata.fallback` (`empty` |
-  `timeout`) when the content is the fallback. Hosts read the stop reason
+  `timeout` | `provider_error`) when the content is the fallback. Hosts read the stop reason
   from `turn.result.stoppedReason` (persona), `AssistantTurnResult` / the
   `done` event's `stoppedReason` and `capReason` (assistant), or the stored
   message's metadata. `isFallbackReply(message)` tells a fallback apart; the

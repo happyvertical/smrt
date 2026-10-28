@@ -1201,6 +1201,62 @@ describe('assistant turn', () => {
       );
     });
 
+    it('stores providerErrorFallback when a model call throws (#4454)', async () => {
+      const codes: Array<string | undefined> = [];
+      const failing: Round = () => {
+        throw Object.assign(new Error('boom'), { code: 'API_ERROR' });
+      };
+      const { events, done } = await authored([failing], {
+        providerErrorFallback: (code: string | undefined) => {
+          codes.push(code);
+          return 'The assistant is unavailable right now.';
+        },
+        onError: () => {},
+      });
+      expect(codes).toEqual(['API_ERROR']);
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({
+        content: 'The assistant is unavailable right now.',
+        role: 'assistant',
+      });
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+    });
+
+    it('accepts a plain-string providerErrorFallback', async () => {
+      const { done } = await authored(
+        [
+          () => {
+            throw new Error('down');
+          },
+        ],
+        { providerErrorFallback: 'Try again later.', onError: () => {} },
+      );
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({ content: 'Try again later.' });
+    });
+
+    it('keeps the error event when no providerErrorFallback is set or it declines', async () => {
+      const failing: Round = () => {
+        throw new Error('down');
+      };
+      for (const extra of [
+        {},
+        { providerErrorFallback: () => undefined },
+        { providerErrorFallback: '  ' },
+      ]) {
+        const { events, done } = await authored([failing], {
+          ...extra,
+          onError: () => {},
+        });
+        expect(events.some((e) => e.type === 'error')).toBe(true);
+        expect(events.some((e) => e.type === 'message')).toBe(false);
+        expect(done).toBeUndefined();
+      }
+    });
+
     it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {
       const quiet: Round = () => ({ content: '' });
       // The tool round's finishReason shows the SDK populates finish reasons.

@@ -71,6 +71,7 @@ import {
   createAssistantTurnResponse,
   createSessionContinuationStore,
   DEFAULT_CONTINUATION_TTL_MS,
+  type ProviderErrorFallback,
   runAssistantTurn,
 } from './assistant-turn.js';
 import type { AssistantTurnEvent } from './assistant-turn-events.js';
@@ -329,6 +330,12 @@ export interface MountAssistantRoutesOptions {
   requestTimeoutMs?: number;
   /** Reply stored when the turn produced no answer (#4379). */
   emptyAnswerFallback?: string;
+  /**
+   * Reply stored when a model call throws, as text or a function of the
+   * error `code` (see `AssistantTurnOptions`, #4454). Unset: an error event
+   * and nothing stored.
+   */
+  providerErrorFallback?: ProviderErrorFallback;
   maxTokens?: number;
   temperature?: number;
   /**
@@ -1209,6 +1216,9 @@ export function mountAssistantRoutes(
           : {}),
         ...(options.emptyAnswerFallback !== undefined
           ? { emptyAnswerFallback: options.emptyAnswerFallback }
+          : {}),
+        ...(options.providerErrorFallback !== undefined
+          ? { providerErrorFallback: options.providerErrorFallback }
           : {}),
         ...(options.maxTokens !== undefined
           ? { maxTokens: options.maxTokens }
