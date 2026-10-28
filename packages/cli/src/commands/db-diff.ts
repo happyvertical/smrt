@@ -14,6 +14,7 @@ import {
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
+  isAdvisoryOnlyChangeLike,
   partitionSchemaChanges,
   printSchemaAdvisories,
   type SchemaChangeLike,
@@ -310,8 +311,17 @@ export const dbDiffCommand: CLICommand = {
       const columnChanges = diff.changes.filter((c) => c.type === 'add_column');
       const indexChanges = diff.changes.filter((c) => c.type === 'add_index');
       const indexDrops = diff.changes.filter((c) => c.type === 'drop_index');
-      const typeUpgrades = diff.changes.filter(
+      const allTypeUpgrades = diff.changes.filter(
         (c) => c.type === 'type_upgrade',
+      );
+      // Advisory-only upgrades (refusals, dirty probes, duplicate-key and
+      // preservation_unverified blocks) never reach db:migrate's statement
+      // stream, so they must not be listed as auto-applied (#3042).
+      const typeUpgrades = allTypeUpgrades.filter(
+        (c) => !isAdvisoryOnlyChangeLike(c),
+      );
+      const unappliedTypeUpgrades = allTypeUpgrades.filter((c) =>
+        isAdvisoryOnlyChangeLike(c),
       );
       const typeMismatches = diff.changes.filter(
         (c) => c.type === 'type_mismatch',
@@ -440,6 +450,21 @@ export const dbDiffCommand: CLICommand = {
           if (change.note) console.log(`       (${change.note})`);
         }
         console.log('     (auto-applied by smrt db:migrate)\n');
+      }
+
+      if (unappliedTypeUpgrades.length > 0) {
+        console.log(
+          `  ⏸️  Type upgrades not applied (advisory only) (${unappliedTypeUpgrades.length}):`,
+        );
+        for (const change of unappliedTypeUpgrades) {
+          console.log(
+            `     ⤴ ${change.table}.${change.name}: ${change.mismatch?.actual} → ${change.mismatch?.expected}`,
+          );
+          if (change.advisory?.message) {
+            console.log(`       ⚠️  ${change.advisory.message}`);
+          }
+        }
+        console.log('     (not applied by smrt db:migrate)\n');
       }
 
       // Executable foreign-key changes are applied by db:migrate too, so the
