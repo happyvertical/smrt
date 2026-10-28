@@ -67,6 +67,12 @@ function accountBody(account: FixtureAccount) {
 /** In-memory Stripe API replay plus webhook signing for tests. */
 export class StripeConnectFixture {
   readonly requests: RecordedRequest[] = [];
+  /** Authoritative dispute reads, keyed by account and provider id. */
+  readonly disputes = new Map<string, Record<string, unknown>>();
+  /** Provider payments created outside SMRT, keyed by account and PI. */
+  readonly externalPayments = new Map<string, Record<string, unknown>>();
+  /** Fail one ownership read before answering, as an unavailable provider. */
+  failNextOwnershipRead = false;
   private readonly accounts = new Map<string, FixtureAccount>();
   private readonly sessions = new Map<string, FixtureSession>();
   private sequence = 0;
@@ -140,6 +146,13 @@ export class StripeConnectFixture {
     return session.body;
   }
 
+  /** Recorded provider sessions, including sessions whose response was lost. */
+  sessionsForAccount(account: string): Record<string, unknown>[] {
+    return [...this.sessions.values()]
+      .filter((session) => session.account === account)
+      .map((session) => session.body);
+  }
+
   readonly fetch = async (
     input: string | URL | Request,
     init?: RequestInit,
@@ -162,6 +175,58 @@ export class StripeConnectFixture {
       body,
     });
 
+    if (method === 'GET' && path.startsWith('/disputes/')) {
+      const dispute = this.disputes.get(`${stripeAccount}:${path.slice(10)}`);
+      return dispute
+        ? json(200, dispute)
+        : json(404, { error: { message: 'No such dispute' } });
+    }
+    if (
+      method === 'GET' &&
+      (path.startsWith('/charges/') ||
+        path.startsWith('/payment_intents/') ||
+        path === '/checkout/sessions')
+    ) {
+      if (this.failNextOwnershipRead) {
+        this.failNextOwnershipRead = false;
+        return json(503, { error: { message: 'Lookup unavailable' } });
+      }
+      if (path.startsWith('/charges/')) {
+        const id = path.slice('/charges/'.length);
+        const dispute = [...this.disputes.entries()].find(
+          ([key, value]) =>
+            key.startsWith(`${stripeAccount}:`) && value.charge === id,
+        )?.[1];
+        return dispute
+          ? json(200, {
+              id,
+              object: 'charge',
+              livemode: false,
+              payment_intent: dispute.payment_intent ?? null,
+            })
+          : json(404, { error: { message: 'No such charge' } });
+      }
+      if (path.startsWith('/payment_intents/')) {
+        const id = path.slice('/payment_intents/'.length);
+        const session = this.sessionsForAccount(stripeAccount ?? '').find(
+          (session) => session.payment_intent === id,
+        );
+        const external = this.externalPayments.get(`${stripeAccount}:${id}`);
+        return external
+          ? json(200, external)
+          : session
+            ? json(200, { id, object: 'payment_intent', livemode: false })
+            : json(404, { error: { message: 'No such payment intent' } });
+      }
+      return json(200, {
+        object: 'list',
+        data: this.sessionsForAccount(stripeAccount ?? '').filter(
+          (session) =>
+            session.payment_intent === url.searchParams.get('payment_intent'),
+        ),
+        has_more: false,
+      });
+    }
     const idempotencyKey = headers.get('Idempotency-Key');
     if (
       method === 'POST' &&
@@ -209,6 +274,8 @@ export class StripeConnectFixture {
       const session = {
         id,
         object: 'checkout.session',
+        mode: 'payment',
+        livemode: false,
         url: `https://checkout.stripe.com/c/pay/${id}`,
         status: 'open',
         payment_status: 'unpaid',

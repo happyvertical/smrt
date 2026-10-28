@@ -434,3 +434,25 @@ test('trusted reset button honors a later cancellation listener and successful r
     'channels:email,archived',
   );
 });
+
+for (const width of [390, 1200]) {
+  for (const density of ['comfortable', 'touch', 'inherit']) {
+    test(`toolbar inherited controls preserve length-valued ${density} minimums at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.goto(`/e2e/density-responsive.html?surface=toolbar&density=${density}`);
+      const controls = [
+        page.getByRole('textbox', { name: 'Inherited toolbar filter' }),
+        page.getByRole('button', { name: 'Inherited toolbar action' }),
+      ];
+      const minimum = density === 'comfortable' ? 40 : 56;
+      for (const control of controls) {
+        await expect(control).toBeVisible();
+        expect(await control.evaluate((element) => getComputedStyle(element).minHeight)).toBe(`${minimum}px`);
+        const height = await control.evaluate((element) => element.getBoundingClientRect().height);
+        expect(height).toBeGreaterThanOrEqual(minimum);
+        if (density === 'comfortable') expect(height).toBeLessThan(56);
+        await expect(control).not.toHaveAttribute('data-density');
+      }
+    });
+  }
+}

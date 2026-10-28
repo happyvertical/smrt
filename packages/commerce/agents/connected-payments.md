@@ -92,7 +92,25 @@ signature, resolveSettlementAccounts })`:
    `AMOUNT_MISMATCH`). Refunds made elsewhere are reported. Settlement records a `Payment` (deterministic id from the intent)
    through `recordPayment()` and marks the intent paid. `refunded` events are
    reported (`refund_reported`), never booked automatically.
-5. The event id is stored only after processing succeeds; a refusal throws,
+5. Connected `charge.dispute.*` events re-read the typed dispute through the
+   public SDK (`gateway.getDispute`, optional for older custom gateways but
+   required for dispute delivery), scoped to the verified account and environment. They locate one
+   settled payment in that tenant by provider payment-intent/charge reference;
+   when none exists, `gateway.lookupCheckout` resolves authoritative ownership
+   by PaymentIntent/Charge in that same account and environment. Only a complete
+   provider `no_match` is acknowledged as `dispute_reported`, without any journal
+   or dispute projection. A matched quote must belong to a persisted intent in
+   that tenant/account/environment (and match the saved session when present);
+   a missing local settlement then refuses delivery (`DISPUTE_NOT_RECORDED`)
+   until settlement arrives, including when checkout creation lost its response
+   and saved no option. Unknown quote/tenant/account/environment, conflicting
+   session identity, ambiguous or incomplete lookup and provider failure refuse
+   delivery. An older custom gateway without `lookupCheckout` refuses this
+   zero-settlement case with `CONFIGURATION`; it never guesses from absent rows.
+   Unknown statuses or balance transaction kinds,
+   currency conversions, changed evidence and missing fee configuration refuse
+   delivery for operator reconciliation. No dispute is acknowledged as ignored.
+6. The event id is stored only after processing succeeds; a refusal throws,
    so respond non-2xx and nothing unprocessed is acknowledged.
 
 ## Accounting
@@ -105,6 +123,45 @@ and no `applicationFeeAccountId` is refused. Refund journals reverse the
 refunded amount; a refunded application fee is reported by
 `application_fee.refunded` for the host to book.
 
+## Dispute accounting and recovery (#4262)
+
+`TenantPaymentDispute` is a tenant-owned, command-written projection with no
+generated API/CLI/MCP surface. Its retained snapshot records provider lifecycle
+and all posted balance transaction evidence. A payment revision fence serializes
+reconciliation before the authoritative provider read. Every new provider
+balance transaction gets one deterministic, posted journal in the same database
+transaction as the snapshot. A crash rolls back both; a crash saving the inbox
+replays the snapshot safely. Duplicate event ids return `paymentId` too. A
+redelivery whose historical outcome is `ignored` is reconciled and updates that
+inbox outcome; other processed outcomes stay deduplicated.
+
+Posts use provider integer minor units, never lifecycle status as money proof:
+cash changes by `net`, receivables by `-amount`, dispute fee expense by `fee`.
+For example, a 10,000 withdrawal with a 1,500 fee credits cash 11,500, debits AR
+10,000 and expense 1,500. A reinstatement posts the opposite balances from its
+own provider transaction. Configure `disputeFeeAccountId` on the settlement
+accounts whenever fees occur. The provider's balance transaction must be an
+`adjustment`, with optional category `dispute` or `dispute_reversal`, and in the
+settlement currency. Unknown contracts fail closed until supported explicitly.
+
+Original payment, invoice allocations, payouts, refund rows and settlement
+journals remain historical evidence. Reconciliation records the resulting
+receivable even when the invoice was already paid or a supplier payout confirmed;
+it does not collect the debt, unwind an allocation, reverse a supplier remittance,
+or send a provider refund. Hosts must show/recover that receivable operationally.
+Lifecycle updates with no balance evidence record status and post no money.
+
+Before deployment, run the normal commerce schema migration to add
+`tenant_payment_disputes` and the webhook event's optional `paymentId` column.
+Replay previously ignored deliveries by having the provider redeliver the original
+signed Connect webhook to the updated endpoint (a fresh valid signature is
+required; do not bypass signature validation or manually delete inbox history).
+Ordering uses current provider state, so redelivering an older event after a
+closed dispute cannot revert its postings. Retain the original connected account
+mapping: relinking remains an explicit operation that strands old-account events.
+The complete Payment/ledger contract runs on SQLite and PostgreSQL; the existing
+DuckDB checkout-only lane does not support Payment's full FK closure.
+
 ## Operator setup
 
 - smrt-secrets (held by the installation tenant, `secretsTenantId`):
@@ -116,7 +173,9 @@ refunded amount; a refunded application fee is reported by
   `application_fee.refunded`) and one Connect endpoint (`account.updated`,
   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
   `checkout.session.async_payment_failed`, `checkout.session.expired`,
-  `charge.refunded`, `charge.refund.updated`), per environment.
+  `charge.refunded`, `charge.refund.updated`, `charge.dispute.created`,
+  `charge.dispute.updated`, `charge.dispute.closed`,
+  `charge.dispute.funds_withdrawn`, `charge.dispute.funds_reinstated`), per environment.
 - Each tenant needs ledger accounts for cash, receivables and the platform fee
   expense, returned by `resolveSettlementAccounts`.
 

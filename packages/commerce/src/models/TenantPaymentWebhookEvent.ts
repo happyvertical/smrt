@@ -29,6 +29,8 @@ export type TenantPaymentWebhookOutcome =
   | 'application_fee'
   | 'refund_reported'
   | 'refund_updated'
+  | 'dispute_updated'
+  | 'dispute_reported'
   | 'late_payment'
   | 'ignored';
 
@@ -78,6 +80,9 @@ export class TenantPaymentWebhookEvent extends SmrtObject {
 
   /** PaymentIntent the event settled or referred to, when any. */
   paymentIntentId: string = '';
+
+  /** Payment reconciled by this delivery, when any. */
+  paymentId: string = '';
 
   /**
    * The `application_fee.*` details returned to the host (JSON), so a

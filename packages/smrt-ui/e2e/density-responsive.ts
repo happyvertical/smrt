@@ -8,6 +8,19 @@ switch (params.get('surface')) {
     mount(Layout, { target });
     break;
   }
+  case 'toolbar': {
+    const { default: Toolbar } = await import(
+      '../src/components/data/__tests__/toolbar-density.fixture.svelte',
+    );
+    const density = params.get('density');
+    mount(Toolbar, {
+      target,
+      props: {
+        density: density === 'touch' || density === 'inherit' ? density : 'comfortable',
+      },
+    });
+    break;
+  }
   case 'table': {
     const { default: Table } = await import(
       '../src/components/data/__tests__/responsive-table.fixture.svelte',

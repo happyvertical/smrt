@@ -206,7 +206,6 @@
     "packages/smrt-ui/src/components/chat/MessageBubble.svelte": 2,
     "packages/smrt-ui/src/components/chat/TypingIndicator.svelte": 1,
     "packages/smrt-ui/src/components/data/CollectionList.svelte": 2,
-    "packages/smrt-ui/src/components/data/CollectionToolbar.svelte": 1,
     "packages/smrt-ui/src/components/data/DataTable.svelte": 15,
     "packages/smrt-ui/src/components/display/ConfidenceBadge.svelte": 3,
     "packages/smrt-ui/src/components/display/StatusBadge.svelte": 1,
