@@ -263,10 +263,6 @@ export function uniqueColumnIndexName(
 }
 
 /**
- * True when a change is report-only: it carries an advisory and no
- * executable statement. Such changes never reach the migration stream.
- */
-/**
  * Single- vs double-precision float classification for #2770's float-width
  * drift detection. `null` for anything that isn't unambiguously one or the
  * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
@@ -292,6 +288,10 @@ function floatPrecisionOf(
   return null;
 }
 
+/**
+ * True when a change is report-only: it carries an advisory and no
+ * executable statement. Such changes never reach the migration stream.
+ */
 export function isAdvisoryOnlyChange(change: SchemaChange): boolean {
   if (!change.advisory) return false;
   const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
