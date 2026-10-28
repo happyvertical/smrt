@@ -41,8 +41,9 @@ Every model is `@TenantScoped({ mode: 'optional' })` with nullable `tenantId`.
 All generated surfaces are explicit; never omit `api`, `mcp`, or `cli` config.
 
 - **Recipe `marketing.campaigns`** (`src/recipes.ts`, help in
-  `src/campaigns.recipe.md`): lists campaigns, channels and results for the
-  planner and other catalog hosts. Results are read-only there (snapshots are
+  `src/campaigns.recipe.md`): lists campaigns and channels for the planner and
+  other catalog hosts; results (snapshots) are a child record of the campaign,
+  not a menu entry. Results are read-only there (snapshots are
   written by `MetricIngestionService`) and the help never tells a person to set
   the lifecycle status by hand. Fields it shows carry `@field({ description })`
   in plain words; keep them when editing the models.

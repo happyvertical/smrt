@@ -42,8 +42,8 @@ covers a period for one campaign, or for one channel within it. A result is
 never changed once it is in: a correction arrives as a new result for the same
 period.
 
-1. Open the list of results.
-2. Find the **{field:CampaignMetricSnapshot.campaignId}** you are interested in. A result with no **{field:CampaignMetricSnapshot.campaignChannelId}** covers the whole campaign.
+1. Open a campaign and look at its results, listed under the campaign.
+2. Each result names the **{field:CampaignMetricSnapshot.campaignId}** it belongs to. A result with no **{field:CampaignMetricSnapshot.campaignChannelId}** covers the whole campaign.
 3. Check the period, **{field:CampaignMetricSnapshot.periodStart}** to **{field:CampaignMetricSnapshot.periodEnd}**.
 4. Compare the **{field:CampaignMetricSnapshot.spendCents}** with the **{field:CampaignMetricSnapshot.clicks}**, **{field:CampaignMetricSnapshot.leads}** and **{field:CampaignMetricSnapshot.conversions}** it brought in, and the **{field:CampaignMetricSnapshot.revenueCents}** where the channel reports it.
 5. The **{field:CampaignMetricSnapshot.source}** says which channel's reporting sent the result.

@@ -33,7 +33,7 @@ export class PlacesLocationsRecipe extends SmrtRecipe {
   ];
   static section = {
     id: 'places',
-    label: 'Places',
+    label: 'Locations',
     icon: 'home',
     description: 'The places your work happens.',
   };

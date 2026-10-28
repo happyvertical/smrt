@@ -39,7 +39,7 @@ and when someone saves one on purpose. Open the versions to read them.
 
 1. Find the **{field:ContentVersion.contentId}** and look down the **{field:ContentVersion.version}** numbers.
 2. The **{field:ContentVersion.kind}** says why each one was saved and the **{field:ContentVersion.summary}** what changed.
-3. Open a version to see the **{field:ContentVersion.title}** and **{field:ContentVersion.status}** as they were on the **{field:ContentVersion.createdAt}**.
+3. Open a version to see the **{field:ContentVersion.title}** and **{field:ContentVersion.status}** as they were when the version was saved.
 
 ### Issue a correction
 

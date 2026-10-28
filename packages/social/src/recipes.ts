@@ -55,13 +55,6 @@ export class SocialPostsRecipe extends SmrtRecipe {
       description: 'The social accounts you can post to, and their settings.',
       noun: 'account',
     },
-    {
-      label: 'Post results',
-      model: SocialPostAnalyticsSnapshot,
-      icon: 'eye',
-      description:
-        'The views, likes and other numbers each platform reported for a post.',
-    },
   ];
   static options = {
     SocialPost: {

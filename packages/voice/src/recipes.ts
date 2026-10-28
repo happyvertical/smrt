@@ -38,7 +38,7 @@ export class VoiceProfilesRecipe extends SmrtRecipe {
     {
       label: 'Voices',
       model: VoiceProfile,
-      icon: 'chat',
+      icon: 'users',
       description:
         'The voices your app can speak in, described in words or copied from a clip.',
       noun: 'voice',

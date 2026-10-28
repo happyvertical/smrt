@@ -51,14 +51,6 @@ export class MarketingCampaignsRecipe extends SmrtRecipe {
         'Where each campaign runs, such as an ad group or a social post, and its share of the budget.',
       noun: 'channel',
     },
-    {
-      label: 'Results',
-      model: CampaignMetricSnapshot,
-      icon: 'fileText',
-      description:
-        'What each campaign and channel brought in, period by period, as reported by the channels.',
-      noun: 'result',
-    },
   ];
   static options = {
     Campaign: {

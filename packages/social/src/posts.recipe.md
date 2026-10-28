@@ -45,8 +45,8 @@ and the **{field:SocialPost.platformUrl}** are filled in.
 Post results are written by the platform sync, not by hand; you can only read
 them here.
 
-1. Open the post results.
-2. Find the **{field:SocialPostAnalyticsSnapshot.socialPostId}** you are interested in and the **{field:SocialPostAnalyticsSnapshot.platform}** it ran on.
+1. Open the post and look at its results, listed under the post.
+2. Each result names the **{field:SocialPostAnalyticsSnapshot.socialPostId}** it belongs to and the **{field:SocialPostAnalyticsSnapshot.platform}** it ran on.
 3. Each result shows the **{field:SocialPostAnalyticsSnapshot.analytics}** the platform reported and when they were **{field:SocialPostAnalyticsSnapshot.capturedAt}**, so the newest one is the latest count.
 
 ### Stop using an account

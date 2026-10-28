@@ -36,7 +36,7 @@ export class ApprovalsRecipe extends SmrtRecipe {
   static section = {
     id: 'approvals',
     label: 'Approvals',
-    icon: 'done',
+    icon: 'briefcase',
     description: 'Who has to say yes before something happens.',
   };
   static models = [ApprovalRequest, ApprovalEvent, ApprovalPolicy];

@@ -75,7 +75,11 @@ export class CampaignMetricSnapshot extends SmrtObject {
   })
   source: string = '';
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The reference this result is filed under, so the same report is never counted twice.',
+  })
   dedupeKey: string = '';
 
   constructor(options: CampaignMetricSnapshotOptions = {}) {

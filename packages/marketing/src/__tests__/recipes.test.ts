@@ -29,7 +29,6 @@ describe('marketing recipes (#4409)', () => {
     expect(MarketingCampaignsRecipe.nav.map((entry) => entry.label)).toEqual([
       'Campaigns',
       'Channels',
-      'Results',
     ]);
   });
 

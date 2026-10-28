@@ -54,7 +54,7 @@ export class AdsCampaignsRecipe extends SmrtRecipe {
     {
       label: 'Ads',
       model: AdVariation,
-      icon: 'eye',
+      icon: 'fileText',
       description:
         'The ads inside each campaign, how often each shows and how many clicks it got.',
       noun: 'ad',

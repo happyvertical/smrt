@@ -111,11 +111,23 @@ export class ApprovalRequest extends SmrtObject {
    * Hash of the exact subject revision being approved. `consume` must
    * present the same hash, so an approval never transfers to changed content.
    */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description:
+      'A fingerprint of the exact version that was put up for approval. If the thing changes, the approval no longer applies.',
+  })
   subjectRevisionHash: string = '';
 
   /** Idempotency key, unique per tenant. A replay returns the same request. */
-  @field({ type: 'text', required: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    readonly: true,
+    description:
+      'The reference the request is filed under, so asking twice does not open it twice.',
+  })
   requestKey: string = '';
 
   /** Principal id of the requester. The requester can never decide. */
