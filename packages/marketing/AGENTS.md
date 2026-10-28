@@ -40,6 +40,13 @@ publish-surface changes.
 Every model is `@TenantScoped({ mode: 'optional' })` with nullable `tenantId`.
 All generated surfaces are explicit; never omit `api`, `mcp`, or `cli` config.
 
+- **Recipe `marketing.campaigns`** (`src/recipes.ts`, help in
+  `src/campaigns.recipe.md`): lists campaigns, channels and results for the
+  planner and other catalog hosts. Results are read-only there (snapshots are
+  written by `MetricIngestionService`) and the help never tells a person to set
+  the lifecycle status by hand. Fields it shows carry `@field({ description })`
+  in plain words; keep them when editing the models.
+
 ## Services
 
 - **CampaignLifecycleService** loads the current row before applying one legal
