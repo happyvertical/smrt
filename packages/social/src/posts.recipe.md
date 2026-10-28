@@ -24,10 +24,10 @@ arrive here as post results.
 4. Give it a **{field:SocialPost.title}** if the platform shows one, and a **{field:SocialPost.linkUrl}** if you are sharing a page.
 5. Save. It stays a draft until your app puts it out.
 
-### Plan when a post goes out
+### Note when a post should go out
 
-1. Open the post and set **{field:SocialPost.scheduledAt}** to the date and time you want.
-2. Save. The date is recorded on the post; your app publishes it when that time comes.
+1. Open the post and set **{field:SocialPost.scheduledAt}** to the date and time you have in mind.
+2. Save. This only records the plan on the post. Nothing here publishes it: a post goes out only when your application's own publishing step approves it and sends it at that time, so check with whoever set up your app that this step is in place.
 
 ### See where a post stands
 

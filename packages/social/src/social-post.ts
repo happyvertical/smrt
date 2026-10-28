@@ -315,7 +315,7 @@ export class SocialPost extends SmrtObject {
    */
   @field({
     description:
-      'The date and time you plan to put the post out. Your app publishes it then.',
+      'The date and time you have in mind for putting the post out. Only a note of the plan: publishing is a separate step your application has to run.',
   })
   scheduledAt: Date | null = null;
 
