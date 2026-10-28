@@ -54,17 +54,21 @@ export class Operation extends SmrtObject {
    * operation's identity by {@link OperationService}: it is set when the
    * operation is defined and is not changed afterwards; rename the `name`.
    */
-  @field({ required: true })
+  @field({ required: true, description: 'A short code for this kind of work.' })
   code: string = '';
 
   /** Human-readable name shown in lists and pickers. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'What this kind of work is called, such as cutting.',
+  })
   name: string = '';
 
   /**
    * Free-text grouping for lists (`fabrication`, `finishing`, `quality`).
    * Empty when the operation is not grouped.
    */
+  @field({ description: 'A group to sort similar work together.' })
   category: string = '';
 
   /**

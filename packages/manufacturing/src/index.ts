@@ -60,7 +60,6 @@ export {
   ProductionRunCompletionCollection,
   RoutingStepCollection,
 } from './collections/index.js';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Models (and per-model options interfaces)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +114,7 @@ export {
   QUANTITY_DECIMALS,
   roundQuantity,
 } from './quantity.js';
+export { AssembliesRecipe, ProductionRecipe } from './recipes.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────

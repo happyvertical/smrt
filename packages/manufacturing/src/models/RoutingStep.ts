@@ -52,22 +52,30 @@ export class RoutingStep extends SmrtObject {
    * The owning {@link BillOfMaterials}. Cascade: a routing belongs to its bill.
    * (`BomLine.bomId` is still a plain string; see AGENTS.md.)
    */
+  @field({ description: 'The list of parts this step is part of.' })
   @foreignKey(BillOfMaterials, { required: true, onDelete: 'CASCADE' })
   bomId: string = '';
 
   /** The {@link Operation} performed here. Restrict: operations are retired, never deleted. */
+  @field({ description: 'The kind of work done in this step.' })
   @foreignKey(Operation, { required: true, onDelete: 'RESTRICT' })
   operationId: string = '';
 
   /** Position in the routing, starting at 1 and without gaps. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The order of this step, starting at 1.',
+  })
   sequence: number = 1;
 
   /**
    * Estimated working minutes at this step to build one unit of the bill's
    * product. Decimal so `7.5` round-trips.
    */
-  @field({ type: 'decimal' })
+  @field({
+    type: 'decimal',
+    description: 'About how many minutes this step takes.',
+  })
   estimatedMinutes: number = 0.0;
 
   /** Optional free-form note for this step. */

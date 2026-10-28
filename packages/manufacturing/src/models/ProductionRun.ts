@@ -83,19 +83,26 @@ export class ProductionRun extends SmrtObject {
    * The bill the run builds against, pinned when the run is created.
    * Restrict: a bill with runs is history and is not deleted.
    */
+  @field({ description: 'The list of parts this run makes from.' })
   @foreignKey(BillOfMaterials, { required: true, onDelete: 'RESTRICT' })
   bomId: string = '';
 
   /** Units of the bill's product to build. Decimal; greater than zero. */
-  @field({ type: 'decimal' })
+  @field({ type: 'decimal', description: 'How many you plan to make.' })
   targetQty: number = 0.0;
 
   /** Units reported done so far: the sum of the run's completions. */
-  @field({ type: 'decimal' })
+  @field({
+    type: 'decimal',
+    description: 'How many have been finished so far.',
+  })
   completedQty: number = 0.0;
 
   /** Lifecycle status; see {@link ProductionRunStatus}. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Whether the run is planned, under way or done.',
+  })
   status: ProductionRunStatus = 'planned';
 
   constructor(options: ProductionRunOptions = {}) {

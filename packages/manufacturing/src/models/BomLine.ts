@@ -63,7 +63,10 @@ export class BomLine extends SmrtObject {
    * cross-reference convention and to avoid coupling the schema generator
    * to a particular load order.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The list of parts this line belongs to.',
+  })
   bomId: string = '';
 
   /**
@@ -73,7 +76,10 @@ export class BomLine extends SmrtObject {
    * this id to track stock levels and movements. Cross-package id;
    * never `@foreignKey()`.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The part that goes into the assembly.',
+  })
   componentSkuId: string = '';
 
   /**
@@ -81,7 +87,10 @@ export class BomLine extends SmrtObject {
    * the unit declared by {@link uom}. Decimal so fractional usage like
    * `1.75 yards` or `12.5 grams` round-trips correctly.
    */
-  @field({ type: 'decimal' })
+  @field({
+    type: 'decimal',
+    description: 'How much of this part goes into one unit.',
+  })
   qtyPerUnit: number = 0.0;
 
   /**
@@ -91,6 +100,9 @@ export class BomLine extends SmrtObject {
    *
    * Conventions follow the upstream `Material.uom` value when applicable.
    */
+  @field({
+    description: 'What the amount is counted in, such as each or kilograms.',
+  })
   uom: string = 'each';
 
   /**
