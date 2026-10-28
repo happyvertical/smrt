@@ -294,7 +294,8 @@ pre-scanned results and never sees recipes.) The adapter qualifies names and emi
 
 ## Build-time validation
 
-Ids are dotted lowercase and unique; `models` is non-empty, resolvable, and
+Ids are dotted lowercase and unique (the first segment is usually a package short
+name and may be hyphenated: `human-resources.people`); `models` is non-empty, resolvable, and
 duplicate-free; every `nav` model is in `models`; `requires` are well-formed,
 not self-referential or duplicated, and acyclic within the package (ids in other
 packages cannot be checked at scan time); `options` name only listed models and

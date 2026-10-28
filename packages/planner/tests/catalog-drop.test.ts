@@ -84,3 +84,25 @@ describe('dropUnrenderableRecipes', () => {
     expect(log.join('\n')).toContain('skip @happyvertical/smrt-b');
   });
 });
+
+describe('dropUnrenderableRecipes: skipped package', () => {
+  it('is no longer listed as a dependency of the packages that stay', () => {
+    const closed = pkg(
+      'closed',
+      [model('@closed:Only', false)],
+      [
+        recipe('closed.hidden', {
+          models: ['@closed:Only'],
+          nav: [{ model: '@closed:Only' } as never],
+        }),
+      ],
+    );
+    const open = {
+      ...pkg('open', [model('@open:One', true)]),
+      dependencies: ['closed', 'other'],
+    } as CatalogPackage;
+    const out = dropUnrenderableRecipes([closed, open]);
+    expect(out.map((p) => p.id)).toEqual(['open']);
+    expect(out[0].dependencies).toEqual(['other']);
+  });
+});

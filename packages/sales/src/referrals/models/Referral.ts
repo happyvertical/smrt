@@ -23,7 +23,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ReferralOptions, ReferralStatus } from '../types.js';
 
@@ -62,10 +62,12 @@ export class Referral extends SmrtObject {
   tenantId: string | null = null;
 
   /** The Referrer credited with the introduction. Required. */
+  @field({ description: 'The affiliate who sent this person.' })
   @foreignKey('Referrer', { required: true })
   referrerId: string = '';
 
   /** The ReferralProgram the referral belongs to. Required. */
+  @field({ description: 'The program this referral counts towards.' })
   @foreignKey('ReferralProgram', { required: true })
   programId: string = '';
 
@@ -79,6 +81,10 @@ export class Referral extends SmrtObject {
    * Lifecycle status — see the module transition map. Mutate via the
    * transition methods; the save-time guard rejects illegal edges.
    */
+  @field({
+    description:
+      'Whether the referral is waiting, has led to a sale or has lapsed.',
+  })
   status: ReferralStatus = 'pending';
 
   /**

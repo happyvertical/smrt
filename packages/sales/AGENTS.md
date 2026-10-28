@@ -81,3 +81,5 @@ Business/domain models are generally `@TenantScoped({ mode: 'optional' })` with 
   same-process BUSY recovery is proven. Quote issue/sign always recheck
   current seller, host policy/inventory and exact finance approval; see
   [agents/crm.md](agents/crm.md#governed-sellers-quotes-and-canonical-advertiser-registration).
+
+- **Recipe `affiliates.referrals`** (`src/referrals/recipes.ts`, help in `src/referrals/referrals.recipe.md`): the affiliate feature for catalog hosts (referrers, programs, referrals, commissions, payouts). It lives here because `@happyvertical/smrt-affiliates` is a model-less shim and a recipe needs models of its own package. Fields it shows carry `@field({ description })` in plain words.

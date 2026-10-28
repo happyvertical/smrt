@@ -17,6 +17,7 @@ import './__smrt-register__.js';
 export { addDays, addMonths, assertIsoDate, isIsoDate } from './dates.js';
 export * from './employment/index.js';
 export * from './qualifications/index.js';
+export { HumanResourcesPeopleRecipe } from './recipes.js';
 export {
   EMPLOYMENT_STATUS_TRANSITIONS,
   type EmploymentChangeKind,

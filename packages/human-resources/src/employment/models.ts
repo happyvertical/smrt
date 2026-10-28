@@ -58,6 +58,7 @@ const PACKAGE_OWNED_COLUMNS = [
 export class Employment extends SmrtObject {
   @tenantId() tenantId = '';
   /** The person employed. */
+  @field({ description: 'The person who works for you.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     onDelete: 'RESTRICT',
   })
@@ -72,11 +73,21 @@ export class Employment extends SmrtObject {
   })
   employerProfileId: string | null = null;
   /** Free text, unique per tenant. */
+  @field({
+    description: 'Your own reference for this person, such as a staff number.',
+  })
   employeeNumber = '';
-  @field({ type: 'text' }) workerType: WorkerType = 'employee';
+  @field({
+    type: 'text',
+    description:
+      'Whether they are an employee, contractor or another kind of worker.',
+  })
+  workerType: WorkerType = 'employee';
   /** Position or trade label; latest recorded value. */
-  @field({ type: 'text', nullable: true }) position: string | null = null;
-  @field({ type: 'text' }) status: EmploymentStatus = 'active';
+  @field({ type: 'text', nullable: true, description: 'Their role or trade.' })
+  position: string | null = null;
+  @field({ type: 'text', description: 'Whether they currently work for you.' })
+  status: EmploymentStatus = 'active';
 
   override async save(): Promise<this> {
     const prior = this.id
@@ -136,9 +147,19 @@ export class Employment extends SmrtObject {
 })
 export class EmploymentTerm extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Employment', { onDelete: 'RESTRICT' }) employmentId = '';
-  @field({ type: 'text' }) startedOn: IsoDate = '';
-  @field({ type: 'text', nullable: true }) endedOn: IsoDate | null = null;
+  @field({ description: 'The person this period of work belongs to.' })
+  @foreignKey('Employment', { onDelete: 'RESTRICT' })
+  employmentId = '';
+  @field({ type: 'text', description: 'The first day of this period of work.' })
+  startedOn: IsoDate = '';
+  @field({
+    type: 'text',
+    nullable: true,
+    description:
+      'The last day of this period of work. Empty while it continues.',
+  })
+  endedOn: IsoDate | null = null;
+  @field({ description: 'Why the period of work ended.' })
   endReason = '';
 
   override async save(): Promise<this> {

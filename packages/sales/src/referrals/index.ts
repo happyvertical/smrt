@@ -67,6 +67,8 @@ export { ReferralProgram } from './models/ReferralProgram.js';
 export { ReferralTermSnapshot } from './models/ReferralTermSnapshot.js';
 export { ReferralTouch } from './models/ReferralTouch.js';
 export { Referrer } from './models/Referrer.js';
+// Recipes
+export { AffiliatesReferralsRecipe } from './recipes.js';
 // Services
 export {
   type AttributionAward,

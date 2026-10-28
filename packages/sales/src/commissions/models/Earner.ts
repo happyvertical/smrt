@@ -17,7 +17,12 @@
  * @packageDocumentation
  */
 
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   EARNER_KINDS,
@@ -101,9 +106,11 @@ export class Earner extends SmrtObject {
   profileId: string = '';
 
   /** Human-readable display name for portals and operator views. */
+  @field({ description: 'The name this payee is paid under.' })
   displayName: string = '';
 
   /** Account lifecycle: `pending` (default) → `active` / `suspended`. */
+  @field({ description: 'Whether this payee can be paid.' })
   status: EarnerStatus = 'pending';
 
   /** Preferred payout delivery method. */

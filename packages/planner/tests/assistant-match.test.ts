@@ -207,7 +207,7 @@ describe('focused prompt', () => {
     }
     expect(bakery).toBeLessThan(full);
     expect(none).toBeLessThan(bakery);
-    expect(bakery).toBeLessThan(3400);
+    expect(bakery).toBeLessThan(3700);
   });
 });
 

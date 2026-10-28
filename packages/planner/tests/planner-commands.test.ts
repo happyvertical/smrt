@@ -594,7 +594,8 @@ describe('snapshot', () => {
       expect(size, id).toBeLessThan(3500);
     }
     // Every recipe on at once: still a prompt-sized document, not the catalog
-    // (it grows with the catalog's recipes: 6.6k at smrt 0.56's 37).
+    // (it grows with the catalog's recipes: 6.6k at smrt 0.56's 37, 8.3k at
+    // 0.57's 43).
     ok(controller, 'add_recipes', {
       ids: (
         commandSchemas.add_recipes.properties as {
@@ -602,7 +603,7 @@ describe('snapshot', () => {
         }
       ).ids.items.enum,
     });
-    expect(JSON.stringify(controller.snapshot()).length).toBeLessThan(7500);
+    expect(JSON.stringify(controller.snapshot()).length).toBeLessThan(9000);
   });
 });
 

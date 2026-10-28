@@ -312,3 +312,5 @@ that reverted to DECIMAL passes every SQLite suite.
   claim) — the framework exposes no cross-adapter transaction primitive at
   this seam. Escalation is additionally idempotent per `(target, level)`,
   so at-least-once job redelivery never stacks duplicate escalations.
+
+- **Recipe `support.tickets`** (`src/recipes.ts`, help in `src/tickets.recipe.md`): lists tickets, messages and the support team for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.

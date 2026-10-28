@@ -99,6 +99,7 @@ export class CommissionPayout extends SmrtObject {
   tenantId: string | null = null;
 
   /** The {@link Earner} being paid. Required. */
+  @field({ description: 'The affiliate being paid.' })
   @foreignKey('Earner', { required: true })
   earnerId: string = '';
 
@@ -121,9 +122,13 @@ export class CommissionPayout extends SmrtObject {
    * Net amount remitted — must equal
    * `commissionTotalCents + adjustmentTotalCents` (enforced on save).
    */
+  @field({
+    description: 'The total being paid, in the smallest unit of the currency.',
+  })
   totalAmountCents: number = 0;
 
   /** ISO 4217 currency of the batch. */
+  @field({ description: 'The currency of the payment.' })
   currency: string = 'USD';
 
   /** Delivery method for this batch (defaulted from the Earner). */
@@ -142,6 +147,10 @@ export class CommissionPayout extends SmrtObject {
    * {@link markProcessing} / {@link complete} / {@link fail} /
    * {@link resetFromFailed}.
    */
+  @field({
+    description:
+      'Whether the payment is waiting, being sent, completed or failed.',
+  })
   status: CommissionPayoutStatus = 'pending';
 
   /**
@@ -157,6 +166,7 @@ export class CommissionPayout extends SmrtObject {
   providerRef: string = '';
 
   /** When the payout completed. */
+  @field({ description: 'When the payment went out.' })
   paidAt: Date | null = null;
 
   /**
@@ -174,7 +184,10 @@ export class CommissionPayout extends SmrtObject {
    * `` `${earnerId}:${currency}:${periodEnd ISO date}` `` when the caller
    * doesn't supply one.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'A reference that stops the same payout being made twice.',
+  })
   idempotencyKey: string = '';
 
   /**

@@ -77,6 +77,7 @@ export class Commission extends SmrtObject {
   tenantId: string | null = null;
 
   /** The {@link Earner} this commission belongs to. Required. */
+  @field({ description: 'The affiliate who earned this commission.' })
   @foreignKey('Earner', { required: true })
   earnerId: string = '';
 
@@ -123,9 +124,13 @@ export class Commission extends SmrtObject {
   splitGroupId: string = '';
 
   /** The earned amount in integer cents. */
+  @field({
+    description: 'How much was earned, in the smallest unit of the currency.',
+  })
   amountCents: number = 0;
 
   /** ISO 4217 currency (copied from the earning event). */
+  @field({ description: 'The currency the commission is paid in.' })
   currency: string = 'USD';
 
   /**
@@ -133,6 +138,7 @@ export class Commission extends SmrtObject {
    * → paid`. Mutate via the transition methods; the save-time guard rejects
    * illegal edges.
    */
+  @field({ description: 'Where the commission stands, from pending to paid.' })
   status: CommissionStatus = 'pending';
 
   /**
@@ -179,7 +185,11 @@ export class Commission extends SmrtObject {
    * `` `${event.dedupeKey}:${terms}:${componentKey}:${earnerId}:${occurrenceIndex}` ``
    * (see `CommissionCalculationService`). Required.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'A reference that stops the same commission being recorded twice.',
+  })
   dedupeKey: string = '';
 
   /** Additional metadata as a JSON string. */
