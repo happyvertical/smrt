@@ -319,7 +319,7 @@ The documentation build discovers package READMEs from workspace `package.json` 
 ## Related projects
 
 - [HappyVertical SDK](https://github.com/happyvertical/sdk) — infrastructure packages used by s-m-r-t.
-- [s-m-r-t SaaS starter](https://github.com/happyvertical/smrt-saas-starter) — reference application, demo, and template baseline.
+- [smrt-start](https://github.com/happyvertical/smrt-start) — the canonical production-shaped application template.
 
 ## License
 
