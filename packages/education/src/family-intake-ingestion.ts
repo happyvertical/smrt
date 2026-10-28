@@ -73,9 +73,8 @@ export async function retainFamilyIntakeReceipt(
   const supported = (type: string) =>
     ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'].includes(type);
   const byId = new Map(evidence.map((e) => [e.id, e]));
-  const originals = evidence
+  const originalEvidence = evidence
     .filter((e) => {
-      if (!supported(e.mediaType)) return false;
       // A PDF/image's child rendition is provenance, not another work page.
       // Metadata parents (for example an email envelope) do not hide attachments.
       let parentId = e.parentEvidenceId;
@@ -92,6 +91,15 @@ export async function retainFamilyIntakeReceipt(
       return true;
     })
     .sort((a, b) => a.partId.localeCompare(b.partId));
+  if (
+    originalEvidence.some(
+      (e) => e.mediaType !== 'application/json' && !supported(e.mediaType),
+    )
+  )
+    throw new Error(
+      'Unsupported family original: only JPEG, PNG, WebP and PDF are supported',
+    );
+  const originals = originalEvidence.filter((e) => supported(e.mediaType));
   if (
     !originals.length ||
     originals.length > 100 ||

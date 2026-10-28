@@ -77,3 +77,11 @@ authored attachments is unsupported by this bridge until its role is explicitly
 established; do not claim complete attachment fidelity for that shape or infer
 roles from first-page content. Full immutable evidence lineage is retained even
 when a rendition is excluded from capture pages.
+
+The bridge rejects an entire receipt containing an unsupported independent
+original, including a mixed PDF/TIFF bundle, before family retention. Generic
+source originals remain available for recovery; no partial family receipt or
+adoption is created. Hosts must acknowledge successful family import only after
+family retention succeeds and surface failed source imports. Known JSON
+metadata wrappers and media descendants under the supported rendition convention
+are not independent originals.

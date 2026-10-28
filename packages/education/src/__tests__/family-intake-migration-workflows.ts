@@ -43,9 +43,12 @@ export function familyMigrationTests(
         (name) => ObjectRegistry.getSchema(name)?.tableName,
       ),
     );
+    // This upgrade targets application schemas; system job bootstrap is separate.
     const current = structuredClone(
       Object.fromEntries(
-        Object.entries(merged).filter(([table]) => selectedTables.has(table)),
+        Object.entries(merged).filter(
+          ([table]) => selectedTables.has(table) && !table.startsWith('_smrt_'),
+        ),
       ),
     );
     const old = structuredClone(current);

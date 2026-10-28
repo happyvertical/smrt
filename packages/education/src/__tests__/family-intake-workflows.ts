@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,11 @@ import {
   receiveFamilyIntake,
   retainFamilyIntakeReceipt,
 } from '../family-intake-ingestion.js';
+import {
+  FamilyIntake,
+  FamilyIntakeAsset,
+  FamilyIntakeDecision,
+} from '../family-intake-models.js';
 import { FamilyIntakeService } from '../family-intake-service.js';
 import {
   WORKBOOK_MATH_VOCABULARY,
@@ -785,6 +790,62 @@ export function familyIntakeTests(
             photoIntakeId: null,
             revision: 0,
           });
+          const mixed = {
+            ...receive,
+            deliveryKey: 'mixed-pdf-tiff',
+            parts: [
+              {
+                partId: 'pdf',
+                mediaType: 'application/pdf',
+                filename: 'supported.pdf',
+                bytes: Buffer.from('supported original pdf'),
+              },
+              {
+                partId: 'tiff',
+                mediaType: 'image/tiff',
+                filename: 'unsupported.tiff',
+                bytes: Buffer.from('unsupported independent tiff'),
+              },
+            ],
+          };
+          const beforeMixed = await f.service.countFamilyIntakes(input.request);
+          await expect(
+            receiveFamilyIntake({ ...input, receive: mixed }),
+          ).rejects.toThrow('Unsupported family original');
+          const genericRetry = await ingestion.receive(mixed);
+          if (!('itemId' in genericRetry) || !genericRetry.itemId)
+            throw new Error('Missing rejected bridge generic receipt');
+          expect(await f.service.countFamilyIntakes(input.request)).toBe(
+            beforeMixed,
+          );
+          expect(
+            (await f.service.listFamilyIntakes(input.request)).some(
+              (row) => row.itemId === genericRetry.itemId,
+            ),
+          ).toBe(false);
+          expect(
+            (
+              await f.db.query(
+                'SELECT id FROM workbook_photo_intakes WHERE item_id=?',
+                [genericRetry.itemId],
+              )
+            ).rows,
+          ).toEqual([]);
+          const mixedEvidence = await ingestion.getEvidence(
+            genericRetry.itemId,
+          );
+          expect(mixedEvidence).toHaveLength(2);
+          for (const part of mixed.parts) {
+            const original = mixedEvidence.find(
+              (e) => e.partId === part.partId,
+            );
+            if (!original) throw new Error('Missing generic original');
+            expect(
+              Buffer.from(
+                await ingestion.readEvidence(genericRetry.itemId, original.id),
+              ),
+            ).toEqual(part.bytes);
+          }
           await ingestion.expire(view.itemId);
           const selection = { ...f.parent, intakeId: view.id };
           const retained = await f.service.getFamilyIntake(selection);
@@ -1096,6 +1157,68 @@ export function familyIntakeTests(
           }),
         ).rejects.toThrow(),
       );
+    } finally {
+      await f.finish();
+    }
+  });
+  it('forwards revision save guards on new family records without writing them', async () => {
+    const f = await fixture();
+    try {
+      const retained = await f.receive();
+      const original = retained.originals[0];
+      const rows = [
+        new FamilyIntake({
+          db: f.db,
+          id: randomUUID(),
+          tenantId: f.parent.tenantId,
+          itemId: 'guarded-new-receipt',
+          actorUserId: f.parent.actorUserId,
+          ownerProfileId: String(f.guardian.profile.id),
+          contentDigest: 'guarded',
+          sourceJson: JSON.stringify(f.receipt.source),
+        }),
+        new FamilyIntakeAsset({
+          db: f.db,
+          id: randomUUID(),
+          tenantId: f.parent.tenantId,
+          intakeId: retained.id,
+          assetId: original.assetId,
+          name: original.name,
+          mimeType: original.mimeType,
+          sha256: original.sha256,
+          position: 1,
+        }),
+        new FamilyIntakeDecision({
+          db: f.db,
+          id: randomUUID(),
+          tenantId: f.parent.tenantId,
+          intakeId: retained.id,
+          actorUserId: f.parent.actorUserId,
+          requestKey: 'guarded-new-decision',
+          sequence: 1,
+          bodyJson: JSON.stringify({
+            kind: 'assign',
+            learnerId: f.parent.learnerId,
+            reason: 'Guarded fixture',
+          }),
+        }),
+      ];
+      await f.as(f.parent, async () => {
+        for (const row of rows) {
+          await row.initialize();
+          // The public base guard rejects revision options on unsaved rows.
+          // Dropping options here would instead insert these valid records.
+          await expect(
+            row.save({ expectedUpdatedAt: '2000-01-01T00:00:00.000Z' }),
+          ).rejects.toMatchObject({ code: 'RUNTIME_INVALID_STATE' });
+          expect(await f.db.get(row.tableName, { id: row.id })).toBeFalsy();
+        }
+      });
+      expect(
+        await f.as(f.parent, () =>
+          f.service.getFamilyIntake({ ...f.parent, intakeId: retained.id }),
+        ),
+      ).toEqual(retained);
     } finally {
       await f.finish();
     }
