@@ -16,6 +16,7 @@ import { LoginAttemptLimiter } from '../services/LoginAttemptLimiter.js';
 import {
   type MailboxAuthenticationDelivery,
   MailboxAuthenticationService,
+  reserveMailboxAuthenticationRequest,
 } from '../services/MailboxAuthenticationService.js';
 import {
   type PreparedTenantInvitation,
@@ -113,18 +114,57 @@ describe('independently delivered mailbox authentication', () => {
       ),
     );
   }
+  async function requestReturning(
+    input: Parameters<MailboxAuthenticationService['request']>[0],
+  ) {
+    const reservation =
+      process.env.TEST_DB_ADAPTER === 'postgres'
+        ? undefined
+        : await reserveMailboxAuthenticationRequest({
+            limiter,
+            scope: { purpose: 'returning', email: input.email },
+            sourceKey: input.sourceKey,
+          });
+    return generic((service) => service.request({ ...input, reservation }));
+  }
+  async function requestInvitation(
+    input: Parameters<
+      TenantInvitationService['requestMailboxAuthentication']
+    >[0],
+  ) {
+    const member = await (await MembershipCollection.create({ db })).get(
+      input.membershipId,
+    );
+    if (!member?.userId || !member.tenantId)
+      throw new Error('Missing invitation fixture');
+    const user = await (await UserCollection.create({ db })).get(member.userId);
+    if (!user) throw new Error('Missing invitee fixture');
+    const reservation =
+      process.env.TEST_DB_ADAPTER === 'postgres'
+        ? undefined
+        : await reserveMailboxAuthenticationRequest({
+            limiter,
+            scope: {
+              purpose: 'invitation',
+              tenantId: member.tenantId,
+              email: user.email,
+            },
+            sourceKey: input.sourceKey,
+          });
+    return tx((service) =>
+      service.requestMailboxAuthentication({ ...input, reservation }),
+    );
+  }
   async function request(grant: string, membershipId = first.membershipId) {
     const mails: Mail[] = [];
-    const response = await tx((service) =>
-      service.requestMailboxAuthentication({
-        membershipId,
-        token: grant,
-        sourceKey,
-        deliver: async (mail) => {
-          mails.push(mail);
-        },
-      }),
-    );
+    const response = await requestInvitation({
+      membershipId,
+      token: grant,
+      sourceKey,
+      deliver: async (mail) => {
+        mails.push(mail);
+      },
+    });
     if (!mails[0]) throw new Error('Missing captured mail');
     return { mail: mails[0], response };
   }
@@ -171,11 +211,9 @@ describe('independently delivered mailbox authentication', () => {
     const deliver = vi.fn(async (_mail: Mail) => {});
     for (const email of ['', ' \t\n ', 'unknown@example.com']) {
       const started = performance.now();
-      expect(
-        await generic((service) =>
-          service.request({ email, sourceKey, deliver }),
-        ),
-      ).toEqual({ requested: true });
+      expect(await requestReturning({ email, sourceKey, deliver })).toEqual({
+        requested: true,
+      });
       expect(performance.now() - started).toBeGreaterThanOrEqual(240);
     }
     expect(deliver).not.toHaveBeenCalled();
@@ -196,14 +234,26 @@ describe('independently delivered mailbox authentication', () => {
     });
     expect(
       budgets.find(
-        (row) => row.limiter_key === limiter.hashKey('subject', 'mailbox:'),
+        (row) =>
+          row.limiter_key ===
+          limiter.hashKey(
+            'subject',
+            process.env.TEST_DB_ADAPTER === 'postgres'
+              ? 'mailbox:'
+              : `mailbox:${JSON.stringify(['returning', ''])}`,
+          ),
       ),
     ).toMatchObject({ attempt_count: 2 });
     expect(
       budgets.find(
         (row) =>
           row.limiter_key ===
-          limiter.hashKey('subject', 'mailbox:unknown@example.com'),
+          limiter.hashKey(
+            'subject',
+            process.env.TEST_DB_ADAPTER === 'postgres'
+              ? 'mailbox:unknown@example.com'
+              : `mailbox:${JSON.stringify(['returning', 'unknown@example.com'])}`,
+          ),
       ),
     ).toMatchObject({ attempt_count: 1 });
     expect(await status()).toBe(UserStatus.PENDING);
@@ -216,15 +266,13 @@ describe('independently delivered mailbox authentication', () => {
     await active();
     const mails: Mail[] = [];
     const send = () =>
-      generic((service) =>
-        service.request({
-          email: 'client@example.com',
-          sourceKey,
-          deliver: async (mail) => {
-            mails.push(mail);
-          },
-        }),
-      );
+      requestReturning({
+        email: 'client@example.com',
+        sourceKey,
+        deliver: async (mail) => {
+          mails.push(mail);
+        },
+      });
     if (flow === 'authenticate') await send();
     const tenants = await TenantCollection.create({ db });
     const memberships = await MembershipCollection.create({ db });
@@ -342,16 +390,14 @@ describe('independently delivered mailbox authentication', () => {
   it('does not burn grant on delivery failure; retries deliver a fresh one-use proof', async () => {
     const invitationToken = await grant();
     await expect(
-      tx((service) =>
-        service.requestMailboxAuthentication({
-          membershipId: first.membershipId,
-          token: invitationToken,
-          sourceKey,
-          deliver: async () => {
-            throw new Error('transport unavailable');
-          },
-        }),
-      ),
+      requestInvitation({
+        membershipId: first.membershipId,
+        token: invitationToken,
+        sourceKey,
+        deliver: async () => {
+          throw new Error('transport unavailable');
+        },
+      }),
     ).rejects.toThrow('transport unavailable');
     const { mail } = await request(invitationToken);
     expect(await status()).toBe(UserStatus.PENDING);
@@ -494,17 +540,17 @@ describe('independently delivered mailbox authentication', () => {
       'client@example.com',
       'invalid',
     ])
-      expect(
-        await generic((service) =>
-          service.request({ email, sourceKey, deliver }),
-        ),
-      ).toEqual({ requested: true });
+      expect(await requestReturning({ email, sourceKey, deliver })).toEqual({
+        requested: true,
+      });
     expect(mails).toHaveLength(0);
     await active();
     expect(
-      await generic((service) =>
-        service.request({ email: ' Client@Example.com ', sourceKey, deliver }),
-      ),
+      await requestReturning({
+        email: ' Client@Example.com ',
+        sourceKey,
+        deliver,
+      }),
     ).toEqual({ requested: true });
     expect(mails).toHaveLength(1);
     const mail = mails[0];
@@ -528,15 +574,13 @@ describe('independently delivered mailbox authentication', () => {
   it('returning login rechecks active membership and suspension, rolls back nonce consumption', async () => {
     await active();
     const mails: Mail[] = [];
-    await generic((service) =>
-      service.request({
-        email: 'client@example.com',
-        sourceKey,
-        deliver: async (mail) => {
-          mails.push(mail);
-        },
-      }),
-    );
+    await requestReturning({
+      email: 'client@example.com',
+      sourceKey,
+      deliver: async (mail) => {
+        mails.push(mail);
+      },
+    });
     const mail = mails[0];
     if (!mail) throw new Error('Missing mail');
     const members = await MembershipCollection.create({ db });
@@ -563,13 +607,13 @@ describe('independently delivered mailbox authentication', () => {
     await active();
     const deliver = async () => {};
     for (let i = 0; i < 5; i++)
-      await generic((service) =>
-        service.request({ email: 'client@example.com', sourceKey, deliver }),
-      );
+      await requestReturning({
+        email: 'client@example.com',
+        sourceKey,
+        deliver,
+      });
     await expect(
-      generic((service) =>
-        service.request({ email: 'unknown@example.com', sourceKey, deliver }),
-      ),
+      requestReturning({ email: 'unknown@example.com', sourceKey, deliver }),
     ).rejects.toMatchObject({ name: 'LoginRateLimitError' });
     const rows = (
       await db.query('SELECT limiter_key FROM users_login_attempts')
@@ -597,15 +641,13 @@ describe('independently delivered mailbox authentication', () => {
     const invitationToken = await grant();
     const { mail } = await request(invitationToken);
     const mails: Mail[] = [];
-    await generic((service) =>
-      service.request({
-        email: 'client@example.com',
-        sourceKey,
-        deliver: async (value) => {
-          mails.push(value);
-        },
-      }),
-    );
+    await requestReturning({
+      email: 'client@example.com',
+      sourceKey,
+      deliver: async (value) => {
+        mails.push(value);
+      },
+    });
     const normal = mails[0];
     if (!normal) throw new Error('Missing mail');
     for (const session of [child, ceiling]) {
@@ -636,15 +678,13 @@ describe('independently delivered mailbox authentication', () => {
   it('returning proof expires and rejects suspended account without consuming the live nonce', async () => {
     await active();
     const mails: Mail[] = [];
-    await generic((service) =>
-      service.request({
-        email: 'client@example.com',
-        sourceKey,
-        deliver: async (mail) => {
-          mails.push(mail);
-        },
-      }),
-    );
+    await requestReturning({
+      email: 'client@example.com',
+      sourceKey,
+      deliver: async (mail) => {
+        mails.push(mail);
+      },
+    });
     const mail = mails[0];
     if (!mail) throw new Error('Missing mail');
     const users = await UserCollection.create({ db });
@@ -680,15 +720,13 @@ describe('independently delivered mailbox authentication', () => {
         invitations.filter((result) => result.status === 'rejected'),
       ).toHaveLength(1);
       const mails: Mail[] = [];
-      await generic((service) =>
-        service.request({
-          email: 'client@example.com',
-          sourceKey,
-          deliver: async (mail) => {
-            mails.push(mail);
-          },
-        }),
-      );
+      await requestReturning({
+        email: 'client@example.com',
+        sourceKey,
+        deliver: async (mail) => {
+          mails.push(mail);
+        },
+      });
       const mail = mails[0];
       if (!mail) throw new Error('Missing mail');
       const logins = await Promise.allSettled([
@@ -708,16 +746,14 @@ describe('independently delivered mailbox authentication', () => {
     async () => {
       const invitationToken = await grant();
       await expect(
-        tx((service) =>
-          service.requestMailboxAuthentication({
-            membershipId: first.membershipId,
-            token: invitationToken,
-            sourceKey,
-            deliver: async () => {
-              throw new Error('transport down');
-            },
-          }),
-        ),
+        requestInvitation({
+          membershipId: first.membershipId,
+          token: invitationToken,
+          sourceKey,
+          deliver: async () => {
+            throw new Error('transport down');
+          },
+        }),
       ).rejects.toThrow('transport down');
       const budget = (
         await db.query(

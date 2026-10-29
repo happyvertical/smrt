@@ -486,8 +486,11 @@ export {
 export {
   type AuthenticatedMailbox,
   type MailboxAuthenticationDelivery,
+  type MailboxAuthenticationRequestScope,
   MailboxAuthenticationService,
   type MailboxAuthenticationServiceOptions,
+  type MailboxRequestReservation,
+  reserveMailboxAuthenticationRequest,
 } from './services/MailboxAuthenticationService.js';
 export {
   type AcceptedTenantInvitation,

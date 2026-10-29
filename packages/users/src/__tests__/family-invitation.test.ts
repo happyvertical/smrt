@@ -19,7 +19,10 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { backfillUserEmailKeys } from '../migrations/backfillUserEmailKeys.js';
 import { LoginAttemptLimiter } from '../services/LoginAttemptLimiter.js';
-import type { MailboxAuthenticationDelivery } from '../services/MailboxAuthenticationService.js';
+import {
+  type MailboxAuthenticationDelivery,
+  reserveMailboxAuthenticationRequest,
+} from '../services/MailboxAuthenticationService.js';
 import { PasswordCredentialService } from '../services/PasswordCredentialService.js';
 import { SessionService } from '../services/SessionService.js';
 import {
@@ -155,8 +158,17 @@ describe('family invitation exact role and preserved identity', () => {
   }
   async function mail(grant: { membershipId: string; token: string }) {
     let result: Mail | undefined;
+    const reservation =
+      process.env.TEST_DB_ADAPTER === 'postgres'
+        ? undefined
+        : await reserveMailboxAuthenticationRequest({
+            limiter,
+            scope: { purpose: 'invitation', tenantId, email },
+            sourceKey: 'trusted-test-client',
+          });
     await tx((service) =>
       service.requestMailboxAuthentication({
+        reservation,
         ...grant,
         sourceKey: 'trusted-test-client',
         deliver: async (value) => {
@@ -435,6 +447,55 @@ describe('family invitation exact role and preserved identity', () => {
     expect(
       (await db.get('memberships', { id: prepared.membershipId })).role_id,
     ).toBe(roleId);
+  });
+  it('revalidates destination role ownership after preparation at issue and both mailbox boundaries', async () => {
+    const invitation = await grant();
+    const proof = await mail(invitation);
+    const roles = await RoleCollection.create({ db });
+    const role = await roles.get(roleId);
+    if (!role) throw new Error('No destination role');
+    const foreignTenant = await (await TenantCollection.create({ db })).create({
+      name: 'Unrelated family',
+      slug: randomUUID(),
+    });
+    role.tenantId = foreignTenant.id as string;
+    await role.save();
+    await expect(
+      tx((service) => service.issue({ membershipId: invitation.membershipId })),
+    ).rejects.toThrow('role is unavailable');
+    await expect(mail(invitation)).rejects.toThrow('role is unavailable');
+    await expect(
+      tx((service) =>
+        service.authenticateMailbox({
+          membershipId: invitation.membershipId,
+          invitationToken: invitation.token,
+          token: proof.token,
+        }),
+      ),
+    ).rejects.toThrow('role is unavailable');
+    const session = await (
+      await SessionCollection.create({ db })
+    ).createSession({ userId, tenantId: sourceId, authMethod: 'password' });
+    await expect(
+      tx((service) =>
+        service.accept({
+          membershipId: invitation.membershipId,
+          token: invitation.token,
+          sessionId: session.id as string,
+        }),
+      ),
+    ).rejects.toThrow('role is unavailable');
+    role.tenantId = tenantId;
+    await role.save();
+    await expect(
+      tx((service) =>
+        service.authenticateMailbox({
+          membershipId: invitation.membershipId,
+          invitationToken: invitation.token,
+          token: proof.token,
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 'active' });
   });
   it('rejects a non-Person discriminator and a profile binding changed after issue', async () => {
     const invitation = await grant();

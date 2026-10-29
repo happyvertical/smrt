@@ -30,7 +30,9 @@ import type { LoginAttemptLimiter } from './LoginAttemptLimiter.js';
 import { MagicLinkService } from './MagicLinkService.js';
 import {
   assertMailboxSessionCompatibility,
+  claimMailboxAuthenticationRequest,
   type MailboxAuthenticationDelivery,
+  type MailboxRequestReservation,
   reserveMailboxRequest,
 } from './MailboxAuthenticationService.js';
 import { SessionService } from './SessionService.js';
@@ -234,18 +236,31 @@ export class TenantInvitationService {
     token: string;
     sourceKey: string;
     deliver: MailboxAuthenticationDelivery;
+    reservation?: MailboxRequestReservation;
   }): Promise<{ expiresAt: Date }> {
+    const reservation = claimMailboxAuthenticationRequest({
+      reservation: input.reservation,
+      limiter: this.signing.loginLimiter,
+      sourceKey: input.sourceKey,
+      db: this.options.db as DatabaseInterface,
+    });
     if (typeof input.deliver !== 'function')
       throw new TenantInvitationError(
         'Mailbox authentication delivery is required',
       );
-    await reserveMailboxRequest({
-      subject: `invitation:${input.membershipId}`,
-      sourceKey: input.sourceKey,
-      limiter: this.signing.loginLimiter,
-    });
+    if (!reservation.reserved)
+      await reserveMailboxRequest({
+        subject: `invitation:${input.membershipId}`,
+        sourceKey: input.sourceKey,
+        limiter: this.signing.loginLimiter,
+      });
     return await withSystemContext(async () => {
       const records = await this.invitationRecords(input.membershipId);
+      reservation.assertScope({
+        purpose: 'invitation',
+        tenantId: requiredId(records.membership.tenantId),
+        email: records.user.email,
+      });
       const grant = await (await this.magicLinks(records.binding)).inspect(
         input.token,
       );
@@ -254,9 +269,10 @@ export class TenantInvitationService {
           'Invitation identity does not match',
           403,
         );
-      const proof = await (
-        await this.mailboxLinks(records.binding, input.token)
-      ).generate(records.user.email);
+      const links = await this.mailboxLinks(records.binding, input.token);
+      reservation.assertFresh();
+      const proof = await links.generate(records.user.email);
+      reservation.assertFresh();
       await input.deliver({
         email: normalizeIdentityEmail(records.user.email),
         ...proof,
@@ -546,16 +562,7 @@ export class TenantInvitationService {
     const generation = await this.generation(membership);
     if (generation?.revoked)
       throw new TenantInvitationError('Invitation is unavailable', 403);
-    const role = await (await RoleCollection.create(this.options)).get(
-      { id: membership.roleId },
-      { cache: false },
-    );
-    if (
-      !role ||
-      (role.tenantId !== membership.tenantId &&
-        !(role.tenantId == null && role.isSystem))
-    )
-      throw new TenantInvitationError('Invitation role is unavailable', 403);
+    await this.requireInvitationRole(membership.roleId, membership.tenantId);
     const profileId = requiredId(profile.id);
     const binding = createHash('sha256')
       .update(
@@ -570,6 +577,24 @@ export class TenantInvitationService {
       )
       .digest('hex');
     return { user, membership, profile, profileId, binding };
+  }
+
+  private async requireInvitationRole(
+    roleId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const db = this.options.db as DatabaseInterface;
+    if (isPostgresDatabase(db))
+      await db.query('SELECT id FROM roles WHERE id = ? FOR UPDATE', roleId);
+    const role = await (await RoleCollection.create(this.options)).get(
+      { id: roleId },
+      { cache: false },
+    );
+    if (
+      !role ||
+      (role.tenantId !== tenantId && !(role.tenantId == null && role.isSystem))
+    )
+      throw new TenantInvitationError('Invitation role is unavailable', 403);
   }
 
   /** Prepare or replay a pending membership, preserving all existing authority. */
@@ -734,6 +759,10 @@ export class TenantInvitationService {
           status: MembershipStatus.PENDING,
         });
       }
+      await this.requireInvitationRole(
+        requiredId(membership.roleId),
+        input.tenantId,
+      );
       return {
         userId,
         profileId,
