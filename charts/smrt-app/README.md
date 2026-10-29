@@ -119,6 +119,7 @@ and `capabilities: {drop: [ALL]}`. Unknown fields and privilege/host escape sett
 are rejected. Existing snapshots may omit these fields. Migration now accepts the
 same `scratch` emptyDir declarations as named workloads. Scratch names/paths must
 be unique; host/system roots and traversal paths cannot shadow credentials.
+Chart 0.3.0 also preserves an optional migration `nodeSelector` map in the Job PodSpec.
 
 `target.migration.observerAccess: true` requires an explicit pre-existing migration
 `serviceAccountName`. It adds a read-only projection at

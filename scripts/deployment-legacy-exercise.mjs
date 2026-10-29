@@ -252,6 +252,45 @@ export function legacyRuntime(configHash, fixtureNamespace) {
   return { workloads, migration };
 }
 
+export function legacyExerciseValues(configHash, fixtureNamespace) {
+  const current = legacyRuntime(configHash, fixtureNamespace),
+    target = structuredClone(current);
+  return {
+    app: { name: 'legacy', environment: 'isolated' },
+    release: { id: 'adopt-4481', sequence: 1, attempt: 1, phase: 'stopped' },
+    current,
+    target,
+    maintenance: {
+      image: legacyImages.nginx,
+      command: ['nginx', '-g', 'daemon off;'],
+      port: 8080,
+      http: { path: '/', status: 503, body: 'Maintenance' },
+    },
+    bindings: {
+      database: { secretName: 'runtime-v2', secretKey: 'pghost' },
+      privateBuckets: [],
+    },
+    ingress: {
+      name: 'legacy-web',
+      host: 'app.legacy.invalid',
+      tlsSecretName: 'web-tls-v1',
+      className: 'smrt-legacy',
+      annotations: {
+        'nginx.ingress.kubernetes.io/proxy-body-size': '11m',
+        'nginx.ingress.kubernetes.io/proxy-buffer-size': '64k',
+      },
+      additionalRoutes: [
+        {
+          name: 'legacy-site',
+          host: 'www.legacy.invalid',
+          workload: 'site',
+          tlsSecretName: 'site-tls-v1',
+        },
+      ],
+    },
+  };
+}
+
 export function assertRetryOnFailureSupport(documents) {
   const crd = documents.find(
     (o) =>
@@ -1070,40 +1109,11 @@ export async function legacyMain(env = process.env) {
         namespace,
       ),
     ]);
-    const current = legacyRuntime(
-        hash({ data: publicData, binaryData: {} }),
-        fixtures,
-      ),
-      target = structuredClone(current);
-    const values = {
-      app: { name: 'legacy', environment: 'isolated' },
-      release: { id: 'adopt-4481', sequence: 1, attempt: 1, phase: 'stopped' },
-      current,
-      target,
-      maintenance: {
-        image: legacyImages.nginx,
-        command: ['nginx', '-g', 'daemon off;'],
-        port: 8080,
-        http: { path: '/', status: 503, body: 'Maintenance' },
-      },
-      bindings: {
-        database: { secretName: 'runtime-v2', secretKey: 'pghost' },
-        privateBuckets: [],
-      },
-      ingress: {
-        name: 'legacy-web',
-        host: 'app.legacy.invalid',
-        tlsSecretName:'web-tls-v1',
-        className: 'smrt-legacy',
-        annotations: {
-          'nginx.ingress.kubernetes.io/proxy-body-size': '11m',
-          'nginx.ingress.kubernetes.io/proxy-buffer-size': '64k',
-        },
-        additionalRoutes: [
-          { name: 'legacy-site', host: 'www.legacy.invalid', workload: 'site',tlsSecretName:'site-tls-v1' },
-        ],
-      },
-    };
+    const values = legacyExerciseValues(
+      hash({ data: publicData, binaryData: {} }),
+      fixtures,
+    );
+    const { current, target } = values;
     const ownership = {
       'meta.helm.sh/release-name': 'legacy',
       'meta.helm.sh/release-namespace': namespace,
