@@ -27,3 +27,9 @@ No package-export change, route exposure widening or gate bypass is authorized.
 | Behavior/invariant | Trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Command |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | R01 import-only consumer dependency | generate _resources from packed ESM consumer | real import-only users subpath/hoisted package emit route and execute handler; independent import-only application runtime selects runtime config | absent/unexported/missing target skips, disablement and handwritten ts/js preserved | trusted build projectRoot; no runtime actor change | N/A build-time filesystem lookup, no DB/transaction | Node26 ESM/Vite | package exports import condition; no require/default assumed | unit + real filesystem/runtime regression | core resources-route, resources-route-resolution, sveltekit-generator/runtime focused files |
+
+## Model save-option compatibility
+
+The current core guard found six imported group model overrides dropping `SmrtSaveOptions`. Commit92a78ae121 forwards the optional argument through validation to the base save. A real freshly loaded `EducationGroup` with an explicitly stale expected timestamp overwrote the winner before the fix and now rejects it; the winner remains unchanged. Existing group lifecycle, policy and comment tests retain their immutability and version gates. This is an owning #4493 integration correction, not a guard exception.
+
+Runtime artifact validation must follow test execution: tests write ignored manifests with `artifactPurpose:test`, including model-free types/UI packages. Canonical discovery excludes those inputs. Regenerate runtime manifests/knowledge through owning public APIs before the final package sync and graph check; never hand-edit registration strings or recorded hashes. Registration metadata is compared structurally and repeated canonical sync hashes must agree.
