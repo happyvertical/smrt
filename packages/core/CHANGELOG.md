@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.57.41
+
+### Patch Changes
+
+- ### Features
+  
+  - require parent decisions for workbook completion (#4490) (education)
+  - add learner Plan reads and guardian enrollment notes (#4489) (education)
+- @happyvertical/smrt-config@0.57.41
+  - @happyvertical/smrt-scanner@0.57.41
+  - @happyvertical/smrt-types@0.57.41
+
 ## 0.57.40
 
 ### Patch Changes
