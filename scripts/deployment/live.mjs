@@ -1311,7 +1311,8 @@ export function createLiveAdapter(
       'pods,deployments,replicasets,jobs,cronjobs,endpointslices,horizontalpodautoscalers,statefulsets,daemonsets,ingresses,services,configmaps',
     );
     const all = items(snapshot);
-    for (const desired of await inventory(document)) {
+    const rendered = await inventory(document);
+    for (const desired of rendered) {
       const actual = all.find(
         (o) =>
           o.kind === desired.kind && o.metadata.name === desired.metadata.name,
@@ -1327,7 +1328,8 @@ export function createLiveAdapter(
     }
     const owned = (object) =>
       object.metadata.labels?.['app.kubernetes.io/instance'] ===
-      document.metadata.name;
+      document.metadata.name ||
+      retainedDormantReplicaSet(object, all, rendered, document.metadata.name, namespace);
     // v1 requires a dedicated app namespace. Unknown workloads cannot silently keep writing.
     for (const object of all.filter((o) =>
       [

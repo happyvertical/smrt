@@ -312,8 +312,9 @@ ReplicaSet must have zero desired and observed/ready/available/labelled/terminat
 replicas, no deletion or remaining Pod descendants, and one exact same-namespace
 Deployment controller owner (API/kind/name/UID). That parent must belong to the
 current instance and match a rendered Deployment name and immutable selector.
-Explicit foreign instance labels, active history, unsupported or forged ancestry
-still fail closed. Historical Pod templates are not made current by this exception.
+The same bounded predicate applies during preflight and every native phase proof,
+including adopted Helm and TLS observations. Explicit foreign instance labels,
+active history, unsupported or forged ancestry still fail closed. Historical Pod templates are not made current by this exception.
 
 ## Bounded immutable Ingress TLS rotation
 

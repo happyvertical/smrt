@@ -547,8 +547,9 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
       'smrt.happyvertical.com/sequence': '1',
     };
     const deployment = {
+      apiVersion: 'apps/v1',
       kind: 'Deployment',
-      metadata: { name: 'example-web', uid: 'deploy', generation: 1, labels },
+      metadata: { name: 'example-web', namespace: 'test', uid: 'deploy', generation: 1, labels },
       spec: {
         selector: {
           matchLabels: {
@@ -634,6 +635,30 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
         },
       },
     ];
+    all.push({
+      apiVersion: 'apps/v1',
+      kind: 'ReplicaSet',
+      metadata: {
+        namespace: 'test',
+        name: 'legacy-dormant-history',
+        uid: 'legacy-dormant',
+        labels: { app: 'legacy-web' },
+        ownerReferences: [
+          {
+            controller: true,
+            apiVersion: 'apps/v1',
+            kind: 'Deployment',
+            name: 'example-web',
+            uid: 'deploy',
+          },
+        ],
+      },
+      spec: {
+        replicas: 0,
+        selector: structuredClone(deployment.spec.selector),
+      },
+      status: { replicas: 0 },
+    });
     const source = {
       metadata: { generation: 1 },
       status: {
@@ -652,7 +677,7 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
           : JSON.stringify(document.spec.values);
       if (args.includes('create'))
         return JSON.stringify({
-          items: all.filter((o) => o.kind === 'Ingress'),
+          items: all.filter((o) => ['Deployment', 'Ingress'].includes(o.kind)),
         });
       if (args.includes('ocirepository'))
         return JSON.stringify({
