@@ -507,7 +507,15 @@ export function createSDKProposalGenerator(
           response.content,
         );
       const incomplete = 'Incomplete or unexpected proposal response';
-      if (response.finishReason !== 'stop')
+      // SDK ai 0.111 reports a server finish reason outside its set as
+      // `'other'` with the raw value in `rawFinishReason`; 0.110 folded those
+      // into `'stop'`. A raw value that names a cut-off reply is refused like
+      // `length`; any other is accepted as before, but as an unconfirmed
+      // completion (see below).
+      const unconfirmed =
+        response.finishReason === 'other' &&
+        !isCutOffFinishReason(response.rawFinishReason);
+      if (response.finishReason !== 'stop' && !unconfirmed)
         throw refusal('finish_reason', incomplete, response.finishReason);
       if (response.truncated) throw refusal('truncated', incomplete);
       if (response.toolCalls?.length) throw refusal('tool_calls', incomplete);
@@ -527,9 +535,10 @@ export function createSDKProposalGenerator(
       }
       return {
         output,
-        // Only a `stop` finish reason reaches here: `length` and every other
-        // reason were refused above, so the reply finished normally (#4452).
-        completion: 'complete',
+        // `stop` means the reply finished normally (#4452): `length` and every
+        // other named reason were refused above. An `other` reason the server
+        // did not explain as a cut-off is accepted but never confirmed.
+        completion: unconfirmed ? 'unknown' : 'complete',
         usage: safeUsage(response.usage),
         ...(response.model && response.model !== identity.model
           ? { responseModel: response.model }
@@ -537,6 +546,35 @@ export function createSDKProposalGenerator(
       };
     },
   };
+}
+
+/**
+ * Server finish reasons the SDK maps to `'other'` that still mean the reply
+ * was cut short (vLLM `abort`, cancellation, or a provider's own name for its
+ * output limit). Compared case-insensitively on the raw value.
+ */
+const CUT_OFF_FINISH_REASONS = new Set([
+  'abort',
+  'aborted',
+  'cancel',
+  'cancelled',
+  'canceled',
+  'timeout',
+  'timed_out',
+  'length',
+  'max_tokens',
+  'max_output_tokens',
+  'truncated',
+  'content_filter',
+  'tool_calls',
+]);
+
+/** Whether a raw `'other'` finish reason says the reply did not finish. */
+function isCutOffFinishReason(raw: unknown): boolean {
+  return (
+    typeof raw === 'string' &&
+    CUT_OFF_FINISH_REASONS.has(raw.trim().toLowerCase())
+  );
 }
 
 /** Adapt the SDK's optional capability to core's injected decision boundary. */

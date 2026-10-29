@@ -1372,6 +1372,8 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
     'tool_calls',
     'missing',
     'unknown',
+    'end_turn',
+    'abort',
     'malformed',
     'model',
     'canonical-model',
@@ -1413,7 +1415,8 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
                     finish_reason:
                       mode === 'model' ||
                       mode === 'malformed' ||
-                      mode === 'feedback'
+                      mode === 'feedback' ||
+                      mode === 'canonical-model'
                         ? 'stop'
                         : mode,
                   }),
@@ -1452,12 +1455,17 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
         mode === 'stop' ||
         mode === 'missing' ||
         mode === 'unknown' ||
+        mode === 'end_turn' ||
         mode === 'feedback' ||
         mode === 'canonical-model'
       ) {
+        // SDK ai 0.111 reports a server finish reason outside its set as
+        // `other` (0.110 folded it into `stop`): the reply is still accepted,
+        // but its completion is no longer confirmed.
+        const other = mode === 'unknown' || mode === 'end_turn';
         expect(await result).toEqual({
           output: { outcome: 'no_action', suggestions: [], splits: [] },
-          completion: 'complete',
+          completion: other ? 'unknown' : 'complete',
           usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 },
           ...(mode === 'canonical-model'
             ? { responseModel: `${identity.model}-2025-04-14` }
@@ -1487,6 +1495,18 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
               },
             },
           },
+        });
+      } else if (
+        mode === 'length' ||
+        mode === 'tool_calls' ||
+        mode === 'abort'
+      ) {
+        // A cut-off reply is refused whether the server names it with a
+        // canonical reason or one the SDK only passes through as `other`.
+        await expect(result).rejects.toMatchObject({
+          name: 'ProposalResponseError',
+          problem: 'finish_reason',
+          finishReason: mode === 'abort' ? 'other' : mode,
         });
       } else await expect(result).rejects.toThrow();
     } finally {
