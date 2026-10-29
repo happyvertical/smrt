@@ -1,6 +1,6 @@
 # SMRT application chart
 
-Chart `0.2.1` renders the maintenance-window contract described in
+Chart `0.3.0` renders the maintenance-window contract described in
 [the deployment guide](../../docs/content/deployment.md). It creates application
 Deployments, Services, CronJobs, one static responder, an Ingress, an inventory
 ConfigMap, and a retained migration Job. Existing databases, private buckets and
@@ -147,8 +147,9 @@ identity can differ from the actual workload controller, and policies can change
 this is current evidence, not a guarantee of future admission. Actual observed
 Pods must preserve the rendered security, service-account, scratch and credential
 projection envelope. Qualify real execution under the hardened settings with the
-disposable deployment exercise before adoption. Version 0.2.1 is a new artifact;
-published charts 0.1.0 and 0.2.0 must never be overwritten.
+disposable deployment exercise before adoption. Published charts 0.1.0, 0.2.0 and 0.2.1 must never be overwritten.
+The bounded legacy adoption and continuous static contract ships as feature-minor
+chart 0.3.0; it does not replace any previously published artifact.
 
 ### Bounded legacy resource adoption
 
