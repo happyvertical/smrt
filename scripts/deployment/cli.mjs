@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import {
+  planTlsRotation,
+  applyTlsRotation,
+  rollbackTlsRotation,
+  assertTlsSettled,
+} from './tls.mjs';
 import { createLiveAdapter } from './live.mjs';
 import {
   planAdoption,
@@ -21,6 +27,9 @@ export async function main(args, adapterFactory = createLiveAdapter) {
   const [operation, configuration, input, releaseId] = args;
   demand(
     [
+      'tls-plan',
+      'tls-apply-or-resume',
+      'tls-rollback',
       'plan',
       'apply-or-resume',
       'status',
@@ -30,7 +39,7 @@ export async function main(args, adapterFactory = createLiveAdapter) {
       'adopt-or-resume',
       'adopt-status',
     ].includes(operation) && configuration,
-    'Usage: cli.mjs plan|apply-or-resume|status|recover|repair|adopt-plan|adopt-or-resume|adopt-status config.json [target-runtime.json|plan.json] [release-id]',
+    'Usage: cli.mjs plan|apply-or-resume|status|recover|repair|adopt-plan|adopt-or-resume|adopt-status|tls-plan|tls-apply-or-resume|tls-rollback config.json [target-runtime.json|plan.json] [release-id]',
   );
   const config = JSON.parse(await readFile(configuration, 'utf8'));
   const adapter = await adapterFactory(config);
@@ -52,6 +61,18 @@ export async function main(args, adapterFactory = createLiveAdapter) {
       staging: Boolean(snapshot.staging),
     };
   }
+  if (operation.startsWith('tls-')) {
+    demand(input, 'TLS operation requires a reviewed input', 'TLS_TRANSITION');
+    if (adapter.assertAdoptionComplete)
+      await adapter.assertAdoptionComplete(await adapter.read());
+    const value = JSON.parse(await readFile(input, 'utf8'));
+    if (operation === 'tls-plan')
+      return planTlsRotation(await adapter.read(), value, releaseId);
+    return operation === 'tls-rollback'
+      ? rollbackTlsRotation(config, adapter, value)
+      : applyTlsRotation(config, adapter, value);
+  }
+  if (operation !== 'status') assertTlsSettled((await adapter.read()).document);
   if (operation !== 'status' && adapter.assertAdoptionComplete)
     await adapter.assertAdoptionComplete(await adapter.read());
   if (operation === 'plan') {

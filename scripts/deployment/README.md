@@ -305,3 +305,73 @@ the nonsecret `git` user, including `ssh://git@github.com/willgriffin/jobgeni.gi
 Passwords, HTTP userinfo, queries, fragments and control characters are rejected.
 The URL is preserved exactly for native Flux source equality; it is not rewritten
 or converted to a different transport during adoption.
+
+## Bounded immutable Ingress TLS rotation
+
+For an existing accepted **active** release, prepare only named reference changes:
+
+```sh
+# tls-refs.json: [{"name":"existing-ingress","tlsSecretName":"public-tls-v2"}]
+node scripts/deployment/cli.mjs tls-plan deployment-config.json tls-refs.json tls-rotation-001 > tls-plan.json
+node scripts/deployment/cli.mjs tls-apply-or-resume deployment-config.json tls-plan.json
+# Repeat after actual Flux acknowledgement until complete:true.
+node scripts/deployment/cli.mjs tls-apply-or-resume deployment-config.json tls-plan.json
+# Only an exactly correlated native TLS failure permits this operation:
+node scripts/deployment/cli.mjs tls-rollback deployment-config.json tls-plan.json
+```
+
+This is not a configuration editor. Only Secret references on existing TLS-enabled
+Ingress identities can change. Hosts, names, routes, annotations, runtime snapshots,
+Pod templates, database/bucket bindings and the entire release phase/sequence/attempt
+stay unchanged. The plan binds the complete predecessor Git document and revision;
+publication uses exact-predecessor private-index CAS. A pending TLS transition owns
+the release and blocks ordinary runtime mutations. Resume always reobserves native
+state; a saved status is not evidence that HTTPS is healthy.
+
+The independently owned new and prior Secrets must remain immutable and versioned.
+The runner reads actual UID/resourceVersion, checks the private key against the
+leaf in memory, validates SAN/time, and uses **OpenSSL 3** to verify the certificate
+chain and server purpose against trusted roots. Newly selected certificates need
+at least one hour of remaining validity. No private key is written to a temporary
+file or retained in a plan/journal. Certificates used by cert-manager can continue
+renewing independently; this command never creates, mutates or recreates Secrets.
+
+The reserved `smrt.happyvertical.com/tls-transition` annotation records a bounded
+transition identity, exact prior/next references, immutable native Secret identities
+and leaf fingerprints, and actual Deployment/CronJob UID plus Pod-template hashes.
+It moves `pending → complete` or `rolling-back → rolled-back`. A complete status
+still requires native acknowledgement before `complete:true` is returned. Prior
+references stay bound for rollback; a subsequent ordinary runtime release or recovery phase transition closes
+that rollback window and drops the terminal TLS annotation. Historical records
+remain in protected Git. Secret cleanup remains an independently reviewed policy.
+
+Each TLS route requires HTTPS assertions and matching private Service HTTP
+assertions for the same paths/status/body expectations. Actual Node TLS handshakes
+verify original SNI, trust and the exact leaf fingerprint from the named Secret.
+The ordinary Flux/Helm/source, immutable-binding, runtime, routing and HTTP checks
+remain mandatory. Private Service checks continue when a public certificate cannot
+be authenticated. A valid-but-stale served certificate still undergoes the normal
+public HTTP checks. Transport/DNS failure, changed Secret UID, runtime/template
+change, unrelated host failure or HTTP 500 cannot authorize rollback.
+
+Rollback requires a fresh native `TLS_CORRELATED_FAILURE` for changed TLS hosts,
+bound to the exact transition/full document/Git revision and immutable bindings.
+Only failed HTTPS authentication requests can be bypassed during that proof;
+no source/runtime/private-HTTP gate is waived. Preflight validates the retained
+prior certificate/key/chain/SAN and expiry again, then refreshes the actual failed
+current observation before CAS. It restores only the exact retained references.
+If the prior certificate has expired or another gate fails, rollback refuses.
+
+The existing trusted SDK dependency injection can supply public CA certificates
+and a connect-address mapper through `options.tls`. The mapper cannot override the
+original TLS servername or return an observed success flag. The CLI uses real DNS
+and native trust stores; no caller-supplied TLS observation or verification skip
+exists. Trusted application CI evidence must bind the current active configuration
+for each new TLS plan; TLS-only preflight preserves that validated predecessor
+configuration association while checking the new certificate bindings natively.
+
+The disposable legacy exercise authors real HTTPS rotation and a correlated
+rollback against ingress-nginx using a temporary Cilium API-watch fault; it also
+checks native controller UIDs and exact Pod-template preservation. Its successful
+retained CI evidence is required before qualification. Local cryptographic/socket
+and constructor tests do not establish Kubernetes/Flux qualification.

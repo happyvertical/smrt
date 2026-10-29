@@ -26,6 +26,23 @@ export function demand(condition, reason, code) {
   if (!condition) throw new DeploymentError(reason, code);
 }
 export const identity = (document) => hash(document.spec.values);
+export function assertNoPendingTls(document) {
+  const raw =
+    document?.metadata?.annotations?.['smrt.happyvertical.com/tls-transition'];
+  if (raw === undefined) return;
+  let marker;
+  try {
+    marker = JSON.parse(raw);
+  } catch {
+    demand(false, 'Malformed TLS transition annotation', 'TLS_TRANSITION');
+  }
+  demand(
+    marker && ['complete', 'rolled-back'].includes(marker.status),
+    'Pending TLS transition owns this release',
+    'TLS_TRANSITION',
+  );
+}
+
 export const phaseRenderedRuntime = (values) =>
   ['verify', 'active'].includes(values.release.phase) ? values.target : values.current;
 const object = (value) =>
@@ -325,6 +342,7 @@ export function validate(document) {
   return v;
 }
 export function planRelease(previous, target, id) {
+  assertNoPendingTls(previous);
   const old = validate(previous);
   demand(
     old.release.phase === 'active',
@@ -333,6 +351,7 @@ export function planRelease(previous, target, id) {
   demand(old.release.id !== id, 'Release id must be unique');
   const next = structuredClone(previous);
   if (next.metadata.annotations) {
+    delete next.metadata.annotations['smrt.happyvertical.com/tls-transition'];
     delete next.metadata.annotations[
       'smrt.happyvertical.com/binding-reference-set'
     ];
@@ -358,6 +377,7 @@ export function planRelease(previous, target, id) {
   return next;
 }
 export function transition(document, evidence, recovery = false) {
+  assertNoPendingTls(document);
   const v = validate(document);
   demand(
     evidence.identity === identity(document) && evidence.accepted === true,
@@ -423,6 +443,7 @@ export function transition(document, evidence, recovery = false) {
   if (v.release.phase === 'active')
     result.spec.values.current = structuredClone(v.target);
   result.metadata.annotations ??= {};
+  delete result.metadata.annotations['smrt.happyvertical.com/tls-transition'];
   if (recovery && v.release.phase === 'migrate')
     result.metadata.annotations['smrt.happyvertical.com/failed-migration'] =
       JSON.stringify(evidence.failedMigration);
@@ -456,7 +477,10 @@ export async function applyOrResume(
 ) {
   const snapshot = await adapter.read();
   const current = snapshot.document;
-  if (current) validate(current);
+  if (current) {
+    assertNoPendingTls(current);
+    validate(current);
+  }
   if (planned) {
     const v = validate(planned);
     demand(
@@ -499,6 +523,11 @@ export async function applyOrResume(
     allowFailedMigration:
       recovery && current.spec.values.release.phase === 'migrate',
   });
+  demand(
+    evidence.failureCode !== 'TLS_CORRELATED_FAILURE',
+    'Correlated TLS failure requires the bounded TLS rollback command',
+    'TLS_TRANSITION',
+  );
   if (current.spec.values.release.phase === 'active' && !recovery) {
     if (evidence.proven === true) return { complete: true, evidence };
     recovery = true;
@@ -509,6 +538,7 @@ export async function applyOrResume(
 }
 
 export function repairRelease(document, target, evidence) {
+  assertNoPendingTls(document);
   const v = validate(document);
   demand(
     v.release.phase === 'stopped' &&

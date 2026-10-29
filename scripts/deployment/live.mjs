@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { tlsMarker, tlsAnnotation, tlsDocument, validateTlsPlan, validateTlsCurrent } from './tls.mjs';
+import { inspectTlsSecret, retainedTlsIdentity, servedTlsIdentity } from './tls-native.mjs';
 import { createAdoptionMethods } from './live-adoption.mjs';
 import {
   DeploymentError,
@@ -384,6 +386,60 @@ export function createLiveAdapter(
       references.set(`${ref.name}/${ref.key}`, ref);
     return [...references.values()];
   }
+  async function tlsBindings(
+    document,
+    minimumValiditySeconds = 0,
+    changedNames,
+  ) {
+    const groups = new Map();
+    for (const route of normalizedIngressRecords(
+      document.spec.values,
+      document.metadata.name,
+    ))
+      if (route.tlsSecretName) {
+        const hosts = groups.get(route.tlsSecretName) ?? [];
+        hosts.push(route.host);
+        groups.set(route.tlsSecretName, hosts);
+      }
+    const result = [];
+    for (const [name, hosts] of groups)
+      result.push(
+        await inspectTlsSecret(await get('secret', name), hosts, {
+          trustedCa: options.tls?.trustedCa,
+          minimumValiditySeconds:
+            changedNames && !changedNames.has(name)
+              ? 0
+              : minimumValiditySeconds,
+        }),
+      );
+    const marker = tlsMarker(document);
+    if (marker) {
+      demand(
+        Array.isArray(marker.retained) && marker.retained.length <= 18,
+        'Invalid retained TLS bindings',
+        'TLS_TRANSITION',
+      );
+      for (const old of marker.retained) {
+        demand(
+          old &&
+            typeof old.name === 'string' &&
+            /^[a-z][a-z0-9-]{0,62}$/.test(old.name),
+          'Invalid retained TLS binding name',
+          'TLS_TRANSITION',
+        );
+        const actual =
+          result.find((r) => r.name === old.name) ??
+          retainedTlsIdentity(await get('secret', old.name));
+        demand(
+          hash(actual) === hash(old),
+          'Retained TLS immutable binding changed',
+          'TLS_BINDING',
+        );
+        if (!result.some((r) => r.name === old.name)) result.push(actual);
+      }
+    }
+    return result;
+  }
   async function bindings(document) {
     const v = validate(document);
     const proof = [];
@@ -400,22 +456,8 @@ export function createLiveAdapter(
         secret.metadata.resourceVersion,
       ]);
     }
-    for (const name of new Set(
-      normalizedIngressRecords(v, document.metadata.name)
-        .map((r) => r.tlsSecretName)
-        .filter(Boolean),
-    )) {
-      const secret = await get('secret', name);
-      demand(
-        secret.immutable === true,
-        'TLS Secret must be immutable and versioned',
-      );
-      proof.push([
-        secret.metadata.name,
-        secret.metadata.uid,
-        secret.metadata.resourceVersion,
-      ]);
-    }
+    const tls=await tlsBindings(document);
+    for(const binding of tls)proof.push([binding.name,binding.uid,binding.resourceVersion]);
     for (const binding of [v.current, v.target]
       .filter(Boolean)
       .flatMap(readOnlyConfigBindings)) {
@@ -502,7 +544,7 @@ export function createLiveAdapter(
     );
     return object;
   }
-  async function preflight(document, adoptionContext) {
+  async function preflight(document, adoptionContext, tlsContext) {
     demand(
       adoptionContext ||
         document.metadata.annotations?.[
@@ -511,6 +553,7 @@ export function createLiveAdapter(
       'Pending adoption blocks normal release preflight',
     );
     fluxPolicy(document);
+    if(tlsContext){validateTlsPlan(tlsContext);validateTlsCurrent(tlsContext,document);}
     if (!adoptionContext && Object.values(document.spec.values.current?.workloads ?? {}).some(isContinuousStatic))
       await adoption.prepareReleaseWriterFence();
     const bindingProof = await bindings(document);
@@ -563,7 +606,7 @@ export function createLiveAdapter(
         hash({
           maintenance: v.maintenance,
           bindings: v.bindings,
-          ingress: v.ingress,
+          ingress: tlsContext ? tlsContext.predecessor.document.spec.values.ingress : v.ingress,
         }),
       'Application configuration validation identity mismatch',
     );
@@ -988,6 +1031,7 @@ export function createLiveAdapter(
     maintenance,
     publicRoute = false,
     releaseName = config.helmReleaseName ?? v.app.name,
+    tlsFailures = new Set(),
   ) {
     demand(assertions?.length > 0, 'Missing HTTP assertions');
     for (const assertion of assertions) {
@@ -1009,6 +1053,7 @@ export function createLiveAdapter(
           'Private HTTP assertion must use the exact runtime Service DNS',
         );
       }
+      if(url.protocol==='https:'&&tlsFailures.has(url.hostname))continue;
       const response = await request(assertion.url, {
         redirect: 'manual',
         signal: AbortSignal.timeout(10000),
@@ -1167,7 +1212,7 @@ export function createLiveAdapter(
 
   // Only the private adoption helper can select the separately fenced adoption
   // path. Public observe options cannot suppress the ordinary writer fence.
-  async function provePhase(document, revision, options = {}, adoptionProof = false) {
+  async function provePhase(document, revision, options = {}, adoptionProof = false, tlsFailures = new Set()) {
     const v = validate(document);
     let failedMigration;
     const before = await bindings(document);
@@ -1309,6 +1354,8 @@ export function createLiveAdapter(
           { ...v, ingress: { ...v.ingress, host: route.host } },
           false,
           true,
+          document.metadata.name,
+          tlsFailures,
         );
       }
     }
@@ -1412,7 +1459,7 @@ export function createLiveAdapter(
         document.metadata.name,
       );
       if (phase === 'active')
-        await http(config.publicAssertions, v, false, true);
+        await http(config.publicAssertions, v, false, true, document.metadata.name, tlsFailures);
     }
     demand(
       before === (await bindings(document)),
@@ -1427,12 +1474,13 @@ export function createLiveAdapter(
       bindings: before,
     };
   }
-  async function cas(snapshot, document) {
+  async function cas(snapshot, document, exactPredecessor = false) {
     const latest = await read();
     demand(
       latest.raw === snapshot.raw,
       'Release CAS conflict; another release changed this file',
     );
+    if(exactPredecessor)demand(latest.revision===snapshot.revision&&hash(latest.document)===hash(snapshot.document),'TLS transition predecessor CAS changed','TLS_TRANSITION');
     if (latest.revision !== snapshot.revision) {
       await git(
         'merge-base',
@@ -1513,6 +1561,239 @@ export function createLiveAdapter(
       await rm(index, { force: true });
     }
   }
+  const tlsRuntimeTemplates = (all) =>
+    all
+      .filter((o) => ['Deployment', 'CronJob'].includes(o.kind))
+      .map((o) => ({
+        kind: o.kind,
+        name: o.metadata.name,
+        uid: o.metadata.uid,
+        templateSha256: hash(
+          o.kind === 'CronJob'
+            ? o.spec.jobTemplate.spec.template
+            : o.spec.template,
+        ),
+      }))
+      .sort((a, b) =>
+        `${a.kind}/${a.name}`.localeCompare(`${b.kind}/${b.name}`),
+      );
+  async function prepareTls(
+    plan,
+    status,
+    rollback,
+    retained,
+    runtimeTemplates,
+  ) {
+    validateTlsPlan(plan);
+    runtimeTemplates ??= tlsRuntimeTemplates(await namespaceInventory());
+    if (!retained) {
+      const old = await tlsBindings(plan.predecessor.document);
+      const candidate = tlsDocument(
+        plan,
+        old,
+        'pending',
+        null,
+        runtimeTemplates,
+      );
+      // Validate every new referenced leaf/chain/key/host before publication.
+      const changedNames = new Set(
+        plan.after
+          .filter((r, i) => r.tlsSecretName !== plan.before[i].tlsSecretName)
+          .map((r) => r.tlsSecretName),
+      );
+      const fresh = await tlsBindings(
+        {
+          ...candidate,
+          metadata: {
+            ...candidate.metadata,
+            annotations: {
+              ...candidate.metadata.annotations,
+              [tlsAnnotation]: undefined,
+            },
+          },
+        },
+        3600,
+        changedNames,
+      );
+      const map = new Map([...old, ...fresh].map((r) => [r.name, r]));
+      retained = [...map.values()];
+      const expectedNames = new Set(
+        [...plan.before, ...plan.after]
+          .map((r) => r.tlsSecretName)
+          .filter(Boolean),
+      );
+      retained = retained.filter((r) => expectedNames.has(r.name));
+    }
+    const candidate = tlsDocument(
+      plan,
+      retained,
+      status,
+      rollback,
+      runtimeTemplates,
+    );
+    validateTlsCurrent(plan, candidate);
+    await preflight(candidate, undefined, plan);
+    candidate.metadata.annotations['smrt.happyvertical.com/binding-versions'] =
+      await bindings(candidate);
+    return candidate;
+  }
+  async function observeTls(document, revision) {
+    demand(
+      document.spec.values.release.phase === 'active',
+      'TLS observation requires active runtime',
+      'TLS_TRANSITION',
+    );
+    await acknowledge(document, revision);
+    const live = await get('helmrelease', document.metadata.name);
+    demand(
+      live.metadata.annotations?.[tlsAnnotation] ===
+        document.metadata.annotations?.[tlsAnnotation],
+      'Native TLS transition marker differs from protected Git',
+      'TLS_TRANSITION',
+    );
+    const marker = tlsMarker(document);
+    const runtimeTemplates = tlsRuntimeTemplates(await namespaceInventory());
+    if (marker)
+      demand(
+        hash(runtimeTemplates) === hash(marker.runtimeTemplates),
+        'Runtime Pod templates changed during TLS transition',
+        'TLS_TRANSITION',
+      );
+    const expected = await tlsBindings(document);
+    const before = await bindings(document);
+    const observations = [];
+    for (const route of normalizedIngressRecords(
+      document.spec.values,
+      document.metadata.name,
+    ).filter((r) => r.tlsSecretName)) {
+      const assertions = [
+        ...(config.publicAssertions ?? []),
+        ...(config.staticAssertions ?? []),
+      ];
+      const url = assertions
+        .map((a) => new URL(a.url))
+        .find((u) => u.hostname === route.host && u.protocol === 'https:');
+      demand(
+        url,
+        'HTTPS assertion required for each TLS route',
+        'TLS_TRANSITION',
+      );
+      const service = `${document.metadata.name}-${route.workload}.${namespace}.svc.cluster.local`;
+      const publicChecks = assertions.filter((a) => {
+        const u = new URL(a.url);
+        return u.hostname === route.host && u.protocol === 'https:';
+      });
+      demand(
+        publicChecks.every((a) =>
+          config.privateAssertions?.some((p) => {
+            const u = new URL(p.url),
+              target = new URL(a.url);
+            return (
+              u.protocol === 'http:' &&
+              u.hostname === service &&
+              u.pathname === target.pathname &&
+              u.search === target.search &&
+              Number(u.port || 80) ===
+                document.spec.values.target.workloads[route.workload].service
+                  .port &&
+              p.status === a.status &&
+              (a.bodyIncludes === undefined ||
+                p.bodyIncludes === a.bodyIncludes)
+            );
+          }),
+        ),
+        'TLS routes require matching private Service HTTP assertions',
+        'TLS_TRANSITION',
+      );
+      try {
+        observations.push(
+          await servedTlsIdentity(
+            route.host,
+            Number(url.port || 443),
+            expected.find((r) => r.name === route.tlsSecretName).leafSha256,
+            options.tls,
+          ),
+        );
+      } catch {
+        demand(
+          false,
+          'Native TLS transport unavailable; failure is not correlated',
+          'TLS_TRANSPORT',
+        );
+      }
+    }
+    const failed = observations.filter((o) => o.code);
+    const phaseProof = await provePhase(
+      document,
+      revision,
+      {},
+      false,
+      new Set(
+        failed.filter((o) => o.code !== 'TLS_CERTIFICATE').map((o) => o.host),
+      ),
+    );
+    demand(
+      before === (await bindings(document)),
+      'TLS bindings changed during observation',
+      'TLS_BINDING',
+    );
+    await acknowledge(document, revision);
+    demand(
+      observations.every(
+        (o) => o.observedAt >= Date.now() - 30000 && o.observedAt <= Date.now(),
+      ),
+      'TLS observations expired during native phase proof',
+      'TLS_TRANSPORT',
+    );
+    demand(
+      hash(runtimeTemplates) ===
+        hash(tlsRuntimeTemplates(await namespaceInventory())),
+      'Runtime Pod templates changed during TLS observation',
+      'TLS_TRANSITION',
+    );
+    if (!failed.length)
+      return {
+        ...phaseProof,
+        accepted: true,
+        proven: true,
+        revision,
+        documentSha256: hash(document),
+        observedAt: Date.now(),
+        observations,
+        runtimeTemplates,
+      };
+    demand(
+      marker?.identity,
+      'Uncorrelated predecessor TLS identity failure',
+      'TLS_TRANSPORT',
+    );
+    const changed = new Set(
+      marker.after
+        .filter((r, i) => r.tlsSecretName !== marker.before[i]?.tlsSecretName)
+        .map((r) => r.host),
+    );
+    demand(
+      failed.every((r) => changed.has(r.host)),
+      'TLS failure affects an unchanged route; rollback is unrelated',
+      'TLS_TRANSPORT',
+    );
+    return {
+      accepted: true,
+      proven: false,
+      identity: identity(document),
+      revision,
+      bindings: before,
+      failureCode: 'TLS_CORRELATED_FAILURE',
+      tlsFailure: {
+        transitionIdentity: marker.identity,
+        documentSha256: hash(document),
+        revision,
+        bindings: before,
+        hosts: failed,
+        observedAt: Date.now(),
+      },
+    };
+  }
   const namespaceInventory = async () =>
     items(
       await json(
@@ -1578,11 +1859,16 @@ export function createLiveAdapter(
     read,
     preflight,
     cas,
+    prepareTls,
+    observeTls,
+    casTls:(snapshot,document)=>cas(snapshot,document,true),
     observe: async (document, revision, options = {}) => {
       await acknowledge(document, revision, options);
       let result;
       try {
-        result = await provePhase(document, revision, options);
+        result = document.spec.values.release.phase==='active'&&tlsMarker(document)
+          ? await observeTls(document,revision)
+          : await provePhase(document, revision, options);
       } catch (error) {
         if (options.allowFailedMigration) throw error;
         result = {
