@@ -490,6 +490,11 @@ export {
   type MailboxAuthenticationServiceOptions,
 } from './services/MailboxAuthenticationService.js';
 export {
+  type EnrolledMailbox,
+  MailboxEnrollmentService,
+  type MailboxEnrollmentServiceOptions,
+} from './services/MailboxEnrollmentService.js';
+export {
   type AcceptedTenantInvitation,
   type IssuedTenantInvitation,
   type PreparedTenantInvitation,
