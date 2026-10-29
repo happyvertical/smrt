@@ -2,7 +2,11 @@
 import type { Snippet } from 'svelte';
 import { onMount, untrack } from 'svelte';
 import { SMRT_CASCADE_LAYERS_CSS } from '../styles/layers.js';
-import { setThemeContext, type ThemeContext } from './context.svelte.js';
+import {
+  setThemeContext,
+  type ThemeContext,
+  tryGetThemeContext,
+} from './context.svelte.js';
 import { derivePrimaryOverrides } from './create-theme.js';
 import { generateThemeVariables } from './css-generator.js';
 import { FORCED_COLORS_TOKENS } from './forced-colors.js';
@@ -56,6 +60,16 @@ interface Props {
    * static stylesheet for a built-in preset.
    */
   inlineVariables?: boolean;
+  /**
+   * Where the theme attributes land. `document` (the default for a root
+   * provider) also stamps `data-theme`, `data-color-scheme`, the `dark` class,
+   * `color-scheme`, `data-contrast`, `data-density` and
+   * `data-smrt-theme-changing` onto `<html>`. `local` themes only this
+   * provider's own wrapper and never touches the document. A provider nested
+   * inside another `ThemeProvider` is `local` by default, so an embedded
+   * widget cannot retheme its host page (#4485).
+   */
+  scope?: 'document' | 'local';
   /** Content */
   children: Snippet;
 }
@@ -70,6 +84,7 @@ let {
   persist = defaultThemeConfig.persist,
   storageKey = defaultThemeConfig.storageKey,
   inlineVariables,
+  scope,
   children,
   density,
   contrast = 'auto',
@@ -318,6 +333,13 @@ const context: ThemeContext = {
   updateConfig,
 };
 
+// Resolved before this provider registers itself: a parent context means this
+// provider is nested, so it themes its own subtree only unless told otherwise.
+// Fixed at creation: a provider does not move between root and nested.
+const writesDocument = untrack(
+  () => (scope ?? (tryGetThemeContext() ? 'local' : 'document')) === 'document',
+);
+
 setThemeContext(context);
 
 onMount(() => {
@@ -362,7 +384,7 @@ onMount(() => {
 
 // Update document classes and attributes
 $effect(() => {
-  if (typeof document !== 'undefined' && mounted) {
+  if (typeof document !== 'undefined' && mounted && writesDocument) {
     const html = document.documentElement;
 
     // Dark mode class for Tailwind/tailwindcss-dark-mode compatibility
@@ -422,7 +444,7 @@ $effect(() => {
 });
 
 $effect(() => {
-  if (typeof document === 'undefined' || !mounted) return;
+  if (typeof document === 'undefined' || !mounted || !writesDocument) return;
   document.documentElement.toggleAttribute(
     'data-smrt-theme-changing',
     isChangingScheme,
