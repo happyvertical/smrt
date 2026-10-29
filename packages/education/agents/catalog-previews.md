@@ -38,9 +38,15 @@ attribution appearing in a future sync make the preview unavailable.
 Enumeration performs metadata reads and at most one **preview image** GET per
 page; it never GETs original PDFs/ZIPs. It accepts only official HTTPS origin and
 opaque path, refuses redirects, and bounds the complete network/body operation
-by the adapter deadline (20 seconds default, 60 maximum). PNG previews have a
+by the adapter deadline (20 seconds default, 60 maximum). Required HTML/HEAD
+work completes before optional sync previews, which get an independent deadline
+of one quarter of that budget, capped at two seconds and the remaining total
+enumeration budget. A hung preview cannot pause
+metadata enumeration or its cursor. PNG previews have a
 2 MiB byte cap and 4096-pixel width/height cap. SVG, HTML, JPEG and other formats
-are currently unavailable. This uses existing provider request bounds rather
+are currently unavailable. Only non-interlaced, static 8-bit RGB/RGBA PNGs are
+verified: complete chunks/CRCs/IEND and bounded inflated scanlines must be valid;
+truncated or corrupt data never becomes a verified preview. This uses existing provider request bounds rather
 than a general URL proxy. A preview failure leaves catalog metadata readable.
 `CatalogReadService.search()` performs no image or content fetches.
 
@@ -71,7 +77,8 @@ revision and optional rights expiry on **every request**, including cache hits.
 The host must check actor membership/active tenant, not merely trust strings in a
 request. Do not expose an unscoped collection read as this adapter.
 
-The per-service cache holds at most 16 MiB of verified public image bytes for at
+Rights expiry is checked again after awaited loading/verification and before
+serving or inserting cached bytes. The per-service cache holds at most 16 MiB of verified public image bytes for at
 most 60 seconds; reuse a service instance to benefit from it. Cache lookup occurs
 after authorization. Changed length, dimensions or SHA-256, expiry, missing or
 invalid metadata, upstream failures and access denial yield uniform 404 with

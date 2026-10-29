@@ -1,3 +1,4 @@
+import { crc32, inflateSync } from 'node:zlib';
 import type { CatalogActor, CatalogSourceRecord } from './catalog-contracts.js';
 import { CatalogPolicy } from './catalog-policy.js';
 
@@ -130,7 +131,7 @@ export function catalogPreviewFor(
     : undefined;
 }
 
-/** PNG signature and IHDR dimensions, without decoding or transforming originals. */
+/** Verify complete bounded static 8-bit RGB/RGBA PNG data; never transform originals. */
 export function catalogPreviewPngDimensions(bytes: Uint8Array): {
   width: number;
   height: number;
@@ -150,6 +151,64 @@ export function catalogPreviewPngDimensions(bytes: Uint8Array): {
     ![width, height].every((n) => n > 0 && n <= CATALOG_PREVIEW_MAX_DIMENSION)
   )
     throw new Error('Catalog preview dimensions exceed bounds.');
+  // Keep the supported subset explicit. Other encodings remain unavailable.
+  const channels = bytes[25] === 2 ? 3 : bytes[25] === 6 ? 4 : 0;
+  if (
+    bytes.length < 45 ||
+    bytes[24] !== 8 ||
+    !channels ||
+    bytes[26] !== 0 ||
+    bytes[27] !== 0 ||
+    bytes[28] !== 0
+  )
+    throw new Error('Unsupported catalog preview PNG encoding.');
+  const compressed: Uint8Array[] = [];
+  let offset = 8;
+  let ended = false;
+  let idatEnded = false;
+  while (offset + 12 <= bytes.length) {
+    const length = view.getUint32(offset);
+    if (length > bytes.length - offset - 12)
+      throw new Error('Truncated catalog preview PNG chunk.');
+    const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+    const end = offset + 12 + length;
+    if (
+      !/^[a-zA-Z]{2}[A-Z][a-zA-Z]$/.test(type) ||
+      crc32(bytes.subarray(offset + 4, end - 4)) !== view.getUint32(end - 4)
+    )
+      throw new Error('Invalid catalog preview PNG chunk.');
+    if (type === 'IHDR') {
+      if (offset !== 8 || length !== 13)
+        throw new Error('Invalid catalog preview PNG header.');
+    } else if (type === 'IDAT') {
+      if (idatEnded)
+        throw new Error('Invalid catalog preview PNG image ordering.');
+      compressed.push(bytes.subarray(offset + 8, end - 4));
+    } else {
+      if (compressed.length) idatEnded = true;
+      if (type === 'IEND') {
+        if (length || end !== bytes.length)
+          throw new Error('Invalid catalog preview PNG ending.');
+        ended = true;
+      } else if (type === 'PLTE') {
+        if (compressed.length || !length || length > 768 || length % 3)
+          throw new Error('Invalid catalog preview PNG palette.');
+      } else if (/^[A-Z]/.test(type) || ['acTL', 'fcTL', 'fdAT'].includes(type))
+        throw new Error('Unsupported catalog preview PNG chunk.');
+    }
+    offset = end;
+  }
+  if (!ended || offset !== bytes.length || !compressed.length)
+    throw new Error('Incomplete catalog preview PNG.');
+  const stride = width * channels + 1;
+  const raw = inflateSync(Buffer.concat(compressed), {
+    maxOutputLength: stride * height,
+  });
+  if (raw.length !== stride * height)
+    throw new Error('Invalid catalog preview PNG pixel data.');
+  for (let row = 0; row < height; row++)
+    if (raw[row * stride] > 4)
+      throw new Error('Invalid catalog preview PNG filter.');
   return { width, height };
 }
 
@@ -177,7 +236,7 @@ export interface CatalogPreviewLoader {
 export class CatalogPreviewService {
   private readonly cache = new Map<
     string,
-    { bytes: Uint8Array; until: number }
+    { bytes: Uint8Array; until: number; width: number; height: number }
   >();
   private cacheBytes = 0;
   constructor(
@@ -217,7 +276,15 @@ export class CatalogPreviewService {
         this.cache.delete(id);
         this.cacheBytes -= entry.bytes.length;
       }
-    let bytes = this.cache.get(key)?.bytes;
+    const cached = this.cache.get(key);
+    if (
+      cached &&
+      (cached.bytes.length !== preview.byteLength ||
+        cached.width !== preview.width ||
+        cached.height !== preview.height)
+    )
+      return unavailable();
+    let bytes = cached?.bytes;
     if (!bytes) {
       try {
         bytes = await this.loader.loadPreview(preview);
@@ -235,6 +302,7 @@ export class CatalogPreviewService {
           hash !== preview.sha256
         )
           return unavailable();
+        if (!catalogPreviewFor(record)) return unavailable();
         bytes = Uint8Array.from(bytes);
         while (this.cacheBytes + bytes.length > 16 * 1024 * 1024) {
           const first = this.cache.entries().next().value;
@@ -244,6 +312,7 @@ export class CatalogPreviewService {
         }
         this.cache.set(key, {
           bytes,
+          ...dimensions,
           until: Math.min(
             now + 60_000,
             preview.rights.expiresAt
@@ -256,13 +325,7 @@ export class CatalogPreviewService {
         return unavailable();
       }
     }
-    const dimensions = catalogPreviewPngDimensions(bytes);
-    if (
-      bytes.length !== preview.byteLength ||
-      dimensions.width !== preview.width ||
-      dimensions.height !== preview.height
-    )
-      return unavailable();
+    if (!catalogPreviewFor(record)) return unavailable();
     return new Response(Uint8Array.from(bytes), {
       headers: {
         'content-type': 'image/png',

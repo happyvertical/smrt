@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { crc32, deflateSync } from 'node:zlib';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { describe, expect, it, vi } from 'vitest';
 import type { CatalogSourceRecord } from '../catalog-contracts.js';
@@ -8,6 +9,7 @@ import {
   type CatalogPreview,
   CatalogPreviewService,
   catalogPreviewFor,
+  catalogPreviewPngDimensions,
   normalizeCatalogPreview,
 } from '../catalog-preview.js';
 import { CatalogReadService } from '../catalog-read-service.js';
@@ -190,10 +192,13 @@ describe('catalog publisher previews', () => {
   it('bounds cache storage and evicts verified public preview bytes', async () => {
     let index = 0;
     const images = Array.from({ length: 9 }, (_, i) => {
-      const bytes = Buffer.alloc(2 * 1024 * 1024);
-      png.copy(bytes);
-      bytes[bytes.length - 1] = i;
-      return bytes;
+      // Valid private ancillary padding keeps the full image decodable at the cap.
+      const padding = Buffer.alloc(2 * 1024 * 1024 - png.length);
+      padding.writeUInt32BE(padding.length - 12, 0);
+      padding.write('npAD', 4, 'ascii');
+      padding[padding.length - 5] = i;
+      padding.writeUInt32BE(crc32(padding.subarray(4, -4)), padding.length - 4);
+      return Buffer.concat([png.subarray(0, -12), padding, png.subarray(-12)]);
     });
     const records = images.map((bytes) => ({
       ...record,
@@ -349,6 +354,142 @@ describe('catalog publisher previews', () => {
     });
     expect(page.records).toHaveLength(1);
     expect(page.records[0].preview).toBeUndefined();
+  });
+
+  it('rejects truncated publisher PNGs before recording or serving a verified preview', async () => {
+    const truncated = png.subarray(0, 24);
+    const current = {
+      ...record,
+      preview: {
+        ...preview,
+        byteLength: truncated.length,
+        sha256: createHash('sha256').update(truncated).digest('hex'),
+      },
+    };
+    const service = new CatalogPreviewService(
+      { getResource: async () => current, authorize: async () => true },
+      { loadPreview: async () => truncated },
+    );
+    expect((await service.serve(request)).status).toBe(404);
+    const fetcher = vi.fn(async (url: string | URL | Request) =>
+      String(url) === sourceUrl
+        ? response(sourceUrl, html, 'text/html')
+        : response(imageUrl, truncated, 'image/png'),
+    );
+    const adapter = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch: fetcher as typeof fetch,
+    });
+    const page = await adapter.enumerate({
+      cursor: JSON.stringify({ v: 1, todo: [path], offset: 0 }),
+      checkpoint: {
+        providerId: preview.providerId,
+        complete: false,
+        importedCount: 0,
+        failures: [],
+      },
+    });
+    expect(page.records).toHaveLength(1);
+    expect(page.records[0].preview).toBeUndefined();
+  });
+
+  it('rejects corrupt chunks, incomplete compressed data and invalid inflated scanlines', () => {
+    const chunk = (data: Buffer) => {
+      const result = Buffer.alloc(data.length + 12);
+      result.writeUInt32BE(data.length, 0);
+      result.write('IDAT', 4, 'ascii');
+      data.copy(result, 8);
+      result.writeUInt32BE(crc32(result.subarray(4, -4)), result.length - 4);
+      return result;
+    };
+    const withPixels = (data: Buffer) =>
+      Buffer.concat([
+        png.subarray(0, 33),
+        chunk(deflateSync(data)),
+        png.subarray(-12),
+      ]);
+    const corruptCrc = Buffer.from(png);
+    corruptCrc[29] ^= 1;
+    const invalidFilter = Buffer.alloc((1350 * 4 + 1) * 674);
+    invalidFilter[0] = 5;
+    for (const invalid of [
+      png.subarray(0, -1),
+      corruptCrc,
+      withPixels(Buffer.alloc(1)),
+      withPixels(invalidFilter),
+    ])
+      expect(() => catalogPreviewPngDimensions(invalid)).toThrow();
+  });
+
+  it('denies rights that expire while the preview loader is awaited', async () => {
+    const initial = Date.parse('2026-10-28T00:00:00Z');
+    const now = vi.spyOn(Date, 'now').mockReturnValue(initial);
+    const current = {
+      ...record,
+      preview: {
+        ...preview,
+        rights: {
+          ...preview.rights,
+          expiresAt: new Date(initial + 100).toISOString(),
+        },
+      },
+    };
+    const loader = vi.fn(async () => {
+      await Promise.resolve();
+      now.mockReturnValue(initial + 101);
+      return png;
+    });
+    const service = new CatalogPreviewService(
+      { getResource: async () => current, authorize: async () => true },
+      { loadPreview: loader },
+    );
+    try {
+      const result = await service.serve(request);
+      expect(result.status).toBe(404);
+      expect(result.headers.get('cache-control')).toBe('no-store');
+      expect((await service.serve(request)).status).toBe(404);
+      expect(loader).toHaveBeenCalledTimes(1);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('advances metadata enumeration when an optional publisher preview hangs', async () => {
+    const nextPath = '/k5/families/grade-1/unit-2/family-materials.html';
+    const aborted = vi.fn();
+    const fetcher = vi.fn(
+      async (url: string | URL | Request, options?: RequestInit) => {
+        if (String(url) === sourceUrl)
+          return response(sourceUrl, html, 'text/html');
+        return new Promise<Response>((_resolve, reject) =>
+          options?.signal?.addEventListener(
+            'abort',
+            () => {
+              aborted();
+              reject(new Error('aborted image'));
+            },
+            { once: true },
+          ),
+        );
+      },
+    );
+    const adapter = createPublicIllustrativeMathematicsFirstEditionAdapter({
+      fetch: fetcher as typeof fetch,
+      timeoutMs: 50,
+    });
+    const page = await adapter.enumerate({
+      cursor: JSON.stringify({ v: 1, todo: [path, nextPath], offset: 0 }),
+      checkpoint: {
+        providerId: preview.providerId,
+        complete: false,
+        importedCount: 0,
+        failures: [],
+      },
+    });
+    expect(page.paused).not.toBe(true);
+    expect(page.records).toHaveLength(1);
+    expect(page.records[0].preview).toBeUndefined();
+    expect(JSON.parse(page.nextCursor ?? '{}').todo).toEqual([nextPath]);
+    expect(aborted).toHaveBeenCalledTimes(1);
   });
 
   it('persists exact preview metadata; retries retain first retrieval and new revisions invalidate old previews', async () => {

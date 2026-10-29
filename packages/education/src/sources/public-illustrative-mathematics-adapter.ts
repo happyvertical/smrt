@@ -200,6 +200,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
         headers?: Record<string, string>,
       ) => Promise<Response>,
     ) => Promise<T>,
+    deadline = timeout,
   ): Promise<T> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -246,7 +247,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
           timer = setTimeout(() => {
             controller.abort();
             reject(new Error('First-edition operation timed out.'));
-          }, timeout);
+          }, deadline);
         }),
       ]);
     } finally {
@@ -318,7 +319,8 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
         };
       }
       try {
-        return await operation(async (request) => {
+        const started = performance.now();
+        const { result, candidate } = await operation(async (request) => {
           const path = state.todo[0];
           const { parsed, revision } = await html(request, path);
           if (state.pageRevision && state.pageRevision !== revision)
@@ -343,55 +345,11 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             throw new Error(
               'Official hierarchy page has no recognized children; coverage is incomplete.',
             );
-          let preview: CatalogPreview | undefined;
-          if (state.offset === 0 && parsed.previewImage) {
-            try {
-              const response = await request(
-                IM_ASSET_ORIGIN + '/' + parsed.previewImage.id,
-                'GET',
-                { accept: 'image/png' },
-              );
-              if (
-                response.headers
-                  .get('content-type')
-                  ?.split(';')[0]
-                  .trim()
-                  .toLowerCase() !== 'image/png'
-              ) {
-                await response.body?.cancel();
-                throw new Error('Preview is not PNG.');
-              }
-              const bytes = await readBody(response, CATALOG_PREVIEW_MAX_BYTES);
-              const dimensions = catalogPreviewPngDimensions(bytes);
-              const hash = await sha256(bytes);
-              preview = {
-                providerId: PROVIDER,
-                stableId: imStableId(path),
-                revision: `${revision}:${hash}`,
-                reference: parsed.previewImage.id,
-                mediaType: 'image/png',
-                ...dimensions,
-                byteLength: bytes.length,
-                sha256: hash,
-                alt: parsed.previewImage.alt,
-                rights: {
-                  state: 'verified',
-                  identifier: 'CC-BY-4.0',
-                  sourceUrl: IM_ORIGIN + path,
-                  attribution: parsed.attribution,
-                  retrievedAt: new Date().toISOString(),
-                },
-              };
-            } catch {
-              // Optional preview failure never claims original-content availability.
-            }
-          }
           if (page.course && state.offset === 0)
             records.push({
               providerId: PROVIDER,
               stableId: imStableId(path),
-              revision: preview?.revision ?? revision,
-              ...(preview ? { preview } : {}),
+              revision,
               canonicalUrl: IM_ORIGIN + path,
               title: imHierarchyTitle(page),
               parentStableId: page.lesson
@@ -547,14 +505,84 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                 'Public first-edition official CMS artifact links with observed PDF/ZIP/DOCX representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, external-host artifacts, teacher/login and unknown-role material are excluded; unknown MIME is retained with acquisition denied; malformed MIME or invalid validators pause enumeration; AccessIM/v.360 is excluded.',
             });
           return {
-            records: records.sort((a, b) =>
-              a.stableId.localeCompare(b.stableId),
-            ),
-            complete: next.todo.length === 0,
-            ...(next.todo.length ? { nextCursor: encode(next) } : {}),
-            policyExclusions,
+            result: {
+              records: records.sort((a, b) =>
+                a.stableId.localeCompare(b.stableId),
+              ),
+              complete: next.todo.length === 0,
+              ...(next.todo.length ? { nextCursor: encode(next) } : {}),
+              policyExclusions,
+            },
+            candidate:
+              state.offset === 0 && page.course && parsed.previewImage
+                ? {
+                    ...parsed.previewImage,
+                    path,
+                    revision,
+                    attribution: parsed.attribution,
+                  }
+                : undefined,
           };
         });
+        // Required HTML/HEAD work has finished. Optional media gets its own short
+        // deadline/controller, so a stalled image cannot pause the metadata cursor.
+        const previewBudget = Math.min(
+          2000,
+          Math.floor(timeout / 4),
+          Math.floor(timeout - (performance.now() - started)),
+        );
+        if (candidate && previewBudget > 0) {
+          try {
+            const bytes = await operation(async (request) => {
+              const response = await request(
+                `${IM_ASSET_ORIGIN}/${candidate.id}`,
+                'GET',
+                { accept: 'image/png' },
+              );
+              if (
+                response.headers
+                  .get('content-type')
+                  ?.split(';')[0]
+                  .trim()
+                  .toLowerCase() !== 'image/png'
+              ) {
+                await response.body?.cancel();
+                throw new Error('Preview is not PNG.');
+              }
+              return readBody(response, CATALOG_PREVIEW_MAX_BYTES);
+            }, previewBudget);
+            const dimensions = catalogPreviewPngDimensions(bytes);
+            const hash = await sha256(bytes);
+            const preview: CatalogPreview = {
+              providerId: PROVIDER,
+              stableId: imStableId(candidate.path),
+              revision: `${candidate.revision}:${hash}`,
+              reference: candidate.id,
+              mediaType: 'image/png',
+              ...dimensions,
+              byteLength: bytes.length,
+              sha256: hash,
+              alt: candidate.alt,
+              rights: {
+                state: 'verified',
+                identifier: 'CC-BY-4.0',
+                sourceUrl: IM_ORIGIN + candidate.path,
+                attribution: candidate.attribution,
+                retrievedAt: new Date().toISOString(),
+              },
+            };
+            const record = result.records.find(
+              (record) => record.stableId === preview.stableId,
+            );
+            if (record) {
+              record.revision = preview.revision;
+              record.preview = preview;
+            }
+          } catch {
+            // Optional preview failure leaves required records and cursor intact.
+          }
+        }
+        return result;
       } catch (error) {
         return {
           records: [],
