@@ -4,6 +4,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -38,7 +39,7 @@ export class LessonAsset extends SmrtObject {
       }
     }
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const lesson = await this.db.get('lessons', { id: this.lessonId });
     if (!lesson)
       throw new Error(`education lesson ${this.lessonId} does not exist`);
@@ -79,6 +80,6 @@ export class LessonAsset extends SmrtObject {
           'Private lesson material requires an authorized private asset',
         );
     }
-    return await super.save();
+    return await super.save(options);
   }
 }

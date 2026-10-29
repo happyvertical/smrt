@@ -17,7 +17,12 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { validateWaterfallPlan } from '../services/WaterfallCalculationService.js';
 import {
@@ -430,7 +435,7 @@ export class CommissionPlan extends SmrtObject {
    * Activating saves also re-validate components, so an `active` row always
    * carries well-formed terms regardless of which write path set them.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertFrozenIdentityUnchanged();
@@ -440,7 +445,7 @@ export class CommissionPlan extends SmrtObject {
       this.validateEffectiveWindow();
       this.validateWaterfallTerms();
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedPlanStatus.set(this, this.status);
     if (this.status !== 'draft' && !frozenPlanSnapshot.has(this)) {
       frozenPlanSnapshot.set(this, this.serializeFrozenSnapshot());

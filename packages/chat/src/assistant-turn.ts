@@ -384,6 +384,12 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   continuationKey?: string;
   maxSteps?: number;
   /**
+   * Deduped repeats of one read-only call that end the tool phase (#4391;
+   * forwarded to `runToolLoop`). Default `DEFAULT_MAX_REPEATED_CALLS` (2);
+   * `0` turns it off. Counted per leg: a resume starts at zero.
+   */
+  maxRepeatedCalls?: number;
+  /**
    * Token budget for the whole turn, across every browser round trip. Once
    * spent, the model gets one last round without tools to answer, and the
    * turn ends with `stoppedReason: 'budget'`. Unset: no budget.
@@ -410,6 +416,18 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
    * `DEFAULT_EMPTY_ANSWER_FALLBACK`. Replaces the old `'Done.'`.
    */
   emptyAnswerFallback?: string;
+  /**
+   * Reply stored when a model call throws (#4454): a provider failure such
+   * as an `AIError` with code `API_ERROR`. A string, or a function of the
+   * error's `code` (and the error itself) returning the text; a blank or
+   * `undefined` result declines, and the turn fails as it does with no option
+   * set. The reply is stored like `emptyAnswerFallback`, with
+   * `metadata.fallback: 'provider_error'`, and the turn ends with
+   * `stoppedReason: 'provider_error'`. The error is still passed to
+   * `onError`. Unset: an `error` event and nothing stored. A cancelled turn
+   * and the turn's own user-facing errors are never answered this way.
+   */
+  providerErrorFallback?: ProviderErrorFallback;
   /**
    * Host opt-in: answer from the model's reasoning text when the final round
    * and its retry are blank (forwarded, see `ToolLoopOptions`). Default false.
@@ -463,11 +481,45 @@ export interface AssistantTurnState {
   continuationId?: string;
 }
 
+/** `tool` of a step for a call whose name is not a registered tool (#4453). */
+export const UNKNOWN_TOOL_STEP_NAME = 'unknown_tool';
+/** `label` of that step; the model's requested name is never echoed. */
+export const UNKNOWN_TOOL_STEP_LABEL = 'Unknown tool';
+
+/**
+ * Host text for a failed model call (see
+ * {@link AssistantTurnOptions.providerErrorFallback}). The function gets the
+ * error's string `code` when it has one.
+ */
+export type ProviderErrorFallback =
+  | string
+  | ((code: string | undefined, error: unknown) => string | undefined);
+
+function providerErrorReplyText(
+  error: unknown,
+  fallback: ProviderErrorFallback | undefined,
+  signal: AbortSignal | undefined,
+): string | undefined {
+  if (fallback === undefined || signal?.aborted) return undefined;
+  if (error instanceof AssistantTurnUserError) return undefined;
+  const code = (error as { code?: unknown } | null)?.code;
+  let text: string | undefined;
+  try {
+    text =
+      typeof fallback === 'function'
+        ? fallback(typeof code === 'string' ? code : undefined, error)
+        : fallback;
+  } catch {
+    return undefined;
+  }
+  return typeof text === 'string' && text.trim() ? text.trim() : undefined;
+}
+
 /** What {@link runAssistantTurn} returns when its generator completes. */
 export interface AssistantTurnResult {
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
   /** Why tools were withdrawn on the final round, when they were (#4379). */
-  capReason?: 'max_steps' | 'budget';
+  capReason?: 'max_steps' | 'budget' | 'repeated_calls';
   content: string;
   loop?: ToolLoopResult;
   /** The turn's origin message (from the continuation on a resume). */
@@ -778,11 +830,14 @@ async function runTurn<M>(
     return label;
   };
 
+  // Names the model called that resolved to a registered tool. A step for any
+  // other name must not echo model-chosen text as its tool or label (#4453).
+  const registered = new Set<string>();
   const sendAgentReply = author
     ? (await import('./services/ChatService.js')).sendAgentReply
     : null;
 
-  const loop = await runToolLoop({
+  const outcome = await runToolLoop({
     ai: options.ai,
     messages,
     tools: options.tools ?? [],
@@ -792,6 +847,9 @@ async function runTurn<M>(
     principal,
     db: options.db,
     maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
+    ...(options.maxRepeatedCalls !== undefined
+      ? { maxRepeatedCalls: options.maxRepeatedCalls }
+      : {}),
     ...(options.maxTurnTokens !== undefined
       ? { maxTotalTokens: options.maxTurnTokens, initialTokens }
       : {}),
@@ -831,6 +889,7 @@ async function runTurn<M>(
         return;
       }
       if (event.type === 'tool_call') {
+        registered.add(event.slug);
         let label = labelFor(event.slug);
         try {
           label = describe(event.slug, event.args) || label;
@@ -854,13 +913,14 @@ async function runTurn<M>(
         }
         return;
       }
+      const known = registered.has(event.slug);
       emit({
         type: 'step',
         step: {
           kind: 'tool_result',
           callId: event.callId,
-          tool: event.slug,
-          label: labelFor(event.slug),
+          tool: known ? event.slug : UNKNOWN_TOOL_STEP_NAME,
+          label: known ? labelFor(event.slug) : UNKNOWN_TOOL_STEP_LABEL,
           ok: event.ok,
           ...(event.error ? { error: event.error } : {}),
         },
@@ -923,7 +983,56 @@ async function runTurn<M>(
         }
       }
     },
-  });
+  }).then(
+    (value) => ({ loop: value }),
+    (error: unknown) => ({ failure: error }),
+  );
+
+  if ('failure' in outcome) {
+    const text = providerErrorReplyText(
+      outcome.failure,
+      options.providerErrorFallback,
+      options.signal,
+    );
+    // No fallback configured (or none for this failure): the turn fails as it
+    // always did, an error event with nothing stored.
+    if (text === undefined) throw outcome.failure;
+    try {
+      (options.onError ?? defaultLogError)(outcome.failure);
+    } catch {
+      // Logging never breaks the turn.
+    }
+    let finalMessage: M | undefined;
+    if (author && sendAgentReply) {
+      const message = await sendAgentReply(author.chatService, {
+        tenantId: author.tenantId,
+        agentSessionId: author.agentSessionId,
+        threadId: author.threadId ?? null,
+        replyToMessageId: originMessageId ?? null,
+        kind: 'assistant',
+        content: text,
+        metadata: replyMetadataFor(
+          { stoppedReason: 'provider_error' },
+          { content: text, fallback: 'provider_error' },
+        ),
+      });
+      finalMessage = serialize(message);
+      emit({ type: 'message', message: finalMessage });
+    }
+    await report('completed');
+    emit({
+      type: 'done',
+      ...(finalMessage ? { message: finalMessage } : {}),
+      stoppedReason: 'provider_error',
+    });
+    emit(status({ state: 'done', label: 'Done' }));
+    return {
+      stoppedReason: 'provider_error',
+      content: text,
+      ...(originMessageId ? { originMessageId } : {}),
+    };
+  }
+  const loop = outcome.loop;
 
   if (loop.stoppedReason === 'client_tools') {
     if (!options.continuations || !options.continuationKey) {

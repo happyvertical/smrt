@@ -358,8 +358,9 @@ endpoints: unscoped reads could enumerate tenant or user preferences.
 
 ## Owner and member walkthrough
 
-The [SMRT SaaS starter field-policy walkthrough](https://github.com/happyvertical/smrt-saas-starter/pull/51)
-uses SMRT `0.40.61` and demonstrates a full host integration:
+The field-policy walkthrough in the now-archived `smrt-saas-starter`
+([pinned pull request](https://github.com/happyvertical/smrt-saas-starter/pull/51),
+SMRT `0.40.61`; `smrt-start` is the current template) demonstrated a full host integration:
 
 1. An owner or organization administrator opens the field settings destination
    and uses the gear or control panel to set organization defaults.

@@ -1316,6 +1316,11 @@ export class ChatService {
     tenantId: string;
     limit?: number;
     before?: string;
+    /**
+     * Keep only these roles, in SQL, so `limit` counts them alone (#4458).
+     * Omitted or empty reads every role.
+     */
+    roles?: readonly ChatMessageRole[];
   }) {
     await this.#requireActiveMembership(
       params.roomId,
@@ -1325,6 +1330,7 @@ export class ChatService {
     return this.#messages.getByRoom(params.roomId, params.tenantId, {
       limit: params.limit,
       before: params.before,
+      roles: params.roles,
     });
   }
 
@@ -1436,12 +1442,18 @@ export class ChatService {
    * the thread's room. Messages are returned oldest-first (chronological).
    * Replaces direct `messages.list({ where: { threadId } })` reach-ins that
    * could read another tenant's/room's thread history by raw id.
+   *
+   * `roles` (non-empty) keeps only those roles, in SQL, so `limit` counts
+   * them alone: a history builder passes the roles it replays and gets the
+   * newest `limit` of those, however many tool rows sit between (#4458).
+   * Omitted or empty reads every role.
    */
   async getThreadMessages(params: {
     threadId: string;
     actorProfileId: string;
     tenantId: string;
     limit?: number;
+    roles?: readonly ChatMessageRole[];
   }): Promise<ChatMessage[]> {
     const thread = await this.#threads.get({
       id: params.threadId,
@@ -1460,6 +1472,7 @@ export class ChatService {
         tenantId: params.tenantId,
         threadId: params.threadId,
         isDeleted: false,
+        ...(params.roles?.length ? { role: [...params.roles] } : {}),
       },
       orderBy: 'created_at DESC',
       limit: params.limit,

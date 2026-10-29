@@ -23,7 +23,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ReferralOptions, ReferralStatus } from '../types.js';
 
@@ -288,10 +294,10 @@ export class Referral extends SmrtObject {
    * `status` (e.g. un-expiring a referral or skipping straight to
    * qualified) is rejected regardless of how the instance was constructed.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedReferralStatus.set(this, this.status);
     return result;
   }

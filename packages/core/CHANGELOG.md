@@ -1,5 +1,43 @@
 # @happyvertical/smrt-core
 
+## 0.57.38
+
+### Patch Changes
+
+- ### Features
+  
+  - retain family intake before learner assignment (#4479) (education)
+  
+  ### Bug Fixes
+  
+  - patch train 2026-10-28 (29 issues) (#4474)
+- @happyvertical/smrt-config@0.57.38
+  - @happyvertical/smrt-scanner@0.57.38
+  - @happyvertical/smrt-types@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- ### Features
+  
+  - end the tool phase after repeated deduped calls (#4391) (#4467) (chat)
+  - data-query null test (isNull/isNotNull) (#4448) (#4460) (core,agents,reports,content)
+  - package-level planner recipes for ten packages (#4409) (#4457) (recipes)
+  
+  ### Bug Fixes
+  
+  - teamworks release train (chat, reports, ui density, worker queues) (#4472)
+  - compare text/uuid join keys as text on Postgres and DuckDB (#4441) (#4446) (reports)
+  - count historyLimit in replayed turns, not raw rows (#4458) (#4466) (chat)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.110.0 (#4465) (deps)
+- @happyvertical/smrt-config@0.57.37
+  - @happyvertical/smrt-scanner@0.57.37
+  - @happyvertical/smrt-types@0.57.37
+
 ## 0.57.36
 
 ### Patch Changes

@@ -1846,6 +1846,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  /* Spacing hooks, all optional (set on the shell or an ancestor); defaults
+     are the current theme tokens:
+       --smrt-admin-shell-band-padding-inline          top/bottom band side padding (--smrt-spacing-4)
+       --smrt-admin-shell-left-rail-padding            expanded left rail padding (--smrt-spacing-3)
+       --smrt-admin-shell-left-rail-padding-collapsed  collapsed left rail inline padding (--smrt-spacing-2)
+       --smrt-admin-shell-tenant-gap                   gap between tenant panel rows (--smrt-spacing-3)
+     The tenant panel only spaces rows it renders: no tenantFooter, no gap. */
   .smrt-admin-shell {
     --smrt-shell-floating-reserve-inline: 0px;
     --smrt-shell-floating-reserve-block: 0px;
@@ -2026,7 +2033,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     gap: var(--smrt-spacing-3);
     min-width: 0;
     min-block-size: 0;
-    padding: 0 var(--smrt-spacing-4);
+    padding: 0 var(--smrt-admin-shell-band-padding-inline, var(--smrt-spacing-4));
   }
 
   .smrt-admin-shell__band--top,
@@ -2037,7 +2044,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   /* The header's slots can render in the top band too: keep the floating
      layout toggle's corner clear there as well. */
   .smrt-admin-shell__band--top {
-    padding-inline-end: calc(var(--smrt-spacing-4) + var(--smrt-shell-floating-reserve-inline));
+    padding-inline-end: calc(var(--smrt-admin-shell-band-padding-inline, var(--smrt-spacing-4)) + var(--smrt-shell-floating-reserve-inline));
   }
 
   .smrt-admin-shell__empty {
@@ -2244,12 +2251,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__tenant-opener { display: none; flex-shrink: 0; }
   .smrt-admin-shell__tenant-opener.restore-hidden { display: block; }
-  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail { padding-inline: var(--smrt-spacing-2); }
+  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail { padding-inline: var(--smrt-admin-shell-left-rail-padding-collapsed, var(--smrt-spacing-2)); }
 
   .smrt-admin-shell__edge--left .smrt-admin-shell__rail {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
+    padding: var(--smrt-admin-shell-left-rail-padding, var(--smrt-spacing-3));
     overflow: visible;
   }
 
@@ -2266,7 +2274,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-3);
+    gap: var(--smrt-admin-shell-tenant-gap, var(--smrt-spacing-3));
     min-width: 0;
     min-height: 0;
   }

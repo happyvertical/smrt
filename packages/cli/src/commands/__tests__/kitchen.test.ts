@@ -445,6 +445,7 @@ describe('/api/kitchen/cookbook', () => {
       mode: 'new',
       installed: false,
       added: ['@happyvertical/smrt-commerce'],
+      skippedTemplateFiles: [],
     });
     expect(answer.nextSteps).toEqual(
       expect.arrayContaining([
@@ -477,6 +478,18 @@ describe('/api/kitchen/cookbook', () => {
       json(COOKBOOK, { origin, [TOKEN_HEADER]: 'test-token' }),
     ).catch(() => undefined);
     if (again) expect(again.status).toBe(401);
+  });
+
+  it('reports the template files it left out of a new project (#4435)', async () => {
+    writeFileSync(join(template, 'AGENTS.md'), '# template\n');
+    const { origin, project } = await start();
+    const response = await fetch(
+      `${origin}/api/kitchen/cookbook`,
+      json(COOKBOOK, { origin, [TOKEN_HEADER]: 'test-token' }),
+    );
+    const answer = await readJson(response);
+    expect(answer.skippedTemplateFiles).toEqual(['AGENTS.md']);
+    expect(existsSync(join(project, 'AGENTS.md'))).toBe(false);
   });
 
   it('refuses an invalid cookbook with the reasons and keeps listening', async () => {

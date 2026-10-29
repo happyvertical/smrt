@@ -3,6 +3,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -37,7 +38,7 @@ export class Workbook extends SmrtObject {
     super(options);
     optionsFor(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId.trim()) throw new Error('Workbook requires tenant');
     if (
       !(await this.db.get('learners', {
@@ -65,7 +66,7 @@ export class Workbook extends SmrtObject {
       this.policyVersion < 1
     )
       throw new Error('Invalid workbook policy');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookCollection extends SmrtCollection<Workbook> {
@@ -101,7 +102,7 @@ export class WorkbookActivity extends SmrtObject {
       'Workbook history is immutable; deliberate family deletion requires an owning retention operation',
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId.trim()) throw new Error('Workbook requires tenant');
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook history is immutable');
@@ -174,7 +175,7 @@ export class WorkbookActivity extends SmrtObject {
           'Unfiled work requires exact private technical routing',
         );
     }
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookActivityCollection extends SmrtCollection<WorkbookActivity> {
@@ -210,7 +211,7 @@ export class WorkbookWorkFiling extends SmrtObject {
   override async delete(): Promise<void> {
     throw new Error('Workbook history is immutable');
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook history is immutable');
     const owner = { tenant_id: this.tenantId, learner_id: this.learnerId };
@@ -257,7 +258,7 @@ export class WorkbookWorkFiling extends SmrtObject {
       })
     )
       throw new Error('Workbook filing predecessor already superseded');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookWorkFilingCollection extends SmrtCollection<WorkbookWorkFiling> {
@@ -295,7 +296,7 @@ export class WorkbookAttempt extends SmrtObject {
       'Workbook history is immutable; deliberate family deletion requires an owning retention operation',
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId.trim()) throw new Error('Workbook requires tenant');
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook history is immutable');
@@ -344,7 +345,7 @@ export class WorkbookAttempt extends SmrtObject {
         throw new Error('Workbook retained source mismatch');
     if (!['independent', 'assisted', 'unknown'].includes(this.assistance))
       throw new Error('Invalid assistance');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookAttemptCollection extends SmrtCollection<WorkbookAttempt> {
@@ -383,7 +384,7 @@ export class WorkbookAssessmentRevision extends SmrtObject {
       'Workbook history is immutable; deliberate family deletion requires an owning retention operation',
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId.trim()) throw new Error('Workbook requires tenant');
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook history is immutable');
@@ -410,7 +411,7 @@ export class WorkbookAssessmentRevision extends SmrtObject {
       throw new Error('Workbook reviewed source mismatch');
     if (!['ai', 'guardian'].includes(this.kind))
       throw new Error('Invalid revision kind');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookAssessmentRevisionCollection extends SmrtCollection<WorkbookAssessmentRevision> {
@@ -444,7 +445,7 @@ export class WorkbookFeedbackRelease extends SmrtObject {
       'Workbook history is immutable; deliberate family deletion requires an owning retention operation',
     );
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId.trim()) throw new Error('Workbook requires tenant');
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook history is immutable');
@@ -465,7 +466,7 @@ export class WorkbookFeedbackRelease extends SmrtObject {
       }))
     )
       throw new Error('Workbook release revision mismatch');
-    return super.save();
+    return super.save(options);
   }
 }
 export class WorkbookFeedbackReleaseCollection extends SmrtCollection<WorkbookFeedbackRelease> {
@@ -491,7 +492,7 @@ export class WorkbookFeedbackDelivery extends SmrtObject {
     super(options);
     optionsFor(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Workbook delivery history is immutable');
     if (
@@ -511,7 +512,7 @@ export class WorkbookFeedbackDelivery extends SmrtObject {
       }))
     )
       throw new Error('Workbook delivery must name own learner');
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Workbook delivery history is immutable');

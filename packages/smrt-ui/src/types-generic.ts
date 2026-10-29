@@ -15,7 +15,8 @@ export type BadgeVariant =
   | 'success'
   | 'warning'
   | 'error'
-  | 'info';
+  | 'info'
+  | 'neutral';
 export type BadgeSize = 'sm' | 'md';
 
 export interface BadgeProps

@@ -61,6 +61,14 @@ export class SmrtWorker extends SmrtObject {
   @field({ type: 'datetime', nullable: true })
   leaseExpiresAt: Date | null = null;
 
+  /**
+   * Queues this runner polls (its `TaskRunnerConfig.queues`), written at
+   * registration and refreshed on every lease renewal. `null` for rows that
+   * predate the column or belong to a runner that polls no queue.
+   */
+  @field({ type: 'json', nullable: true })
+  queues: string[] | null = null;
+
   /** Lifecycle status (`running` while the runner is processing). */
   @field({ type: 'text', required: true, default: 'running' })
   status: string = 'running';
@@ -71,6 +79,22 @@ export interface RegisterWorkerInput {
   pid?: number | null;
   hostname?: string | null;
   leaseTtlMs: number;
+  /** Queues the runner polls; stored so hosts can tell who reads a queue. */
+  queues?: string[] | null;
+}
+
+/** Normalise a stored `queues` value (JSON text on SQLite, array on Postgres). */
+function parseQueues(value: unknown): string[] | null {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(parsed)) return null;
+  return parsed.filter((q): q is string => typeof q === 'string');
 }
 
 /**
@@ -121,19 +145,39 @@ export class SmrtWorkerCollection extends SmrtCollection<SmrtWorker> {
       // Seed the lease in the same write so the worker is immediately "alive",
       // closing the window between registration and the first claimReady().
       leaseExpiresAt: new Date(now.getTime() + input.leaseTtlMs),
+      queues: input.queues ? [...input.queues] : null,
       status: 'running',
     });
   }
 
   /** Renew a worker's lease to `now + ttl`. */
-  async renewLease(workerKey: string, leaseTtlMs: number): Promise<void> {
+  async renewLease(
+    workerKey: string,
+    leaseTtlMs: number,
+    queues?: string[] | null,
+  ): Promise<void> {
     const now = new Date();
+    const expiresAt = new Date(now.getTime() + leaseTtlMs).toISOString();
+    if (queues) {
+      await this.db.query(
+        `UPDATE _smrt_workers
+            SET lease_expires_at = ?,
+                heartbeat_at = ?,
+                queues = ?
+          WHERE worker_id = ?`,
+        expiresAt,
+        now.toISOString(),
+        JSON.stringify(queues),
+        workerKey,
+      );
+      return;
+    }
     await this.db.query(
       `UPDATE _smrt_workers
           SET lease_expires_at = ?,
               heartbeat_at = ?
         WHERE worker_id = ?`,
-      new Date(now.getTime() + leaseTtlMs).toISOString(),
+      expiresAt,
       now.toISOString(),
       workerKey,
     );
@@ -159,6 +203,29 @@ export class SmrtWorkerCollection extends SmrtCollection<SmrtWorker> {
     const keys = new Set<string>();
     for (const row of result.rows as Array<{ worker_id?: unknown }>) {
       if (typeof row.worker_id === 'string') keys.add(row.worker_id);
+    }
+    return keys;
+  }
+
+  /**
+   * Worker keys holding a fresh lease whose recorded `queues` include `queue`.
+   * Rows with no recorded queues (older runners, schedule runners) never match.
+   */
+  async liveWorkerKeysForQueue(queue: string): Promise<Set<string>> {
+    const result = await this.db.query(
+      `SELECT worker_id, queues
+         FROM _smrt_workers
+        WHERE lease_expires_at IS NOT NULL
+          AND lease_expires_at >= ?`,
+      new Date().toISOString(),
+    );
+    const keys = new Set<string>();
+    for (const row of result.rows as Array<{
+      worker_id?: unknown;
+      queues?: unknown;
+    }>) {
+      if (typeof row.worker_id !== 'string') continue;
+      if (parseQueues(row.queues)?.includes(queue)) keys.add(row.worker_id);
     }
     return keys;
   }

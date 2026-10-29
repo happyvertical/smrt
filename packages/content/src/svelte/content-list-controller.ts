@@ -221,6 +221,22 @@ const DEFAULT_COLUMN_LABELS: Record<ContentListColumnId, string> = {
 };
 
 /**
+ * Per-column guidance published on the surface descriptor. These are the
+ * existing `@field({ description })` strings on the Content model, mirrored here
+ * because this browser-safe module cannot import the model; a model-drift test
+ * keeps them identical. Columns without a model description publish none.
+ */
+export const CONTENT_LIST_COLUMN_DESCRIPTIONS: Partial<
+  Record<ContentListColumnId, string>
+> = {
+  type: 'What kind of piece this is, such as an article or a document.',
+  title: 'The headline readers see.',
+  author: 'Who wrote this piece.',
+  status: 'Where the piece stands: draft, in review, published or archived.',
+  publish: 'The date the piece went out, or is due to go out.',
+};
+
+/**
  * The `ContentData` field each published column reads. Column ids are stable
  * public identifiers and do not always match the field name, so the mapping is
  * explicit — advertising a field that does not exist would mislead an adapter
@@ -1141,6 +1157,9 @@ function surfaceColumn(
   return {
     id,
     label: labels[id] ?? DEFAULT_COLUMN_LABELS[id],
+    ...(CONTENT_LIST_COLUMN_DESCRIPTIONS[id]
+      ? { description: CONTENT_LIST_COLUMN_DESCRIPTIONS[id] }
+      : {}),
     capabilities,
     ...(fieldName ? { fieldName } : {}),
     visibility: 'basic',

@@ -679,6 +679,83 @@ describe('mountAssistantRoutes', () => {
       ]);
     });
 
+    it('counts historyLimit in replayed turns, not persisted tool rows (#4458)', async () => {
+      const toolRound = (turn: number) =>
+        calls(
+          ['data-discover', { turn, n: 1 }, `t${turn}-1`],
+          ['data-discover', { turn, n: 2 }, `t${turn}-2`],
+          ['data-discover', { turn, n: 3 }, `t${turn}-3`],
+        );
+      const ai = scriptedAI([
+        toolRound(1),
+        text('A1'),
+        toolRound(2),
+        text('A2'),
+        text('A3'),
+      ]);
+      const read = vi.spyOn(ChatService.prototype, 'getThreadMessages');
+      const routes = mount({
+        ai,
+        historyLimit: 2,
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool([])],
+        authorInvocation: (invocation) => ({
+          content: `ran ${invocation.slug}`,
+          toolCallData: { name: invocation.slug },
+        }),
+      });
+      const threadId = await createThread(routes);
+      for (const [index, content] of ['Q1', 'Q2', 'Q3'].entries()) {
+        await events(
+          await send(routes, threadId, {
+            content,
+            clientRequestId: `h-${index}`,
+          }),
+        );
+      }
+      // The tool rows are stored between each question and its answer.
+      const stored = await listMessages(routes, threadId);
+      expect(stored.filter((m) => m.role === 'tool')).toHaveLength(6);
+      // Turn 3 replays exactly the last 2 turns, roles alternating.
+      expect(ai.seen[4].map((m) => [m.role, m.content])).toEqual([
+        ['user', 'Q2'],
+        ['assistant', 'A2'],
+        ['user', 'Q3'],
+      ]);
+      // The read is role-filtered in SQL and bounded by the limit (+ the
+      // stored send), whatever the thread holds.
+      const historyReads = read.mock.calls.flatMap(([params], index) =>
+        params.roles ? [{ params, result: read.mock.results[index] }] : [],
+      );
+      expect(historyReads).toHaveLength(3);
+      for (const { params, result } of historyReads) {
+        expect(params).toMatchObject({
+          limit: 3,
+          roles: ['user', 'assistant'],
+        });
+        expect((await result.value).length).toBeLessThanOrEqual(3);
+      }
+    });
+
+    it('keeps historyLimit history unchanged on a thread without tool rows (#4458)', async () => {
+      const ai = scriptedAI([text('A1'), text('A2'), text('A3')]);
+      const routes = mount({ ai, historyLimit: 2 });
+      const threadId = await createThread(routes);
+      for (const [index, content] of ['Q1', 'Q2', 'Q3'].entries()) {
+        await events(
+          await send(routes, threadId, {
+            content,
+            clientRequestId: `n-${index}`,
+          }),
+        );
+      }
+      expect(ai.seen[2].map((m) => [m.role, m.content])).toEqual([
+        ['user', 'Q2'],
+        ['assistant', 'A2'],
+        ['user', 'Q3'],
+      ]);
+    });
+
     it('refuses another member’s or another tenant’s thread before any write or model call', async () => {
       const factory = vi.fn(() => scriptedAI([text('nope')]));
       const routes = mount({ ai: factory });

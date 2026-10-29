@@ -1457,7 +1457,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
       ) {
         expect(await result).toEqual({
           output: { outcome: 'no_action', suggestions: [], splits: [] },
-          completion: 'unknown',
+          completion: 'complete',
           usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 },
           ...(mode === 'canonical-model'
             ? { responseModel: `${identity.model}-2025-04-14` }

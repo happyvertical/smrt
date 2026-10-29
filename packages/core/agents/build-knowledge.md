@@ -382,3 +382,7 @@ and decorators), minus a leading `ClassName - ` / `ClassName: `, tags
 sentence boundary. `@internal` classes and classes without docs emit no key. It
 is not inherited from a parent class. Generated MCP tool descriptions are
 unchanged (they stay generic).
+
+## AGENTS.md discovery in a monorepo (#3476)
+
+`buildDomainKnowledgeManifest()` takes the agent doc from the project root, else from the nearest ancestor `AGENTS.md` up to the workspace root (the nearest directory with `pnpm-workspace.yaml`, else the git root, a directory containing `.git`). It never walks past that boundary, and with no boundary above the project root it checks only the root. `agentDocPath` stays relative to the project root (so an inherited doc reads `../../AGENTS.md`), and `agentDoc` and `sourceHashes.agents` are populated from it. Module docs linked from the doc (`moduleDocs`) are only followed when `AGENTS.md` sits at the project root, since their links resolve against that directory.

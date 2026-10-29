@@ -22,7 +22,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { assertIntegerMinorUnits } from '../money.js';
 import { type PayoutOptions, PayoutStatus } from '../types/index.js';
@@ -394,7 +399,7 @@ export class Payout extends SmrtObject {
    * The amount-invariant check (`validateAmounts`) still runs first as the
    * arithmetic floor.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.validateAmounts();
 
     const prior = await this.resolvePriorStatus();
@@ -429,7 +434,7 @@ export class Payout extends SmrtObject {
 
     await this.assertCappedBySourcePayment();
 
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedPayoutStatus.set(this, this.status);
     return result;
   }

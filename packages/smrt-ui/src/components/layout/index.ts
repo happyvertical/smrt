@@ -4,6 +4,8 @@
 
 export { default as ActionGroup } from './ActionGroup.svelte';
 export { default as Container } from './Container.svelte';
+export { default as DescriptionList } from './DescriptionList.svelte';
+export type { DescriptionListItem } from './description-list.js';
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as Footer } from './Footer.svelte';
 export { default as Grid } from './Grid.svelte';
@@ -18,4 +20,5 @@ export {
   type PageHeaderReport,
   setPageHeaderContext,
 } from './page-header-context.js';
+export { default as Stack } from './Stack.svelte';
 export { default as SummaryCard } from './SummaryCard.svelte';

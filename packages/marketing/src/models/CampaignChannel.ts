@@ -1,6 +1,12 @@
 /** Generic links from a campaign to cross-package channel execution rows. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   CampaignChannelOptions,
@@ -88,7 +94,7 @@ export class CampaignChannel extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!CAMPAIGN_CHANNEL_STATUSES.includes(this.status)) {
       throw new Error(
         `CampaignChannel ${this.channelRef || this.id}: unknown status '${this.status}'.`,
@@ -109,7 +115,7 @@ export class CampaignChannel extends SmrtObject {
     ) {
       throw new Error('CampaignChannel endAt must be on or after startAt.');
     }
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 
   private static coerceDate(value: unknown): Date | null {

@@ -1,5 +1,13 @@
 # @happyvertical/smrt-types
 
+## 0.57.38
+
+No changes in this release.
+
+## 0.57.37
+
+No changes in this release.
+
 ## 0.57.36
 
 No changes in this release.

@@ -10,6 +10,8 @@ typed intent and can be async—rejections restore the previous view. Set
 `optimistic` to present controlled moves while persistence is pending.
 Set `allowSameColumnReorder={false}` when an adapter persists only lane/status
 transitions rather than a position within a lane.
+Lane width defaults to `min(18rem, 82vw)`; set the `laneWidth` prop (any CSS
+length) or the `--smrt-board-lane-width` custom property to change it.
 
 ```svelte
 <script lang="ts">
@@ -560,6 +562,11 @@ keys the shell renders exactly as before.
   …
 </AdminShell>
 ```
+
+`PhoneBottomBar` items take `icon` as a component, or as an icon name string
+(`iconName` is the same). A built-in shell icon name draws that icon; any other
+name goes to the bar's `iconComponent` prop with `size`, as `TenantNav`'s
+`iconComponent` does.
 
 - **`header`** is a full-width row above every edge (`#smrt-admin-shell-header`,
   `--smrt-admin-shell-header-size`, default 3.5rem). On phones it is replaced

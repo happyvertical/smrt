@@ -83,7 +83,7 @@ The `Sku` model moved out of this package and into `@happyvertical/smrt-products
 
 **Upgrade procedure** for deployed consumers:
 
-1. **Let the framework create the destination table first.** Boot the new version once with `@happyvertical/smrt-products` registered in your `SmrtClassOptions`; the lazy `syncSchema` path will create `product_skus` with the right primary key, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes — they're derived from the `Sku` model decorators and would be stripped by a raw `CREATE TABLE AS SELECT`.
+1. **Create the destination table with the explicit migration workflow first.** Runtime never creates application schema, so booting the new version does not create `product_skus`. With `@happyvertical/smrt-products` registered, generate and apply the normal migration (`smrt db:status`, then `smrt db:migrate`) and confirm `smrt db:status --parity` is clean. That creates `product_skus` with the right primary key, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes derived from the `Sku` model decorators; a raw `CREATE TABLE AS SELECT` would strip them. Do this before step 2 so the keys and indexes exist before any rows are copied.
 
 2. **Idempotently copy rows across.** SQLite + Postgres:
 

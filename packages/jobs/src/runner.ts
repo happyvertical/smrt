@@ -342,6 +342,7 @@ export class TaskRunner extends EventEmitter {
       hostname:
         typeof process !== 'undefined' ? (process.env.HOSTNAME ?? null) : null,
       leaseTtlMs: this.effectiveLeaseTtlMs,
+      queues: this.config.queues,
     });
     registerLiveWorker(this.workerKey);
 
@@ -1368,6 +1369,7 @@ export class TaskRunner extends EventEmitter {
         await this.workerCollection?.renewLease(
           this.workerKey,
           this.effectiveLeaseTtlMs,
+          this.config.queues,
         );
       } catch {
         // Ignore transient lease-renewal errors; the next tick retries.
@@ -1403,6 +1405,7 @@ export class TaskRunner extends EventEmitter {
           workerKey: this.workerKey,
           leaseTtlMs: this.effectiveLeaseTtlMs,
           leaseTickMs: this.config.leaseTickMs,
+          queues: this.config.queues,
         },
       });
     } catch {

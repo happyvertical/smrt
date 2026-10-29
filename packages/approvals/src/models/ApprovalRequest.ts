@@ -14,6 +14,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -328,7 +329,7 @@ export class ApprovalRequest extends SmrtObject {
    *
    * @throws {ApprovalError} `APPROVAL_FORBIDDEN` for a persisted request.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.isPersisted) {
       throw new ApprovalError(
         'APPROVAL_FORBIDDEN',
@@ -337,7 +338,7 @@ export class ApprovalRequest extends SmrtObject {
     }
     this.assertInsertAllowed();
     this.requireInsertOnSave();
-    return await super.save();
+    return await super.save(options);
   }
 
   /**

@@ -206,7 +206,9 @@ export type AssistantRunState =
  * - `review`: a proposal is ready — a previewed action, a staged form value,
  *   or a host hold of kind `review`;
  * - `continue`: the run stopped at its step or budget limit; the person can
- *   ask it to continue.
+ *   ask it to continue. A run that stopped on `repeated_calls` (#4391) is
+ *   not offered this: it already had the answer it kept asking for, and
+ *   another leg would repeat the call.
  */
 export interface AssistantRunWaiting {
   kind: 'confirm' | 'choice' | 'review' | 'continue';
@@ -220,6 +222,8 @@ export interface AssistantRunWaiting {
 export type AssistantRunStopReason =
   | 'max_steps'
   | 'budget'
+  /** The model kept repeating one call; it answered without tools (#4391). */
+  | 'repeated_calls'
   | 'paused_too_long'
   | 'user'
   | 'error';
@@ -1593,9 +1597,12 @@ export function createAssistantDockController(
         {
           // A capped turn is continuable even when it then ended `empty`
           // or `timeout` (#4379): its `capReason` keeps the cap cause.
+          // `repeated_calls` (#4391) is recorded but never continuable
+          // (see `computeWaiting`).
           const cap =
             event.stoppedReason === 'max_steps' ||
-            event.stoppedReason === 'budget'
+            event.stoppedReason === 'budget' ||
+            event.stoppedReason === 'repeated_calls'
               ? event.stoppedReason
               : event.capReason;
           if (runCore && cap) {

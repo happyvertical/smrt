@@ -163,7 +163,7 @@ export class SubmissionService extends LearnerService {
     return this.runtime;
   }
   protected async storePage(
-    request: LearnerRequest,
+    request: Pick<LearnerRequest, 'tenantId' | 'actorUserId'>,
     profileId: string,
     page: SubmissionPage,
   ): Promise<Asset> {

@@ -120,6 +120,15 @@ export type {
   SourceSharing,
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
+export * from './family-intake-contracts.js';
+export {
+  FamilyIntake,
+  FamilyIntakeAsset,
+  FamilyIntakeAssetCollection,
+  FamilyIntakeCollection,
+  FamilyIntakeDecision,
+  FamilyIntakeDecisionCollection,
+} from './family-intake-models.js';
 export type {
   AuthorizedCatalogFeed,
   HearthCatalogProviderId,

@@ -6,10 +6,12 @@
  * or an explicit semantic tone for custom status vocabulary.
  */
 
+import type { HTMLAttributes } from 'svelte/elements';
 import type { StatusTone, StatusType } from './types.js';
 
 /** Props for StatusBadge component */
-export interface Props {
+export interface Props
+  extends Omit<HTMLAttributes<HTMLSpanElement>, 'class' | 'children'> {
   /** The status value to display */
   status: string;
   /** Pre-defined color scheme type */
@@ -31,6 +33,7 @@ const {
   size = 'md',
   variant = 'filled',
   label,
+  ...rest
 }: Props = $props();
 
 // Color mappings for different status domains, referencing the canonical
@@ -247,6 +250,7 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 </script>
 
 <span
+  {...rest}
   class="status-badge"
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}

@@ -5,6 +5,7 @@ import {
   field,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import {
@@ -245,7 +246,7 @@ export class SmrtJob extends SmrtObject {
    *
    * Scheduled jobs can also set this explicitly from their owning schedule.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.tenantId === undefined) {
       const contextTenantId = getTenantId();
       if (contextTenantId) {
@@ -253,7 +254,7 @@ export class SmrtJob extends SmrtObject {
       }
     }
 
-    return super.save();
+    return super.save(options);
   }
 
   /**

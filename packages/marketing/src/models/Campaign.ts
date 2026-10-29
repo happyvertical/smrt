@@ -4,6 +4,7 @@ import {
   crossPackageRef,
   field,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
   ValidationError,
 } from '@happyvertical/smrt-core';
@@ -145,8 +146,8 @@ export class Campaign extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
-    if (this.customerId === null) return this.saveLifecycle();
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (this.customerId === null) return this.saveLifecycle(options);
 
     const db = this.db;
     if (typeof db.transaction !== 'function') {
@@ -155,11 +156,13 @@ export class Campaign extends SmrtObject {
       );
     }
     return db.transaction(async (transactionDb) =>
-      this.withDatabase(transactionDb, async (bound) => bound.saveLifecycle()),
+      this.withDatabase(transactionDb, async (bound) =>
+        bound.saveLifecycle(options),
+      ),
     );
   }
 
-  private async saveLifecycle(): Promise<this> {
+  private async saveLifecycle(options?: SmrtSaveOptions): Promise<this> {
     this.prepareIdentityForSave();
     if (this.customerId !== null) {
       await assertCustomersBelongToTenant(
@@ -175,7 +178,7 @@ export class Campaign extends SmrtObject {
     this.assertSchedule();
     let result: this;
     try {
-      const persist = async () => (await super.save()) as this;
+      const persist = async () => (await super.save(options)) as this;
       const tenantContext =
         isSystemContext() || isSuperAdminBypass()
           ? undefined

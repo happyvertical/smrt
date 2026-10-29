@@ -8,6 +8,7 @@ import {
   foreignKey,
   type SmrtDeleteOptions,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -165,7 +166,7 @@ export class PaymentAllocation extends SmrtObject {
   }
 
   /** Save and validate against both claimed parent rows in one transaction. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertIntegerMinorUnits('PaymentAllocation', this.id ?? '<new>', [
       ['amount', this.amount],
     ]);
@@ -322,7 +323,7 @@ export class PaymentAllocation extends SmrtObject {
             `Refund allocation exceeds available unapplied credit (${availableRefund})`,
           );
       }
-      return (await super.save()) as this;
+      return (await super.save(options)) as this;
     });
   }
   /** Managed application reversal must also post its inverse journal and retain evidence. */

@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -322,6 +323,43 @@ describe('SQLite isolated test database schema templates', () => {
       expect(existsSync(templateDirectory ?? '')).toBe(false);
     } finally {
       rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('sweeps template directories left by dead workers but keeps live ones (#3333)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'smrt-vitest-sweep-root-'));
+    const originalTmpdir = process.env.TMPDIR;
+    disposeSqliteSchemaTemplateState();
+    try {
+      const child = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+      const deadPid = child.pid;
+      expect(deadPid).toBeGreaterThan(0);
+      const prefix = 'smrt-vitest-schema-templates-';
+      const dead = join(root, `${prefix}${deadPid}-deadbeef`);
+      const live = join(root, `${prefix}${process.pid}-feedface`);
+      const unrelated = join(root, 'something-else-1');
+      for (const dir of [dead, live, unrelated]) mkdirSync(dir);
+
+      process.env.TMPDIR = root;
+      await getDatabaseFromSqliteSchemaTemplate({
+        cacheKey: `sweep-${randomUUID()}`,
+        databaseOptions: { type: 'sqlite', url: join(root, 'target.db') },
+        getDatabase: async () => ({
+          query: async (_sql: string, snapshotPath?: unknown) => {
+            if (typeof snapshotPath === 'string')
+              writeFileSync(snapshotPath, '');
+          },
+        }),
+        prepare: async () => {},
+      });
+
+      expect(existsSync(dead)).toBe(false);
+      expect(existsSync(live)).toBe(true);
+      expect(existsSync(unrelated)).toBe(true);
+    } finally {
+      disposeSqliteSchemaTemplateState();
+      restoreEnv('TMPDIR', originalTmpdir);
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

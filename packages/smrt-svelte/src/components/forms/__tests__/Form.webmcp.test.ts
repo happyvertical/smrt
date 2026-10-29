@@ -231,6 +231,38 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue('');
   });
 
+  it('sanitizes the default tool name derived from the form id', async () => {
+    const registered: Array<{ name: string }> = [];
+    document.modelContext = {
+      async registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithFields, {
+      props: { webmcp: true, formId: 'A.b/c d', onsubmit: vi.fn() },
+    });
+    await vi.waitFor(() => expect(registered).toHaveLength(1));
+    expect(registered[0].name).toBe('A_b_c_d_stage_changes');
+  });
+
+  it.each([
+    '_Orders-',
+    '__',
+    '--',
+  ])('keeps the already-valid default tool name %s unchanged', async (formId) => {
+    const registered: Array<{ name: string }> = [];
+    document.modelContext = {
+      async registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithFields, {
+      props: { webmcp: true, formId, onsubmit: vi.fn() },
+    });
+    await vi.waitFor(() => expect(registered).toHaveLength(1));
+    expect(registered[0].name).toBe(`${formId}_stage_changes`);
+  });
+
   it('stages canonical rich values and rejects malformed text through WebMCP', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;

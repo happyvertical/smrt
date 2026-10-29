@@ -896,13 +896,20 @@ assistant works and show a status instead (Anytown's watch mode).
   `maxTurnMs` besides `maxSteps`; all three span every browser round trip
   (the continuation carries `tokens` and `startedAt`). When one runs out the
   model gets a last round without tools and the turn ends with
-  `stoppedReason: 'budget'` (or `'max_steps'`). `describeTool(name, args)`
-  also gets a call's arguments, so a step can say "Opening Events".
+  `stoppedReason: 'budget'` (or `'max_steps'`). A read-only call repeated
+  `maxRepeatedCalls` times (default 2) ends the same way with
+  `'repeated_calls'` (#4391). `describeTool(name, args)` also gets a call's
+  arguments, so a step can say "Opening Events".
 - **No answer (server, #4379).** A blank final reply is retried once
   without tools. If it stays blank the turn ends `stoppedReason: 'empty'`;
   a timed-out model call (`requestTimeoutMs`, or the provider's default)
   ends it `'timeout'`. Both store `emptyAnswerFallback` (default
-  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`. See
+  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`.   A model call that throws (`AIError` `API_ERROR`, a 5xx, a dropped
+  connection) is answered only when the host sets `providerErrorFallback`
+  (text, or `(code, error) => text | undefined`): the text is stored with
+  `metadata.fallback: 'provider_error'` and the turn ends
+  `stoppedReason: 'provider_error'`; unset, the turn emits an `error` event and
+  stores nothing. See
   [packages/chat/agents/tool-loop.md](../packages/chat/agents/tool-loop.md).
 - **Settle (browser).** After a step's browser tools ran, the dock waits before
   resuming: the host `settle` hook (e.g. "SvelteKit is no longer
@@ -917,7 +924,8 @@ assistant works and show a status instead (Anytown's watch mode).
   `state` is `running`, `paused`, `waiting`, `done`, `failed` or `cancelled`.
   `waitingFor.kind` says what the person is needed for: `confirm` (a call
   waits for Allow), `choice` / `review` (a host hold, a previewed action, or
-  a staged proposal-only write), or `continue` (a step or budget limit).
+  a staged proposal-only write), or `continue` (a step or budget limit;
+  never `repeated_calls`, where another leg would only repeat the call).
   `acknowledgeRun()` clears the staged/limit waits once the person has seen
   them; `dismissRun()` forgets a finished run.
 - **Pause.** `pauseRun()` holds the next step (before the page tools run and

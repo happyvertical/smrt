@@ -4,6 +4,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -89,7 +90,7 @@ export class Employment extends SmrtObject {
   @field({ type: 'text', description: 'Whether they currently work for you.' })
   status: EmploymentStatus = 'active';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
@@ -116,7 +117,7 @@ export class Employment extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'Employment identity is immutable.',
       );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(
@@ -162,7 +163,7 @@ export class EmploymentTerm extends SmrtObject {
   @field({ description: 'Why the period of work ended.' })
   endReason = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
@@ -177,7 +178,7 @@ export class EmploymentTerm extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'A term can only be closed once; its start and employment never change.',
       );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(
@@ -215,7 +216,7 @@ export class EmploymentChange extends SmrtObject {
   })
   actorProfileId = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new HrError(
@@ -223,7 +224,7 @@ export class EmploymentChange extends SmrtObject {
         'Employment changes are append-only.',
       );
     this.requireInsertOnSave();
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(

@@ -482,6 +482,41 @@ describe('assistant turn', () => {
       expect(ran).toEqual(['data.discover']);
     });
 
+    it('reports an unregistered tool call without echoing its name (#4453)', async () => {
+      const sentence = 'Let me think about which tool to use here';
+      const ran: string[] = [];
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([
+            calls([sentence, {}, 'bad'], ['data-discover', {}, 'good']),
+            text('Done.'),
+          ]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'go',
+          extraTools: [readTool(ran)],
+          describeTool: (name) => (name === 'data.discover' ? 'Looking' : name),
+        }),
+      );
+      const results = events.flatMap((e) =>
+        e.type === 'step' && e.step.kind === 'tool_result' ? [e.step] : [],
+      );
+      const bad = results.find((r) => r.callId === 'bad');
+      expect(bad).toMatchObject({
+        tool: 'unknown_tool',
+        label: 'Unknown tool',
+        ok: false,
+      });
+      expect(
+        JSON.stringify(events.filter((e) => e.type !== 'token')),
+      ).not.toContain('which tool');
+      expect(results.find((r) => r.callId === 'good')).toMatchObject({
+        tool: 'data.discover',
+        label: 'Looking',
+      });
+    });
+
     it('does not offer a server tool missing from the principal allow-list', async () => {
       const ran: string[] = [];
       const ai = scriptedAI([calls(['data-discover', {}]), text('no tools')]);
@@ -1012,6 +1047,68 @@ describe('assistant turn', () => {
         false,
       );
     });
+
+    it('stops on repeated calls, persists capReason, and forwards maxRepeatedCalls (#4391)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent-repeat',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const run = (maxRepeatedCalls?: number) => {
+        const ai = scriptedAI([
+          calls(['data-discover', {}, 'd1']),
+          calls(['data-discover', {}, 'd2']),
+          calls(['data-discover', {}, 'd3']),
+          text('One surface: articles.'),
+        ]);
+        return collect(
+          runAssistantTurn({
+            ai,
+            db,
+            principal: principal(),
+            audit: () => {},
+            userMessage: 'what data is there?',
+            extraTools: [readTool([])],
+            maxSteps: 3,
+            ...(maxRepeatedCalls !== undefined ? { maxRepeatedCalls } : {}),
+            author: {
+              chatService,
+              agentSessionId: session.id as string,
+              tenantId,
+              authorInvocation: () => null,
+            },
+          }),
+        ).then((events) => ({ ai, events }));
+      };
+      const { ai, events } = await run();
+      const done = events.find((e) => e.type === 'done') as Extract<
+        AssistantTurnEvent,
+        { type: 'done' }
+      >;
+      expect(done).toMatchObject({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+        message: { content: 'One surface: articles.' },
+      });
+      // Three tool rounds hit the limit; the fourth call had no tools.
+      expect(ai.offered.at(-1)).toEqual([]);
+      const metadata = (done.message as { metadata?: unknown }).metadata;
+      expect(
+        typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
+      ).toEqual({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+      });
+
+      const off = await run(0);
+      expect(off.events.find((e) => e.type === 'done')).toMatchObject({
+        stoppedReason: 'max_steps',
+        capReason: 'max_steps',
+      });
+    });
   });
 
   describe('blank answers and timeouts (#4379)', () => {
@@ -1102,6 +1199,62 @@ describe('assistant turn', () => {
       expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
         true,
       );
+    });
+
+    it('stores providerErrorFallback when a model call throws (#4454)', async () => {
+      const codes: Array<string | undefined> = [];
+      const failing: Round = () => {
+        throw Object.assign(new Error('boom'), { code: 'API_ERROR' });
+      };
+      const { events, done } = await authored([failing], {
+        providerErrorFallback: (code: string | undefined) => {
+          codes.push(code);
+          return 'The assistant is unavailable right now.';
+        },
+        onError: () => {},
+      });
+      expect(codes).toEqual(['API_ERROR']);
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({
+        content: 'The assistant is unavailable right now.',
+        role: 'assistant',
+      });
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+    });
+
+    it('accepts a plain-string providerErrorFallback', async () => {
+      const { done } = await authored(
+        [
+          () => {
+            throw new Error('down');
+          },
+        ],
+        { providerErrorFallback: 'Try again later.', onError: () => {} },
+      );
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({ content: 'Try again later.' });
+    });
+
+    it('keeps the error event when no providerErrorFallback is set or it declines', async () => {
+      const failing: Round = () => {
+        throw new Error('down');
+      };
+      for (const extra of [
+        {},
+        { providerErrorFallback: () => undefined },
+        { providerErrorFallback: '  ' },
+      ]) {
+        const { events, done } = await authored([failing], {
+          ...extra,
+          onError: () => {},
+        });
+        expect(events.some((e) => e.type === 'error')).toBe(true);
+        expect(events.some((e) => e.type === 'message')).toBe(false);
+        expect(done).toBeUndefined();
+      }
     });
 
     it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {

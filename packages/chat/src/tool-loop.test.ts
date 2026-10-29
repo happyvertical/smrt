@@ -47,20 +47,25 @@ import {
   buildManifestToolCatalog,
   classifyToolError,
   DEFAULT_EMPTY_ANSWER_FALLBACK,
+  DEFAULT_MAX_REPEATED_CALLS,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_DEDUPED_CALLS_PER_TURN,
+  MAX_REPEATED_CALLS_LIMIT,
   MAX_SERVER_TOOL_OBSERVATION_CHARS,
   MAX_TOOL_FAILURE_ARGS_CHARS,
   MAX_TOOL_LOOP_REASONING_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   replyContentFor,
+  replyMetadataFor,
+  resolveMaxRepeatedCalls,
   runToolLoop,
   SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
   TOOL_CALL_DEDUPED_NOTE,
   TOOL_CALL_DEDUPED_REJECTED_NOTE,
   TOOL_EXECUTION_ERROR_HINT,
   TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+  TOOL_LOOP_REPEATED_CALLS_INSTRUCTION,
   type ToolExecutionContext,
   toolFailureAuditMetadata,
   toolFailureRecord,
@@ -1629,6 +1634,8 @@ describe('runToolLoop', () => {
         extraTools: [queryTool(runs)],
         principal: allow(),
         maxSteps: 3,
+        // The repeated-call stop (#4391) is off: this pins the step cap.
+        maxRepeatedCalls: 0,
         audit: () => {},
       };
       const first = await runToolLoop({ ai: ai(), ...options });
@@ -1637,6 +1644,288 @@ describe('runToolLoop', () => {
       expect(runs).toHaveLength(1);
       await runToolLoop({ ai: ai(), ...options });
       expect(runs).toHaveLength(2);
+    });
+  });
+
+  describe('repeated deduped calls end the tool phase (#4391)', () => {
+    const allow = () => ({
+      runAsUserId: userId,
+      tenantId,
+      allowedTools: [...NOTE_TOOLS, 'data.query'],
+    });
+    function queryTool(runs: Array<Record<string, unknown>>): PrincipalTool {
+      return {
+        slug: 'data.query',
+        aiTool: {
+          type: 'function',
+          function: {
+            name: 'data-query',
+            description: 'Query.',
+            parameters: { type: 'object' },
+          },
+        },
+        async execute({ args }) {
+          runs.push(args);
+          return { total: 3 };
+        },
+      };
+    }
+    /** A model that always calls `next()` while tools are offered. */
+    function scripted(next: (round: number) => AIResponse) {
+      const seen: Array<{ messages: AIMessage[]; tools: boolean }> = [];
+      let round = 0;
+      const ai = makeAI((messages, options) => {
+        const tools = toolsOffered(options);
+        seen.push({ messages: [...messages], tools });
+        return tools ? next(round++) : textResponse('There are 3.');
+      });
+      return { ai, seen };
+    }
+    const count = { surfaceId: 's', request: { mode: 'count' } };
+
+    it('makes the next call the answer-now call after two repeats', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const { ai, seen } = scripted(() => toolCall('data-query', count));
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'open work orders?' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(result).toMatchObject({
+        content: 'There are 3.',
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+        steps: 3,
+      });
+      expect(runs).toHaveLength(1);
+      expect(result.invocations.map((i) => Boolean(i.deduped))).toEqual([
+        false,
+        true,
+        true,
+      ]);
+      expect(result.invocations[1]?.observation).toEqual({
+        deduped: true,
+        note: TOOL_CALL_DEDUPED_NOTE,
+      });
+      // Three tool rounds, then one no-tools call carrying the instruction.
+      expect(seen.map((c) => c.tools)).toEqual([true, true, true, false]);
+      const final = seen.at(-1)?.messages ?? [];
+      // The repeated-calls path adds one sentence to the same instruction.
+      expect(final.at(-1)).toEqual({
+        role: 'user',
+        content: `${TOOL_LOOP_ANSWER_NOW_INSTRUCTION} ${TOOL_LOOP_REPEATED_CALLS_INSTRUCTION}`,
+      });
+      expect(TOOL_LOOP_ANSWER_NOW_INSTRUCTION).toContain(
+        'If they do not answer the question, say so.',
+      );
+      expect(TOOL_LOOP_REPEATED_CALLS_INSTRUCTION).toBe(
+        'If the results above do not match what was asked (for example, a ' +
+          'total where a filtered count was asked), say you could not get ' +
+          'that figure rather than presenting the result as the answer.',
+      );
+      // The returned transcript stays valid: every call has its result, and
+      // the instruction is not stored.
+      const callIds = result.messages.flatMap((m) =>
+        'tool_calls' in m && Array.isArray(m.tool_calls)
+          ? m.tool_calls.map((c: { id: string }) => c.id)
+          : [],
+      );
+      const answered = result.messages
+        .filter((m) => m.role === 'tool')
+        .map((m) => (m as { tool_call_id?: string }).tool_call_id);
+      expect(callIds).toHaveLength(3);
+      expect(answered).toEqual(callIds);
+      expect(
+        result.messages.some(
+          (m) => m.content === TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+        ),
+      ).toBe(false);
+    });
+
+    it('answers every call of a round that hits the limit before stopping', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const triple: AIResponse = {
+        content: '',
+        finishReason: 'tool_calls',
+        toolCalls: ['a', 'b', 'c'].map((id) => ({
+          id,
+          type: 'function' as const,
+          function: { name: 'data-query', arguments: JSON.stringify(count) },
+        })),
+      };
+      const { ai, seen } = scripted(() => triple);
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(result.stoppedReason).toBe('repeated_calls');
+      expect(result.steps).toBe(1);
+      expect(seen.map((c) => c.tools)).toEqual([true, false]);
+      expect(
+        result.messages
+          .filter((m) => m.role === 'tool')
+          .map((m) => (m as { tool_call_id?: string }).tool_call_id),
+      ).toEqual(['a', 'b', 'c']);
+    });
+
+    it('keeps the plain instruction on the max_steps path', async () => {
+      const { ai, seen } = scripted(() => toolCall('data-query', count));
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool([])],
+        principal: allow(),
+        maxSteps: 2,
+        maxRepeatedCalls: 0,
+        audit: () => {},
+      });
+      expect(result.capReason).toBe('max_steps');
+      const content = String(seen.at(-1)?.messages.at(-1)?.content);
+      expect(content).toBe(TOOL_LOOP_ANSWER_NOW_INSTRUCTION);
+      expect(content).not.toContain(TOOL_LOOP_REPEATED_CALLS_INSTRUCTION);
+    });
+
+    it('does not count a call with different arguments as a repeat', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const sequence = [
+        count,
+        count,
+        { surfaceId: 's', request: { mode: 'count', filter: { open: 1 } } },
+      ];
+      const { ai } = scripted((round) =>
+        round < sequence.length
+          ? toolCall('data-query', sequence[round] as Record<string, unknown>)
+          : textResponse('There are 2 open.'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        audit: () => {},
+      });
+      expect(result.stoppedReason).toBe('stop');
+      expect(result.capReason).toBeUndefined();
+      expect(result.content).toBe('There are 2 open.');
+      expect(runs).toHaveLength(2);
+    });
+
+    it('takes a configurable limit, and 0 turns it off', async () => {
+      const run = async (maxRepeatedCalls: number) => {
+        const { ai } = scripted(() => toolCall('data-query', count));
+        return runToolLoop({
+          ai,
+          db,
+          messages: [{ role: 'user', content: 'x' }],
+          tools: [],
+          extraTools: [queryTool([])],
+          principal: allow(),
+          maxSteps: 6,
+          maxRepeatedCalls,
+          audit: () => {},
+        });
+      };
+      const one = await run(1);
+      expect(one).toMatchObject({ stoppedReason: 'repeated_calls', steps: 2 });
+      const three = await run(3);
+      expect(three).toMatchObject({
+        stoppedReason: 'repeated_calls',
+        steps: 4,
+      });
+      const off = await run(0);
+      expect(off).toMatchObject({ stoppedReason: 'max_steps', steps: 6 });
+      expect(off.capReason).toBe('max_steps');
+      // Bounded: a huge limit is capped, so it never outlives maxSteps here.
+      expect(resolveMaxRepeatedCalls(1_000)).toBe(MAX_REPEATED_CALLS_LIMIT);
+      expect(resolveMaxRepeatedCalls(undefined)).toBe(
+        DEFAULT_MAX_REPEATED_CALLS,
+      );
+      expect(resolveMaxRepeatedCalls(Number.NaN)).toBe(
+        DEFAULT_MAX_REPEATED_CALLS,
+      );
+      expect(resolveMaxRepeatedCalls(-1)).toBe(0);
+      expect(resolveMaxRepeatedCalls(2.9)).toBe(2);
+    });
+
+    it('never counts a mutating call, and a write resets the counts', async () => {
+      await grant('tool_loop_notes.create');
+      const create = { title: 'Again', tenantId };
+      const sequence = [
+        ['tool_loop_notes.create', create],
+        ['tool_loop_notes.create', create],
+        ['tool_loop_notes.create', create],
+        ['data-query', count],
+        ['data-query', count],
+        ['tool_loop_notes.create', create],
+        ['data-query', count],
+        ['data-query', count],
+      ] as const;
+      const runs: Array<Record<string, unknown>> = [];
+      const { ai } = scripted((round) =>
+        round < sequence.length
+          ? toolCall(sequence[round][0], sequence[round][1])
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'x' }],
+        tools: tools(['tool_loop_notes.create']),
+        extraTools: [queryTool(runs)],
+        principal: allow(),
+        maxSteps: sequence.length + 1,
+        audit: () => {},
+      });
+      // One deduped query before the write, one after: never two in a row.
+      expect(result.stoppedReason).toBe('stop');
+      expect(result.capReason).toBeUndefined();
+      expect(result.invocations.map((i) => Boolean(i.deduped))).toEqual([
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        true,
+      ]);
+      const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+      expect(await notes.list({ where: { title: 'Again' } })).toHaveLength(4);
+    });
+
+    it('persists capReason in the stored reply metadata', () => {
+      expect(
+        replyMetadataFor(
+          { stoppedReason: 'repeated_calls', capReason: 'repeated_calls' },
+          { content: 'There are 3.' },
+        ),
+      ).toEqual({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+      });
+      expect(
+        replyMetadataFor(
+          { stoppedReason: 'empty', capReason: 'repeated_calls' },
+          { content: 'x', fallback: 'empty' },
+        ),
+      ).toEqual({
+        stoppedReason: 'empty',
+        capReason: 'repeated_calls',
+        fallback: 'empty',
+      });
     });
   });
 

@@ -261,7 +261,7 @@ test('real maintained-host generation envelope fits the pinned budgeted SDK requ
     ).service.getCompletedAnalysis(receipt.itemId);
     expect(completed.result.output.proposals).toMatchObject({
       outcome: 'no_action',
-      warnings: ['generation_completion_unknown'],
+      warnings: [],
       automaticActionEligible: false,
     });
   } finally {

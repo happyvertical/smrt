@@ -98,12 +98,19 @@ export type AssistantTurnStopReason =
   | 'max_steps'
   /** The turn's token or time budget ran out (`maxTurnTokens`/`maxTurnMs`). */
   | 'budget'
+  /**
+   * One read-only call was repeated `maxRepeatedCalls` times; the model
+   * answered without tools (#4391). Not continuable: repeating won't help.
+   */
+  | 'repeated_calls'
   | 'no_tools'
   | 'cancelled'
   /** The model returned no answer, even after one retry; the reply is the fallback (#4379). */
   | 'empty'
   /** A model call timed out; the reply is the fallback (#4379). */
-  | 'timeout';
+  | 'timeout'
+  /** A model call failed and the host's `providerErrorFallback` answered (#4454). */
+  | 'provider_error';
 
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =
@@ -122,9 +129,10 @@ export type AssistantTurnEvent<M = Record<string, unknown>> =
       stoppedReason: AssistantTurnStopReason;
       /**
        * Why tools were withdrawn on the final round, kept when the turn then
-       * ends `empty` or `timeout` (#4379).
+       * ends `empty` or `timeout` (#4379). `repeated_calls` (#4391) is not
+       * continuable; `max_steps` and `budget` are.
        */
-      capReason?: 'max_steps' | 'budget';
+      capReason?: 'max_steps' | 'budget' | 'repeated_calls';
     }
   | {
       type: 'error';

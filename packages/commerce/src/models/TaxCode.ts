@@ -1,4 +1,9 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { MoneyValidationError } from '../money.js';
 import type { TaxCodeOptions, TaxCodePart } from '../types/index.js';
@@ -81,7 +86,7 @@ export class TaxCode extends SmrtObject {
     if (options.active !== undefined) this.active = options.active;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.code.trim() || !this.name.trim())
       throw new Error('Tax code requires a nonempty code and name');
     if (
@@ -136,7 +141,7 @@ export class TaxCode extends SmrtObject {
         if (component.tenantId !== this.tenantId)
           throw new Error('Tax code components must belong to the same tenant');
       }
-      return (await super.save()) as this;
+      return (await super.save(options)) as this;
     });
   }
 

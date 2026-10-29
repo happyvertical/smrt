@@ -3,6 +3,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -75,7 +76,7 @@ export class Learner extends SmrtObject {
     this.settings = JSON.stringify(value);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       user_id: this.userId,
       profile_id: this.profileId,
@@ -102,7 +103,7 @@ export class Learner extends SmrtObject {
       );
     if (!Number.isSafeInteger(this.level) || this.level < 0)
       throw new Error('Learner level must be a nonnegative integer');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -120,7 +121,7 @@ export class Curriculum extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, { learner_id: this.learnerId });
     requireEnum(this.status, ['planned', 'active', 'completed', 'archived']);
     if (
@@ -130,7 +131,7 @@ export class Curriculum extends SmrtObject {
       }))
     )
       throw new Error('Curriculum requires its tenant learner');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -161,7 +162,7 @@ export class Enrollment extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       curriculum_id: this.curriculumId,
       learner_id: this.learnerId,
@@ -187,7 +188,7 @@ export class Enrollment extends SmrtObject {
       this.targetMinutesPerWeek < 0
     )
       throw new Error('Target minutes must be a nonnegative integer');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -221,7 +222,7 @@ export class LessonProgress extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       enrollment_id: this.enrollmentId,
       learner_id: this.learnerId,
@@ -262,6 +263,6 @@ export class LessonProgress extends SmrtObject {
         this.bestScore > 1)
     )
       throw new Error('Score must be null or a number from zero to one');
-    return super.save();
+    return super.save(options);
   }
 }

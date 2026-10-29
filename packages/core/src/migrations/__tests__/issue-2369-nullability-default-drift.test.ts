@@ -1293,6 +1293,24 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
     );
   });
 
+  it("sets a JSON literal default, not raw '', for an `any = ''` field on a jsonb column (#3533)", async () => {
+    const diff = await pgComparer({
+      id: { type: 'text', notNull: true, primaryKey: true },
+      index_filter: { type: 'jsonb', notNull: true, defaultValue: null },
+    }).compare({
+      items: schema('items', {
+        id: { type: 'TEXT', primaryKey: true, notNull: true },
+        index_filter: { type: 'JSON', notNull: true, defaultValue: '' },
+      }),
+    });
+
+    const sql = getSQLFromDiff(diff);
+    expect(sql).toContain(
+      `ALTER TABLE "items" ALTER COLUMN "index_filter" SET DEFAULT 'null'::jsonb`,
+    );
+    expect(sql.join('\n')).not.toMatch(/SET DEFAULT ''(?!::)/);
+  });
+
   it('keeps NOT NULL/UNIQUE inline on PostgreSQL ADD COLUMN when the table is empty and defers NOT NULL on a populated table without a default', async () => {
     const columns = { id: { type: 'text', notNull: true, primaryKey: true } };
     const manifest = {

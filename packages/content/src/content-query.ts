@@ -199,7 +199,7 @@ export interface ContentQueryCollection {
   }): Promise<Record<string, unknown>[]>;
   count(options?: { where?: WhereCondition | WhereDnf }): Promise<number>;
   facets(options: {
-    fields: readonly { field: string; limit?: number }[];
+    fields: readonly (string | { field: string; limit?: number })[];
     where?: WhereCondition | WhereDnf;
   }): Promise<{ field: string; values: { value: unknown; count: number }[] }[]>;
 }

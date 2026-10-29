@@ -25,7 +25,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   CommissionBasis,
@@ -393,11 +399,11 @@ export class Commission extends SmrtObject {
    * row. Brand-new rows may start in any status (fixtures/imports); a
    * persisted row may only advance one legal step.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     await this.assertDedupeKeyNotTaken();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedCommissionStatus.set(this, this.status);
     return result;
   }
