@@ -244,3 +244,25 @@ consent, without requiring a group or accepted invitation. It uses the same
 active executor and exact learner ownership checks; it creates no grants or
 policy history. Host guardian decisions must validate the supplied exact current
 relationships/terms separately from a group's `education.group.review` role.
+
+## Trusted workspace-kind metadata
+
+`isGroupTenant(db, tenantId): Promise<boolean>` is a trusted host-only metadata
+lookup for an exact server-selected resource tenant. It uses the supplied current
+executor, verifies that the Tenant exists freshly, and checks the owning
+`education_groups` table for that exact tenant. Blank, malformed, missing or
+ambiguous scope fails closed. The result is independent of group activation,
+Tenant status, memberships and staff roles: disabling a group or removing a staff
+membership never turns it into a family. The result contains no name, roster,
+permission or grant and creates no session or tenant context. It has no generated
+REST, MCP or CLI surface.
+
+This result is not authorization. Hosts must separately require a freshly ACTIVE
+Tenant plus current signed-session, background-job or independent-proof authority
+on the same relevant executor. Never pass a browser-selected tenant as authority,
+interpret a missing Tenant as family, or use absence of group membership to infer
+family kind. The helper provides no arbitrary cross-tenant directory.
+
+| Behavior/invariant | Trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| G33 workspace kind | trusted exact resource lookup | existing family false; active/inactive group true | blank/malformed/absent tenant; ambiguous group rows; database failures propagate | host-selected exact tenant, no synthetic session/context | caller-supplied executor, fresh reads; no writes | Node SQLite/PostgreSQL | status/membership/role absence never implies family or grants | integration | `pnpm --filter @happyvertical/smrt-education exec vitest run src/__tests__/group-sharing-workspace.test.ts` (same file with TEST_DB_ADAPTER=postgres and isolated DATABASE_URL) |

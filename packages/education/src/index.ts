@@ -161,6 +161,7 @@ export * from './group-sharing-contracts.js';
 export * from './group-sharing-models.js';
 export { evaluateGroupSharingPolicy } from './group-sharing-policy.js';
 export { GroupSharingService } from './group-sharing-service.js';
+export { isGroupTenant } from './group-sharing-workspace.js';
 export type {
   AuthorizedCatalogFeed,
   HearthCatalogProviderId,
