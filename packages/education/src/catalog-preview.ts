@@ -304,6 +304,12 @@ export class CatalogPreviewService {
           return unavailable();
         if (!catalogPreviewFor(record)) return unavailable();
         bytes = Uint8Array.from(bytes);
+        // Another miss may have populated this key while loading/hash-checking.
+        const replaced = this.cache.get(key);
+        if (replaced) {
+          this.cache.delete(key);
+          this.cacheBytes -= replaced.bytes.length;
+        }
         while (this.cacheBytes + bytes.length > 16 * 1024 * 1024) {
           const first = this.cache.entries().next().value;
           if (!first) break;

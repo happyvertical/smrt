@@ -220,6 +220,66 @@ describe('catalog publisher previews', () => {
     expect(loadPreview).toHaveBeenCalledTimes(10);
   });
 
+  it('retains cached bytes within capacity after concurrent misses for the same image', async () => {
+    let index = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const images = [
+      png,
+      ...Array.from({ length: 7 }, (_, i) => {
+        const padding = Buffer.alloc(2 * 1024 * 1024 - png.length);
+        padding.writeUInt32BE(padding.length - 12, 0);
+        padding.write('npAD', 4, 'ascii');
+        padding[padding.length - 5] = i;
+        padding.writeUInt32BE(
+          crc32(padding.subarray(4, -4)),
+          padding.length - 4,
+        );
+        return Buffer.concat([
+          png.subarray(0, -12),
+          padding,
+          png.subarray(-12),
+        ]);
+      }),
+    ];
+    const records = images.map((bytes) => ({
+      ...record,
+      preview: {
+        ...preview,
+        byteLength: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      },
+    }));
+    const loadPreview = vi.fn(async () => {
+      const image = images[index];
+      if (index === 0) await gate;
+      return image;
+    });
+    const authorize = vi.fn(async () => true);
+    const service = new CatalogPreviewService(
+      { getResource: async () => records[index], authorize },
+      { loadPreview },
+    );
+    const requests = Array.from({ length: 24 }, () => service.serve(request));
+    try {
+      await vi.waitFor(() => expect(loadPreview).toHaveBeenCalledTimes(24));
+    } finally {
+      release();
+    }
+    expect(
+      (await Promise.all(requests)).every((result) => result.status === 200),
+    ).toBe(true);
+    for (index = 1; index < images.length; index++)
+      expect((await service.serve(request)).status).toBe(200);
+    // Actual verified bytes are below 16 MiB, so the first image must still hit.
+    index = 0;
+    expect((await service.serve(request)).status).toBe(200);
+    expect(loadPreview).toHaveBeenCalledTimes(31);
+    expect(authorize).toHaveBeenCalledTimes(32);
+  });
+
   it('fails closed on changed, invalid, oversized or failed preview bytes', async () => {
     for (const loadPreview of [
       vi.fn(async () => Buffer.alloc(2 * 1024 * 1024 + 1)),
