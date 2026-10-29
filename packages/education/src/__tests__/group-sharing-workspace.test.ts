@@ -36,6 +36,7 @@ describe('trusted exact workspace-kind metadata', () => {
   let admin: DatabaseInterface | undefined;
   let schema: string | undefined;
   let restricted: DatabaseInterface | undefined;
+  let trustedMetadata: DatabaseInterface | undefined;
   let restrictedRole: string | undefined;
   let familyId: string;
   let groupId: string;
@@ -121,11 +122,14 @@ describe('trusted exact workspace-kind metadata', () => {
     await restricted?.close?.();
     restricted = undefined;
     await db.close?.();
-    if (admin && schema)
-      await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-    if (admin && restrictedRole)
-      await admin.query(`DROP ROLE IF EXISTS "${restrictedRole}"`);
+    const cleanup = trustedMetadata ?? admin;
+    if (cleanup && schema)
+      await cleanup.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    if (cleanup && restrictedRole)
+      await cleanup.query(`DROP ROLE IF EXISTS "${restrictedRole}"`);
     restrictedRole = undefined;
+    await trustedMetadata?.close?.();
+    trustedMetadata = undefined;
     await admin?.close?.();
     admin = undefined;
     schema = undefined;
@@ -136,6 +140,21 @@ describe('trusted exact workspace-kind metadata', () => {
     async () => {
       if (!admin || !schema || !process.env.DATABASE_URL)
         throw new Error('Missing PostgreSQL fixture');
+      if (!process.env.SMRT_TEST_POSTGRES_ADMIN_URL)
+        throw new Error('Explicit test-only PostgreSQL admin URL required');
+      // CI uses a NOSUPERUSER/NOBYPASSRLS application URL. Keep setup and
+      // explicitly trusted metadata reads on a distinct fixture-only executor;
+      // retain canonical FORCE policies for all ordinary principal requests.
+      const adminUrl = new URL(process.env.SMRT_TEST_POSTGRES_ADMIN_URL);
+      adminUrl.pathname = new URL(process.env.DATABASE_URL).pathname;
+      adminUrl.searchParams.set('options', `-c search_path=${schema}`);
+      trustedMetadata = await getDatabase({
+        type: 'postgres',
+        url: adminUrl.toString(),
+        dbid: randomUUID(),
+        __smrtSkipVitestSchemaPreparation: true,
+      } as Parameters<typeof getDatabase>[0]);
+      const setup = trustedMetadata;
       await getTestDatabase({
         db,
         classes: [
@@ -158,9 +177,10 @@ describe('trusted exact workspace-kind metadata', () => {
         throw new Error('Missing canonical group SELECT policy');
       const applyPolicies = async () => {
         for (const sql of generated.statements) {
-          if (sql.startsWith('CREATE OR REPLACE FUNCTION')) await db.query(sql);
+          if (sql.startsWith('CREATE OR REPLACE FUNCTION'))
+            await setup.query(sql);
           else if (sql.includes('"public"."education_groups"'))
-            await db.query(
+            await setup.query(
               sql.replaceAll(
                 '"public"."education_groups"',
                 `"${schema}"."education_groups"`,
@@ -192,18 +212,19 @@ describe('trusted exact workspace-kind metadata', () => {
         status: MembershipStatus.ACTIVE,
       });
       restrictedRole = `kind_reader_${randomUUID().replaceAll('-', '')}`;
-      await admin.query(
-        `CREATE ROLE "${restrictedRole}" LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT`,
+      const fixturePassword = randomUUID();
+      await setup.query(
+        `CREATE ROLE "${restrictedRole}" LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT PASSWORD '${fixturePassword}'`,
       );
-      await db.query(
+      await setup.query(
         `GRANT USAGE ON SCHEMA "${schema}" TO "${restrictedRole}"`,
       );
-      await db.query(
+      await setup.query(
         `GRANT SELECT ON ALL TABLES IN SCHEMA "${schema}" TO "${restrictedRole}"`,
       );
       const url = new URL(process.env.DATABASE_URL);
       url.username = restrictedRole;
-      url.password = '';
+      url.password = fixturePassword;
       url.searchParams.set('options', `-c search_path=${schema}`);
       restricted = await getDatabase({
         type: 'postgres',
@@ -275,12 +296,12 @@ describe('trusted exact workspace-kind metadata', () => {
       await run(familyId, false);
       await run(groupTenantId, true);
       await run(null, false);
-      await db.query(
+      await setup.query(
         'UPDATE education_groups SET active = ? WHERE id = ?',
         false,
         groupId,
       );
-      await db.query(
+      await setup.query(
         'UPDATE tenants SET status = ? WHERE id = ?',
         TenantStatus.SUSPENDED,
         groupTenantId,
@@ -293,24 +314,35 @@ describe('trusted exact workspace-kind metadata', () => {
       await run(groupTenantId, false);
       // The helper never elevates; an already trusted metadata executor can
       // establish absence, while the ordinary principal cannot.
-      expect(await isGroupTenant(db, familyId)).toBe(false);
-      expect(await isGroupTenant(db, groupTenantId)).toBe(true);
+      expect(await isGroupTenant(setup, familyId)).toBe(false);
+      expect(await isGroupTenant(setup, groupTenantId)).toBe(true);
+      const appRole = (
+        await db.query(
+          'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+        )
+      ).rows[0];
+      if (appRole.rolsuper === false && appRole.rolbypassrls === false)
+        await expect(isGroupTenant(db, familyId)).rejects.toThrow(
+          'Tenant kind is unavailable',
+        );
       // SET LOCAL cleanup belongs to the public principal wrapper, not helper.
       const after = await outsideSettings(restricted);
       expect(after).toEqual(outside);
       // Corrupt only this fixture to prove that two RLS-visible rows are
       // rejected as ambiguous, using the same generated policies and actor.
-      await db.query(
+      await setup.query(
         'ALTER TABLE education_groups RENAME TO original_education_groups',
       );
-      await db.query(
+      await setup.query(
         'CREATE TABLE education_groups AS SELECT * FROM original_education_groups',
       );
-      await db.query(
+      await setup.query(
         'INSERT INTO education_groups SELECT * FROM original_education_groups',
       );
       await applyPolicies();
-      await db.query(`GRANT SELECT ON education_groups TO "${restrictedRole}"`);
+      await setup.query(
+        `GRANT SELECT ON education_groups TO "${restrictedRole}"`,
+      );
       await (await MembershipCollection.create({ db })).create({
         userId,
         tenantId: groupTenantId,
