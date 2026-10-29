@@ -1,5 +1,13 @@
 # @happyvertical/smrt-ledgers
 
+## 0.57.40
+
+### Patch Changes
+
+- @happyvertical/smrt-prompts@0.57.40
+  - @happyvertical/smrt-tenancy@0.57.40
+  - @happyvertical/smrt-core@0.57.40
+
 ## 0.57.39
 
 ### Patch Changes
