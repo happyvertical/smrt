@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { planTlsRotation, tlsDocument } from './deployment/tls.mjs';
+import { hash } from './deployment/release.mjs';
 import { chartArtifact } from './deployment-chart-artifact.mjs';
 
 // The framework's existing YAML dependency parses actual Helm output; do not
@@ -385,4 +387,19 @@ test('native exercise package and OCI receipt follow arbitrary chart versions wi
     writeFileSync(join(directory, 'Chart.yaml'), metadata.toString());
     assert.throws(() => chartArtifact(directory, scratch, 'http://registry.example.invalid'), /versioned/);
   }
+});
+
+
+test('TLS reference rotation and correlated rollback keep every rendered Pod template unchanged',()=>{
+  const values=fixture();values.release.phase='active';values.release.sequence=1;values.ingress.tlsSecretName='tls-v1';
+  const predecessor={kind:'HelmRelease',metadata:{name:'fixture'},spec:{values}};
+  const plan=planTlsRotation({document:predecessor,revision:'a'.repeat(40)},[{name:values.ingress.name??'fixture',tlsSecretName:'tls-v2'}],'tls-only');
+  const retained=[{name:'tls-v1',uid:'old',resourceVersion:'1',leafSha256:'b'.repeat(64)},{name:'tls-v2',uid:'new',resourceVersion:'2',leafSha256:'c'.repeat(64)}];
+  const templates=[{kind:'Deployment',name:'fixture-web',uid:'fixture-unit',templateSha256:'d'.repeat(64)}];
+  const rotated=tlsDocument(plan,retained,'pending',null,templates);
+  const rollback=tlsDocument(plan,retained,'rolling-back',{revision:'e'.repeat(40),documentSha256:'f'.repeat(64),failureIdentity:'a'.repeat(64)},templates);
+  const podTemplates=(docs)=>docs.filter(o=>['Deployment','CronJob','Job'].includes(o.kind)).map(o=>({kind:o.kind,name:o.metadata.name,template:o.kind==='CronJob'?o.spec.jobTemplate.spec.template:o.spec.template}));
+  const baseline=documents(values);assert.deepEqual(podTemplates(documents(rotated.spec.values)),podTemplates(baseline));assert.deepEqual(podTemplates(documents(rollback.spec.values)),podTemplates(baseline));
+  assert.equal(resource(documents(rotated.spec.values),'Ingress',values.ingress.name??'fixture').spec.tls[0].secretName,'tls-v2');assert.equal(resource(documents(rollback.spec.values),'Ingress',values.ingress.name??'fixture').spec.tls[0].secretName,'tls-v1');
+  assert.deepEqual(rotated.spec.values.release,values.release);assert.equal(hash(rotated.spec.values.target),hash(values.target));
 });
