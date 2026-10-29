@@ -23,6 +23,7 @@ import type {
   Learner,
   LessonProgress,
 } from './learners.js';
+import { readWorkbookCompletion } from './workbook-completion.js';
 import { WorkbookActivityCollection } from './workbook-models.js';
 
 /** Inputs are identifiers, never an authority claim or model patch. */
@@ -55,6 +56,7 @@ export type LearnerAuthorizer = (
       | 'education.learner.packet'
       | 'education.learner.notes.read'
       | 'education.learner.notes.add'
+      | 'education.learner.complete'
       | 'education.learner.setup';
     own: boolean;
     relationshipTypeId?: string;
@@ -396,6 +398,7 @@ export class LearnerService {
         'education.learner.packet',
         'education.learner.notes.read',
         'education.learner.notes.add',
+        'education.learner.complete',
       ].includes(action)
     )
       throw new LearnerAuthorizationError();
@@ -765,20 +768,30 @@ export class LearnerService {
     row: LessonProgress,
   ): Promise<LessonProgressView> {
     const view = progressView(row);
+    const activity = await this.findWorkbookActivity(request, {
+      enrollmentId: row.enrollmentId,
+      lessonId: row.lessonId,
+    });
+    if (!activity) return view;
+    const state = await readWorkbookCompletion(this.db, {
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+    });
     const learner = await this.db.get('learners', {
       id: request.learnerId,
       tenant_id: request.tenantId,
     });
-    if (
-      learner?.user_id !== request.actorUserId ||
-      !(await this.findWorkbookActivity(request, { lessonId: row.lessonId }))
-    )
-      return view;
     return {
       ...view,
-      bestScore: null,
-      completedAt: null,
-      status: view.status === 'complete' ? 'submitted' : view.status,
+      status:
+        state.completion.status === 'complete'
+          ? 'complete'
+          : ['complete', 'skipped'].includes(view.status)
+            ? 'in_progress'
+            : view.status,
+      completedAt: state.completion.completedAt,
+      ...(learner?.user_id === request.actorUserId ? { bestScore: null } : {}),
     };
   }
 

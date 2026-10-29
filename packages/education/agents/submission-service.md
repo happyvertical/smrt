@@ -45,7 +45,12 @@ non-authoritative Grade until guardian review.
 `reviewSubmission` accepts an existing authorized submission and optional score
 and feedback. `attestLesson` creates/reuses an Attestation for a matching progress
 item without requiring uploads. Both require a verified guardian and create a
-new guardian Grade, set submission to `graded` and progress to `complete`.
+new guardian Grade and set submission to `graded`. Ordinary non-workbook progress
+becomes `complete`. Workbook-backed progress instead uses its explicit parent
+completion decision; grading alone leaves it in progress, including through a
+plain SubmissionService instance. Existing explicit completion on the current
+attempt is retained. The owning workbook join determines this policy, never a
+caller flag.
 Omitted/null score is unscored; zero is a real score. The latest guardian grade
 wins over auto/AI/instructor proposals, and its score replaces progress's score.
 Review history is retained. ExternalCompletion is available for trusted server

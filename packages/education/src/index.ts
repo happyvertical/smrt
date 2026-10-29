@@ -268,6 +268,10 @@ export {
   SubmissionIntakeBinding,
 } from './submissions.js';
 export { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
+export {
+  WorkbookCompletionDecision,
+  WorkbookCompletionDecisionCollection,
+} from './workbook-completion.js';
 export * from './workbook-contracts.js';
 export * from './workbook-layout.js';
 export * from './workbook-models.js';
