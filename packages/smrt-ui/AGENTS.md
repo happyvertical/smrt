@@ -84,6 +84,11 @@ own theme provider or static preset stylesheet.
 
 ## Theme presets
 
+Only a root `ThemeProvider` writes the document attributes (`<html>` `data-theme`,
+`data-color-scheme`, `dark`, `data-contrast`, `data-density`). A nested one is
+`scope="local"` by default and themes its own wrapper only; `scope="document"`
+opts back in (#4485).
+
 Adding or editing a preset touches four things that must stay in lockstep:
 `src/themes/<id>/index.ts` (the `Theme`), the `ThemePreset` union in
 `src/themes/types.ts`, the `registry.ts` entry, and the static
