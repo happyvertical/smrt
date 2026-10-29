@@ -333,6 +333,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
   };
   mutate({ doc, all, config, source });
   const command = async (name, args) => {
+    if (name === 'git') return args.includes('rev-parse') ? (config.fixtureRevision ?? 'abc') : '';
     if (name === 'helm') {
       if (args.includes('template')) return 'rendered';
       config.fixtureAfterHelmValues?.();
@@ -353,6 +354,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
     throw new Error('Unexpected tool operation');
   };
   const request = async (url) => {
+    if (config.fixtureRequest) return config.fixtureRequest(url);
     config.fixtureDuringRequest?.();
     if (config.fixtureRequestError) throw new Error(config.fixtureRequestError);
     return new Response('healthy', {
@@ -362,7 +364,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
       headers: { 'X-Smrt-Release': 'release-1', 'X-Smrt-Sequence': '1' },
     });
   };
-  return { doc, adapter: createLiveAdapter(config, command, request) };
+  return { doc, config, all, command, request, adapter: createLiveAdapter(config, command, request, config.fixtureAdapterOptions ?? {}) };
 }
 test('live stopped proof checks independent maintenance HTTP', async () => {
   const { adapter, doc } = liveFixture();
@@ -1877,6 +1879,7 @@ test('central validation rejects bounded legacy contract violations and binds al
   assert.deepEqual(effectiveWorkloadStrategy(values.target.workloads.web), { type: 'Recreate' });
   for (const mutate of [
     (v) => { v.current.workloads.site.strategy = { type: 'Recreate' }; },
+    (v) => { v.target.workloads.site.service.port += 1; },
     (v) => { v.current.workloads.site.volumes = [{ name: 'credentials', secret: { secretName: 'runtime' } }]; },
     (v) => { v.current.workloads.site.selectorLabels = { 'app.kubernetes.io/instance': 'other' }; },
     (v) => { v.current.workloads.site.writer = true; },
@@ -1890,4 +1893,319 @@ test('central validation rejects bounded legacy contract violations and binds al
   ]) { const copy = structuredClone(doc); mutate(copy.spec.values); assert.throws(() => validate(copy), undefined, mutate.toString()); }
   const copy = structuredClone(doc); copy.spec.values.target.workloads.site.command.push('new');
   assert.notEqual(identity(copy), identity(doc));
+});
+
+function staticPhaseFixture(
+  phase,
+  { bootstrap = false, route = true, observer, proofMutation } = {},
+) {
+  const revision = 'a'.repeat(40);
+  let calls = 0;
+  const live = liveFixture(phase, ({ doc, all, config, source }) => {
+    const site = {
+      ...structuredClone(runtime.workloads.web),
+      role: 'service',
+      writer: false,
+      replicas: 1,
+      continuousStatic: true,
+      automountServiceAccountToken: false,
+      podSecurityContext: {
+        runAsNonRoot: true,
+        runAsUser: 101,
+        runAsGroup: 101,
+        seccompProfile: { type: 'RuntimeDefault' },
+      },
+      securityContext: {
+        allowPrivilegeEscalation: false,
+        readOnlyRootFilesystem: true,
+        capabilities: { drop: ['ALL'] },
+      },
+    };
+    doc.spec.values.target.workloads.site = site;
+    if (bootstrap) {
+      doc.spec.values.current = false;
+      if (phase === 'maintenance') doc.spec.values.release.sequence = 0;
+    } else doc.spec.values.current.workloads.site = structuredClone(site);
+    source.status.artifact.revision =
+      source.status.lastAppliedRevision = `main@sha1:${revision}`;
+    config.fixtureRevision = revision;
+    config.writerFence = { id: 'native-test', identity: 'f'.repeat(64) };
+    const defaultObserver = async (context) => {
+      calls++;
+      const now = Date.now();
+      const proof = {
+        apiVersion: 'smrt.happyvertical.com/writer-fence-v1',
+        contractId: context.contractId,
+        contractIdentity: context.contractIdentity,
+        context: context.context,
+        namespace: context.namespace,
+        epoch: 'epoch-1',
+        observedAt: now,
+        expiresAt: now + 20000,
+        namespacePolicyIdentity: 'b'.repeat(64),
+        databasePolicyIdentity: 'c'.repeat(64),
+        observations: ['namespace', 'database'].map((scope) => ({
+          scope,
+          identity: 'd'.repeat(64),
+          observedAt: now,
+          activeWriters: 0,
+        })),
+      };
+      proofMutation?.(proof, context);
+      return proof;
+    };
+    config.fixtureAdapterOptions = {
+      adoptionFenceObserver:
+        observer === false ? undefined : (observer ?? defaultObserver),
+    };
+    config.fixtureRequest = async (url) =>
+      new Response('healthy', {
+        status:
+          url.includes('site.test') ||
+          phase === 'active' ||
+          !url.startsWith('https:')
+            ? 200
+            : 503,
+        headers: {
+          'X-Smrt-Release': 'release-1',
+          'X-Smrt-Sequence': String(doc.spec.values.release.sequence),
+        },
+      });
+    if (route) {
+      doc.spec.values.ingress.additionalRoutes = [
+        { name: 'example-site', host: 'site.test', workload: 'site' },
+      ];
+      all.push({
+        kind: 'Ingress',
+        metadata: { name: 'example-site' },
+        spec: {
+          rules: [
+            {
+              host: 'site.test',
+              http: {
+                paths: [{ backend: { service: { name: 'example-site' } } }],
+              },
+            },
+          ],
+        },
+      });
+      config.staticAssertions = [{ url: 'https://site.test/', status: 200 }];
+    }
+    if (!bootstrap || ['verify', 'active'].includes(phase)) {
+      const siteObjects = structuredClone(objects());
+      for (const o of siteObjects) {
+        o.metadata.name ??= `site-${o.kind.toLowerCase()}`;
+        if (o.kind === 'Deployment') {
+          o.metadata.name = 'example-site';
+          o.metadata.uid = 'site-deployment';
+          o.spec.selector.matchLabels['smrt.happyvertical.com/workload'] =
+            'site';
+          o.spec.template.spec.securityContext = site.podSecurityContext;
+          o.spec.template.spec.containers[0].securityContext =
+            site.securityContext;
+        }
+        if (o.kind === 'ReplicaSet') {
+          o.metadata.uid = 'site-rs';
+          o.metadata.ownerReferences = [{ uid: 'site-deployment' }];
+        }
+        if (o.kind === 'Pod') {
+          o.metadata.uid = 'site-pod';
+          o.metadata.ownerReferences = [{ uid: 'site-rs' }];
+          o.spec.securityContext = site.podSecurityContext;
+          o.spec.containers[0].securityContext = site.securityContext;
+        }
+        if (o.kind === 'EndpointSlice') {
+          o.metadata.labels['kubernetes.io/service-name'] = 'example-site';
+          o.endpoints[0].targetRef.uid = 'site-pod';
+        }
+      }
+      all.push(...siteObjects);
+    }
+    if (phase === 'migrate') {
+      const name = 'example-migration-release-1-1';
+      const spec = {
+        automountServiceAccountToken: false,
+        restartPolicy: 'Never',
+        containers: [{ image }],
+      };
+      all.push(
+        {
+          kind: 'Job',
+          metadata: { name, uid: 'migration-job' },
+          spec: { backoffLimit: 0, template: { spec } },
+          status: { succeeded: 1 },
+        },
+        {
+          kind: 'Pod',
+          metadata: {
+            name: `${name}-pod`,
+            uid: 'migration-pod',
+            ownerReferences: [{ uid: 'migration-job' }],
+          },
+          spec: structuredClone(spec),
+          status: {
+            phase: 'Succeeded',
+            containerStatuses: [{ imageID: image }],
+          },
+        },
+      );
+    }
+    for (const o of all)
+      o.metadata.labels = {
+        ...o.metadata.labels,
+        'app.kubernetes.io/instance': 'example',
+        'smrt.happyvertical.com/release': 'release-1',
+        'smrt.happyvertical.com/phase': phase,
+        'smrt.happyvertical.com/sequence': String(
+          doc.spec.values.release.sequence,
+        ),
+      };
+  });
+  return { ...live, revision, calls: () => calls };
+}
+
+test('actual bootstrap phase proofs do not invent static current before verify, with and without routes', async () => {
+  for (const route of [false, true])
+    for (const phase of [
+      'maintenance',
+      'stopped',
+      'migrate',
+      'verify',
+      'active',
+    ]) {
+      const live = staticPhaseFixture(phase, {
+        bootstrap: true,
+        route,
+        observer: false,
+      });
+      const requests = [];
+      live.config.fixtureRequest = async (url) => {
+        requests.push(url);
+        return new Response('healthy', {
+          status:
+            url.includes('site.test') ||
+            phase === 'active' ||
+            !url.startsWith('https:')
+              ? 200
+              : 503,
+          headers: {
+            'X-Smrt-Release': 'release-1',
+            'X-Smrt-Sequence': String(live.doc.spec.values.release.sequence),
+          },
+        });
+      };
+      const proof = await live.adapter.observe(live.doc, live.revision);
+      assert.equal(proof.proven, true, `${route}/${phase}: ${proof.failure}`);
+      assert.equal(
+        requests.some((url) => url.includes('site.test')),
+        route && ['verify', 'active'].includes(phase),
+      );
+    }
+});
+
+test('ordinary stopped/migrate static exemptions require fresh exactly bound platform fences', async () => {
+  for (const phase of ['stopped', 'migrate']) {
+    const valid = staticPhaseFixture(phase);
+    const validProof = await valid.adapter.observe(valid.doc, valid.revision);
+    assert.equal(validProof.proven, true, validProof.failure);
+    assert.equal(valid.calls(), 1);
+    for (const mutation of [
+      (p) => {
+        p.expiresAt = Date.now() - 1;
+      },
+      (p) => {
+        p.observedAt = Date.now() - 31000;
+      },
+      (p) => {
+        p.namespace = 'foreign';
+      },
+      (p) => {
+        p.contractIdentity = 'e'.repeat(64);
+      },
+      (p) => {
+        p.context = { ...p.context, documentSha256: 'e'.repeat(64) };
+      },
+      (p) => {
+        p.context = { ...p.context, revision: 'b'.repeat(40) };
+      },
+      (p) => {
+        p.context = { ...p.context, phase: 'active' };
+      },
+      (p) => {
+        p.context = { ...p.context, attempt: 2 };
+      },
+      (p) => {
+        p.observations[0].activeWriters = 1;
+      },
+      (p) => {
+        p.observations[1].observedAt -= 31000;
+      },
+      (p) => {
+        p.extra = true;
+      },
+    ]) {
+      const live = staticPhaseFixture(phase, { proofMutation: mutation });
+      const proof = await live.adapter.observe(live.doc, live.revision);
+      assert.equal(proof.proven, false);
+      assert.equal(proof.failureCode, 'WRITER_FENCE');
+    }
+    const missing = staticPhaseFixture(phase, { observer: false });
+    assert.equal(
+      (await missing.adapter.observe(missing.doc, missing.revision))
+        .failureCode,
+      'WRITER_FENCE',
+    );
+  }
+});
+
+test('ordinary fence binds full HelmRelease controls and redacts provider failures', async () => {
+  let saved;
+  const live = staticPhaseFixture('stopped', {
+    proofMutation: (proof) => {
+      if (saved) Object.assign(proof, saved);
+      else saved = structuredClone(proof);
+    },
+  });
+  const firstProof = await live.adapter.observe(live.doc, live.revision);
+  assert.equal(firstProof.proven, true, firstProof.failure);
+  const before = identity(live.doc);
+  live.doc.metadata.annotations.reviewed = 'changed';
+  assert.equal(identity(live.doc), before);
+  assert.equal(
+    (await live.adapter.observe(live.doc, live.revision)).failureCode,
+    'WRITER_FENCE',
+  );
+  const throwing = staticPhaseFixture('stopped', {
+    observer: async () => {
+      throw new Error('SECRET_CANARY');
+    },
+  });
+  const proof = await throwing.adapter.observe(throwing.doc, throwing.revision);
+  assert.equal(proof.failureCode, 'WRITER_FENCE');
+  assert.ok(!proof.failure.includes('SECRET_CANARY'));
+});
+
+test('ordinary preflight validates provider presence without zero-writer observation while maintenance writers run', async () => {
+  const live = staticPhaseFixture('maintenance');
+  live.doc.spec.serviceAccountName = 'reconciler';
+  live.all.push({
+    kind: 'Pod',
+    metadata: { name: 'legitimate-maintenance-writer' },
+    status: { phase: 'Running' },
+  });
+  await assert.rejects(
+    live.adapter.preflight(live.doc),
+    /Missing protected app validation/,
+  );
+  assert.equal(
+    live.calls(),
+    0,
+    'preflight must not query zero writers for a prospective stopped phase',
+  );
+  const absent = staticPhaseFixture('maintenance', { observer: false });
+  absent.doc.spec.serviceAccountName = 'reconciler';
+  await assert.rejects(
+    absent.adapter.preflight(absent.doc),
+    /provider is required/,
+  );
 });

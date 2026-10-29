@@ -791,3 +791,13 @@ test('native normal-command interlock refuses pending live markers, missing jour
     /mismatched adoption journal/,
   );
 });
+
+
+test('reviewed legacy repository accepts exact nonsecret Git SSH and HTTP URLs without normalizing native identity',()=>{
+  for(const repository of ['ssh://git@github.com/willgriffin/jobgeni.git','ssh://git@github.com:22/willgriffin/jobgeni.git','https://github.com/willgriffin/jobgeni.git','http://git.fixture.svc.cluster.local:8080/repo.git']){
+    const {plan}=fixture();plan.legacy.repository=repository;assert.equal(validateAdoptionPlan(plan).legacy.repository,repository);
+  }
+  for(const repository of ['ssh://root@github.com/willgriffin/jobgeni.git','ssh://git:password@github.com/willgriffin/jobgeni.git','https://git@github.com/willgriffin/jobgeni.git','https://git:password@github.com/willgriffin/jobgeni.git','https://@github.com/willgriffin/jobgeni.git','https://github.com/willgriffin/jobgeni.git?token=x','ssh://git@github.com/willgriffin/jobgeni.git#fragment','https://github.com/willgriffin/\njobgeni.git','file:///tmp/repo.git','not-a-url']){
+    const {plan}=fixture();plan.legacy.repository=repository;assert.throws(()=>validateAdoptionPlan(plan),/legacy revisions/);
+  }
+});

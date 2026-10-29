@@ -11,6 +11,7 @@ import {
   readOnlyConfigBindings,
   normalizedIngressRecords,
   isContinuousStatic,
+  phaseRenderedRuntime,
   phases,
   validate,
   validateRepairEvidence,
@@ -501,15 +502,17 @@ export function createLiveAdapter(
     );
     return object;
   }
-  async function preflight(document, adoption) {
+  async function preflight(document, adoptionContext) {
     demand(
-      adoption ||
+      adoptionContext ||
         document.metadata.annotations?.[
           'smrt.happyvertical.com/adoption-status'
         ] !== 'pending',
       'Pending adoption blocks normal release preflight',
     );
     fluxPolicy(document);
+    if (!adoptionContext && Object.values(document.spec.values.current?.workloads ?? {}).some(isContinuousStatic))
+      await adoption.prepareReleaseWriterFence();
     const bindingProof = await bindings(document);
     demand(
       document.spec.serviceAccountName,
@@ -821,7 +824,7 @@ export function createLiveAdapter(
             `Helm ownership conflict: ${safeReference(resourceName)} namespace ${safeReference(namespace)}; reviewed ownership transfer required`,
             'OWNERSHIP_CONFLICT',
           );
-          const legacy = adoption?.resources.find(
+          const legacy = adoptionContext?.resources.find(
             (r) =>
               r.kind === resource.kind &&
               r.name === resource.metadata.name &&
@@ -1038,7 +1041,7 @@ export function createLiveAdapter(
   async function verifyStopped(document, all, strictMaintenance = false) {
     const v = validate(document);
     const staticNames = new Set(
-      Object.entries((v.current || v.target).workloads)
+      Object.entries(phaseRenderedRuntime(v)?.workloads ?? {})
         .filter(([, w]) => isContinuousStatic(w))
         .map(([name]) => `${document.metadata.name}-${name}`),
     );
@@ -1162,7 +1165,9 @@ export function createLiveAdapter(
     }
   }
 
-  async function provePhase(document, revision, options = {}) {
+  // Only the private adoption helper can select the separately fenced adoption
+  // path. Public observe options cannot suppress the ordinary writer fence.
+  async function provePhase(document, revision, options = {}, adoptionProof = false) {
     const v = validate(document);
     let failedMigration;
     const before = await bindings(document);
@@ -1292,7 +1297,7 @@ export function createLiveAdapter(
             backend,
         'Ingress routing identity mismatch',
       );
-      if (route.continuousStatic) {
+      if (route.continuousStatic && phaseRenderedRuntime(v)) {
         demand(
           config.staticAssertions?.every((a) => a.status === 200),
           'Static assertions must require HTTP 200',
@@ -1314,8 +1319,11 @@ export function createLiveAdapter(
       );
       await http(config.maintenanceAssertions, v, true);
     }
-    if (['stopped', 'migrate'].includes(phase))
+    if (['stopped', 'migrate'].includes(phase)) {
+      if (!adoptionProof && Object.values(phaseRenderedRuntime(v)?.workloads ?? {}).some(isContinuousStatic))
+        await adoption.observeReleaseWriterFence(document, revision);
       await verifyStopped(document, all);
+    }
     if (phase === 'migrate') {
       const name = `${document.metadata.name}-migration-${v.release.id}-${v.release.attempt}`;
       const job = all.find((o) => o.kind === 'Job' && o.metadata.name === name);
@@ -1445,6 +1453,15 @@ export function createLiveAdapter(
         'Release CAS conflict; superseded file history',
       );
     }
+    const actual = latest.document?.spec?.values;
+    if (actual && ['stopped', 'migrate'].includes(actual.release.phase) &&
+        Object.values(phaseRenderedRuntime(actual)?.workloads ?? {}).some(isContinuousStatic)) {
+      demand(latest.revision === snapshot.revision && hash(latest.document) === hash(snapshot.document),
+        'Static writer fence CAS source snapshot changed; reobserve exact revision', 'WRITER_FENCE');
+      // Candidate preflight can outlive a native observation. Refresh only the
+      // published current document, before any private-index or Git publication.
+      await adoption.observeReleaseWriterFence(snapshot.document, snapshot.revision);
+    }
     // Build a tree from the remote parent in a private index; no shared checkout/index mutation.
     const index = `${repository}/.git-smrt-release-index-${randomUUID()}`;
     const env = { ...process.env, GIT_INDEX_FILE: index };
@@ -1512,7 +1529,7 @@ export function createLiveAdapter(
       inventory,
       preflight,
       acknowledge,
-      provePhase,
+      provePhase: (document, revision) => provePhase(document, revision, {}, true),
       namespaceInventory,
       verifyStopped: (d, all) => verifyStopped(d, all, true),
       maintenance: async (d) => {
@@ -1525,11 +1542,11 @@ export function createLiveAdapter(
         demand(
           !normalizedIngressRecords(v, d.metadata.name).some(
             (r) => r.continuousStatic,
-          ) || config.staticAssertions?.every((a) => a.status === 200),
+          ) || !phaseRenderedRuntime(v) || config.staticAssertions?.every((a) => a.status === 200),
           'Static assertions must require HTTP 200',
         );
         for (const route of normalizedIngressRecords(v, d.metadata.name).filter(
-          (r) => r.continuousStatic,
+          (r) => r.continuousStatic && phaseRenderedRuntime(v),
         ))
           await http(
             config.staticAssertions?.filter(
@@ -1592,9 +1609,9 @@ export function createLiveAdapter(
 
 export async function verifyRuntime(document, all, options = {}) {
   const v = validate(document);
-  const runtime = options.staticOnly ? v.current || v.target : v.target;
+  const runtime = options.staticOnly ? phaseRenderedRuntime(v) : v.target;
   const prefix = document.metadata.name;
-  const scheduled = Object.entries(runtime.workloads).filter(
+  const scheduled = Object.entries(runtime?.workloads ?? {}).filter(
     ([, w]) => w.schedule && !options.staticOnly,
   );
   const cronjobs = all.filter(
@@ -1659,7 +1676,7 @@ export async function verifyRuntime(document, all, options = {}) {
         'Schedule started during verify',
       );
   }
-  const expected = Object.entries(runtime.workloads).filter(
+  const expected = Object.entries(runtime?.workloads ?? {}).filter(
     ([, w]) => !w.schedule && (!options.staticOnly || isContinuousStatic(w)),
   );
   const deployments = all.filter(

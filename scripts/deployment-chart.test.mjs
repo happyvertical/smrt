@@ -342,6 +342,7 @@ test('bounded adoption fields reject selectors, unsafe static claims, routes and
     (v) => { delete v.current.workloads.site.automountServiceAccountToken; },
     (v) => { v.current.workloads.site.automountServiceAccountToken = true; },
     (v) => { v.target.workloads.site.continuousStatic = false; },
+    (v) => { v.target.workloads.site.service.port += 1; },
     (v) => { v.ingress.additionalRoutes[0].workload = 'task'; },
     (v) => { v.ingress.additionalRoutes[0].host = v.ingress.host; },
     (v) => { v.ingress.additionalRoutes[0].name = v.ingress.name; },

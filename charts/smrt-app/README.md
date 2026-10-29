@@ -157,7 +157,8 @@ chart 0.3.0; it does not replace any previously published artifact.
 Service selector. It accepts one to eight Kubernetes labels and reserves the
 instance label and `smrt.happyvertical.com/*` labels. The same labels are merged
 into the pod labels. Current and target must retain identical effective selectors
-for a workload name; ordinary releases cannot change its static classification.
+for a workload name; ordinary releases cannot change its static classification
+or a continuous static Service port.
 Omission retains the existing selector and resource names.
 
 `readOnlyConfigMaps` accepts at most eight external immutable named ConfigMap
@@ -178,7 +179,8 @@ hardening contexts described above. Its Deployment uses a fixed RollingUpdate
 strategy with `maxUnavailable: 0` and `maxSurge: 1`, preserving service while new
 pod labels or immutable configuration references roll out. Other Deployments keep
 the existing Recreate strategy. Bootstrap still creates no application pods
-before verify. This declaration alone proves no isolation: adoption requires live
+before verify; static runtime and HTTP 200 checks begin only when that target is
+actually rendered. This declaration alone proves no isolation: adoption requires live
 pod/owner/image/config verification and platform CNI denial of credential/API and
 writer-network access. Other workloads continue stopping regardless of writer
 labels. No runtime API token or arbitrary PodSpec field is supported.
@@ -198,3 +200,12 @@ CronJobs optionally accept `startingDeadlineSeconds` (1–600),
 `successfulJobsHistoryLimit` (0–2) / `failedJobsHistoryLimit` (0–3). Omitting them
 retains the prior timing behavior and history defaults of one each. Retained
 migration Jobs continue having no automatic cleanup TTL.
+
+Ordinary stopped/migrate proofs with a running continuous static exemption require
+fresh platform writer-fence observations on every proof, including releases after
+adoption. Protected runner `writerFence` configuration binds the native provider
+and contract; omission blocks advancement. Preflight checks provider presence and
+source identity without requiring writers already stopped. The published stopped
+or migrate phase must then prove zero **unapproved** namespace/database writers
+and actual static isolation before the next phase can publish. Bootstrap with
+`current:false` renders no static exemption before verify and needs no such proof.

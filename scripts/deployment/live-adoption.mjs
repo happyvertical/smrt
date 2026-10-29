@@ -8,8 +8,9 @@ import {
   adoptionDocument,
   validateAdoptionPlan,
   validateAdoptionState,
+  verifyNativeWriterFence,
 } from './adopt.mjs';
-import { demand, hash } from './release.mjs';
+import { demand, hash, identity } from './release.mjs';
 const bytesHash = (value) => createHash('sha256').update(value).digest('hex');
 const ready = (o) =>
   o.status?.conditions?.some(
@@ -250,6 +251,124 @@ export function createAdoptionMethods(config, command, helpers, options) {
         );
     }
     return saved;
+  }
+  async function releaseFenceProvider(revision) {
+    const contract = config.writerFence;
+    demand(
+      contract &&
+        typeof contract.id === 'string' &&
+        /^[a-zA-Z0-9][a-zA-Z0-9_.:/-]{0,255}$/.test(contract.id) &&
+        /^[a-f0-9]{64}$/.test(contract.identity) &&
+        Object.keys(contract).every((key) =>
+          ['id', 'identity', 'observer'].includes(key),
+        ),
+      'Continuous static runtime requires protected writerFence contract',
+      'WRITER_FENCE',
+    );
+    demand(
+      /^[a-f0-9]{40}$/.test(revision),
+      'Writer fence requires exact Git revision',
+      'WRITER_FENCE',
+    );
+    let observer = options.adoptionFenceObserver;
+    if (!observer) {
+      const provider = contract.observer;
+      demand(
+        provider &&
+          Object.keys(provider).length === 2 &&
+          Object.hasOwn(provider, 'file') &&
+          Object.hasOwn(provider, 'sha256') &&
+          /^[a-f0-9]{64}$/.test(provider.sha256),
+        'Protected writer fence provider is required',
+        'WRITER_FENCE',
+      );
+      const path = adoptionPath(provider.file);
+      const target=await helpers.get('kustomization',config.kustomization.name,config.kustomization.namespace);
+      const directory=String(target.spec?.path??'').replace(/^\.\//,'').replace(/\/$/,'');
+      demand(directory && directory!=='.','Writer fence requires a dedicated Flux resource directory','WRITER_FENCE');
+      adoptionPath(directory);
+      demand(path!==config.file && !path.startsWith(`${directory}/`),
+        'Writer fence provider must stay outside rendered Flux resources','WRITER_FENCE');
+      const source = await fileAt(revision, path);
+      demand(
+        source && bytesHash(source) === provider.sha256,
+        'Protected writer fence module identity mismatch',
+        'WRITER_FENCE',
+      );
+      try {
+        observer = (
+          await import(
+            `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
+          )
+        ).observeWriterFence;
+      } catch {
+        demand(
+          false,
+          'Protected writer fence module could not load',
+          'WRITER_FENCE',
+        );
+      }
+    }
+    demand(
+      typeof observer === 'function',
+      'Protected writer fence provider is required',
+      'WRITER_FENCE',
+    );
+    return observer;
+  }
+  async function prepareReleaseWriterFence() {
+    await git('fetch', 'origin', branch);
+    const revision = (await git('rev-parse', `origin/${branch}`)).trim();
+    await releaseFenceProvider(revision);
+  }
+  async function observeReleaseWriterFence(document, revision) {
+    const observer = await releaseFenceProvider(revision);
+    const values = document.spec.values;
+    const context = {
+      operation: 'release',
+      documentIdentity: identity(document),
+      documentSha256: hash(document),
+      revision,
+      releaseId: values.release.id,
+      phase: values.release.phase,
+      attempt: values.release.attempt,
+    };
+    let fence;
+    try {
+      fence = await observer({
+        ...context,
+        context: structuredClone(context),
+        document: structuredClone(document),
+        namespace,
+        contractId: config.writerFence.id,
+        contractIdentity: config.writerFence.identity,
+        observedAt: Date.now(),
+      });
+    } catch {
+      demand(false, 'Platform writer fence observation failed', 'WRITER_FENCE');
+    }
+    const fields = [
+      'apiVersion',
+      'contractId',
+      'contractIdentity',
+      'context',
+      'namespace',
+      'epoch',
+      'observedAt',
+      'expiresAt',
+      'namespacePolicyIdentity',
+      'databasePolicyIdentity',
+      'observations',
+    ];
+    demand(
+      fence &&
+        Object.keys(fence).length === fields.length &&
+        fields.every((key) => Object.hasOwn(fence, key)) &&
+        hash(fence.context) === hash(context),
+      'Ordinary writer fence context mismatch',
+      'WRITER_FENCE',
+    );
+    return verifyNativeWriterFence(fence, { ...config.writerFence, namespace });
   }
   async function observeWriterFence(plan, snapshot, stage) {
     let observer = options.adoptionFenceObserver;
@@ -733,6 +852,8 @@ export function createAdoptionMethods(config, command, helpers, options) {
     qualifyAdoption,
     observeLegacy,
     observeWriterFence,
+    prepareReleaseWriterFence,
+    observeReleaseWriterFence,
     preflightAdoption,
     observeAdopted,
     casAdoption,

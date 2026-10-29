@@ -1854,7 +1854,9 @@ export async function legacyMain(env = process.env) {
       get('networkpolicy', 'static-deny-egress'),
     );
     let fenceCalls = 0;
-    const observeWriterFence = async ({ plan: bound }) => {
+    const observeWriterFence = async (request) => {
+      const bound=request.plan;
+      const ordinary=request.operation==='release';
       fenceCalls++;
       const at = Date.now();
       assert.equal(get('namespace', namespace).metadata.uid, namespaceUid);
@@ -1944,10 +1946,9 @@ export async function legacyMain(env = process.env) {
       });
       return {
         apiVersion: 'smrt.happyvertical.com/writer-fence-v1',
-        contractId: bound.fenceContract.id,
-        contractIdentity: bound.fenceContract.identity,
-        adoptionId: bound.adoptionId,
-        planIdentity: hash(bound),
+        contractId: ordinary ? request.contractId : bound.fenceContract.id,
+        contractIdentity: ordinary ? request.contractIdentity : bound.fenceContract.identity,
+        ...(ordinary ? {context:structuredClone(request.context)} : {adoptionId:bound.adoptionId,planIdentity:hash(bound)}),
         namespace,
         epoch: hash({ namespacePolicyIdentity, databasePolicyIdentity }),
         observedAt: at,
@@ -2026,6 +2027,7 @@ export async function legacyMain(env = process.env) {
         },
       ],
       publicAssertions: [{ url: 'http://app.legacy.invalid/', status: 200 }],
+      writerFence:{...fenceContract},
       adoption: {
         stateFile: plan.stateFile,
         stagingFile: plan.stagingFile,

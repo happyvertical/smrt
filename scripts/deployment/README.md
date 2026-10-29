@@ -251,3 +251,57 @@ artifact. `adoption-state` hashes the complete journal and its preceding-state
 link. Finalization immediately reobserves the final commit; pending reconciliation
 can leave the final rename committed while the command refuses success, and the
 next invocation rechecks that final state without another publication.
+
+
+### Ordinary release fences for continuous static runtimes
+
+Every actual stopped/migrate proof that exempts a running continuous static
+runtime requires fresh native namespace/database writer-fence facts. This applies
+after adoption and to recovery observations as well. The protected configuration
+contains `writerFence: {id, identity, observer: {file, sha256}}`. The observer is a
+regular tracked Git module outside the actual target Kustomization resource
+directory (`spec.path` must be a dedicated relative directory), loaded only
+from the exact observed Git revision after its SHA256 matches. It exports
+`observeWriterFence`; the existing explicit SDK `adoptionFenceObserver` injection
+is also supported with the same contract id/identity. Missing or changed provider
+code blocks. Preflight resolves and validates the provider without calling native
+zero-writer queries while maintenance writers may legitimately still run.
+
+For ordinary release calls the request contains `operation: "release"`, the full
+protected Git `document`, `documentIdentity` (the existing values identity),
+`documentSha256` (`hash(document)` including control spec and annotations), exact
+`revision`, `releaseId`, `phase`, `attempt`, `namespace`, `contractId`,
+`contractIdentity`, and `observedAt`. Its `context` contains exactly operation,
+documentIdentity, documentSha256, revision, releaseId, phase and attempt. The
+response is the existing `smrt.happyvertical.com/writer-fence-v1` native envelope
+with exactly contractId, contractIdentity, context, namespace, epoch, observedAt,
+expiresAt, namespacePolicyIdentity, databasePolicyIdentity and observations, plus
+apiVersion. The ordinary context replaces adoptionId/planIdentity; the adoption
+variant and retained journal format remain unchanged.
+
+Both namespace and database observations must be fresh within 30 seconds, bound
+to the same contract/namespace/full document/revision/phase/attempt, and report
+zero unapproved writers. A native guard may exclude only the exact currently
+approved migration session/controller during migrate; it must not report a
+blanket all-sessions-zero condition that deadlocks legitimate migration. Native
+policy and CNI enforcement must be observed; labels, immutable configuration and
+an operator flag are insufficient. Provider exceptions are redacted. The normal
+sequencer consumes this actual stopped/migrate proof before the next CAS; it does
+not request facts for an unpublished prospective phase. Bootstrap current:false
+has no running static exemption before verify and skips premature static HTTP
+assertions, preserving the no-application-Pods-before-verify contract.
+
+
+After candidate preflight, Git CAS refreshes the native fence for the actual
+published current stopped/migrate document immediately before private-index
+mutation. The full current document and exact source revision must still match
+the observed snapshot; a concurrent source change requires a new observation.
+This guard is shared by advance, recovery, planning and repair CAS paths. It never
+queries zero-writer facts for an unpublished candidate or maintenance writers.
+Expiry never releases the platform's native latch.
+
+Reviewed legacy repository URLs support HTTP(S) without userinfo and SSH URLs with
+the nonsecret `git` user, including `ssh://git@github.com/willgriffin/jobgeni.git`.
+Passwords, HTTP userinfo, queries, fragments and control characters are rejected.
+The URL is preserved exactly for native Flux source equality; it is not rewritten
+or converted to a different transport during adoption.
