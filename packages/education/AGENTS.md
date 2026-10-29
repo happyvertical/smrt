@@ -45,3 +45,7 @@ assignment alone never creates learning history or grants learner inbox access.
 Publisher catalog previews use [the preview contract](agents/catalog-previews.md).
 Keep independent image rights and source revisions; serve via `CatalogPreviewService`
 with live actor/tenant authorization, never direct provider image URLs.
+
+Enrollment Plan projections and guardian-only parent notes use
+[the Plan contract](agents/learner-plan.md). Keep awaiting review separate from
+Continue; note authority/provenance never grants learner access or learning evidence.

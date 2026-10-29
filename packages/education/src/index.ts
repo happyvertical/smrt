@@ -132,6 +132,13 @@ export type {
   SourceSharing,
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
+export type { EnrollmentParentNoteView } from './enrollment-note-service.js';
+export {
+  ENROLLMENT_NOTE_MAX_LENGTH,
+  EnrollmentParentNote,
+  EnrollmentParentNoteCollection,
+  validateEnrollmentNote,
+} from './enrollment-notes.js';
 export * from './family-intake-contracts.js';
 export {
   FamilyIntake,
@@ -172,6 +179,11 @@ export {
   importEasyPeasyGrade4Course,
   importEasyPeasyGrade4Theme,
 } from './hearth-easy-peasy-grade4.js';
+export type {
+  EnrollmentPlanView,
+  PlanLessonView,
+} from './learner-plan-service.js';
+export { LearnerPlanService } from './learner-plan-service.js';
 export type {
   CurriculumView,
   EnrollmentView,
