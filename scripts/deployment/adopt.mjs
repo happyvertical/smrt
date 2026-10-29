@@ -30,6 +30,35 @@ export function adoptionPath(path) {
   );
   return path;
 }
+function legacyRepositoryUrl(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length > 2048 ||
+    /[\u0000-\u0020\u007f-\u009f\\?#]/.test(value)
+  )
+    return false;
+  try {
+    const url = new URL(value);
+    if (
+      !url.hostname ||
+      url.pathname.length < 2 ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      return false;
+    if (url.protocol === 'ssh:') return url.username === 'git';
+    const authority = value.match(/^[^:]+:\/\/([^/]*)/)?.[1];
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      !url.username &&
+      !authority?.includes('@')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function validateAdoptionPlan(plan) {
   demand(
     keys(plan, [
@@ -75,7 +104,7 @@ export function validateAdoptionPlan(plan) {
       'source',
       'kustomization',
     ]) &&
-      text(plan.legacy.repository) &&
+      legacyRepositoryUrl(plan.legacy.repository) &&
       [
         'revision',
         'maintenanceRevision',
@@ -163,6 +192,44 @@ export async function planAdoption(config, adapter, input) {
   await adapter.qualifyAdoption(plan, snapshot);
   return plan;
 }
+/** Native observations shared by adoption and ordinary static exemptions. */
+export function verifyNativeWriterFence(fence, contract, now = Date.now()) {
+  demand(
+    fence?.apiVersion === 'smrt.happyvertical.com/writer-fence-v1' &&
+      text(fence.contractId) && sha(fence.contractIdentity) && text(fence.namespace) &&
+      fence.contractId === contract.id &&
+      fence.contractIdentity === contract.identity &&
+      fence.namespace === contract.namespace &&
+      text(fence.epoch) &&
+      Number.isSafeInteger(fence.observedAt) &&
+      Number.isSafeInteger(fence.expiresAt) &&
+      fence.observedAt >= now - 30000 &&
+      fence.observedAt <= now &&
+      fence.expiresAt > now &&
+      fence.expiresAt <= now + 30000 &&
+      sha(fence.namespacePolicyIdentity) &&
+      sha(fence.databasePolicyIdentity) &&
+      Array.isArray(fence.observations) &&
+      fence.observations.length >= 2 &&
+      fence.observations.every(
+        (o) =>
+          keys(o, ['scope', 'identity', 'observedAt', 'activeWriters']) &&
+          ['namespace', 'database'].includes(o.scope) &&
+          sha(o.identity) &&
+          Number.isSafeInteger(o.observedAt) &&
+          o.observedAt >= now - 30000 &&
+          o.observedAt <= now &&
+          o.activeWriters === 0,
+      ) &&
+      ['namespace', 'database'].every((scope) =>
+        fence.observations.some((o) => o.scope === scope),
+      ),
+    'Missing fresh platform namespace/database writer fence',
+    'WRITER_FENCE',
+  );
+  return hash(fence);
+}
+
 export function verifyAdoptionGate(
   plan,
   stage,
@@ -254,38 +321,10 @@ export function verifyAdoptionGate(
       'databasePolicyIdentity',
       'observations',
     ]) &&
-      fence.apiVersion === 'smrt.happyvertical.com/writer-fence-v1' &&
-      fence.contractId === plan.fenceContract.id &&
-      fence.contractIdentity === plan.fenceContract.identity &&
-      fence.adoptionId === plan.adoptionId &&
-      fence.planIdentity === hash(plan) &&
-      fence.namespace === plan.namespace &&
-      text(fence.epoch) &&
-      Number.isSafeInteger(fence.observedAt) &&
-      Number.isSafeInteger(fence.expiresAt) &&
-      fence.observedAt >= now - 30000 &&
-      fence.observedAt <= now &&
-      fence.expiresAt > now &&
-      fence.expiresAt <= now + 30000 &&
-      sha(fence.namespacePolicyIdentity) &&
-      sha(fence.databasePolicyIdentity) &&
-      Array.isArray(fence.observations) &&
-      fence.observations.length >= 2 &&
-      fence.observations.every(
-        (o) =>
-          keys(o, ['scope', 'identity', 'observedAt', 'activeWriters']) &&
-          ['namespace', 'database'].includes(o.scope) &&
-          sha(o.identity) &&
-          Number.isSafeInteger(o.observedAt) &&
-          o.observedAt >= now - 30000 &&
-          o.observedAt <= now &&
-          o.activeWriters === 0,
-      ) &&
-      ['namespace', 'database'].every((scope) =>
-        fence.observations.some((o) => o.scope === scope),
-      ),
-    'Missing fresh platform namespace/database writer fence',
+      fence.adoptionId === plan.adoptionId && fence.planIdentity === hash(plan),
+    'Missing bound adoption writer fence',
   );
+  verifyNativeWriterFence(fence, {...plan.fenceContract, namespace:plan.namespace}, now);
   return {
     native: hash(observation),
     fence: hash(fence),

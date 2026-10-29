@@ -26,6 +26,8 @@ export function demand(condition, reason, code) {
   if (!condition) throw new DeploymentError(reason, code);
 }
 export const identity = (document) => hash(document.spec.values);
+export const phaseRenderedRuntime = (values) =>
+  ['verify', 'active'].includes(values.release.phase) ? values.target : values.current;
 const object = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const exactKeys = (value, keys) =>
@@ -110,6 +112,7 @@ function validateRuntimeContinuity(values, releaseName) {
     const current = values.current?.workloads?.[name];
     if (current) demand(hash(effectiveWorkloadSelectors(releaseName, name, current)) === hash(effectiveWorkloadSelectors(releaseName, name, target)) &&
       !!current.continuousStatic === !!target.continuousStatic, 'Workload selector/static identity cannot change during an ordinary release');
+    if (current?.continuousStatic) demand(current.service?.port === target.service?.port, 'Continuous static Service port cannot change during an ordinary release');
   }
   const configs = new Map();
   for (const runtime of [values.current, values.target]) {

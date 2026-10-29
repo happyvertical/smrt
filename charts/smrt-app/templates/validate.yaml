@@ -69,6 +69,7 @@
 {{- range $name, $target := .Values.target.workloads }}
 {{- $current := index $root.Values.current.workloads $name }}
 {{- if $current }}
+{{- if and $current.continuousStatic (ne $current.service.port $target.service.port) }}{{ fail "continuous static Service port cannot change" }}{{ end }}
 {{- if or (ne (include "smrt.selectors" (dict "root" $root "name" $name "workload" $current)) (include "smrt.selectors" (dict "root" $root "name" $name "workload" $target))) (ne (default false $current.continuousStatic) (default false $target.continuousStatic)) }}{{ fail "workload selector/static identity cannot change" }}{{ end }}
 {{- end }}
 {{- end }}
