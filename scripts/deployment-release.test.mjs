@@ -543,6 +543,15 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
     };
     for (const failure of [
       null,
+      'dormant-history',
+      'dormant-foreign', 'dormant-null', 'dormant-spec', 'dormant-ready',
+      'dormant-replicas', 'dormant-available', 'dormant-labelled', 'dormant-terminating', 'dormant-missing-uid',
+      'dormant-delete', 'dormant-parent-uid', 'dormant-owner-kind',
+      'dormant-owner-api', 'dormant-owner-name', 'dormant-owner-controller',
+      'dormant-owner-multiple', 'dormant-parent-foreign',
+      'dormant-parent-selector', 'dormant-rs-selector',
+      'dormant-parent-unknown', 'dormant-child', 'dormant-namespace',
+      'dormant-parent-delete',
       'legacy-labels',
       'legacy-forged-owner',
       'legacy-unknown',
@@ -570,6 +579,31 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       const legacyObjects=[legacyDeployment,legacyRS,legacyPod];
       if(failure==='legacy-unknown')legacyObjects.push({...structuredClone(legacyDeployment),metadata:{...legacyDeployment.metadata,name:'unknown',uid:'unknown'}});
       const adoptionContext=failure?.startsWith('legacy-')?{resources:[{apiVersion:'apps/v1',kind:'Deployment',namespace:'test',name:'legacy-site',uid:'legacy-deploy',normalizedSpecIdentity:hash(legacySpec),selector:legacySpec.selector}]}:undefined;
+      const dormant = failure?.startsWith('dormant-');
+      if (dormant) {
+        legacyDeployment.metadata.name='example-web';legacyDeployment.metadata.labels['app.kubernetes.io/instance']='example';
+        legacyRS.metadata.ownerReferences[0].name='example-web';legacyRS.spec.replicas=0;legacyRS.status={replicas:0};legacyObjects.pop();
+        const owner=legacyRS.metadata.ownerReferences[0];
+        if(failure==='dormant-foreign')legacyRS.metadata.labels['app.kubernetes.io/instance']='foreign';
+        if(failure==='dormant-null')legacyRS.metadata.labels['app.kubernetes.io/instance']=null;
+        if(failure==='dormant-spec')legacyRS.spec.replicas=1;
+        for(const [mode,key] of [['replicas','replicas'],['ready','readyReplicas'],['available','availableReplicas'],['labelled','fullyLabeledReplicas'],['terminating','terminatingReplicas']])if(failure===`dormant-${mode}`)legacyRS.status[key]=1;
+        if(failure==='dormant-missing-uid')delete legacyRS.metadata.uid;
+        if(failure==='dormant-delete')legacyRS.metadata.deletionTimestamp='2026-10-29T00:00:00Z';
+        if(failure==='dormant-parent-uid')owner.uid='forged';
+        if(failure==='dormant-owner-kind')owner.kind='Job';
+        if(failure==='dormant-owner-api')owner.apiVersion='apps/v1beta1';
+        if(failure==='dormant-owner-name')owner.name='forged';
+        if(failure==='dormant-owner-controller')owner.controller=false;
+        if(failure==='dormant-owner-multiple')legacyRS.metadata.ownerReferences.push({...owner});
+        if(failure==='dormant-parent-foreign')legacyDeployment.metadata.labels['app.kubernetes.io/instance']='foreign';
+        if(failure==='dormant-parent-selector')legacyDeployment.spec.selector.matchLabels.app='forged';
+        if(failure==='dormant-rs-selector')legacyRS.spec.selector.matchLabels.app='forged';
+        if(failure==='dormant-parent-unknown'){legacyDeployment.metadata.name='unknown';owner.name='unknown';}
+        if(failure==='dormant-child'){legacyPod.metadata.labels['app.kubernetes.io/instance']='example';legacyObjects.push(legacyPod);}
+        if(failure==='dormant-namespace')legacyRS.metadata.namespace='foreign';
+        if(failure==='dormant-parent-delete')legacyDeployment.metadata.deletionTimestamp='2026-10-29T00:00:00Z';
+      }
       const calls = [];
       const command = async (name, args, input) => {
         calls.push({ name, args, input });
@@ -639,7 +673,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         if (args.includes('create'))
           return JSON.stringify({
             items: [
-              { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'example-web' }, spec: { template: { metadata: { labels: { app: 'example' } }, spec: { automountServiceAccountToken: false, containers: [{ name: 'app', image }] } } } },
+              { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'example-web' }, spec: { selector:{matchLabels:{app:'legacy-site'}}, template: { metadata: { labels: { app: 'example' } }, spec: { automountServiceAccountToken: false, containers: [{ name: 'app', image }] } } } },
               {
                 apiVersion: 'v1',
                 kind: 'ConfigMap',
@@ -653,11 +687,11 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
             ],
           });
         if (args.some((a) => a.startsWith('pods,')))
-          return JSON.stringify({ items: failure?.includes('legacy') ? legacyObjects : [] });
+          return JSON.stringify({ items: (failure?.includes('legacy') || dormant) ? legacyObjects : [] });
         return JSON.stringify({ metadata: {} });
       };
       const adapter = createLiveAdapter(config, command);
-      if (failure && !['owned','legacy-labels'].includes(failure))
+      if (failure && !['owned','legacy-labels','dormant-history'].includes(failure))
         await assert.rejects(
           adapter.preflight(doc, adoptionContext),
           (error) =>
@@ -673,7 +707,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
           bindings: hash([]),
           bindingReferences: [],
         });
-        assert.equal(calls.filter((c) => c.name === 'helm').length, 5);
+        assert.equal(calls.filter((c) => c.name === 'helm').length, dormant ? 6 : 5);
       }
       for (const call of calls.filter(
         (c) =>

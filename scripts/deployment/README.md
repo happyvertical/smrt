@@ -306,6 +306,15 @@ Passwords, HTTP userinfo, queries, fragments and control characters are rejected
 The URL is preserved exactly for native Flux source equality; it is not rewritten
 or converted to a different transport during adoption.
 
+Ordinary preflight preserves dormant historical ReplicaSets after adoption without
+relabeling or deleting them. Only an absent instance label is eligible: the native
+ReplicaSet must have zero desired and observed/ready/available/labelled/terminating
+replicas, no deletion or remaining Pod descendants, and one exact same-namespace
+Deployment controller owner (API/kind/name/UID). That parent must belong to the
+current instance and match a rendered Deployment name and immutable selector.
+Explicit foreign instance labels, active history, unsupported or forged ancestry
+still fail closed. Historical Pod templates are not made current by this exception.
+
 ## Bounded immutable Ingress TLS rotation
 
 For an existing accepted **active** release, prepare only named reference changes:
