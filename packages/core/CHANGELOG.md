@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.38
+
+### Patch Changes
+
+- ### Features
+  
+  - retain family intake before learner assignment (#4479) (education)
+  
+  ### Bug Fixes
+  
+  - patch train 2026-10-28 (29 issues) (#4474)
+- @happyvertical/smrt-config@0.57.38
+  - @happyvertical/smrt-scanner@0.57.38
+  - @happyvertical/smrt-types@0.57.38
+
 ## 0.57.37
 
 ### Patch Changes
