@@ -149,3 +149,51 @@ Pods must preserve the rendered security, service-account, scratch and credentia
 projection envelope. Qualify real execution under the hardened settings with the
 disposable deployment exercise before adoption. Version 0.2.1 is a new artifact;
 published charts 0.1.0 and 0.2.0 must never be overwritten.
+
+### Bounded legacy resource adoption
+
+`workloads.<name>.selectorLabels` optionally replaces the default Deployment and
+Service selector. It accepts one to eight Kubernetes labels and reserves the
+instance label and `smrt.happyvertical.com/*` labels. The same labels are merged
+into the pod labels. Current and target must retain identical effective selectors
+for a workload name; ordinary releases cannot change its static classification.
+Omission retains the existing selector and resource names.
+
+`readOnlyConfigMaps` accepts at most eight external immutable named ConfigMap
+bindings: `{volumeName, configMapName, hash, mountPath, items: [{key, path}]}`.
+`hash` is the canonical release helper hash of
+`{data: configMap.data ?? {}, binaryData: configMap.binaryData ?? {}}`.
+Items map individual keys to flat relative filenames. Mounts are directory mounts,
+read-only, with no subPath, Secret or raw volume escape. Names and mount paths
+cannot overlap scratch or other configuration mounts. One ConfigMap name cannot
+claim different hashes across current and target. The inventory lists these under
+`readOnlyConfigMaps` as external resources, never Helm-owned resources; observers
+need bounded named ConfigMap reads and must prove immutable content and identity.
+
+`continuousStatic: true` keeps a nonscheduled `role: service` workload running
+through stopped and migrate. It requires `writer: false`, empty `env`, one to
+three replicas, explicit `automountServiceAccountToken: false`, and both strict
+hardening contexts described above. Its Deployment uses a fixed RollingUpdate
+strategy with `maxUnavailable: 0` and `maxSurge: 1`, preserving service while new
+pod labels or immutable configuration references roll out. Other Deployments keep
+the existing Recreate strategy. Bootstrap still creates no application pods
+before verify. This declaration alone proves no isolation: adoption requires live
+pod/owner/image/config verification and platform CNI denial of credential/API and
+writer-network access. Other workloads continue stopping regardless of writer
+labels. No runtime API token or arbitrary PodSpec field is supported.
+
+Within `ingress`, optional `name` preserves an existing primary Ingress identity.
+Optional `annotations` permits only NGINX `proxy-body-size` (1m, 2m, 4m, 8m, 10m,
+11m) and `proxy-buffer-size` (4k, 8k, 16k, 32k, 64k). `additionalRoutes` accepts
+up to eight `{name, host, workload, tlsSecretName?, annotations?}` records targeting
+continuous static services present in both runtimes. Each route retains its own
+TLS reference, is independently inventoried, and continues serving while the
+primary route uses maintenance. Names and hosts must be unique. All fields remain
+inside the existing configuration identity hash; no annotation snippet, issuer
+control or private service exposure is allowed.
+
+CronJobs optionally accept `startingDeadlineSeconds` (1–600),
+`activeDeadlineSeconds` (1–3300), `ttlSecondsAfterFinished` (1–86400), and
+`successfulJobsHistoryLimit` (0–2) / `failedJobsHistoryLimit` (0–3). Omitting them
+retains the prior timing behavior and history defaults of one each. Retained
+migration Jobs continue having no automatic cleanup TTL.

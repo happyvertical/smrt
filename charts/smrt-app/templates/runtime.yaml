@@ -16,14 +16,23 @@ spec:
   schedule: {{ $w.schedule | quote }}
   suspend: {{ ne $root.Values.release.phase "active" }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 1
+  successfulJobsHistoryLimit: {{ dig "successfulJobsHistoryLimit" 1 $w }}
+  failedJobsHistoryLimit: {{ dig "failedJobsHistoryLimit" 1 $w }}
+  {{- with $w.startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ . }}
+  {{- end }}
   jobTemplate:
     metadata:
       labels:
 {{ include "smrt.runtimeLabels" (dict "root" $root "workload" $w) | indent 8 }}
     spec:
       backoffLimit: 0
+      {{- with $w.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ . }}
+      {{- end }}
+      {{- with $w.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ . }}
+      {{- end }}
       template:
         metadata:
           labels:
@@ -41,12 +50,15 @@ metadata:
   labels:
 {{ include "smrt.labels" $root | indent 4 }}
 spec:
-  replicas: {{ if has $root.Values.release.phase (list "stopped" "migrate") }}0{{ else }}{{ $w.replicas }}{{ end }}
+  replicas: {{ if and (has $root.Values.release.phase (list "stopped" "migrate")) (not $w.continuousStatic) }}0{{ else }}{{ $w.replicas }}{{ end }}
+  {{- if $w.continuousStatic }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  {{- else }}
   strategy: {type: Recreate}
+  {{- end }}
   selector:
     matchLabels:
-      app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
-      smrt.happyvertical.com/workload: {{ $name }}
+{{ include "smrt.selectors" (dict "root" $root "name" $name "workload" $w) | indent 6 }}
   template:
     metadata:
       labels:
@@ -66,8 +78,7 @@ metadata:
 {{ include "smrt.labels" $root | indent 4 }}
 spec:
   selector:
-    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
-    smrt.happyvertical.com/workload: {{ $name }}
+{{ include "smrt.selectors" (dict "root" $root "name" $name "workload" $w) | indent 4 }}
   ports: [{name: http, port: {{ .port }}, targetPort: http}]
 {{- end }}
 {{- end }}

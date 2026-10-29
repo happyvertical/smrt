@@ -39,3 +39,45 @@
 {{- end }}
 {{- end }}
 {{- end }}
+{{- $root := . }}
+{{- $configHashes := dict }}
+{{- range $runtime := list .Values.current .Values.target }}
+{{- if $runtime }}
+{{- range $name, $w := $runtime.workloads }}
+{{- range $key, $value := $w.selectorLabels }}
+{{- $parts := splitList "/" $key }}
+{{- if eq (len $parts) 2 }}{{ range (splitList "." (first $parts)) }}{{ if not (regexMatch "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" .) }}{{ fail "invalid selector DNS prefix" }}{{ end }}{{ end }}{{ end }}
+{{- end }}
+{{- if and $w.continuousStatic (or (ne $w.role "service") $w.writer (not $w.service) $w.schedule (gt (len $w.env) 0) (not $w.podSecurityContext) (not $w.securityContext) (not (hasKey $w "automountServiceAccountToken"))) }}{{ fail "continuous static requires credential-free hardened service" }}{{ end }}
+{{- $names := dict }}{{ $paths := list }}
+{{- range $w.scratch }}{{ $_ := set $names .name true }}{{ $paths = append $paths .mountPath }}{{ end }}
+{{- range $w.readOnlyConfigMaps }}
+{{- if hasKey $names .volumeName }}{{ fail "duplicate volume name" }}{{ end }}
+{{- $_ := set $names .volumeName true }}
+{{- $paths = append $paths .mountPath }}
+{{- if and (hasKey $configHashes .configMapName) (ne (index $configHashes .configMapName) .hash) }}{{ fail "conflicting ConfigMap hashes" }}{{ end }}
+{{- $_ := set $configHashes .configMapName .hash }}
+{{- $itemPaths := dict }}
+{{- range .items }}{{ if hasKey $itemPaths .path }}{{ fail "duplicate ConfigMap item path" }}{{ end }}{{ $_ := set $itemPaths .path true }}{{ end }}
+{{- end }}
+{{- range $i, $path := $paths }}{{ range $j, $other := $paths }}{{ if and (ne $i $j) (or (eq $path $other) (hasPrefix (printf "%s/" $other) $path)) }}{{ fail "overlapping mounts" }}{{ end }}{{ end }}{{ end }}
+{{- range $field := list "startingDeadlineSeconds" "activeDeadlineSeconds" "ttlSecondsAfterFinished" "successfulJobsHistoryLimit" "failedJobsHistoryLimit" }}{{ if and (hasKey $w $field) (not $w.schedule) }}{{ fail "CronJob timing requires schedule" }}{{ end }}{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.current }}
+{{- range $name, $target := .Values.target.workloads }}
+{{- $current := index $root.Values.current.workloads $name }}
+{{- if $current }}
+{{- if or (ne (include "smrt.selectors" (dict "root" $root "name" $name "workload" $current)) (include "smrt.selectors" (dict "root" $root "name" $name "workload" $target))) (ne (default false $current.continuousStatic) (default false $target.continuousStatic)) }}{{ fail "workload selector/static identity cannot change" }}{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $routeNames := dict (default .Release.Name .Values.ingress.name) true }}
+{{- $hosts := dict .Values.ingress.host true }}
+{{- range .Values.ingress.additionalRoutes }}
+{{- if or (hasKey $routeNames .name) (hasKey $hosts .host) }}{{ fail "duplicate ingress name/host" }}{{ end }}
+{{- $_ := set $routeNames .name true }}{{ $_ := set $hosts .host true }}
+{{- $name := .workload }}
+{{- range $runtime := list $root.Values.current $root.Values.target }}{{ if $runtime }}{{ $w := index $runtime.workloads $name }}{{ if not (and $w $w.continuousStatic) }}{{ fail "additional ingress requires continuous static workload" }}{{ end }}{{ end }}{{ end }}
+{{- end }}
