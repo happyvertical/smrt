@@ -281,6 +281,18 @@ admin auth.
 
 ## Vite Plugin
 
+`_resources` and application-runtime config detection resolve their exact
+`@happyvertical/smrt-users/sveltekit` and `@happyvertical/smrt-app-runtime/sveltekit`
+imports with ESM import conditions anchored
+to the consumer package URL, using `import-meta-resolve`. A `types`/`import`-only
+export is valid; a CommonJS `createRequire.resolve` probe would falsely skip it.
+Verify the selected target is an existing file because import-meta resolution
+can return URLs for missing files/directories. Missing/unexported dependencies
+remain skipped, ancestor-hoisted installs resolve normally, and handwritten
+`+server.ts`/`+server.js` ownership and explicit disablement remain unchanged.
+Do not change a package's export map to accommodate a mismatched detector.
+
+
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
 decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
 conventions. Its package list comes only from the `smrt({ packages })` option, or

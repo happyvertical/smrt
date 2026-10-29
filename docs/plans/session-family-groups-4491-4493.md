@@ -12,3 +12,18 @@ Risk HIGH: auth/tenancy, identity proof, closed sharing models, private media, c
 Prior #4491 validation remains evidence for the premerge head1e52b92e5: packageSQLite79, PG56, root build/typecheck/test/lint/format; knowledge graph needs canonical refresh after test-generated local artifacts. SDK enforced-STARTTLS PR1473 separately has clean independent review and Required CI.
 
 Drive-by ledger for combined PR: e4752bb1e2 public SvelteKit cookie/local event typing (ten changed lines); 1e52b92e5 generated registration dependency metadata (six changed lines, assets/content/images; only existing declared smrt-types/smrt-ui dependency metadata). Canonical regeneration reproduced identical hashes; no object/schema/import changes.
+
+## Planned core resolver integration item (#4493)
+
+The packed app's `_resources` and application-runtime config detectors test
+ESM import-only users/runtime subpaths through CommonJS require conditions and
+incorrectly skip valid routes or runtime configuration. Correct both owning
+detectors to resolve the exact ESM import from the consumer package URL, including
+hoisted installs. Keep missing/invalid targets,
+explicit disablement and handwritten route ownership intact. This is a directly
+tracked integration item, not the kernel's ten-line incidental drive-by exception.
+No package-export change, route exposure widening or gate bypass is authorized.
+
+| Behavior/invariant | Trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R01 import-only consumer dependency | generate _resources from packed ESM consumer | real import-only users subpath/hoisted package emit route and execute handler; independent import-only application runtime selects runtime config | absent/unexported/missing target skips, disablement and handwritten ts/js preserved | trusted build projectRoot; no runtime actor change | N/A build-time filesystem lookup, no DB/transaction | Node26 ESM/Vite | package exports import condition; no require/default assumed | unit + real filesystem/runtime regression | core resources-route, resources-route-resolution, sveltekit-generator/runtime focused files |
