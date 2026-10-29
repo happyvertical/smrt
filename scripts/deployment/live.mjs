@@ -172,6 +172,73 @@ function verifyControllerEnvelope(actual, desired) {
   const template = podTemplate(desired);
   if (template) verifyPodEnvelope(podTemplate(actual)?.spec, template.spec);
 }
+// Historical ReplicaSets are not relabelled when Helm adopts their Deployment.
+// Only proven dormant native history may lack the ordinary instance label.
+function retainedDormantReplicaSet(object, all, rendered, release, namespace) {
+  const instance = 'app.kubernetes.io/instance';
+  if (
+    object.kind !== 'ReplicaSet' ||
+    object.apiVersion !== 'apps/v1' ||
+    typeof object.metadata.uid !== 'string' ||
+    !object.metadata.uid ||
+    Object.hasOwn(object.metadata.labels ?? {}, instance) ||
+    object.metadata.namespace !== namespace ||
+    object.metadata.deletionTimestamp ||
+    object.spec?.replicas !== 0 ||
+    [
+      'replicas',
+      'readyReplicas',
+      'availableReplicas',
+      'fullyLabeledReplicas',
+      'terminatingReplicas',
+    ].some((key) => (object.status?.[key] ?? 0) !== 0)
+  )
+    return false;
+  const owners = object.metadata.ownerReferences;
+  if (!Array.isArray(owners) || owners.length !== 1) return false;
+  const owner = owners[0];
+  if (
+    owner.controller !== true ||
+    owner.apiVersion !== 'apps/v1' ||
+    owner.kind !== 'Deployment' ||
+    typeof owner.uid !== 'string' ||
+    !owner.uid
+  )
+    return false;
+  const parent = all.find(
+    (o) =>
+      o.kind === 'Deployment' &&
+      o.apiVersion === 'apps/v1' &&
+      o.metadata.namespace === namespace &&
+      o.metadata.name === owner.name &&
+      o.metadata.uid === owner.uid,
+  );
+  const expected = rendered.find(
+    (o) =>
+      o.kind === 'Deployment' &&
+      o.apiVersion === 'apps/v1' &&
+      o.metadata.name === owner.name,
+  );
+  return Boolean(
+    parent &&
+      expected &&
+      !parent.metadata.deletionTimestamp &&
+      parent.metadata.labels?.[instance] === release &&
+      parent.spec?.selector &&
+      expected.spec?.selector &&
+      hash(parent.spec?.selector) === hash(expected.spec?.selector) &&
+      Object.entries(parent.spec?.selector?.matchLabels ?? {}).every(
+        ([key, value]) => object.spec?.selector?.matchLabels?.[key] === value,
+      ) &&
+      !all.some(
+        (o) =>
+          o.kind === 'Pod' &&
+          o.metadata.ownerReferences?.some(
+            (ref) => ref.uid === object.metadata.uid,
+          ),
+      ),
+  );
+}
 // Standalone runtime proofs also bind security/account/volume fields directly to
 // declared values. The full rendered object is independently checked by provePhase.
 function declaredPodEnvelope(workload) {
@@ -754,11 +821,15 @@ export function createLiveAdapter(
       verifyKnownLegacyWorkloads(existing,
         { resources: adoptionContext.resources }, verifyPodEnvelope);
     } else {
+      const historicalSelectors = existing.some(o => o.kind === 'ReplicaSet' &&
+        !Object.hasOwn(o.metadata.labels ?? {}, 'app.kubernetes.io/instance'))
+        ? await inventory(document) : [];
       demand(
         existing.every(
           (o) =>
-            o.metadata.labels?.['app.kubernetes.io/instance'] ===
-              document.metadata.name &&
+            (o.metadata.labels?.['app.kubernetes.io/instance'] ===
+              document.metadata.name || retainedDormantReplicaSet(o, existing,
+                historicalSelectors, document.metadata.name, namespace)) &&
             !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
               o.kind,
             ),
