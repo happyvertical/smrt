@@ -70,6 +70,18 @@ export {
 export type { CatalogPolicyDecision } from './catalog-policy.js';
 export { CatalogPolicy } from './catalog-policy.js';
 export type {
+  CatalogPreview,
+  CatalogPreviewLoader,
+  CatalogPreviewStore,
+} from './catalog-preview.js';
+export {
+  CATALOG_PREVIEW_MAX_BYTES,
+  CATALOG_PREVIEW_MAX_DIMENSION,
+  CatalogPreviewService,
+  catalogPreviewFor,
+  normalizeCatalogPreview,
+} from './catalog-preview.js';
+export type {
   CatalogReadStore,
   CatalogResourceView,
 } from './catalog-read-service.js';

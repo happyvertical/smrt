@@ -92,6 +92,8 @@ export interface ImArtifact {
   allowed: boolean;
 }
 export interface ImParsedPage {
+  /** Page-scoped instructional ImageFiles; never branding or credited third-party images. */
+  previewImage?: { id: string; alt: string };
   children: string[];
   artifacts: ImArtifact[];
   exclusions: { code: string; message: string }[];
@@ -425,7 +427,55 @@ export function parseImFirstEditionPage(
   }
   if (children.size > 128 || artifacts.size > 128)
     throw new Error('First-edition page exceeds hierarchy/artifact bound.');
+  let previewImage: ImParsedPage['previewImage'];
+  const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(html)?.[1] ?? '';
+  // Family instructional content carries the page license. Any additional image
+  // credit/license/attribution makes its scope ambiguous, so omit the preview.
+  if (
+    licensed &&
+    attribution &&
+    page.audience === 'families' &&
+    page.band.startsWith('k5') &&
+    page.leaf === 'family-materials' &&
+    !/attribution|copyright|licensed|credits?|©|all rights reserved/i.test(
+      imText(main),
+    )
+  ) {
+    for (const figure of main.matchAll(
+      /<figure\b([^>]*)>([\s\S]*?)<\/figure>/gi,
+    )) {
+      if (
+        !/class=["'][^"']*\bembedded-content-image-file\b/i.test(figure[1]) ||
+        !/data-record-model=["']ImageFile["']/i.test(figure[1])
+      )
+        continue;
+      const caption = /<figcaption\b[^>]*>([\s\S]*?)<\/figcaption>/i.exec(
+        figure[2],
+      );
+      if (!caption || imText(caption[1])) continue;
+      const image = /<img\b([^>]*)>/i.exec(figure[2])?.[1] ?? '';
+      const src = /\bsrc=["']([^"']+)["']/i.exec(image)?.[1];
+      const alt = imText(/\balt=["']([^"']+)["']/i.exec(image)?.[1] ?? '');
+      // Only publisher-authored instructional diagrams, never photographs or logos.
+      if (
+        !src ||
+        !/\b(chart|diagram|number line|graph|table|tally)\b/i.test(alt) ||
+        /logo|photo|portrait|©|copyright|credit|license/i.test(alt)
+      )
+        continue;
+      try {
+        const id = imAssetId(new URL(src));
+        if (id) {
+          previewImage = { id, alt };
+          break;
+        }
+      } catch {
+        /* Unsupported source is absent. */
+      }
+    }
+  }
   return {
+    ...(previewImage ? { previewImage } : {}),
     children: [...children],
     artifacts: [...artifacts.values()],
     exclusions,

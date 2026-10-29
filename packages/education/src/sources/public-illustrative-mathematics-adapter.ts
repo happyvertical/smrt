@@ -11,6 +11,13 @@ import type {
   CatalogSyncPage,
 } from '../catalog-contracts.js';
 import {
+  CATALOG_PREVIEW_MAX_BYTES,
+  type CatalogPreview,
+  type CatalogPreviewLoader,
+  catalogPreviewPngDimensions,
+  normalizeCatalogPreview,
+} from '../catalog-preview.js';
+import {
   IM_ASSET_ORIGIN,
   IM_LICENSE,
   IM_ORIGIN,
@@ -165,13 +172,14 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 }
 /**
  * Public first-edition English/linked Spanish K–12 teacher/family hierarchy.
- * Each enumeration reads one HTML page and at most four asset HEADs. Only an
+ * Each enumeration reads one HTML page, at most one bounded preview PNG and
+ * at most four original asset HEADs. Only an
  * explicit, validated selection can GET PDF bytes; generic acquisition retains
  * policy, tenant isolation, idempotence, attribution and notices.
  */
 export function createPublicIllustrativeMathematicsFirstEditionAdapter(
   config: PublicIllustrativeMathematicsFirstEditionConfig = {},
-): CatalogSyncAdapter & CatalogAcquireAdapter {
+): CatalogSyncAdapter & CatalogAcquireAdapter & CatalogPreviewLoader {
   const fetcher = config.fetch ?? globalThis.fetch;
   const timeout = config.timeoutMs ?? 20_000;
   const pdfCap = config.maxPdfBytes ?? 32 * 1024 * 1024;
@@ -192,6 +200,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
         headers?: Record<string, string>,
       ) => Promise<Response>,
     ) => Promise<T>,
+    deadline = timeout,
   ): Promise<T> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -238,7 +247,7 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
           timer = setTimeout(() => {
             controller.abort();
             reject(new Error('First-edition operation timed out.'));
-          }, timeout);
+          }, deadline);
         }),
       ]);
     } finally {
@@ -268,6 +277,33 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
     return { parsed, revision };
   }
   return {
+    async loadPreview(value) {
+      const preview = normalizeCatalogPreview(value);
+      if (
+        !preview ||
+        (preview.rights.expiresAt &&
+          Date.parse(preview.rights.expiresAt) <= Date.now())
+      )
+        throw new Error('Invalid or expired preview.');
+      return operation(async (request) => {
+        const response = await request(
+          IM_ASSET_ORIGIN + '/' + preview.reference,
+          'GET',
+          { accept: 'image/png' },
+        );
+        if (
+          response.headers
+            .get('content-type')
+            ?.split(';')[0]
+            .trim()
+            .toLowerCase() !== 'image/png'
+        ) {
+          await response.body?.cancel();
+          throw new Error('Preview is not PNG.');
+        }
+        return readBody(response, CATALOG_PREVIEW_MAX_BYTES);
+      });
+    },
     async enumerate(input): Promise<CatalogSyncPage> {
       let state: Cursor;
       try {
@@ -283,7 +319,8 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
         };
       }
       try {
-        return await operation(async (request) => {
+        const started = performance.now();
+        const { result, candidate } = await operation(async (request) => {
           const path = state.todo[0];
           const { parsed, revision } = await html(request, path);
           if (state.pageRevision && state.pageRevision !== revision)
@@ -468,14 +505,84 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
                 'Public first-edition official CMS artifact links with observed PDF/ZIP/DOCX representations explicitly labeled for students/families on official K5/MS/HS teacher/family course, unit, resources and lesson preparation pages, including linked Spanish counterparts and Algebra 1 Supports. HTML-only lessons, external-host artifacts, teacher/login and unknown-role material are excluded; unknown MIME is retained with acquisition denied; malformed MIME or invalid validators pause enumeration; AccessIM/v.360 is excluded.',
             });
           return {
-            records: records.sort((a, b) =>
-              a.stableId.localeCompare(b.stableId),
-            ),
-            complete: next.todo.length === 0,
-            ...(next.todo.length ? { nextCursor: encode(next) } : {}),
-            policyExclusions,
+            result: {
+              records: records.sort((a, b) =>
+                a.stableId.localeCompare(b.stableId),
+              ),
+              complete: next.todo.length === 0,
+              ...(next.todo.length ? { nextCursor: encode(next) } : {}),
+              policyExclusions,
+            },
+            candidate:
+              state.offset === 0 && page.course && parsed.previewImage
+                ? {
+                    ...parsed.previewImage,
+                    path,
+                    revision,
+                    attribution: parsed.attribution,
+                  }
+                : undefined,
           };
         });
+        // Required HTML/HEAD work has finished. Optional media gets its own short
+        // deadline/controller, so a stalled image cannot pause the metadata cursor.
+        const previewBudget = Math.min(
+          2000,
+          Math.floor(timeout / 4),
+          Math.floor(timeout - (performance.now() - started)),
+        );
+        if (candidate && previewBudget > 0) {
+          try {
+            const bytes = await operation(async (request) => {
+              const response = await request(
+                `${IM_ASSET_ORIGIN}/${candidate.id}`,
+                'GET',
+                { accept: 'image/png' },
+              );
+              if (
+                response.headers
+                  .get('content-type')
+                  ?.split(';')[0]
+                  .trim()
+                  .toLowerCase() !== 'image/png'
+              ) {
+                await response.body?.cancel();
+                throw new Error('Preview is not PNG.');
+              }
+              return readBody(response, CATALOG_PREVIEW_MAX_BYTES);
+            }, previewBudget);
+            const dimensions = catalogPreviewPngDimensions(bytes);
+            const hash = await sha256(bytes);
+            const preview: CatalogPreview = {
+              providerId: PROVIDER,
+              stableId: imStableId(candidate.path),
+              revision: `${candidate.revision}:${hash}`,
+              reference: candidate.id,
+              mediaType: 'image/png',
+              ...dimensions,
+              byteLength: bytes.length,
+              sha256: hash,
+              alt: candidate.alt,
+              rights: {
+                state: 'verified',
+                identifier: 'CC-BY-4.0',
+                sourceUrl: IM_ORIGIN + candidate.path,
+                attribution: candidate.attribution,
+                retrievedAt: new Date().toISOString(),
+              },
+            };
+            const record = result.records.find(
+              (record) => record.stableId === preview.stableId,
+            );
+            if (record) {
+              record.revision = preview.revision;
+              record.preview = preview;
+            }
+          } catch {
+            // Optional preview failure leaves required records and cursor intact.
+          }
+        }
+        return result;
       } catch (error) {
         return {
           records: [],
