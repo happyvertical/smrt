@@ -533,6 +533,8 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
         },
       ],
     };
+    const ingressSpec = { ingressClassName: 'nginx', rules: [{ host: 'fixture.invalid' }] };
+    saved.resources.push({ apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', namespace: 'test', name: 'app-ingress', uid: 'ingress-uid', spec: ingressSpec, specIdentity: hash(ingressSpec), normalizedSpecIdentity: hash(ingressSpec), selector: {}, legacyManager: 'kustomize-controller', fluxInventoryId: 'test_app-ingress_networking.k8s.io_Ingress' });
     const snapshotBytes = JSON.stringify(saved);
     plan.snapshot.sha256 = byteHash(snapshotBytes);
     const q = {
@@ -612,6 +614,7 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
       },
       spec: structuredClone(normalized),
     };
+    const ingress = { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { ...structuredClone(actual.metadata), name: 'app-ingress', uid: 'ingress-uid' }, spec: structuredClone(ingressSpec) };
     const snapshot = {
       revision,
       raw: {
@@ -628,7 +631,7 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
             : kind === 'gitrepository'
               ? source
               : ks,
-      namespaceInventory: async () => [actual],
+      namespaceInventory: async () => [actual, ingress],
       verifyStopped: async () => {},
       maintenance: async () => {},
       bindings: async () => sha,
@@ -639,6 +642,19 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     assert.ok(await methods.qualifyAdoption(plan, snapshot));
     assert.ok(await methods.observeLegacy(plan, snapshot, 'legacy-stopped'));
     assert.ok(await methods.observeLegacy(plan, snapshot, 'relinquished'));
+    const statusEntry = { manager: 'nginx-ingress-controller', subresource: 'status', fieldsType: 'FieldsV1', fieldsV1: { 'f:status': { 'f:loadBalancer': {} } } };
+    ingress.metadata.managedFields.push(statusEntry);
+    assert.ok(await methods.observeLegacy(plan, snapshot, 'relinquished'), 'authenticated status subresource ownership is not specification ownership');
+    for (const invalid of [
+      { ...statusEntry, subresource: undefined },
+      { ...statusEntry, fieldsV1: { 'f:spec': {} } },
+      { ...statusEntry, fieldsV1: { 'f:status': {}, 'f:metadata': {} } },
+      { ...statusEntry, fieldsType: undefined },
+    ]) {
+      ingress.metadata.managedFields[1] = invalid;
+      await assert.rejects(methods.observeLegacy(plan, snapshot, 'relinquished'), /field manager/);
+    }
+    ingress.metadata.managedFields[1] = statusEntry;
     for (const [object, key, value, expected] of [
       [
         actual.metadata,
@@ -646,6 +662,8 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
         'wrong',
         /UID\/spec\/selector|Unknown or unsupported/,
       ],
+      [ingress.metadata, 'uid', 'wrong', /UID\/spec\/selector/],
+      [ingress.spec, 'ingressClassName', 'changed', /UID\/spec\/selector/],
       [source.metadata, 'uid', 'wrong', /Legacy Flux UID/],
       [
         source.status.artifact,

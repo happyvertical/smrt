@@ -461,9 +461,23 @@ export function createAdoptionMethods(config, command, helpers, options) {
             ),
           'Legacy inventory remains managed or reviewed Helm metadata missing',
         );
+        // Native status-subresource ownership cannot own specification fields.
+        // Preserve the reviewed legacy spec manager and refuse mixed field sets.
+        const statusOnly = (entry) =>
+          ['Ingress', 'Service', 'Deployment', 'CronJob', 'Job', 'ReplicaSet', 'Pod'].includes(actual.kind) &&
+          entry.subresource === 'status' &&
+          entry.fieldsType === 'FieldsV1' &&
+          entry.fieldsV1 &&
+          typeof entry.fieldsV1 === 'object' &&
+          !Array.isArray(entry.fieldsV1) &&
+          Object.keys(entry.fieldsV1).length === 1 &&
+          Object.hasOwn(entry.fieldsV1, 'f:status') &&
+          entry.fieldsV1['f:status'] !== null &&
+          typeof entry.fieldsV1['f:status'] === 'object' &&
+          !Array.isArray(entry.fieldsV1['f:status']);
         demand(
           actual.metadata.managedFields?.some(
-            (entry) => entry.manager === r.legacyManager,
+            (entry) => entry.manager === r.legacyManager && !entry.subresource,
           ) &&
             !actual.metadata.managedFields?.some(
               (entry) =>
@@ -472,7 +486,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
                   'kube-controller-manager',
                   'kube-scheduler',
                   'helm-controller',
-                ].includes(entry.manager),
+                ].includes(entry.manager) && !statusOnly(entry),
             ),
           'Unreviewed legacy resource field manager',
         );
