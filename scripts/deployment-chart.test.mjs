@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { chartArtifact } from './deployment-chart-artifact.mjs';
 
 // The framework's existing YAML dependency parses actual Helm output; do not
 // substitute a regex parser for Kubernetes manifests.
@@ -39,6 +40,12 @@ function resource(docs, kind, name) {
   return result;
 }
 const phaseValues = (base, phase) => ({ ...structuredClone(base), release: { ...base.release, phase } });
+
+test('legacy adoption capabilities ship as a new immutable feature-minor chart artifact', () => {
+  const metadata = parseAllDocuments(readFileSync(join(chart, 'Chart.yaml'), 'utf8'))[0].toJSON();
+  assert.equal(metadata.version, '0.3.0');
+  assert.equal(metadata.appVersion, '1');
+});
 
 test('representative fixtures lint strictly and chart packages independently', () => {
   for (const app of ['iolaus', 'work']) {
@@ -355,4 +362,26 @@ test('bootstrap never creates a fake legacy static runtime before verify', () =>
     assert.equal(docs.some((d) => d.kind === 'Deployment' && d.metadata.name === 'fixture-site'), false);
   }
   assert.equal(resource(documents(phaseValues(values, 'verify')), 'Deployment', 'fixture-site').spec.replicas, 1);
+});
+
+
+test('native exercise package and OCI receipt follow arbitrary chart versions without replacing published artifacts', () => {
+  for (const version of ['2.7.19', '1.8.0-rc.2+build.7']) {
+    const directory = join(scratch, `version-${version}`);
+    cpSync(chart, directory, { recursive: true });
+    const metadata = parseAllDocuments(readFileSync(join(directory, 'Chart.yaml'), 'utf8'))[0];
+    metadata.set('version', version);
+    writeFileSync(join(directory, 'Chart.yaml'), metadata.toString());
+    const artifact = chartArtifact(directory, scratch, 'http://registry.example.invalid:5000');
+    assert.equal(artifact.version, version);
+    assert.equal(artifact.packagePath, join(scratch, `smrt-app-${version}.tgz`));
+    assert.equal(artifact.ociTag, version.replace('+', '_'));
+    assert.equal(artifact.manifestUrl, `http://registry.example.invalid:5000/v2/charts/smrt-app/manifests/${version.replace('+', '_')}`);
+    execFileSync(helm, ['package', directory, '--destination', scratch]);
+    assert.ok(readFileSync(artifact.packagePath).length > 0);
+    assert.throws(() => chartArtifact(directory, scratch, 'https://user:password@registry.example.invalid'), /credential-free/);
+    metadata.set('version', '../0.2.1');
+    writeFileSync(join(directory, 'Chart.yaml'), metadata.toString());
+    assert.throws(() => chartArtifact(directory, scratch, 'http://registry.example.invalid'), /versioned/);
+  }
 });
