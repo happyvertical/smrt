@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { planTlsRotation, tlsDocument } from './deployment/tls.mjs';
 import { hash } from './deployment/release.mjs';
 import { chartArtifact } from './deployment-chart-artifact.mjs';
+import { legacyExerciseValues } from './deployment-legacy-exercise.mjs';
 
 // The framework's existing YAML dependency parses actual Helm output; do not
 // substitute a regex parser for Kubernetes manifests.
@@ -97,6 +98,31 @@ test('runtime probes, scheduling, scratch and drain settings are preserved', () 
   assert.deepEqual(pod.tolerations, workload.tolerations);
   assert.deepEqual(pod.volumes, [{ name: 'heartbeat', emptyDir: { sizeLimit: '16Mi', medium: 'Memory' } }]);
   assert.equal(pod.terminationGracePeriodSeconds, 270);
+});
+
+test('real legacy exercise values pass Helm schema and retain migration architecture placement', () => {
+  const values = legacyExerciseValues('a'.repeat(64), 'fixtures');
+  assert.deepEqual(values.current.migration.nodeSelector, { 'kubernetes.io/arch': 'amd64' });
+  for (const phase of ['maintenance', 'stopped', 'migrate', 'verify', 'active']) {
+    const docs = documents(phaseValues(values, phase));
+    const web = resource(docs, 'Deployment', 'fixture-web');
+    const runtime = ['verify', 'active'].includes(phase) ? values.target : values.current;
+    assert.deepEqual(web.spec.template.spec.nodeSelector, runtime.workloads.web.nodeSelector);
+    if (phase === 'migrate') {
+      const job = resource(docs, 'Job', 'fixture-migration-adopt-4481-1');
+      assert.deepEqual(job.spec.template.spec.nodeSelector, values.target.migration.nodeSelector);
+    }
+  }
+  for (const side of ['current', 'target']) {
+    for (const nodeSelector of [{ 'kubernetes.io/arch': true }, { 'kubernetes.io/arch': '' }]) {
+      const invalid = structuredClone(values);
+      invalid[side].migration.nodeSelector = nodeSelector;
+      assert.throws(() => render(invalid), /nodeSelector/);
+    }
+    const invalid = structuredClone(values);
+    invalid[side].migration.unapprovedPlacement = 'amd64';
+    assert.throws(() => render(invalid), /unapprovedPlacement/);
+  }
 });
 
 test('bootstrap leaves all runtime absent until verify', () => {

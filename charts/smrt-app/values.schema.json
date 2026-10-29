@@ -976,6 +976,13 @@
         "securityContext": {
           "$ref": "#/definitions/securityContext"
         },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "serviceAccountName": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,62}$"
