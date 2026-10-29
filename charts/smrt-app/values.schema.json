@@ -186,6 +186,91 @@
         "tlsSecretName": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,30}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "nginx.ingress.kubernetes.io/proxy-body-size": {
+              "enum": [
+                "1m",
+                "2m",
+                "4m",
+                "8m",
+                "10m",
+                "11m"
+              ]
+            },
+            "nginx.ingress.kubernetes.io/proxy-buffer-size": {
+              "enum": [
+                "4k",
+                "8k",
+                "16k",
+                "32k",
+                "64k"
+              ]
+            }
+          }
+        },
+        "additionalRoutes": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "host",
+              "workload"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$"
+              },
+              "host": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
+              },
+              "workload": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$"
+              },
+              "tlsSecretName": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$"
+              },
+              "annotations": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "nginx.ingress.kubernetes.io/proxy-body-size": {
+                    "enum": [
+                      "1m",
+                      "2m",
+                      "4m",
+                      "8m",
+                      "10m",
+                      "11m"
+                    ]
+                  },
+                  "nginx.ingress.kubernetes.io/proxy-buffer-size": {
+                    "enum": [
+                      "4k",
+                      "8k",
+                      "16k",
+                      "32k",
+                      "64k"
+                    ]
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "required": [
@@ -623,6 +708,140 @@
         "serviceAccountName": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "selectorLabels": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 8,
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$",
+            "allOf": [
+              {
+                "not": {
+                  "pattern": "^smrt\\.happyvertical\\.com/"
+                }
+              },
+              {
+                "not": {
+                  "const": "app.kubernetes.io/instance"
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^([A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?)?$"
+          }
+        },
+        "readOnlyConfigMaps": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "volumeName",
+              "configMapName",
+              "hash",
+              "mountPath",
+              "items"
+            ],
+            "properties": {
+              "volumeName": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                "not": {
+                  "const": "smrt-observer"
+                }
+              },
+              "configMapName": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$"
+              },
+              "hash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "mountPath": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9_][A-Za-z0-9_./-]*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.{1,2}(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "//"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "^/(var|run|proc|sys|dev)(/|$)"
+                    }
+                  }
+                ]
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key",
+                    "path"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._-]+$"
+                    },
+                    "path": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "continuousStatic": {
+          "type": "boolean"
+        },
+        "automountServiceAccountToken": {
+          "const": false
+        },
+        "startingDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3300
+        },
+        "ttlSecondsAfterFinished": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "successfulJobsHistoryLimit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "failedJobsHistoryLimit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
         }
       },
       "required": [
@@ -680,6 +899,45 @@
             "required": [
               "port"
             ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "continuousStatic"
+            ],
+            "properties": {
+              "continuousStatic": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "service",
+              "podSecurityContext",
+              "securityContext",
+              "automountServiceAccountToken"
+            ],
+            "properties": {
+              "role": {
+                "const": "service"
+              },
+              "writer": {
+                "const": false
+              },
+              "env": {
+                "maxItems": 0
+              },
+              "replicas": {
+                "maximum": 3
+              }
+            },
+            "not": {
+              "required": [
+                "schedule"
+              ]
+            }
           }
         }
       ]

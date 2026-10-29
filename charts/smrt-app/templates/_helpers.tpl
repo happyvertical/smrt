@@ -27,11 +27,16 @@ smrt.happyvertical.com/sequence: {{ .Values.release.sequence | quote }}
   {{- with $w.port }}
   ports: [{name: http, containerPort: {{ . }}}]
   {{- end }}
-  {{- with $w.scratch }}
+  {{- if or $w.scratch $w.readOnlyConfigMaps }}
   volumeMounts:
-  {{- range . }}
+  {{- range $w.scratch }}
     - name: {{ .name }}
       mountPath: {{ .mountPath | quote }}
+  {{- end }}
+  {{- range $w.readOnlyConfigMaps }}
+    - name: {{ .volumeName }}
+      mountPath: {{ .mountPath | quote }}
+      readOnly: true
   {{- end }}
   {{- end }}
 {{- end }}
@@ -52,18 +57,32 @@ nodeSelector: {{ . | toJson }}
 {{- end }}
 containers:
 {{ include "smrt.container" . | indent 2 }}
-{{- with .workload.scratch }}
+{{- if or .workload.scratch .workload.readOnlyConfigMaps }}
 volumes:
-{{- range . }}
+{{- range .workload.scratch }}
   - name: {{ .name }}
     emptyDir: {{ omit . "name" "mountPath" | toJson }}
+{{- end }}
+{{- range .workload.readOnlyConfigMaps }}
+  - name: {{ .volumeName }}
+    configMap:
+      name: {{ .configMapName }}
+      items: {{ .items | toJson }}
 {{- end }}
 {{- end }}
 {{- end }}
 
 {{- define "smrt.runtimeLabels" -}}
+{{- $labels := dict "app.kubernetes.io/instance" .root.Release.Name "app.kubernetes.io/name" .root.Values.app.name "smrt.happyvertical.com/environment" .root.Values.app.environment "smrt.happyvertical.com/runtime" (.workload | toJson | sha256sum | trunc 63) }}
+{{- range $key, $value := .workload.selectorLabels }}{{ $_ := set $labels $key $value }}{{ end }}
+{{ $labels | toYaml }}
+{{- end }}
+
+{{- define "smrt.selectors" -}}
+{{- if .workload.selectorLabels -}}
+{{ .workload.selectorLabels | toYaml }}
+{{- else -}}
 app.kubernetes.io/instance: {{ .root.Release.Name | quote }}
-app.kubernetes.io/name: {{ .root.Values.app.name | quote }}
-smrt.happyvertical.com/environment: {{ .root.Values.app.environment | quote }}
-smrt.happyvertical.com/runtime: {{ .workload | toJson | sha256sum | trunc 63 | quote }}
+smrt.happyvertical.com/workload: {{ .name }}
+{{- end -}}
 {{- end }}

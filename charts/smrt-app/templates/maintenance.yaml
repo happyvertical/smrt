@@ -54,34 +54,44 @@ metadata:
 spec:
   selector: {app.kubernetes.io/instance: {{ .Release.Name | quote }}, smrt.happyvertical.com/component: maintenance}
   ports: [{name: http, port: {{ .Values.maintenance.port }}, targetPort: http}]
+{{- $root := . }}
+{{- $routes := prepend (default (list) .Values.ingress.additionalRoutes) (dict "name" (default .Release.Name .Values.ingress.name) "host" .Values.ingress.host "tlsSecretName" .Values.ingress.tlsSecretName "annotations" .Values.ingress.annotations "primary" true) }}
+{{- range $route := $routes }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ $route.name }}
   labels:
-{{ include "smrt.labels" . | indent 4 }}
+{{ include "smrt.labels" $root | indent 4 }}
+  {{- with $route.annotations }}
+  annotations: {{ . | toJson }}
+  {{- end }}
 spec:
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- with .Values.ingress.tlsSecretName }}
-  tls: [{hosts: [{{ $.Values.ingress.host | quote }}], secretName: {{ . }} }]
+  ingressClassName: {{ $root.Values.ingress.className }}
+  {{- with $route.tlsSecretName }}
+  tls: [{hosts: [{{ $route.host | quote }}], secretName: {{ . }} }]
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    - host: {{ $route.host | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                {{- if eq .Values.release.phase "active" }}
-                {{- $web := dict }}
-                {{- range $name, $w := .Values.target.workloads }}
-                  {{- if eq $w.role "web" }}{{ $_ := set $web "name" $name }}{{ $_ := set $web "port" $w.service.port }}{{ end }}
+                {{- if or (not $route.primary) (eq $root.Values.release.phase "active") }}
+                {{- $backend := dict "name" $route.workload }}
+                {{- if $route.primary }}
+                {{- range $name, $w := $root.Values.target.workloads }}
+                {{- if eq $w.role "web" }}{{ $_ := set $backend "name" $name }}{{ end }}
                 {{- end }}
-                name: {{ .Release.Name }}-{{ required "target needs a web workload with service" $web.name }}
-                port: {number: {{ $web.port }}}
+                {{- end }}
+                {{- $w := index $root.Values.target.workloads $backend.name }}
+                name: {{ $root.Release.Name }}-{{ $backend.name }}
+                port: {number: {{ $w.service.port }}}
                 {{- else }}
-                name: {{ .Release.Name }}-maintenance
-                port: {number: {{ .Values.maintenance.port }}}
+                name: {{ $root.Release.Name }}-maintenance
+                port: {number: {{ $root.Values.maintenance.port }}}
                 {{- end }}
+{{- end }}

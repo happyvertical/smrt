@@ -45,7 +45,8 @@ test('representative fixtures lint strictly and chart packages independently', (
     execFileSync(helm, ['lint', '--strict', chart, '-f', join(chart, 'fixtures', `${app}.json`)]);
   }
   execFileSync(helm, ['package', chart, '--destination', scratch]);
-  assert.ok(readFileSync(join(scratch, 'smrt-app-0.2.1.tgz')).length > 0);
+  const version = parseAllDocuments(readFileSync(join(chart, 'Chart.yaml'), 'utf8'))[0].toJSON().version;
+  assert.ok(readFileSync(join(scratch, `smrt-app-${version}.tgz`)).length > 0);
 });
 
 test('current entire pod spec survives maintenance and target starts only after migration', () => {
@@ -268,4 +269,90 @@ test('bounded security envelope and migration-only observer projection survive r
   }
   base.target.migration.observerAccess = false;
   assert.equal(resource(documents(base), 'Job', `fixture-migration-${base.release.id}-${base.release.attempt}`).spec.template.spec.volumes.some((v) => v.projected), false);
+});
+
+const legacyValues = () => {
+  const values = fixture();
+  for (const runtime of [values.current, values.target]) {
+    runtime.workloads.web.selectorLabels = { app: 'jobgeni-web' };
+    runtime.workloads.site = {
+      ...structuredClone(runtime.workloads.web), role: 'service', writer: false,
+      selectorLabels: { app: 'jobgeni-site' }, continuousStatic: true, env: [], replicas: 1,
+      automountServiceAccountToken: false,
+      podSecurityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: { type: 'RuntimeDefault' } },
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
+      readOnlyConfigMaps: [{ volumeName: 'site-content', configMapName: 'site-v1', hash: 'a'.repeat(64), mountPath: '/usr/share/nginx/html', items: [{ key: 'index.html', path: 'index.html' }] }],
+    };
+    runtime.workloads.monitor.startingDeadlineSeconds = 600;
+    runtime.workloads.monitor.activeDeadlineSeconds = 3300;
+    runtime.workloads.monitor.ttlSecondsAfterFinished = 86400;
+    runtime.workloads.monitor.successfulJobsHistoryLimit = 2;
+    runtime.workloads.monitor.failedJobsHistoryLimit = 3;
+  }
+  values.ingress.name = 'jobgeni-web';
+  values.ingress.annotations = { 'nginx.ingress.kubernetes.io/proxy-body-size': '11m', 'nginx.ingress.kubernetes.io/proxy-buffer-size': '64k' };
+  values.ingress.additionalRoutes = [{ name: 'jobgeni-site', host: 'www.jobgeni.test', workload: 'site', tlsSecretName: 'site-tls' }];
+  return values;
+};
+
+test('legacy selectors, static services and independent ingress survive every maintenance phase', () => {
+  for (const phase of ['maintenance', 'stopped', 'migrate', 'verify', 'active']) {
+    const values = phaseValues(legacyValues(), phase);
+    const docs = documents(values);
+    const site = resource(docs, 'Deployment', 'fixture-site');
+    assert.equal(site.spec.replicas, 1);
+    assert.deepEqual(site.spec.strategy, { type: 'RollingUpdate', rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } });
+    assert.deepEqual(resource(docs, 'Deployment', 'fixture-web').spec.strategy, { type: 'Recreate' });
+    assert.deepEqual(site.spec.selector.matchLabels, { app: 'jobgeni-site' });
+    assert.equal(site.spec.template.metadata.labels.app, 'jobgeni-site');
+    assert.equal(site.spec.template.metadata.labels['app.kubernetes.io/instance'], 'fixture');
+    assert.deepEqual(resource(docs, 'Service', 'fixture-web').spec.selector, { app: 'jobgeni-web' });
+    assert.equal(site.spec.template.spec.containers[0].volumeMounts[0].readOnly, true);
+    assert.deepEqual(site.spec.template.spec.volumes, [{ name: 'site-content', configMap: { name: 'site-v1', items: [{ key: 'index.html', path: 'index.html' }] } }]);
+    assert.equal(resource(docs, 'Ingress', 'jobgeni-web').spec.rules[0].http.paths[0].backend.service.name, phase === 'active' ? 'fixture-web' : 'fixture-maintenance');
+    assert.equal(resource(docs, 'Ingress', 'jobgeni-site').spec.rules[0].http.paths[0].backend.service.name, 'fixture-site');
+    const cron = resource(docs, 'CronJob', 'fixture-monitor');
+    assert.equal(cron.spec.startingDeadlineSeconds, 600);
+    assert.equal(cron.spec.jobTemplate.spec.activeDeadlineSeconds, 3300);
+    assert.equal(cron.spec.jobTemplate.spec.ttlSecondsAfterFinished, 86400);
+    assert.equal(cron.spec.successfulJobsHistoryLimit, 2);
+    assert.equal(cron.spec.failedJobsHistoryLimit, 3);
+    const inventory = JSON.parse(resource(docs, 'ConfigMap', 'fixture-inventory').data['inventory.json']);
+    assert.ok(inventory.readOnlyConfigMaps.some((r) => r.name === 'site-v1' && r.external && r.immutable));
+    assert.ok(inventory.secrets.some((r) => r.name === 'site-tls' && r.usage === 'tls'));
+    assert.equal(inventory.resources.some((r) => r.name === 'site-v1'), false);
+  }
+});
+
+test('bounded adoption fields reject selectors, unsafe static claims, routes and mount escapes', () => {
+  const mutations = [
+    (v) => { v.target.workloads.web.selectorLabels = { app: 'changed' }; },
+    (v) => { v.current.workloads.site.selectorLabels = { 'smrt.happyvertical.com/writer': 'false' }; },
+    (v) => { v.current.workloads.site.strategy = { type: 'Recreate' }; },
+    (v) => { v.current.workloads.site.writer = true; },
+    (v) => { v.current.workloads.site.env = v.current.workloads.web.env; },
+    (v) => { delete v.current.workloads.site.securityContext; },
+    (v) => { delete v.current.workloads.site.automountServiceAccountToken; },
+    (v) => { v.current.workloads.site.automountServiceAccountToken = true; },
+    (v) => { v.target.workloads.site.continuousStatic = false; },
+    (v) => { v.ingress.additionalRoutes[0].workload = 'task'; },
+    (v) => { v.ingress.additionalRoutes[0].host = v.ingress.host; },
+    (v) => { v.ingress.additionalRoutes[0].name = v.ingress.name; },
+    (v) => { v.ingress.annotations['nginx.ingress.kubernetes.io/server-snippet'] = 'unsafe'; },
+    (v) => { v.current.workloads.site.readOnlyConfigMaps[0].items[0].path = '../token'; },
+    (v) => { v.current.workloads.site.readOnlyConfigMaps[0].mountPath = '/var/run/secrets'; },
+    (v) => { v.current.workloads.site.scratch = [{ name: 'other', mountPath: '/usr/share' }]; },
+    (v) => { v.target.workloads.site.readOnlyConfigMaps[0].hash = 'b'.repeat(64); },
+    (v) => { v.target.workloads.monitor.activeDeadlineSeconds = 3301; },
+  ];
+  for (const mutate of mutations) { const v = legacyValues(); mutate(v); assert.throws(() => render(v), undefined, mutate.toString()); }
+});
+
+test('bootstrap never creates a fake legacy static runtime before verify', () => {
+  const values = legacyValues(); values.current = false;
+  for (const phase of ['maintenance', 'stopped', 'migrate']) {
+    const docs = documents(phaseValues(values, phase));
+    assert.equal(docs.some((d) => d.kind === 'Deployment' && d.metadata.name === 'fixture-site'), false);
+  }
+  assert.equal(resource(documents(phaseValues(values, 'verify')), 'Deployment', 'fixture-site').spec.replicas, 1);
 });

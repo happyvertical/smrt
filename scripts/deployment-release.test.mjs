@@ -124,7 +124,7 @@ function objects() {
   return [
     {
       kind: 'Deployment',
-      spec: { template: { spec: { automountServiceAccountToken: false, containers: [{ image }] } } },
+      spec: { selector: { matchLabels: { 'app.kubernetes.io/instance': 'example', 'smrt.happyvertical.com/workload': 'web' } }, template: { spec: { automountServiceAccountToken: false, containers: [{ image }] } } },
       metadata: { name: 'example-web', uid: 'deployment', generation: 2 },
       status: {
         observedGeneration: 2,
@@ -156,6 +156,10 @@ function objects() {
 test('ready exact images and endpoint UID pass', async () =>
   verifyRuntime(document('verify'), objects()));
 for (const [name, mutate] of [
+  [
+    'changed selector identity',
+    (o) => { o[0].spec.selector.matchLabels['smrt.happyvertical.com/workload'] = 'other'; },
+  ],
   [
     'old imageID',
     (o) => {
@@ -1837,4 +1841,53 @@ test('live inventory binds maintenance controller envelope to the original rende
     });
     assert.equal((await live.adapter.observe(live.doc, 'abc')).proven, !inject);
   }
+});
+
+test('legacy central helpers bind selectors, static classification and read-only configuration', async () => {
+  const { effectiveWorkloadSelectors, readOnlyConfigBindings, isContinuousStatic, normalizedIngressRecords } = await import('./deployment/release.mjs');
+  const doc = document('stopped');
+  const w = doc.spec.values.target.workloads.web;
+  w.selectorLabels = { app: 'legacy' };
+  doc.spec.values.current.workloads.web.selectorLabels = { app: 'legacy' };
+  assert.deepEqual(effectiveWorkloadSelectors('example', 'web', w), { app: 'legacy' });
+  assert.doesNotThrow(() => validate(doc), 'real current stopped sequence one stays valid');
+  w.selectorLabels.app = 'different';
+  assert.throws(() => validate(doc), /selector\/static identity/);
+  assert.equal(isContinuousStatic({ writer: false }), false);
+  assert.deepEqual(readOnlyConfigBindings(runtime), []);
+  assert.equal(normalizedIngressRecords(document().spec.values, 'example')[0].name, 'example');
+});
+
+test('central validation rejects bounded legacy contract violations and binds all fields', async () => {
+  const { readFileSync } = await import('node:fs');
+  const values = JSON.parse(readFileSync(new URL('../charts/smrt-app/fixtures/iolaus.json', import.meta.url), 'utf8'));
+  for (const runtime of [values.current, values.target]) runtime.workloads.site = {
+    ...structuredClone(runtime.workloads.web), role: 'service', writer: false, env: [], replicas: 1,
+    continuousStatic: true, automountServiceAccountToken: false,
+    podSecurityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: { type: 'RuntimeDefault' } },
+    securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
+    readOnlyConfigMaps: [{ volumeName: 'site', configMapName: 'site-v1', hash: 'a'.repeat(64), mountPath: '/site', items: [{ key: 'index', path: 'index.html' }] }],
+  };
+  values.release.sequence = 1;
+  values.ingress.additionalRoutes = [{ name: 'site', host: 'www.example.test', workload: 'site' }];
+  const doc = { ...document('stopped'), spec: { ...document().spec, values } };
+  assert.doesNotThrow(() => validate(doc));
+  const { effectiveWorkloadStrategy } = await import('./deployment/release.mjs');
+  assert.deepEqual(effectiveWorkloadStrategy(values.target.workloads.site), { type: 'RollingUpdate', rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } });
+  assert.deepEqual(effectiveWorkloadStrategy(values.target.workloads.web), { type: 'Recreate' });
+  for (const mutate of [
+    (v) => { v.current.workloads.site.strategy = { type: 'Recreate' }; },
+    (v) => { v.current.workloads.site.volumes = [{ name: 'credentials', secret: { secretName: 'runtime' } }]; },
+    (v) => { v.current.workloads.site.selectorLabels = { 'app.kubernetes.io/instance': 'other' }; },
+    (v) => { v.current.workloads.site.writer = true; },
+    (v) => { v.current.workloads.site.env = v.current.workloads.web.env; },
+    (v) => { v.current.workloads.site.automountServiceAccountToken = true; },
+    (v) => { v.target.workloads.site.readOnlyConfigMaps[0].hash = 'b'.repeat(64); },
+    (v) => { v.current.workloads.site.readOnlyConfigMaps[0].items[0].path = '../key'; },
+    (v) => { v.current.workloads.site.scratch = [{ name: 'tmp', mountPath: '/site/overlap' }]; },
+    (v) => { v.ingress.additionalRoutes[0].workload = 'task'; },
+    (v) => { v.ingress.annotations = { 'nginx.ingress.kubernetes.io/server-snippet': 'x' }; },
+  ]) { const copy = structuredClone(doc); mutate(copy.spec.values); assert.throws(() => validate(copy), undefined, mutate.toString()); }
+  const copy = structuredClone(doc); copy.spec.values.target.workloads.site.command.push('new');
+  assert.notEqual(identity(copy), identity(doc));
 });
