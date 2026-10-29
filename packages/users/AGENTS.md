@@ -285,3 +285,34 @@ Focused matrix: `mailbox-authentication.test.ts` runs in memory SQLite by defaul
 `TEST_DB_ADAPTER=postgres` plus an explicit isolated `DATABASE_URL` creates a unique
 schema per scenario and also exercises concurrent invitation/login proof claims.
 It is registered in `test:postgres`; no shared local service fallback is used.
+
+## Family invitations and preserved Person identity
+
+Trusted hosts may use `prepare({tenantId,email,roleId})` instead of `roleSlug`
+to select an exact destination-owned role (or genuine global system role). Both
+selectors together, foreign-tenant roles and missing roles fail closed. The
+legacy `roleSlug` path remains system-only. `existingProfilePolicy:'owned-person'`
+is an explicit service option allowing an existing ACTIVE canonical User's
+already-owned tenant Person; exact normalized email, Person discriminator, unique
+ownership and active source-family membership/tenant are required. It never
+rebinds profiles or credentials. New pending identities stay canonical global;
+OIDC owner authorization still requires canonical global Person. Returning
+`MailboxAuthenticationService` retains its existing global-only contract.
+
+`UserCollection.requireOwnedPersonForTenant(userId,tenantId)` is a bounded
+read for the exact current tenant actor, with active destination membership; it
+validates the same preserved owned Person. System/bypass/different actors fail.
+Consumers must use their transaction executor and treat returned profile data as
+private identity data, never a cross-family directory.
+
+Each `issue` rotates a random generation in canonical membership context memory
+(`smrt/tenant-invitation`, `generation`) and signs it into grant bindings, so a
+resend invalidates every earlier grant and its mailbox proofs. `revoke` affects
+only pending membership, rotates generation and marks it inactive. `prepare`
+may reprepare only service-revoked inactive membership with the same role;
+manual inactive memberships stay refused. Malformed generation fails closed.
+Never edit/forget this framework-owned state. Legacy grants without generation
+remain valid until a rotation, expiry or consumption. Host scope/relationship
+writes must follow acceptance on the same caller executor: a failure rolls back
+nonces, activation, generation and host writes. Mint the canonical magic-link
+session only after committed mailbox identity proof; the grant alone cannot mint.

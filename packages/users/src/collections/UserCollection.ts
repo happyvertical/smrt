@@ -3,15 +3,16 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { isPostgresDatabase, SmrtCollection } from '@happyvertical/smrt-core';
 import { BackfillTracker } from '@happyvertical/smrt-core/migrations';
 import {
   AmbiguousOidcIdentityError,
+  CanonicalPersonProfileError,
   normalizeIdentityEmail,
   OidcIdentity,
   OidcIdentityCollection,
   type Profile,
-  type ProfileCollection,
+  ProfileCollection,
 } from '@happyvertical/smrt-profiles';
 import {
   coordinateOidcProvisioning,
@@ -20,13 +21,95 @@ import {
   isOidcProvisioningRaceConflict,
   saveOidcRaceArbiter,
 } from '@happyvertical/smrt-profiles/internal/oidc-provisioning';
-import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
 import type { getDatabase } from '@happyvertical/sql';
 import { USER_EMAIL_KEY_BACKFILL_NAME } from '../migrations/backfillUserEmailKeys.js';
 import { User } from '../models/User.js';
-import { UserStatus } from '../types/index.js';
+import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
+import { MembershipCollection } from './MembershipCollection.js';
+import { TenantCollection } from './TenantCollection.js';
 
 type DatabaseInterface = Awaited<ReturnType<typeof getDatabase>>;
+
+/** Internal invitation validation; never authorizes a destination or rebinds identity. */
+export async function requireExistingOwnedPerson(
+  db: DatabaseInterface,
+  userId: string,
+): Promise<Profile> {
+  return withSystemContext(async () => {
+    const unavailable = () =>
+      new CanonicalPersonProfileError(
+        'email_mismatch',
+        'Owned Person identity is unavailable',
+      );
+    if (isPostgresDatabase(db))
+      await db.query('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    const users = await UserCollection.create({ db });
+    const user = await users.get({ id: userId }, { cache: false });
+    if (
+      !user ||
+      user.status !== UserStatus.ACTIVE ||
+      !user.profileId ||
+      !user.email
+    )
+      throw unavailable();
+    if ((await users.findCanonicalByEmail(user.email))?.id !== userId)
+      throw unavailable();
+    const owners = await users.list({
+      where: { profileId: user.profileId },
+      limit: 2,
+    });
+    if (owners.length !== 1 || owners[0].id !== userId) throw unavailable();
+    if (isPostgresDatabase(db))
+      await db.query(
+        'SELECT id FROM profiles WHERE id = ? FOR UPDATE',
+        user.profileId,
+      );
+    const profiles = await ProfileCollection.create({ db });
+    const profile = await profiles.get(
+      { id: user.profileId },
+      { cache: false },
+    );
+    const person = await db.get('profiles', {
+      id: user.profileId,
+      _meta_type: '@happyvertical/smrt-profiles:Person',
+    });
+    if (
+      !person ||
+      !profile ||
+      (await profile.getTypeSlug()) !== 'person' ||
+      normalizeIdentityEmail(profile.email ?? '') !==
+        normalizeIdentityEmail(user.email)
+    )
+      throw unavailable();
+    if (profile.tenantId == null) {
+      return profiles.requireCanonicalGlobalPerson(user.profileId, user.email);
+    }
+    if (isPostgresDatabase(db))
+      await db.query(
+        'SELECT id FROM memberships WHERE user_id = ? AND tenant_id = ? FOR UPDATE',
+        userId,
+        profile.tenantId,
+      );
+    const membership = await (
+      await MembershipCollection.create({ db })
+    ).findByUserAndTenant(userId, profile.tenantId);
+    const tenant = await (await TenantCollection.create({ db })).get(
+      { id: profile.tenantId },
+      { cache: false },
+    );
+    if (
+      !membership ||
+      membership.status !== MembershipStatus.ACTIVE ||
+      tenant?.status !== TenantStatus.ACTIVE
+    )
+      throw unavailable();
+    return profile;
+  });
+}
 
 /**
  * OIDC claims used for identity resolution
@@ -179,6 +262,44 @@ export interface GetOrCreateFromOidcOptions {
 export class UserCollection extends SmrtCollection<User> {
   static readonly _itemClass = User;
   private userEmailKeysReadyPromise: Promise<void> | null = null;
+
+  /**
+   * Read only the current active tenant actor's exact owned Person, including a
+   * preserved Person in another family. No identity or membership is created.
+   */
+  async requireOwnedPersonForTenant(
+    userId: string,
+    tenantId: string,
+  ): Promise<Profile> {
+    const context = getCurrentTenant();
+    if (
+      !userId ||
+      !tenantId ||
+      context?.userId !== userId ||
+      context.tenantId !== tenantId ||
+      context.superAdminBypass
+    )
+      throw new Error('Owned Person identity is unavailable');
+    const db = this.options.db as DatabaseInterface;
+    if (isPostgresDatabase(db)) {
+      await db.query('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+      await db.query(
+        'SELECT id FROM memberships WHERE user_id = ? AND tenant_id = ? FOR UPDATE',
+        userId,
+        tenantId,
+      );
+    }
+    const membership = await (
+      await MembershipCollection.create({ db })
+    ).findByUserAndTenant(userId, tenantId);
+    const tenant = await (await TenantCollection.create({ db })).get(
+      { id: tenantId },
+      { cache: false },
+    );
+    if (!membership?.isActive() || tenant?.status !== TenantStatus.ACTIVE)
+      throw new Error('Owned Person identity is unavailable');
+    return requireExistingOwnedPerson(db, userId);
+  }
 
   /**
    * Find user by email address

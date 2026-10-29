@@ -358,8 +358,8 @@ describe('independently delivered mailbox authentication', () => {
     await complete(invitationToken, mail.token);
   });
   it('binds mailed proof to the exact grant, membership and identity; refusals do not consume it', async () => {
-    const invitationToken = await grant();
     const otherGrant = await grant();
+    const invitationToken = await grant();
     const { mail } = await request(invitationToken);
     await expect(complete(otherGrant, mail.token)).rejects.toMatchObject({
       name: 'MagicLinkError',
