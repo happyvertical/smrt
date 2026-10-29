@@ -11,6 +11,13 @@ import type {
   CatalogSyncPage,
 } from '../catalog-contracts.js';
 import {
+  CATALOG_PREVIEW_MAX_BYTES,
+  type CatalogPreview,
+  type CatalogPreviewLoader,
+  catalogPreviewPngDimensions,
+  normalizeCatalogPreview,
+} from '../catalog-preview.js';
+import {
   IM_ASSET_ORIGIN,
   IM_LICENSE,
   IM_ORIGIN,
@@ -165,13 +172,14 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 }
 /**
  * Public first-edition English/linked Spanish K–12 teacher/family hierarchy.
- * Each enumeration reads one HTML page and at most four asset HEADs. Only an
+ * Each enumeration reads one HTML page, at most one bounded preview PNG and
+ * at most four original asset HEADs. Only an
  * explicit, validated selection can GET PDF bytes; generic acquisition retains
  * policy, tenant isolation, idempotence, attribution and notices.
  */
 export function createPublicIllustrativeMathematicsFirstEditionAdapter(
   config: PublicIllustrativeMathematicsFirstEditionConfig = {},
-): CatalogSyncAdapter & CatalogAcquireAdapter {
+): CatalogSyncAdapter & CatalogAcquireAdapter & CatalogPreviewLoader {
   const fetcher = config.fetch ?? globalThis.fetch;
   const timeout = config.timeoutMs ?? 20_000;
   const pdfCap = config.maxPdfBytes ?? 32 * 1024 * 1024;
@@ -268,6 +276,33 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
     return { parsed, revision };
   }
   return {
+    async loadPreview(value) {
+      const preview = normalizeCatalogPreview(value);
+      if (
+        !preview ||
+        (preview.rights.expiresAt &&
+          Date.parse(preview.rights.expiresAt) <= Date.now())
+      )
+        throw new Error('Invalid or expired preview.');
+      return operation(async (request) => {
+        const response = await request(
+          IM_ASSET_ORIGIN + '/' + preview.reference,
+          'GET',
+          { accept: 'image/png' },
+        );
+        if (
+          response.headers
+            .get('content-type')
+            ?.split(';')[0]
+            .trim()
+            .toLowerCase() !== 'image/png'
+        ) {
+          await response.body?.cancel();
+          throw new Error('Preview is not PNG.');
+        }
+        return readBody(response, CATALOG_PREVIEW_MAX_BYTES);
+      });
+    },
     async enumerate(input): Promise<CatalogSyncPage> {
       let state: Cursor;
       try {
@@ -308,11 +343,55 @@ export function createPublicIllustrativeMathematicsFirstEditionAdapter(
             throw new Error(
               'Official hierarchy page has no recognized children; coverage is incomplete.',
             );
+          let preview: CatalogPreview | undefined;
+          if (state.offset === 0 && parsed.previewImage) {
+            try {
+              const response = await request(
+                IM_ASSET_ORIGIN + '/' + parsed.previewImage.id,
+                'GET',
+                { accept: 'image/png' },
+              );
+              if (
+                response.headers
+                  .get('content-type')
+                  ?.split(';')[0]
+                  .trim()
+                  .toLowerCase() !== 'image/png'
+              ) {
+                await response.body?.cancel();
+                throw new Error('Preview is not PNG.');
+              }
+              const bytes = await readBody(response, CATALOG_PREVIEW_MAX_BYTES);
+              const dimensions = catalogPreviewPngDimensions(bytes);
+              const hash = await sha256(bytes);
+              preview = {
+                providerId: PROVIDER,
+                stableId: imStableId(path),
+                revision: `${revision}:${hash}`,
+                reference: parsed.previewImage.id,
+                mediaType: 'image/png',
+                ...dimensions,
+                byteLength: bytes.length,
+                sha256: hash,
+                alt: parsed.previewImage.alt,
+                rights: {
+                  state: 'verified',
+                  identifier: 'CC-BY-4.0',
+                  sourceUrl: IM_ORIGIN + path,
+                  attribution: parsed.attribution,
+                  retrievedAt: new Date().toISOString(),
+                },
+              };
+            } catch {
+              // Optional preview failure never claims original-content availability.
+            }
+          }
           if (page.course && state.offset === 0)
             records.push({
               providerId: PROVIDER,
               stableId: imStableId(path),
-              revision,
+              revision: preview?.revision ?? revision,
+              ...(preview ? { preview } : {}),
               canonicalUrl: IM_ORIGIN + path,
               title: imHierarchyTitle(page),
               parentStableId: page.lesson

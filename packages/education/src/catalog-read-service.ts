@@ -6,13 +6,15 @@ import type {
   CatalogSourceRecord,
 } from './catalog-contracts.js';
 import { CatalogPolicy } from './catalog-policy.js';
+import { type CatalogPreview, catalogPreviewFor } from './catalog-preview.js';
 
 export interface CatalogReadStore {
-  search(input: {
-    query?: string;
-    subject?: string;
-    grade?: string;
-  }): Promise<readonly (CatalogSourceRecord & { id: string })[]>;
+  search(input: { query?: string; subject?: string; grade?: string }): Promise<
+    readonly (CatalogSourceRecord & {
+      id: string;
+      withdrawnAt?: string | null;
+    })[]
+  >;
 }
 
 /** Deliberately metadata-only DTO: credentials, byte locations, and teacher records stay server-side. */
@@ -32,6 +34,7 @@ export interface CatalogResourceView {
   parentStableId?: string;
   availableFormats?: string[];
   representation?: CatalogResourceRepresentation;
+  preview?: CatalogPreview;
   license: Pick<
     CatalogLicenseEvidence,
     | 'state'
@@ -57,7 +60,9 @@ export class CatalogReadService {
       throw new Error('Trusted tenant and actor identity are required.');
     const records = await this.store.search(filter);
     return records
-      .filter((record) => this.policy.canView(record, actor))
+      .filter(
+        (record) => !record.withdrawnAt && this.policy.canView(record, actor),
+      )
       .map((record) => this.view(record));
   }
 
@@ -68,6 +73,7 @@ export class CatalogReadService {
     const representation = normalizeCatalogRepresentation(
       record.representation,
     );
+    const preview = catalogPreviewFor(record);
     return {
       id: record.id,
       providerId: record.providerId,
@@ -90,6 +96,7 @@ export class CatalogReadService {
         ? { availableFormats: [...record.availableFormats] }
         : {}),
       ...(representation ? { representation } : {}),
+      ...(preview ? { preview } : {}),
       license: {
         state: licenseEvidence.state,
         ...(licenseEvidence.identifier

@@ -41,3 +41,7 @@ explicit licensing authorization; never add a system/global write bypass.
 Family-owned unassigned originals and audited learner adoption use
 [FamilyIntakeService](agents/family-intake.md). Keep family source scope immutable;
 assignment alone never creates learning history or grants learner inbox access.
+
+Publisher catalog previews use [the preview contract](agents/catalog-previews.md).
+Keep independent image rights and source revisions; serve via `CatalogPreviewService`
+with live actor/tenant authorization, never direct provider image URLs.

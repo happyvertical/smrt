@@ -8,6 +8,7 @@ import type {
   CatalogSourceRecord,
   CatalogSyncCheckpoint,
 } from './catalog-contracts.js';
+import { catalogPreviewFor } from './catalog-preview.js';
 import type { CatalogSyncStore } from './catalog-sync-service.js';
 
 function json(value: unknown): string {
@@ -98,6 +99,27 @@ export class CatalogDatabaseSyncStore implements CatalogSyncStore {
     });
     if (rows.length > 1)
       throw new Error('Catalog provider record identity is ambiguous.');
+    // Retain valid historical evidence even after expiry; read/serve decide availability.
+    let preview = catalogPreviewFor(record, Number.NEGATIVE_INFINITY);
+    if (record.preview !== undefined && !preview)
+      throw new Error('Invalid catalog preview metadata.');
+    const previousPreview = rows[0]?.getPreview();
+    if (rows[0]?.revision === record.revision && previousPreview) {
+      if (
+        !preview ||
+        JSON.stringify({
+          ...preview,
+          rights: {
+            ...preview.rights,
+            retrievedAt: previousPreview.rights.retrievedAt,
+          },
+        }) !== JSON.stringify(previousPreview)
+      )
+        throw new Error(
+          'Catalog preview is immutable within a source revision.',
+        );
+      preview = previousPreview;
+    }
     const fields = {
       providerId: record.providerId,
       stableId: record.stableId,
@@ -115,6 +137,7 @@ export class CatalogDatabaseSyncStore implements CatalogSyncStore {
       representation: json(
         normalizeCatalogRepresentation(record.representation),
       ),
+      preview: json(preview),
       licenseEvidence: json(record.licenseEvidence),
       licenseState: record.licenseEvidence.state,
       visibility: record.visibility,

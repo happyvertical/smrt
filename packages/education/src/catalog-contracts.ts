@@ -1,3 +1,5 @@
+import type { CatalogPreview } from './catalog-preview.js';
+
 /** Metadata-only resource visibility. Teacher material is never learner-visible. */
 export type CatalogVisibility = 'catalog' | 'teacher';
 export type CatalogLicenseState =
@@ -84,6 +86,7 @@ export interface CatalogSourceRecord {
   parentStableId?: string;
   availableFormats?: string[];
   representation?: CatalogResourceRepresentation;
+  preview?: CatalogPreview;
   licenseEvidence: CatalogLicenseEvidence;
   visibility: CatalogVisibility;
 }
