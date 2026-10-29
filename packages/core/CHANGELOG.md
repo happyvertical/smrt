@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.39
+
+### Patch Changes
+
+- ### Features
+  
+  - add authorized publisher catalog previews (#4484) (education)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.0 (#4471) (deps)
+- @happyvertical/smrt-config@0.57.39
+  - @happyvertical/smrt-scanner@0.57.39
+  - @happyvertical/smrt-types@0.57.39
+
 ## 0.57.38
 
 ### Patch Changes
