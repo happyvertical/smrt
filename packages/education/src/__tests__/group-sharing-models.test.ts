@@ -200,4 +200,42 @@ describe('closed group sharing persistence contracts', () => {
       await db.close?.();
     }
   });
+  it('rejects an explicit stale revision even when the group instance was freshly loaded', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['EducationGroup'],
+    });
+    try {
+      const tenantId = '11111111-1111-4111-8111-111111111111';
+      await withTenant({ tenantId, userId: 'u' }, async () => {
+        const groups = await EducationGroupCollection.create({ db });
+        const original = await groups.create({
+          tenantId,
+          name: 'Original',
+          creatorUserId: '22222222-2222-4222-8222-222222222222',
+          creatorProfileId: '33333333-3333-4333-8333-333333333333',
+        });
+        const expectedUpdatedAt = original.updated_at;
+        if (!expectedUpdatedAt)
+          throw new Error('Missing persisted group revision');
+        original.name = 'Committed winner';
+        await original.save({ expectedUpdatedAt });
+        const fresh = await groups.get(String(original.id), { cache: false });
+        if (!fresh?.updated_at) throw new Error('Missing current group');
+        expect(fresh.updated_at.getTime()).toBeGreaterThan(
+          expectedUpdatedAt.getTime(),
+        );
+        fresh.name = 'Stale caller overwrite';
+        await expect(fresh.save({ expectedUpdatedAt })).rejects.toMatchObject({
+          code: 'RUNTIME_REVISION_CONFLICT',
+        });
+        expect(
+          (await groups.get(String(original.id), { cache: false }))?.name,
+        ).toBe('Committed winner');
+      });
+    } finally {
+      await db.close?.();
+    }
+  });
 });

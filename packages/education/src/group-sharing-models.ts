@@ -4,6 +4,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -85,7 +86,7 @@ export class EducationGroup extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
     required(this.name, this.creatorUserId, this.creatorProfileId);
     await immutable(this, {
       creator_user_id: this.creatorUserId,
@@ -93,7 +94,7 @@ export class EducationGroup extends SmrtObject {
     });
     if (typeof this.active !== 'boolean')
       throw new Error('Invalid group state');
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error(
@@ -132,7 +133,7 @@ export class GroupLearnerInvitation extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
     required(
       this.groupId,
       this.familyTenantId,
@@ -189,7 +190,7 @@ export class GroupLearnerInvitation extends SmrtObject {
       this.acceptedPolicyDigest !== ''
     )
       throw new Error('Unaccepted invitation cannot bind membership');
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Invitation history is retained');
@@ -220,7 +221,7 @@ export class GroupLearnerMembership extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
     required(this.groupId, this.learnerId, this.consentParentUserId);
     positive(this.policyVersion);
     if (!['active', 'revoked'].includes(this.status))
@@ -234,7 +235,7 @@ export class GroupLearnerMembership extends SmrtObject {
       tenant_id: this.tenantId,
     });
     await parent(this, 'education_groups', { id: this.groupId });
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Membership consent history is retained');
@@ -276,7 +277,7 @@ export class GroupSharingPolicy extends SmrtObject {
   setPolicy(value: unknown): void {
     this.policyJson = canonicalGroupSharingPolicy(value);
   }
-  override async save(): Promise<this> {
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
     required(this.membershipId, this.actorUserId);
     positive(this.version);
     date(this.recordedAt);
@@ -288,7 +289,7 @@ export class GroupSharingPolicy extends SmrtObject {
       id: this.membershipId,
       tenant_id: this.tenantId,
     });
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Policy snapshots are immutable');
@@ -334,7 +335,7 @@ export class GroupRevisionComment extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
     required(
       this.membershipId,
       this.learnerId,
@@ -392,7 +393,7 @@ export class GroupRevisionComment extends SmrtObject {
       id: this.revisionId,
       attempt_id: this.attemptId,
     });
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Comment attribution is retained');
@@ -425,7 +426,7 @@ export class GroupLearnerRosterEntry extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
     required(
       this.groupId,
       this.familyTenantId,
@@ -452,7 +453,7 @@ export class GroupLearnerRosterEntry extends SmrtObject {
       group_id: this.groupId,
       learner_id: this.learnerId,
     });
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Group roster history is retained');
