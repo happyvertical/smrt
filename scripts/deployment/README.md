@@ -328,6 +328,12 @@ publication uses exact-predecessor private-index CAS. A pending TLS transition o
 the release and blocks ordinary runtime mutations. Resume always reobserves native
 state; a saved status is not evidence that HTTPS is healthy.
 
+Ordinary release/adoption phases retain the existing immutable TLS Secret
+UID/resourceVersion binding contract; they do not impose certificate type,
+key/chain/SAN or expiry validation on pre-existing references. The explicit TLS
+workflow requires a healthy, valid native predecessor; emergency replacement of
+an already expired/unhealthy baseline requires a separate recovery contract.
+
 The independently owned new and prior Secrets must remain immutable and versioned.
 The runner reads actual UID/resourceVersion, checks the private key against the
 leaf in memory, validates SAN/time, and uses **OpenSSL 3** to verify the certificate
@@ -341,7 +347,12 @@ transition identity, exact prior/next references, immutable native Secret identi
 and leaf fingerprints, and actual Deployment/CronJob UID plus Pod-template hashes.
 It moves `pending → complete` or `rolling-back → rolled-back`. A complete status
 still requires native acknowledgement before `complete:true` is returned. Prior
-references stay bound for rollback; a subsequent ordinary runtime release or recovery phase transition closes
+references stay recorded for explicit rollback. Terminal observations and ordinary
+release health do not fetch unused retired Secrets, so expiry or independently
+approved cleanup of an unused prior version does not break ordinary health;
+explicit rollback still fails if its recorded target is missing or unsafe. Binding
+version pins cover currently selected references only. A subsequent ordinary
+runtime release or recovery phase transition closes
 that rollback window and drops the terminal TLS annotation. Historical records
 remain in protected Git. Secret cleanup remains an independently reviewed policy.
 
@@ -365,8 +376,10 @@ If the prior certificate has expired or another gate fails, rollback refuses.
 The existing trusted SDK dependency injection can supply public CA certificates
 and a connect-address mapper through `options.tls`. The mapper cannot override the
 original TLS servername or return an observed success flag. The CLI uses real DNS
-and native trust stores; no caller-supplied TLS observation or verification skip
-exists. Trusted application CI evidence must bind the current active configuration
+and native trust stores. For a private CA, start the CLI with the same public CA
+bundle configured through Node's `NODE_EXTRA_CA_CERTS` and OpenSSL's
+`SSL_CERT_FILE`; synthetic tests verify both native trust-loading paths. No
+caller-supplied TLS observation or verification skip exists. Trusted application CI evidence must bind the current active configuration
 for each new TLS plan; TLS-only preflight preserves that validated predecessor
 configuration association while checking the new certificate bindings natively.
 

@@ -350,6 +350,27 @@ test('native TLS validates immutable key/chain/SAN/time and actual served peer c
       minimumValiditySeconds: 3600,
     });
     assert.match(binding.leafSha256, /^[a-f0-9]{64}$/);
+    execFileSync(
+      'openssl',
+      ['verify', '-verify_hostname', 'app.test', join(c.dir, 'server.crt')],
+      {
+        env: { ...process.env, SSL_CERT_FILE: join(c.dir, 'ca.crt') },
+        stdio: 'pipe',
+      },
+    );
+    assert.equal(
+      execFileSync(
+        process.execPath,
+        ['-p', "require('node:tls').getCACertificates('extra').length"],
+        {
+          env: { ...process.env, NODE_EXTRA_CA_CERTS: join(c.dir, 'ca.crt') },
+          encoding: 'utf8',
+        },
+      ).trim(),
+      '1',
+      'native CLI trust can use startup Node and OpenSSL environment roots',
+    );
+
     for (const [secret, hosts, options] of [
       [{ ...c.secret, immutable: false }, ['app.test'], { trustedCa: [c.ca] }],
       [c.secret, ['wrong.test'], { trustedCa: [c.ca] }],
@@ -430,7 +451,7 @@ test('native TLS validates immutable key/chain/SAN/time and actual served peer c
 });
 
 import { createLiveAdapter } from './deployment/live.mjs';
-test('live TLS correlation preserves source/runtime/binding/HTTP gates and never waives unrelated failures', async () => {
+test('live TLS correlation preserves source/runtime/binding/HTTP gates and never waives unrelated failures', async (t) => {
   const c = certificates();
   let server;
   try {
@@ -564,12 +585,7 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
     );
     const document = tlsDocument(p, bindings, 'pending', null, templates);
     document.metadata.annotations['smrt.happyvertical.com/binding-versions'] =
-      hash(
-        [
-          ['tls-v2', 'new', '2'],
-          ['tls-v1', 'old', '1'],
-        ].sort(),
-      );
+      hash([['tls-v2', 'new', '2']].sort());
     const all = [
       deployment,
       {
@@ -626,7 +642,9 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
         lastAppliedRevision: `main@sha1:${revision}`,
       },
     };
-    let failure;
+    let failure,
+      retiredMissing = false,
+      ordinarySecret;
     const command = async (name, args) => {
       if (name === 'helm')
         return args.includes('template')
@@ -656,6 +674,10 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
           metadata: { ...document.metadata, generation: 1 },
           status: source.status,
         });
+      if (args.includes('secret') && args.includes('tls-v1') && retiredMissing)
+        throw new Error('retired Secret removed');
+      if (args.includes('secret') && ordinarySecret)
+        return JSON.stringify(ordinarySecret);
       if (args.includes('secret'))
         return JSON.stringify(
           args.includes('tls-v2')
@@ -704,6 +726,60 @@ test('live TLS correlation preserves source/runtime/binding/HTTP gates and never
     const proof = await adapter.observeTls(document, revision);
     assert.equal(proof.failureCode, 'TLS_CORRELATED_FAILURE');
     assert.equal(proof.tlsFailure.documentSha256, hash(document));
+    const terminal = tlsDocument(p, bindings, 'complete', null, templates);
+    terminal.metadata.annotations['smrt.happyvertical.com/binding-versions'] =
+      document.metadata.annotations['smrt.happyvertical.com/binding-versions'];
+    const pendingMarker = document.metadata.annotations[tlsAnnotation];
+    document.metadata.annotations[tlsAnnotation] =
+      terminal.metadata.annotations[tlsAnnotation];
+    retiredMissing = true;
+    assert.equal(
+      (await adapter.observeTls(document, revision)).failureCode,
+      'TLS_CORRELATED_FAILURE',
+      'completed explicit observation ignores an unused deleted prior reference',
+    );
+    for (const mode of ['Opaque', 'private-ca', 'expired']) {
+      ordinarySecret = {
+        ...nextSecret,
+        type: mode === 'Opaque' ? 'Opaque' : nextSecret.type,
+        data: nextSecret.data,
+      };
+      const clock = Date.now();
+      if (mode === 'expired')
+        t.mock.method(Date, 'now', () => clock + 3 * 86400000);
+      try {
+        assert.equal(
+          (await adapter.observe(document, revision)).proven,
+          true,
+          `ordinary ${mode} binding retains baseline immutable identity semantics`,
+        );
+      } finally {
+        t.mock.restoreAll();
+      }
+    }
+    ordinarySecret = undefined;
+    retiredMissing = false;
+    document.metadata.annotations[tlsAnnotation] = pendingMarker;
+    const safeOldData = oldSecret.data;
+    oldSecret.data = {
+      'tls.crt': Buffer.from('expired invalid prior certificate').toString(
+        'base64',
+      ),
+      'tls.key': Buffer.from('unsafe key').toString('base64'),
+    };
+    await assert.rejects(
+      adapter.prepareTls(
+        p,
+        'rolling-back',
+        { revision, documentSha256: hash(document), failureIdentity: sha },
+        bindings,
+        templates,
+      ),
+      (error) => error.code === 'TLS_BINDING',
+      'explicit rollback revalidates its old target before preflight/publication',
+    );
+    oldSecret.data = safeOldData;
+
     for (failure of ['source', 'binding', 'http', 'runtime']) {
       if (failure === 'runtime') deployment.status.readyReplicas = 0;
       await assert.rejects(adapter.observeTls(document, revision));

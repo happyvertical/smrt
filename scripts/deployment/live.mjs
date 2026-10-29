@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { tlsMarker, tlsAnnotation, tlsDocument, validateTlsPlan, validateTlsCurrent } from './tls.mjs';
 import { inspectTlsSecret, retainedTlsIdentity, servedTlsIdentity } from './tls-native.mjs';
-import { createAdoptionMethods } from './live-adoption.mjs';
+import { createAdoptionMethods, verifyKnownLegacyWorkloads } from './live-adoption.mjs';
 import {
   DeploymentError,
   demand,
@@ -419,7 +419,10 @@ export function createLiveAdapter(
         'Invalid retained TLS bindings',
         'TLS_TRANSITION',
       );
-      for (const old of marker.retained) {
+      const retained = marker.retained.filter(r =>
+        !['complete', 'rolled-back'].includes(marker.status) ||
+        result.some(actual => actual.name === r.name));
+      for (const old of retained) {
         demand(
           old &&
             typeof old.name === 'string' &&
@@ -456,8 +459,13 @@ export function createLiveAdapter(
         secret.metadata.resourceVersion,
       ]);
     }
-    const tls=await tlsBindings(document);
-    for(const binding of tls)proof.push([binding.name,binding.uid,binding.resourceVersion]);
+    const tlsNames = normalizedIngressRecords(v, document.metadata.name)
+      .map(r => r.tlsSecretName).filter(Boolean);
+    for (const name of new Set(tlsNames)) {
+      const secret = await get('secret', name);
+      demand(secret.immutable === true, 'TLS Secret must be immutable and versioned');
+      proof.push([secret.metadata.name, secret.metadata.uid, secret.metadata.resourceVersion]);
+    }
     for (const binding of [v.current, v.target]
       .filter(Boolean)
       .flatMap(readOnlyConfigBindings)) {
@@ -742,17 +750,22 @@ export function createLiveAdapter(
         'pods,deployments,replicasets,jobs,cronjobs,statefulsets,daemonsets,horizontalpodautoscalers',
       ),
     );
-    demand(
-      existing.every(
-        (o) =>
-          o.metadata.labels?.['app.kubernetes.io/instance'] ===
-            document.metadata.name &&
-          !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
-            o.kind,
-          ),
-      ),
-      'Unknown or unsupported writer exists before maintenance',
-    );
+    if (adoptionContext) {
+      verifyKnownLegacyWorkloads(existing,
+        { resources: adoptionContext.resources }, verifyPodEnvelope);
+    } else {
+      demand(
+        existing.every(
+          (o) =>
+            o.metadata.labels?.['app.kubernetes.io/instance'] ===
+              document.metadata.name &&
+            !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
+              o.kind,
+            ),
+        ),
+        'Unknown or unsupported writer exists before maintenance',
+      );
+    }
     for (const phase of phases) {
       const candidate = structuredClone(document);
       candidate.spec.values.release.phase = phase;
@@ -1632,6 +1645,9 @@ export function createLiveAdapter(
       runtimeTemplates,
     );
     validateTlsCurrent(plan, candidate);
+    // Explicit rollback must revalidate its selected old target, independently
+    // of the ordinary identity-only binding contract.
+    await tlsBindings(candidate);
     await preflight(candidate, undefined, plan);
     candidate.metadata.annotations['smrt.happyvertical.com/binding-versions'] =
       await bindings(candidate);
@@ -1812,6 +1828,7 @@ export function createLiveAdapter(
       acknowledge,
       provePhase: (document, revision) => provePhase(document, revision, {}, true),
       namespaceInventory,
+      verifyPodEnvelope,
       verifyStopped: (d, all) => verifyStopped(d, all, true),
       maintenance: async (d) => {
         const v = validate(d);
@@ -1866,7 +1883,9 @@ export function createLiveAdapter(
       await acknowledge(document, revision, options);
       let result;
       try {
-        result = document.spec.values.release.phase==='active'&&tlsMarker(document)
+        const marker = tlsMarker(document);
+        result = document.spec.values.release.phase === 'active' && marker &&
+          !['complete', 'rolled-back'].includes(marker.status)
           ? await observeTls(document,revision)
           : await provePhase(document, revision, options);
       } catch (error) {
