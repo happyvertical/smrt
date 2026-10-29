@@ -284,6 +284,27 @@ describe('runChatConversationStream — plain path', () => {
     });
   });
 
+  it('reports a thrown AI_TIMEOUT (ai >= 0.111 mid-stream timeout) as the timeout text', async () => {
+    const ai = {
+      async *stream() {
+        yield 'Partial';
+        throw Object.assign(new Error('Request timed out after 30000ms'), {
+          code: 'AI_TIMEOUT',
+        });
+      },
+    } as unknown as AIInterface;
+    const events = await collect(
+      runChatConversationStream({
+        context: { ai },
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    expect(events).toEqual([
+      { type: 'token', text: 'Partial' },
+      { type: 'error', error: CHAT_STREAM_TIMEOUT_ERROR },
+    ]);
+  });
+
   it('needs both attempts quiet: quiet then a finished blank gets the fallback (#4379)', async () => {
     const ai = scriptedStreamAI([
       { chunks: ['Earlier.'], finish: 'stop' },

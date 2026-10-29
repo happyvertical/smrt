@@ -44,6 +44,7 @@ import type { ChatService } from './services/index.js';
 import {
   DEFAULT_EMPTY_ANSWER_FALLBACK,
   FALLBACK_HISTORY_PLACEHOLDER,
+  isModelTimeoutError,
   noteFinishReason,
   replyContentFor,
   reportsFinishReason,
@@ -374,8 +375,9 @@ async function* streamPlainConversation(
 
   let content = '';
   let finishReason: string | undefined;
-  // A blank stream is retried once (#4379). A newer SDK throws `AI_TIMEOUT`
-  // on a timeout. Older SDKs (<= 0.108.0) can end a timed-out stream quietly:
+  // A blank stream is retried once (#4379). A newer SDK (ai >= 0.111) throws
+  // `AI_TIMEOUT` on a timeout, before or mid-stream, which gets the same
+  // timeout text. Older SDKs (<= 0.108.0) can end a timed-out stream quietly:
   // no text and no finish reason. That shape is a suspected timeout only for
   // an AI boundary that has reported finish reasons before (so their absence
   // is anomalous) and only when both attempts end that way; any other blank
@@ -403,7 +405,12 @@ async function* streamPlainConversation(
         }
       }
     } catch (error) {
-      yield { type: 'error', error: toErrorMessage(error) };
+      yield {
+        type: 'error',
+        error: isModelTimeoutError(error)
+          ? CHAT_STREAM_TIMEOUT_ERROR
+          : toErrorMessage(error),
+      };
       return;
     }
     if (content.trim()) break;
