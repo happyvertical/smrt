@@ -2009,6 +2009,19 @@ export class IngestionService {
     );
     return this.itemDTO(item, disposition?.created_at);
   }
+  /** Authorized immutable delivery identity for domain-owned retention/recovery. */
+  async getReceiptSource(itemId: string): Promise<{
+    sourceId: string;
+    sourceVersion: string;
+    deliveryKey: string;
+  }> {
+    const item = await this.item(itemId, 'read');
+    return {
+      sourceId: String(item.source_id),
+      sourceVersion: String(item.source_version),
+      deliveryKey: String(item.delivery_key),
+    };
+  }
   async getEvidence(itemId: string): Promise<IntakeEvidenceDTO[]> {
     await this.item(itemId, 'read');
     return (
