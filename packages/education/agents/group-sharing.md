@@ -257,6 +257,16 @@ membership never turns it into a family. The result contains no name, roster,
 permission or grant and creates no session or tenant context. It has no generated
 REST, MCP or CLI surface.
 
+On PostgreSQL, the exact bounded group count and `row_security_active` check
+share one statement on the caller's executor. One visible row establishes group
+kind; an ambiguous result fails closed. Zero rows establishes family kind only
+when PostgreSQL reports row security inactive for that relation and caller.
+Under active RLS, zero rows is indeterminate and throws `Tenant kind is unavailable`,
+including for an actual family tenant. The host needs an already trusted metadata
+executor with provable unrestricted visibility to classify families. Policy-level
+bypass settings alone do not prove that visibility. The helper never changes
+roles, permissions, session settings or tenant context to obtain visibility.
+
 This result is not authorization. Hosts must separately require a freshly ACTIVE
 Tenant plus current signed-session, background-job or independent-proof authority
 on the same relevant executor. Never pass a browser-selected tenant as authority,
@@ -265,4 +275,4 @@ family kind. The helper provides no arbitrary cross-tenant directory.
 
 | Behavior/invariant | Trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Command |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| G33 workspace kind | trusted exact resource lookup | existing family false; active/inactive group true | blank/malformed/absent tenant; ambiguous group rows; database failures propagate | host-selected exact tenant, no synthetic session/context | caller-supplied executor, fresh reads; no writes | Node SQLite/PostgreSQL | status/membership/role absence never implies family or grants | integration | `pnpm --filter @happyvertical/smrt-education exec vitest run src/__tests__/group-sharing-workspace.test.ts` (same file with TEST_DB_ADAPTER=postgres and isolated DATABASE_URL) |
+| G33 workspace kind | trusted exact resource lookup | existing family false; active/inactive group true | blank/malformed/absent tenant; ambiguous group rows; PostgreSQL RLS-hidden or indeterminate zero refuses family; database failures propagate | host-selected exact tenant, no synthetic session/context | caller-supplied executor, fresh reads; no writes | Node SQLite/PostgreSQL | status/membership/role absence never implies family or grants | integration | `pnpm --filter @happyvertical/smrt-education exec vitest run src/__tests__/group-sharing-workspace.test.ts` (same file with TEST_DB_ADAPTER=postgres and isolated DATABASE_URL) |
