@@ -1,4 +1,3 @@
-import { crc32, inflateSync } from 'node:zlib';
 import type { CatalogActor, CatalogSourceRecord } from './catalog-contracts.js';
 import { CatalogPolicy } from './catalog-policy.js';
 
@@ -136,6 +135,16 @@ export function catalogPreviewPngDimensions(bytes: Uint8Array): {
   width: number;
   height: number;
 } {
+  // Like core's manifest Node host, resolve built-ins only when the server
+  // capability is invoked; metadata/model imports must remain browser-safe.
+  const host = (
+    typeof process === 'undefined'
+      ? undefined
+      : process.getBuiltinModule?.('node:zlib')
+  ) as typeof import('node:zlib') | undefined;
+  if (!host)
+    throw new Error('Catalog preview verification requires a Node host.');
+  const { crc32, inflateSync } = host;
   if (
     bytes.length < 24 ||
     bytes.length > CATALOG_PREVIEW_MAX_BYTES ||

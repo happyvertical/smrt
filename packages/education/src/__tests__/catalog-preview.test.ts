@@ -480,6 +480,17 @@ describe('catalog publisher previews', () => {
       expect(() => catalogPreviewPngDimensions(invalid)).toThrow();
   });
 
+  it('fails closed when PNG verification has no Node host capability', () => {
+    const builtin = vi
+      .spyOn(process, 'getBuiltinModule')
+      .mockReturnValue(undefined);
+    try {
+      expect(() => catalogPreviewPngDimensions(png)).toThrow('Node host');
+    } finally {
+      builtin.mockRestore();
+    }
+  });
+
   it('denies rights that expire while the preview loader is awaited', async () => {
     const initial = Date.parse('2026-10-28T00:00:00Z');
     const now = vi.spyOn(Date, 'now').mockReturnValue(initial);

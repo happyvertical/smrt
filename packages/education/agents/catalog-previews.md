@@ -10,6 +10,9 @@ additive manifest migration for its nullable `preview` column before sync; legac
 rows have no preview. Sync retains the first retrieval timestamp on identical
 revision retries and rejects changing an existing preview within that revision.
 New revisions replace the current reference; old revision requests become 404.
+PNG verification resolves its Node host capability only when invoked; importing
+catalog metadata/models remains browser-safe. Serving/verification requires a
+Node host and fails closed without it.
 The image hash participates in the IM page record's revision, so changed bytes
 cannot silently reuse a preview revision.
 
