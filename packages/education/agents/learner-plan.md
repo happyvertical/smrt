@@ -23,6 +23,13 @@ progress, including private workbook feedback rules. Optional workbookActivityId
 is resolved for the exact tenant/learner/enrollment/lesson; consumers route that
 work to their workbook interface, not generic scan capture.
 
+Workbook progress uses the same explicit parent completion projection as Work.
+Old grade-derived complete/skipped rows without a current decision project in
+progress with completedAt null; they cannot contribute a completion timestamp to
+progressEvidence. Later analysis of the same attempt retains a parent's decision;
+a new correction or practice attempt reopens it. Ordinary lesson progress is
+unchanged. See [the workbook contract](workbook-service.md).
+
 For required-online lessons, optional sourceUrl comes only from the same
 catalog-authorized Lesson.externalUrl and must be HTTPS without credentials.
 Answer URLs and asset locations are never projected. A missing or unsafe online

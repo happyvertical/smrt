@@ -44,11 +44,12 @@ export const workbookClasses = [
   'FamilyIntakeAsset',
   'FamilyIntakeDecision',
   'WorkbookAttempt',
+  'WorkbookCompletionDecision',
   'WorkbookAssessmentRevision',
   'WorkbookFeedbackRelease',
   'WorkbookFeedbackDelivery',
 ];
-async function workbookFixture(
+export async function workbookFixture(
   db: DatabaseInterface,
   cleanup: () => Promise<void>,
 ) {
@@ -434,7 +435,7 @@ export function workbookContractTests(
         ).find((row) => row.lessonId === f.activity.lessonId)!;
         expect(progress).toMatchObject({
           bestScore: null,
-          status: 'submitted',
+          status: 'in_progress',
           completedAt: null,
         });
         const assignment = (
@@ -442,7 +443,7 @@ export function workbookContractTests(
         ).find((row) => row.lesson.id === f.activity.lessonId)!;
         expect(assignment.progress).toMatchObject({
           bestScore: null,
-          status: 'submitted',
+          status: 'in_progress',
           completedAt: null,
         });
         expect(
@@ -451,14 +452,14 @@ export function workbookContractTests(
           ),
         ).toMatchObject({
           bestScore: null,
-          status: 'submitted',
+          status: 'in_progress',
           completedAt: null,
         });
         expect(
           (await f.as(f.own, () => service.nextLessons(scope)))[0].progress,
         ).toMatchObject({
           bestScore: null,
-          status: 'submitted',
+          status: 'in_progress',
           completedAt: null,
         });
         expect(
@@ -467,7 +468,11 @@ export function workbookContractTests(
               service.listProgress({ ...scope, ...f.parent }),
             )
           )[0],
-        ).toMatchObject({ bestScore: 0, status: 'complete' });
+        ).toMatchObject({
+          bestScore: 0,
+          status: 'in_progress',
+          completedAt: null,
+        });
       }
       const retry = await f.as(f.own, () =>
         f.service.captureWorkbookWork({

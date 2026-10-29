@@ -185,7 +185,44 @@ export interface WorkbookAssessment {
     concepts: WorkbookConcept[];
   };
 }
+/** Explicit parent completion is independent of score and feedback visibility. */
+export interface WorkbookCompletionState {
+  status: 'doing' | 'complete';
+  completedAt: Date | null;
+}
+/** Guardian-only compare-and-set selector for the currently displayed work. */
+export interface WorkbookCompletionContext {
+  attemptId: string;
+  submissionId: string;
+  expectedHeadId: string | null;
+}
+/** Immutable parent decision; a replay may describe an older, no-longer-current attempt. */
+export interface WorkbookCompletionDecisionView {
+  id: string;
+  activityId: string;
+  attemptId: string;
+  submissionId: string;
+  feedbackHeadId: string | null;
+  actorUserId: string;
+  completedAt: Date;
+}
+export class WorkbookCompletionConflictError extends Error {
+  constructor(
+    public readonly code:
+      | 'stale_attempt'
+      | 'stale_head'
+      | 'changed_retry'
+      | 'already_complete',
+  ) {
+    super(`Workbook completion conflict: ${code}`);
+    this.name = 'WorkbookCompletionConflictError';
+  }
+}
+
 export interface WorkbookActivityView {
+  currentAttemptId: string | null;
+  latestSubmissionId: string | null;
+  completion: WorkbookCompletionState;
   filing?: {
     state: 'unfiled' | 'filed' | 'identified';
     workbookId: string | null;
@@ -232,12 +269,17 @@ export interface WorkbookAttemptView {
   submission: import('./submission-service.js').SubmissionView;
 }
 export interface WorkbookTimeline {
+  currentAttemptId: string | null;
+  latestSubmissionId: string | null;
+  completion: WorkbookCompletionState;
+  completionContext: WorkbookCompletionContext | null;
   activity: WorkbookActivityView;
   attempts: (WorkbookAttemptView & {
     revisions: WorkbookRevisionView[];
     releases: WorkbookReleaseView[];
     deliveries: WorkbookReleaseView[];
     headId: string | null;
+    completionDecision: WorkbookCompletionDecisionView | null;
   })[];
   nextCursor: string | null;
 }

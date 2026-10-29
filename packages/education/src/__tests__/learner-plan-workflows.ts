@@ -253,17 +253,18 @@ export async function assertPlanWorkbookBinding(f: Fixture) {
   expect(own.lessons[0].lesson.workbookActivityId).toBe(activity.id);
   expect(own.lessons[1].lesson.workbookActivityId).toBeUndefined();
   expect(own.lessons[0].progress).toMatchObject({
-    status: 'submitted',
+    status: 'in_progress',
     bestScore: null,
     completedAt: null,
   });
-  expect(own.awaitingReviewLessonIds).toEqual([f.lesson.id]);
+  expect(own.awaitingReviewLessonIds).toEqual([]);
   const parent = await f.as(f.parent, () =>
     f.service.getEnrollmentPlan({ ...f.parent, enrollmentId: f.enrollment.id }),
   );
   expect(parent.lessons[0].progress).toMatchObject({
-    status: 'complete',
+    status: 'in_progress',
     bestScore: 0.8,
+    completedAt: null,
   });
   expect(parent.awaitingReviewLessonIds).toEqual([]);
 }

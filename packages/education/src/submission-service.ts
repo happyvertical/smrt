@@ -25,6 +25,7 @@ import {
   LearnerService,
 } from './learner-service.js';
 import type { Grade, Submission, SubmissionKind } from './submissions.js';
+import { readWorkbookCompletion } from './workbook-completion.js';
 
 /** A single captured page. No model patches or pre-existing asset IDs are accepted. */
 export interface SubmissionPage {
@@ -230,12 +231,28 @@ export class SubmissionService extends LearnerService {
         throw new Error('Invalid capture page');
     }
   }
+  private async lockProgressOwner(
+    request: LearnerRequest & { enrollmentId: string },
+  ): Promise<void> {
+    // Match WorkbookService's lock order so generic guardian grading cannot race
+    // capture or an explicit completion decision on the same learner.
+    if (
+      await this.findWorkbookActivity(request, {
+        enrollmentId: request.enrollmentId,
+      })
+    )
+      await this.db.query(
+        'UPDATE learners SET id = id WHERE id = ? AND tenant_id = ?',
+        [request.learnerId, request.tenantId],
+      );
+    await this.lock('enrollments', request.enrollmentId, request.tenantId);
+  }
   private async progress(
     request: LessonRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
   ) {
     const enrollment = await this.requireEnrollment(request, action);
-    await this.lock('enrollments', request.enrollmentId, request.tenantId);
+    await this.lockProgressOwner(request);
     const catalog = await this.catalog(request, enrollment.courseId);
     if (
       !catalog.sections.some((section) =>
@@ -803,8 +820,25 @@ export class SubmissionService extends LearnerService {
     });
     row.status = 'graded';
     await row.save();
-    progress.status = 'complete';
-    progress.completedAt = new Date();
+    const workbookActivity = await this.findWorkbookActivity(request, {
+      enrollmentId: progress.enrollmentId,
+      lessonId: row.lessonId,
+    });
+    const completion = workbookActivity
+      ? await readWorkbookCompletion(this.db, {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          activityId: String(workbookActivity.id),
+        })
+      : null;
+    progress.status = completion
+      ? completion.completion.status === 'complete'
+        ? 'complete'
+        : 'in_progress'
+      : 'complete';
+    progress.completedAt = completion
+      ? completion.completion.completedAt
+      : new Date();
     // The authoritative guardian score supersedes any automated proposal.
     progress.bestScore = score;
     await progress.save();
@@ -815,7 +849,7 @@ export class SubmissionService extends LearnerService {
   ): Promise<SubmissionView> {
     return this.mutate(async (service) => {
       await service.requireEnrollment(request, 'education.learner.grade');
-      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      await service.lockProgressOwner(request);
       const { row, progress } = await service.requireSubmission(
         request,
         'education.learner.grade',
