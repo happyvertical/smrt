@@ -801,3 +801,93 @@ test('reviewed legacy repository accepts exact nonsecret Git SSH and HTTP URLs w
     const {plan}=fixture();plan.legacy.repository=repository;assert.throws(()=>validateAdoptionPlan(plan),/legacy revisions/);
   }
 });
+
+import { verifyKnownLegacyWorkloads } from './deployment/live-adoption.mjs';
+import { verifyPodEnvelope } from './deployment/live.mjs';
+test('qualified legacy ancestry accepts actual legacy labels and rejects unknown or forged controller ownership', () => {
+  const spec = {
+    selector: { matchLabels: { app: 'legacy-site' } },
+    template: {
+      spec: {
+        automountServiceAccountToken: false,
+        containers: [{ name: 'app', image }],
+      },
+    },
+  };
+  const deployment = {
+    apiVersion: 'apps/v1',
+    kind: 'Deployment',
+    metadata: {
+      namespace: 'test',
+      name: 'legacy-site',
+      uid: 'deployment',
+      labels: { app: 'legacy-site' },
+    },
+    spec,
+  };
+  const ref = (o) => ({
+    controller: true,
+    apiVersion: o.apiVersion,
+    kind: o.kind,
+    name: o.metadata.name,
+    uid: o.metadata.uid,
+  });
+  const rs = {
+    apiVersion: 'apps/v1',
+    kind: 'ReplicaSet',
+    metadata: {
+      namespace: 'test',
+      name: 'legacy-site-hash',
+      uid: 'rs',
+      labels: { app: 'legacy-site' },
+      ownerReferences: [ref(deployment)],
+    },
+    spec: structuredClone(spec),
+  };
+  const pod = {
+    apiVersion: 'v1',
+    kind: 'Pod',
+    metadata: {
+      namespace: 'test',
+      name: 'legacy-site-pod',
+      uid: 'pod',
+      labels: { app: 'legacy-site' },
+      ownerReferences: [ref(rs)],
+    },
+    spec: structuredClone(spec.template.spec),
+  };
+  const saved = {
+    resources: [
+      {
+        apiVersion: deployment.apiVersion,
+        kind: deployment.kind,
+        namespace: 'test',
+        name: deployment.metadata.name,
+        uid: deployment.metadata.uid,
+        normalizedSpecIdentity: hash(spec),
+        selector: spec.selector,
+      },
+    ],
+  };
+  const all = [deployment, rs, pod];
+  verifyKnownLegacyWorkloads(all, saved, verifyPodEnvelope);
+  for (const mutate of [
+    (a) => (a[0].metadata.uid = 'other'),
+    (a) => (a[1].metadata.ownerReferences[0].controller = false),
+    (a) => (a[1].metadata.ownerReferences[0].kind = 'Job'),
+    (a) => (a[2].metadata.ownerReferences[0].name = 'forged'),
+    (a) => (a[2].metadata.namespace = 'foreign'),
+    (a) => a[2].spec.containers.push({ name: 'writer', image }),
+    (a) =>
+      a.push({
+        ...structuredClone(deployment),
+        metadata: { ...deployment.metadata, name: 'unknown', uid: 'unknown' },
+      }),
+  ]) {
+    const bad = structuredClone(all);
+    mutate(bad);
+    assert.throws(() =>
+      verifyKnownLegacyWorkloads(bad, saved, verifyPodEnvelope),
+    );
+  }
+});

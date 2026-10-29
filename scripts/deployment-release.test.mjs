@@ -543,6 +543,10 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
     };
     for (const failure of [
       null,
+      'legacy-labels',
+      'legacy-forged-owner',
+      'legacy-unknown',
+      'ordinary-legacy-labels',
       'permission',
       'admission',
       'storage',
@@ -559,6 +563,13 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       'controller-sa-drift',
       'controller-token-volume',
     ]) {
+      const legacySpec={selector:{matchLabels:{app:'legacy-site'}},template:{spec:{automountServiceAccountToken:false,containers:[{name:'app',image}]}}};
+      const legacyDeployment={apiVersion:'apps/v1',kind:'Deployment',metadata:{namespace:'test',name:'legacy-site',uid:'legacy-deploy',labels:{app:'legacy-site'}},spec:legacySpec};
+      const legacyRS={apiVersion:'apps/v1',kind:'ReplicaSet',metadata:{namespace:'test',name:'legacy-site-rs',uid:'legacy-rs',labels:{app:'legacy-site'},ownerReferences:[{apiVersion:'apps/v1',kind:'Deployment',name:'legacy-site',uid:'legacy-deploy',controller:true}]},spec:structuredClone(legacySpec)};
+      const legacyPod={apiVersion:'v1',kind:'Pod',metadata:{namespace:'test',name:'legacy-site-pod',uid:'legacy-pod',labels:{app:'legacy-site'},ownerReferences:[{apiVersion:'apps/v1',kind:'ReplicaSet',name:'legacy-site-rs',uid:'legacy-rs',controller:failure!=='legacy-forged-owner'}]},spec:structuredClone(legacySpec.template.spec)};
+      const legacyObjects=[legacyDeployment,legacyRS,legacyPod];
+      if(failure==='legacy-unknown')legacyObjects.push({...structuredClone(legacyDeployment),metadata:{...legacyDeployment.metadata,name:'unknown',uid:'unknown'}});
+      const adoptionContext=failure?.startsWith('legacy-')?{resources:[{apiVersion:'apps/v1',kind:'Deployment',namespace:'test',name:'legacy-site',uid:'legacy-deploy',normalizedSpecIdentity:hash(legacySpec),selector:legacySpec.selector}]}:undefined;
       const calls = [];
       const command = async (name, args, input) => {
         calls.push({ name, args, input });
@@ -642,13 +653,13 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
             ],
           });
         if (args.some((a) => a.startsWith('pods,')))
-          return JSON.stringify({ items: [] });
+          return JSON.stringify({ items: failure?.includes('legacy') ? legacyObjects : [] });
         return JSON.stringify({ metadata: {} });
       };
       const adapter = createLiveAdapter(config, command);
-      if (failure && failure !== 'owned')
+      if (failure && !['owned','legacy-labels'].includes(failure))
         await assert.rejects(
-          adapter.preflight(doc),
+          adapter.preflight(doc, adoptionContext),
           (error) =>
             error instanceof DeploymentError &&
             (failure !== 'ownership' ||
@@ -658,7 +669,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
                 ))),
         );
       else {
-        assert.deepEqual(await adapter.preflight(doc), {
+        assert.deepEqual(await adapter.preflight(doc, adoptionContext), {
           bindings: hash([]),
           bindingReferences: [],
         });

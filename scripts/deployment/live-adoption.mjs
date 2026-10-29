@@ -23,6 +23,79 @@ const matches = (value, rev) =>
   typeof value === 'string' && value.endsWith(`sha1:${rev}`);
 const resourceKey = (o) =>
   `${o.apiVersion}/${o.kind}/${o.namespace ?? o.metadata?.namespace}/${o.name ?? o.metadata?.name}`;
+export function verifyKnownLegacyWorkloads(all, saved, verifyPod) {
+  const controllerKinds = ['Deployment', 'CronJob', 'Job'];
+  const same = (o, r) =>
+    o.kind === r.kind &&
+    o.apiVersion === r.apiVersion &&
+    o.metadata.name === (r.name ?? r.metadata?.name) &&
+    o.metadata.uid === (r.uid ?? r.metadata?.uid) &&
+    o.metadata.namespace === (r.namespace ?? r.metadata?.namespace);
+  const roots = all.filter((o) => saved.resources.some((r) => same(o, r)));
+  for (const root of roots) {
+    const r = saved.resources.find((r) => same(root, r));
+    demand(
+      hash(root.spec ?? root.data ?? {}) === r.normalizedSpecIdentity &&
+        hash(root.spec?.selector ?? {}) === hash(r.selector ?? {}),
+      'Legacy resource UID/spec/selector changed',
+    );
+  }
+  const owner = (o, kinds) =>
+    all.find(
+      (parent) =>
+        kinds.includes(parent.kind) &&
+        o.metadata.ownerReferences?.some(
+          (ref) =>
+            ref.controller === true &&
+            ref.uid === parent.metadata.uid &&
+            ref.name === parent.metadata.name &&
+            ref.kind === parent.kind &&
+            ref.apiVersion === parent.apiVersion,
+        ) &&
+        parent.metadata.namespace === o.metadata.namespace,
+    );
+  const known = new Set(roots.filter((o) => controllerKinds.includes(o.kind)));
+  for (const job of all.filter((o) => o.kind === 'Job' && !known.has(o))) {
+    const cron = owner(job, ['CronJob']);
+    demand(
+      cron &&
+        known.has(cron) &&
+        hash(job.spec.template.spec) ===
+          hash(cron.spec.jobTemplate.spec.template.spec),
+      'Unknown legacy Job owner/template',
+    );
+    known.add(job);
+  }
+  for (const rs of all.filter((o) => o.kind === 'ReplicaSet')) {
+    const deployment = owner(rs, ['Deployment']);
+    demand(
+      deployment &&
+        known.has(deployment) &&
+        Object.entries(deployment.spec.selector?.matchLabels ?? {}).every(
+          ([key, value]) => rs.spec.selector?.matchLabels?.[key] === value,
+        ),
+      'Unknown legacy ReplicaSet owner/template',
+    );
+    known.add(rs);
+  }
+  for (const pod of all.filter((o) => o.kind === 'Pod')) {
+    const parent = owner(pod, ['ReplicaSet', 'Job']);
+    demand(parent && known.has(parent), 'Unknown standalone legacy Pod');
+    demand(
+      typeof verifyPod === 'function',
+      'Legacy Pod envelope verifier unavailable',
+    );
+    verifyPod(pod.spec, parent.spec.template.spec);
+  }
+  demand(
+    all.every(
+      (o) =>
+        ['Pod', 'ReplicaSet'].includes(o.kind) ||
+        (controllerKinds.includes(o.kind) && known.has(o)),
+    ),
+    'Unknown or unsupported legacy writer controller',
+  );
+}
 export function createAdoptionMethods(config, command, helpers, options) {
   const { repository, branch, namespace } = config;
   const git = (...args) => command('git', ['-C', repository, ...args]);
@@ -444,57 +517,6 @@ export function createAdoptionMethods(config, command, helpers, options) {
     );
     return ks;
   }
-  function verifyKnownWorkloads(all, saved) {
-    const controllers = all.filter((o) =>
-      [
-        'Deployment',
-        'CronJob',
-        'StatefulSet',
-        'DaemonSet',
-        'HorizontalPodAutoscaler',
-        'Job',
-      ].includes(o.kind),
-    );
-    for (const o of controllers)
-      demand(
-        !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
-          o.kind,
-        ) &&
-          (saved.resources.some(
-            (r) =>
-              r.kind === o.kind &&
-              r.name === o.metadata.name &&
-              r.uid === o.metadata.uid,
-          ) ||
-            (o.kind === 'Job' &&
-              o.metadata.ownerReferences?.some((ref) =>
-                saved.resources.some(
-                  (r) => r.kind === 'CronJob' && r.uid === ref.uid,
-                ),
-              ))),
-        'Unknown or unsupported legacy writer controller',
-      );
-    for (const rs of all.filter((o) => o.kind === 'ReplicaSet'))
-      demand(
-        rs.metadata.ownerReferences?.some((ref) =>
-          saved.resources.some(
-            (r) => r.kind === 'Deployment' && r.uid === ref.uid,
-          ),
-        ),
-        'Unknown legacy ReplicaSet owner',
-      );
-    for (const pod of all.filter((o) => o.kind === 'Pod'))
-      demand(
-        pod.metadata.ownerReferences?.some((ref) =>
-          all.some(
-            (owner) =>
-              owner.metadata.uid === ref.uid &&
-              ['ReplicaSet', 'Job'].includes(owner.kind),
-          ),
-        ),
-        'Unknown standalone legacy Pod',
-      );
-  }
   function safeNative(
     plan,
     snapshot,
@@ -555,7 +577,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
       await git('merge-base', '--is-ancestor', earlier, rev);
     const ks = await legacyFlux(plan, rev, relinquished);
     const all = await helpers.namespaceInventory();
-    verifyKnownWorkloads(all, saved);
+    verifyKnownLegacyWorkloads(all.filter(o => ['Pod','ReplicaSet','Deployment','CronJob','Job','StatefulSet','DaemonSet','HorizontalPodAutoscaler'].includes(o.kind)), saved, helpers.verifyPodEnvelope);
     for (const r of saved.resources) {
       const actual = all.find((o) => resourceKey(o) === resourceKey(r));
       demand(
