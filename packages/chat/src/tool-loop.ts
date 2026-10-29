@@ -1903,8 +1903,10 @@ const TIMEOUT_ERROR_CODES = new Set([
 /**
  * A model call that failed by timing out. Checked only after a caller abort
  * was ruled out, so an `AbortError` here is the provider's own timeout signal.
+ * SDK ai 0.111 throws `AI_TIMEOUT` when an OpenAI-compatible stream times out
+ * mid-reply (older SDKs ended it quietly as `stop`), so streams hit it too.
  */
-function isModelTimeoutError(error: unknown): boolean {
+export function isModelTimeoutError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const { code, name } = error as { code?: unknown; name?: unknown };
   if (typeof code === 'string' && TIMEOUT_ERROR_CODES.has(code)) return true;
