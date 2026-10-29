@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { createLiveAdapter } from './live.mjs';
 import {
+  planAdoption,
+  adoptOrResume,
+  validateAdoptionPlan,
+  validateAdoptionState,
+} from './adopt.mjs';
+import {
   DeploymentError,
   applyOrResume,
   demand,
@@ -14,13 +20,40 @@ import {
 export async function main(args, adapterFactory = createLiveAdapter) {
   const [operation, configuration, input, releaseId] = args;
   demand(
-    ['plan', 'apply-or-resume', 'status', 'recover', 'repair'].includes(
-      operation,
-    ) && configuration,
-    'Usage: cli.mjs plan|apply-or-resume|status|recover|repair config.json [target-runtime.json|plan.json] [release-id]',
+    [
+      'plan',
+      'apply-or-resume',
+      'status',
+      'recover',
+      'repair',
+      'adopt-plan',
+      'adopt-or-resume',
+      'adopt-status',
+    ].includes(operation) && configuration,
+    'Usage: cli.mjs plan|apply-or-resume|status|recover|repair|adopt-plan|adopt-or-resume|adopt-status config.json [target-runtime.json|plan.json] [release-id]',
   );
   const config = JSON.parse(await readFile(configuration, 'utf8'));
-  const adapter = adapterFactory(config);
+  const adapter = await adapterFactory(config);
+  if (operation.startsWith('adopt-')) {
+    demand(input, 'Adoption commands require the reviewed plan file');
+    const plan = validateAdoptionPlan(
+      JSON.parse(await readFile(input, 'utf8')),
+    );
+    if (operation === 'adopt-plan') return planAdoption(config, adapter, plan);
+    if (operation === 'adopt-or-resume')
+      return adoptOrResume(config, adapter, plan);
+    const snapshot = await adapter.readAdoption(plan);
+    await adapter.qualifyAdoption(plan, snapshot);
+    if (snapshot.state) validateAdoptionState(plan, snapshot.state);
+    return {
+      revision: snapshot.revision,
+      state: snapshot.state,
+      canonical: Boolean(snapshot.canonical),
+      staging: Boolean(snapshot.staging),
+    };
+  }
+  if (operation !== 'status' && adapter.assertAdoptionComplete)
+    await adapter.assertAdoptionComplete(await adapter.read());
   if (operation === 'plan') {
     const snapshot = await adapter.read();
     const target = JSON.parse(await readFile(input, 'utf8'));

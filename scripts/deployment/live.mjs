@@ -1,11 +1,16 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { createAdoptionMethods } from './live-adoption.mjs';
 import {
   DeploymentError,
   demand,
   hash,
   identity,
+  effectiveWorkloadSelectors,
+  readOnlyConfigBindings,
+  normalizedIngressRecords,
+  isContinuousStatic,
   phases,
   validate,
   validateRepairEvidence,
@@ -174,6 +179,17 @@ function declaredPodEnvelope(workload) {
   const volumes = (workload.scratch ?? []).map(
     ({ name, mountPath, ...emptyDir }) => ({ name, emptyDir }),
   );
+  for (const binding of workload.readOnlyConfigMaps ?? []) {
+    mounts.push({
+      name: binding.volumeName,
+      mountPath: binding.mountPath,
+      readOnly: true,
+    });
+    volumes.push({
+      name: binding.volumeName,
+      configMap: { name: binding.configMapName, items: binding.items },
+    });
+  }
   if (workload.observerAccess) {
     mounts.push({
       name: 'smrt-observer',
@@ -252,7 +268,12 @@ export async function run(command, args, input) {
     );
   }
 }
-export function createLiveAdapter(config, command = run, request = fetch) {
+export function createLiveAdapter(
+  config,
+  command = run,
+  request = fetch,
+  options = {},
+) {
   const { repository, branch, file, namespace, source, kustomization, chart } =
     config;
   demand(
@@ -378,8 +399,12 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         secret.metadata.resourceVersion,
       ]);
     }
-    if (v.ingress.tlsSecretName) {
-      const secret = await get('secret', v.ingress.tlsSecretName);
+    for (const name of new Set(
+      normalizedIngressRecords(v, document.metadata.name)
+        .map((r) => r.tlsSecretName)
+        .filter(Boolean),
+    )) {
+      const secret = await get('secret', name);
       demand(
         secret.immutable === true,
         'TLS Secret must be immutable and versioned',
@@ -388,6 +413,28 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         secret.metadata.name,
         secret.metadata.uid,
         secret.metadata.resourceVersion,
+      ]);
+    }
+    for (const binding of [v.current, v.target]
+      .filter(Boolean)
+      .flatMap(readOnlyConfigBindings)) {
+      const cm = await get('configmap', binding.configMapName);
+      demand(
+        cm.immutable === true &&
+          hash({ data: cm.data ?? {}, binaryData: cm.binaryData ?? {} }) ===
+            binding.hash &&
+          binding.items.every(
+            (item) =>
+              Object.hasOwn(cm.data ?? {}, item.key) ||
+              Object.hasOwn(cm.binaryData ?? {}, item.key),
+          ),
+        'Read-only ConfigMap immutable content/key mismatch',
+      );
+      proof.push([
+        cm.metadata.name,
+        cm.metadata.uid,
+        cm.metadata.resourceVersion,
+        binding.hash,
       ]);
     }
     return hash(proof.sort());
@@ -454,7 +501,14 @@ export function createLiveAdapter(config, command = run, request = fetch) {
     );
     return object;
   }
-  async function preflight(document) {
+  async function preflight(document, adoption) {
+    demand(
+      adoption ||
+        document.metadata.annotations?.[
+          'smrt.happyvertical.com/adoption-status'
+        ] !== 'pending',
+      'Pending adoption blocks normal release preflight',
+    );
     fluxPolicy(document);
     const bindingProof = await bindings(document);
     demand(
@@ -767,15 +821,28 @@ export function createLiveAdapter(config, command = run, request = fetch) {
             `Helm ownership conflict: ${safeReference(resourceName)} namespace ${safeReference(namespace)}; reviewed ownership transfer required`,
             'OWNERSHIP_CONFLICT',
           );
+          const legacy = adoption?.resources.find(
+            (r) =>
+              r.kind === resource.kind &&
+              r.name === resource.metadata.name &&
+              r.namespace === namespace,
+          );
           demand(
-            metadata.managedFields?.some(
-              (entry) =>
-                entry.manager === 'helm-controller' &&
-                ['Apply', 'Update'].includes(entry.operation) &&
-                entry.fieldsType === 'FieldsV1' &&
-                entry.fieldsV1 &&
-                Object.keys(entry.fieldsV1).length > 0,
-            ),
+            (legacy &&
+              metadata.uid === legacy.uid &&
+              metadata.annotations?.['kustomize.toolkit.fluxcd.io/prune'] ===
+                'disabled' &&
+              metadata.managedFields?.some(
+                (entry) => entry.manager === legacy.legacyManager,
+              )) ||
+              metadata.managedFields?.some(
+                (entry) =>
+                  entry.manager === 'helm-controller' &&
+                  ['Apply', 'Update'].includes(entry.operation) &&
+                  entry.fieldsType === 'FieldsV1' &&
+                  entry.fieldsV1 &&
+                  Object.keys(entry.fieldsV1).length > 0,
+              ),
             `Helm manager not established: ${safeReference(resourceName)} namespace ${safeReference(namespace)}`,
             'OWNERSHIP_CONFLICT',
           );
@@ -968,6 +1035,133 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         );
     }
   }
+  async function verifyStopped(document, all, strictMaintenance = false) {
+    const v = validate(document);
+    const staticNames = new Set(
+      Object.entries((v.current || v.target).workloads)
+        .filter(([, w]) => isContinuousStatic(w))
+        .map(([name]) => `${document.metadata.name}-${name}`),
+    );
+    const staticDeployments = all.filter(
+      (o) => o.kind === 'Deployment' && staticNames.has(o.metadata.name),
+    );
+    const staticRS = all.filter(
+      (o) =>
+        o.kind === 'ReplicaSet' &&
+        o.metadata.ownerReferences?.some((r) =>
+          staticDeployments.some((d) => d.metadata.uid === r.uid),
+        ),
+    );
+    const isStatic = (o) =>
+      staticNames.has(o.metadata.name) ||
+      (o.kind === 'ReplicaSet' && staticRS.includes(o)) ||
+      (o.kind === 'Pod' &&
+        o.metadata.ownerReferences?.some((r) =>
+          staticRS.some((rs) => rs.metadata.uid === r.uid),
+        ));
+    if (staticNames.size)
+      await verifyRuntime(document, all, { staticOnly: true });
+    let isMaintenance = (o) =>
+      o.kind === 'Deployment'
+        ? o.metadata.name.endsWith('-maintenance')
+        : o.metadata.name.startsWith(`${document.metadata.name}-maintenance-`);
+    if (strictMaintenance) {
+      const expectedMaintenance = (await inventory(document)).find(
+        (o) =>
+          o.kind === 'Deployment' &&
+          o.metadata.name === `${document.metadata.name}-maintenance`,
+      );
+      const maintenanceDeployment = all.find(
+        (o) =>
+          o.kind === 'Deployment' &&
+          o.metadata.name === `${document.metadata.name}-maintenance`,
+      );
+      demand(
+        expectedMaintenance &&
+          maintenanceDeployment &&
+          containsDesired(maintenanceDeployment.spec, expectedMaintenance.spec),
+        'Stopped maintenance controller differs from rendered template',
+      );
+      verifyControllerEnvelope(maintenanceDeployment, expectedMaintenance);
+      const maintenanceRS = all.filter(
+        (o) =>
+          o.kind === 'ReplicaSet' &&
+          o.metadata.ownerReferences?.some(
+            (r) => r.uid === maintenanceDeployment.metadata.uid,
+          ),
+      );
+      const maintenancePods = all.filter(
+        (o) =>
+          o.kind === 'Pod' &&
+          o.metadata.ownerReferences?.some((r) =>
+            maintenanceRS.some((rs) => rs.metadata.uid === r.uid),
+          ),
+      );
+      demand(
+        maintenancePods.length === expectedMaintenance.spec.replicas &&
+          maintenanceDeployment.status?.observedGeneration ===
+            maintenanceDeployment.metadata.generation &&
+          maintenanceDeployment.status?.readyReplicas ===
+            expectedMaintenance.spec.replicas,
+        'Stopped maintenance runtime is not ready',
+      );
+      for (const pod of maintenancePods) {
+        verifyPodEnvelope(pod.spec, expectedMaintenance.spec.template.spec);
+        demand(
+          !pod.metadata.deletionTimestamp &&
+            pod.status?.conditions?.some(
+              (c) => c.type === 'Ready' && c.status === 'True',
+            ) &&
+            digest(pod.status?.containerStatuses?.[0]?.imageID) ===
+              digest(
+                expectedMaintenance.spec.template.spec.containers[0].image,
+              ),
+          'Stopped maintenance Pod/image differs from rendered runtime',
+        );
+      }
+      isMaintenance = (o) =>
+        o === maintenanceDeployment ||
+        maintenanceRS.includes(o) ||
+        maintenancePods.includes(o);
+    }
+    for (const object of all) {
+      if (isStatic(object) || isMaintenance(object)) continue;
+      if (object.kind === 'CronJob')
+        demand(
+          object.spec.suspend === true && !object.status?.active?.length,
+          'Schedule is not stopped',
+        );
+      if (object.kind === 'Deployment')
+        demand(
+          object.spec.replicas === 0 && (object.status?.replicas ?? 0) === 0,
+          'Runtime deployment is not stopped',
+        );
+      if (object.kind === 'ReplicaSet')
+        demand(
+          (object.spec.replicas ?? 0) === 0 &&
+            (object.status?.replicas ?? 0) === 0,
+          'ReplicaSet remains active',
+        );
+      if (object.kind === 'Pod') {
+        const ownerJob = all.find(
+          (o) =>
+            o.kind === 'Job' &&
+            object.metadata.ownerReferences?.some(
+              (r) => r.uid === o.metadata.uid,
+            ),
+        );
+        demand(
+          ownerJob &&
+            ['Succeeded', 'Failed'].includes(object.status.phase) &&
+            !object.metadata.deletionTimestamp,
+          'Actual runtime Pod remains, including terminating Pods',
+        );
+      }
+      if (object.kind === 'Job')
+        demand((object.status?.active ?? 0) === 0, 'Job remains active');
+    }
+  }
+
   async function provePhase(document, revision, options = {}) {
     const v = validate(document);
     let failedMigration;
@@ -1077,74 +1271,51 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         'Stale controller phase identity',
       );
     }
-    const ingress = all.find(
-      (o) => o.kind === 'Ingress' && o.metadata.name === document.metadata.name,
-    );
-    const web = Object.entries(v.target.workloads).find(
-      ([, w]) => w.role === 'web',
-    );
-    const route =
-      phase === 'active'
-        ? `${document.metadata.name}-${web?.[0]}`
-        : `${document.metadata.name}-maintenance`;
+    const routes = normalizedIngressRecords(v, document.metadata.name);
     demand(
-      ingress?.spec.rules?.length === 1 &&
-        ingress.spec.rules[0].host === v.ingress.host &&
-        ingress.spec.rules[0].http?.paths?.length === 1 &&
-        ingress.spec.rules[0].http.paths[0].backend?.service?.name === route,
-      'Ingress routing identity mismatch',
+      all.filter((o) => o.kind === 'Ingress').length === routes.length,
+      'Unexpected or missing ingress route',
     );
-    if (phase !== 'active') await http(config.maintenanceAssertions, v, true);
-    if (['stopped', 'migrate'].includes(phase)) {
-      for (const object of all) {
-        if (object.kind === 'CronJob')
-          demand(
-            object.spec.suspend === true && !object.status?.active?.length,
-            'Schedule is not stopped',
-          );
-        if (
-          object.kind === 'Deployment' &&
-          !object.metadata.name.endsWith('-maintenance')
-        )
-          demand(
-            object.spec.replicas === 0 && (object.status?.replicas ?? 0) === 0,
-            'Runtime deployment is not stopped',
-          );
-        if (
-          object.kind === 'ReplicaSet' &&
-          !object.metadata.name.startsWith(
-            `${document.metadata.name}-maintenance-`,
-          )
-        )
-          demand(
-            (object.spec.replicas ?? 0) === 0 &&
-              (object.status?.replicas ?? 0) === 0,
-            'ReplicaSet remains active',
-          );
-        if (
-          object.kind === 'Pod' &&
-          !object.metadata.name.startsWith(
-            `${document.metadata.name}-maintenance-`,
-          )
-        ) {
-          const ownerJob = all.find(
-            (o) =>
-              o.kind === 'Job' &&
-              object.metadata.ownerReferences?.some(
-                (r) => r.uid === o.metadata.uid,
-              ),
-          );
-          demand(
-            ownerJob &&
-              ['Succeeded', 'Failed'].includes(object.status.phase) &&
-              !object.metadata.deletionTimestamp,
-            'Actual runtime Pod remains, including terminating Pods',
-          );
-        }
-        if (object.kind === 'Job')
-          demand((object.status?.active ?? 0) === 0, 'Job remains active');
+    for (const route of routes) {
+      const ingress = all.find(
+        (o) => o.kind === 'Ingress' && o.metadata.name === route.name,
+      );
+      const backend =
+        phase === 'active' || route.continuousStatic
+          ? `${document.metadata.name}-${route.workload}`
+          : `${document.metadata.name}-maintenance`;
+      demand(
+        ingress?.spec.rules?.length === 1 &&
+          ingress.spec.rules[0].host === route.host &&
+          ingress.spec.rules[0].http?.paths?.length === 1 &&
+          ingress.spec.rules[0].http.paths[0].backend?.service?.name ===
+            backend,
+        'Ingress routing identity mismatch',
+      );
+      if (route.continuousStatic) {
+        demand(
+          config.staticAssertions?.every((a) => a.status === 200),
+          'Static assertions must require HTTP 200',
+        );
+        await http(
+          config.staticAssertions?.filter(
+            (a) => new URL(a.url).hostname === route.host,
+          ),
+          { ...v, ingress: { ...v.ingress, host: route.host } },
+          false,
+          true,
+        );
       }
     }
+    if (phase !== 'active') {
+      demand(
+        config.maintenanceAssertions?.every((a) => a.status === 503),
+        'Maintenance assertions must require HTTP 503',
+      );
+      await http(config.maintenanceAssertions, v, true);
+    }
+    if (['stopped', 'migrate'].includes(phase))
+      await verifyStopped(document, all);
     if (phase === 'migrate') {
       const name = `${document.metadata.name}-migration-${v.release.id}-${v.release.attempt}`;
       const job = all.find((o) => o.kind === 'Job' && o.metadata.name === name);
@@ -1325,7 +1496,68 @@ export function createLiveAdapter(config, command = run, request = fetch) {
       await rm(index, { force: true });
     }
   }
+  const namespaceInventory = async () =>
+    items(
+      await json(
+        'get',
+        'pods,deployments,replicasets,jobs,cronjobs,endpointslices,horizontalpodautoscalers,statefulsets,daemonsets,ingresses,services,configmaps',
+      ),
+    );
+  const adoption = createAdoptionMethods(
+    config,
+    command,
+    {
+      get,
+      bindings,
+      inventory,
+      preflight,
+      acknowledge,
+      provePhase,
+      namespaceInventory,
+      verifyStopped: (d, all) => verifyStopped(d, all, true),
+      maintenance: async (d) => {
+        const v = validate(d);
+        demand(
+          config.maintenanceAssertions?.every((a) => a.status === 503),
+          'Maintenance assertions must require HTTP 503',
+        );
+        await http(config.maintenanceAssertions, v, true);
+        demand(
+          !normalizedIngressRecords(v, d.metadata.name).some(
+            (r) => r.continuousStatic,
+          ) || config.staticAssertions?.every((a) => a.status === 200),
+          'Static assertions must require HTTP 200',
+        );
+        for (const route of normalizedIngressRecords(v, d.metadata.name).filter(
+          (r) => r.continuousStatic,
+        ))
+          await http(
+            config.staticAssertions?.filter(
+              (a) => new URL(a.url).hostname === route.host,
+            ),
+            { ...v, ingress: { ...v.ingress, host: route.host } },
+            false,
+            true,
+          );
+      },
+      helmOwner: (o, name, ns) =>
+        demand(
+          o.metadata.labels?.['app.kubernetes.io/managed-by'] === 'Helm' &&
+            o.metadata.annotations?.['meta.helm.sh/release-name'] === name &&
+            o.metadata.annotations?.['meta.helm.sh/release-namespace'] === ns &&
+            o.metadata.managedFields?.some(
+              (entry) =>
+                entry.manager === 'helm-controller' &&
+                entry.fieldsType === 'FieldsV1' &&
+                Object.keys(entry.fieldsV1 ?? {}).length > 0,
+            ),
+          'Adopted Helm ownership/manager not established',
+        ),
+    },
+    options,
+  );
   return {
+    ...adoption,
     read,
     preflight,
     cas,
@@ -1358,13 +1590,16 @@ export function createLiveAdapter(config, command = run, request = fetch) {
   };
 }
 
-export async function verifyRuntime(document, all) {
+export async function verifyRuntime(document, all, options = {}) {
   const v = validate(document);
+  const runtime = options.staticOnly ? v.current || v.target : v.target;
   const prefix = document.metadata.name;
-  const scheduled = Object.entries(v.target.workloads).filter(
-    ([, w]) => w.schedule,
+  const scheduled = Object.entries(runtime.workloads).filter(
+    ([, w]) => w.schedule && !options.staticOnly,
   );
-  const cronjobs = all.filter((o) => o.kind === 'CronJob');
+  const cronjobs = all.filter(
+    (o) => o.kind === 'CronJob' && !options.staticOnly,
+  );
   demand(
     cronjobs.length === scheduled.length,
     'Unexpected or missing scheduled workload',
@@ -1424,11 +1659,15 @@ export async function verifyRuntime(document, all) {
         'Schedule started during verify',
       );
   }
-  const expected = Object.entries(v.target.workloads).filter(
-    ([, w]) => !w.schedule,
+  const expected = Object.entries(runtime.workloads).filter(
+    ([, w]) => !w.schedule && (!options.staticOnly || isContinuousStatic(w)),
   );
   const deployments = all.filter(
-    (o) => o.kind === 'Deployment' && !o.metadata.name.endsWith('-maintenance'),
+    (o) =>
+      o.kind === 'Deployment' &&
+      !o.metadata.name.endsWith('-maintenance') &&
+      (!options.staticOnly ||
+        expected.some(([name]) => o.metadata.name === `${prefix}-${name}`)),
   );
   demand(
     deployments.length === expected.length,
@@ -1451,6 +1690,11 @@ export async function verifyRuntime(document, all) {
     verifyPodEnvelope(
       deployment.spec?.template?.spec,
       declaredPodEnvelope(workload),
+    );
+    demand(
+      hash(deployment.spec?.selector?.matchLabels ?? {}) ===
+        hash(effectiveWorkloadSelectors(prefix, name, workload)),
+      'Runtime selector identity mismatch',
     );
     const rs = all.filter(
       (o) =>
