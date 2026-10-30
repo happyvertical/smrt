@@ -228,8 +228,8 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
-    "@tanstack/db": "^0.6.14",
-    "@tanstack/svelte-db": "^0.1.91",
+    "@tanstack/db": "^1.0.0-rc.1",
+    "@tanstack/svelte-db": "^1.0.0-rc.1",
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {

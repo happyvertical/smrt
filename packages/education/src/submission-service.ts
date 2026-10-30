@@ -777,6 +777,51 @@ export class SubmissionService extends LearnerService {
       request.actorUserId,
     );
   }
+  /** Latest retained completed-work evidence; lesson completion is independent. */
+  async getLatestLessonSubmission(
+    request: LessonRequest,
+  ): Promise<SubmissionView | null> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    const catalog = await this.catalog(request, enrollment.courseId);
+    if (
+      !catalog.sections.some((section) =>
+        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
+      )
+    )
+      throw new LearnerAuthorizationError();
+    const progress = await (
+      await LessonProgressCollection.create({ db: this.db })
+    ).get(
+      {
+        enrollmentId: request.enrollmentId,
+        learnerId: request.learnerId,
+        lessonId: request.lessonId,
+        tenantId: request.tenantId,
+      },
+      { cache: false },
+    );
+    if (!progress) return null;
+    const [row] = await (
+      await SubmissionCollection.create({ db: this.db })
+    ).list({
+      where: {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        lessonId: request.lessonId,
+        progressId: String(progress.id),
+        kind: 'completed_work',
+        'status in': ['captured', 'needs_review', 'graded'],
+      },
+      orderBy: ['submittedAt DESC', 'id DESC'],
+      limit: 1,
+    });
+    return row
+      ? this.getSubmission({ ...request, submissionId: String(row.id) })
+      : null;
+  }
   private async grade(
     request: LearnerRequest,
     row: Submission,

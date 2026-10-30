@@ -195,6 +195,8 @@ export interface ReserveLoginAttemptOptions {
 /** A granted reservation. Exactly one of the three methods must be awaited. */
 export interface LoginAttemptLease {
   readonly allowed: true;
+  /** Earliest reserved key window end, as Unix milliseconds (not a fresh TTL). */
+  readonly budgetExpiresAt: number;
   readonly subjectKeyHash: string | null;
   readonly sourceKeyHash: string | null;
   /** The credential was wrong. Keeps the reservation; may lock the key. */
@@ -522,6 +524,13 @@ export class LoginAttemptLimiter {
 
     return {
       allowed: true,
+      budgetExpiresAt: Math.min(
+        ...reserved.map(
+          (key) =>
+            Date.parse(key.windowStartedAt) +
+            (this.budgetFor(key.scope) as Budget).windowMs,
+        ),
+      ),
       subjectKeyHash: subjectHash,
       sourceKeyHash: sourceHash,
       fail: async (metadata) => {

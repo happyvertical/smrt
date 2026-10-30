@@ -49,3 +49,11 @@ with live actor/tenant authorization, never direct provider image URLs.
 Enrollment Plan projections and guardian-only parent notes use
 [the Plan contract](agents/learner-plan.md). Keep awaiting review separate from
 Continue; note authority/provenance never grants learner access or learning evidence.
+
+Homeschool group sharing uses [GroupSharingService](agents/group-sharing.md),
+its read-only reader and revision comment service. Group tenants never become
+family ancestors or guardians. Enumerate only the group-owned opaque roster index,
+then revalidate each exact family edge and current policy. Media delivery must call
+the reader on every request; signed storage URLs are not a sharing grant. Saved
+parent comment visibility applies on every child read. Progress with feedback
+disabled contains counts only, never correctness, scores or concept labels.

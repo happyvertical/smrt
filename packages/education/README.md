@@ -5,6 +5,16 @@ The package represents courses, ordered sections, lessons, and lesson-owned file
 It supplies catalog structure and authorized learner planning/progress workflows.
 Applications authenticate actors and decide guardian permissions.
 
+Homeschool groups use `GroupSharingService`, with the optional
+`education.supervisor` recipe. Its read-only reader and comment services remain
+internal so hosts cannot accidentally bypass the owning transaction lifecycle.
+Groups have independent users tenants; parents approve links to existing family
+learners and choose a versioned sharing policy. The closed services recheck live
+session, role, membership and policy on the supplied database executor. Family
+work and revision-bound comments remain retained after leaving a group.
+See the [group sharing contract](agents/group-sharing.md) for the required host
+authorizer, private media delivery, facet semantics and migration/test matrix.
+
 ## Install
 
 ```sh
