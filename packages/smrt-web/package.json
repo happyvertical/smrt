@@ -39,9 +39,9 @@
     }
   },
   "dependencies": {
-    "@tanstack/db": "^0.6.14",
+    "@tanstack/db": "^1.0.0-rc.1",
     "@tanstack/query-core": "^5.103.1",
-    "@tanstack/query-db-collection": "^1.0.46"
+    "@tanstack/query-db-collection": "^1.5.0"
   },
   "scripts": {
     "build": "vite build --mode library && node ../../scripts/check-smrt-web-engine-boundary.mjs",
