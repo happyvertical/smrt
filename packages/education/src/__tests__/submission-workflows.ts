@@ -859,7 +859,13 @@ export async function assertLatestLessonSubmission(f: Fixture) {
     );
   try {
     expect(await read()).toBeNull();
-    expect(await f.db.list('lesson_progress', {})).toHaveLength(0);
+    expect(
+      await f.db.list('lesson_progress', {
+        tenant_id: f.own.tenantId,
+        enrollment_id: f.enrollment.id,
+        learner_id: f.own.learnerId,
+      }),
+    ).toHaveLength(0);
     const captured = await f.as(f.own, () =>
       e.service.captureSubmission(e.request),
     );
@@ -910,6 +916,16 @@ export async function assertLatestLessonSubmission(f: Fixture) {
       { actorUserId: String(f.bob.user.id) },
     ])
       await expect(read(patch)).rejects.toThrow();
+    const foreign = {
+      tenantId: f.foreign.tenantId,
+      actorUserId: String(f.stranger.user.id),
+      learnerId: String(f.foreign.id),
+    };
+    await expect(
+      f.as(foreign, () =>
+        e.service.getLatestLessonSubmission({ ...e.request, ...foreign }),
+      ),
+    ).rejects.toThrow();
     expect(
       (
         await f.as(f.parent, () =>
