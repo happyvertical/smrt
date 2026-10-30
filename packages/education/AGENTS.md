@@ -38,6 +38,10 @@ Revisioned authored courses, release, archive, enrollment pins and licence use
 [CourseAuthoringService](agents/course-authoring-service.md). Keep history
 append-only, require request keys, and never weaken personal-use-copy rules.
 
+Generation proposals into new draft revisions and revision-bound educational
+review use [CourseGenerationReviewService](agents/course-generation-review.md).
+Keep supplied content unless a decision is recorded; reviews carry no score.
+
 Immutable questions, answer keys/rubrics, stable learning objectives, worksheet
 render ids and exact-revision references use [QuestionAuthoringService](agents/question-records.md).
 Keep keys out of learner bundles; a missing key stays null.

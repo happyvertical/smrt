@@ -43,7 +43,16 @@ export type CourseAuthoringOperation =
   | 'create-objective'
   | 'save-objective'
   | 'link-objectives'
-  | 'read-worksheet';
+  | 'read-worksheet'
+  | 'request-generation'
+  | 'run-generation'
+  | 'cancel-generation'
+  | 'accept-proposal'
+  | 'read-generation'
+  | 'record-review'
+  | 'read-review'
+  | 'resolve-finding'
+  | 'note-context-change';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {

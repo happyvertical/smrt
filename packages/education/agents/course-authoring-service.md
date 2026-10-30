@@ -28,7 +28,7 @@ re-validate that delegation on the supplied executor. The service checks the
 ambient tenant context, active actor and delegating-guardian membership first.
 `generated` provenance additionally needs `generate`. Enrollment pin, upgrade
 and auto-upgrade choices use `release` (deny them per `operation` for agents if
-wanted); archive and discard use `archive`. `review` is reserved for #4516.
+wanted); archive and discard use `archive`. `generate` and `review` are used by the [generation and review service](course-generation-review.md).
 Foreign or missing courses/enrollments are not-found/denied alike.
 
 ## Writes
@@ -44,7 +44,8 @@ stable `code`; never match on messages.
 `release` requires an injected `releaseReviewGate(executor, {tenantId, courseId,
 revisionId}) => {current, reviewId?, reason?}`. No gate configured throws
 `ReviewGateRequiredError`; `current !== true` throws `ReviewNotCurrentError`.
-#4516 supplies the review-backed implementation. The decision records actor,
+`createReviewBackedReleaseGate()` is the review-backed implementation (the default of
+`CourseGenerationReviewService`; see [generation and review](course-generation-review.md)). The decision records actor,
 delegating guardian and `reviewId`, one release per revision. It materializes a
 release-only `AuthoredCourse` row (source key `authored-release`), sections and
 `Lesson` subclasses whose ids derive deterministically from the revision id and
@@ -72,7 +73,8 @@ for catalog listings only and never touch enrollments, progress, submissions,
 grades, workbooks, notes or evidence. Archived courses refuse release, new pins
 and upgrades. `discardDraft` ends an unreferenced draft with a tombstone (history
 stays); it is refused (`CourseDiscardRefusedError.references`) for releases and
-enrollments, and for review/variant rows via the injected `referenceGuard`.
+enrollments, and for review/generation/variant rows via the injected `referenceGuard`
+(`createCourseReferenceGuard`).
 
 ## Licence and sharing
 

@@ -527,7 +527,7 @@ export class CourseAuthoringService {
     return row as Row;
   }
 
-  private async state(
+  protected async state(
     tx: Tx,
     tenantId: string,
     courseId: string,
@@ -557,14 +557,14 @@ export class CourseAuthoringService {
     ).sort((a, b) => a.sequence - b.sequence);
   }
 
-  private async lockHead(tx: Tx, tenantId: string, courseId: string) {
+  protected async lockHead(tx: Tx, tenantId: string, courseId: string) {
     await tx.query(
       'UPDATE course_draft_heads SET id = id WHERE course_id = ? AND tenant_id = ?',
       [courseId, tenantId],
     );
   }
 
-  private async writableDraft(tx: Tx, tenantId: string, courseId: string) {
+  protected async writableDraft(tx: Tx, tenantId: string, courseId: string) {
     await this.identityRow(tx, tenantId, courseId);
     if ((await this.state(tx, tenantId, courseId)) === 'discarded')
       throw new CourseDiscardedError();
@@ -655,7 +655,7 @@ export class CourseAuthoringService {
     });
   }
 
-  private async headView(
+  protected async headView(
     tx: Tx,
     tenantId: string,
     courseId: string,
@@ -742,6 +742,19 @@ export class CourseAuthoringService {
       draft: CourseDraftInput;
     },
   ): Promise<CourseHeadView & { revisionId: string }> {
+    return this.run((tx) => this.saveDraftIn(tx, request));
+  }
+
+  /** The save path on a caller-supplied transaction, so composed writes share CAS and authz. */
+  protected async saveDraftIn(
+    tx: Tx,
+    request: CourseAuthoringActor & {
+      courseId: string;
+      expectedHeadRevisionId: string;
+      requestKey: string;
+      draft: CourseDraftInput;
+    },
+  ): Promise<CourseHeadView & { revisionId: string }> {
     const requestKey = requireKey(request.requestKey);
     const expected = requireKey(
       request.expectedHeadRevisionId,
@@ -761,7 +774,7 @@ export class CourseAuthoringService {
     const payloadDigest = groupSharingDigest(
       canonical({ expected, courseId: request.courseId, draft: prepared }),
     );
-    return this.run(async (tx) => {
+    {
       await this.authorize(
         tx,
         request,
@@ -927,14 +940,25 @@ export class CourseAuthoringService {
       head.updatedByUserId = request.actorUserId;
       head.updatedAt = new Date();
       await head.save();
+      await this.onDraftRevisionAppended(tx, request, {
+        courseId: request.courseId,
+        revisionId: String(revision.id),
+      });
       return {
         courseId: request.courseId,
         headRevisionId: String(revision.id),
         revisionId: String(revision.id),
         version: sequence,
       };
-    });
+    }
   }
+
+  /** Extension point run inside the save transaction after the head moved. */
+  protected async onDraftRevisionAppended(
+    _tx: Tx,
+    _actor: CourseAuthoringActor,
+    _revision: { courseId: string; revisionId: string },
+  ): Promise<void> {}
 
   private async revisionLessonIds(
     tx: Tx,
@@ -1062,7 +1086,7 @@ export class CourseAuthoringService {
     if (missing.length) throw new QuestionReferenceError(missing);
   }
 
-  private async revisionView(
+  protected async revisionView(
     tx: Tx,
     tenantId: string,
     revision: CourseRevision,

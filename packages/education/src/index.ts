@@ -137,6 +137,38 @@ export {
 export * from './course-authoring-models.js';
 export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
 export { CourseAuthoringService } from './course-authoring-service.js';
+export * from './course-generation-contracts.js';
+export * from './course-generation-models.js';
+export {
+  applyProposalFields,
+  draftFromRevision,
+  planProposal,
+  validateCourseGenerationOutput,
+} from './course-generation-output.js';
+export {
+  COURSE_PROPOSAL_ARGS_SCHEMA,
+  COURSE_PROPOSAL_HANDLER,
+  createProposalCourseGenerator,
+} from './course-generation-proposal-generator.js';
+export type { CourseGenerationReviewServiceOptions } from './course-generation-review-service.js';
+export { CourseGenerationReviewService } from './course-generation-review-service.js';
+export * from './course-review-contracts.js';
+export { courseReviewContextDigest } from './course-review-digest.js';
+export type {
+  FixtureReviewer,
+  ReviewEvaluationCaseResult,
+  ReviewEvaluationReport,
+  ReviewerFinding,
+  ReviewFixtureCase,
+  ReviewFixtureMaterial,
+  SeededFlaw,
+} from './course-review-evaluation.js';
+export { evaluateReviewer } from './course-review-evaluation.js';
+export {
+  createCourseReferenceGuard,
+  createReviewBackedReleaseGate,
+} from './course-review-gate.js';
+export * from './course-review-models.js';
 export type {
   CourseSourceConfig,
   CourseSourceKind,
