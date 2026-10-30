@@ -1,0 +1,1953 @@
+import { withPrivateAssetAccess } from '@happyvertical/smrt-assets';
+import {
+  isEmbeddedDatabase,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import type { CourseLicenseKind, CourseModality } from './catalog.js';
+import {
+  AuthoredCourseCollection,
+  CourseSectionCollection,
+  ExerciseCollection,
+  LessonAssetCollection,
+  ReadingCollection,
+  VideoCollection,
+  WorksheetCollection,
+} from './collections.js';
+import {
+  COURSE_PROVENANCES,
+  CourseArchivedError,
+  type CourseAuthoringAction,
+  type CourseAuthoringActor,
+  CourseAuthoringAuthorizationError,
+  type CourseAuthoringAuthorizer,
+  type CourseAuthoringOperation,
+  CourseAuthoringValidationError,
+  CourseDiscardedError,
+  CourseDiscardRefusedError,
+  type CourseDraftInput,
+  type CourseHeadView,
+  type CourseLessonInput,
+  type CourseLessonRevisionView,
+  type CourseLessonType,
+  type CourseLifecycleState,
+  CourseMaterialCopyError,
+  type CourseMaterialCopyPort,
+  type CourseMaterialView,
+  CourseNotFoundError,
+  type CourseProvenance,
+  type CourseReferenceGuard,
+  type CourseReleaseView,
+  CourseRequestKeyConflictError,
+  CourseRevisionAlreadyReleasedError,
+  type CourseRevisionView,
+  CourseStaleHeadError,
+  type CourseStateView,
+  type EffectiveLessonView,
+  EnrollmentPinConflictError,
+  type EnrollmentPinKind,
+  type EnrollmentPinView,
+  type ReleaseReviewGate,
+  ReviewGateRequiredError,
+  ReviewNotCurrentError,
+} from './course-authoring-contracts.js';
+import {
+  AUTHORED_IDENTITY_SOURCE_KEY,
+  AUTHORED_RELEASE_SOURCE_KEY,
+  isGroupShareableLicense,
+  mostRestrictiveLicense,
+} from './course-authoring-licence.js';
+import {
+  CourseArchiveDecisionCollection,
+  CourseDiscardTombstoneCollection,
+  CourseDraftHeadCollection,
+  type CourseRelease,
+  CourseReleaseCollection,
+  type CourseRevision,
+  CourseRevisionCollection,
+  CourseUpgradeChoiceCollection,
+  type EnrollmentReleasePin,
+  EnrollmentReleasePinCollection,
+  type LessonRevision,
+  LessonRevisionCollection,
+  ReleasedLessonCollection,
+} from './course-authoring-models.js';
+import { groupSharingDigest } from './group-sharing-hash.js';
+
+const NAMESPACE = 'smrt.education.course-authoring.v1';
+const KEY_PATTERN = /^[A-Za-z0-9._:@/-]{1,200}$/;
+const LESSON_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,120}$/;
+const MAX_SECTIONS = 100;
+const MAX_LESSONS = 1000;
+const MAX_TEXT = 200_000;
+
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : v,
+  );
+
+/** Deterministic UUID-shaped id; the same inputs always yield the same row id. */
+async function derivedId(...parts: string[]): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(JSON.stringify([NAMESPACE, ...parts])),
+  );
+  const hex = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function requireKey(value: unknown, what = 'request key'): string {
+  if (typeof value !== 'string' || !KEY_PATTERN.test(value))
+    throw new CourseAuthoringValidationError(`Invalid ${what}`);
+  return value;
+}
+function text(value: unknown, what: string, max: number, required = false) {
+  if (value === undefined || value === null || value === '') {
+    if (required)
+      throw new CourseAuthoringValidationError(`${what} is required`);
+    return '';
+  }
+  if (typeof value !== 'string' || value.length > max)
+    throw new CourseAuthoringValidationError(`Invalid ${what}`);
+  if (required && !value.trim())
+    throw new CourseAuthoringValidationError(`${what} is required`);
+  return value;
+}
+function provenance(value: unknown, fallback: CourseProvenance) {
+  const result = value === undefined ? fallback : value;
+  if (!COURSE_PROVENANCES.includes(result as CourseProvenance))
+    throw new CourseAuthoringValidationError('Invalid provenance');
+  return result as CourseProvenance;
+}
+function fieldProvenance(value: unknown): Record<string, CourseProvenance> {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new CourseAuthoringValidationError('Invalid field provenance');
+  const result: Record<string, CourseProvenance> = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (key.length > 100)
+      throw new CourseAuthoringValidationError('Invalid field provenance');
+    result[key] = provenance(v, 'supplied');
+  }
+  return result;
+}
+function nonNegativeInt(value: unknown, what: string): number {
+  const result = value === undefined ? 0 : value;
+  if (!Number.isSafeInteger(result) || (result as number) < 0)
+    throw new CourseAuthoringValidationError(`Invalid ${what}`);
+  return result as number;
+}
+const bool = (value: unknown, what: string): boolean => {
+  if (typeof value !== 'boolean')
+    throw new CourseAuthoringValidationError(`Invalid ${what}`);
+  return value;
+};
+const iso = (date: Date | string) => new Date(date).toISOString();
+const optional = (value: string | null | undefined) => value || null;
+
+type Row = Record<string, unknown>;
+type Tx = DatabaseInterface;
+
+/** Everything a retried save must reproduce, minus the actor. */
+interface PreparedLesson {
+  lessonKey: string;
+  fields: {
+    title: string;
+    body: string;
+    lessonType: CourseLessonType;
+    completionRule: string;
+    estimatedMinutes: number;
+    difficulty: number;
+    modality: CourseModality;
+    externalRef: string;
+    externalUrl: string;
+    licenseKind: CourseLicenseKind;
+    provenance: CourseProvenance;
+    fieldProvenance: Record<string, CourseProvenance>;
+  };
+  materials: Array<{
+    source: { kind: string; ref: string } | null;
+    assetId: string | null;
+    relationship: string;
+    licenseKind: CourseLicenseKind;
+  }>;
+}
+interface PreparedDraft {
+  title: string;
+  summary: string;
+  subject: string;
+  theme: string;
+  levelMin: number;
+  levelMax: number;
+  objectives: string[];
+  provenance: CourseProvenance;
+  fieldProvenance: Record<string, CourseProvenance>;
+  sections: Array<{
+    sectionKey: string;
+    title: string;
+    lessons: PreparedLesson[];
+  }>;
+}
+
+const LICENSE_KINDS: CourseLicenseKind[] = [
+  'own-work',
+  'open-license',
+  'personal-use-copy',
+  'licensed-for-sharing',
+];
+function license(
+  value: unknown,
+  fallback: CourseLicenseKind,
+): CourseLicenseKind {
+  const result = value === undefined ? fallback : value;
+  if (!LICENSE_KINDS.includes(result as CourseLicenseKind))
+    throw new CourseAuthoringValidationError('Invalid licence kind');
+  return result as CourseLicenseKind;
+}
+
+function prepareDraft(
+  input: CourseDraftInput,
+  requestKey: string,
+  courseId: string,
+): PreparedDraft {
+  if (!input || typeof input !== 'object' || !Array.isArray(input.sections))
+    throw new CourseAuthoringValidationError('Invalid draft');
+  if (input.sections.length > MAX_SECTIONS)
+    throw new CourseAuthoringValidationError('Too many sections');
+  const draftProvenance = provenance(input.provenance, 'supplied');
+  const levelMin = nonNegativeInt(input.levelMin, 'level');
+  const levelMax = nonNegativeInt(input.levelMax ?? levelMin, 'level');
+  if (levelMax < levelMin)
+    throw new CourseAuthoringValidationError('Invalid level range');
+  if (
+    input.objectives !== undefined &&
+    (!Array.isArray(input.objectives) ||
+      input.objectives.length > 200 ||
+      input.objectives.some(
+        (o) => typeof o !== 'string' || !o.trim() || o.length > 1000,
+      ))
+  )
+    throw new CourseAuthoringValidationError('Invalid objectives');
+  const sectionKeys = new Set<string>();
+  const lessonKeys = new Set<string>();
+  let lessonCount = 0;
+  const sections = input.sections.map((section, sectionIndex) => {
+    const sectionKey = text(section?.sectionKey, 'section key', 120, true);
+    if (!LESSON_KEY_PATTERN.test(sectionKey) || sectionKeys.has(sectionKey))
+      throw new CourseAuthoringValidationError(
+        'Invalid or duplicate section key',
+      );
+    sectionKeys.add(sectionKey);
+    if (!Array.isArray(section.lessons))
+      throw new CourseAuthoringValidationError('Invalid section lessons');
+    const lessons = section.lessons.map(
+      (lesson, lessonIndex): PreparedLesson => {
+        if (++lessonCount > MAX_LESSONS)
+          throw new CourseAuthoringValidationError('Too many lessons');
+        const lessonKey =
+          (lesson as CourseLessonInput).lessonKey ??
+          `l-${groupSharingDigest(canonical([courseId, requestKey, sectionIndex, lessonIndex])).slice(0, 32)}`;
+        if (
+          typeof lessonKey !== 'string' ||
+          !LESSON_KEY_PATTERN.test(lessonKey) ||
+          lessonKeys.has(lessonKey)
+        )
+          throw new CourseAuthoringValidationError(
+            'Invalid or duplicate lesson key',
+          );
+        lessonKeys.add(lessonKey);
+        const lessonType = (lesson.lessonType ?? 'reading') as CourseLessonType;
+        if (!['reading', 'video', 'worksheet', 'exercise'].includes(lessonType))
+          throw new CourseAuthoringValidationError('Invalid lesson type');
+        const completionRule =
+          lesson.completionRule ??
+          (lessonType === 'worksheet' ? 'submit' : 'attest');
+        if (!['attest', 'submit', 'score', 'external'].includes(completionRule))
+          throw new CourseAuthoringValidationError('Invalid completion rule');
+        const modality = lesson.modality ?? 'online';
+        if (
+          !['online', 'printable', 'kit', 'video', 'game', 'mixed'].includes(
+            modality,
+          )
+        )
+          throw new CourseAuthoringValidationError('Invalid modality');
+        const difficulty = lesson.difficulty ?? 0;
+        if (!Number.isFinite(difficulty))
+          throw new CourseAuthoringValidationError('Invalid difficulty');
+        const materials = (lesson.materials ?? []).map((m) => {
+          if (
+            !m ||
+            (m.source === undefined) === (m.assetId === undefined) ||
+            !['printable', 'answer-key', 'video', 'attachment'].includes(
+              m.relationship,
+            )
+          )
+            throw new CourseAuthoringValidationError('Invalid material');
+          if (m.source) {
+            text(m.source.kind, 'material source kind', 100, true);
+            text(m.source.ref, 'material source ref', 1000, true);
+          } else text(m.assetId, 'material asset', 200, true);
+          return {
+            source: m.source
+              ? { kind: m.source.kind, ref: m.source.ref }
+              : null,
+            assetId: m.assetId ?? null,
+            relationship: m.relationship,
+            // An uploaded original is treated as private family material unless
+            // the author states a different licence.
+            licenseKind: license(
+              m.licenseKind,
+              m.source ? 'personal-use-copy' : 'own-work',
+            ),
+          };
+        });
+        return {
+          lessonKey,
+          fields: {
+            title: text(lesson.title, 'lesson title', 300, true),
+            body: text(lesson.body, 'lesson body', MAX_TEXT),
+            lessonType,
+            completionRule,
+            estimatedMinutes: nonNegativeInt(
+              lesson.estimatedMinutes,
+              'estimated minutes',
+            ),
+            difficulty,
+            modality,
+            externalRef: text(lesson.externalRef, 'external ref', 500),
+            externalUrl: text(lesson.externalUrl, 'external url', 2000),
+            licenseKind: license(lesson.licenseKind, 'own-work'),
+            provenance: provenance(lesson.provenance, draftProvenance),
+            fieldProvenance: fieldProvenance(lesson.fieldProvenance),
+          },
+          materials,
+        };
+      },
+    );
+    return {
+      sectionKey,
+      title: text(section.title, 'section title', 300, true),
+      lessons,
+    };
+  });
+  return {
+    title: text(input.title, 'title', 300, true),
+    summary: text(input.summary, 'summary', MAX_TEXT),
+    subject: text(input.subject, 'subject', 200),
+    theme: text(input.theme, 'theme', 200),
+    levelMin,
+    levelMax,
+    objectives: [...(input.objectives ?? [])],
+    provenance: draftProvenance,
+    fieldProvenance: fieldProvenance(input.fieldProvenance),
+    sections,
+  };
+}
+
+export interface CourseAuthoringServiceOptions {
+  /** Supplied by the review feature; without it release always fails closed. */
+  releaseReviewGate?: ReleaseReviewGate;
+  /** Reports review/variant rows that must block discarding a draft. */
+  referenceGuard?: CourseReferenceGuard;
+  /** Copies uploaded originals to education-owned assets. */
+  materialCopy?: CourseMaterialCopyPort;
+}
+
+/**
+ * Actor-bound authoring of revisioned courses. All writes are one transaction;
+ * every authorizer call receives that transaction's executor.
+ */
+export class CourseAuthoringService {
+  constructor(
+    private readonly db: DatabaseInterface,
+    private readonly authorizer: CourseAuthoringAuthorizer,
+    private readonly options: CourseAuthoringServiceOptions = {},
+  ) {}
+
+  private run<T>(operation: (tx: Tx) => Promise<T>): Promise<T> {
+    return withEmbeddedWriteTransaction(
+      this.db,
+      isEmbeddedDatabase(this.db),
+      operation,
+    );
+  }
+
+  private async authorize(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    action: CourseAuthoringAction,
+    operation: CourseAuthoringOperation,
+    extra: {
+      courseId?: string;
+      enrollmentId?: string;
+      learnerId?: string;
+    } = {},
+  ): Promise<void> {
+    const context = getCurrentTenant();
+    if (
+      !context ||
+      context.superAdminBypass ||
+      !actor?.tenantId ||
+      !actor.actorUserId ||
+      context.tenantId !== actor.tenantId ||
+      context.userId !== actor.actorUserId
+    )
+      throw new CourseAuthoringAuthorizationError();
+    const members = [actor.actorUserId];
+    if (actor.delegatingGuardianUserId)
+      members.push(actor.delegatingGuardianUserId);
+    for (const userId of members) {
+      if (
+        !(await tx.get('memberships', {
+          tenant_id: actor.tenantId,
+          user_id: userId,
+          status: 'active',
+        })) ||
+        !(await tx.get('users', { id: userId, status: 'active' }))
+      )
+        throw new CourseAuthoringAuthorizationError();
+    }
+    const allowed = await this.authorizer({
+      tenantId: actor.tenantId,
+      actorUserId: actor.actorUserId,
+      ...(actor.delegatingGuardianUserId
+        ? { delegatingGuardianUserId: actor.delegatingGuardianUserId }
+        : {}),
+      ...extra,
+      action,
+      operation,
+      executor: tx,
+    });
+    if (allowed !== true) throw new CourseAuthoringAuthorizationError();
+  }
+
+  private async identityRow(tx: Tx, tenantId: string, courseId: string) {
+    if (typeof courseId !== 'string' || !courseId)
+      throw new CourseNotFoundError();
+    const row = await tx.get('courses', {
+      id: courseId,
+      tenant_id: tenantId,
+      source_key: AUTHORED_IDENTITY_SOURCE_KEY,
+    });
+    if (!row) throw new CourseNotFoundError();
+    return row as Row;
+  }
+
+  private async state(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+  ): Promise<CourseLifecycleState> {
+    const tombstone = await tx.get('course_discard_tombstones', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    if (tombstone) return 'discarded';
+    const decisions = await this.archiveDecisions(tx, tenantId, courseId);
+    if (decisions.at(-1)?.action === 'archive') return 'archived';
+    const releases = await tx.list('course_releases', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    return releases.length ? 'released' : 'draft';
+  }
+
+  private async archiveDecisions(tx: Tx, tenantId: string, courseId: string) {
+    return (
+      await (
+        await CourseArchiveDecisionCollection.create({ db: tx })
+      ).list({
+        where: { tenantId, courseId },
+        limit: 100000,
+      })
+    ).sort((a, b) => a.sequence - b.sequence);
+  }
+
+  private async lockHead(tx: Tx, tenantId: string, courseId: string) {
+    await tx.query(
+      'UPDATE course_draft_heads SET id = id WHERE course_id = ? AND tenant_id = ?',
+      [courseId, tenantId],
+    );
+  }
+
+  private async writableDraft(tx: Tx, tenantId: string, courseId: string) {
+    await this.identityRow(tx, tenantId, courseId);
+    if ((await this.state(tx, tenantId, courseId)) === 'discarded')
+      throw new CourseDiscardedError();
+  }
+
+  // -- creation and drafts -------------------------------------------------
+
+  /** Creates the stable course identity, its first (empty) revision and draft head. */
+  async createCourse(
+    request: CourseAuthoringActor & {
+      requestKey: string;
+      title: string;
+      summary?: string;
+      subject?: string;
+      theme?: string;
+      levelMin?: number;
+      levelMax?: number;
+      objectives?: string[];
+    },
+  ): Promise<CourseHeadView> {
+    const requestKey = requireKey(request.requestKey);
+    const draft = prepareDraft(
+      {
+        title: request.title,
+        summary: request.summary,
+        subject: request.subject,
+        theme: request.theme,
+        levelMin: request.levelMin,
+        levelMax: request.levelMax,
+        objectives: request.objectives,
+        sections: [],
+        provenance: 'supplied',
+      },
+      requestKey,
+      '',
+    );
+    const payloadDigest = groupSharingDigest(canonical({ create: draft }));
+    return this.run(async (tx) => {
+      const courseId = await derivedId('course', request.tenantId, requestKey);
+      await this.authorize(tx, request, 'education.course.author', 'create', {
+        courseId,
+      });
+      const existing = await tx.get('courses', { id: courseId });
+      if (existing) {
+        const revision = await tx.get('course_revisions', {
+          tenant_id: request.tenantId,
+          course_id: courseId,
+          request_key: requestKey,
+        });
+        if (!revision || revision.payload_digest !== payloadDigest)
+          throw new CourseRequestKeyConflictError();
+        return this.headView(tx, request.tenantId, courseId);
+      }
+      await (await AuthoredCourseCollection.create({ db: tx })).create({
+        id: courseId,
+        tenantId: request.tenantId,
+        title: draft.title,
+        summary: draft.summary,
+        subject: draft.subject,
+        levelMin: draft.levelMin,
+        levelMax: draft.levelMax,
+        sourceKey: AUTHORED_IDENTITY_SOURCE_KEY,
+        sourceRef: requestKey,
+        licenseKind: 'own-work',
+        attestedBy: request.actorUserId,
+        status: 'draft',
+      });
+      const revision = await this.appendRevision(tx, request, {
+        courseId,
+        parent: null,
+        sequence: 1,
+        requestKey,
+        payloadDigest,
+        draft,
+        sections: [],
+        licenseKind: 'own-work',
+      });
+      await (await CourseDraftHeadCollection.create({ db: tx })).create({
+        tenantId: request.tenantId,
+        courseId,
+        headRevisionId: String(revision.id),
+        version: 1,
+        updatedByUserId: request.actorUserId,
+        updatedAt: new Date(),
+        _insertOnly: true,
+      });
+      return this.headView(tx, request.tenantId, courseId);
+    });
+  }
+
+  private async headView(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+  ): Promise<CourseHeadView> {
+    const head = await tx.get('course_draft_heads', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    if (!head) throw new CourseNotFoundError();
+    return {
+      courseId,
+      headRevisionId: String(head.head_revision_id),
+      version: Number(head.version),
+    };
+  }
+
+  private async appendRevision(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    input: {
+      courseId: string;
+      parent: string | null;
+      sequence: number;
+      requestKey: string;
+      payloadDigest: string;
+      draft: PreparedDraft;
+      sections: Array<{
+        sectionKey: string;
+        title: string;
+        lessonRevisionIds: string[];
+      }>;
+      licenseKind: CourseLicenseKind;
+    },
+  ): Promise<CourseRevision> {
+    const { draft } = input;
+    const contentDigest = groupSharingDigest(
+      canonical({
+        title: draft.title,
+        summary: draft.summary,
+        subject: draft.subject,
+        theme: draft.theme,
+        levelMin: draft.levelMin,
+        levelMax: draft.levelMax,
+        objectives: draft.objectives,
+        sections: input.sections,
+      }),
+    );
+    return (await CourseRevisionCollection.create({ db: tx })).create({
+      _insertOnly: true,
+      tenantId: actor.tenantId,
+      courseId: input.courseId,
+      parentRevisionId: input.parent,
+      sequence: input.sequence,
+      authorUserId: actor.actorUserId,
+      delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+      provenance: draft.provenance,
+      fieldProvenanceJson: JSON.stringify(draft.fieldProvenance),
+      title: draft.title,
+      summary: draft.summary,
+      subject: draft.subject,
+      theme: draft.theme,
+      levelMin: draft.levelMin,
+      levelMax: draft.levelMax,
+      objectivesJson: JSON.stringify(draft.objectives),
+      sectionsJson: JSON.stringify(input.sections),
+      licenseKind: input.licenseKind,
+      requestKey: input.requestKey,
+      payloadDigest: input.payloadDigest,
+      contentDigest,
+      recordedAt: new Date(),
+    });
+  }
+
+  /**
+   * Appends a revision and moves the draft head by expected-head compare and
+   * swap. A retried request key replays its original result; the same key with a
+   * different payload is a typed conflict.
+   */
+  async saveDraft(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      expectedHeadRevisionId: string;
+      requestKey: string;
+      draft: CourseDraftInput;
+    },
+  ): Promise<CourseHeadView & { revisionId: string }> {
+    const requestKey = requireKey(request.requestKey);
+    const expected = requireKey(
+      request.expectedHeadRevisionId,
+      'expected head',
+    );
+    const prepared = prepareDraft(request.draft, requestKey, request.courseId);
+    const usesGenerated =
+      prepared.provenance === 'generated' ||
+      Object.values(prepared.fieldProvenance).includes('generated') ||
+      prepared.sections.some((s) =>
+        s.lessons.some(
+          (l) =>
+            l.fields.provenance === 'generated' ||
+            Object.values(l.fields.fieldProvenance).includes('generated'),
+        ),
+      );
+    const payloadDigest = groupSharingDigest(
+      canonical({ expected, courseId: request.courseId, draft: prepared }),
+    );
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'save-draft',
+        {
+          courseId: request.courseId,
+        },
+      );
+      if (usesGenerated)
+        await this.authorize(
+          tx,
+          request,
+          'education.course.generate',
+          'save-draft',
+          {
+            courseId: request.courseId,
+          },
+        );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      const replay = await tx.get('course_revisions', {
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+        request_key: requestKey,
+      });
+      if (replay) {
+        if (replay.payload_digest !== payloadDigest)
+          throw new CourseRequestKeyConflictError();
+        return {
+          courseId: request.courseId,
+          headRevisionId: String(replay.id),
+          revisionId: String(replay.id),
+          version: Number(replay.sequence),
+        };
+      }
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const heads = await CourseDraftHeadCollection.create({ db: tx });
+      const head = await heads.get(
+        { tenantId: request.tenantId, courseId: request.courseId },
+        { cache: false },
+      );
+      if (!head) throw new CourseNotFoundError();
+      if (head.headRevisionId !== expected)
+        throw new CourseStaleHeadError(head.headRevisionId);
+      const parent = (await tx.get('course_revisions', {
+        id: head.headRevisionId,
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+      })) as Row;
+      const known = await this.knownMaterials(
+        tx,
+        request.tenantId,
+        request.courseId,
+      );
+      const previousByKey = await this.revisionLessonIds(
+        tx,
+        request.tenantId,
+        String(parent.sections_json),
+      );
+      const lessonRevisions = await LessonRevisionCollection.create({ db: tx });
+      const licences: CourseLicenseKind[] = [];
+      const sections: Array<{
+        sectionKey: string;
+        title: string;
+        lessonRevisionIds: string[];
+      }> = [];
+      for (const section of prepared.sections) {
+        const ids: string[] = [];
+        for (const lesson of section.lessons) {
+          const materials: CourseMaterialView[] = [];
+          for (const material of lesson.materials)
+            materials.push(
+              await this.resolveMaterial(
+                tx,
+                request,
+                request.courseId,
+                material,
+                known,
+              ),
+            );
+          const licenseKind = mostRestrictiveLicense([
+            lesson.fields.licenseKind,
+            ...materials.map((m) => m.licenseKind),
+          ]);
+          licences.push(licenseKind);
+          const body = { ...lesson.fields, licenseKind, materials };
+          const contentDigest = groupSharingDigest(canonical(body));
+          const existing = await lessonRevisions.get(
+            {
+              tenantId: request.tenantId,
+              courseId: request.courseId,
+              lessonKey: lesson.lessonKey,
+              contentDigest,
+            },
+            { cache: false },
+          );
+          const row =
+            existing ??
+            (await lessonRevisions.create({
+              _insertOnly: true,
+              tenantId: request.tenantId,
+              courseId: request.courseId,
+              lessonKey: lesson.lessonKey,
+              parentRevisionId: previousByKey.get(lesson.lessonKey) ?? null,
+              title: lesson.fields.title,
+              body: lesson.fields.body,
+              lessonType: lesson.fields.lessonType,
+              completionRule: lesson.fields.completionRule,
+              estimatedMinutes: lesson.fields.estimatedMinutes,
+              difficulty: lesson.fields.difficulty,
+              modality: lesson.fields.modality,
+              externalRef: lesson.fields.externalRef,
+              externalUrl: lesson.fields.externalUrl,
+              licenseKind,
+              materialsJson: JSON.stringify(materials),
+              provenance: lesson.fields.provenance,
+              fieldProvenanceJson: JSON.stringify(
+                lesson.fields.fieldProvenance,
+              ),
+              authorUserId: request.actorUserId,
+              delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+              contentDigest,
+              recordedAt: new Date(),
+            }));
+          ids.push(String(row.id));
+        }
+        sections.push({
+          sectionKey: section.sectionKey,
+          title: section.title,
+          lessonRevisionIds: ids,
+        });
+      }
+      const sequence = Number(parent.sequence) + 1;
+      const revision = await this.appendRevision(tx, request, {
+        courseId: request.courseId,
+        parent: head.headRevisionId,
+        sequence,
+        requestKey,
+        payloadDigest,
+        draft: prepared,
+        sections,
+        licenseKind: mostRestrictiveLicense(licences),
+      });
+      head.headRevisionId = String(revision.id);
+      head.version = sequence;
+      head.updatedByUserId = request.actorUserId;
+      head.updatedAt = new Date();
+      await head.save();
+      return {
+        courseId: request.courseId,
+        headRevisionId: String(revision.id),
+        revisionId: String(revision.id),
+        version: sequence,
+      };
+    });
+  }
+
+  private async revisionLessonIds(
+    tx: Tx,
+    tenantId: string,
+    sectionsJson: string,
+  ) {
+    const result = new Map<string, string>();
+    const ids = (
+      JSON.parse(sectionsJson) as Array<{ lessonRevisionIds: string[] }>
+    ).flatMap((s) => s.lessonRevisionIds);
+    for (const id of ids) {
+      const row = await tx.get('lesson_revisions', { id, tenant_id: tenantId });
+      if (row) result.set(String(row.lesson_key), id);
+    }
+    return result;
+  }
+
+  /** Assets this course already owns through earlier lesson revisions. */
+  private async knownMaterials(tx: Tx, tenantId: string, courseId: string) {
+    const known = new Map<string, CourseMaterialView>();
+    const rows = await tx.list('lesson_revisions', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    for (const row of rows)
+      for (const m of JSON.parse(
+        String(row.materials_json),
+      ) as CourseMaterialView[])
+        known.set(m.assetId, m);
+    return known;
+  }
+
+  private async resolveMaterial(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    courseId: string,
+    material: PreparedLesson['materials'][number],
+    known: Map<string, CourseMaterialView>,
+  ): Promise<CourseMaterialView> {
+    if (material.assetId) {
+      const prior = known.get(material.assetId);
+      if (!prior) throw new CourseMaterialCopyError('Unknown course material');
+      return {
+        assetId: prior.assetId,
+        relationship:
+          material.relationship as CourseMaterialView['relationship'],
+        licenseKind: material.licenseKind,
+        provenance: prior.provenance,
+      };
+    }
+    const port = this.options.materialCopy;
+    if (!port || !material.source)
+      throw new CourseMaterialCopyError('Material copying is not configured');
+    const copied = await port.copy(tx, {
+      tenantId: actor.tenantId,
+      actorUserId: actor.actorUserId,
+      courseId,
+      source: material.source,
+      relationship: material.relationship as CourseMaterialView['relationship'],
+    });
+    if (
+      !copied?.assetId ||
+      !(await tx.get('assets', {
+        id: copied.assetId,
+        tenant_id: actor.tenantId,
+      }))
+    )
+      throw new CourseMaterialCopyError();
+    const view: CourseMaterialView = {
+      assetId: copied.assetId,
+      relationship: material.relationship as CourseMaterialView['relationship'],
+      licenseKind: material.licenseKind,
+      provenance: {
+        source: material.source,
+        copiedAt: new Date().toISOString(),
+        copiedByUserId: actor.actorUserId,
+      },
+    };
+    known.set(view.assetId, view);
+    return view;
+  }
+
+  // -- reads ----------------------------------------------------------------
+
+  private lessonView(row: LessonRevision | Row): CourseLessonRevisionView {
+    const r = row as unknown as LessonRevision;
+    return {
+      id: String(r.id),
+      lessonKey: r.lessonKey,
+      parentRevisionId: optional(r.parentRevisionId),
+      title: r.title,
+      body: r.body,
+      lessonType: r.lessonType as CourseLessonType,
+      completionRule:
+        r.completionRule as CourseLessonRevisionView['completionRule'],
+      estimatedMinutes: r.estimatedMinutes,
+      difficulty: r.difficulty,
+      modality: r.modality as CourseModality,
+      externalRef: r.externalRef,
+      externalUrl: r.externalUrl,
+      licenseKind: r.licenseKind,
+      provenance: r.provenance as CourseProvenance,
+      fieldProvenance: JSON.parse(r.fieldProvenanceJson),
+      materials: JSON.parse(r.materialsJson),
+    };
+  }
+
+  private async revisionView(
+    tx: Tx,
+    tenantId: string,
+    revision: CourseRevision,
+  ): Promise<CourseRevisionView> {
+    const lessons = new Map(
+      (
+        await (
+          await LessonRevisionCollection.create({ db: tx })
+        ).list({
+          where: { tenantId, courseId: revision.courseId },
+          limit: 100000,
+        })
+      ).map((row) => [String(row.id), row]),
+    );
+    return {
+      id: String(revision.id),
+      courseId: revision.courseId,
+      parentRevisionId: optional(revision.parentRevisionId),
+      sequence: revision.sequence,
+      title: revision.title,
+      summary: revision.summary,
+      subject: revision.subject,
+      theme: revision.theme,
+      levelMin: revision.levelMin,
+      levelMax: revision.levelMax,
+      objectives: JSON.parse(revision.objectivesJson),
+      licenseKind: revision.licenseKind,
+      provenance: revision.provenance as CourseProvenance,
+      fieldProvenance: JSON.parse(revision.fieldProvenanceJson),
+      authorUserId: revision.authorUserId,
+      delegatingGuardianUserId: optional(revision.delegatingGuardianUserId),
+      recordedAt: iso(revision.recordedAt),
+      sections: (
+        JSON.parse(revision.sectionsJson) as Array<{
+          sectionKey: string;
+          title: string;
+          lessonRevisionIds: string[];
+        }>
+      ).map((section) => ({
+        sectionKey: section.sectionKey,
+        title: section.title,
+        lessons: section.lessonRevisionIds.map((id) => {
+          const row = lessons.get(id);
+          if (!row)
+            throw new Error('Course revision references a missing lesson');
+          return this.lessonView(row);
+        }),
+      })),
+    };
+  }
+
+  /** Reads a draft revision (the head unless `revisionId` is given), answer keys included. */
+  async readDraft(
+    request: CourseAuthoringActor & { courseId: string; revisionId?: string },
+  ): Promise<{ head: CourseHeadView; revision: CourseRevisionView }> {
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'read-draft',
+        {
+          courseId: request.courseId,
+        },
+      );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      const head = await this.headView(tx, request.tenantId, request.courseId);
+      const revision = await (
+        await CourseRevisionCollection.create({ db: tx })
+      ).get(
+        {
+          id: request.revisionId ?? head.headRevisionId,
+          tenantId: request.tenantId,
+          courseId: request.courseId,
+        },
+        { cache: false },
+      );
+      if (!revision) throw new CourseNotFoundError();
+      return {
+        head,
+        revision: await this.revisionView(tx, request.tenantId, revision),
+      };
+    });
+  }
+
+  async getCourse(
+    request: CourseAuthoringActor & { courseId: string },
+  ): Promise<CourseStateView> {
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'read-draft',
+        {
+          courseId: request.courseId,
+        },
+      );
+      return this.courseState(tx, request.tenantId, request.courseId);
+    });
+  }
+
+  private async courseState(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+  ): Promise<CourseStateView> {
+    const course = await this.identityRow(tx, tenantId, courseId);
+    const state = await this.state(tx, tenantId, courseId);
+    const head = await tx.get('course_draft_heads', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    const revision = head
+      ? await tx.get('course_revisions', {
+          id: head.head_revision_id,
+          tenant_id: tenantId,
+        })
+      : null;
+    const licenseKind = (revision?.license_kind ??
+      'own-work') as CourseLicenseKind;
+    const releases = (
+      await tx.list('course_releases', {
+        tenant_id: tenantId,
+        course_id: courseId,
+      })
+    )
+      .map((r) => ({
+        id: String(r.id),
+        releaseNumber: Number(r.release_number),
+        revisionId: String(r.revision_id),
+        releaseCourseId: String(r.release_course_id),
+      }))
+      .sort((a, b) => a.releaseNumber - b.releaseNumber);
+    return {
+      courseId,
+      title: String(course.title),
+      state,
+      licenseKind,
+      groupShareable: isGroupShareableLicense(licenseKind),
+      headRevisionId: head ? String(head.head_revision_id) : null,
+      releases,
+    };
+  }
+
+  // -- release --------------------------------------------------------------
+
+  /**
+   * Freezes one revision for assignment. Requires a current review of that exact
+   * revision from the injected gate; materializes immutable Course, section and
+   * Lesson rows for this release only.
+   */
+  async release(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      revisionId: string;
+      requestKey: string;
+    },
+  ): Promise<CourseReleaseView> {
+    const requestKey = requireKey(request.requestKey);
+    return this.run(async (tx) => {
+      await this.authorize(tx, request, 'education.course.release', 'release', {
+        courseId: request.courseId,
+      });
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      const releases = await CourseReleaseCollection.create({ db: tx });
+      const replay = await releases.get(
+        {
+          tenantId: request.tenantId,
+          courseId: request.courseId,
+          requestKey,
+        },
+        { cache: false },
+      );
+      if (replay) {
+        if (replay.revisionId !== request.revisionId)
+          throw new CourseRequestKeyConflictError();
+        return this.releaseView(tx, request.tenantId, replay);
+      }
+      if (
+        (await this.state(tx, request.tenantId, request.courseId)) ===
+        'archived'
+      )
+        throw new CourseArchivedError();
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const revision = await (
+        await CourseRevisionCollection.create({ db: tx })
+      ).get(
+        {
+          id: request.revisionId,
+          tenantId: request.tenantId,
+          courseId: request.courseId,
+        },
+        { cache: false },
+      );
+      if (!revision) throw new CourseNotFoundError();
+      const already = await releases.get(
+        {
+          tenantId: request.tenantId,
+          courseId: request.courseId,
+          revisionId: request.revisionId,
+        },
+        { cache: false },
+      );
+      if (already)
+        throw new CourseRevisionAlreadyReleasedError(String(already.id));
+      const gate = this.options.releaseReviewGate;
+      if (!gate) throw new ReviewGateRequiredError();
+      const review = await gate(tx, {
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+        revisionId: request.revisionId,
+      });
+      if (review?.current !== true)
+        throw new ReviewNotCurrentError(review?.reason);
+      const view = await this.revisionView(tx, request.tenantId, revision);
+      if (!view.sections.some((s) => s.lessons.length))
+        throw new CourseAuthoringValidationError(
+          'A release requires at least one lesson',
+        );
+      const releaseNumber =
+        (
+          await tx.list('course_releases', {
+            tenant_id: request.tenantId,
+            course_id: request.courseId,
+          })
+        ).length + 1;
+      const releaseCourseId = await derivedId(
+        'release-course',
+        request.revisionId,
+      );
+      const release = await this.materialize(tx, request, {
+        view,
+        releaseNumber,
+        releaseCourseId,
+        reviewId: review.reviewId ?? '',
+        requestKey,
+      });
+      await this.autoUpgrade(tx, request.tenantId, request.courseId, release);
+      return this.releaseView(tx, request.tenantId, release);
+    });
+  }
+
+  private async materialize(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    input: {
+      view: CourseRevisionView;
+      releaseNumber: number;
+      releaseCourseId: string;
+      reviewId: string;
+      requestKey: string;
+    },
+  ): Promise<CourseRelease> {
+    const { view } = input;
+    const lessons = view.sections.flatMap((s) => s.lessons);
+    const personal = view.licenseKind === 'personal-use-copy';
+    const modalities = new Set(lessons.map((l) => l.modality));
+    await (await AuthoredCourseCollection.create({ db: tx })).create({
+      id: input.releaseCourseId,
+      tenantId: actor.tenantId,
+      title: view.title,
+      summary: view.summary,
+      subject: view.subject,
+      levelMin: view.levelMin,
+      levelMax: view.levelMax,
+      sourceKey: AUTHORED_RELEASE_SOURCE_KEY,
+      sourceRef: `${view.courseId}@${input.releaseNumber}`,
+      licenseKind: view.licenseKind,
+      attestedBy: actor.actorUserId,
+      estimatedMinutes: lessons.reduce((n, l) => n + l.estimatedMinutes, 0),
+      modality: modalities.size === 1 ? [...modalities][0] : 'mixed',
+      // A personal-use course can never be published; the release row is the authority.
+      status: personal ? 'draft' : 'published',
+    });
+    const release = await (
+      await CourseReleaseCollection.create({ db: tx })
+    ).create({
+      _insertOnly: true,
+      tenantId: actor.tenantId,
+      courseId: view.courseId,
+      revisionId: view.id,
+      releaseCourseId: input.releaseCourseId,
+      releaseNumber: input.releaseNumber,
+      reviewId: input.reviewId,
+      actorUserId: actor.actorUserId,
+      delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+      requestKey: input.requestKey,
+      recordedAt: new Date(),
+    });
+    const sections = await CourseSectionCollection.create({ db: tx });
+    const released = await ReleasedLessonCollection.create({ db: tx });
+    const links = await LessonAssetCollection.create({ db: tx });
+    const byType = {
+      reading: await ReadingCollection.create({ db: tx }),
+      video: await VideoCollection.create({ db: tx }),
+      worksheet: await WorksheetCollection.create({ db: tx }),
+      exercise: await ExerciseCollection.create({ db: tx }),
+    };
+    for (const [sectionIndex, section] of view.sections.entries()) {
+      const sectionId = await derivedId('section', view.id, section.sectionKey);
+      await sections.create({
+        id: sectionId,
+        tenantId: actor.tenantId,
+        courseId: input.releaseCourseId,
+        title: section.title,
+        sortOrder: sectionIndex,
+      });
+      for (const [lessonIndex, lesson] of section.lessons.entries()) {
+        const lessonId = await derivedId('lesson', view.id, lesson.lessonKey);
+        await byType[lesson.lessonType].create({
+          id: lessonId,
+          tenantId: actor.tenantId,
+          sectionId,
+          title: lesson.title,
+          body: lesson.body,
+          sortOrder: lessonIndex,
+          estimatedMinutes: lesson.estimatedMinutes,
+          difficulty: lesson.difficulty,
+          modality: lesson.modality,
+          completionRule: lesson.completionRule,
+          // The stable cross-version identity travels with the immutable row.
+          externalRef:
+            lesson.externalRef || `authored:${lesson.lessonKey}@${lesson.id}`,
+          externalUrl: lesson.externalUrl,
+        });
+        await released.create({
+          _insertOnly: true,
+          tenantId: actor.tenantId,
+          courseId: view.courseId,
+          releaseId: String(release.id),
+          lessonKey: lesson.lessonKey,
+          lessonRevisionId: lesson.id,
+          lessonId,
+          sectionId,
+        });
+        for (const [index, material] of lesson.materials.entries()) {
+          const link = {
+            tenantId: actor.tenantId,
+            lessonId,
+            assetId: material.assetId,
+            relationship: material.relationship,
+            sortOrder: index,
+          };
+          const private_ = personal || material.relationship === 'answer-key';
+          try {
+            if (!private_) await links.create(link);
+            else {
+              const asset = await tx.get('assets', {
+                id: material.assetId,
+                tenant_id: actor.tenantId,
+              });
+              if (!asset?.owner_profile_id)
+                throw new CourseMaterialCopyError(
+                  'Private material requires a private owned asset',
+                );
+              await withPrivateAssetAccess(
+                {
+                  tenantId: actor.tenantId,
+                  actorUserId: actor.actorUserId,
+                  ownerProfileId: String(asset.owner_profile_id),
+                  assetIds: [material.assetId],
+                },
+                () => links.create(link),
+              );
+            }
+          } catch (error) {
+            if (error instanceof CourseMaterialCopyError) throw error;
+            throw new CourseMaterialCopyError(
+              'Released material requires an authorized education-owned asset',
+            );
+          }
+        }
+      }
+    }
+    return release;
+  }
+
+  private async releaseView(
+    tx: Tx,
+    tenantId: string,
+    release: CourseRelease,
+  ): Promise<CourseReleaseView> {
+    const lessons = (
+      await (
+        await ReleasedLessonCollection.create({ db: tx })
+      ).list({
+        where: { tenantId, releaseId: String(release.id) },
+        limit: 100000,
+      })
+    ).map((l) => ({
+      lessonKey: l.lessonKey,
+      lessonRevisionId: l.lessonRevisionId,
+      lessonId: l.lessonId,
+      sectionId: l.sectionId,
+    }));
+    return {
+      id: String(release.id),
+      courseId: release.courseId,
+      revisionId: release.revisionId,
+      releaseNumber: release.releaseNumber,
+      releaseCourseId: release.releaseCourseId,
+      reviewId: optional(release.reviewId),
+      actorUserId: release.actorUserId,
+      delegatingGuardianUserId: optional(release.delegatingGuardianUserId),
+      recordedAt: iso(release.recordedAt),
+      lessons: lessons.sort((a, b) => a.lessonKey.localeCompare(b.lessonKey)),
+    };
+  }
+
+  // -- archive and discard --------------------------------------------------
+
+  /** Reversible; never touches enrollments, progress, submissions, grades or notes. */
+  async archive(
+    request: CourseAuthoringActor & { courseId: string; requestKey: string },
+  ): Promise<CourseStateView> {
+    return this.setArchived(request, true);
+  }
+  async unarchive(
+    request: CourseAuthoringActor & { courseId: string; requestKey: string },
+  ): Promise<CourseStateView> {
+    return this.setArchived(request, false);
+  }
+  private async setArchived(
+    request: CourseAuthoringActor & { courseId: string; requestKey: string },
+    archive: boolean,
+  ): Promise<CourseStateView> {
+    const requestKey = requireKey(request.requestKey);
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.archive',
+        archive ? 'archive' : 'unarchive',
+        { courseId: request.courseId },
+      );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const decisions = await this.archiveDecisions(
+        tx,
+        request.tenantId,
+        request.courseId,
+      );
+      const action = archive ? 'archive' : 'unarchive';
+      const replay = decisions.find((d) => d.requestKey === requestKey);
+      if (replay) {
+        if (replay.action !== action) throw new CourseRequestKeyConflictError();
+        return this.courseState(tx, request.tenantId, request.courseId);
+      }
+      const archived = decisions.at(-1)?.action === 'archive';
+      if (archived === archive)
+        return this.courseState(tx, request.tenantId, request.courseId);
+      await (await CourseArchiveDecisionCollection.create({ db: tx })).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+        action,
+        sequence: decisions.length + 1,
+        actorUserId: request.actorUserId,
+        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        requestKey,
+        recordedAt: new Date(),
+      });
+      // Release Course rows mirror the decision for catalog listings only.
+      const releases = await tx.list('course_releases', {
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+      });
+      const courses = await AuthoredCourseCollection.create({ db: tx });
+      for (const release of releases) {
+        const course = await courses.get(
+          { id: String(release.release_course_id), tenantId: request.tenantId },
+          { cache: false },
+        );
+        if (!course) continue;
+        course.status = archive
+          ? 'archived'
+          : course.licenseKind === 'personal-use-copy'
+            ? 'draft'
+            : 'published';
+        await course.save();
+      }
+      return this.courseState(tx, request.tenantId, request.courseId);
+    });
+  }
+
+  /**
+   * Discards a draft nothing references. History stays append-only: a tombstone
+   * ends the draft, and erasing its rows belongs to a retention operation.
+   */
+  async discardDraft(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      requestKey: string;
+      reason?: string;
+    },
+  ): Promise<CourseStateView> {
+    const requestKey = requireKey(request.requestKey);
+    const reason = text(request.reason, 'reason', 1000);
+    return this.run(async (tx) => {
+      await this.authorize(tx, request, 'education.course.archive', 'discard', {
+        courseId: request.courseId,
+      });
+      await this.identityRow(tx, request.tenantId, request.courseId);
+      const tombstone = await tx.get('course_discard_tombstones', {
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+      });
+      if (tombstone) {
+        if (tombstone.request_key !== requestKey)
+          throw new CourseDiscardedError();
+        return this.courseState(tx, request.tenantId, request.courseId);
+      }
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const references: string[] = [];
+      if (
+        (
+          await tx.list('course_releases', {
+            tenant_id: request.tenantId,
+            course_id: request.courseId,
+          })
+        ).length
+      )
+        references.push('release');
+      // Attempts, progress and submissions all hang from an enrollment.
+      if (
+        await tx.get('enrollments', {
+          tenant_id: request.tenantId,
+          course_id: request.courseId,
+        })
+      )
+        references.push('enrollment');
+      if (this.options.referenceGuard) {
+        const guard = await this.options.referenceGuard(tx, {
+          tenantId: request.tenantId,
+          courseId: request.courseId,
+        });
+        if (guard?.referenced !== false)
+          references.push(
+            ...(guard?.kinds?.length ? guard.kinds : ['reference']),
+          );
+      }
+      if (references.length) throw new CourseDiscardRefusedError(references);
+      const head = await tx.get('course_draft_heads', {
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+      });
+      const course = await tx.get('courses', {
+        id: request.courseId,
+        tenant_id: request.tenantId,
+      });
+      await (await CourseDiscardTombstoneCollection.create({ db: tx })).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+        title: String(course?.title ?? ''),
+        headRevisionId: String(head?.head_revision_id ?? ''),
+        revisionCount: (
+          await tx.list('course_revisions', {
+            tenant_id: request.tenantId,
+            course_id: request.courseId,
+          })
+        ).length,
+        reason,
+        actorUserId: request.actorUserId,
+        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        requestKey,
+        recordedAt: new Date(),
+      });
+      return this.courseState(tx, request.tenantId, request.courseId);
+    });
+  }
+
+  // -- enrollment pins and upgrades -----------------------------------------
+
+  private async enrollmentRow(tx: Tx, tenantId: string, enrollmentId: string) {
+    const row =
+      typeof enrollmentId === 'string' && enrollmentId
+        ? await tx.get('enrollments', { id: enrollmentId, tenant_id: tenantId })
+        : null;
+    // A missing or foreign enrollment is indistinguishable from a denial.
+    if (!row) throw new CourseAuthoringAuthorizationError();
+    return row as Row;
+  }
+
+  private async pins(tx: Tx, tenantId: string, enrollmentId: string) {
+    return (
+      await (
+        await EnrollmentReleasePinCollection.create({ db: tx })
+      ).list({
+        where: { tenantId, enrollmentId },
+        limit: 100000,
+      })
+    ).sort((a, b) => a.sequence - b.sequence);
+  }
+
+  private async releaseRow(tx: Tx, tenantId: string, releaseId: string) {
+    const row =
+      typeof releaseId === 'string' && releaseId
+        ? await tx.get('course_releases', {
+            id: releaseId,
+            tenant_id: tenantId,
+          })
+        : null;
+    if (!row) throw new CourseNotFoundError();
+    return row as Row;
+  }
+
+  private async autoUpgradeEnabled(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+    enrollmentId: string,
+  ): Promise<boolean> {
+    const choices = (
+      await (
+        await CourseUpgradeChoiceCollection.create({ db: tx })
+      ).list({
+        where: { tenantId, courseId },
+        limit: 100000,
+      })
+    ).sort((a, b) => a.sequence - b.sequence);
+    const own = choices.filter((c) => c.enrollmentId === enrollmentId).at(-1);
+    if (own) return own.enabled;
+    return (
+      choices.filter((c) => c.enrollmentId === '').at(-1)?.enabled ?? false
+    );
+  }
+
+  private async pinView(
+    tx: Tx,
+    tenantId: string,
+    enrollmentId: string,
+  ): Promise<EnrollmentPinView> {
+    const pins = await this.pins(tx, tenantId, enrollmentId);
+    const current = pins.at(-1);
+    if (!current)
+      throw new EnrollmentPinConflictError('Enrollment is not pinned');
+    const release = await this.releaseRow(tx, tenantId, current.releaseId);
+    return {
+      enrollmentId,
+      courseId: current.courseId,
+      releaseId: current.releaseId,
+      releaseNumber: Number(release.release_number),
+      kind: current.kind as EnrollmentPinKind,
+      autoUpgrade: await this.autoUpgradeEnabled(
+        tx,
+        tenantId,
+        current.courseId,
+        enrollmentId,
+      ),
+      history: pins.map((p) => ({
+        releaseId: p.releaseId,
+        previousReleaseId: optional(p.previousReleaseId),
+        kind: p.kind as EnrollmentPinKind,
+        sequence: p.sequence,
+        actorUserId: optional(p.actorUserId),
+        recordedAt: iso(p.recordedAt),
+      })),
+    };
+  }
+
+  private async lockEnrollment(tx: Tx, tenantId: string, enrollmentId: string) {
+    await tx.query(
+      'UPDATE enrollments SET id = id WHERE id = ? AND tenant_id = ?',
+      [enrollmentId, tenantId],
+    );
+  }
+
+  private async appendPin(
+    tx: Tx,
+    actor: CourseAuthoringActor | null,
+    tenantId: string,
+    enrollment: Row,
+    input: {
+      releaseId: string;
+      courseId: string;
+      previous: EnrollmentReleasePin | undefined;
+      kind: EnrollmentPinKind;
+      requestKey: string;
+      sequence: number;
+    },
+  ) {
+    return (await EnrollmentReleasePinCollection.create({ db: tx })).create({
+      _insertOnly: true,
+      tenantId,
+      enrollmentId: String(enrollment.id),
+      learnerId: String(enrollment.learner_id),
+      courseId: input.courseId,
+      releaseId: input.releaseId,
+      previousReleaseId: input.previous?.releaseId ?? null,
+      kind: input.kind,
+      sequence: input.sequence,
+      actorUserId: actor?.actorUserId ?? '',
+      delegatingGuardianUserId: actor?.delegatingGuardianUserId ?? '',
+      requestKey: input.requestKey,
+      recordedAt: new Date(),
+    });
+  }
+
+  /**
+   * Records which release an existing enrollment follows. The enrollment must
+   * already have been created on that release's materialized Course row.
+   */
+  async pinEnrollment(
+    request: CourseAuthoringActor & {
+      enrollmentId: string;
+      releaseId: string;
+      requestKey: string;
+    },
+  ): Promise<EnrollmentPinView> {
+    return this.movePin(request, 'initial');
+  }
+
+  /** Explicit move of a pinned enrollment to a newer release of the same course. */
+  async upgradeEnrollment(
+    request: CourseAuthoringActor & {
+      enrollmentId: string;
+      releaseId: string;
+      requestKey: string;
+    },
+  ): Promise<EnrollmentPinView> {
+    return this.movePin(request, 'explicit');
+  }
+
+  private async movePin(
+    request: CourseAuthoringActor & {
+      enrollmentId: string;
+      releaseId: string;
+      requestKey: string;
+    },
+    kind: 'initial' | 'explicit',
+  ): Promise<EnrollmentPinView> {
+    const requestKey = requireKey(request.requestKey);
+    return this.run(async (tx) => {
+      const enrollment = await this.enrollmentRow(
+        tx,
+        request.tenantId,
+        request.enrollmentId,
+      );
+      await this.authorize(
+        tx,
+        request,
+        'education.course.release',
+        kind === 'initial' ? 'pin-enrollment' : 'upgrade-enrollment',
+        {
+          enrollmentId: request.enrollmentId,
+          learnerId: String(enrollment.learner_id),
+        },
+      );
+      await this.lockEnrollment(tx, request.tenantId, request.enrollmentId);
+      const pins = await this.pins(tx, request.tenantId, request.enrollmentId);
+      const replay = pins.find((p) => p.requestKey === requestKey);
+      if (replay) {
+        if (replay.kind !== kind || replay.releaseId !== request.releaseId)
+          throw new CourseRequestKeyConflictError();
+        return this.pinView(tx, request.tenantId, request.enrollmentId);
+      }
+      const release = await this.releaseRow(
+        tx,
+        request.tenantId,
+        request.releaseId,
+      );
+      const courseId = String(release.course_id);
+      await this.writableDraft(tx, request.tenantId, courseId);
+      if ((await this.state(tx, request.tenantId, courseId)) === 'archived')
+        throw new CourseArchivedError();
+      const previous = pins.at(-1);
+      if (kind === 'initial') {
+        if (previous)
+          throw new EnrollmentPinConflictError(
+            'Enrollment is already pinned; use an upgrade',
+          );
+        if (enrollment.course_id !== release.release_course_id)
+          throw new EnrollmentPinConflictError(
+            'Enrollment was not created on this release',
+          );
+      } else {
+        if (!previous)
+          throw new EnrollmentPinConflictError('Enrollment is not pinned');
+        const current = await this.releaseRow(
+          tx,
+          request.tenantId,
+          previous.releaseId,
+        );
+        if (
+          previous.courseId !== courseId ||
+          Number(release.release_number) <= Number(current.release_number)
+        )
+          throw new EnrollmentPinConflictError(
+            'An upgrade must target a newer release of the same course',
+          );
+      }
+      await this.appendPin(tx, request, request.tenantId, enrollment, {
+        releaseId: request.releaseId,
+        courseId,
+        previous,
+        kind,
+        requestKey,
+        sequence: pins.length + 1,
+      });
+      return this.pinView(tx, request.tenantId, request.enrollmentId);
+    });
+  }
+
+  /**
+   * Records an opt-in or opt-out of auto-upgrade for a course (all its pinned
+   * enrollments) or one enrollment. It governs future releases only.
+   */
+  async setAutoUpgrade(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      enrollmentId?: string;
+      enabled: boolean;
+      requestKey: string;
+    },
+  ): Promise<{
+    courseId: string;
+    enrollmentId: string | null;
+    enabled: boolean;
+  }> {
+    const requestKey = requireKey(request.requestKey);
+    const enabled = bool(request.enabled, 'enabled');
+    return this.run(async (tx) => {
+      const enrollment = request.enrollmentId
+        ? await this.enrollmentRow(tx, request.tenantId, request.enrollmentId)
+        : null;
+      await this.authorize(
+        tx,
+        request,
+        'education.course.release',
+        'set-auto-upgrade',
+        {
+          courseId: request.courseId,
+          ...(enrollment
+            ? {
+                enrollmentId: String(enrollment.id),
+                learnerId: String(enrollment.learner_id),
+              }
+            : {}),
+        },
+      );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const choices = await CourseUpgradeChoiceCollection.create({ db: tx });
+      const all = await choices.list({
+        where: { tenantId: request.tenantId, courseId: request.courseId },
+        limit: 100000,
+      });
+      const result = {
+        courseId: request.courseId,
+        enrollmentId: request.enrollmentId ?? null,
+        enabled,
+      };
+      const replay = all.find((c) => c.requestKey === requestKey);
+      if (replay) {
+        if (
+          replay.enabled !== enabled ||
+          replay.enrollmentId !== (request.enrollmentId ?? '')
+        )
+          throw new CourseRequestKeyConflictError();
+        return result;
+      }
+      if (enrollment) {
+        const pins = await this.pins(
+          tx,
+          request.tenantId,
+          String(enrollment.id),
+        );
+        if (pins.at(-1)?.courseId !== request.courseId)
+          throw new EnrollmentPinConflictError(
+            'Enrollment is not pinned to a release of this course',
+          );
+      }
+      await choices.create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+        enrollmentId: request.enrollmentId ?? '',
+        enabled,
+        sequence: all.length + 1,
+        actorUserId: request.actorUserId,
+        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        requestKey,
+        recordedAt: new Date(),
+      });
+      return result;
+    });
+  }
+
+  /** Moves opted-in enrollments to a new release; each move is recorded. */
+  private async autoUpgrade(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+    release: CourseRelease,
+  ): Promise<void> {
+    const rows = await (
+      await EnrollmentReleasePinCollection.create({ db: tx })
+    ).list({
+      where: { tenantId, courseId },
+      limit: 1000000,
+    });
+    const latest = new Map<string, EnrollmentReleasePin>();
+    for (const pin of rows.sort((a, b) => a.sequence - b.sequence))
+      latest.set(pin.enrollmentId, pin);
+    for (const [enrollmentId, previous] of latest) {
+      if (previous.releaseId === String(release.id)) continue;
+      if (
+        !(await this.autoUpgradeEnabled(tx, tenantId, courseId, enrollmentId))
+      )
+        continue;
+      const enrollment = await tx.get('enrollments', {
+        id: enrollmentId,
+        tenant_id: tenantId,
+      });
+      if (!enrollment) continue;
+      await this.lockEnrollment(tx, tenantId, enrollmentId);
+      await this.appendPin(tx, null, tenantId, enrollment as Row, {
+        releaseId: String(release.id),
+        courseId,
+        previous,
+        kind: 'auto',
+        requestKey: `auto:${String(release.id)}`,
+        sequence: (await this.pins(tx, tenantId, enrollmentId)).length + 1,
+      });
+    }
+  }
+
+  /**
+   * The enrollment's current release plus the lessons that apply to it. After an
+   * automatic move, started lessons stay on the older release's immutable row.
+   */
+  async getEnrollmentRelease(
+    request: CourseAuthoringActor & { enrollmentId: string },
+  ): Promise<{ pin: EnrollmentPinView; lessons: EffectiveLessonView[] }> {
+    return this.run(async (tx) => {
+      const enrollment = await this.enrollmentRow(
+        tx,
+        request.tenantId,
+        request.enrollmentId,
+      );
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'read-enrollment',
+        {
+          enrollmentId: request.enrollmentId,
+          learnerId: String(enrollment.learner_id),
+        },
+      );
+      const pin = await this.pinView(
+        tx,
+        request.tenantId,
+        request.enrollmentId,
+      );
+      const pins = await this.pins(tx, request.tenantId, request.enrollmentId);
+      // Only automatic moves since the last explicit/initial pin keep started work.
+      const start = pins.findLastIndex((p) => p.kind !== 'auto');
+      const lineage = [
+        ...new Set(pins.slice(Math.max(start, 0)).map((p) => p.releaseId)),
+      ];
+      const lessonsOf = async (releaseId: string) =>
+        (
+          await (
+            await ReleasedLessonCollection.create({ db: tx })
+          ).list({
+            where: { tenantId: request.tenantId, releaseId },
+            limit: 100000,
+          })
+        ).map((l) => ({ lessonKey: l.lessonKey, lessonId: l.lessonId }));
+      const started = async (lessonId: string) => {
+        const progress = await tx.get('lesson_progress', {
+          tenant_id: request.tenantId,
+          enrollment_id: request.enrollmentId,
+          lesson_id: lessonId,
+        });
+        return (
+          !!progress &&
+          (progress.status !== 'not_started' || Number(progress.attempts) > 0)
+        );
+      };
+      const result = new Map<string, EffectiveLessonView>();
+      for (const lesson of await lessonsOf(pin.releaseId))
+        result.set(lesson.lessonKey, {
+          lessonKey: lesson.lessonKey,
+          lessonId: lesson.lessonId,
+          releaseId: pin.releaseId,
+          pinnedToOlderRelease: false,
+        });
+      // Oldest first so the newest release in which a lesson was started wins.
+      for (const releaseId of lineage.filter((id) => id !== pin.releaseId)) {
+        for (const lesson of await lessonsOf(releaseId)) {
+          if (!(await started(lesson.lessonId))) continue;
+          result.set(lesson.lessonKey, {
+            lessonKey: lesson.lessonKey,
+            lessonId: lesson.lessonId,
+            releaseId,
+            pinnedToOlderRelease: true,
+          });
+        }
+      }
+      return {
+        pin,
+        lessons: [...result.values()].sort((a, b) =>
+          a.lessonKey.localeCompare(b.lessonKey),
+        ),
+      };
+    });
+  }
+}

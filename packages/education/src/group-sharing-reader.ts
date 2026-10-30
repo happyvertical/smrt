@@ -20,6 +20,7 @@ import {
   SubmissionAssetCollection,
   SubmissionCollection,
 } from './collections.js';
+import { isAuthoredReleaseGroupShareable } from './course-authoring-licence.js';
 import {
   type GroupSharingAction,
   type GroupSharingAuthorizer,
@@ -223,6 +224,9 @@ async function load(
         courseId: course ? String(course.id) : null,
         subject: course?.subject?.trim() || null,
         parentReviewed: heads.length === 1,
+        courseShareable: course
+          ? isAuthoredReleaseGroupShareable(course)
+          : true,
       });
       const revisionPermitted =
         Boolean(revision) &&
@@ -416,6 +420,7 @@ export class GroupSharingReader {
               (course) =>
                 course.id &&
                 course.sourceKey !== 'unfiled-work' &&
+                isAuthoredReleaseGroupShareable(course) &&
                 enrolled.has(String(course.id)),
             )
             .map((course) => ({

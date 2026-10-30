@@ -34,6 +34,10 @@ sharing separate from guardian Grade authority. Photo-first receipt/context
 capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
 never create learning evidence, and blank exercises need explicit work intent.
 
+Revisioned authored courses, release, archive, enrollment pins and licence use
+[CourseAuthoringService](agents/course-authoring-service.md). Keep history
+append-only, require request keys, and never weaken personal-use-copy rules.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.

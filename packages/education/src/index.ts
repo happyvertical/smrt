@@ -126,6 +126,17 @@ export {
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
+export * from './course-authoring-contracts.js';
+export {
+  AUTHORED_IDENTITY_SOURCE_KEY,
+  AUTHORED_RELEASE_SOURCE_KEY,
+  isAuthoredReleaseGroupShareable,
+  isGroupShareableLicense,
+  mostRestrictiveLicense,
+} from './course-authoring-licence.js';
+export * from './course-authoring-models.js';
+export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
+export { CourseAuthoringService } from './course-authoring-service.js';
 export type {
   CourseSourceConfig,
   CourseSourceKind,
