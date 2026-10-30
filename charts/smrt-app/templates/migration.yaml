@@ -25,6 +25,9 @@ spec:
       {{- with .Values.target.migration.podSecurityContext }}
       securityContext: {{ . | toJson }}
       {{- end }}
+      {{- with .Values.target.migration.nodeSelector }}
+      nodeSelector: {{ . | toJson }}
+      {{- end }}
       restartPolicy: Never
       terminationGracePeriodSeconds: {{ .Values.target.migration.terminationGracePeriodSeconds }}
       containers:

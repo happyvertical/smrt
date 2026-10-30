@@ -94,8 +94,61 @@ jobs:
           kind delete cluster --name smrt-chart-ci
           rm -f "$KUBECONFIG"
 
+  legacy-exercise:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SMRT_LEGACY_DEPLOYMENT_EXERCISE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+      - name: Install verified legacy profile tools
+        run: |
+          for tool in helm kind; do
+            node scripts/deployment-toolchain.mjs "$tool" "$RUNNER_TEMP/smrt-legacy-bin"
+          done
+          node --input-type=module <<'JS'
+          import { createHash } from 'node:crypto';
+          import { writeFile } from 'node:fs/promises';
+          import { legacyArtifacts } from './scripts/deployment-legacy-exercise.mjs';
+          const response = await fetch(legacyArtifacts.kubectl.url);
+          if (!response.ok) throw new Error('Cannot download compatible kubectl');
+          const bytes = Buffer.from(await response.arrayBuffer());
+          if (createHash('sha256').update(bytes).digest('hex') !== legacyArtifacts.kubectl.sha256) throw new Error('kubectl checksum mismatch');
+          await writeFile(`${process.env.RUNNER_TEMP}/smrt-legacy-bin/kubectl`, bytes, { mode: 0o755 });
+          JS
+          echo "$RUNNER_TEMP/smrt-legacy-bin" >> "$GITHUB_PATH"
+          echo "KUBECONFIG=$RUNNER_TEMP/smrt-legacy-kubeconfig" >> "$GITHUB_ENV"
+      - name: Exercise actual legacy Git, Flux, PostgreSQL TLS and enforced CNI adoption
+        run: |
+          set +e
+          node scripts/deployment-legacy-exercise.mjs > "$RUNNER_TEMP/smrt-legacy-exercise.log" 2>&1
+          result=$?
+          if [ "$result" -ne 0 ]; then tail -80 "$RUNNER_TEMP/smrt-legacy-exercise.log"; else grep '^\[legacy-exercise\]' "$RUNNER_TEMP/smrt-legacy-exercise.log"; fi
+          exit "$result"
+      - name: Retain sanitized legacy exercise evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: smrt-legacy-exercise
+          path: |
+            ${{ runner.temp }}/smrt-legacy-exercise.log
+            ${{ runner.temp }}/smrt-legacy-evidence
+          if-no-files-found: ignore
+      - name: Delete disposable legacy cluster
+        if: always()
+        run: |
+          kind delete cluster --name smrt-legacy-ci
+          rm -f "$KUBECONFIG"
+
+
   publish:
-    needs: [validate, exercise]
+    needs: [validate, exercise, legacy-exercise]
     if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
