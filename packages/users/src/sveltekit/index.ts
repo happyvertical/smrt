@@ -57,6 +57,7 @@ import {
   TerminalAuthService,
   type TerminalAuthServiceOptions,
 } from '../services/TerminalAuthService.js';
+import type { SessionLocals } from './types.js';
 
 export {
   type AppResultContract,
@@ -182,11 +183,14 @@ type HandleInput = {
       set: (
         name: string,
         value: string,
-        options?: Record<string, unknown>,
+        options: Record<string, unknown> & { path: string },
       ) => void;
-      delete: (name: string, options?: Record<string, unknown>) => void;
+      delete: (
+        name: string,
+        options: Record<string, unknown> & { path: string },
+      ) => void;
     };
-    locals: Record<string, unknown>;
+    locals: Partial<SessionLocals>;
     url: { pathname: string; protocol?: string };
     request: { headers: Headers };
   };

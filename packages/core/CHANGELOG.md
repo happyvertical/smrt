@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.42
+
+### Patch Changes
+
+- ### Features
+  
+  - release family learning workflows and compatible browser runtime (#4509)
+- @happyvertical/smrt-config@0.57.42
+  - @happyvertical/smrt-scanner@0.57.42
+  - @happyvertical/smrt-types@0.57.42
+
 ## 0.57.41
 
 ### Patch Changes

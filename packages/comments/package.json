@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-comments",
-  "version": "0.57.41",
+  "version": "0.57.42",
   "description": "Record comments and mention hooks for SMRT applications",
   "type": "module",
   "main": "./dist/index.js",

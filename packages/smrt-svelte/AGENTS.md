@@ -145,6 +145,14 @@ prefix set and the shared name table — are stamped with the `modelContext`
 they were taken against and reset when a host installs a new one; keep them in
 step, or a prefix stays refused against a registry that never held its tools.
 
+## Live collection lifecycle (#4508)
+
+`liveCollection` absorbs TanStack loading failures, crashes, and sync-health
+failures into SMRT's `error` status. Background sync failures retain the last
+good rows and use the `sync-error` payload until recovery. Component unmount
+releases its reader; explicit collection cleanup also stops active dependent
+queries through smrt-web's owning lifecycle.
+
 ## Hooks
 
 | Hook | Returns |

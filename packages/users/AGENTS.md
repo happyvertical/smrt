@@ -16,6 +16,7 @@ are not prerequisites for unrelated user-package work.
 | `src/services/DeviceCredentialService.ts` | per-person PIN layered on a device session (#3276), verifier seam for other credential kinds | this file, "Security boundaries" |
 | `src/services/PasswordCredentialService.ts`, `src/sveltekit/password-handlers.ts` | email + password sign-in and password lifecycle (#3274); shared scrypt in `credential-hash.ts` | this file, "Security boundaries"; README "Password sign-in" |
 | `src/services/PasskeyCredentialService.ts`, `src/sveltekit/passkey-handlers.ts`, `src/svelte/passkey.ts` | passkey (WebAuthn) sign-in and passkey lifecycle (#3275); library does all verification | this file, "Security boundaries"; README "Passkey sign-in" |
+| `src/services/TenantInvitationService.ts`, `src/services/MailboxAuthenticationService.ts` | exact-role invitations, preserved identity, one-use generations and embedded transaction send budgets | [agents/family-invitations.md](agents/family-invitations.md) |
 | `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
 ## Models and authority

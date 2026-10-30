@@ -999,6 +999,17 @@ function projectChanges(changes: unknown): unknown {
   });
 }
 
+/** Keep engine settlement behind the stable SMRT transaction surface. */
+function adaptTransaction(transaction: {
+  when(state: 'settled'): Promise<unknown>;
+}): SmrtWebTransaction {
+  const promise = transaction.when('settled');
+  // Reactive-only callers may never await this promise. Mark it handled while
+  // retaining the original rejection for callers that do await it.
+  void promise.catch(() => {});
+  return { isPersisted: { promise } };
+}
+
 /**
  * A pending optimistic mutation. Await {@link isPersisted} to observe the
  * server outcome: it resolves once the write has been persisted through the
@@ -1492,7 +1503,7 @@ export function createSmrtCollection<TData extends object>(
       queryFn: async () =>
         unwrapListResult(await fetchers.list(), definition.name) as Array<Row>,
       getKey: (row) => String((row as Record<string, unknown>)[idField]),
-      onInsert: async ({ transaction }) => {
+      onInsert: async ({ transaction, collection }) => {
         let anyHandled = false;
         for (const mutation of transaction.mutations) {
           const modified = mutation.modified as Record<string, unknown>;
@@ -1517,20 +1528,19 @@ export function createSmrtCollection<TData extends object>(
           mutationResults.set(envelope.key, outcome.result);
           anyHandled = anyHandled || outcome.handled;
         }
-        // If a capability handled the write offline (#1762) it never reached the
-        // server, so BOTH the engine's own post-mutation refetch (suppressed via
-        // `{ refetch: false }`) and `invalidateRelated()` are skipped — else the
-        // server list, which lacks the offline row, would drop the optimistic
-        // row the outbox must keep until it replays. A mixed batch (some
-        // handled, some not) is conservative: if ANY mutation was handled we
-        // suppress, so an unsent row is never dropped; the common case is one
-        // mutation per transaction. An UNHANDLED batch behaves exactly as
-        // before: refetch runs and related caches invalidate.
-        if (anyHandled) return { refetch: false };
+        // Confirm every row before removing optimistic state. A mixed batch
+        // stays local when any write was queued: refetching could erase it.
+        if (anyHandled) {
+          await collection.utils.writeUpsert(
+            transaction.mutations.map((mutation) => mutation.modified),
+          );
+          return;
+        }
+        await collection.utils.refetch();
         invalidateRelated();
       },
       onUpdate: fetchers.update
-        ? async ({ transaction }) => {
+        ? async ({ transaction, collection }) => {
             let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
@@ -1551,12 +1561,18 @@ export function createSmrtCollection<TData extends object>(
               mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
-            if (anyHandled) return { refetch: false };
+            if (anyHandled) {
+              await collection.utils.writeUpsert(
+                transaction.mutations.map((mutation) => mutation.modified),
+              );
+              return;
+            }
+            await collection.utils.refetch();
             invalidateRelated();
           }
         : undefined,
       onDelete: fetchers.delete
-        ? async ({ transaction }) => {
+        ? async ({ transaction, collection }) => {
             let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
@@ -1576,7 +1592,13 @@ export function createSmrtCollection<TData extends object>(
               mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
-            if (anyHandled) return { refetch: false };
+            if (anyHandled) {
+              await collection.utils.writeDelete(
+                transaction.mutations.map((mutation) => String(mutation.key)),
+              );
+              return;
+            }
+            await collection.utils.refetch();
             invalidateRelated();
           }
         : undefined,
@@ -1699,7 +1721,7 @@ export function createSmrtCollection<TData extends object>(
       // cleanup() resolves. Per-capability try/catch so one rejecting teardown
       // does not skip the others nor reject cleanup(). With no capabilities this
       // awaits nothing extra.
-      await collection.cleanup();
+      await collection.cleanup({ dependents: true });
       for (const capability of capabilities) {
         try {
           await capability.teardown?.(ctx);
@@ -1712,31 +1734,24 @@ export function createSmrtCollection<TData extends object>(
       return subscribeWithListOrder(callback);
     },
     insert(row) {
-      return collection.insert(row) as unknown as SmrtWebTransaction;
+      return adaptTransaction(collection.insert(row));
     },
     update(key, changes) {
       if (!fetchers.update) {
         throw new Error(`${definition.name} has no update action`);
       }
       const { id: _id, ...safeChanges } = changes as Record<string, unknown>;
-      const engine = collection as unknown as {
-        update: (
-          key: string,
-          updater: (draft: Record<string, unknown>) => void,
-        ) => unknown;
-      };
-      return engine.update(key, (draft) => {
-        Object.assign(draft, safeChanges);
-      }) as SmrtWebTransaction;
+      return adaptTransaction(
+        collection.update(key, (draft) => {
+          Object.assign(draft, safeChanges);
+        }),
+      );
     },
     delete(key) {
       if (!fetchers.delete) {
         throw new Error(`${definition.name} has no delete action`);
       }
-      const engine = collection as unknown as {
-        delete: (key: string) => unknown;
-      };
-      return engine.delete(key) as SmrtWebTransaction;
+      return adaptTransaction(collection.delete(key));
     },
     async action(action, args, route) {
       if (!fetchers.custom) {
@@ -1755,7 +1770,7 @@ export function createSmrtCollection<TData extends object>(
   persistedMutationResults.set(handle as object, mutationResults);
   mutationTargetHydrators.set(handle as object, async (row) => {
     await collection.preload();
-    collection.utils.writeUpsert(row as Partial<Row>);
+    await collection.utils.writeUpsert(row as Partial<Row>);
   });
 
   engineCollections.set(handle, collection);

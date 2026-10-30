@@ -61,6 +61,16 @@ submissions and automatic grading are not implemented.
 grade. It does not include catalog answers, extracted answers, storage paths,
 model objects, or database handles.
 
+`getLatestLessonSubmission` takes the learner request, `enrollmentId` and
+`lessonId`, repeats live read authorization and exact enrollment/catalog lesson
+scope, and returns the same safe view or `null` when no eligible work exists.
+It reads at most one submission for that exact progress, choosing `completed_work`
+in `captured`, `needs_review` or `graded` status by `submittedAt DESC, id DESC`.
+Blank references, extracting and rejected work are excluded. Committed capture
+is retained evidence; it does not assert lesson completion. Hosts select completed
+lessons from authorized progress separately. An empty safe page list does not
+fall back to older work; asset signing still requires its own live authorization.
+
 ## Storage and signed routes
 
 The service creates an AssetRuntime bound to the operation's transaction. It
