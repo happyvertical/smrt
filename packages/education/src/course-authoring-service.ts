@@ -74,6 +74,11 @@ import {
   ReleasedLessonCollection,
 } from './course-authoring-models.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
+import {
+  type LessonLayoutParams,
+  type LessonQuestionRefInput,
+  QuestionReferenceError,
+} from './question-contracts.js';
 
 const NAMESPACE = 'smrt.education.course-authoring.v1';
 const KEY_PATTERN = /^[A-Za-z0-9._:@/-]{1,200}$/;
@@ -178,6 +183,8 @@ interface PreparedLesson {
     relationship: string;
     licenseKind: CourseLicenseKind;
   }>;
+  questions: LessonQuestionRefInput[];
+  layoutParams: LessonLayoutParams;
 }
 interface PreparedDraft {
   title: string;
@@ -210,6 +217,84 @@ function license(
   if (!LICENSE_KINDS.includes(result as CourseLicenseKind))
     throw new CourseAuthoringValidationError('Invalid licence kind');
   return result as CourseLicenseKind;
+}
+
+const REF_KEYS = ['questionRevisionId', 'section', 'column', 'anchor'];
+function prepareQuestionRefs(value: unknown): LessonQuestionRefInput[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 500)
+    throw new CourseAuthoringValidationError('Invalid lesson questions');
+  const seen = new Set<string>();
+  return value.map((ref): LessonQuestionRefInput => {
+    if (
+      !ref ||
+      typeof ref !== 'object' ||
+      Object.keys(ref).some((k) => !REF_KEYS.includes(k)) ||
+      typeof ref.questionRevisionId !== 'string' ||
+      !ref.questionRevisionId ||
+      ref.questionRevisionId.length > 200 ||
+      seen.has(ref.questionRevisionId) ||
+      (ref.section !== undefined &&
+        (typeof ref.section !== 'string' ||
+          !LESSON_KEY_PATTERN.test(ref.section))) ||
+      (ref.column !== undefined &&
+        (!Number.isSafeInteger(ref.column) ||
+          ref.column < 1 ||
+          ref.column > 12))
+    )
+      throw new CourseAuthoringValidationError('Invalid lesson question');
+    seen.add(ref.questionRevisionId);
+    const anchor = ref.anchor;
+    if (anchor !== undefined) {
+      const rect = anchor?.rect;
+      if (
+        !anchor ||
+        typeof anchor !== 'object' ||
+        Object.keys(anchor).some(
+          (k) => !['assetId', 'page', 'rect'].includes(k),
+        ) ||
+        (anchor.assetId !== undefined &&
+          (typeof anchor.assetId !== 'string' ||
+            !anchor.assetId ||
+            anchor.assetId.length > 200)) ||
+        (anchor.page !== undefined &&
+          (!Number.isSafeInteger(anchor.page) || anchor.page < 1)) ||
+        (rect !== undefined &&
+          (!Array.isArray(rect) ||
+            rect.length !== 4 ||
+            rect.some((n) => !Number.isFinite(n) || n < 0 || n > 1)))
+      )
+        throw new CourseAuthoringValidationError('Invalid question anchor');
+    }
+    return {
+      questionRevisionId: ref.questionRevisionId,
+      ...(ref.section !== undefined ? { section: ref.section } : {}),
+      ...(ref.column !== undefined ? { column: ref.column } : {}),
+      ...(anchor !== undefined ? { anchor } : {}),
+    };
+  });
+}
+function prepareLayoutParams(value: unknown): LessonLayoutParams {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new CourseAuthoringValidationError('Invalid layout params');
+  const entries = Object.entries(value);
+  if (
+    entries.length > 20 ||
+    entries.some(
+      ([k, v]) =>
+        k.length > 60 ||
+        !(
+          typeof v === 'boolean' ||
+          (typeof v === 'number' && Number.isFinite(v)) ||
+          (typeof v === 'string' && v.length <= 200)
+        ),
+    )
+  )
+    throw new CourseAuthoringValidationError('Invalid layout params');
+  return Object.fromEntries(
+    entries.sort(([a], [b]) => a.localeCompare(b)),
+  ) as LessonLayoutParams;
 }
 
 function prepareDraft(
@@ -310,6 +395,8 @@ function prepareDraft(
         });
         return {
           lessonKey,
+          questions: prepareQuestionRefs(lesson.questions),
+          layoutParams: prepareLayoutParams(lesson.layoutParams),
           fields: {
             title: text(lesson.title, 'lesson title', 300, true),
             body: text(lesson.body, 'lesson body', MAX_TEXT),
@@ -371,7 +458,7 @@ export class CourseAuthoringService {
     private readonly options: CourseAuthoringServiceOptions = {},
   ) {}
 
-  private run<T>(operation: (tx: Tx) => Promise<T>): Promise<T> {
+  protected run<T>(operation: (tx: Tx) => Promise<T>): Promise<T> {
     return withEmbeddedWriteTransaction(
       this.db,
       isEmbeddedDatabase(this.db),
@@ -379,7 +466,7 @@ export class CourseAuthoringService {
     );
   }
 
-  private async authorize(
+  protected async authorize(
     tx: Tx,
     actor: CourseAuthoringActor,
     action: CourseAuthoringAction,
@@ -428,7 +515,7 @@ export class CourseAuthoringService {
     if (allowed !== true) throw new CourseAuthoringAuthorizationError();
   }
 
-  private async identityRow(tx: Tx, tenantId: string, courseId: string) {
+  protected async identityRow(tx: Tx, tenantId: string, courseId: string) {
     if (typeof courseId !== 'string' || !courseId)
       throw new CourseNotFoundError();
     const row = await tx.get('courses', {
@@ -760,7 +847,22 @@ export class CourseAuthoringService {
             ...materials.map((m) => m.licenseKind),
           ]);
           licences.push(licenseKind);
-          const body = { ...lesson.fields, licenseKind, materials };
+          // Question content joins the digest only when present, so lessons
+          // without questions keep their existing content digests.
+          await this.requireQuestionRevisions(
+            tx,
+            request.tenantId,
+            lesson.questions,
+          );
+          const body = {
+            ...lesson.fields,
+            licenseKind,
+            materials,
+            ...(lesson.questions.length ? { questions: lesson.questions } : {}),
+            ...(Object.keys(lesson.layoutParams).length
+              ? { layoutParams: lesson.layoutParams }
+              : {}),
+          };
           const contentDigest = groupSharingDigest(canonical(body));
           const existing = await lessonRevisions.get(
             {
@@ -790,6 +892,8 @@ export class CourseAuthoringService {
               externalUrl: lesson.fields.externalUrl,
               licenseKind,
               materialsJson: JSON.stringify(materials),
+              questionsJson: JSON.stringify(lesson.questions),
+              layoutParamsJson: JSON.stringify(lesson.layoutParams),
               provenance: lesson.fields.provenance,
               fieldProvenanceJson: JSON.stringify(
                 lesson.fields.fieldProvenance,
@@ -935,7 +1039,27 @@ export class CourseAuthoringService {
       provenance: r.provenance as CourseProvenance,
       fieldProvenance: JSON.parse(r.fieldProvenanceJson),
       materials: JSON.parse(r.materialsJson),
+      questions: JSON.parse(r.questionsJson || '[]'),
+      layoutParams: JSON.parse(r.layoutParamsJson || '{}'),
     };
+  }
+
+  /** Lesson question refs must name existing immutable revisions of this tenant. */
+  private async requireQuestionRevisions(
+    tx: Tx,
+    tenantId: string,
+    refs: readonly LessonQuestionRefInput[],
+  ) {
+    const missing: string[] = [];
+    for (const ref of refs)
+      if (
+        !(await tx.get('question_revisions', {
+          id: ref.questionRevisionId,
+          tenant_id: tenantId,
+        }))
+      )
+        missing.push(ref.questionRevisionId);
+    if (missing.length) throw new QuestionReferenceError(missing);
   }
 
   private async revisionView(

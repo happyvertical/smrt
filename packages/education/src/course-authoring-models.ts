@@ -163,6 +163,10 @@ export class LessonRevision extends SmrtObject {
   externalUrl = '';
   licenseKind: CourseLicenseKind = 'own-work';
   @field({ type: 'text' }) materialsJson = '[]';
+  /** Ordered `LessonQuestionRefInput`s naming immutable question revisions. */
+  @field({ type: 'text' }) questionsJson = '[]';
+  /** Flat render parameters that, with the refs, make up the worksheet version id. */
+  @field({ type: 'text' }) layoutParamsJson = '{}';
   provenance = 'supplied';
   @field({ type: 'text' }) fieldProvenanceJson = '{}';
   authorUserId = '';
@@ -202,6 +206,15 @@ export class LessonRevision extends SmrtObject {
     )
       throw new Error('Invalid lesson revision');
     requireJson(this.materialsJson, 'array', 'Materials');
+    requireJson(this.questionsJson, 'array', 'Lesson questions');
+    requireJson(this.layoutParamsJson, 'object', 'Layout params');
+    for (const ref of JSON.parse(this.questionsJson) as Array<{
+      questionRevisionId?: unknown;
+    }>) {
+      if (typeof ref?.questionRevisionId !== 'string')
+        throw new Error('Lesson question reference is invalid');
+      await requireOwned(this, 'question_revisions', ref.questionRevisionId);
+    }
     requireJson(this.fieldProvenanceJson, 'object', 'Field provenance');
     validDate(this.recordedAt);
     this.requireInsertOnSave();

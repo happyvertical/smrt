@@ -227,6 +227,24 @@ export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
+export type { QuestionAuthoringServiceOptions } from './question-authoring-service.js';
+export { QuestionAuthoringService } from './question-authoring-service.js';
+export {
+  type NormalizedQuestionContent,
+  normalizeQuestionContent,
+} from './question-content.js';
+export * from './question-contracts.js';
+export * from './question-models.js';
+export {
+  buildGuardianWorksheet,
+  buildLearnerWorksheet,
+  type WorksheetRenderInput,
+  worksheetVersionId,
+} from './question-render.js';
+export {
+  parseQuestionRubric,
+  validateRubricResults,
+} from './question-rubric.js';
 export {
   EducationCatalogRecipe,
   EducationLearnerRecipe,

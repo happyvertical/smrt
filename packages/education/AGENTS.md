@@ -38,6 +38,10 @@ Revisioned authored courses, release, archive, enrollment pins and licence use
 [CourseAuthoringService](agents/course-authoring-service.md). Keep history
 append-only, require request keys, and never weaken personal-use-copy rules.
 
+Immutable questions, answer keys/rubrics, stable learning objectives, worksheet
+render ids and exact-revision references use [QuestionAuthoringService](agents/question-records.md).
+Keep keys out of learner bundles; a missing key stays null.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.

@@ -409,6 +409,23 @@ export class WorkbookAssessmentRevision extends SmrtObject {
       }))
     )
       throw new Error('Workbook reviewed source mismatch');
+    // Entries that pin an authored revision must name immutable rows this tenant owns.
+    const assessment = JSON.parse(this.assessmentJson) as WorkbookAssessment;
+    for (const [column, table, ids] of [
+      [
+        'question revision',
+        'question_revisions',
+        assessment.questions.map((q) => q.questionRevisionId),
+      ],
+      [
+        'lesson revision',
+        'lesson_revisions',
+        assessment.questions.map((q) => q.lessonRevisionId),
+      ],
+    ] as const)
+      for (const id of new Set(ids.filter((v): v is string => !!v)))
+        if (!(await this.db.get(table, { id, tenant_id: this.tenantId })))
+          throw new Error(`Workbook ${column} reference mismatch`);
     if (!['ai', 'guardian'].includes(this.kind))
       throw new Error('Invalid revision kind');
     return super.save(options);

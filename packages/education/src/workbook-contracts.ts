@@ -36,6 +36,12 @@ export interface WorkbookQuestion {
   mappingCertainty?: 'clear' | 'uncertain' | 'unknown';
   mappingProvenance?: 'proposed' | 'guardian-reviewed' | 'unknown';
   evidenceLimitations?: string[];
+  /**
+   * Exact immutable authored question (and lesson) revision this entry marks.
+   * Optional and additive: legacy unreferenced entries are unchanged.
+   */
+  questionRevisionId?: string;
+  lessonRevisionId?: string;
 }
 export interface WorkbookPreservationState {
   activityId: string;
@@ -405,6 +411,15 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
       throw new WorkbookAssessmentValidationError(
         'Invalid evidence limitations',
       );
+    for (const [value, label] of [
+      [q.questionRevisionId, 'question revision id'],
+      [q.lessonRevisionId, 'lesson revision id'],
+    ] as const)
+      if (
+        value !== undefined &&
+        (typeof value !== 'string' || !value.trim() || value.length > 200)
+      )
+        throw new WorkbookAssessmentValidationError(`Invalid ${label}`);
     text(q.id, 'question id', 200);
     text(q.prompt, 'prompt');
     text(q.answer, 'answer');

@@ -7,6 +7,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { validateRubricResults } from './question-rubric.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 
@@ -310,6 +311,12 @@ export class Grade extends SmrtObject {
   @field({ type: 'integer', nullable: true }) pointsPossible: number | null =
     null;
   rubricResults = '{}';
+  /**
+   * Exact immutable question revision this grade assesses. Nullable and
+   * additive: legacy grades leave it unset and keep unvalidated rubric results.
+   */
+  @field({ type: 'text', nullable: true }) questionRevisionId: string | null =
+    null;
   feedback = '';
   gradedAt = new Date();
 
@@ -350,6 +357,18 @@ export class Grade extends SmrtObject {
       this.pointsEarned > this.pointsPossible
     )
       throw new Error('Points earned cannot exceed points possible');
+    if (this.questionRevisionId !== null) {
+      const revision = await this.db.get('question_revisions', {
+        id: this.questionRevisionId,
+        tenant_id: this.tenantId,
+      });
+      if (!revision)
+        throw new Error('Grade requires its tenant question revision');
+      validateRubricResults(
+        revision.rubric_json as string | null,
+        this.getRubricResults(),
+      );
+    }
     return super.save(options);
   }
 }

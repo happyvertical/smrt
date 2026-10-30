@@ -1,6 +1,10 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CourseLicenseKind, CourseModality } from './catalog.js';
 import type { LessonAssetRelationship } from './lesson-assets.js';
+import type {
+  LessonLayoutParams,
+  LessonQuestionRefInput,
+} from './question-contracts.js';
 
 /** Authorizer actions. The host maps roles; the service never infers a role. */
 export type CourseAuthoringAction =
@@ -32,7 +36,14 @@ export type CourseAuthoringOperation =
   | 'pin-enrollment'
   | 'upgrade-enrollment'
   | 'set-auto-upgrade'
-  | 'read-enrollment';
+  | 'read-enrollment'
+  | 'create-question'
+  | 'save-question'
+  | 'read-question'
+  | 'create-objective'
+  | 'save-objective'
+  | 'link-objectives'
+  | 'read-worksheet';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {
@@ -139,6 +150,10 @@ export interface CourseLessonInput {
   provenance?: CourseProvenance;
   fieldProvenance?: Record<string, CourseProvenance>;
   materials?: CourseMaterialInput[];
+  /** Ordered immutable question revisions; each must exist in this tenant. */
+  questions?: LessonQuestionRefInput[];
+  /** Flat render parameters folded into the worksheet version id. */
+  layoutParams?: LessonLayoutParams;
 }
 export interface CourseSectionInput {
   sectionKey: string;
@@ -175,6 +190,8 @@ export interface CourseLessonRevisionView {
   provenance: CourseProvenance;
   fieldProvenance: Record<string, CourseProvenance>;
   materials: CourseMaterialView[];
+  questions: LessonQuestionRefInput[];
+  layoutParams: LessonLayoutParams;
 }
 export interface CourseRevisionView {
   id: string;
