@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.43
+
+### Patch Changes
+
+- ### Features
+  
+  - simplify the Export tab into a summary and two cards (#4511) (planner)
+- @happyvertical/smrt-config@0.57.43
+  - @happyvertical/smrt-scanner@0.57.43
+  - @happyvertical/smrt-types@0.57.43
+
 ## 0.57.42
 
 ### Patch Changes
