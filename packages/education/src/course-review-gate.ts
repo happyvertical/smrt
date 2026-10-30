@@ -6,6 +6,89 @@ import { courseReviewContextDigest } from './course-review-digest.js';
 
 type Row = Record<string, unknown>;
 
+const COURSE_COLUMNS: Record<string, string> = {
+  title: 'title',
+  summary: 'summary',
+  subject: 'subject',
+  theme: 'theme',
+  levelMin: 'level_min',
+  levelMax: 'level_max',
+  objectives: 'objectives_json',
+  sections: 'sections_json',
+};
+
+/**
+ * Unresolved blocking and human-verification findings stop release when they
+ * sit on any review of this revision (a newer or empty review never hides
+ * them) or on a review of an ancestor revision whose target material is still
+ * present unchanged. Only an explicit resolution clears a finding.
+ */
+async function hasUnresolvedFindings(
+  executor: Parameters<ReleaseReviewGate>[0],
+  request: Parameters<ReleaseReviewGate>[1],
+  target: Row,
+): Promise<boolean> {
+  const scope = { tenant_id: request.tenantId, course_id: request.courseId };
+  const lessonIds = new Set<string>();
+  const questionIds = new Set<string>();
+  for (const section of JSON.parse(String(target.sections_json)) as Array<{
+    lessonRevisionIds: string[];
+  }>)
+    for (const id of section.lessonRevisionIds) {
+      lessonIds.add(id);
+      const lesson = await executor.get('lesson_revisions', {
+        id,
+        tenant_id: request.tenantId,
+      });
+      for (const q of JSON.parse(
+        String(lesson?.questions_json || '[]'),
+      ) as Array<{
+        questionRevisionId: string;
+      }>)
+        questionIds.add(q.questionRevisionId);
+    }
+  const seen = new Set<string>();
+  let current: Row | null = target;
+  while (current && !seen.has(String(current.id))) {
+    const revisionId = String(current.id);
+    seen.add(revisionId);
+    const findings = (await executor.list('course_review_findings', {
+      ...scope,
+      revision_id: revisionId,
+    })) as Row[];
+    for (const finding of findings) {
+      if (!finding.blocking && !finding.human_verification_required) continue;
+      if (
+        await executor.get('course_finding_resolutions', {
+          tenant_id: request.tenantId,
+          finding_id: String(finding.id),
+        })
+      )
+        continue;
+      if (revisionId === request.revisionId) return true;
+      const id = String(finding.target_id);
+      const kind = String(finding.target_kind);
+      let present = false;
+      if (kind === 'lesson-revision') present = lessonIds.has(id);
+      else if (kind === 'question-revision') present = questionIds.has(id);
+      else {
+        const column = COURSE_COLUMNS[String(finding.target_field)];
+        present = column
+          ? current[column] === target[column]
+          : current.content_digest === target.content_digest;
+      }
+      if (present) return true;
+    }
+    current = current.parent_revision_id
+      ? ((await executor.get('course_revisions', {
+          id: String(current.parent_revision_id),
+          ...scope,
+        })) as Row | null)
+      : null;
+  }
+  return false;
+}
+
 /**
  * Release gate backed by `CourseReview`. A revision is releasable only when its
  * latest review binds to that exact revision, is still the draft head, carries
@@ -61,20 +144,8 @@ export function createReviewBackedReleaseGate(): ReleaseReviewGate {
       context.theme !== String(revision.theme)
     )
       return stop('context-mismatch');
-    const findings = (await executor.list('course_review_findings', {
-      tenant_id: request.tenantId,
-      review_id: reviewId,
-    })) as Row[];
-    for (const finding of findings) {
-      if (!finding.blocking && !finding.human_verification_required) continue;
-      if (
-        !(await executor.get('course_finding_resolutions', {
-          tenant_id: request.tenantId,
-          finding_id: String(finding.id),
-        }))
-      )
-        return stop('unresolved-findings');
-    }
+    if (await hasUnresolvedFindings(executor, request, revision as Row))
+      return stop('unresolved-findings');
     return { current: true, reviewId };
   };
 }

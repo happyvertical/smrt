@@ -1468,6 +1468,118 @@ describe('release gate and discard guard', () => {
     expect(await s.count('course_finding_resolutions')).toBe(2);
   });
 
+  it('cannot be bypassed by a newer review, an unchanged re-save or a delegated agent', async () => {
+    const s = await setup();
+    const c = await s.course();
+    const lessonA = (await s.read(c.courseId, c.headRevisionId)).revision
+      .sections[0].lessons[0].id;
+    const first = await s.review(c.courseId, c.headRevisionId, [
+      s.finding(
+        { kind: 'lesson-revision', id: lessonA, field: 'body' },
+        { humanVerificationRequired: true, uncertain: true },
+      ),
+    ]);
+    // An agent records an empty follow-up review of the same revision.
+    await s.review(c.courseId, c.headRevisionId, [], {}, s.agent);
+    await expect(
+      s.release(c.courseId, c.headRevisionId, s.agent),
+    ).rejects.toMatchObject({
+      reason: 'unresolved-findings',
+    });
+    // An unchanged re-save plus a fresh review still carries the finding.
+    const same = await s.save(c.courseId, c.headRevisionId, undefined, s.agent);
+    expect(
+      (await s.read(c.courseId, same.revisionId)).revision.sections[0]
+        .lessons[0].id,
+    ).toBe(lessonA);
+    await s.review(c.courseId, same.revisionId, [], {}, s.agent);
+    await expect(
+      s.release(c.courseId, same.revisionId, s.agent),
+    ).rejects.toMatchObject({
+      reason: 'unresolved-findings',
+    });
+    // An agent may not clear it; a person can.
+    const findingId = first.sections.generalLevel.findings[0].id;
+    await expect(
+      s.as(s.agent, () =>
+        s.service.resolveFinding({
+          ...s.agent,
+          courseId: c.courseId,
+          findingId,
+          resolution: 'verified',
+          requestKey: s.key('res'),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(HumanVerificationRequiredError);
+    await s.as(s.guardian, () =>
+      s.service.resolveFinding({
+        ...s.guardian,
+        courseId: c.courseId,
+        findingId,
+        resolution: 'verified',
+        requestKey: s.key('res'),
+      }),
+    );
+    expect(
+      (await s.release(c.courseId, same.revisionId, s.agent)).revisionId,
+    ).toBe(same.revisionId);
+  });
+
+  it('does not carry findings on material that has since changed', async () => {
+    const s = await setup();
+    const c = await s.course();
+    const lessonA = (await s.read(c.courseId, c.headRevisionId)).revision
+      .sections[0].lessons[0].id;
+    await s.review(c.courseId, c.headRevisionId, [
+      s.finding(
+        { kind: 'lesson-revision', id: lessonA, field: 'body' },
+        { blocking: true },
+      ),
+      s.finding(
+        { kind: 'course-revision', id: c.headRevisionId, field: 'summary' },
+        { blocking: true },
+      ),
+    ]);
+    // Lesson A changes but the summary does not: the summary finding still carries.
+    const edited = await s.save(c.courseId, c.headRevisionId, [
+      {
+        sectionKey: 'unit-1',
+        title: 'Unit 1',
+        lessons: [
+          { lessonKey: 'a', title: 'Lesson A', body: 'Corrected body A' },
+          { lessonKey: 'b', title: 'Lesson B' },
+        ],
+      },
+    ]);
+    await s.review(c.courseId, edited.revisionId);
+    await expect(
+      s.release(c.courseId, edited.revisionId),
+    ).rejects.toMatchObject({
+      reason: 'unresolved-findings',
+    });
+    // Changing the summary too leaves nothing carried.
+    const both = await s.save(
+      c.courseId,
+      edited.headRevisionId,
+      [
+        {
+          sectionKey: 'unit-1',
+          title: 'Unit 1',
+          lessons: [
+            { lessonKey: 'a', title: 'Lesson A', body: 'Corrected body A' },
+            { lessonKey: 'b', title: 'Lesson B' },
+          ],
+        },
+      ],
+      s.guardian,
+      { summary: 'Corrected summary' },
+    );
+    await s.review(c.courseId, both.revisionId);
+    expect((await s.release(c.courseId, both.revisionId)).revisionId).toBe(
+      both.revisionId,
+    );
+  });
+
   it('refuses to discard a draft with review or generation references', async () => {
     const s = await setup();
     const discard = (courseId: string) =>

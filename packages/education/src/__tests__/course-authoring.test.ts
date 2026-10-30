@@ -1409,6 +1409,74 @@ describe('CourseAuthoringService', () => {
       lesson_id: rel.lessons[0].lessonId,
       relationship: 'printable',
     });
+    // Re-saving by asset id without restating a licence keeps personal-use.
+    const reused = (
+      await s.as(s.guardian, () =>
+        s.service.readDraft({
+          ...s.guardian,
+          courseId: head.courseId,
+          revisionId: two.revisionId,
+        }),
+      )
+    ).revision;
+    expect(reused.sections[0].lessons[0].materials[0].licenseKind).toBe(
+      'personal-use-copy',
+    );
+    expect(reused.sections[0].lessons[0].licenseKind).toBe('personal-use-copy');
+    expect(reused.licenseKind).toBe('personal-use-copy');
+    expect(
+      (await s.db.get('courses', { id: rel.releaseCourseId }))?.status,
+    ).toBe('draft');
+    expect(
+      (
+        await s.as(s.guardian, () =>
+          s.service.getCourse({ ...s.guardian, courseId: head.courseId }),
+        )
+      ).groupShareable,
+    ).toBe(false);
+    expect(
+      (await s.db.get('assets', { id: material.assetId }))?.access_mode,
+    ).toBe('private');
+    // Explicitly stating a looser licence on reuse does not loosen it.
+    const stated = await s.save(
+      head.courseId,
+      two.headRevisionId,
+      withMaterial({
+        assetId: material.assetId,
+        relationship: 'printable',
+        licenseKind: 'own-work',
+      }) as CourseDraftInput['sections'],
+    );
+    const statedRevision = (
+      await s.as(s.guardian, () =>
+        s.service.readDraft({
+          ...s.guardian,
+          courseId: head.courseId,
+          revisionId: stated.revisionId,
+        }),
+      )
+    ).revision;
+    expect(statedRevision.licenseKind).toBe('personal-use-copy');
+    expect(statedRevision.sections[0].lessons[0].materials[0].licenseKind).toBe(
+      'personal-use-copy',
+    );
+    // Removing the material is the way to lift the restriction.
+    const removed = await s.save(
+      head.courseId,
+      stated.headRevisionId,
+      s.lessons(['a', 'Worksheet']),
+    );
+    expect(
+      (
+        await s.as(s.guardian, () =>
+          s.service.readDraft({
+            ...s.guardian,
+            courseId: head.courseId,
+            revisionId: removed.revisionId,
+          }),
+        )
+      ).revision.licenseKind,
+    ).toBe('own-work');
     // Without a configured port, uploaded sources cannot be accepted.
     const bare = await setup();
     const bareHead = await bare.create();

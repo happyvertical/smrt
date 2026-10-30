@@ -182,6 +182,8 @@ interface PreparedLesson {
     assetId: string | null;
     relationship: string;
     licenseKind: CourseLicenseKind;
+    /** True only when the author restated a licence; a default never loosens a reused asset. */
+    licenseStated: boolean;
   }>;
   questions: LessonQuestionRefInput[];
   layoutParams: LessonLayoutParams;
@@ -391,6 +393,7 @@ function prepareDraft(
               m.licenseKind,
               m.source ? 'personal-use-copy' : 'own-work',
             ),
+            licenseStated: m.licenseKind !== undefined,
           };
         });
         return {
@@ -1005,7 +1008,11 @@ export class CourseAuthoringService {
         assetId: prior.assetId,
         relationship:
           material.relationship as CourseMaterialView['relationship'],
-        licenseKind: material.licenseKind,
+        // A reused asset never gets looser: an omitted licence is not a statement.
+        licenseKind: mostRestrictiveLicense([
+          prior.licenseKind,
+          ...(material.licenseStated ? [material.licenseKind] : []),
+        ]),
         provenance: prior.provenance,
       };
     }
