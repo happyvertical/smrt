@@ -68,8 +68,8 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   hands the token to `kitchenState` (memory only, never storage or a URL); a `token` still in the
   config (an older CLI) is never read, only reported (`tokenInConfig`) and Send stays off. `state.svelte.ts`
   is `kitchenState` (`config` needs endpoint and token; `needsLink` is endpoint without token), which
-  `ExportPanel` reads to add **Send to kitchen** to its primary actions (after Copy prompt, before
-  Download), or to show the missing-link notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
+  `ExportPanel` reads to add **Send to kitchen** to its "Download cookbook" card (beside Download), or to
+  show the missing-link notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
 - Package name is `@happyvertical/smrt-planner`. It is released only by the monorepo's batched
   release, at the shared smrt version (root `CHANGESETS.md`); never publish it on its own or from a
   workstation.
