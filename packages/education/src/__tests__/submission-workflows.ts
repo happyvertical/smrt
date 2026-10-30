@@ -843,3 +843,106 @@ export async function assertSharedStorageDenial(f: Fixture) {
     await e.cleanup();
   }
 }
+
+/** Shared SQLite/PostgreSQL contract for the bounded retained-work read. */
+export async function assertLatestLessonSubmission(f: Fixture) {
+  let allowed = true;
+  const e = await environment(
+    f,
+    {},
+    ({ own, relationshipTypeId }) =>
+      allowed && (own || relationshipTypeId === f.guardianType.id),
+  );
+  const read = (patch = {}) =>
+    f.as(f.own, () =>
+      e.service.getLatestLessonSubmission({ ...e.request, ...patch }),
+    );
+  try {
+    expect(await read()).toBeNull();
+    expect(await f.db.list('lesson_progress', {})).toHaveLength(0);
+    const captured = await f.as(f.own, () =>
+      e.service.captureSubmission(e.request),
+    );
+    expect(await read()).toEqual(
+      await f.as(f.own, () =>
+        e.service.getSubmission({
+          ...e.request,
+          submissionId: captured.id,
+        }),
+      ),
+    );
+    const submissions = await ScannedSubmissionCollection.create({ db: f.db });
+    const time = new Date('2030-01-01T00:00:00Z');
+    const make = (options = {}) =>
+      f.as(f.own, () =>
+        submissions.create({
+          tenantId: f.own.tenantId,
+          learnerId: f.own.learnerId,
+          lessonId: String(f.lesson.id),
+          progressId: captured.progressId,
+          submittedAt: time,
+          ...options,
+        }),
+      );
+    const first = await make();
+    const second = await make({ status: 'needs_review' });
+    const winner = [String(first.id), String(second.id)].sort().at(-1);
+    expect((await read())?.id).toBe(winner);
+    await make({ status: 'extracting', submittedAt: new Date('2031-01-01') });
+    await make({ status: 'rejected', submittedAt: new Date('2032-01-01') });
+    await make({
+      kind: 'blank_reference',
+      submittedAt: new Date('2033-01-01'),
+    });
+    expect((await read())?.id).toBe(winner);
+    expect((await read())?.pages).toEqual([]);
+    const latest = await make({
+      status: 'graded',
+      submittedAt: new Date('2034-01-01'),
+    });
+    expect((await read())?.id).toBe(latest.id);
+    expect(await read({ lessonId: String(f.secondLesson.id) })).toBeNull();
+    for (const patch of [
+      { tenantId: f.foreign.tenantId },
+      { learnerId: String(f.sibling.id) },
+      { enrollmentId: 'missing-enrollment' },
+      { lessonId: String(f.wrongLesson.id) },
+      { actorUserId: String(f.bob.user.id) },
+    ])
+      await expect(read(patch)).rejects.toThrow();
+    expect(
+      (
+        await f.as(f.parent, () =>
+          e.service.getLatestLessonSubmission({
+            ...e.request,
+            ...f.parent,
+          }),
+        )
+      )?.id,
+    ).toBe(latest.id);
+    allowed = false;
+    await expect(read()).rejects.toThrow();
+    allowed = true;
+    await f.db.update(
+      'profile_relationships',
+      { id: f.relationship.id },
+      {
+        tenant_id: f.foreign.tenantId,
+      },
+    );
+    await expect(
+      f.as(f.parent, () =>
+        e.service.getLatestLessonSubmission({
+          ...e.request,
+          ...f.parent,
+        }),
+      ),
+    ).rejects.toThrow();
+    const encoded = JSON.stringify(captured);
+    expect(encoded).not.toContain('source_uri');
+    expect(encoded).not.toContain('uploaded page');
+    expect(encoded).not.toContain('extracted');
+  } finally {
+    await e.cleanup();
+  }
+}
