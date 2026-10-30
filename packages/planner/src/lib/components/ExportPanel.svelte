@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Button, Chip, Disclosure } from '@happyvertical/smrt-ui';
+import { Button, Card, Chip, Disclosure } from '@happyvertical/smrt-ui';
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { Textarea } from '@happyvertical/smrt-ui/forms';
 import { onMount, tick } from 'svelte';
@@ -34,9 +34,11 @@ import CopyButton from './CopyButton.svelte';
 import ProjectControls from './ProjectControls.svelte';
 
 /**
- * The Export tab: what the cookbook holds, a prompt that hands it to a coding
- * agent, the file download (and the command the file needs), Send to kitchen
- * when a kitchen is listening, and, apart from those, Import and Reset.
+ * The Export tab, top to bottom: the host's build action when there is one,
+ * what the cookbook holds, a card with the prompt that hands it to a coding
+ * agent, a card with the file download and the command the file needs (and
+ * Send to kitchen when a kitchen is listening), and, apart from those, Import
+ * and Reset.
  */
 interface Props {
   /** Replaces `navigator.clipboard.writeText` (tests). */
@@ -94,8 +96,8 @@ let pending = $state<Cookbook | null>(null);
 let pendingDropped = $state<string[]>([]);
 let error = $state('');
 let notice = $state('');
-let copyNotice = $state('');
-let promptOpen = $state(false);
+let promptNotice = $state('');
+let commandNotice = $state('');
 
 // A file is named for the cookbook's own name, else the library cookbook last
 // applied, else a generic name.
@@ -117,12 +119,11 @@ const COPY_BY_HAND =
   'Copying is not available here. The text is selected: press Ctrl+C (Cmd+C on a Mac) to copy it.';
 
 async function promptCopyFailed() {
-  promptOpen = true;
   await tick();
   const element = promptBox?.getElement();
   element?.focus();
   element?.select();
-  copyNotice = COPY_BY_HAND;
+  promptNotice = COPY_BY_HAND;
 }
 
 function commandCopyFailed() {
@@ -131,7 +132,7 @@ function commandCopyFailed() {
     selection?.removeAllRanges();
     selection?.selectAllChildren(commandLine);
   }
-  copyNotice = COPY_BY_HAND;
+  commandNotice = COPY_BY_HAND;
 }
 
 async function choose(event: Event & { currentTarget: HTMLInputElement }) {
@@ -164,54 +165,65 @@ function confirmImport() {
 </script>
 
 <div class="export">
-  <section class="block" aria-labelledby="prompt-heading" data-export-section="prompt">
-    <div class="export-intro">
-      <p class="eyebrow">Your app plan</p>
-      <h2 id="prompt-heading">Ready for the next step?</h2>
-      <p class="meta">Your recipes, theme, layout and customised pages travel together as a cookbook. Sample records stay in this preview.</p>
-    </div>
-    <div class="next-steps" data-export-actions="primary">
-      {#if exportAction}
-        <div class="build-step">
-          <h3>Build your app</h3>
-          <p class="meta">Continue with your current plan.</p>
-          <div class="actions">
-            <Button disabled={actionPending || assistantBusy} onclick={runExportAction}>{exportAction.label}</Button>
-          </div>
-        </div>
-      {/if}
-      <div class="copy-step">
-        <h3>Keep a copy</h3>
-        <p class="meta">Download your cookbook or copy a prompt for your coding agent.</p>
-        <div class="actions">
-          <CopyButton
-            text={() => prompt.text}
-            label="Copy prompt"
-            variant={exportAction ? 'secondary' : 'primary'}
-            {write}
-            oncopied={() => (copyNotice = 'Prompt copied.')}
-            onfail={promptCopyFailed}
-          />
-          {#if kitchenState.config}
-            <Button
-              variant="secondary"
-              disabled={kitchenState.status === 'sending'}
-              onclick={() => kitchenState.send(cookbookStore.snapshot())}
-            >{kitchenState.status === 'sending' ? 'Sending to kitchen…' : 'Send to kitchen'}</Button>
-          {/if}
-          <Button variant="secondary" onclick={downloadCurrent}>Download cookbook</Button>
-        </div>
+  <div class="export-intro">
+    <h2>Export</h2>
+    <p class="meta">Your recipes, theme, layout and customised pages travel together as a cookbook. Sample records stay in this preview.</p>
+  </div>
+
+  {#if exportAction}
+    <div class="build-step" data-export-actions="primary">
+      <h3>Build your app</h3>
+      <p class="meta">Continue with your current plan.</p>
+      <div class="actions">
+        <Button disabled={actionPending || assistantBusy} onclick={runExportAction}>{exportAction.label}</Button>
       </div>
     </div>
-    {#if actionError}<Alert variant="error" title="Export action failed">{actionError}</Alert>{/if}
-    {#if exportAction && assistantBusy}<p class="meta" role="status">Wait for the assistant to finish, or stop it, before continuing.</p>{/if}
-    <p class="notice" role="status" aria-live="polite">{copyNotice}</p>
-    <Disclosure title="Preview coding-agent prompt" bind:open={promptOpen}>
+  {/if}
+  {#if actionError}<Alert variant="error" title="Export action failed">{actionError}</Alert>{/if}
+  {#if exportAction && assistantBusy}<p class="meta" role="status">Wait for the assistant to finish, or stop it, before continuing.</p>{/if}
+
+  <section class="block" aria-labelledby="summary-heading" data-export-section="summary">
+    <h3 id="summary-heading">In this cookbook</h3>
+    {#if summary.length}
+      <dl class="summary">
+        {#each summary as line (line.id)}
+          <dt>{line.label}</dt>
+          <dd>
+            {#if line.chips}
+              <ul class="chips">
+                {#each line.chips as chip, i (`${chip}:${i}`)}
+                  <li><Chip label={chip} size="sm" /></li>
+                {/each}
+              </ul>
+            {:else}
+              {line.text}
+            {/if}
+          </dd>
+        {/each}
+      </dl>
+    {:else}
+      <p class="quiet">Nothing customised yet. Add recipes or apply a cookbook first.</p>
+    {/if}
+  </section>
+
+  <Card padding="sm" role="group" aria-labelledby="prompt-heading" data-export-section="prompt">
+    <div class="card-body">
+      <h3 id="prompt-heading">Copy prompt</h3>
       <p class="meta" id="prompt-note">
         Paste it into Claude Code, Codex or another coding agent. The prompt
         carries the cookbook, creates the app <code>{appName}</code> with the smrt CLI {prompt.version} and
         starts it. About {formatSize(prompt.bytes)}.
       </p>
+      <div class="actions">
+        <CopyButton
+          text={() => prompt.text}
+          label="Copy prompt"
+          variant={exportAction ? 'secondary' : 'primary'}
+          {write}
+          oncopied={() => (promptNotice = 'Prompt copied.')}
+          onfail={promptCopyFailed}
+        />
+      </div>
       <Textarea
         bind:this={promptBox}
         class="prompt"
@@ -224,56 +236,44 @@ function confirmImport() {
         aria-describedby="prompt-note"
         interaction={false}
       />
-    </Disclosure>
-  </section>
-
-  <section class="block" aria-label="Downloaded file instructions" data-export-section="file">
-    <Disclosure title="Use the downloaded file yourself">
-    <p class="meta">
-      Download writes <code>{fileName}</code> ({fileSize}). To make the app from
-      it yourself, run this where the file is:
-    </p>
-    <div class="command">
-      <code bind:this={commandLine} data-export-command>{command}</code>
-      <CopyButton
-        text={() => command}
-        label="Copy command"
-        variant="secondary"
-        {write}
-        oncopied={() => (copyNotice = 'Command copied.')}
-        onfail={commandCopyFailed}
-      />
+      <p class="notice" role="status" aria-live="polite">{promptNotice}</p>
     </div>
-    <Disclosure title="Preview JSON">
-      <pre class="json">{serializeCookbook(current)}</pre>
-    </Disclosure>
-    </Disclosure>
-  </section>
+  </Card>
 
-  <section class="block" aria-label="Cookbook summary" data-export-section="summary">
-    <Disclosure title="In this cookbook">
-      {#if summary.length}
-        <dl class="summary">
-          {#each summary as line (line.id)}
-            <dt>{line.label}</dt>
-            <dd>
-              {#if line.chips}
-                <ul class="chips">
-                  {#each line.chips as chip, i (`${chip}:${i}`)}
-                    <li><Chip label={chip} size="sm" /></li>
-                  {/each}
-                </ul>
-              {:else}
-                {line.text}
-              {/if}
-            </dd>
-          {/each}
-        </dl>
-      {:else}
-        <p class="quiet">Nothing customised yet. Add recipes or apply a cookbook first.</p>
-      {/if}
-    </Disclosure>
-  </section>
+  <Card padding="sm" role="group" aria-labelledby="file-heading" data-export-section="file">
+    <div class="card-body">
+      <h3 id="file-heading">Download cookbook</h3>
+      <p class="meta">
+        Download writes <code>{fileName}</code> ({fileSize}). To make the app from
+        it yourself, run this where the file is:
+      </p>
+      <div class="command">
+        <code bind:this={commandLine} data-export-command>{command}</code>
+        <CopyButton
+          text={() => command}
+          label="Copy command"
+          variant="secondary"
+          {write}
+          oncopied={() => (commandNotice = 'Command copied.')}
+          onfail={commandCopyFailed}
+        />
+      </div>
+      <p class="notice" role="status" aria-live="polite">{commandNotice}</p>
+      <div class="actions" data-export-actions="download">
+        <Button variant={exportAction ? 'secondary' : 'primary'} onclick={downloadCurrent}>Download cookbook</Button>
+        {#if kitchenState.config}
+          <Button
+            variant="secondary"
+            disabled={kitchenState.status === 'sending'}
+            onclick={() => kitchenState.send(cookbookStore.snapshot())}
+          >{kitchenState.status === 'sending' ? 'Sending to kitchen…' : 'Send to kitchen'}</Button>
+        {/if}
+      </div>
+      <Disclosure title="Preview JSON">
+        <pre class="json">{serializeCookbook(current)}</pre>
+      </Disclosure>
+    </div>
+  </Card>
 
   {#if kitchenState.needsLink}
     <Alert variant="info" title="Send to kitchen needs its link">
@@ -382,10 +382,12 @@ function confirmImport() {
   }
 
   h3 { font: var(--smrt-typography-title-small-font); }
-  .eyebrow { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-large-font); }
-  .export-intro, .build-step, .copy-step { display: grid; gap: var(--smrt-spacing-3); min-inline-size: 0; }
-  .next-steps { display: grid; gap: var(--smrt-spacing-4); }
+  .export-intro, .build-step, .card-body { display: grid; gap: var(--smrt-spacing-3); min-inline-size: 0; }
   .build-step { padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-sunken); }
+
+  .export :global([data-smrt-component='Card']) {
+    min-inline-size: 0;
+  }
 
   .block {
     display: grid;
@@ -492,6 +494,11 @@ function confirmImport() {
       align-items: stretch;
     }
 
+    /* In a column the 16rem flex-basis would set the height, not the width. */
+    .command code {
+      flex: 0 0 auto;
+    }
+
     .actions > :global([data-smrt-component='Button']),
     .command > :global([data-smrt-component='Button']) {
       inline-size: 100%;
@@ -501,6 +508,7 @@ function confirmImport() {
   /* Forced colours: the command and preview boxes keep a visible edge. */
   @media (forced-colors: active) {
     .build-step,
+    .export :global([data-smrt-component='Card']),
     .command code,
     .json {
       border-color: CanvasText;
