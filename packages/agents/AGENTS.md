@@ -7,6 +7,7 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 | Module | Contract |
 | --- | --- |
 | [Data-surface discovery](agents/data-surface-discovery.md) | Summary discovery, row-count hints, and allowed field values |
+| [Lazy agent_config](agents/lazy-config.md) | `$env` sentinels, class `configResolvers`, resolver context and precedence (#1161, #2806) |
 
 ## Agent Lifecycle
 
@@ -95,27 +96,7 @@ Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `c
 
 ## Lazy agent_config Resolution (issue #1161)
 
-Persisted `agent_config` snapshots env-derived values at sync time, so rotated env vars don't reach already-stored schedule rows. Two complementary mechanisms unfreeze them:
-
-1. **`$env` sentinels in persisted config** — register a global resolver and reference it from the JSON:
-
-   ```ts
-   import { registerConfigResolver } from '@happyvertical/smrt-agents';
-   registerConfigResolver('sharedAssetStorage', () => resolveSharedAssetStorage());
-   // persisted: { "assetStorage": { "$env": "sharedAssetStorage" } }
-   ```
-
-2. **`static configResolvers` on the agent class** — declarative, discoverable via the class itself:
-
-   ```ts
-   class Praeco extends Agent {
-     static override configResolvers = {
-       assetStorage: () => resolveSharedAssetStorage(),
-     };
-   }
-   ```
-
-The TaskRunner calls `resolveLazyConfig()` immediately before constructing the agent, so live values always win over snapshotted ones. Re-exported from `@happyvertical/smrt-core` (`resolveLazyConfig`, `registerConfigResolver`, `getClassConfigResolvers`, …) for cases where agents isn't on the import path.
+`$env` sentinels and `static configResolvers` re-resolve persisted `agent_config` at execute time. Resolvers receive the instance's identity and its own persisted value (#2806). Keep a per-agent credential with `preferPersisted()`, and never select an agent by scanning the tenant's rows. See [agents/lazy-config.md](agents/lazy-config.md).
 
 ## Learning Trait (issue #1886) — opt-in
 
