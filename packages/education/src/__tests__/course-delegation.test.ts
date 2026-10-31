@@ -266,6 +266,26 @@ describe('delegated agent enrollment', () => {
     expect(await s.count('enrollment_assignment_records')).toBe(0);
   });
 
+  it('never forwards a caller-supplied relationship type', async () => {
+    const s = await setup();
+    const forged = {
+      relationshipTypeId: String(s.f.guardianType.id),
+      delegated: false,
+      delegatingRelationshipTypeId: 'forged',
+    };
+    const before = await s.count('enrollments');
+    await expect(s.enrollWith(s.legacy, forged)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    expect(await s.count('enrollments')).toBe(before);
+    s.learnerCalls.length = 0;
+    await s.enroll(forged);
+    const call = s.learnerCalls.at(-1) as LearnerCall;
+    expect(call.relationshipTypeId).toBeUndefined();
+    expect(call.delegated).toBe(true);
+    expect(call.delegatingRelationshipTypeId).toBe(String(s.f.guardianType.id));
+  });
+
   it('refuses delegation without a configured port, or when it denies or throws', async () => {
     const s = await setup();
     const before = await s.count('enrollments');

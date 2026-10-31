@@ -519,23 +519,38 @@ export class LearnerService {
       ].includes(action)
     )
       throw new LearnerAuthorizationError();
-    // Never forward caller-supplied delegation members except the validated ones.
+    // Authority-looking keys are always set here, after the request spread, so a
+    // caller-supplied value (a host spreading request fields) can never survive.
     const {
       delegatingGuardianUserId: _guardian,
       delegationId: _id,
+      relationshipTypeId: _type,
+      delegated: _delegated,
+      delegatingRelationshipTypeId: _delegatingType,
+      own: _own,
       ...base
-    } = request as LearnerRequest & LearnerDelegationRequest;
+    } = request as LearnerRequest &
+      LearnerDelegationRequest &
+      Record<string, unknown>;
+    const authority = delegation
+      ? {
+          delegated: true,
+          relationshipTypeId: undefined,
+          delegatingGuardianUserId: delegation.delegatingGuardianUserId,
+          delegationId: delegation.delegationId,
+          delegatingRelationshipTypeId: relationshipTypeId,
+        }
+      : {
+          delegated: undefined,
+          relationshipTypeId,
+          delegatingGuardianUserId: undefined,
+          delegationId: undefined,
+          delegatingRelationshipTypeId: undefined,
+        };
     if (
       (await this.authorize({
         ...base,
-        ...(delegation
-          ? {
-              delegated: true,
-              delegatingGuardianUserId: delegation.delegatingGuardianUserId,
-              delegationId: delegation.delegationId,
-              delegatingRelationshipTypeId: relationshipTypeId,
-            }
-          : { relationshipTypeId }),
+        ...authority,
         executor: this.db,
         action,
         own,
