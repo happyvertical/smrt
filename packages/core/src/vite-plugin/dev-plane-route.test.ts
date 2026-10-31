@@ -13,20 +13,12 @@ vi.mock('node:fs', async () => {
     writeFileSync: vi.fn(),
   };
 });
-vi.mock('node:module', async () => {
-  const actual =
-    await vi.importActual<typeof import('node:module')>('node:module');
-  return {
-    ...actual,
-    createRequire: () => ({
-      resolve: (id: string) => {
-        if (id === '@happyvertical/smrt-dev-mcp/dev-plane')
-          return '/consumer/node_modules/x.js';
-        throw new Error(`Cannot find module '${id}'`);
-      },
-    }),
-  };
-});
+// Template-shape tests only; real consumer resolution of the import-only
+// dev-plane subpath is exercised in dev-plane-route-resolution.test.ts (#3913).
+vi.mock('./consumer-import.js', () => ({
+  consumerResolvesImport: (_projectRoot: string, specifier: string) =>
+    specifier === '@happyvertical/smrt-dev-mcp/dev-plane',
+}));
 
 const base: SvelteKitOptions = {
   enabled: true,

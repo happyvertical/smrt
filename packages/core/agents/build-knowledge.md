@@ -281,11 +281,16 @@ admin auth.
 
 ## Vite Plugin
 
-`_resources` and application-runtime config detection resolve their exact
-`@happyvertical/smrt-users/sveltekit` and `@happyvertical/smrt-app-runtime/sveltekit`
-imports with ESM import conditions anchored
-to the consumer package URL, using `import-meta-resolve`. A `types`/`import`-only
-export is valid; a CommonJS `createRequire.resolve` probe would falsely skip it.
+Every generated file gated on a consumer dependency (`_resources` →
+`@happyvertical/smrt-users/sveltekit`, application-runtime config →
+`@happyvertical/smrt-app-runtime/sveltekit`, `_dev` →
+`@happyvertical/smrt-dev-mcp/dev-plane`) detects it through
+`consumerResolvesImport` (`src/vite-plugin/consumer-import.ts`, #3913): ESM
+import conditions anchored to the consumer package URL, using
+`import-meta-resolve`. A `types`/`import`-only export is valid; a CommonJS
+`createRequire.resolve` probe would falsely skip it, so new gated routes use
+the shared resolver. `generated-route-dependencies-packed-consumer.test.ts`
+proves all three against real packed tarballs (direct, hoisted, absent).
 Verify the selected target is an existing file because import-meta resolution
 can return URLs for missing files/directories. Missing/unexported dependencies
 remain skipped, ancestor-hoisted installs resolve normally, and handwritten
