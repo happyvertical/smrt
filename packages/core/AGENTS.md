@@ -138,7 +138,11 @@ and repository rules.
   overwrites (#4145, `issue-4145-*.test.ts`). The schema
   planner rejects a table claimed by two unrelated classes
   (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);
-  collections (including `SmrtReportCollection`) never claim one. Consumer
+  collections (including `SmrtReportCollection`) never claim one. The scanner
+  stamps each collection entry with `collectionOf` (its model) and the
+  registry's collection classifier trusts it first, so a collection stays a
+  non-owner even when runtime cannot walk its parent or holds another core
+  copy's `SmrtCollection` (#3956, `issue-3956-*.test.ts`). Consumer
   gates: `registry/__tests__/issue-3110-*.test.ts`, `issue-3109-*.test.ts`,
   `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
 - A collection class never publishes more than its model: unset surfaces
