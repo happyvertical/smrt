@@ -1,5 +1,16 @@
 # @happyvertical/smrt-timesheets
 
+## 0.57.44
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.44
+  - @happyvertical/smrt-tenancy@0.57.44
+  - @happyvertical/smrt-users@0.57.44
+  - @happyvertical/smrt-ui@0.57.44
+  - @happyvertical/smrt-types@0.57.44
+
 ## 0.57.43
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.44
+
+### Patch Changes
+
+- ### Features
+  
+  - course authoring revisions, question records, generation and review (#4519) (education)
+- @happyvertical/smrt-config@0.57.44
+  - @happyvertical/smrt-scanner@0.57.44
+  - @happyvertical/smrt-types@0.57.44
+
 ## 0.57.43
 
 ### Patch Changes
