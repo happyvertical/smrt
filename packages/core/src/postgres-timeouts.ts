@@ -15,9 +15,8 @@
  * including ones opened long after startup. The fourth, the connection
  * acquisition timeout, is a `pg` *pool* option with no connection-string
  * spelling; it is emitted as `connectionTimeoutMillis` on the options object
- * passed to `getDatabase()`, where `resolvePostgresConfig()` currently drops it.
- * It becomes live with no change here once the SDK forwards pool options
- * (happyvertical/sdk#1204).
+ * passed to `getDatabase()`, which forwards it (with `max` and
+ * `idleTimeoutMillis`) to the `pg.Pool` it builds.
  *
  * Scope: this is the *runtime* pool only. `smrt db:migrate` opens its own
  * connection through `@happyvertical/sql` directly and bounds its statements
@@ -400,7 +399,21 @@ export function applyPostgresRuntimeTimeouts(
     return configuredTimeouts === undefined ? config : rest;
   }
 
-  const timeouts = resolvePostgresTimeouts(configuredTimeouts, env);
+  // A caller that spelled the pool option itself (`connectionTimeoutMillis`)
+  // configured it on purpose; it ranks below the SMRT `timeouts` key but above
+  // the environment and the default, instead of being silently replaced by the
+  // default (#3046). Re-applying this function to its own output is therefore
+  // idempotent.
+  const explicitConnectionTimeout = (
+    rest as { connectionTimeoutMillis?: unknown }
+  ).connectionTimeoutMillis;
+  const timeouts = resolvePostgresTimeouts(
+    configuredTimeouts?.connectionTimeout === undefined &&
+      typeof explicitConnectionTimeout === 'number'
+      ? { ...configuredTimeouts, connectionTimeout: explicitConnectionTimeout }
+      : configuredTimeouts,
+    env,
+  );
 
   return {
     ...rest,
@@ -409,4 +422,45 @@ export function applyPostgresRuntimeTimeouts(
       : {}),
     connectionTimeoutMillis: timeouts.connectionTimeoutMs,
   };
+}
+
+/**
+ * The pool cache identity (`dbid`) SMRT passes to `getDatabase()` for a
+ * runtime configuration already bounded by
+ * {@link applyPostgresRuntimeTimeouts} (#3046).
+ *
+ * `@happyvertical/sql` caches connections by `dbid` alone when one is given,
+ * so a dbid derived from the URL only made the first resolver of a URL fix the
+ * pool's `max` and timeouts for the whole process: a later caller asking for
+ * `max: 5` silently shared a 20-client pool. The rules:
+ *
+ * - An explicit `dbid` on the configuration is caller-owned identity and is
+ *   returned as given.
+ * - PostgreSQL gets **no** derived dbid. The SDK then derives a keyed digest
+ *   from the effective connection *and* pool options (`max`,
+ *   `connectionTimeoutMillis`, `idleTimeoutMillis`, credentials), so equal
+ *   configurations still share one pool and differing pool options never do.
+ * - Every other engine keeps the historical `smrt:<url>` identity, which is
+ *   what lets file-backed SQLite/DuckDB callers share one connection; they
+ *   have no pool options to disagree about.
+ *
+ * Callers decide the in-memory case themselves (an in-memory database is
+ * never shared) and only call this for a persistent target.
+ *
+ * @param bounded - Configuration returned by {@link applyPostgresRuntimeTimeouts}
+ * @param fallbackUrl - URL to key on when the configuration carries none
+ * @returns The dbid to pass, or `undefined` to let the SDK derive one
+ */
+export function resolveRuntimePoolDbid(
+  bounded: PostgresTimeoutAwareConfig,
+  fallbackUrl?: string,
+): string | undefined {
+  if (typeof bounded.dbid === 'string' && bounded.dbid !== '') {
+    return bounded.dbid;
+  }
+  if (isPostgresTarget(bounded.url, bounded.type)) {
+    return undefined;
+  }
+  const url = bounded.url ?? fallbackUrl;
+  return url ? `smrt:${url}` : undefined;
 }
