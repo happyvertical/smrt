@@ -427,20 +427,6 @@ function idPredicate(column: string, ids: string[]): Record<string, unknown> {
 }
 
 /**
- * Run a cascade statement against a *referencing* table, tolerating the
- * table (or an expected column) not existing in this database.
- *
- * The cascade plan is built from the in-process registry, which can carry a
- * class from any imported package — including one whose table this specific
- * database was never migrated to include (a partially adopted feature, a
- * package pulled in for its types, or, in a test process, a fixture some
- * other test file registered). A missing referencing table trivially has no
- * rows to act on, so the correct behaviour is identical to the table
- * existing and being empty — this must never abort an otherwise valid
- * delete. Any other failure (a real constraint violation, a lock timeout, a
- * genuine SQL error unrelated to the table's existence) still propagates.
- */
-/**
  * Count of cascade write statements issued per transaction-bound handle
  * (#2824). A joined no-savepoint transaction is aborted on failure only when
  * the cascade actually changed something in it; a refusal raised before any
@@ -461,6 +447,20 @@ function recordCascadeWrite<T>(db: DatabaseInterface, result: T): T {
   return result;
 }
 
+/**
+ * Run a cascade statement against a *referencing* table, tolerating the
+ * table (or an expected column) not existing in this database.
+ *
+ * The cascade plan is built from the in-process registry, which can carry a
+ * class from any imported package — including one whose table this specific
+ * database was never migrated to include (a partially adopted feature, a
+ * package pulled in for its types, or, in a test process, a fixture some
+ * other test file registered). A missing referencing table trivially has no
+ * rows to act on, so the correct behaviour is identical to the table
+ * existing and being empty — this must never abort an otherwise valid
+ * delete. Any other failure (a real constraint violation, a lock timeout, a
+ * genuine SQL error unrelated to the table's existence) still propagates.
+ */
 async function tolerateMissingTable<T>(
   operation: () => Promise<T>,
   fallback: T,
