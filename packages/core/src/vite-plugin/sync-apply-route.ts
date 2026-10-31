@@ -27,7 +27,12 @@ import type {
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
-import { isCollectionManifestClass } from './web-collections.js';
+import {
+  compareText,
+  isCollectionManifestClass,
+  isStiChildModel,
+  orderedManifestObjectEntries,
+} from './web-collections.js';
 
 const MUTATING_ACTIONS = ['create', 'update', 'delete'] as const;
 
@@ -137,13 +142,25 @@ function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
 /**
  * Collect the syncable targets from a manifest: non-collection objects whose
  * API config is enabled and exposes at least one mutating action.
+ *
+ * `SYNC_TARGETS` is keyed by segment, so exactly ONE model owns each segment
+ * (#2807). Several models can share a `collection` (an STI family, or two
+ * unrelated models); emitting one entry per model made the generated object
+ * literal's last duplicate key win, i.e. manifest scan order. The owner is
+ * chosen with the same rule as the web collection definition the offline
+ * outbox writes through (`selectWebCollectionEntries`): the STI base model
+ * beats its children, and otherwise the first candidate in deterministic
+ * qualified-identity order ({@link orderedManifestObjectEntries}) wins.
  */
 export function collectSyncApplyTargets(
   manifest: SmartObjectManifest,
 ): SyncTargetSpec[] {
-  const targets: SyncTargetSpec[] = [];
+  const bySegment = new Map<
+    string,
+    { target: SyncTargetSpec; isStiChild: boolean }
+  >();
 
-  for (const [className, objectDef] of Object.entries(manifest.objects)) {
+  for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
     if (isCollectionManifestClass(manifest, objectDef)) continue;
     // The framework's own abstract base classes are scaffolding, not
     // resources — never make them a sync-apply target, regardless of
@@ -160,7 +177,11 @@ export function collectSyncApplyTargets(
 
     if (!objectDef.collection) continue;
 
-    targets.push({
+    const isStiChild = isStiChildModel(manifest, objectDef);
+    const existing = bySegment.get(objectDef.collection);
+    if (existing && !(existing.isStiChild && !isStiChild)) continue;
+
+    const target: SyncTargetSpec = {
       segment: objectDef.collection,
       registryKey: className,
       permissionCollection: resolvePermissionCollection(objectDef),
@@ -169,10 +190,13 @@ export function collectSyncApplyTargets(
       writableAllowlist: getApiWritableAllowlist(apiConfig),
       publicAccess: getApiPublicAccess(apiConfig),
       tenantScoped: !!objectDef.decoratorConfig?.tenantScoped,
-    });
+    };
+    bySegment.set(objectDef.collection, { target, isStiChild });
   }
 
-  return targets.sort((a, b) => a.segment.localeCompare(b.segment));
+  return [...bySegment.values()]
+    .map(({ target }) => target)
+    .sort((a, b) => compareText(a.segment, b.segment));
 }
 
 function serializeTargets(targets: SyncTargetSpec[]): string {

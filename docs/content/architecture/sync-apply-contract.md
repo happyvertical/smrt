@@ -60,6 +60,8 @@ Per-item fields:
 | `op` | yes | `create`, `update`, or `delete`. |
 | `id` | yes | The client-generated row UUID. Must be a well-formed UUID (`8-4-4-4-12` hex); malformed ids are rejected per-item (`invalid_id`). This envelope field is the **only** channel for a client-supplied id — see [Mass-assignment guard](#mass-assignment-guard-1540) below. |
 | `payload` | create/update | Plain object of field values, exactly like a CRUD create/update body. Ignored for `delete`. |
+
+When several models share one segment (an STI family, or unrelated models with the same `collection`), the generated SvelteKit route maps the segment to exactly **one** model, the same owner as the segment's `@smrt/web` collection definition: the STI base model beats its children, and otherwise the first model in qualified-identity order wins. Its registry key, ops allowlist, readonly fields, writable policy and public-access setting apply to every item for that segment, independent of manifest scan order (#2807).
 | `baseUpdatedAt` | no | ISO-8601 timestamp: the server `updated_at` the client last saw for this row. Drives the [conflict guard](#conflict-policy-v1-server-authoritative-lww) on `update`/`delete`. Omit to opt out of conflict detection (blind last-write). |
 
 Batch-level constraints (violations return **HTTP 400** with

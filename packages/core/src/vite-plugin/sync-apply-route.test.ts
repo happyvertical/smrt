@@ -510,4 +510,127 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     );
     expect(result).toMatchObject({ status: 'applied' });
   });
+
+  // #2807: two models share the `records` segment. In either manifest
+  // insertion order the same deterministic winner (first in qualified-identity
+  // order: ArchivedRecord, which allows public create) owns the segment.
+  for (const order of ['forward', 'reversed'] as const) {
+    it(`routes a shared segment to one deterministic target (${order} insertion order, #2807)`, async () => {
+      const entries = Object.entries(sharedRecordModels());
+      const route = await importRoute(
+        Object.fromEntries(order === 'forward' ? entries : entries.reverse()),
+      );
+      const result = await firstResult(
+        await route.POST({ locals: {}, request: createBatch('records') }),
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+    });
+  }
+});
+
+/** Two non-collection models sharing one segment with different api configs. */
+function sharedRecordModels(): Record<string, Record<string, unknown>> {
+  return {
+    '@fixture/app:Record': {
+      qualifiedName: '@fixture/app:Record',
+      className: 'Record',
+      packageName: '@fixture/app',
+      collection: 'records',
+      fields: { name: { type: 'text' } },
+      methods: {},
+      decoratorConfig: { api: { include: ['update', 'delete'] } },
+    },
+    '@fixture/app:ArchivedRecord': {
+      qualifiedName: '@fixture/app:ArchivedRecord',
+      className: 'ArchivedRecord',
+      packageName: '@fixture/app',
+      collection: 'records',
+      fields: { name: { type: 'text' }, sku: { type: 'text', readonly: true } },
+      methods: {},
+      decoratorConfig: { api: { include: ['create'], public: true } },
+    },
+  };
+}
+
+describe('one sync target per shared segment (#2807)', () => {
+  let projectRoot = '';
+  const options = {
+    enabled: true,
+    routesDir: 'src/routes/api',
+    objectsDir: 'src/lib/objects',
+  };
+
+  beforeEach(() => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'smrt-sync-apply-2807-'));
+  });
+
+  afterEach(() => {
+    rmSync(projectRoot, { force: true, recursive: true });
+  });
+
+  function generatedRoute(objects: Record<string, Record<string, unknown>>) {
+    generateSyncApplyRoute(projectRoot, manifestWith(objects), options);
+    return readFileSync(
+      join(projectRoot, 'src/routes/api/sync/apply/+server.ts'),
+      'utf-8',
+    );
+  }
+
+  it('emits exactly one SYNC_TARGETS entry per segment, from the first model in qualified-identity order', () => {
+    const targets = collectSyncApplyTargets(manifestWith(sharedRecordModels()));
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({
+      segment: 'records',
+      registryKey: '@fixture/app:ArchivedRecord',
+      ops: ['create'],
+      readonlyFields: ['sku'],
+      publicAccess: true,
+    });
+    const route = generatedRoute(sharedRecordModels());
+    expect(route.match(/^ {2}"records": \{/gm)).toHaveLength(1);
+  });
+
+  it('is byte-identical across reversed manifest insertion order', () => {
+    const forward = generatedRoute(sharedRecordModels());
+    const reversed = generatedRoute(
+      Object.fromEntries(Object.entries(sharedRecordModels()).reverse()),
+    );
+    expect(reversed).toBe(forward);
+  });
+
+  it('lets the STI base own a segment shared with its child, in either order', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['create', 'update'] } },
+    };
+    // The child sorts first by qualified name, yet the base owns the table.
+    const child = {
+      qualifiedName: '@fixture/app:DraftRevision',
+      className: 'DraftRevision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      extends: 'Revision',
+      extendsQualified: '@fixture/app:Revision',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['create'] } },
+    };
+    for (const objects of [
+      { '@fixture/app:Revision': base, '@fixture/app:DraftRevision': child },
+      { '@fixture/app:DraftRevision': child, '@fixture/app:Revision': base },
+    ]) {
+      expect(collectSyncApplyTargets(manifestWith(objects))).toEqual([
+        expect.objectContaining({
+          segment: 'revisions',
+          registryKey: '@fixture/app:Revision',
+          ops: ['create', 'update'],
+        }),
+      ]);
+    }
+  });
 });
