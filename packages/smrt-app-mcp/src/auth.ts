@@ -1,5 +1,6 @@
 /** Server-only OAuth protected-resource boundary. This is not an issuer. */
 import { createRemoteJWKSet, type JWTPayload, jwtVerify } from 'jose';
+import { stampVerifiedIdentity } from './identity.js';
 import { ownStringArray, readOwnFields } from './own-data.js';
 import type { McpAppPrincipal, McpTenantBinding } from './server.js';
 
@@ -215,15 +216,17 @@ export function createLocalMcpTokenAuth(
       }
       return {
         ok: true as const,
-        principal: {
-          id: fields.id,
-          tenantId: fields.tenantId,
-          kind: fields.kind as string | undefined,
-          scopes,
-          identity: { issuer: 'local-token', subject: fields.id },
-          // Owner tokens bind only through the direct membership.
-          tenantBinding: 'direct' as const,
-        },
+        principal: stampVerifiedIdentity(
+          {
+            id: fields.id,
+            tenantId: fields.tenantId,
+            kind: fields.kind as string | undefined,
+            scopes,
+            // Owner tokens bind only through the direct membership.
+            tenantBinding: 'direct' as const,
+          },
+          { issuer: 'local-token', subject: fields.id },
+        ),
       };
     },
   });
@@ -462,14 +465,19 @@ export function createMcpResourceAuth(
         }
         return {
           ok: true,
-          principal: {
-            id: fields.id,
-            tenantId: fields.tenantId as string | undefined,
-            kind: fields.kind as string | undefined,
-            roles,
-            scopes: [...granted],
-            // Stamped from the token this server verified, never the mapper.
-            identity: {
+          principal: stampVerifiedIdentity(
+            {
+              id: fields.id,
+              tenantId: fields.tenantId as string | undefined,
+              kind: fields.kind as string | undefined,
+              roles,
+              scopes: [...granted],
+              tenantBinding:
+                (fields.tenantBinding as McpTenantBinding | undefined) ??
+                'direct-or-inherited',
+            },
+            {
+              // Stamped from the token this server verified, never the mapper.
               issuer,
               subject: payload.sub,
               ...(validString(payload.client_id)
@@ -478,10 +486,7 @@ export function createMcpResourceAuth(
                   ? { clientId: payload.azp }
                   : {}),
             },
-            tenantBinding:
-              (fields.tenantBinding as McpTenantBinding | undefined) ??
-              'direct-or-inherited',
-          },
+          ),
         };
       } catch {
         return deny('invalid_token');

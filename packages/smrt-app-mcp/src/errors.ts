@@ -127,6 +127,18 @@ export function safeMcpToolError(
   error: unknown,
   mapError?: McpToolErrorMapper,
 ): McpToolErrorInfo {
+  return authoredMcpToolError(error, mapError) ?? { ...GENERIC_TOOL_ERROR };
+}
+
+/**
+ * The authored (opt-in) safe error for a thrown value: a valid
+ * {@link McpToolError} or `mapError` result, else `undefined`. Only this form
+ * is typed on the MCP wire; an unmapped failure keeps the generic result.
+ */
+export function authoredMcpToolError(
+  error: unknown,
+  mapError?: McpToolErrorMapper,
+): McpToolErrorInfo | undefined {
   try {
     if (error instanceof McpToolError) {
       const info = validInfo({
@@ -140,7 +152,7 @@ export function safeMcpToolError(
       if (info) return info;
     }
   } catch {
-    // A mapper failure falls back to the generic message below.
+    // A mapper failure falls back to the generic message.
   }
-  return { ...GENERIC_TOOL_ERROR };
+  return undefined;
 }

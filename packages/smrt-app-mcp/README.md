@@ -289,16 +289,17 @@ useWebMcpTool(() => toWebMcpSpec(descriptor, createSameOriginSessionCaller({ url
   fires exactly once per `tools/call` and task-creating call, including policy
   denials, unknown tools and unauthenticated calls that never reach a handler.
   `principal` and `identity` (`issuer`, `subject`, `clientId`) are what the
-  server authenticated (adapter-stamped from the verified token), never client
+  server authenticated (adapter-stamped from the verified token, carried as a non-enumerable principal property so the principal's shape is unchanged), never client
   input; `identity` is `null` for session principals. `error` is only the safe
-  `{ code, message }`. The hook is awaited, but a throw or rejection never
+  `{ code, message }` (stable codes for denials and failures appear only
+  here, never on the wire). The hook is awaited, but a throw or rejection never
   changes the result (report via `onToolCallHookError`).
 - Handler failures: a thrown `McpToolError(code, message, details?)` or a
-  per-tool `mapError` result reaches the agent as `structuredContent.error`
-  (`{ code, message }`); anything else, including a throwing `mapError`, is
-  `mcp_tool_execution_failed` / "Workflow execution failed." Denials carry
-  `mcp_tool_not_found`, `mcp_authentication_required` or
-  `mcp_tool_access_denied` in the JSON-RPC error `data.code`.
+  per-tool `mapError` result is opt-in and reaches the agent as
+  `structuredContent.error` (`{ code, message }`). Any other failure, including
+  a throwing `mapError`, keeps the existing generic result
+  (`{ error: { message: 'Workflow execution failed.' } }`, no code). Unknown-tool
+  and unauthenticated denials keep their existing wire shape (no `data.code`).
 - The session caller `POST`s `{ arguments }` to `<url>/<name>` with
   `credentials: 'same-origin'` and the host's CSRF headers; tenant, role and
   user keys in arguments are dropped (the host endpoint derives authority from

@@ -38,6 +38,7 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  authoredMcpToolError,
   MCP_AUTHENTICATION_REQUIRED_CODE,
   MCP_TOOL_ACCESS_DENIED_CODE,
   MCP_TOOL_NOT_FOUND_CODE,
@@ -774,10 +775,7 @@ export function createMcpAppServer(
       (candidate) => candidate.tool.name === input.name,
     );
     if (!resolved) {
-      throw new McpAccessError(404, 'Unknown MCP tool.', {
-        code: MCP_TOOL_NOT_FOUND_CODE,
-        retryable: false,
-      });
+      throw new McpAccessError(404, 'Unknown MCP tool.');
     }
     const { tool, identity } = resolved;
     const publicPatterns = principal ? undefined : getPublicPatterns();
@@ -785,7 +783,6 @@ export function createMcpAppServer(
       throw new McpAccessError(
         401,
         `Authentication is required for MCP tool: ${input.name}`,
-        { code: MCP_AUTHENTICATION_REQUIRED_CODE, retryable: false },
       );
     }
     if (!(await passesToolPolicy(tool, principal))) {
@@ -807,8 +804,6 @@ export function createMcpAppServer(
       copy.roles = Object.freeze([...principal.roles]) as string[];
     if (principal.scopes)
       copy.scopes = Object.freeze([...principal.scopes]) as string[];
-    if (principal.identity)
-      copy.identity = Object.freeze({ ...principal.identity });
     return Object.freeze(copy);
   }
 
@@ -859,6 +854,21 @@ export function createMcpAppServer(
     }
   }
 
+  /**
+   * The audit-only code for a denial. The MCP wire result is unchanged: the
+   * 404/401 denials carry no `data.code`, the hook still gets a stable one.
+   */
+  function deniedInfo(error: McpAccessError): McpToolErrorInfo {
+    const code =
+      error.metadata.code ??
+      (error.status === 404
+        ? MCP_TOOL_NOT_FOUND_CODE
+        : error.status === 401
+          ? MCP_AUTHENTICATION_REQUIRED_CODE
+          : 'mcp_access_denied');
+    return { code, message: error.message };
+  }
+
   /** Authorize, run and audit one call exactly once. */
   async function audited(
     input: CallToolInput,
@@ -873,10 +883,7 @@ export function createMcpAppServer(
       authorized = await authorizeCall(input);
     } catch (error) {
       if (error instanceof McpAccessError) {
-        await audit(input, principal, 'denied', {
-          code: error.metadata.code ?? 'mcp_access_denied',
-          message: error.message,
-        });
+        await audit(input, principal, 'denied', deniedInfo(error));
       } else {
         await audit(input, principal, 'error', safeMcpToolError(error));
       }
@@ -887,10 +894,7 @@ export function createMcpAppServer(
       result = await run(authorized);
     } catch (error) {
       if (error instanceof McpAccessError) {
-        await audit(input, principal, 'denied', {
-          code: error.metadata.code ?? 'mcp_access_denied',
-          message: error.message,
-        });
+        await audit(input, principal, 'denied', deniedInfo(error));
       } else {
         await audit(input, principal, 'error', safeMcpToolError(error));
       }
@@ -937,13 +941,15 @@ export function createMcpAppServer(
           // Handler exceptions may contain credentials or application
           // records: only an authored McpToolError or a mapError result
           // reaches the agent.
-          const info = safeMcpToolError(error, workflowTool.mapError);
+          const typed = authoredMcpToolError(error, workflowTool.mapError);
+          const message = typed?.message ?? 'Workflow execution failed.';
           return {
-            failure: info,
+            failure: typed ?? safeMcpToolError(error),
             response: {
               isError: true,
-              content: [{ type: 'text', text: info.message }],
-              structuredContent: { error: info },
+              content: [{ type: 'text', text: message }],
+              // Unmapped failures keep the original `{ message }` wire shape.
+              structuredContent: { error: typed ?? { message } },
             },
           };
         }

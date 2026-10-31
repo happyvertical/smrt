@@ -198,6 +198,20 @@ describe('audit hook', () => {
   });
 });
 
+describe('verified identity side channel', () => {
+  it('is non-enumerable, so principal shape and spreads exclude it', async () => {
+    const { stampVerifiedIdentity } = await import('../identity.js');
+    const stamped = stampVerifiedIdentity(
+      { id: 'a' },
+      { issuer: 'i', subject: 's' },
+    ) as McpAppPrincipal;
+    expect(stamped).toEqual({ id: 'a' });
+    expect(Object.keys(stamped)).toEqual(['id']);
+    expect(stamped.identity).toEqual({ issuer: 'i', subject: 's' });
+    expect({ ...stamped }.identity).toBeUndefined();
+  });
+});
+
 describe('typed error mapping', () => {
   async function run(def: ReturnType<typeof operation>) {
     const { app, events } = server(def);
@@ -260,10 +274,7 @@ describe('typed error mapping', () => {
       isError: true,
       content: [{ type: 'text', text: 'Workflow execution failed.' }],
       structuredContent: {
-        error: {
-          code: 'mcp_tool_execution_failed',
-          message: 'Workflow execution failed.',
-        },
+        error: { message: 'Workflow execution failed.' },
       },
     };
     const boom = () => {
@@ -290,8 +301,8 @@ describe('typed error mapping', () => {
         throw new McpToolError('has spaces', 'x');
       }),
     );
-    expect(result.structuredContent).toMatchObject({
-      error: { code: 'mcp_tool_execution_failed' },
+    expect(result.structuredContent).toEqual({
+      error: { message: 'Workflow execution failed.' },
     });
   });
 });

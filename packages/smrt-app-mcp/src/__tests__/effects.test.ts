@@ -160,7 +160,7 @@ describe('effects: read-only MCP catalogs', () => {
     expect(denied.error).toEqual({
       code: -32602,
       message: 'Unknown MCP tool.',
-      data: { code: 'mcp_tool_not_found', retryable: false },
+      data: {},
     });
     expect(denied).toEqual(unknown);
     expect(await rowTitles()).toEqual(before);
