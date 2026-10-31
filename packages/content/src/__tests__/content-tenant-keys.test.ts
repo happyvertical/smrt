@@ -42,6 +42,7 @@ import {
 import { ContentGovernanceAssignmentCollection } from '../content-governance-assignments';
 import { ContentGovernancePolicyCollection } from '../content-governance-policies';
 import { ContentGovernanceProfileCollection } from '../content-governance-profiles';
+import { Contents } from '../contents';
 
 const TABLES = {
   content_contributors: 'email',
@@ -419,6 +420,11 @@ describe('content tenant-local natural keys (#3305 M1)', () => {
         new RegExp(`referenced by assignments: ${tenantA}:article::`),
       );
 
+      // Another tenant's context learns only that references exist.
+      await expect(inB(() => globalProfile.delete())).rejects.toThrow(
+        /referenced by assignments: 1 tenant definition\(s\)$/,
+      );
+
       // Once tenant A overrides the key, the global row is no longer relied on.
       await inA(async () => {
         const override = await policies.create({
@@ -430,6 +436,29 @@ describe('content tenant-local natural keys (#3305 M1)', () => {
       await expect(
         withSystemContext(() => globalPolicy.delete()),
       ).resolves.toBeUndefined();
+    });
+
+    it('reports the tenant override as the effective definition and its id', async () => {
+      const policies = await ContentGovernancePolicyCollection.create({ db });
+      await withSystemContext(async () => {
+        const policy = await policies.create({ key: 'house', label: 'Global' });
+        await policy.save();
+      });
+      const override = await inA(async () => {
+        const policy = await policies.create({ key: 'house', label: 'A' });
+        await policy.save();
+        return policy;
+      });
+      const contents = await Contents.create({ db });
+      const definitions = await inA(() =>
+        contents.getGovernanceDefinitionsAction(),
+      );
+      const house = definitions.effective.policies.find(
+        (policy) => policy.key === 'house',
+      ) as { id?: string; label?: string; tenantId?: string | null };
+      expect(house.label).toBe('A');
+      expect(house.id).toBe(override.id);
+      expect(house.tenantId).toBe(tenantA);
     });
 
     it('fails closed when a tenant context asks for another tenant definitions', async () => {

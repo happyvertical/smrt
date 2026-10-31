@@ -917,7 +917,9 @@ export async function getEffectiveContentGovernanceConfig(
  * requiring a global policy, or assignments naming a global profile, in a
  * tenant without its own row of that key. Deleting the global row would
  * leave those references dangling, so a global delete checks every tenant,
- * not only the global layer. Labels are `<tenantId>:<referencing key>`.
+ * not only the global layer. Labels are `<tenantId>:<referencing key>`; under
+ * an active tenant context they are reduced to a count so one tenant never
+ * learns another's ids or keys.
  */
 export async function findTenantReferencesToGlobalKey(options: {
   db?: DatabaseInterface | null;
@@ -952,9 +954,13 @@ export async function findTenantReferencesToGlobalKey(options: {
             tenantId: assignment.tenantId,
             key: assignment.key || assignment.contentType,
           }));
-  return references
+  const labels = references
     .filter((ref) => ref.tenantId && !overridden.has(ref.tenantId))
     .map((ref) => `${ref.tenantId}:${ref.key}`);
+  if (labels.length > 0 && getCurrentTenant()) {
+    return [`${labels.length} tenant definition(s)`];
+  }
+  return labels;
 }
 
 export function hasStaticContentGovernancePolicy(key: string): boolean {
