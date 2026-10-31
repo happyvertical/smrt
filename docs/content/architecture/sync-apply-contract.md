@@ -60,9 +60,9 @@ Per-item fields:
 | `op` | yes | `create`, `update`, or `delete`. |
 | `id` | yes | The client-generated row UUID. Must be a well-formed UUID (`8-4-4-4-12` hex); malformed ids are rejected per-item (`invalid_id`). This envelope field is the **only** channel for a client-supplied id — see [Mass-assignment guard](#mass-assignment-guard-1540) below. |
 | `payload` | create/update | Plain object of field values, exactly like a CRUD create/update body. Ignored for `delete`. |
-
-When several models share one segment (an STI family, or unrelated models with the same `collection`), the generated SvelteKit route maps the segment to exactly **one** model, the same owner as the segment's `@smrt/web` collection definition: the STI base model beats its children, and otherwise the first model in qualified-identity order wins. Its registry key, ops allowlist, readonly fields, writable policy and public-access setting apply to every item for that segment, independent of manifest scan order (#2807).
 | `baseUpdatedAt` | no | ISO-8601 timestamp: the server `updated_at` the client last saw for this row. Drives the [conflict guard](#conflict-policy-v1-server-authoritative-lww) on `update`/`delete`. Omit to opt out of conflict detection (blind last-write). |
+
+When several models share one segment (an STI family, or unrelated models with the same `collection`), the generated SvelteKit route maps the segment to exactly **one** model, independent of manifest scan order (#2807). Among models exposing a mutating op, the STI base model beats its children (an API-enabled STI base that exposes no mutating op leaves the segment with no sync target), and otherwise the first model in qualified-identity order wins. That model's registry key, ops allowlist, readonly fields, writable policy and public-access setting apply to every item for the segment. With unrelated models sharing a segment this owner may differ from the model whose generated CRUD route file serves the same segment (route files are last-writer in the same order, #2754) or from the `@smrt/web` definition owner (which requires `list`); hosting with `rejectRouteCollisions` rejects such shared CRUD segments outright.
 
 Batch-level constraints (violations return **HTTP 400** with
 `{ "error": { "code", "message" } }`; nothing is applied):

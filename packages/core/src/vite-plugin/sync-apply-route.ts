@@ -29,6 +29,7 @@ import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import {
   compareText,
+  findManifestObjectByName,
   isCollectionManifestClass,
   isStiChildModel,
   orderedManifestObjectEntries,
@@ -140,17 +141,51 @@ function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
 }
 
 /**
+ * True when an ancestor sharing `objectDef`'s collection (its STI base) is in
+ * the manifest with its API enabled. Such a base owns the segment.
+ */
+function hasApiEnabledStiBase(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  const seen = new Set<string>();
+  let child = objectDef;
+  let parentName = child.extendsQualified || child.extends;
+  while (parentName && !seen.has(parentName)) {
+    seen.add(parentName);
+    const parent = findManifestObjectByName(manifest, parentName, child);
+    if (!parent || parent.collection !== objectDef.collection) return false;
+    if (
+      parent.decoratorConfig?.api !== false &&
+      !isFrameworkBaseClass(parent.className, parent.packageName)
+    ) {
+      return true;
+    }
+    child = parent;
+    parentName = parent.extendsQualified || parent.extends;
+  }
+  return false;
+}
+
+/**
  * Collect the syncable targets from a manifest: non-collection objects whose
  * API config is enabled and exposes at least one mutating action.
  *
  * `SYNC_TARGETS` is keyed by segment, so exactly ONE model owns each segment
  * (#2807). Several models can share a `collection` (an STI family, or two
  * unrelated models); emitting one entry per model made the generated object
- * literal's last duplicate key win, i.e. manifest scan order. The owner is
- * chosen with the same rule as the web collection definition the offline
- * outbox writes through (`selectWebCollectionEntries`): the STI base model
- * beats its children, and otherwise the first candidate in deterministic
+ * literal's last duplicate key win, i.e. manifest scan order. The owner uses
+ * the tie rule of the web collection definitions (`selectWebCollectionEntries`)
+ * over models that expose a mutating op: the STI base model beats its
+ * children, and otherwise the first candidate in deterministic
  * qualified-identity order ({@link orderedManifestObjectEntries}) wins.
+ *
+ * An STI child never owns a segment whose API-enabled base shares it, even
+ * when that base exposes no mutating op: the base's (narrower) policy decides,
+ * so the segment then has no sync target (fail closed). Candidate sets differ
+ * from the web selector's (`list`) and from CRUD route emission (last writer
+ * per route file, #2754), so with unrelated models sharing a segment the sync
+ * owner can differ from those owners; it is deterministic either way.
  */
 export function collectSyncApplyTargets(
   manifest: SmartObjectManifest,
@@ -172,10 +207,11 @@ export function collectSyncApplyTargets(
     const apiConfig = objectDef.decoratorConfig?.api;
     if (apiConfig === false) continue;
 
+    if (!objectDef.collection) continue;
+    if (hasApiEnabledStiBase(manifest, objectDef)) continue;
+
     const ops = resolveMutatingActions(apiConfig);
     if (ops.length === 0) continue;
-
-    if (!objectDef.collection) continue;
 
     const isStiChild = isStiChildModel(manifest, objectDef);
     const existing = bySegment.get(objectDef.collection);

@@ -633,4 +633,71 @@ describe('one sync target per shared segment (#2807)', () => {
       ]);
     }
   });
+
+  it('fails closed when the STI base exposes no mutating op, even if a child does', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['list', 'get'] } },
+    };
+    const child = {
+      qualifiedName: '@fixture/app:DraftRevision',
+      className: 'DraftRevision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      extends: 'Revision',
+      extendsQualified: '@fixture/app:Revision',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['create'], public: true } },
+    };
+    expect(
+      collectSyncApplyTargets(
+        manifestWith({
+          '@fixture/app:DraftRevision': child,
+          '@fixture/app:Revision': base,
+        }),
+      ),
+    ).toEqual([]);
+    // With the base's API disabled, the child is the segment's only model.
+    expect(
+      collectSyncApplyTargets(
+        manifestWith({
+          '@fixture/app:DraftRevision': child,
+          '@fixture/app:Revision': {
+            ...base,
+            decoratorConfig: { api: false },
+          },
+        }),
+      ),
+    ).toEqual([
+      expect.objectContaining({ registryKey: '@fixture/app:DraftRevision' }),
+    ]);
+  });
+
+  it('takes the first MUTATING-capable unrelated model; a list-only model is not a sync candidate', () => {
+    const listOnly = {
+      qualifiedName: '@fixture/app:AuditRecord',
+      className: 'AuditRecord',
+      packageName: '@fixture/app',
+      collection: 'records',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['list', 'get'] } },
+    };
+    expect(
+      collectSyncApplyTargets(
+        manifestWith({
+          ...sharedRecordModels(),
+          '@fixture/app:AuditRecord': listOnly,
+        }),
+      ),
+    ).toEqual([
+      expect.objectContaining({ registryKey: '@fixture/app:ArchivedRecord' }),
+    ]);
+  });
 });
