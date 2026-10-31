@@ -85,6 +85,43 @@ describe('importWorkspaceModule', () => {
     }
   });
 
+  it('surfaces a missing import inside a resolved module instead of loading a dist fallback (#2954)', async () => {
+    const fixturePackageDir = new URL(
+      './node_modules/@fixture/nested-missing-import-package/',
+      import.meta.url,
+    );
+    await rm(fixturePackageDir, { recursive: true, force: true });
+    await mkdir(fixturePackageDir, { recursive: true });
+    await writeFile(
+      new URL('package.json', fixturePackageDir),
+      `${JSON.stringify({
+        name: '@fixture/nested-missing-import-package',
+        type: 'module',
+        exports: { '.': { import: './index.mjs' } },
+      })}\n`,
+    );
+    await writeFile(
+      new URL('index.mjs', fixturePackageDir),
+      "export * from './not-written-yet.mjs';\n",
+    );
+    try {
+      await expect(
+        importWorkspaceModule({
+          packageName: '@fixture/nested-missing-import-package',
+          sourceEntry: 'packages/missing/src/index.ts',
+          distEntry: 'package.json',
+          purpose: 'test nested resolution failures',
+        }),
+      ).rejects.toThrow(/not-written-yet/);
+    } finally {
+      await rm(new URL('./node_modules/@fixture/', import.meta.url), {
+        recursive: true,
+        force: true,
+      });
+      await removeIfEmpty(new URL('./node_modules/', import.meta.url));
+    }
+  });
+
   it('propagates ESM resolver failures when no installed package or workspace fallback is available', async () => {
     const isolatedDir = await mkdtemp(
       join(tmpdir(), 'smrt-import-workspace-module-'),

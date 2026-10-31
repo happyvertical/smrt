@@ -25,17 +25,27 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
-/** Whether `error` means the specifier could not be resolved at all. */
-function isResolutionFailure(error: unknown): boolean {
+/**
+ * Whether `error` means `packageName` itself could not be resolved. A module
+ * that resolved but failed on one of its own imports (a missing relative
+ * file, a missing dependency) reports the same codes, so the failed
+ * specifier must name the package for the caller to fall back.
+ */
+function isResolutionFailure(error: unknown, packageName: string): boolean {
   const { code, message } = (error ?? {}) as {
     code?: unknown;
     message?: unknown;
   };
+  if (typeof message !== 'string') return false;
+  const namesPackage =
+    message.includes(`'${packageName}'`) ||
+    message.includes(`"${packageName}"`) ||
+    message.includes(` ${packageName} `) ||
+    message.endsWith(` ${packageName}`);
   return (
-    code === 'ERR_MODULE_NOT_FOUND' ||
-    code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' ||
-    code === 'ERR_UNSUPPORTED_DIR_IMPORT' ||
-    (typeof message === 'string' &&
+    namesPackage &&
+    (code === 'ERR_MODULE_NOT_FOUND' ||
+      code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' ||
       /Failed to (?:resolve|load url)|Cannot find (?:module|package)/.test(
         message,
       ))
@@ -69,7 +79,7 @@ export async function importWorkspaceModule<T = unknown>({
       // Only an unresolvable specifier falls through to the workspace
       // fallbacks; a source module that resolved but failed to evaluate must
       // surface, not be masked by a sibling's built dist.
-      if (!isResolutionFailure(importError)) {
+      if (!isResolutionFailure(importError, packageName)) {
         throw importError;
       }
     }
