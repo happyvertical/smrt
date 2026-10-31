@@ -268,6 +268,10 @@ export {
 export * from './question-contracts.js';
 export * from './question-models.js';
 export {
+  renderGuardianWorksheetPdf,
+  renderLearnerWorksheetPdf,
+} from './question-printable.js';
+export {
   buildGuardianWorksheet,
   buildLearnerWorksheet,
   type WorksheetRenderInput,

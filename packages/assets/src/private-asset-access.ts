@@ -7,6 +7,7 @@ import {
   type SmrtObject,
 } from '@happyvertical/smrt-core';
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import type { AssetCollection } from './assets';
 
 /** Trusted server capability. Never construct this from an untrusted API payload. */
 export interface PrivateAssetAccess {
@@ -219,3 +220,86 @@ GlobalInterceptors.register({
   beforeSave: guardMutation,
   beforeDelete: guardMutation,
 });
+
+/** Request for {@link readPrivateAssetMetadata}. Trusted server input only. */
+export interface PrivateAssetMetadataRequest {
+  tenantId: string;
+  actorUserId: string;
+  assetId: string;
+}
+
+/**
+ * Display-safe projection of a private asset. This is an allowlist: it never
+ * carries the owner, storage locators (`sourceUri`), the description sidecar,
+ * processor metadata or any capability.
+ */
+export interface PrivateAssetMetadata {
+  id: string;
+  tenantId: string;
+  name: string;
+  mimeType: string;
+  version: number;
+  typeSlug: string;
+  statusSlug: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+/**
+ * Read one private asset's display metadata. The host must authorize the
+ * actor's relationship to the asset first. Requires the ambient tenant actor to
+ * match the request exactly. Missing, public and other-tenant assets all
+ * return `null`. Enforcement stays in the interceptor: the read is a guarded
+ * `get` of exactly this id inside a one-id capability that closes on return.
+ */
+export async function readPrivateAssetMetadata(
+  collection: AssetCollection,
+  request: PrivateAssetMetadataRequest,
+): Promise<PrivateAssetMetadata | null> {
+  const { tenantId, actorUserId, assetId } = request;
+  const actor = getCurrentTenant();
+  if (
+    !tenantId ||
+    !actorUserId ||
+    !assetId ||
+    actor?.tenantId !== tenantId ||
+    actor.userId !== actorUserId
+  )
+    throw new Error(
+      'Private asset metadata requires an exact authenticated actor and asset ID',
+    );
+  // Owner resolution reads the tenant-scoped PRIVATE row directly because the
+  // guarded collection hides it without an owner. The owner is used only to
+  // open the one-id capability; the guarded read below is the enforcement.
+  const row = await collection.db.get(collection.tableName, {
+    id: assetId,
+    tenant_id: tenantId,
+    access_mode: 'private',
+  });
+  const ownerProfileId = row?.owner_profile_id;
+  if (typeof ownerProfileId !== 'string' || !ownerProfileId) return null;
+  return withPrivateAssetAccess(
+    { tenantId, actorUserId, ownerProfileId, assetIds: [assetId] },
+    async () => {
+      const asset = await collection.get(assetId);
+      if (
+        !asset ||
+        asset.accessMode !== 'private' ||
+        asset.tenantId !== tenantId ||
+        asset.id !== assetId
+      )
+        return null;
+      return {
+        id: asset.id as string,
+        tenantId,
+        name: asset.name,
+        mimeType: asset.mimeType,
+        version: asset.version,
+        typeSlug: asset.typeSlug,
+        statusSlug: asset.statusSlug,
+        createdAt: asset.created_at ?? null,
+        updatedAt: asset.updated_at ?? null,
+      };
+    },
+  );
+}

@@ -45,6 +45,11 @@ import {
   type StoreOptions,
 } from './asset-store';
 import { AssetCollection } from './assets';
+import {
+  type PrivateAssetMetadata,
+  type PrivateAssetMetadataRequest,
+  readPrivateAssetMetadata,
+} from './private-asset-access';
 
 /**
  * DB configuration accepted by the runtime — mirrors the shape
@@ -345,6 +350,18 @@ export class AssetRuntime implements AssetRuntimeLike {
       'submitAssetWorkflow',
       skipped?.message,
     );
+  }
+
+  /**
+   * Read display metadata for one private asset without exposing the row.
+   * Trusted server capability: the host must authorize the actor's relationship
+   * to the asset first, and the ambient tenant actor must match the request.
+   * Returns `null` for missing, public and other-tenant assets alike.
+   */
+  getPrivateAssetMetadata(
+    request: PrivateAssetMetadataRequest,
+  ): Promise<PrivateAssetMetadata | null> {
+    return readPrivateAssetMetadata(this.collection, request);
   }
 
   /**

@@ -3,6 +3,9 @@
  * tests use the real SQLite collection and generated REST/MCP transports so a
  * new surface cannot accidentally bypass the interceptor.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   GlobalInterceptors,
   type SmrtCollection,
@@ -21,6 +24,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Asset } from '../asset';
+import { type AssetRuntime, createAssetRuntime } from '../asset-runtime';
 import { AssetCollection } from '../assets';
 import { withPrivateAssetAccess } from '../private-asset-access';
 
@@ -78,6 +82,8 @@ describe('private Asset access capability', () => {
           id: PRIVATE_ID,
           accessMode: 'private',
           name: 'private asset',
+          mimeType: 'application/pdf',
+          description: 'secret sidecar',
           tenantId: TENANT_ID,
           ownerProfileId: OWNER_ID,
           sourceUri: 'file:///private.bin',
@@ -314,6 +320,137 @@ describe('private Asset access capability', () => {
         PUBLIC_ID,
         SECOND_PUBLIC_ID,
       ]);
+    });
+  });
+
+  describe('getPrivateAssetMetadata', () => {
+    let runtime: AssetRuntime;
+    let storageDir: string;
+    const request = (assetId: string, overrides = {}) => ({
+      tenantId: TENANT_ID,
+      actorUserId: ACTOR_ID,
+      assetId,
+      ...overrides,
+    });
+
+    beforeEach(async () => {
+      storageDir = mkdtempSync(join(tmpdir(), 'private-meta-'));
+      runtime = await createAssetRuntime({
+        db,
+        storage: storageDir,
+        collection: assets,
+      });
+    });
+    afterEach(() => rmSync(storageDir, { recursive: true, force: true }));
+
+    it('returns only the allowlisted metadata of an own-tenant private asset', async () => {
+      const meta = await asActor(() =>
+        runtime.getPrivateAssetMetadata(request(PRIVATE_ID)),
+      );
+      expect(meta).toMatchObject({
+        id: PRIVATE_ID,
+        tenantId: TENANT_ID,
+        name: 'private asset',
+        mimeType: 'application/pdf',
+        version: 1,
+      });
+      expect(Object.keys(meta ?? {}).sort()).toEqual([
+        'createdAt',
+        'id',
+        'mimeType',
+        'name',
+        'statusSlug',
+        'tenantId',
+        'typeSlug',
+        'updatedAt',
+        'version',
+      ]);
+      expect(JSON.stringify(meta)).not.toMatch(/private\.bin|secret sidecar/);
+    });
+
+    it('returns null for public, missing and other-tenant assets alike', async () => {
+      await asActor(async () => {
+        expect(
+          await runtime.getPrivateAssetMetadata(request(PUBLIC_ID)),
+        ).toBeNull();
+        expect(
+          await runtime.getPrivateAssetMetadata(
+            request('00000000-0000-4000-8000-000000000499'),
+          ),
+        ).toBeNull();
+      });
+      await withTenant(
+        { tenantId: OTHER_TENANT_ID, userId: ACTOR_ID },
+        async () => {
+          expect(
+            await runtime.getPrivateAssetMetadata(
+              request(PRIVATE_ID, { tenantId: OTHER_TENANT_ID }),
+            ),
+          ).toBeNull();
+        },
+      );
+    });
+
+    it('requires a matching ambient actor and non-empty ids', async () => {
+      await expect(
+        runtime.getPrivateAssetMetadata(request(PRIVATE_ID)),
+      ).rejects.toThrow(/exact authenticated actor/i);
+      await asActor(async () => {
+        await expect(
+          runtime.getPrivateAssetMetadata(
+            request(PRIVATE_ID, { actorUserId: OTHER_ACTOR_ID }),
+          ),
+        ).rejects.toThrow(/exact authenticated actor/i);
+        await expect(
+          runtime.getPrivateAssetMetadata(
+            request(PRIVATE_ID, { tenantId: OTHER_TENANT_ID }),
+          ),
+        ).rejects.toThrow(/exact authenticated actor/i);
+        for (const empty of [
+          { assetId: '' },
+          { tenantId: '' },
+          { actorUserId: '' },
+        ])
+          await expect(
+            runtime.getPrivateAssetMetadata(request(PRIVATE_ID, empty)),
+          ).rejects.toThrow(/exact authenticated actor/i);
+      });
+    });
+
+    it('leaves no active capability behind', async () => {
+      await asActor(async () => {
+        await runtime.getPrivateAssetMetadata(request(PRIVATE_ID));
+        expect(await assets.get(PRIVATE_ID)).toBeNull();
+        expect((await assets.list({})).map((a) => a.id).sort()).toEqual([
+          PUBLIC_ID,
+          SECOND_PUBLIC_ID,
+        ]);
+      });
+    });
+
+    it('works inside a covering scope without widening it', async () => {
+      await asActor(() =>
+        withPrivate([PRIVATE_ID, SECOND_PUBLIC_ID], async () => {
+          const meta = await runtime.getPrivateAssetMetadata(
+            request(PRIVATE_ID),
+          );
+          expect(meta?.id).toBe(PRIVATE_ID);
+          // Parent scope is still intact and still not widened.
+          expect(await assets.get(PRIVATE_ID)).not.toBeNull();
+          expect(await assets.get(OTHER_PRIVATE_ID)).toBeNull();
+          expect(await assets.get(PUBLIC_ID)).toBeNull();
+        }),
+      );
+    });
+
+    it('cannot be used to widen a narrower parent scope', async () => {
+      await asActor(() =>
+        withPrivate([PRIVATE_ID], async () => {
+          await expect(
+            runtime.getPrivateAssetMetadata(request(OTHER_PRIVATE_ID)),
+          ).rejects.toThrow(/cannot widen/i);
+        }),
+      );
     });
   });
 

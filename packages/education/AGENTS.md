@@ -44,7 +44,8 @@ Keep supplied content unless a decision is recorded; reviews carry no score.
 
 Immutable questions, answer keys/rubrics, stable learning objectives, worksheet
 render ids and exact-revision references use [QuestionAuthoringService](agents/question-records.md).
-Keep keys out of learner bundles; a missing key stays null.
+Keep keys out of learner bundles; a missing key stays null. `attachGeneratedPrintable`
+stores the rendered PDFs; the guardian copy is always an `answer-key`, never `printable`.
 
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
