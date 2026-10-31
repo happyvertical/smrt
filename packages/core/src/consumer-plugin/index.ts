@@ -13,6 +13,7 @@ import {
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
+import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
@@ -2343,9 +2344,11 @@ function generateFallbackTypesModule(manifest: ConsumerManifest): string {
     return `// No types available`;
   }
 
-  // Generate basic interfaces
-  const interfaces = objects.map(([_name, obj]) => {
-    return `export interface ${obj.className}Data {
+  // One basic interface per class (#3296), in the shared declaration order.
+  const interfaces = selectObjectDeclarations(
+    manifest as unknown as SmartObjectManifest,
+  ).map(({ interfaceName }) => {
+    return `export interface ${interfaceName} {
   id?: string;
   created_at?: string;
   updated_at?: string;
