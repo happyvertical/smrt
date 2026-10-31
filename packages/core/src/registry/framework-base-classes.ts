@@ -17,6 +17,9 @@
  * This is the SINGLE shared source of truth for that identity check within
  * `@happyvertical/smrt-core` and its consumers — imported by:
  * - `./schema-builder.ts` (skips table/DDL generation for these classes)
+ * - `./table-mappings.ts`, `./class-registration.ts` and
+ *   `../migrations/qualified-name-aliases.ts` (registry table, parent and
+ *   alias bookkeeping skip these classes)
  * - `../knowledge.ts` (the `.smrt/smrt-knowledge.json` surface projection)
  * - `../generators/mcp.ts` (`MCPGenerator.generateTools()`)
  * - `../generators/rest.ts` (`APIGenerator.findClassByCollectionSegment()`)
@@ -24,6 +27,8 @@
  * - `../vite-plugin/sync-apply-route.ts` (`collectSyncApplyTargets()`)
  * - `../vite-plugin/web-collections.ts` (the `smrt-virt-web` client's
  *   collection and WebMCP tool selectors)
+ * - `../vite-plugin/api-client-entries.ts` (`selectApiClientEntries()`, the
+ *   generated `@smrt/client` runtime module and declarations, #3295)
  * - `@happyvertical/smrt-cli`'s `cli-generator.ts` (the live local `smrt`
  *   binary's object command generation), via core's public export
  * - `../testing/database.ts` (`getTestDatabase()` skips table creation for
