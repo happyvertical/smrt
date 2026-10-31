@@ -4,6 +4,7 @@ import {
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import { ContentContributor } from './content-contributor';
+import { getByTenantKey, resolveLookupTenantId } from './tenant-keyed-lookup';
 
 // The collection's own @smrt() surface: its read helpers are published
 // operations (the API explorer and the workbench call them). A collection
@@ -14,7 +15,7 @@ import { ContentContributor } from './content-contributor';
   // Mirror the model's storage so the collection decorator cannot plan a
   // different table or natural key for it.
   tableName: 'content_contributors',
-  conflictColumns: ['email'],
+  conflictColumns: ['tenant_id', 'email'],
   api: {
     include: [
       'list',
@@ -41,8 +42,22 @@ import { ContentContributor } from './content-contributor';
 export class ContentContributorCollection extends SmrtCollection<ContentContributor> {
   static readonly _itemClass = ContentContributor;
 
-  async getByEmail(email: string): Promise<ContentContributor | null> {
-    return this.get({ email: email.toLowerCase().trim() });
+  /**
+   * The contributor for `email` in one tenant: `options.tenantId`, else the
+   * active tenant context; without either, the global (NULL-tenant)
+   * contributor. Emails are unique per tenant (#3305 M1), so this never
+   * returns another tenant's contributor, and a tenant does not inherit a
+   * global contributor's identity or trust level.
+   */
+  async getByEmail(
+    email: string,
+    options: { tenantId?: string | null } = {},
+  ): Promise<ContentContributor | null> {
+    return getByTenantKey(this, 'email', email.toLowerCase().trim(), {
+      tenantId: options.tenantId,
+      globalFallback: false,
+      label: 'ContentContributorCollection.getByEmail',
+    });
   }
 
   async getByProfileId(profileId: string): Promise<ContentContributor | null> {
@@ -55,7 +70,10 @@ export class ContentContributorCollection extends SmrtCollection<ContentContribu
     tenantId?: string | null;
   }): Promise<ContentContributor> {
     const normalizedEmail = options.email.toLowerCase().trim();
-    const existing = await this.getByEmail(normalizedEmail);
+    // Look up and create in the same tenant, so a retry finds the row it
+    // created and another tenant's same-email contributor is never reused.
+    const tenantId = resolveLookupTenantId(options.tenantId || undefined);
+    const existing = await this.getByEmail(normalizedEmail, { tenantId });
     if (existing) {
       if (options.name && !existing.name) {
         existing.name = options.name;
@@ -65,7 +83,15 @@ export class ContentContributorCollection extends SmrtCollection<ContentContribu
     }
 
     const profileCollection = await ProfileCollection.create(this.options);
-    let profile = await profileCollection.findByEmail(normalizedEmail);
+    // Link a profile from the contributor's own tenant (or a global profile
+    // for a global contributor), never another tenant's same-email profile.
+    let profile =
+      (
+        await profileCollection.list({
+          where: { email: normalizedEmail, tenantId },
+          limit: 1,
+        })
+      )[0] ?? null;
 
     if (!profile) {
       const profileTypes = await ProfileTypeCollection.create(this.options);
@@ -78,7 +104,7 @@ export class ContentContributorCollection extends SmrtCollection<ContentContribu
         typeId: personType.id || undefined,
         email: normalizedEmail,
         name: options.name || normalizedEmail.split('@')[0],
-        tenantId: options.tenantId || undefined,
+        tenantId: tenantId || undefined,
       });
       await profile.save();
     }
@@ -87,7 +113,7 @@ export class ContentContributorCollection extends SmrtCollection<ContentContribu
       email: normalizedEmail,
       name: options.name || profile.name || normalizedEmail.split('@')[0],
       profileId: profile.id || undefined,
-      tenantId: options.tenantId || undefined,
+      tenantId: tenantId || undefined,
       trustLevel: 'standard',
     });
     await contributor.save();

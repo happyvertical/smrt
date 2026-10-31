@@ -24,7 +24,11 @@ export interface ContentGovernancePolicyOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'content_governance_policies',
-  conflictColumns: ['key'],
+  // A key is unique per tenant: a tenant row overrides the global (NULL-tenant)
+  // policy of the same key instead of colliding with it or with another
+  // tenant's, and global rows stay unique on key through the tenant-led
+  // index's NULLS NOT DISTINCT (#3305 M1).
+  conflictColumns: ['tenant_id', 'key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: { skipApiCheck: true },
@@ -89,8 +93,11 @@ export class ContentGovernancePolicy extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
+    // Check references in this row's own scope (#3305 M1): a tenant row
+    // against that tenant's overrides plus the global layer.
     const effective = await getEffectiveContentGovernanceConfig({
       db: this.db,
+      tenantId: this.tenantId || undefined,
     });
     const hasFallback = hasStaticContentGovernancePolicy(this.key);
     const referencedBy = effective.profiles

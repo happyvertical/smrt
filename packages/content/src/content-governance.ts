@@ -1,8 +1,6 @@
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import {
   getCurrentTenant,
-  isSuperAdminBypass,
-  isSystemContext,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -534,10 +532,11 @@ function resolveGovernanceTenantFilter(
     return tenantId;
   }
 
-  if (isSystemContext() || isSuperAdminBypass()) {
-    return undefined;
-  }
-
+  // Keys are unique per tenant (#3305 M1), so the same key can exist once per
+  // tenant: merging every tenant's rows would let an arbitrary tenant's
+  // override win. A super-admin bypass keeps its tenant, and with tenancy on a
+  // system context (no tenant) reads the global layer only; an administrative
+  // caller selects another tenant by passing its id explicitly.
   const currentTenant = getCurrentTenant();
   if (currentTenant?.tenantId) {
     return currentTenant.tenantId;
