@@ -66,6 +66,10 @@
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  ensurePostgresChangeFeedAppendFunction,
+  SYSTEM_TABLE_TENANT_UUID_COLUMNS,
+} from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
@@ -1002,6 +1006,16 @@ async function convertPostgresUuidColumns(
       `ALTER TABLE ${pgTable(bridge.table)} DROP COLUMN ${quoteIdentifier(bridge.column)}`,
     );
   }
+  // The change-feed helpers write tenant ids into these tables. Install the
+  // current (type-agnostic, #3297) bodies inside this same transaction before
+  // converting them, so an install still carrying text-only bodies cannot
+  // start failing appends the moment the column becomes uuid.
+  if (columns.some((column) => column.table.startsWith('_smrt_changes'))) {
+    // Only `query` is used once the engine is named explicitly.
+    await ensurePostgresChangeFeedAppendFunction(db as DatabaseInterface, {
+      typeHint: 'postgres',
+    });
+  }
   for (const column of columns) {
     const table = pgTable(column.table);
     const name = quoteIdentifier(column.column);
@@ -1826,6 +1840,15 @@ async function loadDeclaredUuidColumns(): Promise<Set<string>> {
   try {
     const schemaDefinitions = ObjectRegistry.getAllSchemasAsDefinitions();
     const declared = buildDeclaredUuidColumnSet(schemaDefinitions);
+    // System tables never enter the manifest, but their tenant columns are
+    // declared native uuid on PostgreSQL by the system DDL itself (#3297).
+    // Added only alongside a real manifest so the fail-closed empty-set gate
+    // still fires when discovery found nothing.
+    if (declared.size > 0) {
+      for (const { table, column } of SYSTEM_TABLE_TENANT_UUID_COLUMNS) {
+        declared.add(declaredUuidKey(table, column));
+      }
+    }
     // The empty-set fail-closed gate only fires when NOTHING is declared. A
     // partial discovery failure can leave a non-empty-but-incomplete set, which
     // slips past that gate and silently leaves some declared-UUID columns as

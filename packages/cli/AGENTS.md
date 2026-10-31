@@ -16,7 +16,7 @@ smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurren
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md
-smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
+smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap (incl. PG system tenant ids, #3297)
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
 smrt db:migrate-ledger-accounts [--dry-run] # Move pre-#3098 ledger rows out of `accounts` (smrt-ledgers README)

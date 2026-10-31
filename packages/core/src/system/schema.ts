@@ -336,7 +336,7 @@ CREATE TABLE IF NOT EXISTS _smrt_changes_pending (
   table_name TEXT NOT NULL,
   row_id TEXT,
   operation TEXT NOT NULL,
-  tenant_id TEXT,
+  tenant_id UUID,
   created_at TIMESTAMPTZ NOT NULL
 );
 
@@ -349,7 +349,10 @@ export const POSTGRES_CHANGE_FEED_PENDING_TABLE = '_smrt_changes_pending';
 
 /** PostgreSQL materialization of the portable change-feed table DDL. */
 export const CREATE_POSTGRES_SMRT_CHANGES_TABLE =
-  CREATE_SMRT_CHANGES_TABLE.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ');
+  CREATE_SMRT_CHANGES_TABLE.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ').replace(
+    /\btenant_id TEXT\b/g,
+    'tenant_id UUID',
+  );
 
 /** PostgreSQL helper used to isolate best-effort feed appends (#2026). */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME = '_smrt_append_change';
@@ -376,7 +379,32 @@ export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY = `${POSTGRES_C
  * replaced. Bump it whenever either helper's body changes in a way an existing
  * database must pick up.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v4';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v5';
+
+/**
+ * The previous body marker, still stamped into every v5 body (#3297).
+ *
+ * v5 only changes how a tenant id is coerced: it is converted to whatever type
+ * the live `tenant_id` column has (TEXT before `db:migrate-uuid`, native uuid
+ * after), so a v5 body is a drop-in for v4 callers. Older SMRT processes probe
+ * for the v4 marker; carrying it stops them from replacing a v5 body with a
+ * v4 one (which inserts text into a converted uuid column) during a
+ * mixed-version rollout.
+ */
+export const POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER =
+  'smrt-change-feed-helpers:v4';
+
+/**
+ * Coerce a text tenant id to the live type of `<table>.tenant_id` (#3297).
+ *
+ * `jsonb_populate_record` builds the table's row type at execution time, so
+ * the same body works before and after the column converts to uuid, and a
+ * cached plan is invalidated by the ALTER like any other. Empty strings are
+ * NULL, matching the TypeScript writers.
+ */
+function postgresTenantIdAs(table: string, textExpression: string): string {
+  return `(jsonb_populate_record(NULL::${table}, jsonb_build_object('tenant_id', NULLIF(${textExpression}, '')))).tenant_id`;
+}
 
 /** PostgreSQL helper that sequences staged change-feed appends (#2649). */
 export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME = '_smrt_drain_changes';
@@ -428,6 +456,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed_drain$
 -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+-- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
 DECLARE
   v_base BIGINT;
   v_error_code TEXT;
@@ -505,7 +534,7 @@ BEGIN
         numbered.table_name,
         numbered.row_id,
         numbered.operation,
-        numbered.tenant_id,
+        ${postgresTenantIdAs('_smrt_changes', 'numbered.tenant_id::TEXT')},
         numbered.created_at
       FROM numbered
       RETURNING
@@ -520,7 +549,7 @@ BEGIN
       inserted.table_name,
       inserted.row_id,
       inserted.operation,
-      inserted.tenant_id,
+      inserted.tenant_id::TEXT,
       NULL::TEXT,
       NULL::TEXT
     FROM inserted
@@ -569,6 +598,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed$
 -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+-- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
 DECLARE
   v_seq BIGINT;
   v_error_code TEXT;
@@ -621,7 +651,7 @@ BEGIN
         p_table_name,
         p_row_id,
         p_operation,
-        p_tenant_id,
+        ${postgresTenantIdAs('_smrt_changes_pending', 'p_tenant_id')},
         p_created_at
       );
 
@@ -662,7 +692,7 @@ BEGIN
       p_table_name,
       p_row_id,
       p_operation,
-      p_tenant_id,
+      ${postgresTenantIdAs('_smrt_changes', 'p_tenant_id')},
       p_created_at
     FROM _smrt_changes AS changes
     RETURNING _smrt_changes.seq INTO v_seq;
@@ -698,6 +728,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed_batch$
 -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+-- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
 DECLARE
   v_deferred BOOLEAN;
   v_error_code TEXT;
@@ -721,7 +752,7 @@ BEGIN
           input.value->>'table',
           input.value->>'rowId',
           input.value->>'operation',
-          input.value->>'tenantId',
+          ${postgresTenantIdAs('_smrt_changes_pending', "input.value->>'tenantId'")},
           (input.value->>'timestamp')::TIMESTAMPTZ
         FROM input
         ORDER BY input.entry_index
@@ -753,7 +784,7 @@ BEGIN
         numbered.value->>'table',
         numbered.value->>'rowId',
         numbered.value->>'operation',
-        numbered.value->>'tenantId',
+        ${postgresTenantIdAs('_smrt_changes', "numbered.value->>'tenantId'")},
         (numbered.value->>'timestamp')::TIMESTAMPTZ
       FROM numbered
       ORDER BY numbered.entry_index
@@ -1063,9 +1094,41 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
 ];
 
 /**
+ * System-table columns that hold a real tenant id (#3297): a tenant UUID from
+ * the tenant context, or NULL for global rows. On PostgreSQL they materialize
+ * as native `uuid`, like every application `tenant_id`; other engines keep
+ * TEXT, where `UUID` renders as TEXT anyway. Existing PostgreSQL TEXT columns
+ * convert through `smrt db:migrate-uuid` in a maintenance window.
+ *
+ * Deliberately NOT here (they stay TEXT):
+ * - text identity encodings that are not tenant ids: `_smrt_contexts.owner_id`
+ *   (`__collection__` / `__collection__:<tenantId>` scope keys, object/agent
+ *   row ids), `_smrt_run_once_claims.actor` (an arbitration namespace),
+ *   `_smrt_dispatch.processed_by` (a subscriber name) and
+ *   `_smrt_schema_migrations.applied_by` (a hostname);
+ * - `_smrt_run_once_claims.tenant_id`: a NOT NULL claim scope folded into the
+ *   claim key; a caller without a tenant must pass a scope string, so it is a
+ *   scope key, not a tenant FK;
+ * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
+ *   published external-agent usage API accepts any non-empty text tenant id,
+ *   so converting it is a contract change tracked separately.
+ */
+export const SYSTEM_TABLE_TENANT_UUID_COLUMNS: ReadonlyArray<{
+  table: string;
+  column: string;
+}> = Object.freeze([
+  { table: '_smrt_dispatch', column: 'tenant_id' },
+  { table: '_smrt_dispatch_subscriptions', column: 'tenant_id' },
+  { table: '_smrt_changes', column: 'tenant_id' },
+  { table: '_smrt_changes_pending', column: 'tenant_id' },
+]);
+
+/**
  * Materialize the portable system-table schema for a target engine.
  *
- * PostgreSQL must use TIMESTAMPTZ because every system Date is an instant.
+ * PostgreSQL must use TIMESTAMPTZ because every system Date is an instant,
+ * and native UUID for the tenant columns in
+ * {@link SYSTEM_TABLE_TENANT_UUID_COLUMNS} (#3297).
  * PostgreSQL and DuckDB also materialize integer storage as BIGINT, matching
  * application-table DDL; SQLite keeps its variable-width INTEGER.
  */
@@ -1085,8 +1148,26 @@ export function getSystemTableDDLForEngine(
       ? ddl.replace(/\bINTEGER\b/g, 'BIGINT')
       : ddl;
   return engine === 'postgres'
-    ? integerDdl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ')
+    ? toPostgresTenantUuid(integerDdl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ'))
     : integerDdl;
+}
+
+const POSTGRES_UUID_TENANT_TABLES = new Set(
+  SYSTEM_TABLE_TENANT_UUID_COLUMNS.map(({ table }) => table),
+);
+
+/**
+ * Render `tenant_id TEXT` as native uuid on PostgreSQL in the DDL of a table
+ * listed in {@link SYSTEM_TABLE_TENANT_UUID_COLUMNS} (each system DDL
+ * constant creates one table).
+ */
+function toPostgresTenantUuid(ddl: string): string {
+  const table = ddl.match(
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w$]*)/i,
+  )?.[1];
+  return table && POSTGRES_UUID_TENANT_TABLES.has(table)
+    ? ddl.replace(/\btenant_id TEXT\b/g, 'tenant_id UUID')
+    : ddl;
 }
 
 /**
