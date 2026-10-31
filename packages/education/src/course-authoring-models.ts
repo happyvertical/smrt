@@ -604,7 +604,10 @@ export class EnrollmentAutoUpgradeSkip extends SmrtObject {
   optInDelegatingGuardianUserId = '';
   optInDelegationId = '';
   policyBasis = '';
+  /** The authorizer's bounded reason, else 'not-authorized'. Never a thrown message. */
   reason = 'not-authorized';
+  /** The authorizer's short code (`[a-z0-9._-]`, up to 64); empty when none. */
+  code = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -626,9 +629,12 @@ export class EnrollmentAutoUpgradeSkip extends SmrtObject {
       'Auto-upgrade skip requires the opt-in actor',
     );
     requireText(this.policyBasis, 'Auto-upgrade skip requires a policy basis');
+    requireText(this.reason, 'Auto-upgrade skip requires a reason', 200);
     if (
       !['course', 'enrollment'].includes(this.optInScope) ||
-      this.reason !== 'not-authorized'
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control characters
+      /[\u0000-\u001f\u007f]/.test(this.reason) ||
+      !/^[a-z0-9._-]{0,64}$/.test(this.code)
     )
       throw new Error('Invalid auto-upgrade skip');
     validDate(this.recordedAt);

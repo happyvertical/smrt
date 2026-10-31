@@ -7,6 +7,7 @@ import {
   CourseRequestKeyConflictError,
   CourseStaleHeadError,
 } from './course-authoring-contracts.js';
+import { LessonRevisionCollection } from './course-authoring-models.js';
 import {
   CourseAuthoringService,
   type CourseAuthoringServiceOptions,
@@ -33,6 +34,7 @@ import {
   type QuestionProvenance,
   type QuestionResponseType,
   type QuestionRevisionView,
+  type ReleasedLessonView,
   type WorksheetBundle,
 } from './question-contracts.js';
 import {
@@ -865,45 +867,116 @@ export class QuestionAuthoringService extends CourseAuthoringService {
         release ? { courseId: String(release.course_id) } : {},
       );
       if (!release) throw new QuestionNotFoundError();
-      const released = (await tx.get('released_lessons', {
-        tenant_id: request.tenantId,
-        release_id: request.releaseId,
-        lesson_key: request.lessonKey,
+      const { input } = await this.releasedLessonInput(
+        tx,
+        request.tenantId,
+        request.releaseId,
+        request.lessonKey,
+      );
+      return request.audience === 'guardian'
+        ? buildGuardianWorksheet(input)
+        : buildLearnerWorksheet(input);
+    });
+  }
+
+  /** The release lesson's immutable revision row and keyed worksheet inputs. */
+  private async releasedLessonInput(
+    tx: Tx,
+    tenantId: string,
+    releaseId: string,
+    lessonKey: string,
+  ) {
+    const released = (await tx.get('released_lessons', {
+      tenant_id: tenantId,
+      release_id: releaseId,
+      lesson_key: lessonKey,
+    })) as Row | null;
+    const lesson = released
+      ? ((await tx.get('lesson_revisions', {
+          id: String(released.lesson_revision_id),
+          tenant_id: tenantId,
+        })) as Row | null)
+      : null;
+    if (!released || !lesson) throw new QuestionNotFoundError();
+    const refs = JSON.parse(
+      String(lesson.questions_json || '[]'),
+    ) as LessonQuestionRefInput[];
+    const layoutParams = JSON.parse(
+      String(lesson.layout_params_json || '{}'),
+    ) as LessonLayoutParams;
+    const revisions = new Map<string, QuestionRevisionView>();
+    for (const ref of refs) {
+      const row = (await tx.get('question_revisions', {
+        id: ref.questionRevisionId,
+        tenant_id: tenantId,
       })) as Row | null;
-      const lesson = released
-        ? ((await tx.get('lesson_revisions', {
-            id: String(released.lesson_revision_id),
-            tenant_id: request.tenantId,
-          })) as Row | null)
-        : null;
-      if (!lesson) throw new QuestionNotFoundError();
-      const refs = JSON.parse(
-        String(lesson.questions_json || '[]'),
-      ) as LessonQuestionRefInput[];
-      const layoutParams = JSON.parse(
-        String(lesson.layout_params_json || '{}'),
-      ) as LessonLayoutParams;
-      const revisions = new Map<string, QuestionRevisionView>();
-      for (const ref of refs) {
-        const row = (await tx.get('question_revisions', {
-          id: ref.questionRevisionId,
-          tenant_id: request.tenantId,
-        })) as Row | null;
-        if (!row) throw new QuestionNotFoundError();
-        revisions.set(
-          ref.questionRevisionId,
-          await this.questionRevisionView(tx, request.tenantId, row),
-        );
-      }
-      const input = {
+      if (!row) throw new QuestionNotFoundError();
+      revisions.set(
+        ref.questionRevisionId,
+        await this.questionRevisionView(tx, tenantId, row),
+      );
+    }
+    return {
+      released,
+      lesson,
+      input: {
         lessonRevisionId: String(lesson.id),
         refs,
         layoutParams,
         revisions,
+      },
+    };
+  }
+
+  /**
+   * Authoring/guardian read of one released lesson: the full lesson revision
+   * (materials, provenance, ordered question refs, layout params) and the keyed
+   * worksheet bundle (answer keys and rubrics included). Needs `read-draft`;
+   * learners use `QuestionResponseService.readReleasedLesson`, which is keyless
+   * and limited to their effective lessons.
+   */
+  async readReleasedLesson(
+    request: CourseAuthoringActor & { releaseId: string; lessonKey: string },
+  ): Promise<ReleasedLessonView> {
+    return this.run(async (tx) => {
+      const release =
+        typeof request.releaseId === 'string' && request.releaseId
+          ? ((await tx.get('course_releases', {
+              id: request.releaseId,
+              tenant_id: request.tenantId,
+            })) as Row | null)
+          : null;
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'read-released-lesson',
+        release ? { courseId: String(release.course_id) } : {},
+      );
+      if (!release) throw new QuestionNotFoundError();
+      const { released, lesson, input } = await this.releasedLessonInput(
+        tx,
+        request.tenantId,
+        request.releaseId,
+        request.lessonKey,
+      );
+      const model = await (
+        await LessonRevisionCollection.create({ db: tx })
+      ).get(
+        { id: String(lesson.id), tenantId: request.tenantId },
+        { cache: false },
+      );
+      if (!model) throw new QuestionNotFoundError();
+      return {
+        releaseId: request.releaseId,
+        courseId: String(release.course_id),
+        lessonKey: String(released.lesson_key),
+        lessonId: String(released.lesson_id),
+        sectionId: String(released.section_id),
+        lessonRevisionId: String(lesson.id),
+        revision: this.lessonView(model),
+        worksheet: buildGuardianWorksheet(input),
       };
-      return request.audience === 'guardian'
-        ? buildGuardianWorksheet(input)
-        : buildLearnerWorksheet(input);
     });
   }
 }

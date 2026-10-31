@@ -1,6 +1,9 @@
 import {
   type CourseAuthoringActor,
   CourseAuthoringError,
+  type CourseLessonCompletion,
+  type CourseLessonRevisionView,
+  type CourseLessonType,
 } from './course-authoring-contracts.js';
 import type { QuestionRubric } from './question-rubric.js';
 
@@ -228,6 +231,43 @@ export interface GuardianWorksheetBundle extends WorksheetBundleBase {
 export type WorksheetBundle = LearnerWorksheetBundle | GuardianWorksheetBundle;
 
 export type QuestionActor = CourseAuthoringActor;
+
+/**
+ * Authoring/guardian read of one released lesson (`read-draft`): the full lesson
+ * revision (materials and provenance included) and the keyed worksheet bundle.
+ */
+export type ReleasedLessonView = Readonly<{
+  releaseId: string;
+  courseId: string;
+  lessonKey: string;
+  lessonId: string;
+  sectionId: string;
+  lessonRevisionId: string;
+  revision: CourseLessonRevisionView;
+  worksheet: GuardianWorksheetBundle;
+}>;
+
+/**
+ * Learner-safe read of one effective lesson. Built from an allowlist: no key,
+ * rubric, provenance, material, source locator or licence detail. The body of a
+ * personal-use-copy lesson is withheld (empty, `bodyWithheld`).
+ */
+export type LearnerLessonView = Readonly<{
+  enrollmentId: string;
+  releaseId: string;
+  lessonKey: string;
+  lessonId: string;
+  lessonRevisionId: string;
+  title: string;
+  body: string;
+  bodyWithheld: boolean;
+  lessonType: CourseLessonType;
+  completionRule: CourseLessonCompletion;
+  estimatedMinutes: number;
+  /** True when a started lesson stays on an older release than the current pin. */
+  pinnedToOlderRelease: boolean;
+  worksheet: LearnerWorksheetBundle;
+}>;
 
 export class QuestionNotFoundError extends CourseAuthoringError {
   constructor() {

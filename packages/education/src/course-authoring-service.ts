@@ -16,7 +16,9 @@ import {
   WorksheetCollection,
 } from './collections.js';
 import {
+  type AutoUpgradeSkipView,
   COURSE_PROVENANCES,
+  type CourseArchiveDecisionView,
   CourseArchivedError,
   type CourseAuthoringAction,
   type CourseAuthoringActor,
@@ -24,6 +26,7 @@ import {
   type CourseAuthoringAuthorizer,
   type CourseAuthoringOperation,
   CourseAuthoringValidationError,
+  type CourseAuthorizationDecision,
   CourseDiscardedError,
   CourseDiscardRefusedError,
   type CourseDraftInput,
@@ -36,6 +39,8 @@ import {
   type CourseMaterialCopyPort,
   type CourseMaterialView,
   CourseNotFoundError,
+  type CoursePage,
+  type CoursePageRequest,
   type CourseProvenance,
   type CourseReferenceGuard,
   type CourseReleaseView,
@@ -44,10 +49,14 @@ import {
   type CourseRevisionView,
   CourseStaleHeadError,
   type CourseStateView,
+  type CourseSummaryView,
+  type CourseUpgradeChoiceView,
+  DEFAULT_PAGE_SIZE,
   type EffectiveLessonView,
   EnrollmentPinConflictError,
   type EnrollmentPinKind,
   type EnrollmentPinView,
+  MAX_PAGE_SIZE,
   type ReleaseReviewGate,
   ReviewGateRequiredError,
   ReviewNotCurrentError,
@@ -163,6 +172,106 @@ const optional = (value: string | null | undefined) => value || null;
 
 type Row = Record<string, unknown>;
 type Tx = DatabaseInterface;
+
+const SKIP_REASON = 'not-authorized';
+// biome-ignore lint/suspicious/noControlCharactersInRegex: strip control characters
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
+const SKIP_CODE_PATTERN = /^[a-z0-9._-]{1,64}$/;
+
+/**
+ * Normalizes an authorizer answer. Only `allowed === true` allows. Reason and
+ * code are host-chosen labels: strip control characters, bound them and drop
+ * anything invalid, so a skip row can never carry free-form or unbounded text.
+ */
+function readDecision(result: unknown): {
+  allowed: boolean;
+  reason: string;
+  code: string;
+} {
+  if (typeof result === 'boolean')
+    return { allowed: result, reason: SKIP_REASON, code: '' };
+  if (!result || typeof result !== 'object')
+    return { allowed: false, reason: SKIP_REASON, code: '' };
+  const decision = result as CourseAuthorizationDecision;
+  const reason =
+    typeof decision.reason === 'string'
+      ? decision.reason.replace(CONTROL_CHARACTERS, ' ').trim().slice(0, 200)
+      : '';
+  return {
+    allowed: decision.allowed === true,
+    reason: reason || SKIP_REASON,
+    code:
+      typeof decision.code === 'string' && SKIP_CODE_PATTERN.test(decision.code)
+        ? decision.code
+        : '',
+  };
+}
+
+function pageLimit(value: unknown): number {
+  if (value === undefined) return DEFAULT_PAGE_SIZE;
+  if (!Number.isSafeInteger(value) || (value as number) < 1)
+    throw new CourseAuthoringValidationError('Invalid page limit');
+  return Math.min(value as number, MAX_PAGE_SIZE);
+}
+type PageKey = readonly [number, string];
+const compareKeys = (a: PageKey, b: PageKey) =>
+  a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
+function encodeCursor(key: PageKey): string {
+  return btoa(JSON.stringify(key))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+function decodeCursor(cursor: unknown): PageKey | null {
+  if (cursor === undefined) return null;
+  try {
+    if (typeof cursor !== 'string' || cursor.length > 400) throw new Error();
+    const parsed = JSON.parse(
+      atob(cursor.replace(/-/g, '+').replace(/_/g, '/')),
+    );
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      Number.isFinite(parsed[0]) &&
+      typeof parsed[1] === 'string' &&
+      parsed[1].length <= 200
+    )
+      return [parsed[0], parsed[1]];
+  } catch {
+    // fall through
+  }
+  throw new CourseAuthoringValidationError('Invalid page cursor');
+}
+/** Total order by (key, id), keyset cursor: stable under concurrent appends. */
+function paginate<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => PageKey,
+  request: CoursePageRequest,
+): { rows: T[]; nextCursor: string | null } {
+  const limit = pageLimit(request.limit);
+  const after = decodeCursor(request.cursor);
+  const sorted = rows
+    .map((row) => ({ row, key: keyOf(row) }))
+    .sort((a, b) => compareKeys(a.key, b.key))
+    .filter((entry) => !after || compareKeys(entry.key, after) > 0);
+  const slice = sorted.slice(0, limit);
+  return {
+    rows: slice.map((entry) => entry.row),
+    nextCursor:
+      sorted.length > limit ? encodeCursor(slice[slice.length - 1].key) : null,
+  };
+}
+/** The one lifecycle rule: discarded, else archived, else released, else draft. */
+function deriveState(
+  discarded: boolean,
+  latestArchiveAction: string | undefined,
+  releaseCount: number,
+): CourseLifecycleState {
+  if (discarded) return 'discarded';
+  if (latestArchiveAction === 'archive') return 'archived';
+  return releaseCount ? 'released' : 'draft';
+}
+const millis = (value: unknown) => new Date(value as string | Date).getTime();
 
 /** Everything a retried save must reproduce, minus the actor. */
 interface PreparedLesson {
@@ -517,7 +626,8 @@ export class CourseAuthoringService {
       operation,
       executor: tx,
     });
-    if (allowed !== true) throw new CourseAuthoringAuthorizationError();
+    if (readDecision(allowed).allowed !== true)
+      throw new CourseAuthoringAuthorizationError();
   }
 
   protected async identityRow(tx: Tx, tenantId: string, courseId: string) {
@@ -543,12 +653,11 @@ export class CourseAuthoringService {
     });
     if (tombstone) return 'discarded';
     const decisions = await this.archiveDecisions(tx, tenantId, courseId);
-    if (decisions.at(-1)?.action === 'archive') return 'archived';
     const releases = await tx.list('course_releases', {
       tenant_id: tenantId,
       course_id: courseId,
     });
-    return releases.length ? 'released' : 'draft';
+    return deriveState(false, decisions.at(-1)?.action, releases.length);
   }
 
   private async archiveDecisions(tx: Tx, tenantId: string, courseId: string) {
@@ -1139,7 +1248,7 @@ export class CourseAuthoringService {
 
   // -- reads ----------------------------------------------------------------
 
-  private lessonView(row: LessonRevision | Row): CourseLessonRevisionView {
+  protected lessonView(row: LessonRevision | Row): CourseLessonRevisionView {
     const r = row as unknown as LessonRevision;
     return {
       id: String(r.id),
@@ -1327,6 +1436,291 @@ export class CourseAuthoringService {
       headRevisionId: head ? String(head.head_revision_id) : null,
       releases,
     };
+  }
+
+  /**
+   * Authored courses of the tenant, oldest first (created time, then id), with
+   * state, draft head, latest release and archive state. Discarded courses are
+   * excluded unless `includeDiscarded` is true. Needs `read-draft`.
+   */
+  async listCourses(
+    request: CourseAuthoringActor &
+      CoursePageRequest & { includeDiscarded?: boolean },
+  ): Promise<CoursePage<CourseSummaryView>> {
+    pageLimit(request.limit);
+    decodeCursor(request.cursor);
+    const includeDiscarded =
+      request.includeDiscarded === undefined
+        ? false
+        : bool(request.includeDiscarded, 'includeDiscarded');
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'list-courses',
+      );
+      const discarded = new Set(
+        (
+          await tx.list('course_discard_tombstones', {
+            tenant_id: request.tenantId,
+          })
+        ).map((row) => String(row.course_id)),
+      );
+      const identities = (
+        await tx.list('courses', {
+          tenant_id: request.tenantId,
+          source_key: AUTHORED_IDENTITY_SOURCE_KEY,
+        })
+      ).filter((row) => includeDiscarded || !discarded.has(String(row.id)));
+      const page = paginate(
+        identities,
+        (row) => [millis(row.created_at), String(row.id)],
+        request,
+      );
+      const items: CourseSummaryView[] = [];
+      for (const row of page.rows)
+        items.push(
+          await this.courseSummary(
+            tx,
+            request.tenantId,
+            row as Row,
+            discarded.has(String(row.id)),
+          ),
+        );
+      return { items, nextCursor: page.nextCursor };
+    });
+  }
+
+  private async courseSummary(
+    tx: Tx,
+    tenantId: string,
+    row: Row,
+    discarded: boolean,
+  ): Promise<CourseSummaryView> {
+    const courseId = String(row.id);
+    const decisions = await this.archiveDecisions(tx, tenantId, courseId);
+    const releases = await tx.list('course_releases', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    const latest = releases.sort(
+      (a, b) => Number(b.release_number) - Number(a.release_number),
+    )[0];
+    const decision = decisions.at(-1);
+    const head = await tx.get('course_draft_heads', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    const revision = head
+      ? await tx.get('course_revisions', {
+          id: head.head_revision_id,
+          tenant_id: tenantId,
+        })
+      : null;
+    const state = deriveState(discarded, decision?.action, releases.length);
+    return {
+      courseId,
+      title: String(row.title),
+      state,
+      createdAt: iso(row.created_at as string | Date),
+      head:
+        head && revision
+          ? {
+              revisionId: String(head.head_revision_id),
+              sequence: Number(revision.sequence),
+              version: Number(head.version),
+            }
+          : null,
+      latestRelease: latest
+        ? {
+            id: String(latest.id),
+            revisionId: String(latest.revision_id),
+            releaseNumber: Number(latest.release_number),
+            releaseCourseId: String(latest.release_course_id),
+            recordedAt: iso(latest.recorded_at as string | Date),
+          }
+        : null,
+      archive: {
+        archived: !discarded && decision?.action === 'archive',
+        latestDecision: decision
+          ? ({
+              action: decision.action as 'archive' | 'unarchive',
+              sequence: decision.sequence,
+              actorUserId: decision.actorUserId,
+              delegatingGuardianUserId: optional(
+                decision.delegatingGuardianUserId,
+              ),
+              delegationId: optional(decision.delegationId),
+              recordedAt: iso(decision.recordedAt),
+            } satisfies CourseArchiveDecisionView)
+          : null,
+      },
+    };
+  }
+
+  private choiceView(row: CourseUpgradeChoice): CourseUpgradeChoiceView {
+    return {
+      id: String(row.id),
+      courseId: row.courseId,
+      scope: row.enrollmentId ? 'enrollment' : 'course',
+      enrollmentId: optional(row.enrollmentId),
+      enabled: row.enabled,
+      kind: row.enabled ? 'opt-in' : 'opt-out',
+      sequence: row.sequence,
+      actorUserId: row.actorUserId,
+      delegatingGuardianUserId: optional(row.delegatingGuardianUserId),
+      delegationId: optional(row.delegationId),
+      policyBasis: row.policyBasis,
+      recordedAt: iso(row.recordedAt),
+    };
+  }
+
+  /**
+   * Recorded auto-upgrade opt-in/out history of a course, in sequence order:
+   * every row (course and enrollment level), or with `enrollmentId` that
+   * enrollment's own rows plus the choice that currently governs it.
+   * Needs `read-draft` (authoring view); a foreign enrollment is a denial.
+   */
+  async listUpgradeChoices(
+    request: CourseAuthoringActor &
+      CoursePageRequest & { courseId: string; enrollmentId?: string },
+  ): Promise<
+    CoursePage<CourseUpgradeChoiceView> & {
+      governing: CourseUpgradeChoiceView | null;
+    }
+  > {
+    pageLimit(request.limit);
+    decodeCursor(request.cursor);
+    return this.run(async (tx) => {
+      const enrollment = request.enrollmentId
+        ? await this.enrollmentRow(tx, request.tenantId, request.enrollmentId)
+        : null;
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'list-upgrade-choices',
+        {
+          courseId: request.courseId,
+          ...(enrollment
+            ? {
+                enrollmentId: String(enrollment.id),
+                learnerId: String(enrollment.learner_id),
+              }
+            : {}),
+        },
+      );
+      await this.identityRow(tx, request.tenantId, request.courseId);
+      const rows = (
+        await (
+          await CourseUpgradeChoiceCollection.create({ db: tx })
+        ).list({
+          where: { tenantId: request.tenantId, courseId: request.courseId },
+          limit: 100000,
+        })
+      ).filter(
+        (row) => !enrollment || row.enrollmentId === request.enrollmentId,
+      );
+      const page = paginate(
+        rows,
+        (row) => [row.sequence, String(row.id)],
+        request,
+      );
+      const governing = enrollment
+        ? await this.governingChoice(
+            tx,
+            request.tenantId,
+            request.courseId,
+            String(enrollment.id),
+          )
+        : null;
+      return {
+        items: page.rows.map((row) => this.choiceView(row)),
+        nextCursor: page.nextCursor,
+        governing: governing ? this.choiceView(governing) : null,
+      };
+    });
+  }
+
+  /**
+   * Automatic upgrades that were not performed, oldest first, for a course
+   * and/or an enrollment (at least one is required). Needs `read-draft`.
+   */
+  async listAutoUpgradeSkips(
+    request: CourseAuthoringActor &
+      CoursePageRequest & { courseId?: string; enrollmentId?: string },
+  ): Promise<CoursePage<AutoUpgradeSkipView>> {
+    pageLimit(request.limit);
+    decodeCursor(request.cursor);
+    for (const value of [request.courseId, request.enrollmentId])
+      if (value !== undefined && (typeof value !== 'string' || !value))
+        throw new CourseAuthoringValidationError('Invalid skip filter');
+    if (!request.courseId && !request.enrollmentId)
+      throw new CourseAuthoringValidationError(
+        'A course or an enrollment is required',
+      );
+    return this.run(async (tx) => {
+      const enrollment = request.enrollmentId
+        ? await this.enrollmentRow(tx, request.tenantId, request.enrollmentId)
+        : null;
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'list-auto-upgrade-skips',
+        {
+          ...(request.courseId ? { courseId: request.courseId } : {}),
+          ...(enrollment
+            ? {
+                enrollmentId: String(enrollment.id),
+                learnerId: String(enrollment.learner_id),
+              }
+            : {}),
+        },
+      );
+      if (request.courseId)
+        await this.identityRow(tx, request.tenantId, request.courseId);
+      const rows = await (
+        await EnrollmentAutoUpgradeSkipCollection.create({ db: tx })
+      ).list({
+        where: {
+          tenantId: request.tenantId,
+          ...(request.courseId ? { courseId: request.courseId } : {}),
+          ...(request.enrollmentId
+            ? { enrollmentId: request.enrollmentId }
+            : {}),
+        },
+        limit: 100000,
+      });
+      const page = paginate(
+        rows,
+        (row) => [millis(row.recordedAt), String(row.id)],
+        request,
+      );
+      return {
+        items: page.rows.map(
+          (row): AutoUpgradeSkipView => ({
+            id: String(row.id),
+            enrollmentId: row.enrollmentId,
+            learnerId: row.learnerId,
+            courseId: row.courseId,
+            releaseId: row.releaseId,
+            optInScope: row.optInScope as 'course' | 'enrollment',
+            optInActorUserId: row.optInActorUserId,
+            optInDelegatingGuardianUserId: optional(
+              row.optInDelegatingGuardianUserId,
+            ),
+            optInDelegationId: optional(row.optInDelegationId),
+            policyBasis: row.policyBasis,
+            reason: row.reason,
+            code: row.code,
+            recordedAt: iso(row.recordedAt),
+          }),
+        ),
+        nextCursor: page.nextCursor,
+      };
+    });
   }
 
   // -- release --------------------------------------------------------------
@@ -2142,7 +2536,8 @@ export class CourseAuthoringService {
     enrollmentId: string,
     learnerId: string,
     courseId: string,
-  ): Promise<boolean> {
+  ): Promise<{ allowed: boolean; reason: string; code: string }> {
+    const denied = readDecision(false);
     try {
       const delegation = readDelegation({
         actorUserId: choice.actorUserId,
@@ -2161,16 +2556,16 @@ export class CourseAuthoringService {
           })) ||
           !(await tx.get('users', { id: userId, status: 'active' }))
         )
-          return false;
+          return denied;
       }
       // A nested transaction is a SAVEPOINT: a failing statement inside the
       // host callback is rolled back to it, so it cannot leave the release
       // transaction aborted (PostgreSQL 25P02). A throw means "not allowed".
       // An executor that cannot nest cannot isolate the callback: fail closed.
-      if (typeof tx.transaction !== 'function') return false;
-      return await tx.transaction(
-        async (inner) =>
-          (await this.authorizer({
+      if (typeof tx.transaction !== 'function') return denied;
+      return await tx.transaction(async (inner) =>
+        readDecision(
+          await this.authorizer({
             tenantId,
             actorUserId: choice.actorUserId,
             ...(delegation ?? {}),
@@ -2180,10 +2575,12 @@ export class CourseAuthoringService {
             action: 'education.course.assign',
             operation: 'auto-upgrade',
             executor: inner,
-          })) === true,
+          }),
+        ),
       );
     } catch {
-      return false;
+      // Never record a thrown message: the generic reason only.
+      return denied;
     }
   }
 
@@ -2220,16 +2617,15 @@ export class CourseAuthoringService {
       const optInScope = choice.enrollmentId ? 'enrollment' : 'course';
       const learnerId = String((enrollment as Row).learner_id);
       await this.lockEnrollment(tx, tenantId, enrollmentId);
-      if (
-        !(await this.authorizeAutoUpgrade(
-          tx,
-          tenantId,
-          choice,
-          enrollmentId,
-          learnerId,
-          courseId,
-        ))
-      ) {
+      const decision = await this.authorizeAutoUpgrade(
+        tx,
+        tenantId,
+        choice,
+        enrollmentId,
+        learnerId,
+        courseId,
+      );
+      if (!decision.allowed) {
         await (
           await EnrollmentAutoUpgradeSkipCollection.create({ db: tx })
         ).create({
@@ -2244,7 +2640,8 @@ export class CourseAuthoringService {
           optInDelegatingGuardianUserId: choice.delegatingGuardianUserId,
           optInDelegationId: choice.delegationId,
           policyBasis: choice.policyBasis,
-          reason: 'not-authorized',
+          reason: decision.reason,
+          code: decision.code,
           recordedAt: new Date(),
         });
         continue;

@@ -8,6 +8,7 @@ import {
   LearnerService,
 } from './learner-service.js';
 import {
+  type LearnerLessonView,
   type LessonLayoutParams,
   type LessonQuestionRefInput,
   QUESTION_COMPLETION_MODES,
@@ -272,6 +273,57 @@ export class QuestionResponseService extends LearnerService {
     };
   }
 
+  /**
+   * One effective lesson for rendering, learner-safe. The audience is the same
+   * for the learner and an authorized guardian (`education.learner.read`, own or
+   * guardian relationship): the keyless bundle and an allowlisted lesson, never
+   * answer keys, rubrics, provenance, materials, source locators or the body of
+   * a personal-use-copy lesson. Keys are read through `QuestionAuthoringService.
+   * readReleasedLesson` (`read-draft`). A lesson outside the enrollment's
+   * effective set is a `QuestionResponseScopeError`.
+   */
+  async readReleasedLesson(request: LessonRequest): Promise<LearnerLessonView> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    const lesson = await this.lessonQuestions(
+      request.tenantId,
+      enrollment,
+      request.lessonId,
+    );
+    const revisions = new Map<string, QuestionRevisionView>();
+    for (const ref of lesson.refs)
+      revisions.set(
+        ref.questionRevisionId,
+        revisionView(await this.revisionRow(request, ref), false),
+      );
+    const row = lesson.row;
+    const withheld = String(row.license_kind) === 'personal-use-copy';
+    return {
+      enrollmentId: String(enrollment.id),
+      releaseId: lesson.releaseId,
+      lessonKey: lesson.lessonKey,
+      lessonId: request.lessonId,
+      lessonRevisionId: lesson.lessonRevisionId,
+      title: String(row.title),
+      body: withheld ? '' : String(row.body),
+      bodyWithheld: withheld,
+      lessonType: String(row.lesson_type) as LearnerLessonView['lessonType'],
+      completionRule: String(
+        row.completion_rule,
+      ) as LearnerLessonView['completionRule'],
+      estimatedMinutes: Number(row.estimated_minutes),
+      pinnedToOlderRelease: lesson.pinnedToOlderRelease,
+      worksheet: buildLearnerWorksheet({
+        lessonRevisionId: lesson.lessonRevisionId,
+        refs: lesson.refs,
+        layoutParams: lesson.layoutParams,
+        revisions,
+      }),
+    };
+  }
+
   private view(
     row: QuestionResponse,
     learnerUserId: string,
@@ -327,6 +379,10 @@ export class QuestionResponseService extends LearnerService {
         : null;
     if (!lesson) throw new QuestionResponseScopeError();
     return {
+      row: lesson as Row,
+      releaseId: String(effective?.releaseId),
+      lessonKey: String(effective?.lessonKey),
+      pinnedToOlderRelease: effective?.pinnedToOlderRelease === true,
       lessonRevisionId: String(lesson.id),
       refs: JSON.parse(
         String(lesson.questions_json || '[]'),

@@ -55,7 +55,11 @@ export type CourseAuthoringOperation =
   | 'record-review'
   | 'read-review'
   | 'resolve-finding'
-  | 'note-context-change';
+  | 'note-context-change'
+  | 'list-courses'
+  | 'list-upgrade-choices'
+  | 'list-auto-upgrade-skips'
+  | 'read-released-lesson';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {
@@ -71,6 +75,18 @@ export interface CourseAuthoringActor {
   delegationId?: string;
 }
 
+/**
+ * A richer authorizer answer. `reason` (at most 200 characters) and `code` (a
+ * short token, at most 64 characters of `[a-z0-9._-]`) are recorded on an
+ * auto-upgrade skip when `allowed` is false; invalid values are dropped, never
+ * thrown. A plain `boolean` stays valid everywhere.
+ */
+export interface CourseAuthorizationDecision {
+  allowed: boolean;
+  reason?: string;
+  code?: string;
+}
+
 export type CourseAuthoringAuthorizer = (
   request: CourseAuthoringActor & {
     action: CourseAuthoringAction;
@@ -81,7 +97,10 @@ export type CourseAuthoringAuthorizer = (
     enrollmentId?: string;
     learnerId?: string;
   },
-) => boolean | Promise<boolean>;
+) =>
+  | boolean
+  | CourseAuthorizationDecision
+  | Promise<boolean | CourseAuthorizationDecision>;
 
 export type CourseProvenance =
   | 'supplied'
@@ -211,6 +230,8 @@ export interface CourseLessonRevisionView {
   questions: LessonQuestionRefInput[];
   layoutParams: LessonLayoutParams;
 }
+/** Alias for hosts: a lesson revision as read by the authoring views. */
+export type LessonRevisionView = CourseLessonRevisionView;
 export interface CourseRevisionView {
   id: string;
   courseId: string;
@@ -280,6 +301,88 @@ export type CourseStateView = Readonly<{
     releaseCourseId: string;
   }>;
 }>;
+/** Largest page a list read returns; the default is `DEFAULT_PAGE_SIZE`. */
+export const MAX_PAGE_SIZE = 100;
+export const DEFAULT_PAGE_SIZE = 50;
+
+/** Opaque, deterministic pagination: pass back `nextCursor` unchanged. */
+export interface CoursePageRequest {
+  limit?: number;
+  cursor?: string;
+}
+export type CoursePage<T> = Readonly<{
+  items: ReadonlyArray<T>;
+  /** Null on the last page. */
+  nextCursor: string | null;
+}>;
+
+export type CourseArchiveDecisionView = Readonly<{
+  action: 'archive' | 'unarchive';
+  sequence: number;
+  actorUserId: string;
+  delegatingGuardianUserId: string | null;
+  delegationId: string | null;
+  recordedAt: string;
+}>;
+/** One authored course in `listCourses`. */
+export type CourseSummaryView = Readonly<{
+  courseId: string;
+  title: string;
+  state: CourseLifecycleState;
+  createdAt: string;
+  /** The draft head; `revisionId` is the expected-head token for the next save. */
+  head: Readonly<{
+    revisionId: string;
+    sequence: number;
+    version: number;
+  }> | null;
+  latestRelease: Readonly<{
+    id: string;
+    revisionId: string;
+    releaseNumber: number;
+    releaseCourseId: string;
+    recordedAt: string;
+  }> | null;
+  archive: Readonly<{
+    archived: boolean;
+    latestDecision: CourseArchiveDecisionView | null;
+  }>;
+}>;
+
+export type CourseUpgradeChoiceView = Readonly<{
+  id: string;
+  courseId: string;
+  scope: 'course' | 'enrollment';
+  /** Null for a course-level choice. */
+  enrollmentId: string | null;
+  enabled: boolean;
+  kind: 'opt-in' | 'opt-out';
+  sequence: number;
+  actorUserId: string;
+  delegatingGuardianUserId: string | null;
+  delegationId: string | null;
+  policyBasis: string;
+  recordedAt: string;
+}>;
+
+export type AutoUpgradeSkipView = Readonly<{
+  id: string;
+  enrollmentId: string;
+  learnerId: string;
+  courseId: string;
+  releaseId: string;
+  optInScope: 'course' | 'enrollment';
+  optInActorUserId: string;
+  optInDelegatingGuardianUserId: string | null;
+  optInDelegationId: string | null;
+  policyBasis: string;
+  /** The authorizer's reason when it gave one, else `not-authorized`. */
+  reason: string;
+  /** The authorizer's short code, or an empty string. */
+  code: string;
+  recordedAt: string;
+}>;
+
 export type EnrollmentPinKind = 'initial' | 'explicit' | 'auto';
 export type EnrollmentPinView = Readonly<{
   enrollmentId: string;

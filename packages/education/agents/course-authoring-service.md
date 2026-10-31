@@ -90,12 +90,40 @@ re-evaluates the delegation or relationship) and the transaction executor; hosts
 must map `auto-upgrade` per learner from the assignment setting. A denial or
 authorizer failure (each call runs in a SAVEPOINT, rolled back on a throw, so a failing host statement cannot abort the release transaction) never blocks the release or other enrollments: that
 enrollment stays on its pin and an `EnrollmentAutoUpgradeSkip` row records
-`not-authorized`, the opt-in scope, actor, guardian and `policyBasis`. A replayed
+`not-authorized` (or the authorizer's `reason`), the optional `code`, the opt-in scope, actor,
+guardian and `policyBasis`. A replayed
 request key with a different basis is a request-key conflict.
 `getEnrollmentRelease` returns the pin and effective lessons: after any move
 (automatic or explicit), started lessons stay on the immutable row they were
 started on, unstarted lessons follow the current release. `LearnerService`
 consumes the same rule (see `learner-service.md`).
+
+## Authorizer answers
+
+An authorizer returns `boolean` or `{ allowed, reason?, code? }` (only `allowed: true`
+allows). On an auto-upgrade denial `reason` (at most 200 characters, control characters
+stripped) and `code` (`[a-z0-9._-]`, at most 64; e.g. `assignment-setting`,
+`agent-permission`, `guardian-link`) are stored on the skip; invalid values fall back to
+`not-authorized` and an empty code. A thrown error's message is never recorded.
+
+## Reads
+
+All use `read-draft`, the executor and delegation fields, and are tenant-exact (a foreign
+course is not-found, a foreign enrollment a denial). Lists take `limit` (default 50, capped at
+100) and an opaque `cursor`, and return `{ items, nextCursor }` in a total order.
+- `listCourses({ includeDiscarded? })` (operation `list-courses`): `CourseSummaryView`
+  per course: state, `head` (`revisionId` is the expected-head token), `latestRelease`,
+  `archive`. Oldest first; discarded courses only when requested.
+- `listUpgradeChoices({ courseId, enrollmentId? })` (`list-upgrade-choices`): opt-in/out
+  history in sequence order; with an enrollment, its own rows plus `governing`.
+- `listAutoUpgradeSkips({ courseId?, enrollmentId? })` (`list-auto-upgrade-skips`, one
+  required): `AutoUpgradeSkipView` with `reason`, `code`, opt-in actor/guardian/delegation.
+- `QuestionAuthoringService.readReleasedLesson({ releaseId, lessonKey })`
+  (`read-released-lesson`): lesson revision, layout and the keyed worksheet bundle.
+- `QuestionResponseService.readReleasedLesson({ enrollmentId, lessonId })` (learner
+  authorizer, `education.learner.read`; the learner or an authorized guardian): only the
+  enrollment's effective lessons (else `QuestionResponseScopeError`), keyless bundle,
+  no materials or provenance, personal-use body withheld (`bodyWithheld`).
 
 ## Archive and discard
 
