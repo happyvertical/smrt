@@ -201,6 +201,12 @@ manifest generator resolves unqualified targets in the declaring package.
 Keep the merged schema in parity tests: `getTestDatabase()` preserves its
 authoritative FK metadata over the generated columns, so testing only the
 standalone generator cannot prove the constraint that reaches the database.
+With an explicit `classes` list, `getTestDatabase()` builds that authoritative
+schema with `getAllSchemasAsDefinitions({ tables })`: only the requested tables
+and their foreign-key closure are merged and ownership-checked
+(`CONFIG_TABLE_NAME_COLLISION` still fires for any of them), so an unrelated
+collision elsewhere in the registry cannot abort the setup. The implicit list
+checks every registered table (#3956).
 
 Field decorator registration retains constructor ownership separately from the
 simple-name inspection view. Custom decorators should pass the callback's
