@@ -129,6 +129,9 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
       'Test-run manifest snapshot contract (#4128): a process-environment map written by the Vitest runner and read by Node test workers; a browser has no test run to join',
     names: [
       'SMRT_TEST_MANIFEST_PATHS_ENV_KEY',
+      'isActiveTestManifestPath',
+      'isRefusedTestArtifact',
+      'isTestArtifactManifest',
       'registerActiveTestManifestPath',
       'resolveActiveTestManifestPath',
     ],

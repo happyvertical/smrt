@@ -17,7 +17,10 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManifestBuilder } from '../generator.js';
 import { ManifestManager } from '../manager.js';
+import { loadManifestFromPathSync } from '../manifest-loader.js';
 import {
+  isRefusedTestArtifact,
+  isTestArtifactManifest,
   registerActiveTestManifestPath,
   resolveActiveTestManifestPath,
   SMRT_TEST_MANIFEST_PATHS_ENV_KEY,
@@ -140,5 +143,58 @@ describe('ManifestBuilder explicit output mode', () => {
     expect(existsSync(join(outputDir, 'manifest.json'))).toBe(true);
     expect(existsSync(join(dir, '.smrt/manifest.json'))).toBe(false);
     expect(existsSync(join(dir, 'dist/manifest.json'))).toBe(false);
+  });
+});
+
+describe('test artifacts outside their own run (#2760)', () => {
+  function writeTestArtifact(path: string): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: '1.0.0',
+        artifactPurpose: 'test',
+        objects: { InlineFixture: {} },
+      }),
+    );
+  }
+
+  it('refuses a test artifact unless it is a registered active snapshot', () => {
+    const dir = root();
+    const snapshot = join(dir, '.smrt/test-runs/run/manifest.json');
+    const artifact = { artifactPurpose: 'test', objects: {} };
+    expect(isTestArtifactManifest(artifact)).toBe(true);
+    expect(isTestArtifactManifest({ objects: {} })).toBe(false);
+    expect(isRefusedTestArtifact(artifact, snapshot)).toBe(true);
+    expect(isRefusedTestArtifact({ objects: {} }, snapshot)).toBe(false);
+    registerActiveTestManifestPath(dir, snapshot);
+    expect(isRefusedTestArtifact(artifact, snapshot)).toBe(false);
+    expect(
+      isRefusedTestArtifact(artifact, join(dir, '.smrt/manifest.json')),
+    ).toBe(true);
+  });
+
+  it('skips a stale test manifest at .smrt/manifest.json for local and external loads', () => {
+    const dir = root();
+    writeTestArtifact(join(dir, '.smrt/manifest.json'));
+    const manager = new ManifestManager(dir);
+    expect(manager.loadLocal()).toBeNull();
+    expect(manager.loadForExternalPackage()).toBeNull();
+    writeManifest(join(dir, 'dist/manifest.json'), { Production: {} });
+    expect(Object.keys(manager.loadLocal()!.objects)).toEqual(['Production']);
+    expect(Object.keys(manager.loadForExternalPackage()!.objects)).toEqual([
+      'Production',
+    ]);
+  });
+
+  it('refuses an explicit-path load of a test artifact outside its run', () => {
+    const dir = root();
+    const path = join(dir, '.smrt/manifest.json');
+    writeTestArtifact(path);
+    expect(loadManifestFromPathSync(path)).toBeNull();
+    registerActiveTestManifestPath(dir, path);
+    expect(Object.keys(loadManifestFromPathSync(path)!.objects)).toEqual([
+      'InlineFixture',
+    ]);
   });
 });

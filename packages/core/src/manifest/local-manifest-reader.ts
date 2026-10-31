@@ -1,7 +1,10 @@
 import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { existsSync, join, readFileSync } from './node-host.js';
-import { resolveActiveTestManifestPath } from './test-artifacts.js';
+import {
+  isRefusedTestArtifact,
+  resolveActiveTestManifestPath,
+} from './test-artifacts.js';
 
 /** The two filesystem reads a manifest load needs. */
 export interface ManifestFileAccess {
@@ -34,7 +37,8 @@ const reportedMissingTestManifests = new Set<string>();
  * to avoid pulling in test objects.
  *
  * Inside a test run, the run's active test manifest snapshot (see
- * `test-artifacts.ts`, #4128) precedes every local path. It is never written
+ * `test-artifacts.ts`, #4128) precedes every local path. A manifest marked
+ * `artifactPurpose: 'test'` found anywhere else is skipped (#2760). It is never written
  * to, or read from, the standard locations, so a concurrent build cannot
  * replace it and a process outside the run never reads it.
  */
@@ -113,7 +117,16 @@ export class LocalManifestReader {
       if (this.files.existsSync(path)) {
         try {
           const content = this.files.readFileSync(path, 'utf-8');
-          return JSON.parse(content);
+          const manifest = JSON.parse(content);
+          // A test artifact is only valid as its own run's active snapshot;
+          // anywhere else its inline fixtures are phantom objects (#2760).
+          if (isRefusedTestArtifact(manifest, path)) {
+            logger.debug(
+              `[ManifestManager] Skipping test artifact at ${path}; it is not this process's active test manifest`,
+            );
+            continue;
+          }
+          return manifest;
         } catch (error) {
           logger.error(`[ManifestManager] Failed to read manifest at ${path}`, {
             error,

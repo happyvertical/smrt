@@ -2581,7 +2581,14 @@ function readManifest(
     join(directory, 'dist', 'manifest.json'),
   ]) {
     const content = readJson(path);
-    if (content) return { path, content: objectRecord(content) };
+    // A test run's manifest lists inline test fixtures as if they were the
+    // package's objects (#2760); only build outputs describe a package.
+    if (
+      content &&
+      (content as { artifactPurpose?: unknown }).artifactPurpose !== 'test'
+    ) {
+      return { path, content: objectRecord(content) };
+    }
   }
   return null;
 }

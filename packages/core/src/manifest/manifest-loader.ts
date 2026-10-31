@@ -63,6 +63,7 @@ import {
   isTestEnvironment as isTestEnvFromStore,
   shouldLoadCoreTestManifest,
 } from './store.js';
+import { isRefusedTestArtifact } from './test-artifacts.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -423,7 +424,12 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
         );
         const testObjectCount = Object.keys(testManifest.objects).length;
 
-        if (testObjectCount > 0) {
+        // Outside the test run that registered it, a test manifest's inline
+        // fixtures are phantom objects (#2760).
+        if (
+          testObjectCount > 0 &&
+          !isRefusedTestArtifact(testManifest, testManifestPath)
+        ) {
           setLocalTestManifestCache(testManifest);
           debugLog(
             `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty LocalManifestReader result`,
@@ -449,6 +455,12 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
       const testManifest: Manifest = parse(
         readFileSync(testManifestPath, 'utf-8'),
       );
+      if (isRefusedTestArtifact(testManifest, testManifestPath)) {
+        debugLog(
+          `[manifest-loader] Skipping test manifest ${testManifestPath}; it is not this process's active test manifest`,
+        );
+        return null;
+      }
       setLocalTestManifestCache(testManifest);
       const objectCount = Object.keys(testManifest.objects).length;
       debugLog(
@@ -492,7 +504,10 @@ export function readProjectManifestSync(): SmartObjectManifest | null {
   const manager = new LocalManifestReader(process.cwd());
   const path = manager
     .getLocalCandidatePaths()
-    .find((candidate) => existsSync(candidate));
+    .find(
+      (candidate) =>
+        existsSync(candidate) && !isRefusedTestArtifactFile(candidate),
+    );
   if (!path) return null;
   let mtimeMs: number;
   try {
@@ -752,6 +767,16 @@ function resolveWorkspacePackageJsonPath(packageName: string): string | null {
   return null;
 }
 
+/** Whether the manifest file at `path` is a refused test artifact (#2760). */
+function isRefusedTestArtifactFile(path: string): boolean {
+  try {
+    return isRefusedTestArtifact(parse(readFileSync(path, 'utf-8')), path);
+  } catch {
+    // Unreadable files are handled (and reported) by the caller's own read.
+    return false;
+  }
+}
+
 function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
   const candidates = [
     join(packageDir, 'src', 'manifest', 'manifest.json'),
@@ -759,7 +784,7 @@ function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (existsSync(candidate) && !isRefusedTestArtifactFile(candidate)) {
       return candidate;
     }
   }
@@ -907,6 +932,15 @@ export function loadExternalManifestSync(
       return null;
     }
 
+    if (isRefusedTestArtifact(manifest, manifestPath)) {
+      if (options.warn ?? true) {
+        logger.warn(
+          `Ignoring test artifact ${manifestPath} for package ${packageName}; test manifests are never dependency manifests`,
+        );
+      }
+      return null;
+    }
+
     const cachedManifest = manifest.packageName
       ? manifest
       : { ...manifest, packageName };
@@ -951,6 +985,13 @@ export function loadManifestFromPathSync(
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
       logger.warn(`Invalid manifest structure at ${manifestPath}`);
+      return null;
+    }
+
+    if (isRefusedTestArtifact(manifest, manifestPath)) {
+      logger.warn(
+        `Ignoring test artifact ${manifestPath}; it is not this process's active test manifest`,
+      );
       return null;
     }
 
