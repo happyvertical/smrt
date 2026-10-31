@@ -131,9 +131,12 @@ consumer, or from the provider for transitive modules) is emitted as
 `SMRT_VITE_RUNTIME ? await import(...) : {}` with `SMRT_VITE_RUNTIME =
 Boolean(import.meta.env)`, and its export/collection consistency throws are
 gated the same way. Vite SSR therefore registers those constructors exactly as
-before, while `smrt db:migrate`, CLIs, and workers load the register, warn once
-on stderr, and rely on `.smrt/manifest.json` for those objects. Generation
-warns too. Publish a compiled JS export to register them under plain Node.
+before, while `smrt db:migrate` and CLIs load the register, warn once on
+stderr, and rely on `.smrt/manifest.json` for those objects. Generation warns
+too. Not covered: the compiled worker artifact (`.smrt/runtime/register.js`) is
+a Vite build, so `import.meta.env` is constant there and the externalized
+TypeScript import still fails when a plain-Node worker starts. Publish a
+compiled JS export to register such objects outside Vite.
 Regression: the `#3092` tests in `index.test.ts` (plain-Node and real Vite
 `ssrLoadModule` loads of one generated register, and the transitive gating).
 

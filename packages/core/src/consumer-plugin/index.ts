@@ -2232,7 +2232,7 @@ async function generateRegistrationFile(
   const uniqueViteOnlyModules = [...new Set(viteOnlyModules)];
   if (uniqueViteOnlyModules.length > 0) {
     console.warn(
-      `[smrt:consumer] ${uniqueViteOnlyModules.join(', ')} resolve${uniqueViteOnlyModules.length === 1 ? 's' : ''} to TypeScript source; .smrt/register.js imports ${uniqueViteOnlyModules.length === 1 ? 'it' : 'them'} only under Vite. Plain Node (smrt db:migrate, CLIs, workers) keeps their manifests but does not register their constructors; publish a compiled JavaScript export to register them outside Vite (#3092).`,
+      `[smrt:consumer] ${uniqueViteOnlyModules.join(', ')} resolve${uniqueViteOnlyModules.length === 1 ? 's' : ''} to TypeScript source; .smrt/register.js imports ${uniqueViteOnlyModules.length === 1 ? 'it' : 'them'} only under Vite. Plain Node (smrt db:migrate, CLIs) keeps their manifests but does not register their constructors; the compiled worker artifact (.smrt/runtime/register.js) still imports them and cannot start under plain Node. Publish a compiled JavaScript export to register them outside Vite (#3092).`,
     );
   }
   const viteRuntimePrelude =
