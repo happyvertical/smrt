@@ -371,6 +371,80 @@ describe('content tenant-local natural keys (#3305 M1)', () => {
       expect(forA?.tenantId ?? null).toBeNull();
     });
 
+    it('refuses to delete a global row a tenant still relies on', async () => {
+      const policies = await ContentGovernancePolicyCollection.create({ db });
+      const profiles = await ContentGovernanceProfileCollection.create({ db });
+      const assignments = await ContentGovernanceAssignmentCollection.create({
+        db,
+      });
+      const globalPolicy = await withSystemContext(async () => {
+        const policy = await policies.create({
+          key: 'legal-check',
+          label: 'Legal',
+        });
+        await policy.save();
+        return policy;
+      });
+      const globalProfile = await withSystemContext(async () => {
+        const profile = await profiles.create({
+          key: 'legal-desk',
+          label: 'Legal desk',
+          requirements: [],
+        });
+        await profile.save();
+        return profile;
+      });
+      await inA(async () => {
+        const profile = await profiles.create({
+          key: 'a-desk',
+          requirements: [{ policyKey: 'legal-check', label: 'Legal' }],
+        });
+        await profile.save();
+        const assignment = await assignments.create({
+          contentType: 'article',
+          enabled: true,
+          publicationProfileKey: 'legal-desk',
+        });
+        await assignment.save();
+      });
+
+      await expect(
+        withSystemContext(() => globalPolicy.delete()),
+      ).rejects.toThrow(
+        new RegExp(`referenced by profiles: ${tenantA}:a-desk`),
+      );
+      await expect(
+        withSystemContext(() => globalProfile.delete()),
+      ).rejects.toThrow(
+        new RegExp(`referenced by assignments: ${tenantA}:article::`),
+      );
+
+      // Once tenant A overrides the key, the global row is no longer relied on.
+      await inA(async () => {
+        const override = await policies.create({
+          key: 'legal-check',
+          label: 'A legal',
+        });
+        await override.save();
+      });
+      await expect(
+        withSystemContext(() => globalPolicy.delete()),
+      ).resolves.toBeUndefined();
+    });
+
+    it('fails closed when a tenant context asks for another tenant definitions', async () => {
+      await expect(
+        inA(() =>
+          getEffectiveContentGovernanceConfig({ db, tenantId: tenantB }),
+        ),
+      ).rejects.toThrow(/isolation/i);
+      await expect(
+        inA(() =>
+          getEffectiveContentGovernanceConfig({ db, tenantId: tenantA }),
+        ),
+      ).resolves.toBeDefined();
+    });
+
     it('limits the persisted-assignment probe to the content tenant and the global layer', async () => {
       const assignments = await ContentGovernanceAssignmentCollection.create({
         db,
@@ -474,6 +548,51 @@ describe.each(
     }
     await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
     admin = undefined;
+  });
+
+  it('keeps same keys per tenant, one global row on retry, and fails closed on foreign reads', async () => {
+    const policies = await ContentGovernancePolicyCollection.create({ db });
+    const contributors = await ContentContributorCollection.create({ db });
+    const savePolicy = (tenantId: string | null, label: string) => {
+      const run = async () => {
+        const policy = await policies.create({ key: 'shared', label });
+        await policy.save();
+        return policy;
+      };
+      return tenantId ? withTenant({ tenantId }, run) : withSystemContext(run);
+    };
+    const a = await savePolicy(tenantA, 'A');
+    const b = await savePolicy(tenantB, 'B');
+    const g = await savePolicy(null, 'G');
+    const gRetry = await savePolicy(null, 'G2');
+    expect(new Set([a.id, b.id, g.id]).size).toBe(3);
+    expect(gRetry.id).toBe(g.id);
+    expect(
+      await selectRows(db, 'content_governance_policies', 'WHERE key = ?', [
+        'shared',
+      ]),
+    ).toHaveLength(3);
+    expect(
+      (
+        await withTenant({ tenantId: tenantA }, () =>
+          policies.getByKey('shared'),
+        )
+      )?.label,
+    ).toBe('A');
+    expect((await policies.getByKey('shared'))?.label).toBe('G2');
+    await expect(
+      withTenant({ tenantId: tenantA }, () =>
+        policies.getByKey('shared', { tenantId: tenantB }),
+      ),
+    ).rejects.toThrow(/isolation/i);
+
+    const first = await saveContributor(contributors, tenantA);
+    expect(
+      await withTenant({ tenantId: tenantB }, () =>
+        contributors.getByEmail('legacy@example.com'),
+      ),
+    ).toBeNull();
+    expect((await saveContributor(contributors, tenantA)).id).toBe(first.id);
   });
 
   it('replaces the narrower unique index in place, preserving rows, and is then a no-op', async () => {

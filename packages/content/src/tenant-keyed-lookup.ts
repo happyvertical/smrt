@@ -51,14 +51,19 @@ export async function getByTenantKey<T extends SmrtObject>(
       : `SELECT * FROM ${collection.tableName} WHERE ${column} = ? AND tenant_id = ?`
     : `SELECT * FROM ${collection.tableName} WHERE ${column} = ? AND tenant_id IS NULL`;
   const rows = (await collection.query(
-    sql,
+    // Deterministic winner if engines without NULL-equal unique indexes
+    // ever let duplicate global rows race in.
+    `${sql} ORDER BY created_at, id`,
     tenantId ? [value, tenantId] : [value],
     { allowRawOnTenantScoped: true },
   )) as T[];
-  const rowTenant = (row: T) =>
-    (row as unknown as { tenantId?: string | null }).tenantId ?? null;
+  const rowTenant = (row: T) => {
+    const value = (row as unknown as { tenantId?: string | null }).tenantId;
+    return value ? String(value).toLowerCase() : null;
+  };
+  const wanted = tenantId?.toLowerCase() ?? null;
   return (
-    (tenantId ? rows.find((row) => rowTenant(row) === tenantId) : undefined) ??
+    (wanted ? rows.find((row) => rowTenant(row) === wanted) : undefined) ??
     rows.find((row) => rowTenant(row) === null) ??
     null
   );

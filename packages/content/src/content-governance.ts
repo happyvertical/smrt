@@ -1,5 +1,6 @@
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import {
+  assertTenantReadAllowed,
   getCurrentTenant,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
@@ -529,6 +530,14 @@ function resolveGovernanceTenantFilter(
   tenantId: string | null | undefined,
 ): string | null | undefined {
   if (tenantId !== undefined) {
+    // An active tenant context cannot list another tenant's definitions by
+    // passing its id (#3305 M1).
+    if (tenantId) {
+      assertTenantReadAllowed(
+        tenantId,
+        'loadPersistedContentGovernanceDefinitions',
+      );
+    }
     return tenantId;
   }
 
@@ -637,7 +646,12 @@ function mapPersistedAssignmentRow(
 }
 
 export async function loadPersistedContentGovernanceDefinitions(
-  options: { db?: DatabaseInterface | null; tenantId?: string | null } = {},
+  options: {
+    db?: DatabaseInterface | null;
+    tenantId?: string | null;
+    /** @internal Every tenant's rows, for global-row reference checks. */
+    allTenants?: boolean;
+  } = {},
 ): Promise<PersistedContentGovernanceDefinitions> {
   const { db } = options;
   if (!db) {
@@ -649,7 +663,9 @@ export async function loadPersistedContentGovernanceDefinitions(
   }
 
   try {
-    const tenantId = resolveGovernanceTenantFilter(options.tenantId);
+    const tenantId = options.allTenants
+      ? undefined
+      : resolveGovernanceTenantFilter(options.tenantId);
     const listGovernanceRows = async (tableName: string) => {
       const byCreatedAt = (
         a: Record<string, unknown>,
@@ -894,6 +910,51 @@ export async function getEffectiveContentGovernanceConfig(
       normalizeAssignmentDefinition,
     ),
   };
+}
+
+/**
+ * Tenant rows that rely on the global `kind` row `key` (#3305 M1): profiles
+ * requiring a global policy, or assignments naming a global profile, in a
+ * tenant without its own row of that key. Deleting the global row would
+ * leave those references dangling, so a global delete checks every tenant,
+ * not only the global layer. Labels are `<tenantId>:<referencing key>`.
+ */
+export async function findTenantReferencesToGlobalKey(options: {
+  db?: DatabaseInterface | null;
+  kind: 'policy' | 'profile';
+  key: string;
+}): Promise<string[]> {
+  const persisted = await loadPersistedContentGovernanceDefinitions({
+    db: options.db,
+    allTenants: true,
+  });
+  const overridden = new Set(
+    (options.kind === 'policy' ? persisted.policies : persisted.profiles)
+      .filter((row) => row.tenantId && row.key === options.key)
+      .map((row) => row.tenantId as string),
+  );
+  const references =
+    options.kind === 'policy'
+      ? persisted.profiles
+          .filter((profile) =>
+            profile.requirements.some(
+              (requirement) => requirement.policyKey === options.key,
+            ),
+          )
+          .map((profile) => ({ tenantId: profile.tenantId, key: profile.key }))
+      : persisted.assignments
+          .filter(
+            (assignment) =>
+              assignment.publicationProfileKey === options.key ||
+              assignment.correctionProfileKey === options.key,
+          )
+          .map((assignment) => ({
+            tenantId: assignment.tenantId,
+            key: assignment.key || assignment.contentType,
+          }));
+  return references
+    .filter((ref) => ref.tenantId && !overridden.has(ref.tenantId))
+    .map((ref) => `${ref.tenantId}:${ref.key}`);
 }
 
 export function hasStaticContentGovernancePolicy(key: string): boolean {

@@ -47,7 +47,8 @@ function parseMetadata(raw: unknown): Record<string, unknown> {
   tableName: 'content_contributors',
   // Unique per tenant, not installation-wide: tenants each know their own
   // contributors, and global (NULL-tenant) rows stay unique on the normalized
-  // email through the tenant-led index's NULLS NOT DISTINCT (#3305 M1).
+  // email through the null-aware upsert, and in the database through NULLS NOT
+  // DISTINCT on PostgreSQL 15+ (#3305 M1).
   conflictColumns: ['tenant_id', 'email'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },

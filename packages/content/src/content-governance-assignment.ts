@@ -31,8 +31,8 @@ export interface ContentGovernanceAssignmentOptions extends SmrtObjectOptions {
   tableName: 'content_governance_assignments',
   // A key is unique per tenant: a tenant row overrides the global (NULL-tenant)
   // assignment of the same key instead of colliding with it or with another
-  // tenant's, and global rows stay unique on key through the tenant-led
-  // index's NULLS NOT DISTINCT (#3305 M1).
+  // tenant's. Global rows stay unique on key through the null-aware upsert,
+  // and in the database through NULLS NOT DISTINCT on PostgreSQL 15+ (#3305 M1).
   conflictColumns: ['tenant_id', 'key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
