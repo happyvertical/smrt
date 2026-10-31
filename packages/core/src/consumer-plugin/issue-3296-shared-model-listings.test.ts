@@ -278,6 +278,29 @@ describe('objectDeclarationIdentity / selectObjectDeclarations (#3296)', () => {
         }),
       ),
     ).toHaveLength(2);
+    // An in-memory scanned listing carrying `undefined`-valued keys is the
+    // same shape as its JSON-loaded twin from a dependency's dist manifest.
+    const inMemory = {
+      ...licenseSaleListing('@a/x'),
+      fields: {
+        title: { type: 'text', required: true, description: undefined },
+        amount: { type: 'integer' },
+      },
+    };
+    expect(
+      selectObjectDeclarations(
+        manifestOf({
+          '@a/x:LicenseSale': inMemory,
+          '@b/y:LicenseSale': JSON.parse(
+            JSON.stringify({
+              ...inMemory,
+              qualifiedName: '@b/y:LicenseSale',
+              packageName: '@b/y',
+            }),
+          ),
+        }),
+      ),
+    ).toHaveLength(1);
     // Field key order is not part of the shape.
     const listing = licenseSaleListing('@b/y');
     expect(

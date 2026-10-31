@@ -33,7 +33,8 @@ export interface ObjectDeclaration {
   /**
    * The listing the declaration is rendered from: the first listing in
    * deterministic qualified-identity order. Every collapsed listing has the
-   * same fields, so the choice never changes the rendered declaration.
+   * same fields, so the choice never changes the declared type (only, at
+   * most, the order its properties are written in).
    */
   obj: SmartObjectDefinition;
   /** Manifest key of {@link obj}. */
@@ -54,6 +55,17 @@ function normalizeSourcePath(filePath: string): string {
 
 function isAbsoluteSourcePath(filePath: string): boolean {
   return filePath.startsWith('/') || /^[A-Za-z]:\//.test(filePath);
+}
+
+/**
+ * The value as it survives a manifest JSON round trip. An in-memory scanned
+ * listing (Vite plugin) is merged with dependency listings read from
+ * `dist/manifest.json`; `undefined`-valued keys exist only in the former, so
+ * comparing raw objects would keep the same class apart.
+ */
+function wireShape(value: unknown): unknown {
+  const json = JSON.stringify(value);
+  return json === undefined ? null : JSON.parse(json);
 }
 
 /** JSON with object keys sorted at every depth, for structural comparison. */
@@ -92,7 +104,7 @@ export function objectDeclarationIdentity(
   const filePath =
     typeof obj.filePath === 'string' ? normalizeSourcePath(obj.filePath) : '';
   if (filePath && isAbsoluteSourcePath(filePath)) {
-    return `source\0${filePath}\0${obj.className}\0${canonicalJson(obj.fields ?? {})}`;
+    return `source\0${filePath}\0${obj.className}\0${canonicalJson(wireShape(obj.fields ?? {}))}`;
   }
   return `listing\0${obj.qualifiedName || manifestKey}`;
 }
