@@ -75,7 +75,7 @@ const OWNERS = {
   framework: {
     label: 'FRAMEWORK',
     meaning:
-      'the framework broke the planner: a release package rejects a library cookbook, or an app generated from one no longer installs, builds or typechecks against the release tarballs. Fix the package that changed (or, if the contract change is intended, update the cookbook in packages/planner/src/lib/library/library.json in the same PR).',
+      'the framework broke the planner or a consumer: a release package rejects a library cookbook, an app generated from one no longer installs, builds or typechecks against the release tarballs, or the release consumer canary (scripts/fixtures/release-consumer-canary) no longer builds, registers, resolves schemas, tests or migrates. Fix the package that changed (or, if the contract change is intended, update the cookbook in packages/planner/src/lib/library/library.json in the same PR).',
   },
   upstream: {
     label: 'UPSTREAM',
