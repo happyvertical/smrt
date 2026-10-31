@@ -218,6 +218,31 @@ export function inheritCollectionExposure(
 }
 
 /**
+ * `exclude: ['*']` was written to mean "nothing on this surface" (smrt-profiles
+ * `MagicLinkToken`), but no generator ever read `'*'` as a wildcard, so it
+ * excluded nothing and left every operation open. Read it fail-closed: a
+ * surface whose `exclude` names `'*'` becomes `include: []`, keeping its other
+ * options. Returns the config unchanged (same object) when no surface does
+ * (#3468).
+ */
+export function closeWildcardExclusions(
+  config: SmartObjectConfig,
+): SmartObjectConfig {
+  let next: SmartObjectConfig | undefined;
+  for (const surface of EXPOSURE_SURFACES) {
+    const value = config[surface];
+    if (!value || typeof value !== 'object') continue;
+    const { exclude } = value as { exclude?: unknown };
+    if (!Array.isArray(exclude) || !exclude.includes('*')) continue;
+    const closed: Record<string, unknown> = { ...value, include: [] };
+    delete closed.exclude;
+    next ??= { ...config };
+    (next as Record<string, unknown>)[surface] = closed;
+  }
+  return next ?? config;
+}
+
+/**
  * Combine a surface the scanner copied into a collection's manifest entry with
  * the value its model's runtime config now implies, never opening more than
  * either: `false` wins, `include` lists intersect, `exclude` lists union, and

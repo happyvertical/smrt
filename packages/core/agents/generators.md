@@ -235,7 +235,8 @@ leaves unset, it inherits the model's: `false` stays `false`; an `include`
 list keeps only its CRUD verbs (the other names are the model's instance
 methods, so the collection's own methods stay closed); an `exclude` list is
 copied; an open model leaves the collection open. A `sensitive: true` model's
-collection gets read-only MCP unless it configures `mcp` itself. The CLI treats
+collection gets read-only MCP; one that configures `mcp` itself keeps its
+custom methods, but the runtime CRUD cap below still drops its MCP writes. The CLI treats
 a collection's `include` as the complete allowlist, as MCP and REST do.
 
 The scanner records the surfaces it copied as `inheritedExposure` on the
@@ -246,8 +247,10 @@ intersect, `exclude` lists union), so a consumer that closes the model
 undecorated collection too. On `mcp`/`cli` the runtime also caps every
 collection's generated CRUD verbs to the model's effective ones, decorated or
 not; custom methods a collection lists stay its own opt-in, closed with
-`registerOverride` on the collection class (#3468,
-`registry/__tests__/issue-3468-closed-collection-exposure.test.ts`). Surface
+`registerOverride` on the collection class. `exclude: ['*']` is not a
+wildcard any generator reads, so both the scanner and `getConfig()` normalize
+it to `include: []` (fail closed; smrt-profiles `MagicLinkToken`). See #3468,
+`registry/__tests__/issue-3468-closed-collection-exposure.test.ts`. Surface
 tests must match `<model>collection_` tool names as well as `<model>_`.
 
 A collection opens its own methods by listing them in its own `@smrt()`. A

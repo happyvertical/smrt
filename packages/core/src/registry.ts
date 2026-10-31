@@ -90,6 +90,7 @@ export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 import {
   COLLECTION_CRUD_SURFACES,
   capCollectionCrudToModel,
+  closeWildcardExclusions,
   inheritCollectionExposure,
   inheritedCollectionSurface,
   narrowInheritedCollectionSurface,
@@ -685,9 +686,12 @@ function resolveEffectiveConfig(
   ) {
     return cached.config;
   }
-  if (visiting.has(registered)) return registered.config;
+  if (visiting.has(registered))
+    return closeWildcardExclusions(registered.config);
   visiting.add(registered);
-  let config = registered.config;
+  // `exclude: ['*']` closes the surface (#3468).
+  const ownConfig = closeWildcardExclusions(registered.config);
+  let config = ownConfig;
   const key = registered.qualifiedName || registered.name || name;
   if (!isFrameworkBaseClass(registered.name, registered.packageName)) {
     if (isCollectionRegistration(key, registered, collectionExposureLookup)) {
@@ -714,7 +718,7 @@ function resolveEffectiveConfig(
           item: chainMethodNames(item),
         };
         const inherited: SmartObjectConfig = inheritCollectionExposure(
-          registered.config,
+          ownConfig,
           itemConfig,
           methods,
         );
@@ -723,10 +727,10 @@ function resolveEffectiveConfig(
         // have closed it), never opening more than the build did (#3468).
         for (const surface of registered.inheritedExposure ?? []) {
           const narrowed = narrowInheritedCollectionSurface(
-            registered.config[surface],
+            ownConfig[surface],
             inheritedCollectionSurface(surface, itemConfig, methods),
           );
-          if (narrowed !== registered.config[surface]) {
+          if (narrowed !== ownConfig[surface]) {
             (inherited as Record<string, unknown>)[surface] = narrowed;
           }
         }
@@ -734,23 +738,21 @@ function resolveEffectiveConfig(
         // keeps closed, however its own surface reads (#3468).
         for (const surface of COLLECTION_CRUD_SURFACES) {
           const current =
-            surface in inherited
-              ? inherited[surface]
-              : registered.config[surface];
+            surface in inherited ? inherited[surface] : ownConfig[surface];
           const capped = capCollectionCrudToModel(surface, current, itemConfig);
           if (capped !== current) {
             (inherited as Record<string, unknown>)[surface] = capped;
           }
         }
         if (Object.keys(inherited).length > 0) {
-          config = { ...registered.config, ...inherited };
+          config = { ...ownConfig, ...inherited };
         }
       }
     } else {
       const parent = resolveParentModel(registered);
       if (parent) {
         const inherited = inheritSubclassExposure(
-          registered.config,
+          ownConfig,
           resolveEffectiveConfig(
             parent.qualifiedName || parent.name,
             parent,
@@ -758,7 +760,7 @@ function resolveEffectiveConfig(
           ),
         );
         if (Object.keys(inherited).length > 0) {
-          config = { ...registered.config, ...inherited };
+          config = { ...ownConfig, ...inherited };
         }
       }
     }

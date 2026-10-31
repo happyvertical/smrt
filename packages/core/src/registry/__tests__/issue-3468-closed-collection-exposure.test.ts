@@ -29,6 +29,7 @@ import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { getTestDatabase } from '../../testing/database.js';
 import {
   capCollectionCrudToModel,
+  closeWildcardExclusions,
   narrowInheritedCollectionSurface,
 } from '../collection-exposure.js';
 import type { SmartObjectConfig } from '../types.js';
@@ -165,6 +166,64 @@ describe('#3468 surface combinators', () => {
     expect(
       capCollectionCrudToModel('mcp', undefined, { sensitive: true }),
     ).toEqual({ exclude: ['create', 'update', 'delete'] });
+  });
+});
+
+describe("#3468 `exclude: ['*']` closes a surface", () => {
+  let restore: () => void;
+  beforeEach(() => {
+    restore = snapshotObjectRegistryState();
+  });
+  afterEach(() => {
+    restore();
+  });
+
+  it('normalizes the wildcard to an empty include, keeping other options', () => {
+    const config: SmartObjectConfig = {
+      api: { exclude: ['*'] },
+      mcp: { exclude: ['delete'] },
+      cli: { include: ['list'] },
+    };
+    expect(closeWildcardExclusions(config)).toEqual({
+      api: { include: [] },
+      mcp: { exclude: ['delete'] },
+      cli: { include: ['list'] },
+    });
+    const untouched = { mcp: { exclude: ['delete'] } };
+    expect(closeWildcardExclusions(untouched)).toBe(untouched);
+  });
+
+  it('closes the model and its undecorated collection in the manifest and at runtime', async () => {
+    const manifest = generated(
+      model('Token', {
+        sensitive: true,
+        api: { exclude: ['*'] },
+        mcp: { exclude: ['*'] },
+        cli: { include: ['list'] },
+      }),
+      collection('Token', {}, ['verify']),
+    );
+    const token = manifest.objects[`${PKG}:Token`].decoratorConfig;
+    const tokens = manifest.objects[`${PKG}:TokenCollection`].decoratorConfig;
+    expect(token.api).toEqual({ include: [] });
+    expect(token.mcp).toEqual({ include: [] });
+    expect(tokens.api).toEqual({ include: [] });
+    expect(tokens.mcp).toEqual({ include: [] });
+
+    // A registration that never went through the scanner (a decorator, or a
+    // manifest built before this fix) is closed by getConfig() too.
+    const stale = generated(model('Raw', {}), collection('Raw'));
+    stale.objects[`${PKG}:Raw`].decoratorConfig = {
+      api: { exclude: ['*'] },
+      mcp: { exclude: ['*'] },
+    };
+    ObjectRegistry.registerPackageManifest(manifest);
+    ObjectRegistry.registerPackageManifest(stale);
+    expect(ObjectRegistry.getConfig(`${PKG}:Raw`).mcp).toEqual({ include: [] });
+    const tools = await toolNames();
+    expect(
+      tools.filter((name) => /^(token|raw)(collection)?_/.test(name)),
+    ).toEqual([]);
   });
 });
 
