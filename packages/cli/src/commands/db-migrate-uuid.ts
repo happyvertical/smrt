@@ -1845,13 +1845,15 @@ const SYSTEM_TENANT_COLUMN_KEYS = new Set(
  * timezone-naive `_smrt_changes.created_at` (the helpers cannot be installed
  * until the audited timestamp migration runs) holds all of them back.
  */
-async function holdSystemTenantColumnsTogether(
+async function holdSystemTenantColumnsTogether<
+  T extends { table: string; column: string },
+>(
   db: QueryExecutor,
-  convert: LiveTextColumn[],
+  convert: T[],
   blocked: Array<{ table: string; column: string }>,
   skipBlockedPartner: NonNullable<ConversionPlan['skipBlockedPartner']>,
 ): Promise<{
-  convert: LiveTextColumn[];
+  convert: T[];
   skipBlockedPartner: NonNullable<ConversionPlan['skipBlockedPartner']>;
 }> {
   const isSystem = (column: { table: string; column: string }) =>
