@@ -24,6 +24,8 @@ export interface Props
   variant?: 'filled' | 'outline';
   /** Optional custom label (defaults to status value) */
   label?: string;
+  /** `'capitalize'` (default) title-cases the label via CSS; `'as-is'` leaves it untouched. */
+  case?: 'capitalize' | 'as-is';
 }
 
 const {
@@ -33,6 +35,7 @@ const {
   size = 'md',
   variant = 'filled',
   label,
+  case: textCase = 'capitalize',
   ...rest
 }: Props = $props();
 
@@ -255,6 +258,7 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}
   class:outline={variant === 'outline'}
+  class:as-is={textCase === 'as-is'}
   style:--smrt-badge-bg={colors.bg}
   style:--smrt-badge-text={colors.text} data-smrt-component="StatusBadge"
 >
@@ -276,6 +280,9 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
     background-color: var(--smrt-badge-bg);
     color: var(--smrt-badge-text);
     line-height: 1.25;
+  }
+  .status-badge.as-is {
+    text-transform: none;
   }
 
   .status-badge.sm {

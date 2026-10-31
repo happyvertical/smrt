@@ -416,6 +416,49 @@ describe('AdminShell', () => {
     }
   });
 
+  it('renders brandEnd beside the brand, outside the home link', async () => {
+    const brandEnd = createRawSnippet<[{ compact: boolean }]>((context) => ({
+      render: () =>
+        `<button type="button" data-brand-end data-compact="${context().compact}">bell</button>`,
+    }));
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Shop',
+        homeHref: '/home',
+        brandEnd,
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      const end = container.querySelector('[data-brand-end]');
+      expect(end).not.toBeNull();
+      expect(end?.closest('a')).toBeNull();
+      const row = end?.closest('.smrt-admin-shell__brand-row');
+      expect(
+        row?.querySelector('a.smrt-admin-shell__brand-link'),
+      ).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('adds no brand row without brandEnd', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: { title: 'Shop', homeHref: '/home', children: textSnippet('m') },
+    });
+    try {
+      await tick();
+      expect(
+        container.querySelector('.smrt-admin-shell__brand-row'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('renders a logo and keeps default branding unlinked without homeHref', async () => {
     const component = mount(AdminShell, {
       target: container,
