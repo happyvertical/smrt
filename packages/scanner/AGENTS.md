@@ -55,7 +55,10 @@ executes the source.
 - `verifyManifestCompleteness({ packageDir })` — publish guard: re-scans `src/`
   and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483).
   Returns `ok` / `incomplete` / `missing-manifest` / `scan-error` / `skipped`.
-  Driven by `scripts/verify-manifest-completeness.mjs` from `prepack`.
+  Driven by `scripts/verify-manifest-completeness.mjs` from `prepack` and, for
+  every packed release package, from `scripts/release-manifest-guards.mjs`
+  (#2853). `requireManifestExport` (the wrapper's `--release`) reports
+  `missing-manifest` when source declares objects but no `./manifest` export.
 - `discoverSourceFiles(options)` — shared bounded source-discovery policy used
   by `OxcScanner` and the core manifest preflight.
 - `extractAgentSurface` / `scanSvelteAgentSurface` / `mergeAgentSurfaces` —
