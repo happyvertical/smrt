@@ -182,6 +182,12 @@ export interface ToolFailureRecord {
   errorCode: string;
   /** The exact text the model was shown. */
   shown: string;
+  /**
+   * `true` for a validation-class failure (#4505): the tool refused the
+   * arguments (`invalid_request`, not a denial), so the model can fix them
+   * and retry. Absent for every other failure.
+   */
+  recoverable?: true;
 }
 
 /**
@@ -2237,6 +2243,9 @@ export function toolFailureRecord(
     shown:
       invocation.modelContent ??
       serverObservationContent(invocation.observation),
+    ...(errorKind === 'invalid_request' && !invocation.rejected
+      ? { recoverable: true as const }
+      : {}),
   };
 }
 

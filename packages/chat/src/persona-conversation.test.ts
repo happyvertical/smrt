@@ -383,12 +383,15 @@ describe('persona-bound conversation', () => {
       toolStatus: 'error',
       errorKind: 'invalid_request',
       errorCode: 'PROBE_REQUEST_INVALID',
+      // A validation failure the model can fix (#4505).
+      recoverable: true,
     });
     expect(row?.getToolCallData()).toMatchObject({
       name: 'probe.query',
       args: { field: 'nope' },
       status: 'error',
       errorCode: 'PROBE_REQUEST_INVALID',
+      recoverable: true,
     });
 
     const failed = audits.filter((a) => a.action === 'chat.tool_call_failed');

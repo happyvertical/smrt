@@ -38,6 +38,7 @@ import AssistantQuestionForm from './AssistantQuestionForm.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import { toolCallStatusForAction } from './action-status.js';
 import type { AssistantChoiceSourceRegistry } from './assistant-choices.svelte.js';
+import { renderAssistantMarkdown } from './assistant-markdown.js';
 import {
   type AssistantQuestion,
   type AssistantQuestionAnswer,
@@ -157,6 +158,20 @@ export interface Props {
   toolResultComponent?: (
     message: AssistantMessage,
   ) => Component<{ message: AssistantMessage }> | undefined;
+  /** How an assistant message's text renders (#4505). `'text'` (default)
+   * shows it verbatim, as before. `'markdown'` renders paragraphs, headings
+   * (`#`–`###`), lists, fenced and inline code, bold/italic and http(s) links
+   * through the package's escaping renderer (`renderAssistantMarkdown`): all
+   * input HTML is escaped, so model text can never inject markup. Applies to
+   * stored assistant messages and the streaming reply; user, system and tool
+   * messages stay plain text. */
+  messageFormat?: 'text' | 'markdown';
+  /** Host renderer for an assistant message's text (#4505), used instead of
+   * `messageFormat` inside the message bubble. `streaming` is `true` for the
+   * in-progress reply, whose `message` is a stand-in with the text so far
+   * (`id` `'assistant-dock-streaming'`). Attachments, question forms and the
+   * `toolCall` region still render around it. */
+  renderMessage?: Snippet<[{ message: AssistantMessage; streaming: boolean }]>;
   /** Hands the host this dock's own controller once, on mount (#2989), so it
    * can propose an action with `controller.previewAction(request)`. The
    * proposal renders with Confirm/Reject like any other; everything else
@@ -250,6 +265,8 @@ const {
   threadList = true,
   toolCall,
   toolResultComponent,
+  messageFormat = 'text',
+  renderMessage,
   oncontroller,
   onactionapplied,
   onactionsettled,
@@ -658,6 +675,20 @@ async function handleConfirmAction(requestId: string) {
 }
 </script>
 
+{#snippet assistantText(message: AssistantMessage, streaming: boolean)}
+  {#if renderMessage}
+    {@render renderMessage({ message, streaming })}
+  {:else if messageFormat === 'markdown'}
+    <!-- Only the escaping renderer's output is injected (#4505): it escapes
+         all input HTML and emits a fixed tag set with checked http(s) hrefs. -->
+    <div class="assistant-dock-message-content assistant-dock-markdown">
+      {@html renderAssistantMarkdown(message.content)}
+    </div>
+  {:else}
+    <p class="assistant-dock-message-content">{message.content}</p>
+  {/if}
+{/snippet}
+
 <div class="assistant-dock" data-smrt-component="AssistantDock">
   <div
     class="assistant-dock-layout"
@@ -841,7 +872,11 @@ async function handleConfirmAction(requestId: string) {
                   own={message.role === 'user'}
                 >
                   {#snippet children()}
-                    <p class="assistant-dock-message-content">{message.content}</p>
+                    {#if message.role === 'assistant'}
+                      {@render assistantText(message, false)}
+                    {:else}
+                      <p class="assistant-dock-message-content">{message.content}</p>
+                    {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="assistant-dock-attachments"
@@ -904,7 +939,16 @@ async function handleConfirmAction(requestId: string) {
           >
             <MessageBubble variant="agent" own={false}>
               {#snippet children()}
-                <p class="assistant-dock-message-content">{controller.streamingText}</p>
+                {@render assistantText(
+                  {
+                    id: 'assistant-dock-streaming',
+                    threadId: controller.activeThreadId ?? '',
+                    role: 'assistant',
+                    content: controller.streamingText,
+                    createdAt: '',
+                  },
+                  true,
+                )}
               {/snippet}
             </MessageBubble>
           </div>
@@ -1358,6 +1402,53 @@ async function handleConfirmAction(requestId: string) {
   .assistant-dock-message-content {
     margin: 0;
     white-space: pre-wrap;
+  }
+
+  /* Markdown answers (#4505): block spacing comes from the elements, and the
+     rendered HTML is not scoped, so its rules are :global under the wrapper. */
+  .assistant-dock-markdown {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .assistant-dock-markdown :global(:is(p, ul, ol, pre, h1, h2, h3)) {
+    margin: 0 0 var(--smrt-spacing-2);
+  }
+
+  .assistant-dock-markdown :global(:is(p, ul, ol, pre, h1, h2, h3):last-child) {
+    margin-bottom: 0;
+  }
+
+  .assistant-dock-markdown :global(:is(h1, h2, h3)) {
+    font-size: 1em;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    line-height: inherit;
+  }
+
+  .assistant-dock-markdown :global(h1) {
+    font-size: 1.15em;
+  }
+
+  .assistant-dock-markdown :global(:is(ul, ol)) {
+    padding-inline-start: 1.25em;
+  }
+
+  .assistant-dock-markdown :global(code) {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+    font-size: 0.9em;
+  }
+
+  .assistant-dock-markdown :global(pre) {
+    overflow-x: auto;
+    white-space: pre;
+    padding: var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container-low);
+  }
+
+  .assistant-dock-markdown :global(a) {
+    color: inherit;
+    text-decoration: underline;
   }
 
   .assistant-dock-attachments {
