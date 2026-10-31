@@ -329,7 +329,7 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   wire-ability gate fails closed on both (#2686). The bare `object` keyword is
   resolved for parameters only — `ManifestAdapter.inferFromAnnotation` gives an
   `object`-typed FIELD a `{}` column default, so naming it in `extractTypeName`
-  would silently change DDL.
+  would silently change DDL. Same-module aliases: `resolvedType` (#4327).
 - **`@method()` config is read with `requireLiteralValues`**, like `@smrt()`: an
   unresolvable value is a scan error, because a dropped `expose: false` restores
   the routing the author was withholding. `decoratorConfig` is `undefined` for
