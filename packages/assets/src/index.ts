@@ -128,6 +128,8 @@ export {
 } from './owned-asset-helpers';
 export {
   type PrivateAssetAccess,
+  type PrivateAssetMetadata,
+  type PrivateAssetMetadataRequest,
   withPrivateAssetAccess,
 } from './private-asset-access';
 // Export types
