@@ -982,7 +982,10 @@ export const utilityCommands: Record<string, CLICommand> = {
           includePrivateMethods: false,
           includeStaticMethods: true,
 
-          // Output configuration
+          // Output configuration: only the test manifest. `.smrt/manifest.json`
+          // belongs to the production build; a test-inclusive scan there
+          // surfaced inline fixtures to every production reader (#2760).
+          outputMode: 'explicit',
           outputDir: options.output || 'src/manifest',
           outputName: 'test-manifest.json',
           generateTypeStub: true,
@@ -1001,8 +1004,7 @@ export const utilityCommands: Record<string, CLICommand> = {
           Object.keys(manifest.objects).join(', '),
         );
 
-        // Legacy compatibility: Still write to requested output directory if specified
-        // But the primary manifest is now in .smrt/manifest.json (via ManifestManager)
+        // Write the requested output directory (the only test manifest).
         const outputDir = resolve(
           process.cwd(),
           options.output || 'src/manifest',
@@ -1034,8 +1036,7 @@ export default testManifest;
         console.log(
           `✅ Generated test manifest with ${objectCount} test object(s)`,
         );
-        console.log(`   Unified: .smrt/manifest.json`);
-        console.log(`   Legacy:  ${jsonPath}`);
+        console.log(`   JSON:    ${jsonPath}`);
         console.log(`   TS:      ${tsPath}\n`);
 
         // Run tests if requested
@@ -1050,6 +1051,12 @@ export default testManifest;
 
             // Run vitest with forwarded arguments (file patterns)
             const vitestArgs = [vitestEntrypoint, 'run', ...args];
+            // The test run's manifest is this file, never `.smrt/manifest.json`
+            // (#4128): register it so the run's workers read it first.
+            const { registerActiveTestManifestPath } = await import(
+              '@happyvertical/smrt-core/manifest'
+            );
+            registerActiveTestManifestPath(process.cwd(), jsonPath);
             const proc = spawn(process.execPath, vitestArgs, {
               stdio: 'inherit',
             });
@@ -1568,7 +1575,15 @@ export default testManifest;
 
             await builder.generate({
               include: ['src/**/*.ts'],
-              exclude: ['src/**/*.d.ts', 'node_modules/**', 'dist/**'],
+              // A production manifest never describes inline test fixtures
+              // (#2760).
+              exclude: [
+                'src/**/*.d.ts',
+                '**/*.test.ts',
+                '**/*.spec.ts',
+                'node_modules/**',
+                'dist/**',
+              ],
               baseClasses,
               followImports: true,
               discoverExternalPackages: true,
