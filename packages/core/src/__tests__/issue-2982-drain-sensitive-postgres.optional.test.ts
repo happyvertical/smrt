@@ -144,6 +144,95 @@ describe.skipIf(!pgUrl)(
       expect(await tablesIn(db, '_smrt_changes')).toEqual([PUBLIC_TABLE]);
     });
 
+    it('converts a pre-#2982 full single-argument body into the delegating compat drain', async () => {
+      // An older SMRT's own (integer) drain: same signature and result, its own
+      // body. The upgrade must CREATE OR REPLACE over it without changing the
+      // identity older replicas call.
+      await db.query(
+        'DROP FUNCTION IF EXISTS _smrt_drain_changes(integer, text[])',
+      );
+      await db.query(`
+      CREATE OR REPLACE FUNCTION _smrt_drain_changes(p_limit INTEGER DEFAULT 1000)
+      RETURNS TABLE(
+        drained_seq BIGINT, drained_table TEXT, drained_row_id TEXT,
+        drained_operation TEXT, drained_tenant_id TEXT,
+        error_code TEXT, error_message TEXT
+      )
+      LANGUAGE plpgsql SECURITY INVOKER
+      AS $pre_2982$
+      -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+      BEGIN
+        RETURN;
+      END;
+      $pre_2982$;
+    `);
+
+      await ensurePostgresChangeFeedHelpers(db);
+
+      const compat = rowsOf(
+        await db.query(
+          `SELECT p.prosrc FROM pg_proc AS p
+          WHERE p.oid = to_regprocedure('_smrt_drain_changes(integer)')`,
+        ),
+      );
+      expect(String(compat[0]?.prosrc)).toContain('ARRAY[]::TEXT[]');
+      await stage(db, PUBLIC_TABLE);
+      const rows = rowsOf(
+        await db.query('SELECT * FROM _smrt_drain_changes()'),
+      );
+      expect(rows.map((row) => row.drained_table)).toEqual([PUBLIC_TABLE]);
+    });
+
+    it("gives a newly created drain the compat drain's reconciled EXECUTE grants", async () => {
+      // A permissions-managed database revokes PUBLIC EXECUTE on the framework
+      // routines. The new identity must not arrive with the default ACL.
+      await db.query(
+        'DROP FUNCTION IF EXISTS _smrt_drain_changes(integer, text[])',
+      );
+      await db.query(
+        'REVOKE ALL ON FUNCTION _smrt_drain_changes(integer) FROM PUBLIC',
+      );
+
+      await ensurePostgresChangeFeedHelpers(db);
+
+      const acl = rowsOf(
+        await db.query(
+          `SELECT acl.grantee, acl.privilege_type
+           FROM pg_proc AS p, aclexplode(p.proacl) AS acl
+          WHERE p.oid = to_regprocedure('_smrt_drain_changes(integer,text[])')`,
+        ),
+      );
+      expect(acl.length).toBeGreaterThan(0);
+      expect(acl.some((entry) => Number(entry.grantee) === 0)).toBe(false);
+      expect(
+        rowsOf(
+          await db.query(
+            `SELECT has_function_privilege(current_user, '_smrt_drain_changes(integer,text[])', 'EXECUTE') AS can`,
+          ),
+        )[0]?.can,
+      ).toBe(true);
+      await db.query(
+        'GRANT EXECUTE ON FUNCTION _smrt_drain_changes(integer) TO PUBLIC',
+      );
+    });
+
+    it('purges a sensitive backlog larger than one batch across passes without stalling', async () => {
+      await db.query(
+        `INSERT INTO _smrt_changes_pending (table_name, row_id, operation, tenant_id, created_at)
+       SELECT 'sessions', gen_random_uuid()::text, 'update', NULL, now()
+       FROM generate_series(1, 2500)`,
+      );
+      await stage(db, PUBLIC_TABLE);
+      // The public entry behind the backlog is sequenced at once: each pass
+      // purges one bounded batch and the sequencing batch skips the rest.
+      expect(await drainChangeFeed(db)).toBe(1);
+      expect(await tablesIn(db, '_smrt_changes')).toEqual([PUBLIC_TABLE]);
+      // Later drains purge the remainder, a batch per pass.
+      for (let i = 0; i < 3; i++) await drainChangeFeed(db);
+      expect(await tablesIn(db, '_smrt_changes_pending')).toEqual([]);
+      expect(await tablesIn(db, '_smrt_changes')).toEqual([PUBLIC_TABLE]);
+    });
+
     it('installs the current drain on a database that only has the pre-#2982 helper', async () => {
       // A database last bootstrapped by an older SMRT has the single-argument
       // drain only. The current runtime must not call a function that is not
@@ -173,9 +262,14 @@ describe.skipIf(!pgUrl)(
 
       await stage(db, 'sessions');
       await stage(db, PUBLIC_TABLE);
+      // The public entry behind the backlog is sequenced at once: each pass
+      // purges one bounded batch and the sequencing batch skips the rest.
       expect(await drainChangeFeed(db)).toBe(1);
       expect(await tablesIn(db, '_smrt_changes')).toEqual([PUBLIC_TABLE]);
+      // Later drains purge the remainder, a batch per pass.
+      for (let i = 0; i < 3; i++) await drainChangeFeed(db);
       expect(await tablesIn(db, '_smrt_changes_pending')).toEqual([]);
+      expect(await tablesIn(db, '_smrt_changes')).toEqual([PUBLIC_TABLE]);
     });
   },
 );

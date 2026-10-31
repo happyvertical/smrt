@@ -60,7 +60,14 @@ entry point for older replicas during a rollout. It delegates with no
 exclusions, which is the old behaviour; its output stays covered by the read,
 signal and retention refusals above. The bootstrap and raw-handle probes require
 both overloads, so an upgraded database installs the new one before current code
-calls it.
+calls it. A newly created two-argument drain inherits the compat drain's
+reconciled EXECUTE grants, so a hardened ACL with no PUBLIC EXECUTE carries
+over. The compat drain has its own exception boundary. The purge is bounded per
+pass, like the sequencing batch.
+
+In a permissions-managed deployment the migration owner installs the helpers
+before current replicas boot. Permission plans must come from the current CLI:
+an older planner reports the two-argument overload as an unsupported routine.
 
 `pruneChangeFeed()` additionally deletes sensitive rows below the horizon on
 every sweep, ahead of either retention bound, so credentials do not sit at rest
