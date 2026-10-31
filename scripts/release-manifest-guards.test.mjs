@@ -248,7 +248,7 @@ test('the guard verifies the tarball, not only the workspace: a packed manifest 
   assert.match(result.logs.join('\n'), /differs from the verified workspace/);
 });
 
-test('the guard resolves exports from the packed package.json', () => {
+test('the exports verdict loads the packed modules, not the workspace dist', () => {
   const { packageDir } = createWorkspace();
   const tarballPath = packFixture(packageDir, (staged) => {
     writeText(join(staged, 'dist/index.js'), 'export class Other {}\n');
@@ -258,6 +258,25 @@ test('the guard resolves exports from the packed package.json', () => {
 
   assert.equal(result.ok, false);
   assert.deepEqual(result.failures, ['manifest exports (#2845)']);
+});
+
+test('a packed exports map that diverges from the workspace manifest exports fails', () => {
+  const { packageDir } = createWorkspace();
+  const tarballPath = packFixture(packageDir, (staged) => {
+    const packageJson = JSON.parse(readFileSync(join(staged, 'package.json'), 'utf8'));
+    packageJson.exports['./manifest.json'] = {
+      import: './dist/other-manifest.json',
+      default: './dist/manifest.json',
+    };
+    writeJson(join(staged, 'package.json'), packageJson);
+    writeJson(join(staged, 'dist/other-manifest.json'), { version: '1.0.0', objects: {} });
+  });
+
+  const result = runReleaseManifestGuards({ packageDir, tarballPath });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.includes('packed manifest identity'));
+  assert.match(result.logs.join('\n'), /only in the packed package\.json/);
 });
 
 test('the guard fails when a declared dependency cannot be installed into the scratch consumer', () => {

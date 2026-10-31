@@ -53,21 +53,28 @@ export const exportsVerifierPath = join(
 
 const MANIFEST_EXPORT_KEYS = ['./manifest', './manifest.json'];
 
-function exportTarget(entry) {
-  if (typeof entry === 'string') return entry;
-  if (!entry || typeof entry !== 'object') return undefined;
-  for (const condition of ['default', 'import', 'require', 'types']) {
-    if (typeof entry[condition] === 'string') return entry[condition];
-  }
-  return undefined;
+// Every string target of an export entry. The completeness and exports
+// verifiers prefer different conditions (`default` vs `import`), so binding
+// both verdicts to the tarball means comparing every target either may read.
+function exportTargets(entry) {
+  if (typeof entry === 'string') return [entry];
+  if (!entry || typeof entry !== 'object') return [];
+  return [
+    ...new Set(
+      ['default', 'import', 'require', 'types']
+        .map((condition) => entry[condition])
+        .filter((target) => typeof target === 'string'),
+    ),
+  ];
 }
 
-/** Relative targets of every manifest export, keyed by export subpath. */
+/** Relative targets of every manifest export, keyed by `<subpath> <target>`. */
 function manifestTargets(packageJson) {
   const targets = {};
   for (const key of MANIFEST_EXPORT_KEYS) {
-    const target = exportTarget(packageJson.exports?.[key]);
-    if (target) targets[key] = target;
+    for (const target of exportTargets(packageJson.exports?.[key])) {
+      targets[`${key} ${target}`] = target;
+    }
   }
   return targets;
 }
@@ -167,7 +174,10 @@ function compareManifests({ packageDir, installedDir, packedPackageJson }) {
   );
   const packedTargets = manifestTargets(packedPackageJson);
   const problems = [];
-  for (const key of MANIFEST_EXPORT_KEYS) {
+  const keys = [
+    ...new Set([...Object.keys(workspaceTargets), ...Object.keys(packedTargets)]),
+  ].sort();
+  for (const key of keys) {
     const workspaceTarget = workspaceTargets[key];
     const packedTarget = packedTargets[key];
     if (!workspaceTarget && !packedTarget) continue;
