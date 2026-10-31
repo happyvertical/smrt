@@ -156,7 +156,8 @@ function packageIdentifierPrefix(packageName: string | undefined): string {
  */
 export interface ObjectDeclarationCollision {
   className: string;
-  declarations: Array<{ interfaceName: string; objectRef: string }>;
+  /** Each declaration's name and every listing it describes. */
+  declarations: Array<{ interfaceName: string; objectRefs: string[] }>;
 }
 
 /** The declaration selection plus a lookup from any listing to its name. */
@@ -181,10 +182,18 @@ export interface ObjectDeclarationIndex {
  * sharing a simple name each get a package-qualified name
  * (`@ergot/market-core:LicenseSale` -> `ErgotMarketCoreLicenseSaleData`) and
  * none of them keeps the bare name, which would otherwise silently merge two
- * classes' fields through TypeScript declaration merging. Unique simple names
- * are reserved first, and a qualified name that is still taken gets a stable
- * numeric suffix, so every emitted name is unique and independent of manifest
- * insertion order.
+ * classes' fields through TypeScript declaration merging. Every simple name
+ * is reserved first, and a qualified name that is still taken (or a stem with
+ * no known package) gets a stable numeric suffix, so every emitted name is
+ * unique and independent of manifest insertion order.
+ *
+ * The package prefix is the package of the declaration's FIRST listing in
+ * qualified-identity order. When one class is relisted by consumer packages
+ * (#3296) that is not necessarily the declaring package, and it can change
+ * when a relisting dependency is added or removed; the collision warning
+ * names every listing so a consumer can tell. A collision group also forms
+ * when one class's listings disagree on fields (a stale relisting), which the
+ * warning describes as well.
  */
 export function createObjectDeclarationIndex(
   manifest: SmartObjectManifest,
@@ -217,10 +226,11 @@ export function createObjectDeclarationIndex(
     byClassName.set(declaration.obj.className, group);
   }
 
+  // Every simple name is reserved, including a colliding one: no member of a
+  // collision group may keep it, even when its package is unknown and its
+  // qualified stem is just the class name.
   const used = new Set<string>();
-  for (const [className, group] of byClassName) {
-    if (group.length === 1) used.add(`${className}Data`);
-  }
+  for (const className of byClassName.keys()) used.add(`${className}Data`);
   const collisions: ObjectDeclarationCollision[] = [];
   for (const [className, group] of byClassName) {
     if (group.length === 1) continue;
@@ -239,7 +249,9 @@ export function createObjectDeclarationIndex(
       className,
       declarations: group.map((declaration) => ({
         interfaceName: declaration.interfaceName,
-        objectRef: declaration.obj.qualifiedName || declaration.manifestKey,
+        objectRefs: declaration.manifestKeys.map(
+          (key) => manifest.objects[key]?.qualifiedName || key,
+        ),
       })),
     });
   }
@@ -273,13 +285,15 @@ export function warnObjectDeclarationCollisions(
 ): void {
   for (const { className, declarations } of index.collisions) {
     log(
-      `[smrt:types] ${declarations.length} distinct classes are named ${JSON.stringify(className)}; ` +
+      `[smrt:types] ${declarations.length} declarations share the class name ${JSON.stringify(className)} ` +
+        '(distinct classes, or one class whose listings disagree on fields); ' +
         `generated row types use qualified names instead of ${className}Data: ` +
         declarations
           .map(
-            ({ interfaceName, objectRef }) => `${interfaceName} (${objectRef})`,
+            ({ interfaceName, objectRefs }) =>
+              `${interfaceName} (${objectRefs.join(', ')})`,
           )
-          .join(', '),
+          .join('; '),
     );
   }
 }

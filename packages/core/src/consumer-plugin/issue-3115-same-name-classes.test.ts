@@ -28,6 +28,7 @@ import {
   warnObjectDeclarationCollisions,
 } from '../manifest/object-declarations.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { generateTypeDeclarationFile } from '../vite-plugin/index.js';
 import { smrtConsumer } from './index';
 
 const MARKET_CORE = '@ergot/market-core';
@@ -270,7 +271,7 @@ export async function probe(): Promise<void> {
   });
 
   it('is byte-identical regardless of provider aggregation order', async () => {
-    const outputs = [];
+    const outputs: string[] = [];
     for (const [index, packages] of [
       [MARKET_CORE, COMMERCE],
       [COMMERCE, MARKET_CORE],
@@ -283,6 +284,109 @@ export async function probe(): Promise<void> {
       );
     }
     expect(outputs[1]).toBe(outputs[0]);
+  });
+});
+
+function marketCoreLicenseSaleCollection() {
+  return {
+    qualifiedName: `${MARKET_CORE}:LicenseSaleCollection`,
+    className: 'LicenseSaleCollection',
+    packageName: MARKET_CORE,
+    name: 'licenseSaleCollection',
+    collection: 'license-sales',
+    filePath: '/build/ergot/packages/market-core/src/license-sale.ts',
+    extends: 'SmrtCollection',
+    extendsTypeArg: 'LicenseSale',
+    fields: {},
+    methods: {},
+    decoratorConfig: {},
+  };
+}
+
+describe('Vite ambient declarations for distinct same-named classes (#3115)', () => {
+  let tmpDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    tmpDir = resolve(
+      import.meta.dirname,
+      `__test-issue-3115-ambient-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(tmpDir, { recursive: true });
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('types the virt-client and virt-web modules, including a collection class, with each class row type', async () => {
+    const manifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      objects: {
+        [`${MARKET_CORE}:LicenseSale`]: marketCoreLicenseSale(),
+        [`${MARKET_CORE}:LicenseSaleCollection`]:
+          marketCoreLicenseSaleCollection(),
+        [`${COMMERCE}:LicenseSale`]: commerceLicenseSale(),
+      },
+    } as unknown as SmartObjectManifest;
+    await generateTypeDeclarationFile(manifest, tmpDir, 'types');
+    const declarationPath = join(tmpDir, 'types', 'virtual-modules.d.ts');
+    const declarations = readFileSync(declarationPath, 'utf-8');
+    expect(declarations).not.toMatch(/\bLicenseSaleData\b/);
+    expect(declarations).toContain(
+      `"licenseSaleCollection": CrudOperations<import('@happyvertical/smrt-virt-types').ErgotMarketCoreLicenseSaleData>;`,
+    );
+    expect(warnSpy).toHaveBeenCalled();
+
+    const probePath = join(tmpDir, 'probe.ts');
+    writeFileSync(
+      probePath,
+      `import type { ApiClient } from '@happyvertical/smrt-virt-client';
+import type { SmrtWebCollectionDefinitions } from '@happyvertical/smrt-virt-web';
+declare const client: ApiClient;
+export async function probe(): Promise<void> {
+  const viaCollection = await client.licenseSaleCollection.get('1');
+  const seats: number | undefined = viaCollection.seats;
+  // @ts-expect-error commerce-only field is not on the market-core row
+  viaCollection.contractNumber;
+  const contract = await client.contracts.get('1');
+  const contractNumber: string = contract.contractNumber;
+  // @ts-expect-error market-core-only field is not on the commerce row
+  contract.seats;
+  type WebContract = NonNullable<SmrtWebCollectionDefinitions['contracts']['_row']>;
+  const webNumber: WebContract['contractNumber'] = 'C-1';
+  void [seats, contractNumber, webNumber];
+}
+`,
+    );
+    const program = ts.createProgram([declarationPath, probePath], {
+      noEmit: true,
+      strict: true,
+      skipLibCheck: false,
+      types: [],
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    });
+    const errors = ts
+      .getPreEmitDiagnostics(program)
+      .filter(
+        (diagnostic) =>
+          diagnostic.category === ts.DiagnosticCategory.Error &&
+          // The MCP and server modules import the installed core runtime and
+          // Node builtins, which this bare program does not resolve; they are
+          // unrelated to row types.
+          !/@happyvertical\/smrt-core\/runtime|'node:/.test(
+            ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+          ),
+      )
+      .map((diagnostic) =>
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+      );
+    expect(errors).toEqual([]);
   });
 });
 
@@ -332,6 +436,54 @@ describe('createObjectDeclarationIndex naming (#3115)', () => {
     expect(index.interfaceNameFor(commerce as never)).toBe(
       'HappyverticalSmrtCommerceLicenseSaleData',
     );
+  });
+
+  it('never lets a colliding class keep the bare name, even without a known package', () => {
+    const unpackaged = (filePath: string) => ({
+      ...marketCoreLicenseSale(),
+      qualifiedName: undefined,
+      packageName: undefined,
+      filePath,
+    });
+    const index = createObjectDeclarationIndex(
+      manifestOf({
+        LicenseSale: unpackaged('/app/src/license-sale.ts'),
+        [`${COMMERCE}:LicenseSale`]: commerceLicenseSale(),
+      }),
+    );
+    const names = index.declarations.map((d) => d.interfaceName);
+    expect(names).not.toContain('LicenseSaleData');
+    expect(names).toEqual([
+      'HappyverticalSmrtCommerceLicenseSaleData',
+      'LicenseSale2Data',
+    ]);
+    const log = vi.fn();
+    warnObjectDeclarationCollisions(index, log);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0][0])).toContain(
+      'LicenseSale2Data (LicenseSale)',
+    );
+  });
+
+  it('names every listing of a collapsed declaration in the collision report', () => {
+    const relisted = {
+      ...marketCoreLicenseSale(),
+      qualifiedName: '@ergot/admin:LicenseSale',
+      packageName: '@ergot/admin',
+    };
+    const index = createObjectDeclarationIndex(
+      manifestOf({
+        '@ergot/admin:LicenseSale': relisted,
+        [`${MARKET_CORE}:LicenseSale`]: marketCoreLicenseSale(),
+        [`${COMMERCE}:LicenseSale`]: commerceLicenseSale(),
+      }),
+    );
+    // The prefix is the first listing's package (documented); the report
+    // lists the declaring package's listing too.
+    expect(index.collisions[0]?.declarations[0]).toEqual({
+      interfaceName: 'ErgotAdminLicenseSaleData',
+      objectRefs: ['@ergot/admin:LicenseSale', `${MARKET_CORE}:LicenseSale`],
+    });
   });
 
   it('never reuses a name another class already declares, and suffixes deterministically', () => {

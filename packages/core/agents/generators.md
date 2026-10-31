@@ -50,8 +50,13 @@ manifest itself keeps every listing.
 Names follow the qualified identity when simple names collide (#3115): a
 unique class keeps `${className}Data`; distinct classes sharing a simple name
 each get a package-qualified name (`@ergot/market-core:LicenseSale` ->
-`ErgotMarketCoreLicenseSaleData`), none keeps the bare name, and the generator
-warns with the qualified names. Client and web declarations resolve row types
+`ErgotMarketCoreLicenseSaleData`), none keeps the bare name (a stem without a
+known package is suffixed), and the generator warns with each name and every
+listing it covers. The prefix is the package of the declaration's first
+listing in qualified-identity order, which for a class relisted by consumer
+packages (#3296) need not be the declaring package. One class whose listings
+disagree on fields (a stale relisting) also forms a collision group, so it
+loses its bare name until the stale package is rebuilt. Client and web declarations resolve row types
 through `createObjectDeclarationIndex().interfaceNameFor()` and import them
 (`import('./smrt-objects')`, `import('@happyvertical/smrt-virt-types')`);
 a bare name does not resolve inside an ambient module.
