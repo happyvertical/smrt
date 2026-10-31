@@ -837,6 +837,17 @@ export class CourseAuthoringService {
         request.tenantId,
         String(parent.sections_json),
       );
+      const previousOwn = new Map<string, CourseLicenseKind>();
+      for (const [key, id] of previousByKey) {
+        const row = await tx.get('lesson_revisions', {
+          id,
+          tenant_id: request.tenantId,
+        });
+        previousOwn.set(
+          key,
+          (row?.own_license_kind || 'own-work') as CourseLicenseKind,
+        );
+      }
       const lessonRevisions = await LessonRevisionCollection.create({ db: tx });
       const licences: CourseLicenseKind[] = [];
       const sections: Array<{
@@ -858,8 +869,14 @@ export class CourseAuthoringService {
                 known,
               ),
             );
-          const licenseKind = mostRestrictiveLicense([
+          // A lesson's own licence never loosens across revisions of the same
+          // lessonKey; only removing the lesson lifts it. Materials add to it.
+          const ownLicense = mostRestrictiveLicense([
             lesson.fields.licenseKind,
+            previousOwn.get(lesson.lessonKey) ?? 'own-work',
+          ]);
+          const licenseKind = mostRestrictiveLicense([
+            ownLicense,
             ...materials.map((m) => m.licenseKind),
           ]);
           licences.push(licenseKind);
@@ -873,6 +890,9 @@ export class CourseAuthoringService {
           const body = {
             ...lesson.fields,
             licenseKind,
+            ...(ownLicense === 'own-work'
+              ? {}
+              : { ownLicenseKind: ownLicense }),
             materials,
             ...(lesson.questions.length ? { questions: lesson.questions } : {}),
             ...(Object.keys(lesson.layoutParams).length
@@ -907,6 +927,7 @@ export class CourseAuthoringService {
               externalRef: lesson.fields.externalRef,
               externalUrl: lesson.fields.externalUrl,
               licenseKind,
+              ownLicenseKind: ownLicense,
               materialsJson: JSON.stringify(materials),
               questionsJson: JSON.stringify(lesson.questions),
               layoutParamsJson: JSON.stringify(lesson.layoutParams),
@@ -986,11 +1007,27 @@ export class CourseAuthoringService {
       tenant_id: tenantId,
       course_id: courseId,
     });
-    for (const row of rows)
+    // Fold every occurrence so the most restrictive licence ever recorded
+    // wins regardless of row order.
+    for (const row of rows) {
       for (const m of JSON.parse(
         String(row.materials_json),
-      ) as CourseMaterialView[])
-        known.set(m.assetId, m);
+      ) as CourseMaterialView[]) {
+        const seen = known.get(m.assetId);
+        known.set(
+          m.assetId,
+          seen
+            ? {
+                ...seen,
+                licenseKind: mostRestrictiveLicense([
+                  seen.licenseKind,
+                  m.licenseKind,
+                ]),
+              }
+            : m,
+        );
+      }
+    }
     return known;
   }
 

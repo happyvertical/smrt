@@ -162,6 +162,8 @@ export class LessonRevision extends SmrtObject {
   externalRef = '';
   externalUrl = '';
   licenseKind: CourseLicenseKind = 'own-work';
+  /** The lesson's own licence before materials; sticky across revisions of a lessonKey. */
+  ownLicenseKind = 'own-work';
   @field({ type: 'text' }) materialsJson = '[]';
   /** Ordered `LessonQuestionRefInput`s naming immutable question revisions. */
   @field({ type: 'text' }) questionsJson = '[]';

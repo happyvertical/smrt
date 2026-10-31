@@ -252,7 +252,6 @@ export function draftFromRevision(view: CourseRevisionView): CourseDraftInput {
           modality: l.modality,
           externalRef: l.externalRef,
           externalUrl: l.externalUrl,
-          licenseKind: l.licenseKind,
           provenance: l.provenance,
           fieldProvenance: { ...l.fieldProvenance },
           materials: l.materials.map((m) => ({

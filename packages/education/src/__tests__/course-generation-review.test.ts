@@ -1525,7 +1525,65 @@ describe('release gate and discard guard', () => {
     ).toBe(same.revisionId);
   });
 
-  it('does not carry findings on material that has since changed', async () => {
+  it('carries findings by stable identity across edits until a person resolves them', async () => {
+    const s = await setup();
+    const c = await s.course();
+    const lessonA = (await s.read(c.courseId, c.headRevisionId)).revision
+      .sections[0].lessons[0].id;
+    const first = await s.review(c.courseId, c.headRevisionId, [
+      s.finding(
+        { kind: 'lesson-revision', id: lessonA, field: 'body' },
+        { humanVerificationRequired: true },
+      ),
+      s.finding(
+        { kind: 'lesson-revision', id: lessonA, field: 'body' },
+        { blocking: true },
+      ),
+    ]);
+    const edit = (body: string) => [
+      {
+        sectionKey: 'unit-1',
+        title: 'Unit 1',
+        lessons: [
+          { lessonKey: 'a', title: 'Lesson A', body },
+          { lessonKey: 'b', title: 'Lesson B' },
+        ],
+      },
+    ];
+    // A one-character edit by an agent plus an empty review clears nothing.
+    const edited = await s.save(
+      c.courseId,
+      c.headRevisionId,
+      edit('Supplied body A.'),
+      s.agent,
+    );
+    await s.review(c.courseId, edited.revisionId, [], {}, s.agent);
+    await expect(
+      s.release(c.courseId, edited.revisionId, s.agent),
+    ).rejects.toMatchObject({ reason: 'unresolved-findings' });
+    const [verify, blocking] = first.sections.generalLevel.findings;
+    const resolve = (findingId: string) =>
+      s.as(s.guardian, () =>
+        s.service.resolveFinding({
+          ...s.guardian,
+          courseId: c.courseId,
+          findingId,
+          resolution: 'verified',
+          requestKey: s.key('res'),
+        }),
+      );
+    // Resolving only one of the two still blocks (blocking follows the same rule).
+    await resolve(verify.id);
+    await expect(
+      s.release(c.courseId, edited.revisionId, s.agent),
+    ).rejects.toMatchObject({ reason: 'unresolved-findings' });
+    await resolve(blocking.id);
+    expect(
+      (await s.release(c.courseId, edited.revisionId, s.agent)).revisionId,
+    ).toBe(edited.revisionId);
+  });
+
+  it('drops a carried finding when its material is removed', async () => {
     const s = await setup();
     const c = await s.course();
     const lessonA = (await s.read(c.courseId, c.headRevisionId)).revision
@@ -1533,51 +1591,67 @@ describe('release gate and discard guard', () => {
     await s.review(c.courseId, c.headRevisionId, [
       s.finding(
         { kind: 'lesson-revision', id: lessonA, field: 'body' },
-        { blocking: true },
-      ),
-      s.finding(
-        { kind: 'course-revision', id: c.headRevisionId, field: 'summary' },
-        { blocking: true },
+        { humanVerificationRequired: true },
       ),
     ]);
-    // Lesson A changes but the summary does not: the summary finding still carries.
-    const edited = await s.save(c.courseId, c.headRevisionId, [
-      {
-        sectionKey: 'unit-1',
-        title: 'Unit 1',
-        lessons: [
-          { lessonKey: 'a', title: 'Lesson A', body: 'Corrected body A' },
-          { lessonKey: 'b', title: 'Lesson B' },
-        ],
-      },
-    ]);
-    await s.review(c.courseId, edited.revisionId);
-    await expect(
-      s.release(c.courseId, edited.revisionId),
-    ).rejects.toMatchObject({
-      reason: 'unresolved-findings',
-    });
-    // Changing the summary too leaves nothing carried.
-    const both = await s.save(
+    const removed = await s.save(
       c.courseId,
-      edited.headRevisionId,
+      c.headRevisionId,
       [
         {
           sectionKey: 'unit-1',
           title: 'Unit 1',
-          lessons: [
-            { lessonKey: 'a', title: 'Lesson A', body: 'Corrected body A' },
-            { lessonKey: 'b', title: 'Lesson B' },
-          ],
+          lessons: [{ lessonKey: 'b', title: 'Lesson B' }],
         },
       ],
-      s.guardian,
-      { summary: 'Corrected summary' },
+      s.agent,
     );
-    await s.review(c.courseId, both.revisionId);
-    expect((await s.release(c.courseId, both.revisionId)).revisionId).toBe(
-      both.revisionId,
+    await s.review(c.courseId, removed.revisionId, [], {}, s.agent);
+    expect(
+      (await s.release(c.courseId, removed.revisionId, s.agent)).revisionId,
+    ).toBe(removed.revisionId);
+  });
+
+  it('keeps withholding a personal-use lesson body after a re-save without a licence', async () => {
+    const s = await setup();
+    const head = await s.as(s.guardian, () =>
+      s.service.createCourse({
+        ...s.guardian,
+        requestKey: s.key('c'),
+        title: 'Private',
+        levelMin: 1,
+        levelMax: 2,
+      }),
     );
+    const lesson = (licenseKind?: 'personal-use-copy') => [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [
+          {
+            lessonKey: 'p',
+            title: 'Private lesson',
+            body: 'Purchased workbook text',
+            ...(licenseKind ? { licenseKind } : {}),
+          },
+        ],
+      },
+    ];
+    const one = await s.save(
+      head.courseId,
+      head.headRevisionId,
+      lesson('personal-use-copy') as never,
+    );
+    const two = await s.save(head.courseId, one.revisionId, lesson() as never);
+    const job = await s.request({
+      courseId: head.courseId,
+      headRevisionId: two.revisionId,
+    });
+    s.gen.output = { rationale: 'nothing to add' };
+    await s.run(job.jobId);
+    const sent = JSON.stringify(s.gen.calls[0].material);
+    expect(sent).not.toContain('Purchased workbook text');
+    expect(sent).toContain('bodyWithheld');
   });
 
   it('refuses to discard a draft with review or generation references', async () => {

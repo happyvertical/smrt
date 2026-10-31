@@ -1280,11 +1280,29 @@ describe('CourseAuthoringService', () => {
     });
     expect(evaluateGroupSharingPolicy(policy, facts).eligible).toBe(true);
     // Removing the personal-use material and releasing again restores shareability.
-    const cleaned = await s.save(
+    // A restated looser licence on the same lessonKey does not lift it.
+    const restated = await s.save(
       head.courseId,
       personal.headRevisionId,
       withLicences(false),
     );
+    expect(
+      (
+        await s.as(s.guardian, () =>
+          s.service.getCourse({ ...s.guardian, courseId: head.courseId }),
+        )
+      ).licenseKind,
+    ).toBe('personal-use-copy');
+    // Removing the restricted lesson is what lifts it.
+    const cleaned = await s.save(head.courseId, restated.headRevisionId, [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [
+          { lessonKey: 'a', title: 'A', licenseKind: 'open-license' as const },
+        ],
+      },
+    ]);
     const rel2 = await s.release(head.courseId, cleaned.revisionId);
     expect(
       (
@@ -1294,6 +1312,159 @@ describe('CourseAuthoringService', () => {
         >
       ).license_kind,
     ).toBe('open-license');
+  });
+
+  it('keeps a lesson licence across revisions of the same lessonKey', async () => {
+    const s = await setup();
+    const head = await s.create();
+    const lessonsWith = (licenseKind?: 'own-work' | 'personal-use-copy') => [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [
+          {
+            lessonKey: 'a',
+            title: 'A',
+            body: 'Purchased workbook text',
+            ...(licenseKind ? { licenseKind } : {}),
+          },
+          { lessonKey: 'b', title: 'B' },
+        ],
+      },
+    ];
+    const state = async () =>
+      s.as(s.guardian, () =>
+        s.service.getCourse({ ...s.guardian, courseId: head.courseId }),
+      );
+    const one = await s.save(
+      head.courseId,
+      head.headRevisionId,
+      lessonsWith('personal-use-copy'),
+    );
+    // Omitting the licence on a re-save inherits it; the default is for new keys only.
+    const two = await s.save(head.courseId, one.headRevisionId, lessonsWith());
+    expect(await state()).toMatchObject({
+      licenseKind: 'personal-use-copy',
+      groupShareable: false,
+    });
+    // Explicitly stating a looser licence does not loosen it.
+    const three = await s.save(
+      head.courseId,
+      two.headRevisionId,
+      lessonsWith('own-work'),
+    );
+    expect(await state()).toMatchObject({ licenseKind: 'personal-use-copy' });
+    const rel = await s.release(head.courseId, three.revisionId);
+    expect(
+      await s.db.get('courses', { id: rel.releaseCourseId }),
+    ).toMatchObject({ license_kind: 'personal-use-copy', status: 'draft' });
+    // Removing the lesson lifts it.
+    await s.save(head.courseId, three.headRevisionId, s.lessons(['b', 'B']));
+    expect(await state()).toMatchObject({
+      licenseKind: 'own-work',
+      groupShareable: true,
+    });
+  });
+
+  it('folds a reused asset licence across every revision regardless of row order', async () => {
+    const port: CourseMaterialCopyPort = {
+      async copy(executor, request) {
+        const user = (await executor.get('users', {
+          id: request.actorUserId,
+        })) as Record<string, string>;
+        const id = randomUUID();
+        await withPrivateAssetAccess(
+          {
+            tenantId: request.tenantId,
+            actorUserId: request.actorUserId,
+            ownerProfileId: user.profile_id,
+            assetIds: [id],
+          },
+          async () =>
+            (await AssetCollection.create({ db: executor })).create({
+              id,
+              tenantId: request.tenantId,
+              name: 'copy',
+              accessMode: 'private',
+              ownerProfileId: user.profile_id,
+              sourceUri: `file:///education/${id}.pdf`,
+            }),
+        );
+        return { assetId: id };
+      },
+    };
+    for (const reverse of [false, true]) {
+      const s = await setup({ copy: port });
+      if (reverse) {
+        const list = s.db.list.bind(s.db);
+        s.db.list = (async (table: string, ...rest: unknown[]) => {
+          const rows = await (list as (...a: unknown[]) => Promise<unknown[]>)(
+            table,
+            ...rest,
+          );
+          return table === 'lesson_revisions' ? [...rows].reverse() : rows;
+        }) as typeof s.db.list;
+      }
+      const head = await s.create();
+      const withMaterial = (material: Record<string, unknown>) =>
+        [
+          {
+            sectionKey: 'u',
+            title: 'U',
+            lessons: [
+              {
+                lessonKey: 'a',
+                title: 'Worksheet',
+                lessonType: 'worksheet' as const,
+                materials: [material],
+              },
+            ],
+          },
+        ] as CourseDraftInput['sections'];
+      // Older, looser: uploaded and explicitly stated own-work.
+      const one = await s.save(
+        head.courseId,
+        head.headRevisionId,
+        withMaterial({
+          source: { kind: 'ingestion-item', ref: 'i' },
+          relationship: 'printable',
+          licenseKind: 'own-work',
+        }),
+      );
+      const assetId = (
+        await s.as(s.guardian, () =>
+          s.service.readDraft({ ...s.guardian, courseId: head.courseId }),
+        )
+      ).revision.sections[0].lessons[0].materials[0].assetId;
+      // Tightened later, then reused with the licence omitted.
+      const two = await s.save(
+        head.courseId,
+        one.headRevisionId,
+        withMaterial({
+          assetId,
+          relationship: 'printable',
+          licenseKind: 'personal-use-copy',
+        }),
+      );
+      const three = await s.save(
+        head.courseId,
+        two.headRevisionId,
+        withMaterial({ assetId, relationship: 'printable' }),
+      );
+      const revision = (
+        await s.as(s.guardian, () =>
+          s.service.readDraft({
+            ...s.guardian,
+            courseId: head.courseId,
+            revisionId: three.revisionId,
+          }),
+        )
+      ).revision;
+      expect(revision.sections[0].lessons[0].materials[0].licenseKind).toBe(
+        'personal-use-copy',
+      );
+      expect(revision.licenseKind).toBe('personal-use-copy');
+    }
   });
 
   it('copies uploaded materials to education-owned assets with provenance', async () => {

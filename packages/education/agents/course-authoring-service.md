@@ -79,7 +79,9 @@ enrollments, and for review/generation/variant rows via the injected `referenceG
 ## Licence and sharing
 
 Most restrictive wins: own-work < open-license < licensed-for-sharing <
-personal-use-copy (`mostRestrictiveLicense`). Uploaded materials default to
+personal-use-copy (`mostRestrictiveLicense`). A lesson's own licence is sticky across revisions of its
+`lessonKey` (omitted or looser restatements never loosen it; removing the lesson
+does), and a reused asset keeps the most restrictive licence ever recorded for it. Uploaded materials default to
 `personal-use-copy` unless the author states otherwise. Any personal-use part
 makes the course tenant-private: `GroupSharingWorkFacts.courseShareable=false`
 (reason `course-private`) for authored releases, and the policy option list hides

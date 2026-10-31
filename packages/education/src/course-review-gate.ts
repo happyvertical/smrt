@@ -6,22 +6,11 @@ import { courseReviewContextDigest } from './course-review-digest.js';
 
 type Row = Record<string, unknown>;
 
-const COURSE_COLUMNS: Record<string, string> = {
-  title: 'title',
-  summary: 'summary',
-  subject: 'subject',
-  theme: 'theme',
-  levelMin: 'level_min',
-  levelMax: 'level_max',
-  objectives: 'objectives_json',
-  sections: 'sections_json',
-};
-
 /**
  * Unresolved blocking and human-verification findings stop release when they
  * sit on any review of this revision (a newer or empty review never hides
- * them) or on a review of an ancestor revision whose target material is still
- * present unchanged. Only an explicit resolution clears a finding.
+ * them) or on a review of an ancestor revision whose target (by stable identity) is
+ * still present. Only an explicit resolution clears a finding.
  */
 async function hasUnresolvedFindings(
   executor: Parameters<ReleaseReviewGate>[0],
@@ -29,23 +18,26 @@ async function hasUnresolvedFindings(
   target: Row,
 ): Promise<boolean> {
   const scope = { tenant_id: request.tenantId, course_id: request.courseId };
-  const lessonIds = new Set<string>();
+  const lessonKeys = new Set<string>();
   const questionIds = new Set<string>();
   for (const section of JSON.parse(String(target.sections_json)) as Array<{
     lessonRevisionIds: string[];
   }>)
     for (const id of section.lessonRevisionIds) {
-      lessonIds.add(id);
       const lesson = await executor.get('lesson_revisions', {
         id,
         tenant_id: request.tenantId,
       });
+      if (lesson) lessonKeys.add(String(lesson.lesson_key));
       for (const q of JSON.parse(
         String(lesson?.questions_json || '[]'),
-      ) as Array<{
-        questionRevisionId: string;
-      }>)
-        questionIds.add(q.questionRevisionId);
+      ) as Array<{ questionRevisionId: string }>) {
+        const revision = await executor.get('question_revisions', {
+          id: q.questionRevisionId,
+          tenant_id: request.tenantId,
+        });
+        if (revision) questionIds.add(String(revision.question_id));
+      }
     }
   const seen = new Set<string>();
   let current: Row | null = target;
@@ -66,16 +58,23 @@ async function hasUnresolvedFindings(
       )
         continue;
       if (revisionId === request.revisionId) return true;
+      // Carry by stable identity (lessonKey, question identity, course field)
+      // so an edit alone never clears a finding; removed material drops it.
       const id = String(finding.target_id);
       const kind = String(finding.target_kind);
-      let present = false;
-      if (kind === 'lesson-revision') present = lessonIds.has(id);
-      else if (kind === 'question-revision') present = questionIds.has(id);
-      else {
-        const column = COURSE_COLUMNS[String(finding.target_field)];
-        present = column
-          ? current[column] === target[column]
-          : current.content_digest === target.content_digest;
+      let present = true;
+      if (kind === 'lesson-revision') {
+        const row = await executor.get('lesson_revisions', {
+          id,
+          tenant_id: request.tenantId,
+        });
+        present = !!row && lessonKeys.has(String(row.lesson_key));
+      } else if (kind === 'question-revision') {
+        const row = await executor.get('question_revisions', {
+          id,
+          tenant_id: request.tenantId,
+        });
+        present = !!row && questionIds.has(String(row.question_id));
       }
       if (present) return true;
     }

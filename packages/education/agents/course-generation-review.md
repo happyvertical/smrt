@@ -63,10 +63,9 @@ resolve a `humanVerificationRequired` finding.
 only when its latest review is for that revision, is the draft head, has no marker,
 a matching digest, and no unresolved blocking or human-verification finding on
 any review of it (a newer or empty review never hides one) or carried from an
-ancestor revision's reviews while its target lesson/question revision or course
-field is still unchanged (changed or removed material drops it; only
-`resolveFinding` clears one);
-otherwise `ReviewNotCurrentError.reason` is `no-review`, `outdated`,
+ancestor revision's reviews by stable identity (lessonKey, question identity,
+course field) regardless of edits; removed material drops it, and only
+`resolveFinding` clears one; otherwise `ReviewNotCurrentError.reason` is `no-review`, `outdated`,
 `context-mismatch` or `unresolved-findings`. A plain `CourseAuthoringService`
 without a gate still fails closed. `createCourseReferenceGuard(extra)` blocks
 discard for review and generation rows; pass variant guards through `extra`.
