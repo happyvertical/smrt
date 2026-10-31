@@ -273,6 +273,12 @@ export {
   type WorksheetRenderInput,
   worksheetVersionId,
 } from './question-render.js';
+export * from './question-response-contracts.js';
+export type {
+  GuardianCorrectionRequest,
+  RecordQuestionResponseRequest,
+} from './question-response-service.js';
+export { QuestionResponseService } from './question-response-service.js';
 export {
   parseQuestionRubric,
   validateRubricResults,

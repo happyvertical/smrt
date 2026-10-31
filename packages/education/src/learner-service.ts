@@ -77,6 +77,8 @@ export type LearnerAuthorizer = (
       | 'education.learner.notes.read'
       | 'education.learner.notes.add'
       | 'education.learner.complete'
+      | 'education.learner.respond'
+      | 'education.learner.review-response'
       | 'education.learner.setup';
     own: boolean;
     relationshipTypeId?: string;
@@ -419,6 +421,7 @@ export class LearnerService {
         'education.learner.notes.read',
         'education.learner.notes.add',
         'education.learner.complete',
+        'education.learner.review-response',
       ].includes(action)
     )
       throw new LearnerAuthorizationError();

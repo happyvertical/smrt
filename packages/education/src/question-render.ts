@@ -9,7 +9,7 @@ import type {
   QuestionRevisionView,
 } from './question-contracts.js';
 
-const canonical = (value: unknown): string =>
+export const canonical = (value: unknown): string =>
   JSON.stringify(value, (_key, v) =>
     v && typeof v === 'object' && !Array.isArray(v)
       ? Object.fromEntries(

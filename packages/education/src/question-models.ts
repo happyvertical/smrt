@@ -328,8 +328,12 @@ export class QuestionResponse extends SmrtObject {
   completionMode = 'online';
   assistance = 'unknown';
   @field({ type: 'text' }) responseJson = '{}';
+  /** 1-based attempt (episode) number per learner and question revision. */
+  attemptNumber = 1;
   actorUserId = '';
   requestKey = '';
+  /** Digest of the request that wrote this row; empty for rows written directly. */
+  payloadDigest = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -360,6 +364,8 @@ export class QuestionResponse extends SmrtObject {
     requireText(this.episodeId, 'Response requires an episode');
     requireText(this.actorUserId, 'Response requires an actor');
     requireText(this.requestKey, 'Response requires a request key');
+    if (!Number.isSafeInteger(this.attemptNumber) || this.attemptNumber < 1)
+      throw new Error('Invalid response attempt number');
     if (
       !QUESTION_COMPLETION_MODES.includes(
         this.completionMode as (typeof QUESTION_COMPLETION_MODES)[number],

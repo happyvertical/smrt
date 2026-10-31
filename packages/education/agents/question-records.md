@@ -49,8 +49,32 @@ tenant; `Grade.rubricResults` must then fit its rubric (criterion id, number or
 Unreferenced legacy records are unchanged. `QuestionResponse` is an append-only
 learner response to one exact revision with completion mode
 (`printable|online|interactive`), assistance, a correction chain, `episodeId` and
-the `worksheetVersionId` seen. It has no service writer yet: learner-side writes
-need their own authority.
+the `worksheetVersionId` seen, a numbered `attemptNumber` and the writing request's
+`payloadDigest`. Writes go through `QuestionResponseService` below.
+
+## Responses (`QuestionResponseService`)
+
+Extends `LearnerService`, so it uses the learner authorizer, active-actor/tenant
+checks and executor-bound policy reads. New authorizer actions:
+`education.learner.respond` (the learner's own enrollment; a guardian never starts
+an attempt) and `education.learner.review-response` (guardian only; a learner
+claiming it is refused before the host is asked).
+
+- `recordResponse`: online attempt (new episode, next `attemptNumber`) or, with
+  `correctsResponseId`, the learner's correction in the same episode.
+- `recordGuardianCorrection`: names the response it corrects; `response` omitted
+  records assistance only and keeps the answer. Both append; nothing is rewritten.
+- `readLessonResponses`: the audience follows the actor. The learner gets the
+  keyless bundle (keys never leave the database call), the guardian the keyed one.
+
+The question revision must be in the enrollment's effective lesson set
+(`resolveEnrollmentLessons`, then the lesson revision's `questions`); otherwise
+`QuestionResponseScopeError`. Unpinned enrollments have no authored questions.
+The response is a closed shape (`text`, `numeric`, `choiceIds`, `parts`) checked
+against the revision's choices and subparts (`QuestionResponseValidationError`).
+Every write needs a request key (unique per learner); a replay returns the stored
+row, another payload throws `CourseRequestKeyConflictError`. Other errors:
+`QuestionResponseNotFoundError`, `LearnerAuthorizationError`.
 
 ## Rendering
 
@@ -64,6 +88,6 @@ type members; only the guardian bundle carries them. Both service audiences need
 
 ## Migration
 
-Schema ships through normal manifest migrations: five new tables plus nullable
+Schema ships through normal manifest migrations: five new tables (`question_responses` included) plus nullable
 columns on `grades` (`question_revision_id`) and `lesson_revisions` (`questions_json`,
 `layout_params_json`); test-pinned as additive. The runtime never creates tables.
