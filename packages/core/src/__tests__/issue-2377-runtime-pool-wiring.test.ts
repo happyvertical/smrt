@@ -5,9 +5,10 @@
  * `@happyvertical/sql` caches one pool per URL/dbid, so a single call site
  * that still passes the raw URL does not merely stay unbounded — it mints a
  * *second*, unbounded pool alongside the bounded one. These tests therefore
- * assert the options each site hands to `getDatabase()`, including the dbid,
- * which must be derived from the bounded URL so all the sites agree on one
- * pool identity.
+ * assert the options each site hands to `getDatabase()`, including the dbid:
+ * every site passes none for PostgreSQL, so the SDK derives one pool identity
+ * from the bounded URL and the pool options (#3046), and `smrt:<url>` for
+ * file-backed engines.
  *
  * `.claude/rules/testing.md` says never to mock database operations, and this
  * file mocks `getDatabase` deliberately: the assertion target is the options
@@ -85,7 +86,9 @@ describe('resolveDatabase', () => {
     expect(options.connectionTimeoutMillis).toBe(
       DEFAULT_POSTGRES_TIMEOUTS.connectionTimeoutMs,
     );
-    expect(options.dbid).toBe(`smrt:${options.url}`);
+    // PostgreSQL gets no derived dbid: the SDK keys the pool on its effective
+    // connection and pool options (#3046).
+    expect(options.dbid).toBeUndefined();
   });
 
   it('bounds a PostgreSQL config object and honours its timeouts key', async () => {
@@ -98,7 +101,9 @@ describe('resolveDatabase', () => {
     const options = lastOptions();
     expect(timeoutParams(options.url).get('statement_timeout')).toBe('5000');
     expect(options.timeouts).toBeUndefined();
-    expect(options.dbid).toBe(`smrt:${options.url}`);
+    // PostgreSQL gets no derived dbid: the SDK keys the pool on its effective
+    // connection and pool options (#3046).
+    expect(options.dbid).toBeUndefined();
   });
 
   it('leaves a SQLite URL and its dbid untouched', async () => {
@@ -126,7 +131,7 @@ describe('resolveDatabase', () => {
 });
 
 describe('resolveChangesDb', () => {
-  it('bounds the _changes route URL and derives its dbid from it', async () => {
+  it('bounds the _changes route URL and leaves its pool identity to the SDK', async () => {
     // A distinct URL per assertion: the route memoizes per option value.
     const url = `${PG_URL}?application_name=changes`;
     await resolveChangesDb(url);
@@ -135,7 +140,9 @@ describe('resolveChangesDb', () => {
     expect(timeoutParams(options.url).get('statement_timeout')).toBe(
       String(DEFAULT_POSTGRES_TIMEOUTS.statementTimeoutMs),
     );
-    expect(options.dbid).toBe(`smrt:${options.url}`);
+    // PostgreSQL gets no derived dbid: the SDK keys the pool on its effective
+    // connection and pool options (#3046).
+    expect(options.dbid).toBeUndefined();
   });
 
   it('bounds a _changes route config object', async () => {
@@ -195,7 +202,9 @@ describe('SmrtClass', () => {
     expect(timeoutParams(options.url).get('statement_timeout')).toBe(
       String(DEFAULT_POSTGRES_TIMEOUTS.statementTimeoutMs),
     );
-    expect(options.dbid).toBe(`smrt:${options.url}`);
+    // PostgreSQL gets no derived dbid: the SDK keys the pool on its effective
+    // connection and pool options (#3046).
+    expect(options.dbid).toBeUndefined();
   });
 
   it('bounds a PostgreSQL config object handed to an object', async () => {
@@ -209,7 +218,9 @@ describe('SmrtClass', () => {
     expect(timeoutParams(options.url).get('lock_timeout')).toBe(
       String(DEFAULT_POSTGRES_TIMEOUTS.lockTimeoutMs),
     );
-    expect(options.dbid).toBe(`smrt:${options.url}`);
+    // PostgreSQL gets no derived dbid: the SDK keys the pool on its effective
+    // connection and pool options (#3046).
+    expect(options.dbid).toBeUndefined();
   });
 
   it('leaves a SQLite object database untouched', async () => {

@@ -162,9 +162,6 @@ export interface DispatchCleanupResult {
 }
 
 /**
- * Options for creating a DispatchBus
- */
-/**
  * Pool and connection options a {@link DispatchBusOptions} database config may
  * carry. They are forwarded to `getDatabase()` exactly as given, so a bus
  * built from a config honors the same pool cap and timeouts as the rest of the
@@ -183,6 +180,9 @@ export interface DispatchBusPoolOptions {
   timeouts?: PostgresTimeoutConfig;
 }
 
+/**
+ * Options for creating a DispatchBus
+ */
 export interface DispatchBusOptions {
   /**
    * Database configuration or existing interface.
