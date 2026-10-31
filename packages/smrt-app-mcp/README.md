@@ -306,7 +306,7 @@ useWebMcpTool(() => toWebMcpSpec(descriptor, createSameOriginSessionCaller({ url
   the session and should run `executeHostOperation`, returning `{ error: { code,
   message } }` on failure) and a typed `HostOperationError` is thrown.
 - Declare each host tool name to the build with the `hostToolNames` option of
-  `smrtPlugin`: duplicates across workflow, bespoke and MCP tools fail the
+  `smrtPlugin` (or the `smrt()` preset in `vite.config.ts`): duplicates across workflow, bespoke and MCP tools fail the
   build.
 
 The resulting descriptor preserves `_meta.ui.resourceUri` and optional

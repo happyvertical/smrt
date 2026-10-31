@@ -416,7 +416,7 @@ unchanged (they stay generic).
 
 ## Host tool-name collisions (#4520)
 
-`smrtPlugin({ hostToolNames })` takes `{ name, surface: 'workflow' | 'bespoke' | 'mcp', declaredBy }`
+`smrtPlugin({ hostToolNames })` (or `smrt({ hostToolNames })` in `vite.config.ts`, which forwards it unchanged) takes `{ name, surface: 'workflow' | 'bespoke' | 'mcp', declaredBy }`
 declarations (`src/vite-plugin/host-tool-names.ts`). Host-vs-host duplicates fail at plugin
 construction; a host name shadowing a generated model tool fails after the scan. The same
 `declaredBy` on several surfaces is one operation and is allowed. Unlike the advisory
