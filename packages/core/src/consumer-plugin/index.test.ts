@@ -1385,6 +1385,258 @@ describe('smrtConsumer registration generation', () => {
     );
   });
 
+  it('keeps the register loadable under plain Node when a workspace provider exports TypeScript source (#3092)', async () => {
+    // ergot.io shape: a workspace package linked into node_modules whose
+    // root export is TypeScript source, consumed by an app that runs it
+    // through Vite. `smrt db:migrate` loads the same register with plain Node.
+    const workspaceDir = join(tmpDir, 'packages', 'ergot-core');
+    const coreDir = join(tmpDir, 'node_modules', '@happyvertical', 'smrt-core');
+    mkdirSync(join(workspaceDir, 'src'), { recursive: true });
+    mkdirSync(join(tmpDir, 'node_modules', '@ergot'), { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    symlinkSync(workspaceDir, join(tmpDir, 'node_modules', '@ergot', 'core'));
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: '@fixture/consumer-app',
+        version: '1.0.0',
+        type: 'module',
+      }),
+    );
+    writeFileSync(
+      join(workspaceDir, 'package.json'),
+      JSON.stringify({
+        name: '@ergot/core',
+        version: '0.0.1',
+        type: 'module',
+        exports: {
+          '.': { types: './src/index.ts', import: './src/index.ts' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(workspaceDir, 'src', 'constants.ts'),
+      "export const ERGOT_TABLE: string = 'ergot_things';\n",
+    );
+    writeFileSync(
+      join(workspaceDir, 'src', 'index.ts'),
+      [
+        "export * from './constants.js';",
+        'export class ErgotThing { label: string = ""; }',
+        'export class ErgotThingCollection { static _itemClass: unknown = ErgotThing; }',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(workspaceDir, 'manifest.json'),
+      JSON.stringify({
+        moduleType: 'smrt',
+        packageName: '@ergot/core',
+        objects: {
+          ErgotThing: {
+            className: 'ErgotThing',
+            hasCollection: true,
+            collectionExportName: 'ErgotThingCollection',
+            collection: 'ergot_things',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-core',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    writeFileSync(
+      join(coreDir, 'index.js'),
+      [
+        'const classes = new Map();',
+        'const collections = new Map();',
+        'export const ObjectRegistry = {',
+        "  register(ctor, config) { classes.set(config.packageName + ':' + config.name, ctor); },",
+        '  registerCollection(name, ctor) { collections.set(name, ctor); },',
+        '  snapshot() { return { classes: [...classes.keys()], collections: [...collections.keys()] }; },',
+        '};',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'snapshot.mjs'),
+      [
+        "import '../.smrt/register.js';",
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        'export const snapshot = ObjectRegistry.snapshot();',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'worker.mjs'),
+      [
+        "import { snapshot } from './snapshot.mjs';",
+        'console.log(JSON.stringify(snapshot));',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(tmpDir, 'vite-ssr.mjs'),
+      [
+        "import { createServer } from 'vite';",
+        'const server = await createServer({',
+        '  root: process.cwd(), configFile: false, logLevel: "silent",',
+        '  appType: "custom", server: { middlewareMode: true, hmr: false, ws: false },',
+        '});',
+        'try {',
+        "  const { snapshot } = await server.ssrLoadModule('/src/snapshot.mjs');",
+        '  console.log(JSON.stringify(snapshot));',
+        '} finally {',
+        '  await server.close();',
+        '}',
+      ].join('\n'),
+    );
+
+    // The reported failure: plain Node cannot evaluate the TypeScript root.
+    const rootLoad = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', "import '@ergot/core';"],
+      { cwd: tmpDir, encoding: 'utf8' },
+    );
+    expect(rootLoad.status).not.toBe(0);
+    expect(rootLoad.stderr).toMatch(/constants\.js|ERR_/);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const plugin = smrtConsumer({
+      packages: ['@ergot/core'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+    expect(
+      warn.mock.calls.some(([message]) =>
+        String(message).includes(
+          '@ergot/core resolves to TypeScript source; .smrt/register.js imports it only under Vite',
+        ),
+      ),
+    ).toBe(true);
+    warn.mockRestore();
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).not.toMatch(/^import .* from ['"]@ergot\/core['"]/m);
+    expect(content).toContain(
+      'const __smrt_provider_0 = SMRT_VITE_RUNTIME ? await import("@ergot/core") : {};',
+    );
+    // Its manifest still reaches the aggregated manifest migrations read.
+    const aggregated = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    ) as { objects: Record<string, unknown> };
+    expect(Object.keys(aggregated.objects).join(',')).toContain('ErgotThing');
+
+    // `smrt db:migrate` / worker: plain Node loads the register.
+    const worker = spawnSync(
+      process.execPath,
+      [join(tmpDir, 'src', 'worker.mjs')],
+      { cwd: tmpDir, encoding: 'utf8' },
+    );
+    expect(worker.status, worker.stderr).toBe(0);
+    expect(worker.stderr).toContain(
+      '[smrt:register] Skipped TypeScript-source modules under plain Node: @ergot/core',
+    );
+    expect(
+      JSON.parse(worker.stdout.trim().split('\n').pop() as string),
+    ).toEqual({ classes: [], collections: [] });
+
+    // Vite SSR evaluates the same register and registers the provider.
+    const ssr = spawnSync(process.execPath, [join(tmpDir, 'vite-ssr.mjs')], {
+      cwd: tmpDir,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect(ssr.status, ssr.stderr).toBe(0);
+    expect(JSON.parse(ssr.stdout.trim().split('\n').pop() as string)).toEqual({
+      classes: ['@ergot/core:ErgotThing'],
+      collections: ['@ergot/core:ErgotThing', 'ergot_things'],
+    });
+  });
+
+  it('gates a TypeScript-source object module reached through its provider (#3092)', async () => {
+    const providerDir = join(tmpDir, 'node_modules', '@test', 'pkg');
+    const nestedModelDir = join(
+      providerDir,
+      'node_modules',
+      '@nested',
+      'model',
+    );
+    mkdirSync(join(nestedModelDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/pkg',
+        version: '1.2.3',
+        type: 'module',
+        exports: { '.': { default: './dist/index.js' } },
+        dependencies: { '@nested/model': '1.0.0' },
+      }),
+    );
+    writeFileSync(join(providerDir, 'dist', 'index.js'), 'export {};\n');
+    writeFileSync(
+      join(nestedModelDir, 'package.json'),
+      JSON.stringify({
+        name: '@nested/model',
+        version: '1.0.0',
+        type: 'module',
+        exports: { '.': { import: './src/index.ts' } },
+      }),
+    );
+    writeFileSync(
+      join(nestedModelDir, 'src', 'index.ts'),
+      'export class Shared {}\nexport class SharedCollection {}\n',
+    );
+    writeFileSync(
+      join(providerDir, 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@nested/model:Shared': {
+            className: 'Shared',
+            packageName: '@nested/model',
+            importPath: '@nested/model',
+            hasCollection: true,
+            collectionExportName: 'SharedCollection',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain(
+      'SMRT_VITE_RUNTIME ? await importSmrtDependency("@nested/model", "@test/pkg") : {};',
+    );
+    expect(content).toMatch(
+      /if \(SMRT_VITE_RUNTIME && !__smrt_consumer_\d+\) throw/,
+    );
+    expect(content).toMatch(
+      /if \(SMRT_VITE_RUNTIME && __smrt_consumer_\d+\._itemClass !== __smrt_consumer_\d+\) throw/,
+    );
+    // The JavaScript provider root stays an ordinary static import.
+    expect(content).toContain(
+      "import * as __smrt_provider_0 from '@test/pkg';",
+    );
+  });
+
   it('aliases same-name exports and isolates their registration manifests', async () => {
     writeFileSync(
       join(tmpDir, 'node_modules', '@test', 'pkg', 'dist', 'manifest.json'),
