@@ -42,7 +42,9 @@ const DEFAULT_EXPIRATION_MINUTES = 15;
   sensitive: true,
   api: { exclude: ['*'] }, // No API access - internal only
   mcp: { exclude: ['*'] },
-  cli: { include: ['list'] }, // Admin visibility only
+  // Admin visibility only: an in-process command over the local database,
+  // with no API route behind it (the API is closed above, #3468).
+  cli: { include: ['list'], skipApiCheck: ['list'] },
 })
 export class MagicLinkToken extends SmrtObject {
   /**

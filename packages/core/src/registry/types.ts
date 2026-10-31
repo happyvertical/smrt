@@ -1163,6 +1163,12 @@ export interface RegisteredClass {
   extends?: string;
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
   extendsTypeArg?: string;
+  /**
+   * Generated surfaces in `config` the scanner copied from this collection's
+   * model (`SmartObjectDefinition.inheritedExposure`); they follow the
+   * model's effective config at runtime, never widening (#3468).
+   */
+  inheritedExposure?: Array<'api' | 'mcp' | 'cli'>;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */

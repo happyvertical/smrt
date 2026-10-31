@@ -18,6 +18,7 @@ import {
 } from '../manifest/manifest-loader.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import {
+  closeWildcardExclusions,
   findCollectionWriteEscalations,
   formatCollectionWriteEscalations,
   inheritCollectionExposure,
@@ -436,6 +437,17 @@ export class ManifestGenerator {
     // that declares no classes generates no qualified names and still builds.
     if (Object.keys(manifest.objects).length > 0) {
       assertScopedPackageName(options?.packageName);
+    }
+
+    // `exclude: ['*']` closes a surface; no generator reads `'*'` as a
+    // wildcard, so normalize it before any pass or manifest reader sees it
+    // (#3468, smrt-profiles MagicLinkToken).
+    for (const objectDef of Object.values(manifest.objects)) {
+      if (objectDef.decoratorConfig) {
+        objectDef.decoratorConfig = closeWildcardExclusions(
+          objectDef.decoratorConfig,
+        );
+      }
     }
 
     // Capture authored API exposure before making the abstract class itself
@@ -2573,6 +2585,11 @@ export class ManifestGenerator {
       );
       if (Object.keys(inherited).length > 0) {
         obj.decoratorConfig = { ...(obj.decoratorConfig || {}), ...inherited };
+        // Keep the copied surfaces distinguishable from the collection's own,
+        // so the runtime can follow its model's effective config (#3468).
+        obj.inheritedExposure = Object.keys(inherited) as Array<
+          keyof typeof inherited
+        >;
         logger.debug(
           `[manifest-generator] ${obj.className} inherits ${Object.keys(inherited).join(', ')} exposure from item class ${itemClass.className}`,
         );

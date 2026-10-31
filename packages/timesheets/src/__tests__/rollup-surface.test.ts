@@ -39,8 +39,12 @@ it('keeps timecards and append-only adjustments off all generated surfaces', asy
     expect(ObjectRegistry.getConfig(name).mcp).toBe(false);
     expect(getTenantScopedConfig(name)?.mode).toBe('required');
     expect(
+      // The collection's tools reach the same rows, so match its prefix too
+      // (#3468: a model-only prefix missed `periodtimecardcollection_*`).
       tools.filter((tool) =>
-        tool.name.startsWith(`${model.name.toLowerCase()}_`),
+        new RegExp(`^${model.name.toLowerCase()}(collection)?_`).test(
+          tool.name,
+        ),
       ),
     ).toEqual([]);
   }

@@ -2027,6 +2027,7 @@ function registerUntracked(
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
+    inheritedExposure: manifestEntry?.inheritedExposure, // #3468
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
     tenantScopedConfigSource,
     visibility, // Visibility control for manifest filtering
@@ -2625,6 +2626,12 @@ function mergeManifestIntoExistingRegistration(
     existing.sourceFilePath = objectDef.filePath;
   }
 
+  // #3468: which surfaces of the merged config the scanner copied from the
+  // collection's model, so they keep following the model at runtime.
+  if (objectDef.inheritedExposure) {
+    existing.inheritedExposure = objectDef.inheritedExposure;
+  }
+
   // The manifest's collection is authoritative (it carries STI inheritance):
   // a class decorated before its manifest loaded registered a derived one,
   // which permission slugs and route segments would otherwise keep (#3125).
@@ -2905,6 +2912,7 @@ function registerFromManifestUntracked(
     replacedQualifiedNames: [...replacedQualifiedNames],
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
+    inheritedExposure: objectDef.inheritedExposure, // #3468
     visibility, // New: Visibility control for manifest filtering
   };
   // #3338: a deprecated alias must never name a second live class.

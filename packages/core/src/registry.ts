@@ -87,7 +87,14 @@ import { clearSubtypeLineage } from './registry/subtype-lineage';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
-import { inheritCollectionExposure } from './registry/collection-exposure';
+import {
+  COLLECTION_CRUD_SURFACES,
+  capCollectionCrudToModel,
+  closeWildcardExclusions,
+  inheritCollectionExposure,
+  inheritedCollectionSurface,
+  narrowInheritedCollectionSurface,
+} from './registry/collection-exposure';
 import {
   isCollectionRegistration,
   resolveCollectionItemClassName,
@@ -679,9 +686,12 @@ function resolveEffectiveConfig(
   ) {
     return cached.config;
   }
-  if (visiting.has(registered)) return registered.config;
+  if (visiting.has(registered))
+    return closeWildcardExclusions(registered.config);
   visiting.add(registered);
-  let config = registered.config;
+  // `exclude: ['*']` closes the surface (#3468).
+  const ownConfig = closeWildcardExclusions(registered.config);
+  let config = ownConfig;
   const key = registered.qualifiedName || registered.name || name;
   if (!isFrameworkBaseClass(registered.name, registered.packageName)) {
     if (isCollectionRegistration(key, registered, collectionExposureLookup)) {
@@ -698,23 +708,51 @@ function resolveEffectiveConfig(
           )
         : undefined;
       if (item && item !== registered) {
-        const inherited = inheritCollectionExposure(
-          registered.config,
-          resolveEffectiveConfig(itemName as string, item, visiting),
-          {
-            collection: new Set(registered.methods.keys()),
-            item: chainMethodNames(item),
-          },
+        const itemConfig = resolveEffectiveConfig(
+          itemName as string,
+          item,
+          visiting,
         );
+        const methods = {
+          collection: new Set(registered.methods.keys()),
+          item: chainMethodNames(item),
+        };
+        const inherited: SmartObjectConfig = inheritCollectionExposure(
+          ownConfig,
+          itemConfig,
+          methods,
+        );
+        // Surfaces the scanner copied from the model follow the model's
+        // effective config now (a consumer subclass or registerOverride may
+        // have closed it), never opening more than the build did (#3468).
+        for (const surface of registered.inheritedExposure ?? []) {
+          const narrowed = narrowInheritedCollectionSurface(
+            ownConfig[surface],
+            inheritedCollectionSurface(surface, itemConfig, methods),
+          );
+          if (narrowed !== ownConfig[surface]) {
+            (inherited as Record<string, unknown>)[surface] = narrowed;
+          }
+        }
+        // A collection never publishes a generated CRUD operation its model
+        // keeps closed, however its own surface reads (#3468).
+        for (const surface of COLLECTION_CRUD_SURFACES) {
+          const current =
+            surface in inherited ? inherited[surface] : ownConfig[surface];
+          const capped = capCollectionCrudToModel(surface, current, itemConfig);
+          if (capped !== current) {
+            (inherited as Record<string, unknown>)[surface] = capped;
+          }
+        }
         if (Object.keys(inherited).length > 0) {
-          config = { ...registered.config, ...inherited };
+          config = { ...ownConfig, ...inherited };
         }
       }
     } else {
       const parent = resolveParentModel(registered);
       if (parent) {
         const inherited = inheritSubclassExposure(
-          registered.config,
+          ownConfig,
           resolveEffectiveConfig(
             parent.qualifiedName || parent.name,
             parent,
@@ -722,7 +760,7 @@ function resolveEffectiveConfig(
           ),
         );
         if (Object.keys(inherited).length > 0) {
-          config = { ...registered.config, ...inherited };
+          config = { ...ownConfig, ...inherited };
         }
       }
     }
@@ -2943,6 +2981,16 @@ export class ObjectRegistry {
           manifestEntry.packageName,
           registered.name,
         ) as QualifiedClassName;
+        didHydrate = true;
+      }
+
+      // #3468: surfaces the scanner copied from a collection's model.
+      if (
+        manifestEntry.inheritedExposure &&
+        registered.inheritedExposure?.join() !==
+          manifestEntry.inheritedExposure.join()
+      ) {
+        registered.inheritedExposure = manifestEntry.inheritedExposure;
         didHydrate = true;
       }
 

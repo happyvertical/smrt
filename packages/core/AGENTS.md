@@ -143,7 +143,10 @@ and repository rules.
   `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
 - A collection class never publishes more than its model: unset surfaces
   inherit the model's, and the build rejects a collection that opens a CRUD
-  write its model closes. See `agents/generators.md` (Collection exposure).
+  write its model closes. Inherited surfaces (`inheritedExposure`) keep
+  following the model at runtime and collection CRUD is capped to the model's,
+  so closing a model closes its collection's tools (#3468). See
+  `agents/generators.md` (Collection exposure).
 - A model subclass (STI child or CTI subclass) never publishes more than its
   parent model: unset surfaces and `sensitive` inherit the parent's, and the
   build rejects a subclass that widens them unless it names each operation in
