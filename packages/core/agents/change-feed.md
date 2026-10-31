@@ -50,6 +50,18 @@ confirms the table exists, and a request naming *only* sensitive tables gets
 an empty page rather than an unfiltered one. Filtered rows never hold the
 cursor back: an exhaustive page still advances to the served horizon.
 
+The PostgreSQL drain also refuses them (#2982). Every drain passes the live
+sensitive set to `_smrt_drain_changes(limit, excluded_tables)`. Under the drain
+lock it deletes staged rows for those tables before allocating any sequence,
+and its batch skips any that commit afterwards. Entries an older replica staged,
+or that were staged before an upgrade, therefore never reach `_smrt_changes`.
+The single-argument `_smrt_drain_changes(limit)` remains as a compatibility
+entry point for older replicas during a rollout. It delegates with no
+exclusions, which is the old behaviour; its output stays covered by the read,
+signal and retention refusals above. The bootstrap and raw-handle probes require
+both overloads, so an upgraded database installs the new one before current code
+calls it.
+
 `pruneChangeFeed()` additionally deletes sensitive rows below the horizon on
 every sweep, ahead of either retention bound, so credentials do not sit at rest
 for the retention window. That deletes from the middle of the retained run,
