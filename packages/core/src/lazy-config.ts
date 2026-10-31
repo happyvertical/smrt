@@ -85,15 +85,22 @@ export interface ConfigResolutionContext {
   agentClass?: string;
   /** Tenant the resolution runs for, when the job is tenant-scoped. */
   tenantId?: string | null;
-  /** Schedule that produced the job, when scheduled. */
+  /**
+   * Schedule that produced the job, when scheduled. Informational only: the
+   * runner echoes it from the job's args without verifying it against
+   * `_smrt_agent_schedules`, so never key a per-agent value (a credential) on
+   * it — use `agentId`.
+   */
   scheduleId?: string;
   /** Job being executed, when resolved by the job runner. */
   jobId?: string;
 }
 
 /**
- * The argument every {@link ConfigResolver} receives. It is a fresh frozen
- * object per call.
+ * The argument every {@link ConfigResolver} receives. It is a fresh object
+ * per call, frozen one level deep: `persisted` is neither copied nor frozen,
+ * so treat it as read-only — mutating it changes the config the agent is
+ * constructed with.
  */
 export interface ConfigResolverContext
   extends Readonly<ConfigResolutionContext> {
@@ -109,6 +116,8 @@ export interface ConfigResolverContext
   /**
    * Whether this instance's persisted config carries a non-null value for the
    * key. Always `false` for a sentinel: the sentinel *is* the persisted value.
+   * Only `undefined` / `null` count as absent; an empty object or a keyless
+   * credential is present — inspect `persisted` when that matters.
    */
   readonly hasPersisted: boolean;
   /**
@@ -135,7 +144,9 @@ export type ConfigResolver = (
  * code that looks a resolver up with {@link getConfigResolver} or
  * {@link getClassConfigResolvers} and calls it itself. The framework builds
  * its own; this exists so such callers pass an explicit identity instead of
- * none.
+ * none. It models a class-resolver call (`source: 'class'`, `path: [key]`);
+ * a sentinel resolver invoked through it sees `hasPersisted` reflect the
+ * `persisted` argument rather than the framework's always-`false`.
  *
  * @param key - Config key (class resolver) or resolver name (sentinel)
  * @param identity - The agent instance being resolved for, if known
@@ -157,7 +168,8 @@ export function createConfigResolverContext(
 
 /**
  * Wrap a class resolver so it only fills a key the instance's persisted config
- * leaves empty (#2806). Use it for a deployment-wide fallback that must never
+ * leaves empty — `undefined` or `null` (#2806); a present but unusable value
+ * such as `{}` is kept, so check `context.persisted` yourself if it can be. Use it for a deployment-wide fallback that must never
  * replace an agent's own persisted value, such as its own provider credential.
  *
  * @example

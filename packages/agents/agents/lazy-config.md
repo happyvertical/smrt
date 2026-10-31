@@ -28,3 +28,8 @@ The TaskRunner calls `resolveLazyConfig()` immediately before constructing the a
 3. absent.
 
 A deployment fallback that must not clobber an agent's own value, such as its provider credential, uses `preferPersisted(fallback)` or returns `undefined` when `context.hasPersisted`. Never select an agent by scanning the tenant's `agent_configs` rows: with several agents of one class per tenant, that leaks one agent's credential to another. Use `context.agentId`. Zero-argument resolvers remain valid.
+
+Caveats:
+- `scheduleId` is echoed from job args without verification, so never key a per-agent value on it.
+- `persisted` is neither copied nor deep-frozen. Treat it as read-only.
+- Only `undefined` / `null` count as absent for `preferPersisted`. A present but empty value such as `{}` is kept.
