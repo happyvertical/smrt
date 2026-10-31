@@ -1827,11 +1827,14 @@ async function applyRenameBackfills(
   console.log();
 }
 
-const SYSTEM_TENANT_COLUMN_KEYS = new Set(
-  SYSTEM_TABLE_TENANT_UUID_COLUMNS.map(({ table, column }) =>
-    declaredUuidKey(table, column),
-  ),
-);
+/** Keys of the system tenant columns; read lazily so module mocks need not export it. */
+function systemTenantColumnKeys(): Set<string> {
+  return new Set(
+    SYSTEM_TABLE_TENANT_UUID_COLUMNS.map(({ table, column }) =>
+      declaredUuidKey(table, column),
+    ),
+  );
+}
 
 /**
  * The system tenant columns convert together or not at all (#3297).
@@ -1856,8 +1859,9 @@ async function holdSystemTenantColumnsTogether<
   convert: T[];
   skipBlockedPartner: NonNullable<ConversionPlan['skipBlockedPartner']>;
 }> {
+  const systemKeys = systemTenantColumnKeys();
   const isSystem = (column: { table: string; column: string }) =>
-    SYSTEM_TENANT_COLUMN_KEYS.has(declaredUuidKey(column.table, column.column));
+    systemKeys.has(declaredUuidKey(column.table, column.column));
   const system = convert.filter(isSystem);
   if (system.length === 0) return { convert, skipBlockedPartner };
 
