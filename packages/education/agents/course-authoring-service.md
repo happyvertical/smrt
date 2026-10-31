@@ -75,7 +75,7 @@ automatic move is authorized per enrollment during `release` with action
 recorded actor and delegating guardian (current membership re-checked, the host
 re-evaluates the delegation or relationship) and the transaction executor; hosts
 must map `auto-upgrade` per learner from the assignment setting. A denial or
-authorizer failure never blocks the release or other enrollments: that
+authorizer failure (each call runs in a SAVEPOINT, rolled back on a throw, so a failing host statement cannot abort the release transaction) never blocks the release or other enrollments: that
 enrollment stays on its pin and an `EnrollmentAutoUpgradeSkip` row records
 `not-authorized`, the opt-in scope, actor, guardian and `policyBasis`. A replayed
 request key with a different basis is a request-key conflict.
@@ -107,7 +107,7 @@ makes the course tenant-private: `GroupSharingWorkFacts.courseShareable=false`
 (reason `course-private`) for authored releases, and the policy option list hides
 them. Work is attributed to the course of its own lesson, and any personal-use
 release anywhere in the enrollment's pin lineage also makes it `course-private`
-and hides the course from the options; unpinned enrollments are unchanged. Existing workbook personal-use scaffolds are unchanged.
+and hides the course from the options; unpinned enrollments and databases without the pin tables are unchanged. Existing workbook personal-use scaffolds are unchanged.
 
 ## Materials
 

@@ -47,7 +47,8 @@ import { WorkbookService } from '../workbook-service.js';
 import { learnerFixture } from './learner-workflows.js';
 import { workbookClasses } from './workbook-workflows.js';
 
-export const groupSharingReadClasses = [
+/** The class set that predates release pins; the reader must still work on it. */
+export const groupSharingReadClassesWithoutAuthoring = [
   ...workbookClasses,
   'Session',
   'EducationGroup',
@@ -56,6 +57,9 @@ export const groupSharingReadClasses = [
   'GroupRevisionComment',
   'WorkbookPhotoDecision',
   'WorkbookContextRevision',
+];
+export const groupSharingReadClasses = [
+  ...groupSharingReadClassesWithoutAuthoring,
   // The reader consults enrollment release pin lineage for course privacy.
   'CourseRevision',
   'LessonRevision',

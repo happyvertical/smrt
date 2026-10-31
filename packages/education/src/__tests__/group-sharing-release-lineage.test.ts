@@ -7,6 +7,7 @@ import { CourseAuthoringService } from '../course-authoring-service.js';
 import { GroupSharingReader } from '../group-sharing-reader.js';
 import {
   groupSharingReadClasses,
+  groupSharingReadClassesWithoutAuthoring,
   sharingReadFixture,
 } from './group-sharing-read-workflows.js';
 
@@ -162,6 +163,47 @@ describe('group sharing and release pin lineage', () => {
       expect(
         preview.works.find((w) => w.attemptId === x.attempt.id)?.decision,
       ).toMatchObject({ eligible: false, reasons: ['course-private'] });
+    } finally {
+      await x.cleanup();
+      await db.close?.();
+    }
+  });
+
+  it('behaves as before when the authoring tables do not exist', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: groupSharingReadClassesWithoutAuthoring,
+    });
+    const x = await sharingReadFixture(db);
+    try {
+      expect(await db.tableExists('enrollment_release_pins')).toBe(false);
+      const listed = await x.asSupervisor(() =>
+        x.reader.listSharedWork(x.scope),
+      );
+      expect(listed.works.map((w) => w.attemptId)).toEqual([x.attempt.id]);
+      const preview = await x.as(x.parent, () =>
+        x.reader.previewSharing(x.scope),
+      );
+      expect(
+        preview.works.find((w) => w.attemptId === x.attempt.id)?.decision
+          .eligible,
+      ).toBe(true);
+      const session = await (
+        await SessionCollection.create({ db })
+      ).createSession({ userId: x.parent.actorUserId });
+      const options = await x.as(x.parent, () =>
+        new GroupSharingReader(
+          db,
+          (c) => c.actorUserId === x.parent.actorUserId,
+        ).getSharingPolicyOptions({
+          actorUserId: x.parent.actorUserId,
+          sessionId: String(session.id),
+          familyTenantId: x.parent.tenantId,
+          learnerId: x.parent.learnerId,
+        }),
+      );
+      expect(options.courses.map((c) => c.id)).toContain(String(x.course.id));
     } finally {
       await x.cleanup();
       await db.close?.();

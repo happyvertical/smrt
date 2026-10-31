@@ -2132,20 +2132,26 @@ export class CourseAuthoringService {
         )
           return false;
       }
-      return (
-        (await this.authorizer({
-          tenantId,
-          actorUserId: choice.actorUserId,
-          ...(choice.delegatingGuardianUserId
-            ? { delegatingGuardianUserId: choice.delegatingGuardianUserId }
-            : {}),
-          courseId,
-          enrollmentId,
-          learnerId,
-          action: 'education.course.assign',
-          operation: 'auto-upgrade',
-          executor: tx,
-        })) === true
+      // A nested transaction is a SAVEPOINT: a failing statement inside the
+      // host callback is rolled back to it, so it cannot leave the release
+      // transaction aborted (PostgreSQL 25P02). A throw means "not allowed".
+      // An executor that cannot nest cannot isolate the callback: fail closed.
+      if (typeof tx.transaction !== 'function') return false;
+      return await tx.transaction(
+        async (inner) =>
+          (await this.authorizer({
+            tenantId,
+            actorUserId: choice.actorUserId,
+            ...(choice.delegatingGuardianUserId
+              ? { delegatingGuardianUserId: choice.delegatingGuardianUserId }
+              : {}),
+            courseId,
+            enrollmentId,
+            learnerId,
+            action: 'education.course.assign',
+            operation: 'auto-upgrade',
+            executor: inner,
+          })) === true,
       );
     } catch {
       return false;

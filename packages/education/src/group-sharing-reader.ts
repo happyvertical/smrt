@@ -311,6 +311,8 @@ async function enrollmentLineagePrivate(
   tenantId: string,
   enrollmentId: string,
 ): Promise<boolean> {
+  // Databases that predate release pins have no lineage to consult.
+  if (!(await db.tableExists('enrollment_release_pins'))) return false;
   const pins = await db.list('enrollment_release_pins', {
     tenant_id: tenantId,
     enrollment_id: enrollmentId,
