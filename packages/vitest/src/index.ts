@@ -445,7 +445,11 @@ export function workspaceExportTarget(
   if (!exportsMap || typeof exportsMap !== 'object') return null;
   const entries = exportsMap as Record<string, unknown>;
   if (subpath in entries) return exportRuntimeTarget(entries[subpath]);
-  for (const [pattern, value] of Object.entries(entries)) {
+  // Node picks the pattern with the longest prefix before `*`.
+  const patterns = Object.entries(entries)
+    .filter(([pattern]) => pattern.includes('*'))
+    .sort(([left], [right]) => right.indexOf('*') - left.indexOf('*'));
+  for (const [pattern, value] of patterns) {
     const star = pattern.indexOf('*');
     if (star < 0) continue;
     const prefix = pattern.slice(0, star);
@@ -893,6 +897,11 @@ export function getWorkspaceViteAliases(
     }));
 }
 
+/** Forward-slash form of a filesystem path, for prefix comparisons. */
+function toPosix(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
 /** The package name a bare or subpath specifier belongs to. */
 function packageNameOf(specifier: string): string {
   const parts = specifier.split('/');
@@ -922,10 +931,10 @@ export function createWorkspaceDistGuard(
   for (const [name, packageRoot] of readWorkspacePackageRoots(root)) {
     const real = normalizeRootKey(packageRoot);
     if (real === ownRoot || exemptPackages.has(name)) continue;
-    distRoots.push({ name, distRoot: `${real}/dist/` });
+    distRoots.push({ name, distRoot: `${toPosix(real)}/dist/` });
   }
   return (id: string) => {
-    const file = id.split('?')[0] ?? id;
+    const file = toPosix(id.split('?')[0] ?? id);
     const owner = distRoots.find(({ distRoot }) => file.startsWith(distRoot));
     if (!owner) return null;
     return (
@@ -951,10 +960,11 @@ function packagesWithDeliberateDistEntries(
   const roots = readWorkspacePackageRoots(root);
   for (const { replacement } of userAliases) {
     for (const [name, packageRoot] of roots) {
+      const target =
+        typeof replacement === 'string' ? toPosix(replacement) : '';
       if (
-        typeof replacement === 'string' &&
-        (replacement.startsWith(`${packageRoot}/dist/`) ||
-          replacement.startsWith(`${normalizeRootKey(packageRoot)}/dist/`))
+        target.startsWith(`${toPosix(packageRoot)}/dist/`) ||
+        target.startsWith(`${toPosix(normalizeRootKey(packageRoot))}/dist/`)
       ) {
         exempt.add(name);
       }

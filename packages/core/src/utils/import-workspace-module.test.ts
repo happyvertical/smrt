@@ -122,6 +122,44 @@ describe('importWorkspaceModule', () => {
     }
   });
 
+  it('falls back when the installed package does not export the requested subpath', async () => {
+    const fixturePackageDir = new URL(
+      './node_modules/@fixture/unexported-subpath-package/',
+      import.meta.url,
+    );
+    await rm(fixturePackageDir, { recursive: true, force: true });
+    await mkdir(fixturePackageDir, { recursive: true });
+    await writeFile(
+      new URL('package.json', fixturePackageDir),
+      `${JSON.stringify({
+        name: '@fixture/unexported-subpath-package',
+        type: 'module',
+        exports: { '.': { import: './index.mjs' } },
+      })}\n`,
+    );
+    await writeFile(
+      new URL('index.mjs', fixturePackageDir),
+      'export const root = true;\n',
+    );
+    try {
+      // No workspace source exists for the fallback, so its own error names
+      // the purpose: proof the export error fell through instead of throwing.
+      await expect(
+        importWorkspaceModule({
+          packageName: '@fixture/unexported-subpath-package/missing',
+          sourceEntry: 'packages/definitely-missing/src/index.ts',
+          purpose: 'test unexported subpaths',
+        }),
+      ).rejects.toThrow(/for test unexported subpaths/);
+    } finally {
+      await rm(new URL('./node_modules/@fixture/', import.meta.url), {
+        recursive: true,
+        force: true,
+      });
+      await removeIfEmpty(new URL('./node_modules/', import.meta.url));
+    }
+  });
+
   it('propagates ESM resolver failures when no installed package or workspace fallback is available', async () => {
     const isolatedDir = await mkdtemp(
       join(tmpdir(), 'smrt-import-workspace-module-'),

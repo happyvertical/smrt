@@ -37,6 +37,17 @@ function isResolutionFailure(error: unknown, packageName: string): boolean {
     message?: unknown;
   };
   if (typeof message !== 'string') return false;
+  // Node and Vite cite the package's package.json, not the specifier, when
+  // the package exists but does not export the requested path.
+  if (
+    code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' ||
+    /is not exported|not defined by "exports"|No "exports" main/.test(message)
+  ) {
+    const owner = packageName.startsWith('@')
+      ? packageName.split('/').slice(0, 2).join('/')
+      : packageName.split('/')[0];
+    return message.replace(/\\/g, '/').includes(`/${owner}/package.json`);
+  }
   const namesPackage =
     message.includes(`'${packageName}'`) ||
     message.includes(`"${packageName}"`) ||
