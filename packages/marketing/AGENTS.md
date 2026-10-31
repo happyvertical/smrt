@@ -107,5 +107,10 @@ render time.
   `campaign_metric_snapshots_dedupe_key_idx`; rows are untouched. Deploy code
   and migration together with writers drained (old code upserts against the
   dropped arbiter); a revert needs collision analysis once tenants share keys.
+  Global (NULL-tenant) evidence is unique in the database only on PostgreSQL
+  15+ (NULLS NOT DISTINCT); elsewhere the model's null-aware check enforces it,
+  so concurrent global ingests need PostgreSQL 15+ or a single writer.
+- New snapshots must belong to their campaign's owner, and a tenant context
+  cannot file evidence for another tenant (checked before any dedupe lookup).
 - Table names are global: `campaigns`, `campaign_channels`, and
   `campaign_metric_snapshots`.

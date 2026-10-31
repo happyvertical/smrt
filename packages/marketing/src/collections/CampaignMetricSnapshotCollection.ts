@@ -1,7 +1,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import {
-  assertTenantReadAllowed,
   getCurrentTenant,
+  TenantIsolationError,
 } from '@happyvertical/smrt-tenancy';
 import { CampaignMetricSnapshot } from '../models/CampaignMetricSnapshot.js';
 import type { CampaignMetricSnapshotOptions } from '../types.js';
@@ -11,13 +11,23 @@ export class CampaignMetricSnapshotCollection extends SmrtCollection<CampaignMet
 
   /**
    * The tenant a dedupe key resolves in (#3305 M2): an explicit `tenantId`,
-   * else the active tenant context, else none (global evidence). A system
-   * context carries no tenant, so an administrative ingest names its tenant.
+   * else the active tenant context, else none (global evidence). This is the
+   * owner the tenancy interceptor gives a new row, so the replay lookup, the
+   * create and the race re-read agree. A system context carries no tenant,
+   * so an administrative ingest names its tenant.
    */
   private resolveOwner(tenantId: string | null | undefined): string | null {
-    if (tenantId) return tenantId;
-    if (tenantId === null) return null;
-    return getCurrentTenant()?.tenantId ?? null;
+    const context = getCurrentTenant()?.tenantId;
+    const owner = tenantId || context || null;
+    // A tenant context reads only its own evidence. The class does not opt
+    // into super-admin bypass, so the bypass flag does not widen this.
+    if (owner && context && owner.toLowerCase() !== context.toLowerCase()) {
+      throw new TenantIsolationError(
+        `Tenant isolation violation in CampaignMetricSnapshotCollection: context tenant is '${context}' but the lookup requested '${owner}'`,
+        { tenantId: context, attemptedTenantId: owner },
+      );
+    }
+    return owner;
   }
 
   /**
@@ -32,12 +42,6 @@ export class CampaignMetricSnapshotCollection extends SmrtCollection<CampaignMet
   ): Promise<CampaignMetricSnapshot | null> {
     if (!dedupeKey) return null;
     const tenantId = this.resolveOwner(options.tenantId);
-    if (tenantId) {
-      assertTenantReadAllowed(
-        tenantId,
-        'CampaignMetricSnapshotCollection.findByDedupeKey',
-      );
-    }
     const rows = (await this.query(
       tenantId
         ? `SELECT * FROM ${this.tableName} WHERE dedupe_key = ? AND tenant_id = ? ORDER BY created_at, id`

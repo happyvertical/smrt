@@ -23,6 +23,7 @@ import {
 import {
   disableTenancy,
   enableTenancy,
+  withSuperAdminBypass,
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
@@ -278,6 +279,58 @@ describe.each(
       ),
     );
     expect(Number(stored[0]?.spend_cents)).toBe(1_000);
+  });
+
+  it('treats an explicit null owner under a tenant context as that tenant, so retries replay', async () => {
+    const campaignA = await campaignIn(tenantA);
+    const first = await inA(() =>
+      ingestion.ingest(input(campaignA, { tenantId: null })),
+    );
+    const retry = await inA(() =>
+      ingestion.ingest(input(campaignA, { tenantId: null, spendCents: 3 })),
+    );
+    expect(first.snapshot.tenantId).toBe(tenantA);
+    expect(retry.created).toBe(false);
+    expect(retry.snapshot.id).toBe(first.snapshot.id);
+    expect(await snapshotRows('shared-report:2026-07-01')).toHaveLength(1);
+  });
+
+  it('does not let a super-admin bypass read another tenant evidence', async () => {
+    const campaignB = await campaignIn(tenantB);
+    await inB(() => ingestion.ingest(input(campaignB)));
+    await expect(
+      inA(() =>
+        withSuperAdminBypass(() =>
+          snapshots.findByDedupeKey('shared-report:2026-07-01', {
+            tenantId: tenantB,
+          }),
+        ),
+      ),
+    ).rejects.toThrow(/isolation/i);
+  });
+
+  it('refuses evidence filed for another owner than its campaign, without revealing foreign keys', async () => {
+    const campaignB = await campaignIn(tenantB);
+    await inB(() => ingestion.ingest(input(campaignB)));
+    // An administrative ingest that names no tenant cannot fork B's evidence
+    // into a global row against B's campaign.
+    await expect(
+      withSystemContext(() => ingestion.ingest(input(campaignB))),
+    ).rejects.toThrow(/not a campaign of this snapshot's owner/);
+    // Tenant A cannot file against B's campaign.
+    await expect(inA(() => ingestion.ingest(input(campaignB)))).rejects.toThrow(
+      /not a campaign of this snapshot's owner/,
+    );
+    // A direct create naming B under A fails as isolation before any
+    // dedupe lookup, whether or not B filed the key.
+    for (const dedupeKey of ['shared-report:2026-07-01', 'never-filed']) {
+      await expect(
+        inA(() =>
+          snapshots.create(input(campaignB, { tenantId: tenantB, dedupeKey })),
+        ),
+      ).rejects.toThrow(/isolation/i);
+    }
+    expect(await snapshotRows('shared-report:2026-07-01')).toHaveLength(1);
   });
 
   it('db:migrate replaces the legacy global dedupe index in place and is then a no-op', async () => {

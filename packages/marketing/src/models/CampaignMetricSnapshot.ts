@@ -9,6 +9,7 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
+  TenantIsolationError,
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
@@ -138,6 +139,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
 
   override async save(options?: SmrtSaveOptions): Promise<this> {
     this.assertMetrics();
+    this.assertOwnerInContext();
     await this.assertChannelMatchesCampaign();
     const captured = persistedSnapshotState.get(this);
     if (captured !== undefined) {
@@ -152,13 +154,16 @@ export class CampaignMetricSnapshot extends SmrtObject {
         `CampaignMetricSnapshot ${this.id}: refusing to overwrite an existing ` +
           'snapshot from a non-hydrated instance; snapshots are immutable evidence.',
       );
-    } else if (this.dedupeKey) {
+    } else {
+      await this.assertCampaignOwnedByOwner();
+    }
+    if (captured === undefined && this.dedupeKey) {
       try {
         // The key is tenant-local: guard the owner's key, which is this
         // row's tenant or, before the interceptor fills it in, the context's.
         // A system context with no tenant guards the global key.
         const row = await this.db.get(this.tableName, {
-          tenant_id: this.tenantId || getCurrentTenant()?.tenantId || null,
+          tenant_id: this.ownerTenantId(),
           dedupe_key: this.dedupeKey,
         });
         if (row && row.id !== this.id) {
@@ -189,6 +194,52 @@ export class CampaignMetricSnapshot extends SmrtObject {
       `CampaignMetricSnapshot ${this.id ?? '<new>'}: metric snapshots are ` +
         'immutable evidence and cannot be deleted.',
     );
+  }
+
+  /** This row's owner: its tenant, else (before auto-populate) the context's. */
+  private ownerTenantId(): string | null {
+    return this.tenantId || getCurrentTenant()?.tenantId || null;
+  }
+
+  /**
+   * A tenant context may only write its own evidence (#3305 M2). Checked
+   * before any raw lookup so the dedupe guard cannot reveal whether another
+   * tenant filed a key. The class does not opt into super-admin bypass.
+   */
+  private assertOwnerInContext(): void {
+    const context = getCurrentTenant()?.tenantId;
+    if (
+      context &&
+      this.tenantId &&
+      this.tenantId.toLowerCase() !== context.toLowerCase()
+    ) {
+      throw new TenantIsolationError(
+        `Tenant isolation violation in CampaignMetricSnapshot: context tenant '${context}' cannot file evidence for tenant '${this.tenantId}'.`,
+        { tenantId: context, attemptedTenantId: this.tenantId },
+      );
+    }
+  }
+
+  /**
+   * New evidence belongs to its campaign's owner (#3305 M2): a snapshot is
+   * never filed globally, or for another tenant, against a tenant's campaign,
+   * so an unnamed administrative ingest cannot fork a tenant's evidence.
+   */
+  private async assertCampaignOwnedByOwner(): Promise<void> {
+    if (!this.campaignId) return;
+    const campaign = (await this.db.get('campaigns', {
+      id: this.campaignId,
+    })) as { tenant_id?: string | null } | null;
+    const campaignOwner = campaign?.tenant_id
+      ? String(campaign.tenant_id).toLowerCase()
+      : null;
+    const owner = this.ownerTenantId()?.toLowerCase() ?? null;
+    if (!campaign || campaignOwner !== owner) {
+      throw new Error(
+        `CampaignMetricSnapshot campaignId '${this.campaignId}' is not a ` +
+          "campaign of this snapshot's owner.",
+      );
+    }
   }
 
   private assertMetrics(): void {
