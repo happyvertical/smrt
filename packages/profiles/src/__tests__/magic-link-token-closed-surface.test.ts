@@ -50,6 +50,9 @@ describe('MagicLinkToken generated surface (#3468)', () => {
     ).toEqual([]);
     expect(ObjectRegistry.getConfig(MODEL).mcp).toEqual({ include: [] });
     expect(ObjectRegistry.getConfig(MODEL).api).toEqual({ include: [] });
-    expect(ObjectRegistry.getConfig(MODEL).cli).toEqual({ include: ['list'] });
+    expect(ObjectRegistry.getConfig(MODEL).cli).toEqual({
+      include: ['list'],
+      skipApiCheck: ['list'],
+    });
   });
 });
