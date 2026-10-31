@@ -5,16 +5,27 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { EarningEvent } from '../models/EarningEvent.js';
+import { findByReplayKey, resolveReplayOwner } from '../replay-owner.js';
 import type { EarningEventOptions } from '../types.js';
 
 export class EarningEventCollection extends SmrtCollection<EarningEvent> {
   static readonly _itemClass = EarningEvent;
 
-  /** Look up an event by its idempotency natural key. */
-  async findByDedupeKey(dedupeKey: string): Promise<EarningEvent | null> {
+  /**
+   * Look up an event by its idempotency natural key within one owner
+   * (#3305 D1): `options.tenantId`, else the active context; neither →
+   * global events only. Never returns another tenant's event.
+   */
+  async findByDedupeKey(
+    dedupeKey: string,
+    options: { tenantId?: string | null } = {},
+  ): Promise<EarningEvent | null> {
     if (!dedupeKey) return null;
-    const results = await this.list({ where: { dedupeKey }, limit: 1 });
-    return results[0] ?? null;
+    const owner = resolveReplayOwner(
+      options.tenantId,
+      'EarningEventCollection.findByDedupeKey',
+    );
+    return findByReplayKey(this, 'dedupe_key', dedupeKey, owner);
   }
 
   /**
@@ -22,9 +33,10 @@ export class EarningEventCollection extends SmrtCollection<EarningEvent> {
    * exists, return it untouched (`created: false`) — evidence is immutable,
    * so a replay never updates the stored row. Otherwise create the event.
    *
-   * `dedupeKey` is required — callers embed tenant/source identity in it
-   * (e.g. `` `${tenantId}:${sourceKind}:${sourceId}:${eventKind}` ``);
-   * an empty key would silently disable idempotency, so it throws instead.
+   * `dedupeKey` is required and unique per tenant (#3305 D1); an empty key
+   * would silently disable idempotency, so it throws instead. The replay
+   * lookup and the create share one owner (`options.tenantId`, else the
+   * context), so a retry finds what it filed and never another tenant's.
    */
   async getOrCreateByDedupeKey(
     options: EarningEventOptions,
@@ -35,7 +47,11 @@ export class EarningEventCollection extends SmrtCollection<EarningEvent> {
         'EarningEventCollection.getOrCreateByDedupeKey requires a dedupeKey',
       );
     }
-    const existing = await this.findByDedupeKey(dedupeKey);
+    const tenantId = resolveReplayOwner(
+      options.tenantId,
+      'EarningEventCollection.getOrCreateByDedupeKey',
+    );
+    const existing = await this.findByDedupeKey(dedupeKey, { tenantId });
     if (existing) {
       return { event: existing, created: false };
     }
@@ -44,6 +60,7 @@ export class EarningEventCollection extends SmrtCollection<EarningEvent> {
     const { occurredAt, ...rest } = options;
     const event = await this.create({
       ...rest,
+      tenantId,
       ...(occurredAt !== undefined ? { occurredAt: new Date(occurredAt) } : {}),
     });
     return { event, created: true };

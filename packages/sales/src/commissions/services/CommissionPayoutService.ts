@@ -369,8 +369,12 @@ export class CommissionPayoutService {
     // signature of an interrupted claim pass: repair it (re-claim +
     // reconcile totals) instead of returning totals its rows can't
     // reproduce. Anything past pending is frozen.
-    const existingPayout =
-      await this.deps.payouts.findByIdempotencyKey(idempotencyKey);
+    const existingPayout = await this.deps.payouts.findByIdempotencyKey(
+      idempotencyKey,
+      {
+        tenantId: earner.tenantId,
+      },
+    );
     if (existingPayout) {
       if (
         existingPayout.isPending() &&

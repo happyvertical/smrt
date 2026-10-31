@@ -42,6 +42,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertWritableInContext, rowOwner } from '../replay-owner.js';
 import {
   type CommissionPayoutOptions,
   type CommissionPayoutStatus,
@@ -84,9 +85,10 @@ const loadedPayoutStatus = new WeakMap<
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  // Idempotent settlement: a retried batch with the same idempotencyKey
-  // resolves to the existing payout instead of double-paying.
-  conflictColumns: ['idempotency_key'],
+  // Idempotent settlement: a retried batch with the same idempotencyKey by
+  // the same owner resolves to the existing payout instead of double-paying;
+  // the key is unique per tenant (#3305 D1).
+  conflictColumns: ['tenant_id', 'idempotency_key'],
   // Fully read-only generated surface on ALL THREE surfaces — see the
   // class doc. Writes go through CommissionPayoutService and the guarded
   // transition helpers only.
@@ -447,6 +449,7 @@ export class CommissionPayout extends SmrtObject {
    *    was set.
    */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    assertWritableInContext(this.tenantId, 'CommissionPayout.save');
     this.validateTotals();
     await this.assertRoutingUnchanged();
     const prior = await this.resolvePriorStatus();
@@ -508,11 +511,21 @@ export class CommissionPayout extends SmrtObject {
 
   /** Authoritative read also closes blind-id and natural-key upsert doors. */
   private async assertRoutingUnchanged(): Promise<void> {
-    const { rows } = await this.db.query(
-      `SELECT CAST(id AS VARCHAR) AS id, payout_method, payout_destination FROM ${this.tableName} WHERE id = ? OR idempotency_key = ?`,
-      this.id ?? null,
-      this.idempotencyKey || null,
-    );
+    // Ids are global; the idempotency key is tenant-local (#3305 D1), so the
+    // key branch matches this row's owner only.
+    const owner = rowOwner(this.tenantId);
+    const { rows } = owner
+      ? await this.db.query(
+          `SELECT CAST(id AS VARCHAR) AS id, payout_method, payout_destination FROM ${this.tableName} WHERE id = ? OR (idempotency_key = ? AND tenant_id = ?)`,
+          this.id ?? null,
+          this.idempotencyKey || null,
+          owner,
+        )
+      : await this.db.query(
+          `SELECT CAST(id AS VARCHAR) AS id, payout_method, payout_destination FROM ${this.tableName} WHERE id = ? OR (idempotency_key = ? AND tenant_id IS NULL)`,
+          this.id ?? null,
+          this.idempotencyKey || null,
+        );
     for (const row of rows) {
       if (row.id !== this.id) {
         throw new Error(
