@@ -53,7 +53,6 @@ import {
   type CourseSummaryView,
   type CourseUpgradeChoiceView,
   DEFAULT_PAGE_SIZE,
-  type EffectiveLessonView,
   EnrollmentPinConflictError,
   type EnrollmentPinKind,
   type EnrollmentPinView,

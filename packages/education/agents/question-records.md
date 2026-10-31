@@ -7,7 +7,7 @@ schema and public contract. It reuses the course authorizer: writes need
 return answer keys need `education.course.read-draft`; every call receives the
 transaction executor and the operation (`create-question`, `save-question`,
 `link-objectives`, `create-objective`, `save-objective`, `read-question`,
-`read-worksheet`). Tenant is required; foreign ids are not-found.
+`read-worksheet`, `resolve-question-revisions`). Tenant is required; foreign ids are not-found.
 
 ## Models (closed, required tenant, no REST/CLI/MCP/AI, append-only)
 
@@ -34,6 +34,13 @@ request key; a retry replays its original result and the same key with another
 payload throws `CourseRequestKeyConflictError`. A stale head throws
 `CourseStaleHeadError`; a reused objective key throws
 `LearningObjectiveKeyConflictError`. Errors keep stable `code`s.
+
+`resolveQuestionRevisions({ revisionIds })` (`read-draft`, no course; the executor and delegation fields
+are passed) returns `{ items, missing }`: per found id `revisionId`, `questionId`, `sequence`,
+`responseType`, `promptSummary` (plain text, whitespace collapsed, at most 200 characters) and, when
+linked, `learningObjectiveKeys`. Never keys, rubrics, choices, media or provenance. 1-200 ids (else
+validation error), de-duplicated, request order. An id with no revision in this tenant, foreign or
+unknown alike, appears only in `missing`.
 
 ## Lessons, attempts, grades
 

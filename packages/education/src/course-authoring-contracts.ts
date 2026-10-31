@@ -43,6 +43,7 @@ export type CourseAuthoringOperation =
   | 'create-question'
   | 'save-question'
   | 'read-question'
+  | 'resolve-question-revisions'
   | 'create-objective'
   | 'save-objective'
   | 'link-objectives'

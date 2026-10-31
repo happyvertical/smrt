@@ -151,6 +151,30 @@ export interface QuestionRevisionView {
   delegationId: string | null;
   recordedAt: string;
 }
+/** Most question revision ids one `resolveQuestionRevisions` call accepts. */
+export const MAX_RESOLVE_QUESTION_REVISIONS = 200;
+/** Longest `promptSummary`, in characters. */
+export const QUESTION_PROMPT_SUMMARY_LENGTH = 200;
+/**
+ * A question revision as a host reference label. Never carries an answer key,
+ * rubric, choices, media or provenance.
+ */
+export interface QuestionRevisionSummary {
+  revisionId: string;
+  questionId: string;
+  sequence: number;
+  responseType: QuestionResponseType;
+  /** Plain-text excerpt of the prompt: whitespace collapsed, at most 200 characters. */
+  promptSummary: string;
+  /** Stable objective external keys; present only when the revision links objectives. */
+  learningObjectiveKeys?: string[];
+}
+export interface ResolvedQuestionRevisions {
+  /** Found revisions, in the order of the first occurrence of each requested id. */
+  items: QuestionRevisionSummary[];
+  /** Requested ids with no revision in this tenant (foreign and unknown are alike). */
+  missing: string[];
+}
 export interface QuestionHeadView {
   questionId: string;
   /** The expected-head token for the next save. */

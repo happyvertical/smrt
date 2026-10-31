@@ -225,6 +225,7 @@ async function setup() {
     agent,
     outsider,
     calls,
+    grants,
     as,
     key,
     question,
@@ -234,6 +235,195 @@ async function setup() {
 }
 
 describe('question and learning-objective records', () => {
+  /*
+   * resolveQuestionRevisions matrix (#4515 G2):
+   *  returns id/question/sequence/type/summary/objective keys, in request order ... 'resolves'
+   *  never carries keys, rubric, choices, provenance ............................. 'resolves'
+   *  tenancy, foreign and unknown ids both only in missing ........................ 'tenancy'
+   *  read-draft with executor, operation, delegation; denial returns nothing ..... 'authorization'
+   *  bounds: empty, >200, bad shapes, dedupe, summary length/whitespace ........... 'bounds'
+   */
+  it('resolveQuestionRevisions resolves labels in request order and never leaks keys', async () => {
+    const s = await setup();
+    const objective = await s.objective('frac.add');
+    const rubric = {
+      criteria: [{ id: 'c1', label: 'Shows work', maxPoints: 2 }],
+    };
+    const a = await s.question(
+      mc({
+        prompt: 'What is 1/2 + 1/4?',
+        objectiveIds: [objective.id],
+        rubric,
+        pointsPossible: 2,
+      }),
+    );
+    const b = await s.question(mc({ prompt: 'Second\n\n   prompt' }));
+    const next = await s.as(s.guardian, () =>
+      s.service.saveQuestionRevision({
+        ...s.guardian,
+        questionId: a.questionId,
+        expectedHeadRevisionId: a.headRevisionId,
+        requestKey: s.key(),
+        content: mc({ prompt: 'Revised prompt', objectiveIds: [objective.id] }),
+      }),
+    );
+    const result = await s.as(s.guardian, () =>
+      s.service.resolveQuestionRevisions({
+        ...s.guardian,
+        // Order is the request's; a duplicate folds into the first occurrence.
+        revisionIds: [
+          b.headRevisionId,
+          a.headRevisionId,
+          b.headRevisionId,
+          next.headRevisionId,
+        ],
+      }),
+    );
+    expect(result.missing).toEqual([]);
+    expect(result.items).toEqual([
+      {
+        revisionId: b.headRevisionId,
+        questionId: b.questionId,
+        sequence: 1,
+        responseType: 'short-answer',
+        promptSummary: 'Second prompt',
+      },
+      {
+        revisionId: a.headRevisionId,
+        questionId: a.questionId,
+        sequence: 1,
+        responseType: 'short-answer',
+        promptSummary: 'What is 1/2 + 1/4?',
+        learningObjectiveKeys: ['frac.add'],
+      },
+      {
+        revisionId: next.headRevisionId,
+        questionId: a.questionId,
+        sequence: 2,
+        responseType: 'short-answer',
+        promptSummary: 'Revised prompt',
+        learningObjectiveKeys: ['frac.add'],
+      },
+    ]);
+    // Only the allowlisted members; no key, rubric, choices or provenance.
+    for (const item of result.items)
+      expect(Object.keys(item).sort()).toEqual(
+        [
+          'promptSummary',
+          'questionId',
+          'responseType',
+          'revisionId',
+          'sequence',
+          ...(item.learningObjectiveKeys ? ['learningObjectiveKeys'] : []),
+        ].sort(),
+      );
+    const text = JSON.stringify(result);
+    expect(text).not.toMatch(
+      /acceptedAnswers|3\/4|Shows work|provenance|rubric/,
+    );
+  });
+
+  it('resolveQuestionRevisions is tenant-exact and reports missing ids without an oracle', async () => {
+    const s = await setup();
+    const own = await s.question();
+    const foreign = await s.question(mc({ prompt: 'Foreign' }), s.outsider);
+    const unknown = '00000000-0000-4000-8000-000000000000';
+    const result = await s.as(s.guardian, () =>
+      s.service.resolveQuestionRevisions({
+        ...s.guardian,
+        revisionIds: [foreign.headRevisionId, own.headRevisionId, unknown],
+      }),
+    );
+    expect(result.items.map((i) => i.revisionId)).toEqual([own.headRevisionId]);
+    // A foreign id and an unknown id are indistinguishable.
+    expect(result.missing).toEqual([foreign.headRevisionId, unknown]);
+    // The foreign tenant sees only its own revision.
+    const theirs = await s.as(s.outsider, () =>
+      s.service.resolveQuestionRevisions({
+        ...s.outsider,
+        revisionIds: [own.headRevisionId, foreign.headRevisionId],
+      }),
+    );
+    expect(theirs.items.map((i) => i.promptSummary)).toEqual(['Foreign']);
+    expect(theirs.missing).toEqual([own.headRevisionId]);
+    // A spoofed tenant never passes the ambient context check.
+    await expect(
+      s.as(s.outsider, () =>
+        s.service.resolveQuestionRevisions({
+          ...s.outsider,
+          tenantId: s.guardian.tenantId,
+          revisionIds: [own.headRevisionId],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
+  });
+
+  it('resolveQuestionRevisions needs read-draft and passes executor, operation and delegation', async () => {
+    const s = await setup();
+    const own = await s.question();
+    s.calls.length = 0;
+    await s.as(s.agent, () =>
+      s.service.resolveQuestionRevisions({
+        ...s.agent,
+        revisionIds: [own.headRevisionId],
+      }),
+    );
+    const call = s.calls.find(
+      (c) => c.operation === 'resolve-question-revisions',
+    );
+    expect(call).toMatchObject({
+      action: 'education.course.read-draft',
+      actorUserId: s.agent.actorUserId,
+      delegatingGuardianUserId: s.guardian.actorUserId,
+      delegationId: 'delegation-1',
+    });
+    expect(call?.executor).toBeDefined();
+    // Authoring alone is not enough.
+    s.grants.set(s.agent.actorUserId, ['education.course.author']);
+    await expect(
+      s.as(s.agent, () =>
+        s.service.resolveQuestionRevisions({
+          ...s.agent,
+          revisionIds: [own.headRevisionId],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
+  });
+
+  it('resolveQuestionRevisions bounds its input', async () => {
+    const s = await setup();
+    const own = await s.question();
+    const call = (revisionIds: unknown) =>
+      s.as(s.guardian, () =>
+        s.service.resolveQuestionRevisions({
+          ...s.guardian,
+          revisionIds: revisionIds as string[],
+        }),
+      );
+    for (const bad of [
+      undefined,
+      'x',
+      [],
+      Array.from({ length: 201 }, (_, i) => `id-${i}`),
+      [''],
+      [42],
+      ['x'.repeat(201)],
+    ])
+      await expect(call(bad)).rejects.toBeInstanceOf(
+        CourseAuthoringValidationError,
+      );
+    // 200 ids is allowed, all unknown ones are missing.
+    const many = Array.from({ length: 199 }, (_, i) => `id-${i}`);
+    const ok = await call([...many, own.headRevisionId]);
+    expect(ok.items).toHaveLength(1);
+    expect(ok.missing).toHaveLength(199);
+    // A long prompt is cut at 200 characters of plain text.
+    const long = await s.question(mc({ prompt: `${'word '.repeat(100)}end` }));
+    const resolved = await call([long.headRevisionId]);
+    expect(resolved.items[0].promptSummary.length).toBeLessThanOrEqual(200);
+    expect(resolved.items[0].promptSummary.startsWith('word word')).toBe(true);
+  });
+
   it('isolates tenants and enforces authorization', async () => {
     const s = await setup();
     const created = await s.question();

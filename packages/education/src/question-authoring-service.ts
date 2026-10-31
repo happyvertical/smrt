@@ -25,6 +25,8 @@ import {
   type LearningObjectiveView,
   type LessonLayoutParams,
   type LessonQuestionRefInput,
+  MAX_RESOLVE_QUESTION_REVISIONS,
+  QUESTION_PROMPT_SUMMARY_LENGTH,
   QUESTION_PROVENANCES,
   type QuestionContentInput,
   type QuestionField,
@@ -33,8 +35,10 @@ import {
   QuestionNotFoundError,
   type QuestionProvenance,
   type QuestionResponseType,
+  type QuestionRevisionSummary,
   type QuestionRevisionView,
   type ReleasedLessonView,
+  type ResolvedQuestionRevisions,
   type WorksheetBundle,
 } from './question-contracts.js';
 import {
@@ -82,6 +86,17 @@ export interface QuestionAuthoringServiceOptions
   extends CourseAuthoringServiceOptions {
   /** Trusted concept ids; when supplied, question and objective concepts must belong. */
   conceptVocabulary?: ReadonlyArray<{ id: string }>;
+}
+
+/** Plain-text, whitespace-collapsed, code-point-bounded excerpt of a prompt. */
+function promptSummary(prompt: string): string {
+  return Array.from(
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: strip control characters
+    prompt.replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim(),
+  )
+    .slice(0, QUESTION_PROMPT_SUMMARY_LENGTH)
+    .join('')
+    .trimEnd();
 }
 
 function usesGenerated(content: NormalizedQuestionContent) {
@@ -587,6 +602,86 @@ export class QuestionAuthoringService extends CourseAuthoringService {
         },
         revision: await this.questionRevisionView(tx, request.tenantId, row),
       };
+    });
+  }
+
+  /**
+   * Resolves question revision ids to reference labels for a host (e.g. a printed
+   * worksheet's question list). Needs `read-draft` (operation
+   * `resolve-question-revisions`, no course). Tenant-exact: an id that is unknown
+   * or belongs to another tenant is simply reported in `missing`, with no
+   * distinction. The result never carries answer keys, rubrics, choices, media or
+   * provenance. At most 200 ids; duplicates are folded; an empty list, a
+   * non-string or an over-long id is a validation error.
+   */
+  async resolveQuestionRevisions(
+    request: CourseAuthoringActor & { revisionIds: string[] },
+  ): Promise<ResolvedQuestionRevisions> {
+    const raw = request.revisionIds;
+    if (
+      !Array.isArray(raw) ||
+      raw.length < 1 ||
+      raw.length > MAX_RESOLVE_QUESTION_REVISIONS ||
+      raw.some(
+        (id) => typeof id !== 'string' || id.length < 1 || id.length > 200,
+      )
+    )
+      throw new CourseAuthoringValidationError(
+        `revisionIds must hold 1-${MAX_RESOLVE_QUESTION_REVISIONS} revision ids`,
+      );
+    const ids = [...new Set(raw as string[])];
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.read-draft',
+        'resolve-question-revisions',
+      );
+      const rows = (await tx.list('question_revisions', {
+        tenant_id: request.tenantId,
+        'id in': ids,
+      })) as Row[];
+      const found = new Map(rows.map((row) => [String(row.id), row]));
+      const objectiveIds = new Set<string>();
+      const linked = new Map<string, string[]>();
+      for (const row of rows) {
+        const own = JSON.parse(String(row.objective_ids_json)) as string[];
+        linked.set(String(row.id), own);
+        for (const id of own) objectiveIds.add(id);
+      }
+      const keys = new Map(
+        objectiveIds.size
+          ? (
+              (await tx.list('learning_objectives', {
+                tenant_id: request.tenantId,
+                'id in': [...objectiveIds],
+              })) as Row[]
+            ).map((row) => [String(row.id), String(row.external_key)])
+          : [],
+      );
+      const items: QuestionRevisionSummary[] = [];
+      const missing: string[] = [];
+      for (const id of ids) {
+        const row = found.get(id);
+        if (!row) {
+          missing.push(id);
+          continue;
+        }
+        const objectiveKeys = (linked.get(id) ?? [])
+          .map((objectiveId) => keys.get(objectiveId))
+          .filter((key): key is string => typeof key === 'string');
+        items.push({
+          revisionId: id,
+          questionId: String(row.question_id),
+          sequence: Number(row.sequence),
+          responseType: String(row.response_type) as QuestionResponseType,
+          promptSummary: promptSummary(String(row.prompt)),
+          ...(objectiveKeys.length
+            ? { learningObjectiveKeys: objectiveKeys }
+            : {}),
+        });
+      }
+      return { items, missing };
     });
   }
 
