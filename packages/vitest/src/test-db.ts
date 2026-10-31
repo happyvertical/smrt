@@ -926,7 +926,7 @@ function defaultManifestSearchPaths(): string[] {
  * may rewrite mid-run.
  *
  * @throws When the current process is not inside a `smrtVitestPlugin()` run
- *   that generated a manifest for `root`.
+ *   that generated a manifest for `root`, or that snapshot no longer exists.
  */
 export function getTestManifestPath(root: string = process.cwd()): string {
   const manifestPath = resolveActiveTestManifestPath(root);
@@ -934,6 +934,12 @@ export function getTestManifestPath(root: string = process.cwd()): string {
     throw new Error(
       `[smrt-vitest] No test manifest snapshot is registered for ${root}. ` +
         'Run under smrtVitestPlugin() with generateManifest enabled (the default).',
+    );
+  }
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `[smrt-vitest] The test manifest snapshot ${manifestPath} registered for ${root} is missing; ` +
+        'it was removed while the run was live (for example by deleting .smrt/).',
     );
   }
   return manifestPath;

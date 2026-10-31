@@ -27,6 +27,7 @@ import {
   SMRT_TEST_RUNS_DIR,
   smrtVitestPlugin,
 } from '../index.js';
+import { getTestManifestPath } from '../test-db.js';
 
 const roots: string[] = [];
 let savedEnv: string | undefined;
@@ -102,6 +103,14 @@ describe('test run manifest snapshot', () => {
     expect(existsSync(join(dir, '.smrt/manifest.json'))).toBe(false);
     expect(existsSync(join(dir, '.smrt/smrt-knowledge.json'))).toBe(false);
     expect(existsSync(join(dir, 'dist/manifest.json'))).toBe(false);
+  });
+
+  it('getTestManifestPath fails loudly when the registered snapshot was removed mid-run', async () => {
+    const dir = fixtureRoot();
+    await invokeConfigResolved(smrtVitestPlugin({ root: dir }));
+    expect(getTestManifestPath(dir)).toBe(resolveTestRunManifestPath(dir));
+    rmSync(join(dir, '.smrt'), { recursive: true, force: true });
+    expect(() => getTestManifestPath(dir)).toThrow(/is missing/);
   });
 
   it('does not register a snapshot when manifest generation is disabled', async () => {

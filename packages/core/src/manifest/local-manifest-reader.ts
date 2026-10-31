@@ -14,6 +14,9 @@ const hostFileAccess: ManifestFileAccess = { existsSync, readFileSync };
 
 const logger = createLogger({ level: 'info' });
 
+/** Registered test snapshots already reported missing, so each warns once. */
+const reportedMissingTestManifests = new Set<string>();
+
 /**
  * Reads SMRT manifests for a project from the standard locations.
  *
@@ -61,6 +64,18 @@ export class LocalManifestReader {
    */
   getLocalCandidatePaths(): string[] {
     const activeTestManifest = resolveActiveTestManifestPath(this.projectRoot);
+    if (
+      activeTestManifest &&
+      !this.files.existsSync(activeTestManifest) &&
+      !reportedMissingTestManifests.has(activeTestManifest)
+    ) {
+      // Falling through to the production chain silently would reproduce
+      // the #4128 symptom (fixture metadata vanishing) with no signal.
+      reportedMissingTestManifests.add(activeTestManifest);
+      logger.warn(
+        `[ManifestManager] The active test manifest ${activeTestManifest} registered for ${this.projectRoot} is missing; falling back to production manifests, so inline test fixtures are not described`,
+      );
+    }
     return [
       ...(activeTestManifest ? [activeTestManifest] : []),
       this.getOutputPath('dev'),

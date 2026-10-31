@@ -113,7 +113,7 @@ describe('local manifest loading inside a test run', () => {
     ).toEqual(['OtherProduction']);
   });
 
-  it('falls back to the production chain when the registered snapshot is missing', () => {
+  it('falls back to the production chain, with a warning, when the registered snapshot is missing', () => {
     const dir = root();
     writeManifest(join(dir, '.smrt/manifest.json'), { Production: {} });
     registerActiveTestManifestPath(dir, join(dir, 'missing/manifest.json'));
