@@ -120,7 +120,9 @@ course is not-found, a foreign enrollment a denial). Lists take `limit` (default
 100) and an opaque `cursor`, and return `{ items, nextCursor }` in a total order.
 - `listCourses({ includeDiscarded? })` (operation `list-courses`): `CourseSummaryView`
   per course: state, `head` (`revisionId` is the expected-head token), `latestRelease`,
-  `archive`. Oldest first; discarded courses only when requested.
+  `archive`, `licenseKind` (most restrictive of head and every release), `groupShareable`
+  (false for personal-use and until a release exists) and `releaseCount`; hosts need no
+  `getCourse` per row. Oldest first; discarded courses only when requested.
 - `listUpgradeChoices({ courseId, enrollmentId? })` (`list-upgrade-choices`): opt-in/out
   history in sequence order; with an enrollment, its own rows plus `governing`.
 - `listAutoUpgradeSkips({ courseId?, enrollmentId? })` (`list-auto-upgrade-skips`, one

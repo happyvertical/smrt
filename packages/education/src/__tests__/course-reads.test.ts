@@ -33,6 +33,7 @@ import { submissionClasses } from './submission-workflows.js';
  *  read-draft required, executor+operation+delegation .... 'authorization'
  *  denied read returns nothing ........................... 'authorization'
  *  listCourses state combos / discarded flag ............. 'listCourses states'
+ *  summary licence/shareability/releaseCount ............. 'listCourses summary licence'
  *  pagination determinism, limit cap, bad cursor ......... 'pagination'
  *  upgrade choice history (course and enrollment) ........ 'upgrade choices'
  *  skips: reason+code, boolean compat, sanitizing, throws  'skips'
@@ -447,6 +448,95 @@ describe('authorized course reads', () => {
       own: true,
     });
     expect(s.learnerCalls.at(-1)?.executor).toBeDefined();
+  });
+
+  it('listCourses summary licence, shareability and release count', async () => {
+    const s = await setup();
+    const draftOnly = await s.newCourse(s.guardian, 'Draft only');
+    const ownWork = await s.newCourse(s.guardian, 'Own work');
+    const release = async (courseId: string, expected: string, n: number) => {
+      const saved = await s.as(s.guardian, () =>
+        s.authoring.saveDraft({
+          ...s.guardian,
+          courseId,
+          expectedHeadRevisionId: expected,
+          requestKey: s.key('save'),
+          draft: {
+            title: 'Own work',
+            levelMin: 1,
+            levelMax: 1,
+            provenance: 'supplied',
+            sections: [
+              { sectionKey: 'u', title: 'U', lessons: [{ title: `L${n}` }] },
+            ],
+          },
+        }),
+      );
+      await s.as(s.guardian, () =>
+        s.authoring.release({
+          ...s.guardian,
+          courseId,
+          revisionId: saved.revisionId,
+          requestKey: s.key('rel'),
+        }),
+      );
+      return saved.headRevisionId;
+    };
+    const head1 = await release(ownWork.courseId, ownWork.headRevisionId, 1);
+    // A draft-only course so far has one release for ownWork.
+    const page = async () =>
+      Object.fromEntries(
+        (
+          await s.as(s.guardian, () =>
+            s.authoring.listCourses({ ...s.guardian }),
+          )
+        ).items.map((c) => [c.courseId, c]),
+      );
+    let byId = await page();
+    expect(byId[draftOnly.courseId]).toMatchObject({
+      licenseKind: 'own-work',
+      groupShareable: false,
+      releaseCount: 0,
+    });
+    expect(byId[ownWork.courseId]).toMatchObject({
+      licenseKind: 'own-work',
+      groupShareable: true,
+      releaseCount: 1,
+    });
+    // Personal-use material (released earlier by setup) is never shareable.
+    expect(byId[s.course.courseId]).toMatchObject({
+      licenseKind: 'personal-use-copy',
+      groupShareable: false,
+      releaseCount: 1,
+    });
+    // Multiple releases count and keep the licence.
+    await release(ownWork.courseId, head1, 2);
+    byId = await page();
+    expect(byId[ownWork.courseId]).toMatchObject({
+      licenseKind: 'own-work',
+      groupShareable: true,
+      releaseCount: 2,
+    });
+    const q3 = await s.question(mcq('Q3'));
+    await s.publish([['a', [s.q1, q3]]]);
+    byId = await page();
+    expect(byId[s.course.courseId]).toMatchObject({
+      releaseCount: 2,
+      licenseKind: 'personal-use-copy',
+      groupShareable: false,
+    });
+    // The head dropped the personal-use lesson, but release 1 still carries it: the
+    // summary folds every release, so it stays private where the head alone would not.
+    const headOnly = await s.as(s.guardian, () =>
+      s.authoring.getCourse({ ...s.guardian, courseId: s.course.courseId }),
+    );
+    expect(headOnly.licenseKind).toBe('own-work');
+    for (const id of [draftOnly.courseId, ownWork.courseId]) {
+      const state = await s.as(s.guardian, () =>
+        s.authoring.getCourse({ ...s.guardian, courseId: id }),
+      );
+      expect(byId[id].licenseKind).toBe(state.licenseKind);
+    }
   });
 
   it('listCourses states: draft, released, archived, discarded excluded or included', async () => {

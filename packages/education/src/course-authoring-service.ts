@@ -65,6 +65,7 @@ import {
 import {
   AUTHORED_IDENTITY_SOURCE_KEY,
   AUTHORED_RELEASE_SOURCE_KEY,
+  isAuthoredReleaseGroupShareable,
   isGroupShareableLicense,
   mostRestrictiveLicense,
 } from './course-authoring-licence.js';
@@ -1510,6 +1511,50 @@ export class CourseAuthoringService {
         (row) => [millis(row.created_at), String(row.id)],
         request,
       );
+      // One batched read per table for the whole page, never per row.
+      const pageIds = page.rows.map((row) => String(row.id));
+      const byCourse = <T extends Row>(rows: T[], key: string) => {
+        const grouped = new Map<string, T[]>();
+        for (const row of rows)
+          grouped.set(String(row[key]), [
+            ...(grouped.get(String(row[key])) ?? []),
+            row,
+          ]);
+        return grouped;
+      };
+      const none = pageIds.length === 0;
+      const releases = none
+        ? []
+        : await tx.list('course_releases', {
+            tenant_id: request.tenantId,
+            'course_id in': pageIds,
+          });
+      const heads = none
+        ? []
+        : await tx.list('course_draft_heads', {
+            tenant_id: request.tenantId,
+            'course_id in': pageIds,
+          });
+      const revisionIds = heads.map((head) => String(head.head_revision_id));
+      const revisions = revisionIds.length
+        ? await tx.list('course_revisions', {
+            tenant_id: request.tenantId,
+            'id in': revisionIds,
+          })
+        : [];
+      const releaseCourseIds = releases.map((r) => String(r.release_course_id));
+      const releaseCourses = releaseCourseIds.length
+        ? await tx.list('courses', {
+            tenant_id: request.tenantId,
+            'id in': releaseCourseIds,
+          })
+        : [];
+      const lookup = {
+        releases: byCourse(releases, 'course_id'),
+        heads: new Map(heads.map((h) => [String(h.course_id), h])),
+        revisions: new Map(revisions.map((r) => [String(r.id), r])),
+        releaseCourses: new Map(releaseCourses.map((c) => [String(c.id), c])),
+      };
       const items: CourseSummaryView[] = [];
       for (const row of page.rows)
         items.push(
@@ -1518,6 +1563,7 @@ export class CourseAuthoringService {
             request.tenantId,
             row as Row,
             discarded.has(String(row.id)),
+            lookup,
           ),
         );
       return { items, nextCursor: page.nextCursor };
@@ -1529,33 +1575,50 @@ export class CourseAuthoringService {
     tenantId: string,
     row: Row,
     discarded: boolean,
+    lookup: {
+      releases: Map<string, Row[]>;
+      heads: Map<string, Row>;
+      revisions: Map<string, Row>;
+      releaseCourses: Map<string, Row>;
+    },
   ): Promise<CourseSummaryView> {
     const courseId = String(row.id);
     const decisions = await this.archiveDecisions(tx, tenantId, courseId);
-    const releases = await tx.list('course_releases', {
-      tenant_id: tenantId,
-      course_id: courseId,
-    });
-    const latest = releases.sort(
+    const releases = [...(lookup.releases.get(courseId) ?? [])];
+    const latest = [...releases].sort(
       (a, b) => Number(b.release_number) - Number(a.release_number),
     )[0];
     const decision = decisions.at(-1);
-    const head = await tx.get('course_draft_heads', {
-      tenant_id: tenantId,
-      course_id: courseId,
-    });
+    const head = lookup.heads.get(courseId);
     const revision = head
-      ? await tx.get('course_revisions', {
-          id: head.head_revision_id,
-          tenant_id: tenantId,
-        })
-      : null;
+      ? lookup.revisions.get(String(head.head_revision_id))
+      : undefined;
     const state = deriveState(discarded, decision?.action, releases.length);
+    // The effective licence is the most restrictive of the head revision and every
+    // release's materialized course; a licence recorded once never loosens.
+    const licenseKind = mostRestrictiveLicense([
+      (revision?.license_kind ?? 'own-work') as CourseLicenseKind,
+      ...releases.map(
+        (r) =>
+          (lookup.releaseCourses.get(String(r.release_course_id))
+            ?.license_kind ?? 'own-work') as CourseLicenseKind,
+      ),
+    ]);
     return {
       courseId,
       title: String(row.title),
       state,
       createdAt: iso(row.created_at as string | Date),
+      licenseKind,
+      // Nothing is shareable until a release exists; the group-sharing rule then
+      // applies to the effective licence (personal-use is never shareable).
+      groupShareable:
+        releases.length > 0 &&
+        isAuthoredReleaseGroupShareable({
+          sourceKey: AUTHORED_RELEASE_SOURCE_KEY,
+          licenseKind,
+        }),
+      releaseCount: releases.length,
       head:
         head && revision
           ? {

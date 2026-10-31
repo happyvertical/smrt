@@ -356,6 +356,19 @@ export type CourseSummaryView = Readonly<{
   title: string;
   state: CourseLifecycleState;
   createdAt: string;
+  /**
+   * Effective licence: the most restrictive of the head revision and every release's
+   * materialized course, so a restriction recorded by any release never loosens.
+   * `CourseStateView.licenseKind` reads the head alone and may be looser.
+   */
+  licenseKind: CourseLicenseKind;
+  /**
+   * The group-sharing rule applied to this course: false for personal-use and
+   * false until the course has a release (nothing to share).
+   */
+  groupShareable: boolean;
+  /** Number of releases (0 for a draft-only course). */
+  releaseCount: number;
   /** The draft head; `revisionId` is the expected-head token for the next save. */
   head: Readonly<{
     revisionId: string;
