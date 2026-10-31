@@ -446,6 +446,35 @@ export function resolveDeclaredScopeMismatch(options: {
   return declared;
 }
 
+/**
+ * The type a parameter accepts on the wire: the scanner's same-module alias
+ * target when the declared type is an alias name, else the declared type
+ * (#4327). Use this, not `parameter.type`, wherever a schema is advertised or
+ * an argument is decoded, so every transport agrees on the alias.
+ */
+export function declaredParameterType(parameter: {
+  type?: string | undefined;
+  resolvedType?: string | undefined;
+}): string {
+  return parameter.resolvedType ?? parameter.type ?? 'any';
+}
+
+/**
+ * JSON Schema for one custom-action parameter. A cyclic alias is advertised
+ * without a type constraint instead of the unknown-name `string` fallback,
+ * which would reject the value the action actually needs (#4327).
+ */
+function customActionParameterSchema(
+  parameter: NonNullable<CustomActionMetadata['parameters']>[number],
+): JsonSchema {
+  if (parameter.aliasUnresolved) {
+    return {
+      description: `Unresolved TypeScript type alias: ${parameter.type}`,
+    };
+  }
+  return convertTypeToJsonSchema(declaredParameterType(parameter));
+}
+
 /** Build the custom-action portion of an MCP/WebMCP JSON Schema. */
 export function buildCustomActionInputSchema(
   metadata: CustomActionMetadata,
@@ -476,7 +505,7 @@ export function buildCustomActionInputSchema(
   ) {
     const parameter = metadata.parameters[0];
     properties.options = {
-      ...convertTypeToJsonSchema(parameter.type),
+      ...customActionParameterSchema(parameter),
       description: 'Options for the custom action',
       ...(parameter.default !== undefined
         ? { default: parameter.default }
@@ -490,7 +519,7 @@ export function buildCustomActionInputSchema(
         parameter.name,
       );
       properties[inputName] = {
-        ...convertTypeToJsonSchema(parameter.type),
+        ...customActionParameterSchema(parameter),
         ...(parameter.default !== undefined
           ? { default: parameter.default }
           : {}),
@@ -537,7 +566,7 @@ export function buildCustomActionInvocationArgs(
   return metadata.parameters.map((parameter) =>
     coerceCustomActionArgument(
       args[customActionParameterInputName(metadata, parameter.name)],
-      parameter.type,
+      declaredParameterType(parameter),
     ),
   );
 }

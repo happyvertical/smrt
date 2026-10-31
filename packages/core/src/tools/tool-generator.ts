@@ -197,7 +197,11 @@ export function generateToolFromMethod(
 
   for (const param of method.parameters) {
     // Convert parameter type to JSON Schema
-    properties[param.name] = convertTypeToJsonSchema(param.type);
+    // A same-module alias name advertises its target type; a cyclic alias
+    // gets no type constraint rather than the unknown-name guess (#4327).
+    properties[param.name] = param.aliasUnresolved
+      ? { description: `Unresolved TypeScript type alias: ${param.type}` }
+      : convertTypeToJsonSchema(param.resolvedType ?? param.type);
 
     // Add to required if not optional
     if (!param.optional) {
