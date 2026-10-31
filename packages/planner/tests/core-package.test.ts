@@ -1,15 +1,23 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
 /**
- * `./core` must run in plain Node: packaged by svelte-package (as `pnpm
- * package` does) and imported by a bare `node` process, with no Vite and no
- * Svelte compiler. Its published dependencies resolve as they do after an
- * install: `node_modules` is linked beside the output, nothing else is.
+ * `./core` must run in plain Node: packaged by svelte-package and bundled by
+ * `scripts/bundle-core.ts` (as `pnpm build` does) and imported by a bare
+ * `node` process, with no Vite and no Svelte compiler. `smrt kitchen` imports
+ * it from an extracted tarball without installing dependencies (#4238), so
+ * `node_modules` is linked beside the output only while bundling and removed
+ * before anything is imported.
  */
 const root = resolve(import.meta.dirname, '..');
 let out = '';
@@ -31,8 +39,14 @@ beforeAll(() => {
     { cwd: root, stdio: 'pipe' },
   );
   // After packaging, which clears the directory.
-  symlinkSync(join(root, 'node_modules'), join(out, 'node_modules'), 'dir');
-}, 120_000);
+  const linked = join(out, 'node_modules');
+  symlinkSync(join(root, 'node_modules'), linked, 'dir');
+  execFileSync(process.execPath, ['scripts/bundle-core.ts', out], {
+    cwd: root,
+    stdio: 'pipe',
+  });
+  rmSync(linked);
+}, 180_000);
 
 afterAll(() => rmSync(out, { recursive: true, force: true }));
 
@@ -42,6 +56,19 @@ it('maps ./core and ./app in the package exports', () => {
   expect(pkg.exports['./app'].default).toBe('./dist/core/app.js');
   expect(pkg.exports['./app/*']).toBe('./app/*');
   expect(pkg.files).toEqual(expect.arrayContaining(['dist', 'app']));
+});
+
+it('bundles ./core into one module that imports no installed package (#4238)', async () => {
+  const { moduleImports } = (await import(
+    pathToFileURL(resolve(root, '../../scripts/verify-packed-planner.mjs')).href
+  )) as { moduleImports: (source: string) => string[] };
+  const imports = moduleImports(
+    readFileSync(join(out, 'core', 'index.js'), 'utf8'),
+  );
+  expect(imports.filter((specifier) => !specifier.startsWith('node:'))).toEqual(
+    [],
+  );
+  expect(existsSync(join(out, 'node_modules'))).toBe(false);
 });
 
 it('imports and runs under plain Node', () => {

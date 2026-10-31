@@ -10,6 +10,7 @@
  * Usage: node scripts/verify-packed-planner.mjs <tarball>
  */
 import { spawnSync } from 'node:child_process';
+import { parse } from 'acorn';
 import { pathToFileURL } from 'node:url';
 
 const REQUIRED_ENTRIES = [
@@ -34,6 +35,34 @@ function tar(args) {
     throw new Error(`tar ${args.join(' ')} failed: ${result.stderr}`);
   }
   return result.stdout;
+}
+
+/**
+ * Static and dynamic import specifiers of an ES module's source, from a real
+ * parse (string and template contents that look like imports are ignored).
+ */
+export function moduleImports(source) {
+  const specifiers = [];
+  const visit = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (
+      (node.type === 'ImportDeclaration' ||
+        node.type === 'ExportNamedDeclaration' ||
+        node.type === 'ExportAllDeclaration' ||
+        node.type === 'ImportExpression') &&
+      node.source
+    ) {
+      specifiers.push(
+        node.source.type === 'Literal' ? String(node.source.value) : '<dynamic>',
+      );
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === 'object') visit(value);
+    }
+  };
+  visit(parse(source, { ecmaVersion: 'latest', sourceType: 'module' }));
+  return specifiers;
 }
 
 /**
@@ -66,6 +95,17 @@ export function plannerTarballProblems({ entries, readJson, readText }) {
   }
   if (!readText('package/app/mcp.html').includes('id="smrt-planner-entry"')) {
     problems.push('app/mcp.html is not the self-contained planner widget');
+  }
+  // `smrt kitchen` imports ./core from its cache without installing the
+  // planner's dependencies (#4238): the entry must be one self-contained file.
+  const coreImports = moduleImports(readText('package/dist/core/index.js'));
+  const external = coreImports.filter(
+    (specifier) => !specifier.startsWith('node:'),
+  );
+  if (external.length > 0) {
+    problems.push(
+      `dist/core/index.js is not self-contained (imports ${external.join(', ')})`,
+    );
   }
   return problems;
 }

@@ -15,7 +15,12 @@ const entries = [
   'package/dist/smrt-version.js',
 ];
 
-function fixture({ files = entries, catalogVersion = '1.2.3', registry } = {}) {
+function fixture({
+  files = entries,
+  catalogVersion = '1.2.3',
+  registry,
+  core = "import { readFileSync } from 'node:fs';\nexport const recipes = [];",
+} = {}) {
   const json = {
     'package/package.json': { version: '1.2.3' },
     'package/dist/catalog/catalog.json': {
@@ -26,6 +31,7 @@ function fixture({ files = entries, catalogVersion = '1.2.3', registry } = {}) {
   const text = {
     'package/dist/smrt-version.js': "export const SMRT_VERSION = '1.2.3';",
     'package/app/mcp.html': '<script id="smrt-planner-entry"></script>',
+    'package/dist/core/index.js': core,
   };
   return {
     entries: files,
@@ -58,4 +64,21 @@ test('rejects a tarball without the app or widget', () => {
     'missing package/app/404.html',
     'missing package/app/mcp.html',
   ]);
+});
+
+test('rejects a ./core entry that imports installed packages (#4238)', () => {
+  assert.deepEqual(
+    plannerTarballProblems(
+      fixture({
+        core: [
+          "import { a } from 'node:path';",
+          "export { b } from '@happyvertical/smrt-core/cookbook/engine';",
+          "const c = await import('@happyvertical/smrt-ui/currency');",
+        ].join('\n'),
+      }),
+    ),
+    [
+      'dist/core/index.js is not self-contained (imports @happyvertical/smrt-core/cookbook/engine, @happyvertical/smrt-ui/currency)',
+    ],
+  );
 });
