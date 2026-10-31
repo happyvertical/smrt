@@ -17,6 +17,7 @@ import { smrt } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
 
 type ActionOptions4327 = Record<string, unknown>;
+type Bag4327 = { name?: string; weight?: number };
 type ChainedOptions4327 = ActionOptions4327;
 type Label4327 = string;
 type Count4327 = number;
@@ -35,7 +36,7 @@ type Deep9_4327 = string;
 
 @smrt({
   mcp: {
-    include: ['createPortfolio', 'annotate', 'loop'],
+    include: ['createPortfolio', 'annotate', 'loop', 'reweigh'],
   },
 })
 class Portfolio4327 extends SmrtObject {
@@ -49,6 +50,10 @@ class Portfolio4327 extends SmrtObject {
     count?: Count4327,
   ): Promise<unknown> {
     return { receiver: 'annotate', payload, label, count };
+  }
+
+  static async reweigh(options: Bag4327): Promise<unknown> {
+    return { receiver: 'reweigh', options };
   }
 
   static async loop(value: Deep1_4327): Promise<unknown> {
@@ -93,6 +98,18 @@ describe('#4327 captured aliases in custom action parameter schemas', () => {
     expect(result).toMatchObject({
       receiver: 'portfolio',
       options: { name: 'Growth', weights: { equity: 0.6 } },
+    });
+  });
+
+  it('advertises an alias to an object literal as an object', async () => {
+    const tool = (await toolsByName()).get('portfolio4327_reweigh');
+    expect(tool?.inputSchema.properties.options.type).toBe('object');
+    const result = await call('portfolio4327_reweigh', {
+      options: { name: 'Bond', weight: 0.4 },
+    });
+    expect(result).toMatchObject({
+      receiver: 'reweigh',
+      options: { name: 'Bond', weight: 0.4 },
     });
   });
 

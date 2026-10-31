@@ -449,8 +449,9 @@ export function resolveDeclaredScopeMismatch(options: {
 /**
  * The type a parameter accepts on the wire: the scanner's same-module alias
  * target when the declared type is an alias name, else the declared type
- * (#4327). Use this, not `parameter.type`, wherever a schema is advertised or
- * an argument is decoded, so every transport agrees on the alias.
+ * (#4327). Core's custom-action schema (MCP/WebMCP), invocation coercion and
+ * SvelteKit route decoders read this rather than `parameter.type`; the CLI
+ * generator (`packages/cli`) still reads the authored name.
  */
 export function declaredParameterType(parameter: {
   type?: string | undefined;
