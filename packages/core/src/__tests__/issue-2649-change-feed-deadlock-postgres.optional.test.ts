@@ -73,7 +73,8 @@ const ROW_B = '55555555-5555-4555-8555-555555555555';
  * The allocator exactly as it shipped before this fix: always direct, always
  * `MAX(seq) + 1`, no staging. Installed to prove the reproduction below really
  * does provoke `40P01` — a test that only ever ran against the fix could not
- * tell a fixed defect from a reproduction that stopped reproducing.
+ * tell a fixed defect from a reproduction that stopped reproducing. Only the
+ * tenant id is cast: the feed's tenant column is native uuid since #3297.
  */
 const PRE_FIX_APPEND_FUNCTION = `
 CREATE OR REPLACE FUNCTION _smrt_append_change(
@@ -94,7 +95,7 @@ DECLARE
 BEGIN
   BEGIN
     INSERT INTO _smrt_changes (seq, table_name, row_id, operation, tenant_id, created_at)
-    SELECT COALESCE(MAX(changes.seq), 0) + 1, p_table_name, p_row_id, p_operation, p_tenant_id, p_created_at
+    SELECT COALESCE(MAX(changes.seq), 0) + 1, p_table_name, p_row_id, p_operation, NULLIF(p_tenant_id, '')::uuid, p_created_at
     FROM _smrt_changes AS changes
     RETURNING _smrt_changes.seq INTO v_seq;
     RETURN QUERY SELECT v_seq, NULL::TEXT, NULL::TEXT;

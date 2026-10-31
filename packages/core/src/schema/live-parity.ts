@@ -28,7 +28,10 @@ import {
   collectIntegerWidthTargets,
   preflightIntegerWidthWidening,
 } from '../migrations/integer-width.js';
-import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
+import {
+  RETIRED_SYSTEM_TABLES,
+  SYSTEM_TABLE_TENANT_UUID_COLUMNS,
+} from '../system/schema.js';
 // The shared live-data column probes (#2874, consolidated for #2878): this
 // module's rename-pending detector used to duplicate `migrations/differ.ts`'s
 // copy of both probes exactly, which is why the #2874 regression had to be
@@ -42,6 +45,12 @@ import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import { getSystemTableShapes } from './system-table-shapes.js';
 import type { ColumnDefinition, SchemaDefinition } from './types.js';
+
+const SYSTEM_TENANT_UUID_COLUMN_KEYS = new Set(
+  SYSTEM_TABLE_TENANT_UUID_COLUMNS.map(
+    ({ table, column }) => `${table}.${column}`,
+  ),
+);
 
 /** How badly a finding breaks the deployment. */
 export type LiveParitySeverity = 'error' | 'warning' | 'info';
@@ -393,6 +402,14 @@ function buildExpectedTables(input: {
           notNull: column.notNull || column.primaryKey,
           unique: column.unique,
           hasDefault: column.hasDefault,
+          // A system tenant column is a tenant reference (#3297): native uuid
+          // on fresh PostgreSQL, still TEXT until `db:migrate-uuid` converts
+          // an existing one — the same tolerance as application tenant ids.
+          ...(SYSTEM_TENANT_UUID_COLUMN_KEYS.has(
+            `${shape.tableName}.${column.name}`,
+          )
+            ? { reference: 'tenantId' as const }
+            : {}),
         })),
         indexes: shape.indexes.map((index) => ({
           name: index.name,
