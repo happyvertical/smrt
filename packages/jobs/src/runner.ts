@@ -861,10 +861,30 @@ export class TaskRunner extends EventEmitter {
       // agent constructor (where it would surface much later as a confusing
       // downstream failure — e.g. `[object Object]` masquerading as a
       // bucket name).
+      //
+      // Every resolver receives this job's own agent identity and the value
+      // this instance's persisted config holds for its key (#2806), so a
+      // per-agent credential resolver can defer to the agent's own value. The
+      // identity comes only from the job row — never from scanning the
+      // tenant's other agents.
       const classResolvers = getClassConfigResolvers(ObjectClass);
+      const scheduleId =
+        typeof rawArgs._scheduleId === 'string'
+          ? rawArgs._scheduleId
+          : undefined;
       const agentConfig = await resolveLazyConfig(persistedAgentConfig, {
         classResolvers,
         onError: 'throw',
+        context: {
+          agentId:
+            typeof job.objectId === 'string' && job.objectId.length > 0
+              ? job.objectId
+              : undefined,
+          agentClass: registeredClass.qualifiedName ?? job.objectType,
+          tenantId: job.tenantId ?? null,
+          scheduleId,
+          jobId: job.id ?? undefined,
+        },
       });
 
       // Persistence identity and the database connection belong to the

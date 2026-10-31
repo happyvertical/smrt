@@ -117,6 +117,13 @@ Persisted `agent_config` snapshots env-derived values at sync time, so rotated e
 
 The TaskRunner calls `resolveLazyConfig()` immediately before constructing the agent, so live values always win over snapshotted ones. Re-exported from `@happyvertical/smrt-core` (`resolveLazyConfig`, `registerConfigResolver`, `getClassConfigResolvers`, …) for cases where agents isn't on the import path.
 
+**Resolver context and precedence (#2806).** Every resolver receives a frozen `ConfigResolverContext`. It holds this instance's `agentId` (the job's `objectId`), canonical `agentClass`, `tenantId`, `scheduleId` and `jobId`. Class resolvers also get the instance's own persisted value for the key (`persisted`, `hasPersisted`); sentinel resolvers get the value's `path`. Precedence:
+1. a non-null resolver result;
+2. the persisted value, kept on `undefined` / `null`;
+3. absent.
+
+A deployment fallback that must not clobber an agent's own value, such as its provider credential, uses `preferPersisted(fallback)` or returns `undefined` when `context.hasPersisted`. Never select an agent by scanning the tenant's `agent_configs` rows: with several agents of one class per tenant, that leaks one agent's credential to another. Use `context.agentId`. Zero-argument resolvers remain valid.
+
 ## Learning Trait (issue #1886) — opt-in
 
 Any agent can opt into a confidence-scored **recall-before / capture-after** loop backed by core's `LearningMemory` (over `_smrt_contexts` + `_smrt_embeddings`). **Off by default** — a non-opted agent behaves byte-for-byte as today; the lifecycle's learning branches are never entered.
