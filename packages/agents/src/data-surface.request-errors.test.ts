@@ -10,6 +10,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DataSurfaceSchema } from './data-surface.js';
 import {
   createDataSurfaceTools,
+  DATA_DISCOVER_TOOL_SLUG,
+  DATA_INSPECT_TOOL_PARAMETERS,
   DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_TOOL_PARAMETERS,
   DATA_QUERY_TOOL_SLUG,
@@ -478,10 +480,10 @@ describe('data.query request errors', () => {
     const error = await requestError(
       queryTool()({
         surfaceId: 'records',
-        request: { mode: 'rows', limit: 5, filter: { status: 'published' } },
+        request: { mode: 'rows', top: 5, filter: { status: 'published' } },
       }),
     );
-    expect(error.message).toContain('unsupported key "limit"');
+    expect(error.message).toContain('unsupported key "top"');
     expect(error.message).toContain('Request shape:');
     expect(error.message).toContain('data.inspect');
   });

@@ -66,6 +66,11 @@ export type DataSurfaceRowCountHint = number | string;
 /** Summary-mode `data.discover` entry. */
 export interface DataSurfaceSummary {
   id: string;
+  /**
+   * The same value as `id`, under the argument name `data.inspect` and
+   * `data.query` take (#4507), so a model copies the key it is asked for.
+   */
+  surfaceId: string;
   label: string;
   description?: string;
   rowCountHint?: DataSurfaceRowCountHint;
@@ -862,6 +867,7 @@ function summary(surface: DataSurfaceDefinition): DataSurfaceSummary {
   const description = summaryDescription(surface.description);
   return {
     id: surface.id,
+    surfaceId: surface.id,
     label: firstSummaryLine(surface.label) ?? surface.id,
     ...(description ? { description } : {}),
     ...rowCountHintEntry(surface),
@@ -1423,6 +1429,10 @@ const GENERIC_QUERY_EXAMPLE =
  *   `query` object standing in for `request`, or a `query` object that is
  *   `request`'s only key, is unwrapped the same way: the intent is
  *   unambiguous and every key inside it is then validated as usual.
+ * - A lone top-level `id` string (#4507) — `data.discover` lists each
+ *   surface under `id` — stands for `surfaceId` when no top-level
+ *   `surfaceId` was given and nothing else sits beside it except, for
+ *   query, `request` (or its `query` wrapper). Any other `id` is left alone.
  * - Two different ids (top level vs nested) are a request error.
  * - No id at all is a request error, never a denial.
  *
@@ -1434,6 +1444,19 @@ function placeSurfaceId(
   tool: 'query' | 'inspect',
 ): Record<string, unknown> {
   let next: Record<string, unknown> = { ...args };
+  if (
+    !Object.hasOwn(next, 'surfaceId') &&
+    typeof next.id === 'string' &&
+    next.id &&
+    Object.keys(next).every(
+      (key) =>
+        key === 'id' ||
+        (tool === 'query' && (key === 'request' || key === 'query')),
+    )
+  ) {
+    const { id, ...rest } = next;
+    next = { ...rest, surfaceId: id };
+  }
   if (
     tool === 'query' &&
     !Object.hasOwn(next, 'request') &&
@@ -1685,8 +1708,25 @@ const DATA_QUERY_TOOL_DESCRIPTION =
 const DATA_DISCOVER_FULL_TOOL_DESCRIPTION =
   'List data surfaces and their safe, readable fields.';
 const DATA_DISCOVER_SUMMARY_TOOL_DESCRIPTION =
-  'List the data surfaces you can read (id, label, short description). ' +
-  "Call data.inspect for a surface's fields and operators before querying.";
+  'List the data surfaces you can read (surfaceId, label, short description). ' +
+  'Call data.inspect with {"surfaceId": <surfaceId>} for a surface\'s fields and operators before querying.';
+
+const DATA_INSPECT_TOOL_DESCRIPTION =
+  'Inspect one readable data surface schema: its fields, filter operators, sort and facet fields, and page limits. ' +
+  'Takes {"surfaceId": <the id data.discover lists for the surface>}.';
+
+/** JSON schema for `data.inspect`'s arguments (#4507). */
+export const DATA_INSPECT_TOOL_PARAMETERS: Record<string, unknown> = {
+  type: 'object',
+  required: ['surfaceId'],
+  properties: {
+    surfaceId: {
+      type: 'string',
+      description: 'The id data.discover lists for the surface.',
+    },
+  },
+  additionalProperties: false,
+};
 
 function tool(
   slug: string,
@@ -1879,13 +1919,8 @@ export function createDataSurfaceTools(
   const inspect = tool(
     DATA_INSPECT_TOOL_SLUG,
     DATA_INSPECT_FUNCTION_NAME,
-    'Inspect one readable data surface schema.',
-    {
-      type: 'object',
-      required: ['surfaceId'],
-      properties: { surfaceId: { type: 'string' } },
-      additionalProperties: false,
-    },
+    DATA_INSPECT_TOOL_DESCRIPTION,
+    DATA_INSPECT_TOOL_PARAMETERS,
     async ({ run, args }) => {
       await assertAllowed(run, 'inspect', DATA_INSPECT_TOOL_SLUG);
       const placed = placeSurfaceId(args, 'inspect');
