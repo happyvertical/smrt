@@ -11,13 +11,7 @@
  *
  * Usage: node scripts/bundle-core.ts [distDir]   (default: dist)
  */
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-} from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'vite';
@@ -64,7 +58,8 @@ try {
   if (bare.length > 0) {
     throw new Error(`bundled ./core still imports: ${bare.join(', ')}`);
   }
-  renameSync(bundled, entry);
+  // Copy, not rename: the temporary directory may be on another device.
+  copyFileSync(bundled, entry);
   console.log(`./core bundled into ${entry}`);
 } finally {
   rmSync(outDir, { recursive: true, force: true });
