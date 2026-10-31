@@ -16,6 +16,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import {
   findCollectionWriteEscalations,
@@ -3287,15 +3288,10 @@ export class ManifestGenerator {
     // across runs (#2749): the vite-plugin's server-mode `@smrt/types`
     // resolution calls this method directly, so sort deterministically
     // before emitting for the same reason as the prebuild/client-mode paths.
-    const sortedEntries = Object.entries(manifest.objects).sort(
-      ([leftKey, left], [rightKey, right]) =>
-        compareText(
-          left.qualifiedName || leftKey,
-          right.qualifiedName || rightKey,
-        ) || compareText(leftKey, rightKey),
-    );
-    for (const [_name, obj] of sortedEntries) {
-      interfaces.push(this.generateInterface(obj));
+    // One class can be listed under several packages (#3296); the shared
+    // declaration selection collapses those listings to one interface.
+    for (const { interfaceName, obj } of selectObjectDeclarations(manifest)) {
+      interfaces.push(this.generateInterface(obj, interfaceName));
     }
 
     return interfaces.join('\n\n');
@@ -3304,7 +3300,10 @@ export class ManifestGenerator {
   /**
    * Generate a single interface definition
    */
-  private generateInterface(obj: SmartObjectDefinition): string {
+  private generateInterface(
+    obj: SmartObjectDefinition,
+    interfaceName: string,
+  ): string {
     const fields = Object.entries(obj.fields)
       .map(([name, field]) => {
         const optional = !field.required ? '?' : '';
@@ -3313,7 +3312,7 @@ export class ManifestGenerator {
       })
       .join('\n');
 
-    return `export interface ${obj.className}Data {
+    return `export interface ${interfaceName} {
 ${fields}
 }`;
   }

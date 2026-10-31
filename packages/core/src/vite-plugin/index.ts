@@ -33,6 +33,7 @@ import {
   resolveFileKnowledgeConfig,
 } from '../knowledge-config.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
+import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import {
   DETERMINISTIC_GENERATED_AT,
   type SmartObjectManifest,
@@ -72,7 +73,6 @@ import {
 } from './sveltekit-route-coordinator.js';
 import {
   buildWebMcpToolDefinitions,
-  compareText,
   generateWebModule,
   selectWebCollectionEntries,
 } from './web-collections.js';
@@ -1961,24 +1961,15 @@ export function createMCPServer(options = {}) {
 function generateClientModeTypes(manifest: SmartObjectManifest): string {
   const typeDefinitions: string[] = [];
 
-  // Generate interfaces for each object in the manifest. Manifest key order
+  // Generate one interface per class in the manifest. Manifest key order
   // follows scan/discovery order, which is not stable across runs (#2749),
-  // so sort deterministically before emitting.
-  const sortedClientModeObjects = Object.entries(manifest.objects)
-    .sort(
-      ([leftKey, left], [rightKey, right]) =>
-        compareText(
-          left.qualifiedName || leftKey,
-          right.qualifiedName || rightKey,
-        ) || compareText(leftKey, rightKey),
-    )
-    .map(([, obj]) => obj);
-  for (const objectMeta of sortedClientModeObjects) {
-    // Manifest keys are qualified names; only the simple class name is a valid
-    // TypeScript identifier (#2631). `className` is required on
-    // `SmartObjectDefinition`, so there is deliberately no manifest-key
-    // fallback here — one would reintroduce invalid emitted TypeScript.
-    const interfaceName = objectMeta.className;
+  // and one class can be listed under several packages (#3296); the shared
+  // declaration selection sorts deterministically and collapses those.
+  // Manifest keys are qualified names; only the simple class name is a valid
+  // TypeScript identifier (#2631), which the selection's interface name uses.
+  for (const { interfaceName, obj: objectMeta } of selectObjectDeclarations(
+    manifest,
+  )) {
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
 
@@ -2021,7 +2012,7 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
       '  updated_at?: string;',
     );
 
-    const interfaceDef = `export interface ${interfaceName}Data {\n${propertyLines.join('\n')}\n}`;
+    const interfaceDef = `export interface ${interfaceName} {\n${propertyLines.join('\n')}\n}`;
     typeDefinitions.push(interfaceDef);
   }
 
@@ -2126,18 +2117,10 @@ export async function generateTypeDeclarationFile(
       mkdirSync(declarationsDir, { recursive: true });
     }
 
-    // Generate interface definitions for each discovered SMRT object. Sorted
-    // for the same reason as generateClientModeTypes (#2749).
-    const objectInterfaces = Object.entries(manifest.objects)
-      .sort(
-        ([leftKey, left], [rightKey, right]) =>
-          compareText(
-            left.qualifiedName || leftKey,
-            right.qualifiedName || rightKey,
-          ) || compareText(leftKey, rightKey),
-      )
-      .map(([_name, obj]) => {
-        const interfaceName = `${obj.className}Data`;
+    // Generate one interface definition per discovered SMRT class. Same
+    // selection as generateClientModeTypes (#2749, #3296).
+    const objectInterfaces = selectObjectDeclarations(manifest)
+      .map(({ interfaceName, obj }) => {
         const fields = Object.entries(obj.fields)
           .map(([fieldName, field]) => {
             const optional = field.required === false ? '?' : '';
