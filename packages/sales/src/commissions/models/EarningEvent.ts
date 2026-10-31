@@ -16,11 +16,11 @@
  * silently orphan the audit trail. Corrections are modelled as NEW events
  * (e.g. a `refund`-kind event) or as `CommissionAdjustment` rows.
  *
- * Idempotent ingestion: `dedupeKey` is the natural key
- * (`conflictColumns: ['dedupe_key']`). Callers embed tenant and source
- * identity in the key — e.g.
- * `` `${tenantId}:${sourceKind}:${sourceId}:${eventKind}:${occurrence}` `` —
- * so a retried ingest resolves to the existing row (see
+ * Idempotent ingestion: `(tenant_id, dedupeKey)` is the natural key
+ * (#3305 D1): the key is unique per tenant, so callers need no longer embed
+ * the tenant (they may, e.g.
+ * `` `${sourceKind}:${sourceId}:${eventKind}:${occurrence}` ``), and a
+ * retried ingest by the same owner resolves to the existing row (see
  * `EarningEventCollection.getOrCreateByDedupeKey`).
  *
  * @packageDocumentation
@@ -33,6 +33,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertWritableInContext, rowOwner } from '../replay-owner.js';
 import type { EarningEventOptions } from '../types.js';
 
 /**
@@ -44,9 +45,10 @@ const persistedEventState = new WeakMap<EarningEvent, string>();
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  // Natural key for idempotent ingestion — a retried create with the same
-  // dedupeKey upserts instead of duplicating.
-  conflictColumns: ['dedupe_key'],
+  // Natural key for idempotent ingestion, unique per tenant (#3305 D1);
+  // global rows stay unique through the null-aware upsert (and NULLS NOT
+  // DISTINCT on PostgreSQL 15+).
+  conflictColumns: ['tenant_id', 'dedupe_key'],
   // Immutable evidence: create/list/get only — no update or delete on any
   // generated surface.
   api: { include: ['create', 'list', 'get'] },
@@ -171,6 +173,7 @@ export class EarningEvent extends SmrtObject {
    *   finds first and never upserts.
    */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    assertWritableInContext(this.tenantId, 'EarningEvent.save');
     const captured = persistedEventState.get(this);
     if (captured !== undefined) {
       if (captured !== this.serializeState()) {
@@ -191,7 +194,9 @@ export class EarningEvent extends SmrtObject {
       // state and not a persisted id" rather than a missing id): its
       // natural key may collide with existing evidence via the upsert.
       try {
+        // The key is tenant-local: guard this row's owner's key only.
         const row = await this.db.get(this.tableName, {
+          tenant_id: rowOwner(this.tenantId),
           dedupe_key: this.dedupeKey,
         });
         if (row && row.id !== this.id) {
