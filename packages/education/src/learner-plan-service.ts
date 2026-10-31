@@ -1,15 +1,13 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CourseModality } from './catalog.js';
-import {
-  CatalogAuthorizationError,
-  type CatalogProjection,
-} from './catalog-service.js';
+import { CatalogAuthorizationError } from './catalog-service.js';
 import {
   EnrollmentCollection,
   LessonProgressCollection,
 } from './collections.js';
 import { EnrollmentNoteService } from './enrollment-note-service.js';
 import {
+  type EnrollmentLessonScope,
   type EnrollmentView,
   LearnerAuthorizationError,
   type LearnerRequest,
@@ -106,9 +104,9 @@ export class LearnerPlanService extends EnrollmentNoteService {
       awaitingReviewLessonIds: [],
       progressEvidence: null,
     };
-    let catalog: CatalogProjection;
+    let scope: EnrollmentLessonScope;
     try {
-      catalog = await this.catalog(request, row.courseId);
+      scope = await this.lessonScope(request, row);
     } catch (error) {
       if (
         error instanceof LearnerAuthorizationError ||
@@ -128,37 +126,34 @@ export class LearnerPlanService extends EnrollmentNoteService {
     });
     const byLesson = new Map(progress.map((value) => [value.lessonId, value]));
     const lessons = await Promise.all(
-      catalog.sections.flatMap((section) =>
-        section.lessons.map(async ({ lesson }): Promise<PlanLessonView> => {
-          const lessonId = String(lesson.id);
-          const activity = await this.findWorkbookActivity(request, {
-            enrollmentId: String(row.id),
-            lessonId,
-          });
-          const current = byLesson.get(lessonId);
-          const requiresOnlineResource =
-            catalog.course.modality === 'online' ||
-            lesson.constructor.name === 'Video';
-          const sourceUrl = requiresOnlineResource
-            ? safeSourceUrl(lesson.externalUrl)
-            : undefined;
-          return {
-            lesson: {
-              id: lessonId,
-              title: lesson.title,
-              kind: lesson.constructor.name,
-              requiresOnlineResource,
-              ...(sourceUrl ? { sourceUrl } : {}),
-              ...(activity?.id
-                ? { workbookActivityId: String(activity.id) }
-                : {}),
-            },
-            progress: current
-              ? await this.projectProgress(request, current)
-              : null,
-          };
-        }),
-      ),
+      scope.entries.map(async ({ lesson, course }): Promise<PlanLessonView> => {
+        const lessonId = String(lesson.id);
+        const activity = await this.findWorkbookActivity(request, {
+          enrollmentId: String(row.id),
+          lessonId,
+        });
+        const current = byLesson.get(lessonId);
+        const requiresOnlineResource =
+          course.modality === 'online' || lesson.constructor.name === 'Video';
+        const sourceUrl = requiresOnlineResource
+          ? safeSourceUrl(lesson.externalUrl)
+          : undefined;
+        return {
+          lesson: {
+            id: lessonId,
+            title: lesson.title,
+            kind: lesson.constructor.name,
+            requiresOnlineResource,
+            ...(sourceUrl ? { sourceUrl } : {}),
+            ...(activity?.id
+              ? { workbookActivityId: String(activity.id) }
+              : {}),
+          },
+          progress: current
+            ? await this.projectProgress(request, current)
+            : null,
+        };
+      }),
     );
     let evidence: EnrollmentPlanView['progressEvidence'] = null;
     for (const { lesson, progress: current } of lessons)
@@ -186,12 +181,12 @@ export class LearnerPlanService extends EnrollmentNoteService {
       enrollment,
       availability: 'available',
       course: {
-        id: String(catalog.course.id),
-        title: catalog.course.title,
-        subject: catalog.course.subject,
-        summary: catalog.course.summary,
-        modality: catalog.course.modality,
-        sourceKey: catalog.course.sourceKey,
+        id: String(scope.course.id),
+        title: scope.course.title,
+        subject: scope.course.subject,
+        summary: scope.course.summary,
+        modality: scope.course.modality,
+        sourceKey: scope.course.sourceKey,
       },
       lessons,
       nextActionableLessonId: actionable?.lesson.id ?? null,

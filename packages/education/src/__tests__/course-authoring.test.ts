@@ -946,7 +946,10 @@ describe('CourseAuthoringService', () => {
     const final = await s.as(s.guardian, () =>
       s.service.getEnrollmentRelease({ ...s.guardian, enrollmentId }),
     );
-    expect(final.lessons.every((l) => l.releaseId === rel4.id)).toBe(true);
+    // The explicit move follows release 4, but started lesson A keeps its row.
+    expect(
+      Object.fromEntries(final.lessons.map((l) => [l.lessonKey, l.releaseId])),
+    ).toEqual({ a: rel.id, b: rel4.id });
     expect(rel2.releaseNumber).toBe(2);
     // The enrollment row itself was never mutated.
     expect(

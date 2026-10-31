@@ -54,6 +54,18 @@ Same-tenant membership alone never grants sibling access.
 - `listProgress` reads only the validated learner/enrollment and lessons still
   visible in that enrollment's course. Inconsistent persisted links fail
   closed or are omitted from the list.
+- An enrollment with an `EnrollmentReleasePin` uses its effective lesson set
+  instead of `enrollment.courseId` alone (`resolveEnrollmentLessons`, shared
+  with `CourseAuthoringService.getEnrollmentRelease`, on the current executor):
+  lessons started (non-`not_started` status or attempts) stay on their original
+  immutable rows in any release the enrollment followed; the rest follow the
+  current pin, in that release's order. `nextLessons`, `assignmentLessons`,
+  `listProgress`, plan reads, `startLesson` and submission/workbook lesson
+  assertions all use it, so a lesson outside the set is rejected and progress
+  rows never move. Unpinned enrollments (or hosts without the authoring
+  tables) read their own course as before. Pins recorded for another learner
+  fail closed. `LessonProgress` accepts a lesson on any release course the
+  enrollment is pinned to; no data migration.
 
 Service results are data-only views, with no persistence or database methods.
 Extra request fields are never model patches: a learner cannot set score,

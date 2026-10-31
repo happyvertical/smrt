@@ -60,11 +60,10 @@ share mutable rows. Personal-use releases stay `draft` status (the existing rule
 the pin. `upgradeEnrollment` appends an explicit move to a newer release.
 `setAutoUpgrade` records an opt-in/out at course or enrollment level (enrollment
 wins) for future releases; each automatic move is a recorded pin without actor.
-`getEnrollmentRelease` returns the pin and effective lessons: after automatic
-moves, started lessons stay on their original release's immutable row, unstarted
-lessons follow the current release; an explicit upgrade moves every lesson.
-LearnerService projections still read `enrollment.courseId`; consuming the
-effective set there is a follow-up that needs its own migration window.
+`getEnrollmentRelease` returns the pin and effective lessons: after any move
+(automatic or explicit), started lessons stay on the immutable row they were
+started on, unstarted lessons follow the current release. `LearnerService`
+consumes the same rule (see `learner-service.md`).
 
 ## Archive and discard
 

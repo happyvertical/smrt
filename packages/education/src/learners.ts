@@ -222,6 +222,27 @@ export class LessonProgress extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
+  /**
+   * A pinned enrollment may follow a later release, whose lessons live on that
+   * release's own materialized Course row. Hosts that have not migrated the
+   * authoring tables keep the strict enrollment-course rule.
+   */
+  private async inPinnedRelease(courseId: string): Promise<boolean> {
+    if (!(await this.db.tableExists('enrollment_release_pins'))) return false;
+    const pins = await this.db.list('enrollment_release_pins', {
+      tenant_id: this.tenantId,
+      enrollment_id: this.enrollmentId,
+    });
+    for (const pin of pins) {
+      const release = await this.db.get('course_releases', {
+        id: pin.release_id,
+        tenant_id: this.tenantId,
+      });
+      if (release?.release_course_id === courseId) return true;
+    }
+    return false;
+  }
+
   override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       enrollment_id: this.enrollmentId,
@@ -242,13 +263,16 @@ export class LessonProgress extends SmrtObject {
       tenant_id: this.tenantId,
     });
     const lesson = await this.db.get('lessons', { id: this.lessonId });
+    const section = lesson
+      ? await this.db.get('course_sections', { id: lesson.section_id })
+      : null;
     if (
       !enrollment ||
-      !lesson ||
-      !(await this.db.get('course_sections', {
-        id: lesson.section_id,
-        course_id: enrollment.course_id,
-      }))
+      !section ||
+      !(
+        section.course_id === enrollment.course_id ||
+        (await this.inPinnedRelease(String(section.course_id)))
+      )
     )
       throw new Error(
         'Progress requires its enrollment learner and course lesson',

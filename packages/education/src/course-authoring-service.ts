@@ -73,6 +73,7 @@ import {
   LessonRevisionCollection,
   ReleasedLessonCollection,
 } from './course-authoring-models.js';
+import { resolveEnrollmentLessons } from './course-release-scope.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
   type LessonLayoutParams,
@@ -2104,8 +2105,8 @@ export class CourseAuthoringService {
   }
 
   /**
-   * The enrollment's current release plus the lessons that apply to it. After an
-   * automatic move, started lessons stay on the older release's immutable row.
+   * The enrollment's current release plus the lessons that apply to it. Started
+   * lessons stay on the immutable row they were started on after any move.
    */
   async getEnrollmentRelease(
     request: CourseAuthoringActor & { enrollmentId: string },
@@ -2131,58 +2132,12 @@ export class CourseAuthoringService {
         request.tenantId,
         request.enrollmentId,
       );
-      const pins = await this.pins(tx, request.tenantId, request.enrollmentId);
-      // Only automatic moves since the last explicit/initial pin keep started work.
-      const start = pins.findLastIndex((p) => p.kind !== 'auto');
-      const lineage = [
-        ...new Set(pins.slice(Math.max(start, 0)).map((p) => p.releaseId)),
-      ];
-      const lessonsOf = async (releaseId: string) =>
-        (
-          await (
-            await ReleasedLessonCollection.create({ db: tx })
-          ).list({
-            where: { tenantId: request.tenantId, releaseId },
-            limit: 100000,
-          })
-        ).map((l) => ({ lessonKey: l.lessonKey, lessonId: l.lessonId }));
-      const started = async (lessonId: string) => {
-        const progress = await tx.get('lesson_progress', {
-          tenant_id: request.tenantId,
-          enrollment_id: request.enrollmentId,
-          lesson_id: lessonId,
-        });
-        return (
-          !!progress &&
-          (progress.status !== 'not_started' || Number(progress.attempts) > 0)
-        );
-      };
-      const result = new Map<string, EffectiveLessonView>();
-      for (const lesson of await lessonsOf(pin.releaseId))
-        result.set(lesson.lessonKey, {
-          lessonKey: lesson.lessonKey,
-          lessonId: lesson.lessonId,
-          releaseId: pin.releaseId,
-          pinnedToOlderRelease: false,
-        });
-      // Oldest first so the newest release in which a lesson was started wins.
-      for (const releaseId of lineage.filter((id) => id !== pin.releaseId)) {
-        for (const lesson of await lessonsOf(releaseId)) {
-          if (!(await started(lesson.lessonId))) continue;
-          result.set(lesson.lessonKey, {
-            lessonKey: lesson.lessonKey,
-            lessonId: lesson.lessonId,
-            releaseId,
-            pinnedToOlderRelease: true,
-          });
-        }
-      }
-      return {
-        pin,
-        lessons: [...result.values()].sort((a, b) =>
-          a.lessonKey.localeCompare(b.lessonKey),
-        ),
-      };
+      const selection = await resolveEnrollmentLessons(
+        tx,
+        request.tenantId,
+        request.enrollmentId,
+      );
+      return { pin, lessons: selection?.lessons ?? [] };
     });
   }
 }

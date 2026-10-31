@@ -6,7 +6,12 @@ import {
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { type CatalogAuthorizer, CatalogService } from './catalog-service.js';
+import type { Course, Lesson } from './catalog.js';
+import {
+  type CatalogAuthorizer,
+  type CatalogProjection,
+  CatalogService,
+} from './catalog-service.js';
 import {
   CourseCollection,
   CourseSectionCollection,
@@ -17,6 +22,10 @@ import {
   LessonCollection,
   LessonProgressCollection,
 } from './collections.js';
+import {
+  orderEffectiveLessons,
+  resolveEnrollmentLessons,
+} from './course-release-scope.js';
 import type {
   Curriculum,
   Enrollment,
@@ -25,6 +34,17 @@ import type {
 } from './learners.js';
 import { readWorkbookCompletion } from './workbook-completion.js';
 import { WorkbookActivityCollection } from './workbook-models.js';
+
+/** One lesson row an enrollment may work on, with the course row it belongs to. */
+export type EnrollmentLessonEntry = Readonly<{
+  lesson: Lesson;
+  course: Course;
+}>;
+/** Course display row plus every lesson that applies to an enrollment, in order. */
+export type EnrollmentLessonScope = Readonly<{
+  course: Course;
+  entries: ReadonlyArray<EnrollmentLessonEntry>;
+}>;
 
 /** Inputs are identifiers, never an authority claim or model patch. */
 export interface LearnerRequest {
@@ -664,6 +684,87 @@ export class LearnerService {
     return projection;
   }
 
+  /**
+   * The lessons that apply to an authorized enrollment. An unpinned enrollment
+   * reads its own course, exactly as before. A pinned one reads the effective
+   * set shared with `CourseAuthoringService.getEnrollmentRelease`: started
+   * lessons stay on their original immutable rows, the rest follow the current
+   * release. Every course row is still authorized through the catalog.
+   */
+  protected async lessonScope(
+    request: LearnerRequest,
+    enrollment: Enrollment,
+  ): Promise<EnrollmentLessonScope> {
+    const selection = (await this.db.tableExists('enrollment_release_pins'))
+      ? await resolveEnrollmentLessons(
+          this.db,
+          request.tenantId,
+          String(enrollment.id),
+        )
+      : null;
+    if (!selection) {
+      const catalog = await this.catalog(request, enrollment.courseId);
+      return {
+        course: catalog.course,
+        entries: catalog.sections.flatMap((section) =>
+          section.lessons.map(({ lesson }) => ({
+            lesson,
+            course: catalog.course,
+          })),
+        ),
+      };
+    }
+    // Pins always belong to the enrollment's own learner.
+    if ([...selection.pinLearnerIds].some((id) => id !== enrollment.learnerId))
+      throw new LearnerAuthorizationError();
+    const releases = new Set([
+      selection.currentReleaseId,
+      ...selection.lessons.map((lesson) => lesson.releaseId),
+    ]);
+    const catalogs = new Map<string, CatalogProjection>();
+    for (const releaseId of releases) {
+      const courseId = selection.releaseCourseIds.get(releaseId);
+      if (!courseId) throw new LearnerAuthorizationError();
+      catalogs.set(releaseId, await this.catalog(request, courseId));
+    }
+    const rows = new Map<string, EnrollmentLessonEntry>();
+    const order = new Map<string, string[]>();
+    for (const [releaseId, catalog] of catalogs) {
+      const ids: string[] = [];
+      for (const section of catalog.sections)
+        for (const { lesson } of section.lessons) {
+          ids.push(String(lesson.id));
+          rows.set(String(lesson.id), { lesson, course: catalog.course });
+        }
+      order.set(releaseId, ids);
+    }
+    const entries: EnrollmentLessonEntry[] = [];
+    for (const effective of orderEffectiveLessons(
+      selection,
+      (releaseId) => order.get(releaseId) ?? [],
+    )) {
+      const entry = rows.get(effective.lessonId);
+      // A row the catalog no longer exposes is not assignable.
+      if (entry && order.get(effective.releaseId)?.includes(effective.lessonId))
+        entries.push(entry);
+    }
+    return {
+      course: (catalogs.get(selection.currentReleaseId) as CatalogProjection)
+        .course,
+      entries,
+    };
+  }
+
+  protected async lessonInScope(
+    request: LearnerRequest,
+    enrollment: Enrollment,
+    lessonId: string,
+  ): Promise<boolean> {
+    return (await this.lessonScope(request, enrollment)).entries.some(
+      ({ lesson }) => String(lesson.id) === lessonId,
+    );
+  }
+
   protected async lock(
     table: 'curricula' | 'enrollments',
     id: string,
@@ -802,11 +903,9 @@ export class LearnerService {
       request,
       'education.learner.read',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
+    const scope = await this.lessonScope(request, enrollment);
     const lessons = new Set(
-      catalog.sections.flatMap((section) =>
-        section.lessons.map(({ lesson }) => lesson.id),
-      ),
+      scope.entries.map(({ lesson }) => String(lesson.id)),
     );
     const rows = await (
       await LessonProgressCollection.create({ db: this.db })
@@ -877,7 +976,7 @@ export class LearnerService {
       };
     }> = [];
     for (const enrollment of enrollments) {
-      const catalog = await this.catalog(request, enrollment.courseId);
+      const scope = await this.lessonScope(request, enrollment);
       const progresses = await (
         await LessonProgressCollection.create({ db: this.db })
       ).list({
@@ -895,15 +994,12 @@ export class LearnerService {
           ),
         ),
       );
-      const lesson = catalog.sections
-        .flatMap((section) => section.lessons.map(({ lesson }) => lesson))
-        .find((candidate) => {
-          const progress = byLesson.get(String(candidate.id));
-          return (
-            !progress || !['complete', 'skipped'].includes(progress.status)
-          );
-        });
-      if (!lesson) continue;
+      const next = scope.entries.find(({ lesson: candidate }) => {
+        const progress = byLesson.get(String(candidate.id));
+        return !progress || !['complete', 'skipped'].includes(progress.status);
+      });
+      if (!next) continue;
+      const { lesson, course } = next;
       const progress = byLesson.get(String(lesson.id));
       result.push({
         enrollment: enrollmentView(enrollment),
@@ -913,8 +1009,7 @@ export class LearnerService {
           title: lesson.title,
           kind: lesson.constructor.name,
           requiresOnlineResource:
-            catalog.course.modality === 'online' ||
-            lesson.constructor.name === 'Video',
+            course.modality === 'online' || lesson.constructor.name === 'Video',
         },
       });
     }
@@ -940,7 +1035,7 @@ export class LearnerService {
       request,
       'education.learner.read',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
+    const scope = await this.lessonScope(request, enrollment);
     const progresses = await (
       await LessonProgressCollection.create({ db: this.db })
     ).list({
@@ -952,25 +1047,22 @@ export class LearnerService {
     });
     const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
     return Promise.all(
-      catalog.sections.flatMap((section) =>
-        section.lessons.map(async ({ lesson }) => ({
-          enrollment: enrollmentView(enrollment),
-          progress: byLesson.get(String(lesson.id))
-            ? await this.projectProgress(
-                request,
-                byLesson.get(String(lesson.id))!,
-              )
-            : null,
-          lesson: {
-            id: String(lesson.id),
-            title: lesson.title,
-            kind: lesson.constructor.name,
-            requiresOnlineResource:
-              catalog.course.modality === 'online' ||
-              lesson.constructor.name === 'Video',
-          },
-        })),
-      ),
+      scope.entries.map(async ({ lesson, course }) => ({
+        enrollment: enrollmentView(enrollment),
+        progress: byLesson.get(String(lesson.id))
+          ? await this.projectProgress(
+              request,
+              byLesson.get(String(lesson.id))!,
+            )
+          : null,
+        lesson: {
+          id: String(lesson.id),
+          title: lesson.title,
+          kind: lesson.constructor.name,
+          requiresOnlineResource:
+            course.modality === 'online' || lesson.constructor.name === 'Video',
+        },
+      })),
     );
   }
 
@@ -984,12 +1076,7 @@ export class LearnerService {
         'education.learner.start',
       );
       await service.lock('enrollments', request.enrollmentId, request.tenantId);
-      const catalog = await service.catalog(request, enrollment.courseId);
-      if (
-        !catalog.sections.some((section) =>
-          section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
-        )
-      )
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
         throw new LearnerAuthorizationError();
       const progress = await LessonProgressCollection.create({
         db: service.db,

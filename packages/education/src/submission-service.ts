@@ -253,12 +253,7 @@ export class SubmissionService extends LearnerService {
   ) {
     const enrollment = await this.requireEnrollment(request, action);
     await this.lockProgressOwner(request);
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
-      )
-    )
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
     const collection = await LessonProgressCollection.create({ db: this.db });
     let progress = await collection.get(
@@ -308,12 +303,9 @@ export class SubmissionService extends LearnerService {
       },
       { cache: false },
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
     if (
       !progress ||
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === row.lessonId),
-      )
+      !(await this.lessonInScope(request, enrollment, row.lessonId))
     )
       throw new LearnerAuthorizationError();
     return { row, progress };
@@ -465,12 +457,7 @@ export class SubmissionService extends LearnerService {
       request,
       'education.learner.submit',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
-      )
-    )
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
   }
 
@@ -785,12 +772,7 @@ export class SubmissionService extends LearnerService {
       request,
       'education.learner.read',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
-      )
-    )
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
     const progress = await (
       await LessonProgressCollection.create({ db: this.db })
@@ -1074,14 +1056,7 @@ export class SubmissionService extends LearnerService {
       request,
       'education.learner.read',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(
-          ({ lesson }) => String(lesson.id) === request.lessonId,
-        ),
-      )
-    )
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
     const link = await (
       await LessonAssetCollection.create({ db: this.db })
