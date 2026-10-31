@@ -208,6 +208,9 @@ the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
 
+#4505: `messageFormat="markdown"` / `renderMessage` ([docs](../../docs/assistant-dock.md));
+`collapseRecoveredFailures` ([tool-loop](agents/tool-loop.md#failed-calls-are-persisted-4383)).
+
 Structured questions and page requests (#4100): [agents/assistant-questions.md](agents/assistant-questions.md).
 
 ## Recipes (#3719)

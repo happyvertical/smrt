@@ -248,7 +248,7 @@ describe('data.discover summary mode (#4329)', () => {
     );
   });
 
-  it('returns only id, label, a one-line description, and the row-count hint', async () => {
+  it('returns only id/surfaceId, label, a one-line description, and the row-count hint', async () => {
     const result = await discover({
       surfaces: [
         surface({ id: 'b-hinted', rowCountHint: 1200 }),
@@ -261,9 +261,10 @@ describe('data.discover summary mode (#4329)', () => {
       discoverDetail: 'summary',
     });
     expect(result).toEqual([
-      { id: 'a-unlabelled', label: 'a-unlabelled' },
+      { id: 'a-unlabelled', surfaceId: 'a-unlabelled', label: 'a-unlabelled' },
       {
         id: 'b-hinted',
+        surfaceId: 'b-hinted',
         label: 'Records 0',
         description: 'Bounded, tenant-safe rows for record set 0.',
         rowCountHint: 1200,

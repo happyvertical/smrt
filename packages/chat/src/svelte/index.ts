@@ -112,6 +112,8 @@ export {
   createAssistantHttpActionClient,
   createAssistantHttpTransport,
 } from './components/assistant/assistant-http-client.js';
+// The dock's escaping Markdown renderer (#4505), for hosts' own surfaces.
+export { renderAssistantMarkdown } from './components/assistant/assistant-markdown.js';
 export {
   ASSISTANT_QUESTION_KIND,
   type AssistantAnswerQuestionInput,

@@ -10,6 +10,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DataSurfaceSchema } from './data-surface.js';
 import {
   createDataSurfaceTools,
+  DATA_DISCOVER_TOOL_SLUG,
+  DATA_INSPECT_TOOL_PARAMETERS,
   DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_TOOL_PARAMETERS,
   DATA_QUERY_TOOL_SLUG,
@@ -478,10 +480,10 @@ describe('data.query request errors', () => {
     const error = await requestError(
       queryTool()({
         surfaceId: 'records',
-        request: { mode: 'rows', limit: 5, filter: { status: 'published' } },
+        request: { mode: 'rows', top: 5, filter: { status: 'published' } },
       }),
     );
-    expect(error.message).toContain('unsupported key "limit"');
+    expect(error.message).toContain('unsupported key "top"');
     expect(error.message).toContain('Request shape:');
     expect(error.message).toContain('data.inspect');
   });
@@ -533,5 +535,206 @@ describe('data.query request errors', () => {
       message: 'Data surface query failed.',
     });
     expect(onFailure).toHaveBeenCalledOnce();
+  });
+});
+
+describe('data.inspect / data.discover surface id naming (#4507)', () => {
+  function tools(discoverDetail?: 'summary') {
+    const all = createDataSurfaceTools({
+      surfaces: [
+        { id: 'records', collection: 'records', label: 'Records', schema },
+      ],
+      execute: async () => ({ rows: [], total: { kind: 'exact', value: 0 } }),
+      ...(discoverDetail ? { discoverDetail } : {}),
+    });
+    const run = fakeRun();
+    run.assertToolAllowed = () => {};
+    const call = (slug: string, args: Record<string, unknown>) => {
+      const tool = all.find((candidate) => candidate.slug === slug);
+      if (!tool) throw new Error(`${slug} missing`);
+      return tool.execute({ run, args, db: undefined });
+    };
+    return { all, call };
+  }
+
+  it('describes inspect surfaceId and names it in the tool description', () => {
+    const properties = DATA_INSPECT_TOOL_PARAMETERS.properties as Record<
+      string,
+      { description?: string }
+    >;
+    expect(properties.surfaceId.description).toBe(
+      'The id data.discover lists for the surface.',
+    );
+    const inspect = tools().all.find(
+      (candidate) => candidate.slug === DATA_INSPECT_TOOL_SLUG,
+    );
+    expect(inspect?.aiTool.function.parameters).toBe(
+      DATA_INSPECT_TOOL_PARAMETERS,
+    );
+    expect(inspect?.aiTool.function.description).toContain('surfaceId');
+  });
+
+  it('lists surfaceId beside id in summary discovery', async () => {
+    const { call } = tools('summary');
+    await expect(call(DATA_DISCOVER_TOOL_SLUG, {})).resolves.toEqual([
+      { id: 'records', surfaceId: 'records', label: 'Records' },
+    ]);
+  });
+
+  it('accepts a lone top-level id as surfaceId for inspect and query', async () => {
+    const { call } = tools();
+    await expect(
+      call(DATA_INSPECT_TOOL_SLUG, { id: 'records' }),
+    ).resolves.toMatchObject({ id: 'records', identityField: 'id' });
+    await expect(
+      call(DATA_QUERY_TOOL_SLUG, { id: 'records', request: { mode: 'count' } }),
+    ).resolves.toMatchObject({ total: { kind: 'exact', value: 0 } });
+  });
+
+  it('keeps the existing errors for an id that is not lone', async () => {
+    const { call } = tools();
+    for (const args of [
+      { id: 'records', label: 'Records' },
+      { id: 7 },
+      { id: '' },
+    ]) {
+      const error = await requestError(
+        call(DATA_INSPECT_TOOL_SLUG, args) as Promise<unknown>,
+      );
+      expect(error.reason).toBe('DATA_QUERY_SURFACE_ID_REQUIRED');
+    }
+    // A flat query's top-level id is ambiguous (it may be a field): not taken.
+    const flat = await requestError(
+      call(DATA_QUERY_TOOL_SLUG, {
+        id: 'records',
+        mode: 'count',
+      }) as Promise<unknown>,
+    );
+    expect(flat.reason).toBe('DATA_QUERY_SURFACE_ID_REQUIRED');
+    // An explicit surfaceId wins; a nested different one still conflicts.
+    const conflict = await requestError(
+      call(DATA_QUERY_TOOL_SLUG, {
+        id: 'records',
+        request: { mode: 'count', surfaceId: 'other' },
+      }) as Promise<unknown>,
+    );
+    expect(conflict.reason).toBe('DATA_QUERY_SURFACE_ID_CONFLICT');
+    await expect(
+      call(DATA_INSPECT_TOOL_SLUG, { id: 'unknown' }),
+    ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+  });
+});
+
+describe('data.query SQL-ish request aliases (#4505)', () => {
+  function capture() {
+    const seen: DataQueryRequest[] = [];
+    const run = queryTool({
+      execute: async (_surface: unknown, request: DataQueryRequest) => {
+        seen.push(request);
+        return { rows: [], total: { kind: 'exact' as const, value: 0 } };
+      },
+    });
+    return { run, seen };
+  }
+  const where = {
+    kind: 'condition',
+    field: 'status',
+    operator: 'eq',
+    value: 'open',
+  };
+
+  it('maps select, where, orderBy, limit and offset onto the canonical keys', async () => {
+    const { run, seen } = capture();
+    await run({
+      surfaceId: 'records',
+      request: {
+        select: ['status'],
+        where,
+        orderBy: 'updatedAt desc, id',
+        limit: 3,
+        offset: 2,
+      },
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].mode).toBe('rows');
+    expect(seen[0].projection).toEqual(expect.arrayContaining(['status']));
+    expect(seen[0].filter).toEqual(where);
+    expect(seen[0].sort?.slice(0, 2)).toEqual([
+      { field: 'updatedAt', direction: 'desc' },
+      { field: 'id', direction: 'asc' },
+    ]);
+    expect(seen[0].page).toEqual({ kind: 'offset', offset: 2, limit: 3 });
+  });
+
+  it('maps aliases in the flat form and merges limit into a page without one', async () => {
+    const { run, seen } = capture();
+    await run({ surfaceId: 'records', select: 'status, updatedAt', limit: 2 });
+    await run({
+      surfaceId: 'records',
+      request: { orderBy: { field: 'id' }, page: { offset: 1 }, limit: 4 },
+    });
+    expect(seen[0].projection).toEqual(
+      expect.arrayContaining(['status', 'updatedAt']),
+    );
+    expect(seen[0].page).toEqual({ kind: 'offset', offset: 0, limit: 2 });
+    expect(seen[1].sort?.[0]).toEqual({ field: 'id', direction: 'asc' });
+    expect(seen[1].page).toEqual({ kind: 'offset', offset: 1, limit: 4 });
+  });
+
+  it('still validates a mapped value against the visible schema', async () => {
+    const error = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { select: ['secret'] },
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_PROJECTION_NOT_ALLOWED');
+    expect(error.message).not.toMatch(/secret"|restricted/);
+  });
+
+  it('keeps the canonical key and reports an alias that conflicts with it', async () => {
+    const execute = vi.fn();
+    for (const [request, alias, canonical] of [
+      [{ projection: ['id'], select: ['status'] }, 'select', 'projection'],
+      [{ filter: where, where }, 'where', 'filter'],
+      [
+        { sort: [{ field: 'id', direction: 'asc' }], orderBy: 'id' },
+        'orderBy',
+        'sort',
+      ],
+      [{ page: { limit: 2 }, limit: 3 }, 'limit', 'page.limit'],
+    ] as const) {
+      const error = await requestError(
+        queryTool({ execute })({ surfaceId: 'records', request }),
+      );
+      expect(error.status).toBe(400);
+      expect(error.message).toContain(`unsupported key "${alias}"`);
+      expect(error.message).toContain(
+        `${alias} is an alias of ${canonical}, which the request already sets`,
+      );
+    }
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('names the aliases in the request property descriptions', () => {
+    const properties = (
+      DATA_QUERY_TOOL_PARAMETERS.properties as Record<string, any>
+    ).request.properties;
+    expect(properties.projection.description).toContain('Alias: select');
+    expect(properties.filter.description).toContain('Alias: where');
+    expect(properties.sort.description).toContain('Alias: orderBy');
+    expect(properties.page.description).toMatch(/limit and offset/);
+  });
+
+  it('names a top-level alias beside request as misplaced', async () => {
+    const error = await requestError(
+      queryTool()({
+        surfaceId: 'records',
+        request: { mode: 'rows' },
+        limit: 5,
+      }),
+    );
+    expect(error.reason).toBe('DATA_QUERY_ARGUMENTS_UNEXPECTED');
+    expect(error.message).toContain('move limit inside request');
   });
 });

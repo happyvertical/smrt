@@ -690,6 +690,32 @@ the output inside that message's own `MessageBubble`, below its text:
 Validate the payload's shape in the snippet, and render it with ordinary
 Svelte markup, never `{@html}`.
 
+### Rendering assistant answers: `messageFormat` and `renderMessage` (#4505)
+
+Assistant text renders verbatim by default (`messageFormat="text"`). Pass
+`messageFormat="markdown"` to render stored assistant messages and the
+streaming reply through `renderAssistantMarkdown` (`assistant-markdown.ts`):
+paragraphs with single-newline breaks, `#`–`###` headings, one-level `-`/`*`/`+`
+and numbered lists, fenced and inline code, `**bold**`/`__bold__`,
+`*italic*`/`_italic_`, and `[text](https://…)` links. It escapes every input
+character first, then emits only that fixed tag set; a link needs an absolute
+`http:`/`https:` URL and gets `target="_blank" rel="noopener noreferrer"`,
+anything else stays literal text. Its output is the only `{@html}` in the
+dock. User, system and tool messages stay plain text.
+
+A host with its own renderer passes a `renderMessage` snippet instead; it
+wins over `messageFormat` and receives `{ message, streaming }`. While a reply
+streams, `message` is a stand-in (`id: 'assistant-dock-streaming'`) holding
+the text so far:
+
+```svelte
+<AssistantDock {transport} {registry}>
+  {#snippet renderMessage({ message, streaming })}
+    <MyMarkdown source={message.content} live={streaming} />
+  {/snippet}
+</AssistantDock>
+```
+
 ### Proposing an action and observing the result (#2989)
 
 The dock creates its own controller. `oncontroller` hands that controller

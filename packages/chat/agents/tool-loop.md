@@ -244,6 +244,10 @@ malformed-JSON calls carry `{}`), `status` (`rejected` | `error`),
 `errorKind`, `errorCode` (the error's own stable `A-Z0-9_` code, else the
 kind) and `shown`. Like a successful call's row it carries the arguments
 and shown text, so it is not value-free. A deduped repeat has no record.
+A validation-class failure — `errorKind` `invalid_request` on a call that was
+not a denial, i.e. the tool refused arguments the model can fix (#4505) —
+also carries `recoverable: true`; both authoring paths copy it onto the row's
+`toolCallData` and `metadata`. Other failures omit it.
 
 - `runPersonaConversationTurn` authors each failed call as a `tool_result`
   row: content = `shown`, `toolCallData` `{ name, args, status, errorCode }`,
@@ -253,6 +257,13 @@ and shown text, so it is not value-free. A deduped repeat has no record.
   `author.authorFailedInvocation` overrides the row or returns `null` to
   skip it; `authorInvocation` sees successful calls only (never a failed or
   deduped-failed one). A failed row's write error is not a dock step.
+- `author.collapseRecoveredFailures` (`mountAssistantRoutes`
+  `collapseRecoveredFailures`; default `false`, #4505) holds each
+  `recoverable` failure until the tool loop ends, drops it when a later call
+  of the same tool in the same turn succeeded, and otherwise persists it then,
+  in call order, before the reply. Denials and execution errors are never
+  held; the audit sink still gets every failure; the dock's live tool steps
+  are unchanged. The persona path is not affected.
 - `runToolLoop` sends the audit sink `action: 'chat.tool_call_failed'` with
   only `toolFailureAuditMetadata(record)`: `name`, `status`, `errorKind`,
   `errorCode`, `argsChars`, `shownChars` — never the arguments or the shown

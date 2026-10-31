@@ -697,6 +697,7 @@ describe('runToolLoop', () => {
       errorKind: 'invalid_request',
       errorCode: 'invalid_request',
       shown: '{"error":"bad"}',
+      recoverable: true,
     });
     const circular: Record<string, unknown> = {};
     circular.self = circular;
@@ -724,6 +725,22 @@ describe('runToolLoop', () => {
         observation: {},
       }),
     ).toBeNull();
+  });
+
+  it('marks only a non-denied invalid_request failure recoverable (#4505)', () => {
+    const record = (error: string, rejected = false) =>
+      toolFailureRecord({
+        slug: 'data.query',
+        args: {},
+        ok: false,
+        rejected,
+        observation: { error: 'x' },
+        error,
+      });
+    expect(record('invalid_request')?.recoverable).toBe(true);
+    expect(record('invalid_request', true)).not.toHaveProperty('recoverable');
+    expect(record('not_permitted', true)).not.toHaveProperty('recoverable');
+    expect(record('execution_error')).not.toHaveProperty('recoverable');
   });
 
   it('audits the original argument size, not the truncation stand-in (#4383)', () => {
