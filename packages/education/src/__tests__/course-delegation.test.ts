@@ -1132,6 +1132,67 @@ describe('delegation id across course services', () => {
     }
   });
 
+  it('passes enrollment learner and course context to the authorizer and verifier', async () => {
+    const { s, head, releaseNew, rel1, enrollment } =
+      await autoUpgradeScenario();
+    const { service, agent, as, key } = s;
+    // The initial pin (made inside the scenario, before any pin existed) carries
+    // the same context. The host callbacks never read `enrollments`.
+    for (const list of [s.calls, s.verified])
+      expect(list.find((c) => c.operation === 'pin-enrollment')).toMatchObject({
+        enrollmentId: enrollment.id,
+        learnerId: s.f.own.learnerId,
+        courseId: head.courseId,
+        releaseId: rel1.id,
+        releaseCourseId: rel1.releaseCourseId,
+      });
+    // Make the explicit upgrade target; the opt-in move is skipped by the host.
+    s.deny.add('v:auto-upgrade');
+    const rel2 = await releaseNew('A2');
+    s.calls.length = 0;
+    s.verified.length = 0;
+    await as(agent, () =>
+      service.upgradeEnrollment({
+        ...agent,
+        enrollmentId: enrollment.id,
+        releaseId: rel2.id,
+        requestKey: key(),
+        policyBasis: 'guardians-and-agents',
+      }),
+    );
+    await as(agent, () =>
+      service.setAutoUpgrade({
+        ...agent,
+        courseId: head.courseId,
+        enrollmentId: enrollment.id,
+        enabled: false,
+        requestKey: key(),
+        policyBasis: 'guardians-and-agents',
+      }),
+    );
+    const learnerId = s.f.own.learnerId;
+    const base = {
+      enrollmentId: enrollment.id,
+      learnerId,
+      courseId: head.courseId,
+    };
+    for (const [list, label] of [
+      [s.calls, 'authorizer'],
+      [s.verified, 'verifier'],
+    ] as const) {
+      const upgrade = list.find((c) => c.operation === 'upgrade-enrollment');
+      expect(upgrade, label).toMatchObject({
+        ...base,
+        releaseId: rel2.id,
+        releaseCourseId: rel2.releaseCourseId,
+      });
+      expect(
+        list.find((c) => c.operation === 'set-auto-upgrade'),
+        label,
+      ).toMatchObject(base);
+    }
+  });
+
   it('treats a different delegation id as a request-key conflict', async () => {
     const s = await authoring();
     const { service, agent, as } = s;

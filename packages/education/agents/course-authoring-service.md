@@ -103,7 +103,7 @@ request key with a different basis is a request-key conflict.
 `EnrollmentPinView` (from `pinEnrollment`, `upgradeEnrollment`, `getEnrollmentRelease`) carries
 `learnerId`, `courseId` (authored identity) and `releaseCourseId` (history rows carry `releaseCourseId`);
 `setAutoUpgrade` returns `learnerId` (null for a course choice). All derive from the enrollment row on the
-server, with no new input: hosts must not read the `enrollments` table. `getEnrollmentRelease` returns
+server, with no new input: hosts must not read the `enrollments` table: `learnerId` and `courseId` (plus `releaseId`/`releaseCourseId` for pin and upgrade) arrive in the assign authorizer and `verifyDelegation` requests. `getEnrollmentRelease` returns
 `EnrollmentReleaseView` (`learnerId`, `courseId`, `releaseCourseId`, `pin`, `lessons`): after any move
 (automatic or explicit), started lessons stay on the immutable row they were
 started on, unstarted lessons follow the current release. `LearnerService`

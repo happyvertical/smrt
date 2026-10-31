@@ -599,6 +599,8 @@ export class CourseAuthoringService {
       courseId?: string;
       enrollmentId?: string;
       learnerId?: string;
+      releaseId?: string;
+      releaseCourseId?: string;
     } = {},
   ): Promise<void> {
     const context = getCurrentTenant();
@@ -2480,6 +2482,16 @@ export class CourseAuthoringService {
         request.tenantId,
         request.enrollmentId,
       );
+      // Context for the host: the target release's authored course and course row.
+      // A missing release is not reported until after authorization, so an
+      // unauthorized actor cannot probe release ids.
+      const target =
+        typeof request.releaseId === 'string' && request.releaseId
+          ? await tx.get('course_releases', {
+              id: request.releaseId,
+              tenant_id: request.tenantId,
+            })
+          : null;
       await this.authorize(
         tx,
         request,
@@ -2488,6 +2500,13 @@ export class CourseAuthoringService {
         {
           enrollmentId: request.enrollmentId,
           learnerId: String(enrollment.learner_id),
+          ...(target
+            ? {
+                courseId: String(target.course_id),
+                releaseId: String(target.id),
+                releaseCourseId: String(target.release_course_id),
+              }
+            : {}),
         },
       );
       await this.lockEnrollment(tx, request.tenantId, request.enrollmentId);

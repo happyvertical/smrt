@@ -111,6 +111,9 @@ export type CourseDelegationVerifier = (
     courseId?: string;
     enrollmentId?: string;
     learnerId?: string;
+    /** Pin and upgrade only: the target release and its materialized course. */
+    releaseId?: string;
+    releaseCourseId?: string;
   },
 ) => CourseDelegationDecision | Promise<CourseDelegationDecision>;
 
@@ -123,6 +126,9 @@ export type CourseAuthoringAuthorizer = (
     courseId?: string;
     enrollmentId?: string;
     learnerId?: string;
+    /** Pin and upgrade only: the target release and its materialized course. */
+    releaseId?: string;
+    releaseCourseId?: string;
   },
 ) =>
   | boolean
