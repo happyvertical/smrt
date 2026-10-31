@@ -12,6 +12,7 @@ import {
   createManifestClassNamePredicate,
   resolveApiMethodExposure,
 } from '../generators/custom-action.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -248,6 +249,7 @@ function resolveCrudObject(
     .filter(
       ([, candidate]) =>
         candidate.collection === obj.collection &&
+        !isFrameworkBaseClass(candidate.className, candidate.packageName) &&
         !isCollectionManifestClass(manifest, candidate),
     )
     .map(([, candidate]) => candidate)[0];
@@ -306,6 +308,7 @@ function resolveGeneratedEndpointCrudMethods(
   for (const [, obj] of orderedManifestObjectEntries(manifest)) {
     if (
       obj.collection !== collection ||
+      isFrameworkBaseClass(obj.className, obj.packageName) ||
       isCollectionManifestClass(manifest, obj)
     ) {
       continue;
@@ -343,6 +346,12 @@ function exposesApiClientSurface(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
 ): boolean {
+  // The framework's own base classes (SmrtObject, SmrtCollection, ...) are
+  // scaffolding: the route generator never emits a route directory for them
+  // (#2642), so the client must not advertise their CRUD or their methods,
+  // static helpers included, as callable actions (#3295). A consumer that
+  // aggregates `@happyvertical/smrt-core` receives them in its manifest.
+  if (isFrameworkBaseClass(obj.className, obj.packageName)) return false;
   if (obj.decoratorConfig?.api === false) return false;
   if (resolveGeneratedClientCrudMethods(obj, manifest).length > 0) return true;
 

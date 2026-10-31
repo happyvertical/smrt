@@ -26,6 +26,13 @@ collection class and its populated model share an endpoint, the model owns the
 canonical collection key and row payload schema; the collection class remains
 available under a deterministic class-derived secondary key. Selection and
 collision suffixes must not depend on manifest insertion order (#2027).
+Client entry selection skips the framework base classes exactly as route
+emission does (`isFrameworkBaseClass`, #2642): a consumer aggregating
+`@happyvertical/smrt-core` receives `SmrtObject`/`SmrtCollection`, and the
+client must not advertise their CRUD or methods (static helpers included) as
+callable actions that no route serves (#3295). Static model methods stay
+collection-scoped (`method(options)`), instance methods item-scoped
+(`method(id, options)`), matching the emitted route files.
 Route emission iterates manifest objects in the same deterministic
 qualified-identity order (`orderedManifestObjectEntries`), so when two models
 share one collection the last writer of each route file — and therefore the
