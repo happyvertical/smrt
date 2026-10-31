@@ -1,12 +1,11 @@
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import {
   getCurrentTenant,
-  isSuperAdminBypass,
-  isSystemContext,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { Content } from './content';
+import { assertOwnTenantRead } from './tenant-keyed-lookup';
 
 export type ContentReviewKind = 'facts' | 'safety' | 'custom';
 
@@ -531,13 +530,22 @@ function resolveGovernanceTenantFilter(
   tenantId: string | null | undefined,
 ): string | null | undefined {
   if (tenantId !== undefined) {
+    // An active tenant context cannot list another tenant's definitions by
+    // passing its id (#3305 M1).
+    if (tenantId) {
+      assertOwnTenantRead(
+        tenantId,
+        'loadPersistedContentGovernanceDefinitions',
+      );
+    }
     return tenantId;
   }
 
-  if (isSystemContext() || isSuperAdminBypass()) {
-    return undefined;
-  }
-
+  // Keys are unique per tenant (#3305 M1), so the same key can exist once per
+  // tenant: merging every tenant's rows would let an arbitrary tenant's
+  // override win. A super-admin bypass keeps its tenant, and with tenancy on a
+  // system context (no tenant) reads the global layer only; an administrative
+  // caller selects another tenant by passing its id explicitly.
   const currentTenant = getCurrentTenant();
   if (currentTenant?.tenantId) {
     return currentTenant.tenantId;
@@ -638,7 +646,12 @@ function mapPersistedAssignmentRow(
 }
 
 export async function loadPersistedContentGovernanceDefinitions(
-  options: { db?: DatabaseInterface | null; tenantId?: string | null } = {},
+  options: {
+    db?: DatabaseInterface | null;
+    tenantId?: string | null;
+    /** @internal Every tenant's rows, for global-row reference checks. */
+    allTenants?: boolean;
+  } = {},
 ): Promise<PersistedContentGovernanceDefinitions> {
   const { db } = options;
   if (!db) {
@@ -650,7 +663,9 @@ export async function loadPersistedContentGovernanceDefinitions(
   }
 
   try {
-    const tenantId = resolveGovernanceTenantFilter(options.tenantId);
+    const tenantId = options.allTenants
+      ? undefined
+      : resolveGovernanceTenantFilter(options.tenantId);
     const listGovernanceRows = async (tableName: string) => {
       const byCreatedAt = (
         a: Record<string, unknown>,
@@ -895,6 +910,57 @@ export async function getEffectiveContentGovernanceConfig(
       normalizeAssignmentDefinition,
     ),
   };
+}
+
+/**
+ * Tenant rows that rely on the global `kind` row `key` (#3305 M1): profiles
+ * requiring a global policy, or assignments naming a global profile, in a
+ * tenant without its own row of that key. Deleting the global row would
+ * leave those references dangling, so a global delete checks every tenant,
+ * not only the global layer. Labels are `<tenantId>:<referencing key>`; under
+ * an active tenant context they are reduced to a count so one tenant never
+ * learns another's ids or keys.
+ */
+export async function findTenantReferencesToGlobalKey(options: {
+  db?: DatabaseInterface | null;
+  kind: 'policy' | 'profile';
+  key: string;
+}): Promise<string[]> {
+  const persisted = await loadPersistedContentGovernanceDefinitions({
+    db: options.db,
+    allTenants: true,
+  });
+  const overridden = new Set(
+    (options.kind === 'policy' ? persisted.policies : persisted.profiles)
+      .filter((row) => row.tenantId && row.key === options.key)
+      .map((row) => row.tenantId as string),
+  );
+  const references =
+    options.kind === 'policy'
+      ? persisted.profiles
+          .filter((profile) =>
+            profile.requirements.some(
+              (requirement) => requirement.policyKey === options.key,
+            ),
+          )
+          .map((profile) => ({ tenantId: profile.tenantId, key: profile.key }))
+      : persisted.assignments
+          .filter(
+            (assignment) =>
+              assignment.publicationProfileKey === options.key ||
+              assignment.correctionProfileKey === options.key,
+          )
+          .map((assignment) => ({
+            tenantId: assignment.tenantId,
+            key: assignment.key || assignment.contentType,
+          }));
+  const labels = references
+    .filter((ref) => ref.tenantId && !overridden.has(ref.tenantId))
+    .map((ref) => `${ref.tenantId}:${ref.key}`);
+  if (labels.length > 0 && getCurrentTenant()) {
+    return [`${labels.length} tenant definition(s)`];
+  }
+  return labels;
 }
 
 export function hasStaticContentGovernancePolicy(key: string): boolean {

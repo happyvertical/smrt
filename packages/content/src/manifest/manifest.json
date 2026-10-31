@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "timestamp": 0,
   "packageName": "@happyvertical/smrt-content",
-  "packageVersion": "0.51.27",
+  "packageVersion": "0.57.44",
   "objects": {
     "@happyvertical/smrt-content:ContentAsset": {
       "name": "contentasset",
@@ -205,12 +205,12 @@
       "packageName": "@happyvertical/smrt-content",
       "fields": {},
       "methods": {
-        "byLeft": {
-          "name": "byLeft",
+        "byRight": {
+          "name": "byRight",
           "async": true,
           "parameters": [
             {
-              "name": "leftId",
+              "name": "rightId",
               "type": "string",
               "optional": false
             },
@@ -224,12 +224,12 @@
           "isStatic": false,
           "isPublic": true
         },
-        "byRight": {
-          "name": "byRight",
+        "byLeft": {
+          "name": "byLeft",
           "async": true,
           "parameters": [
             {
-              "name": "rightId",
+              "name": "leftId",
               "type": "string",
               "optional": false
             },
@@ -471,7 +471,11 @@
         "channel": {
           "type": "text",
           "required": false,
-          "default": "web"
+          "default": "web",
+          "enum": [
+            "web",
+            "email"
+          ]
         },
         "promotedAssetId": {
           "type": "crossPackageRef",
@@ -744,7 +748,32 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_contribution_attachments"
+        "tableName": "content_contribution_attachments",
+        "conflictColumns": [
+          "id"
+        ],
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "listForContribution",
+            "listForRevision"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "listForContribution",
+            "listForRevision"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentContributionAttachment",
@@ -915,7 +944,11 @@
         "channel": {
           "type": "text",
           "required": false,
-          "default": "web"
+          "default": "web",
+          "enum": [
+            "web",
+            "email"
+          ]
         },
         "title": {
           "type": "text",
@@ -1013,6 +1046,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentContributionRevision",
       "collectionExportName": "ContentContributionRevisionCollection",
+      "displayLabelField": "title",
       "validationRules": [
         {
           "field": "contributionId",
@@ -1189,7 +1223,25 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_contribution_revisions"
+        "tableName": "content_contribution_revisions",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentContributionRevision",
@@ -1542,6 +1594,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentContributionType",
       "collectionExportName": "ContentContributionTypeCollection",
+      "displayLabelField": "label",
       "validationRules": [
         {
           "field": "key",
@@ -1713,7 +1766,25 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_contribution_types"
+        "tableName": "content_contribution_types",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentContributionType",
@@ -1850,43 +1921,85 @@
           "type": "foreignKey",
           "required": true,
           "related": "ContentContributor",
+          "description": "The person who sent this in.",
           "_meta": {
+            "description": "The person who sent this in.",
             "required": true
           }
         },
         "contributionTypeKey": {
           "type": "text",
           "required": true,
+          "description": "What kind of submission it is, such as an article or a letter.",
           "_meta": {
-            "required": true
+            "required": true,
+            "description": "What kind of submission it is, such as an article or a letter."
           }
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "submitted"
+          "default": "submitted",
+          "description": "Where the submission stands, from submitted to approved, rejected or published.",
+          "_meta": {
+            "description": "Where the submission stands, from submitted to approved, rejected or published."
+          },
+          "enum": [
+            "submitted",
+            "quarantined",
+            "needs_changes",
+            "approved",
+            "promoted",
+            "rejected",
+            "withdrawn"
+          ]
         },
         "intakeDecision": {
           "type": "text",
           "required": false,
-          "default": "accepted"
+          "default": "accepted",
+          "enum": [
+            "accepted",
+            "quarantined",
+            "rejected"
+          ]
         },
         "channel": {
           "type": "text",
           "required": false,
-          "default": "web"
+          "default": "web",
+          "description": "How it arrived: through the website or by email.",
+          "_meta": {
+            "description": "How it arrived: through the website or by email."
+          },
+          "enum": [
+            "web",
+            "email"
+          ]
         },
         "title": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The headline the contributor gave it.",
+          "_meta": {
+            "description": "The headline the contributor gave it."
+          }
         },
         "description": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A short summary of the submission.",
+          "_meta": {
+            "description": "A short summary of the submission."
+          }
         },
         "body": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The full text as it was sent in.",
+          "_meta": {
+            "description": "The full text as it was sent in."
+          }
         },
         "contributorEmail": {
           "type": "text",
@@ -1894,7 +2007,11 @@
         },
         "contributorName": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The name the contributor gave.",
+          "_meta": {
+            "description": "The name the contributor gave."
+          }
         },
         "threadKey": {
           "type": "text",
@@ -1907,14 +2024,19 @@
         },
         "editorNotes": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Notes from your team about this submission.",
+          "_meta": {
+            "description": "Notes from your team about this submission."
+          }
         },
         "promotedContentId": {
           "type": "foreignKey",
           "required": false,
           "related": "Content",
           "_meta": {
-            "nullable": true
+            "nullable": true,
+            "onDelete": "SET NULL"
           }
         },
         "revisionCount": {
@@ -2185,6 +2307,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentContribution",
       "collectionExportName": "ContentContributionCollection",
+      "displayLabelField": "title",
       "validationRules": [
         {
           "field": "contributorId",
@@ -2315,7 +2438,7 @@
             "foreignKey": {
               "table": "contents",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "SET NULL",
               "onUpdate": "CASCADE"
             }
           },
@@ -2396,7 +2519,7 @@
             ]
           }
         ],
-        "version": "ef8fd792"
+        "version": "5f856715"
       },
       "importPath": "@happyvertical/smrt-content"
     },
@@ -2649,7 +2772,7 @@
             "foreignKey": {
               "table": "contents",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "SET NULL",
               "onUpdate": "CASCADE"
             }
           },
@@ -2730,7 +2853,7 @@
             ]
           }
         ],
-        "version": "ef8fd792"
+        "version": "5f856715"
       },
       "importPath": "@happyvertical/smrt-content"
     },
@@ -2750,18 +2873,33 @@
         "email": {
           "type": "text",
           "required": true,
+          "description": "The email address the contributor writes in from.",
           "_meta": {
-            "required": true
+            "required": true,
+            "description": "The email address the contributor writes in from."
           }
         },
         "name": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The name the contributor goes by.",
+          "_meta": {
+            "description": "The name the contributor goes by."
+          }
         },
         "trustLevel": {
           "type": "text",
           "required": false,
-          "default": "standard"
+          "default": "standard",
+          "description": "How far you trust what they send in: standard, trusted or blocked.",
+          "_meta": {
+            "description": "How far you trust what they send in: standard, trusted or blocked."
+          },
+          "enum": [
+            "standard",
+            "trusted",
+            "blocked"
+          ]
         },
         "metadata": {
           "type": "text",
@@ -2821,6 +2959,7 @@
       "decoratorConfig": {
         "tableName": "content_contributors",
         "conflictColumns": [
+          "tenant_id",
           "email"
         ],
         "api": {
@@ -2851,6 +2990,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentContributor",
       "collectionExportName": "ContentContributorCollection",
+      "displayLabelField": "name",
       "validationRules": [
         {
           "field": "email",
@@ -2923,11 +3063,13 @@
         },
         "indexes": [
           {
-            "name": "content_contributors_email_idx",
+            "name": "content_contributors_tenant_id_email_idx",
             "columns": [
+              "tenant_id",
               "email"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_contributors_slug_context_idx",
@@ -2971,6 +3113,14 @@
               "name": "email",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "memberTypes": [
+                "string | null"
+              ]
             }
           ],
           "returnType": "Promise<ContentContributor | null>",
@@ -3011,7 +3161,33 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_contributors"
+        "tableName": "content_contributors",
+        "conflictColumns": [
+          "tenant_id",
+          "email"
+        ],
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "getByEmail",
+            "getByProfileId"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "getByEmail",
+            "getByProfileId"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentContributor",
@@ -3082,11 +3258,13 @@
         },
         "indexes": [
           {
-            "name": "content_contributors_email_idx",
+            "name": "content_contributors_tenant_id_email_idx",
             "columns": [
+              "tenant_id",
               "email"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_contributors_slug_context_idx",
@@ -3125,14 +3303,20 @@
           "type": "foreignKey",
           "required": true,
           "related": "Content",
+          "description": "The piece being corrected.",
           "_meta": {
-            "required": true
+            "description": "The piece being corrected.",
+            "required": true,
+            "onDelete": "CASCADE"
           }
         },
         "contentVersionId": {
           "type": "foreignKey",
           "required": false,
-          "related": "ContentVersion"
+          "related": "ContentVersion",
+          "_meta": {
+            "onDelete": "CASCADE"
+          }
         },
         "factId": {
           "type": "crossPackageRef",
@@ -3147,28 +3331,63 @@
         "correctionType": {
           "type": "text",
           "required": false,
-          "default": "fact"
+          "default": "fact",
+          "description": "What kind of mistake it fixes: a fact, a safety concern, wording or something else.",
+          "_meta": {
+            "description": "What kind of mistake it fixes: a fact, a safety concern, wording or something else."
+          },
+          "enum": [
+            "fact",
+            "safety",
+            "copy",
+            "custom"
+          ]
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "draft"
+          "default": "draft",
+          "description": "Where the correction stands: a draft, published or retracted.",
+          "_meta": {
+            "description": "Where the correction stands: a draft, published or retracted."
+          },
+          "enum": [
+            "draft",
+            "published",
+            "retracted"
+          ]
         },
         "summary": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A short note on what was wrong and how it was fixed.",
+          "_meta": {
+            "description": "A short note on what was wrong and how it was fixed."
+          }
         },
         "incorrectText": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The wording that was wrong.",
+          "_meta": {
+            "description": "The wording that was wrong."
+          }
         },
         "correctedText": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The wording that replaces it.",
+          "_meta": {
+            "description": "The wording that replaces it."
+          }
         },
         "publicNote": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The note readers see about this correction.",
+          "_meta": {
+            "description": "The note readers see about this correction."
+          }
         },
         "metadata": {
           "type": "text",
@@ -3194,7 +3413,11 @@
         },
         "publishedAt": {
           "type": "datetime",
-          "required": false
+          "required": false,
+          "description": "When the correction was made public.",
+          "_meta": {
+            "description": "When the correction was made public."
+          }
         },
         "createdAt": {
           "type": "text",
@@ -3292,7 +3515,7 @@
             "foreignKey": {
               "table": "contents",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -3304,7 +3527,7 @@
             "foreignKey": {
               "table": "content_versions",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -3412,7 +3635,7 @@
             ]
           }
         ],
-        "version": "bf2808c7"
+        "version": "1e1611c8"
       },
       "importPath": "@happyvertical/smrt-content"
     },
@@ -3470,7 +3693,27 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_corrections"
+        "tableName": "content_corrections",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "listForContent",
+            "getPublishedForContent"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "listForContent",
+            "getPublishedForContent"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentCorrection",
@@ -3513,7 +3756,7 @@
             "foreignKey": {
               "table": "contents",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -3525,7 +3768,7 @@
             "foreignKey": {
               "table": "content_versions",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -3633,7 +3876,7 @@
             ]
           }
         ],
-        "version": "bf2808c7"
+        "version": "1e1611c8"
       },
       "importPath": "@happyvertical/smrt-content"
     },
@@ -3683,7 +3926,11 @@
         },
         "format": {
           "type": "text",
-          "required": false
+          "required": false,
+          "enum": [
+            "rss",
+            "atom"
+          ]
         },
         "status": {
           "type": "text",
@@ -3692,7 +3939,13 @@
           "_meta": {
             "required": true,
             "default": "active"
-          }
+          },
+          "enum": [
+            "active",
+            "paused",
+            "error",
+            "archived"
+          ]
         },
         "defaultCategory": {
           "type": "text",
@@ -3854,6 +4107,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentFeedSource",
       "collectionExportName": "ContentFeedSourceCollection",
+      "displayLabelField": "name",
       "validationRules": [
         {
           "field": "name",
@@ -4101,7 +4355,25 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_feed_sources"
+        "tableName": "content_feed_sources",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentFeedSource",
@@ -4360,6 +4632,7 @@
       "decoratorConfig": {
         "tableName": "content_governance_assignments",
         "conflictColumns": [
+          "tenant_id",
           "key"
         ],
         "api": {
@@ -4390,6 +4663,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentGovernanceAssignment",
       "collectionExportName": "ContentGovernanceAssignmentCollection",
+      "displayLabelField": "label",
       "validationRules": [
         {
           "field": "key",
@@ -4525,11 +4799,13 @@
         },
         "indexes": [
           {
-            "name": "content_governance_assignments_key_idx",
+            "name": "content_governance_assignments_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_governance_assignments_slug_context_idx",
@@ -4567,6 +4843,14 @@
               "name": "key",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "memberTypes": [
+                "string | null"
+              ]
             }
           ],
           "returnType": "Promise<ContentGovernanceAssignment | null>",
@@ -4593,7 +4877,25 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_governance_assignments"
+        "tableName": "content_governance_assignments",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentGovernanceAssignment",
@@ -4702,11 +5004,13 @@
         },
         "indexes": [
           {
-            "name": "content_governance_assignments_key_idx",
+            "name": "content_governance_assignments_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_governance_assignments_slug_context_idx",
@@ -4744,6 +5048,14 @@
               "name": "key",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "memberTypes": [
+                "string | null"
+              ]
             }
           ],
           "returnType": "Promise<ContentGovernancePolicy | null>",
@@ -4752,7 +5064,25 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_governance_policies"
+        "tableName": "content_governance_policies",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentGovernancePolicy",
@@ -4828,11 +5158,13 @@
         },
         "indexes": [
           {
-            "name": "content_governance_policies_key_idx",
+            "name": "content_governance_policies_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_governance_policies_slug_context_idx",
@@ -4875,7 +5207,12 @@
         "kind": {
           "type": "text",
           "required": false,
-          "default": "custom"
+          "default": "custom",
+          "enum": [
+            "facts",
+            "safety",
+            "custom"
+          ]
         },
         "instructions": {
           "type": "text",
@@ -4946,6 +5283,7 @@
       "decoratorConfig": {
         "tableName": "content_governance_policies",
         "conflictColumns": [
+          "tenant_id",
           "key"
         ],
         "api": {
@@ -4976,6 +5314,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentGovernancePolicy",
       "collectionExportName": "ContentGovernancePolicyCollection",
+      "displayLabelField": "label",
       "validationRules": [
         {
           "field": "key",
@@ -5058,11 +5397,13 @@
         },
         "indexes": [
           {
-            "name": "content_governance_policies_key_idx",
+            "name": "content_governance_policies_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_governance_policies_slug_context_idx",
@@ -5183,6 +5524,7 @@
       "decoratorConfig": {
         "tableName": "content_governance_profiles",
         "conflictColumns": [
+          "tenant_id",
           "key"
         ],
         "api": {
@@ -5213,6 +5555,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentGovernanceProfile",
       "collectionExportName": "ContentGovernanceProfileCollection",
+      "displayLabelField": "label",
       "validationRules": [
         {
           "field": "key",
@@ -5294,11 +5637,13 @@
         },
         "indexes": [
           {
-            "name": "content_governance_profiles_key_idx",
+            "name": "content_governance_profiles_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_governance_profiles_slug_context_idx",
@@ -5336,6 +5681,14 @@
               "name": "key",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "memberTypes": [
+                "string | null"
+              ]
             }
           ],
           "returnType": "Promise<ContentGovernanceProfile | null>",
@@ -5344,7 +5697,25 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_governance_profiles"
+        "tableName": "content_governance_profiles",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentGovernanceProfile",
@@ -5419,11 +5790,13 @@
         },
         "indexes": [
           {
-            "name": "content_governance_profiles_key_idx",
+            "name": "content_governance_profiles_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_governance_profiles_slug_context_idx",
@@ -5632,12 +6005,12 @@
       "packageName": "@happyvertical/smrt-content",
       "fields": {},
       "methods": {
-        "byLeft": {
-          "name": "byLeft",
+        "byRight": {
+          "name": "byRight",
           "async": true,
           "parameters": [
             {
-              "name": "leftId",
+              "name": "rightId",
               "type": "string",
               "optional": false
             },
@@ -5651,12 +6024,12 @@
           "isStatic": false,
           "isPublic": true
         },
-        "byRight": {
-          "name": "byRight",
+        "byLeft": {
+          "name": "byLeft",
           "async": true,
           "parameters": [
             {
-              "name": "rightId",
+              "name": "leftId",
               "type": "string",
               "optional": false
             },
@@ -5908,32 +6281,66 @@
           "type": "foreignKey",
           "required": true,
           "related": "Content",
+          "description": "The piece that was reviewed.",
           "_meta": {
-            "required": true
+            "description": "The piece that was reviewed.",
+            "required": true,
+            "onDelete": "CASCADE"
           }
         },
         "contentVersionId": {
           "type": "foreignKey",
           "required": false,
-          "related": "ContentVersion"
+          "related": "ContentVersion",
+          "_meta": {
+            "onDelete": "CASCADE"
+          }
         },
         "kind": {
           "type": "text",
           "required": false,
-          "default": "custom"
+          "default": "custom",
+          "description": "What the review checked: facts, safety or a custom policy.",
+          "_meta": {
+            "description": "What the review checked: facts, safety or a custom policy."
+          },
+          "enum": [
+            "facts",
+            "safety",
+            "custom"
+          ]
         },
         "policyKey": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The policy the piece was checked against.",
+          "_meta": {
+            "description": "The policy the piece was checked against."
+          }
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "pending"
+          "default": "pending",
+          "description": "The outcome: pending, passed, flagged, failed or waived.",
+          "_meta": {
+            "description": "The outcome: pending, passed, flagged, failed or waived."
+          },
+          "enum": [
+            "pending",
+            "passed",
+            "flagged",
+            "failed",
+            "waived"
+          ]
         },
         "summary": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A short account of what the review found.",
+          "_meta": {
+            "description": "A short account of what the review found."
+          }
         },
         "findings": {
           "type": "text",
@@ -5941,7 +6348,11 @@
         },
         "reviewer": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Who or what carried out the review.",
+          "_meta": {
+            "description": "Who or what carried out the review."
+          }
         },
         "metadata": {
           "type": "text",
@@ -5967,7 +6378,11 @@
         },
         "createdAt": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "When the review was done.",
+          "_meta": {
+            "description": "When the review was done."
+          }
         },
         "updatedAt": {
           "type": "text",
@@ -6069,7 +6484,7 @@
             "foreignKey": {
               "table": "contents",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -6081,7 +6496,7 @@
             "foreignKey": {
               "table": "content_versions",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -6160,7 +6575,7 @@
             ]
           }
         ],
-        "version": "7b2c0ad7"
+        "version": "1491101b"
       },
       "importPath": "@happyvertical/smrt-content"
     },
@@ -6272,7 +6687,23 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_reviews"
+        "tableName": "content_reviews",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentReview",
@@ -6315,7 +6746,7 @@
             "foreignKey": {
               "table": "contents",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -6327,7 +6758,7 @@
             "foreignKey": {
               "table": "content_versions",
               "column": "id",
-              "onDelete": "NO ACTION",
+              "onDelete": "CASCADE",
               "onUpdate": "CASCADE"
             }
           },
@@ -6406,7 +6837,7 @@
             ]
           }
         ],
-        "version": "7b2c0ad7"
+        "version": "1491101b"
       },
       "importPath": "@happyvertical/smrt-content"
     },
@@ -6415,6 +6846,7 @@
       "className": "Article",
       "qualifiedName": "@happyvertical/smrt-content:Article",
       "collection": "contents",
+      "description": "Article content type",
       "filePath": "packages/content/src/content-types.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
@@ -6443,7 +6875,11 @@
         },
         "type": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "What kind of piece this is, such as an article or a document.",
+          "_meta": {
+            "description": "What kind of piece this is, such as an article or a document."
+          }
         },
         "variant": {
           "type": "text",
@@ -6455,35 +6891,61 @@
         },
         "author": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Who wrote this piece.",
+          "_meta": {
+            "description": "Who wrote this piece."
+          }
         },
         "name": {
           "type": "text",
           "required": true,
           "default": "",
+          "description": "A short name used to find this piece in lists.",
           "_meta": {
-            "required": true
+            "required": true,
+            "description": "A short name used to find this piece in lists."
           }
         },
         "title": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The headline readers see.",
+          "_meta": {
+            "description": "The headline readers see."
+          }
         },
         "description": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A one or two sentence summary of the piece.",
+          "_meta": {
+            "description": "A one or two sentence summary of the piece."
+          }
         },
         "body": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The full text of the piece.",
+          "_meta": {
+            "description": "The full text of the piece."
+          }
         },
         "bodyFormat": {
           "type": "text",
-          "required": false
+          "required": false,
+          "enum": [
+            "markdown",
+            "html"
+          ]
         },
         "publish_date": {
           "type": "datetime",
-          "required": false
+          "required": false,
+          "description": "The date the piece went out, or is due to go out.",
+          "_meta": {
+            "description": "The date the piece went out, or is due to go out."
+          }
         },
         "url": {
           "type": "text",
@@ -6504,21 +6966,45 @@
         "tags": {
           "type": "json",
           "required": false,
-          "default": []
+          "default": [],
+          "description": "Words that group pieces by subject.",
+          "_meta": {
+            "description": "Words that group pieces by subject."
+          }
         },
         "category": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The one section the piece belongs to, such as news or local.",
+          "_meta": {
+            "description": "The one section the piece belongs to, such as news or local."
+          }
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "draft"
+          "default": "draft",
+          "description": "Where the piece stands: draft, in review, published or archived.",
+          "_meta": {
+            "description": "Where the piece stands: draft, in review, published or archived."
+          },
+          "enum": [
+            "published",
+            "draft",
+            "review",
+            "archived",
+            "deleted"
+          ]
         },
         "state": {
           "type": "text",
           "required": false,
-          "default": "active"
+          "default": "active",
+          "enum": [
+            "deprecated",
+            "active",
+            "highlighted"
+          ]
         },
         "metadata": {
           "type": "json",
@@ -7314,9 +7800,29 @@
               "name": "relationship",
               "type": "string",
               "optional": true
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "typeUnresolved": true
             }
           ],
           "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssetIds": {
+          "name": "getAssetIds",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<string[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7458,6 +7964,7 @@
       "extends": "Content",
       "exportName": "Article",
       "collectionExportName": "ArticleCollection",
+      "displayLabelField": "name",
       "validationRules": [
         {
           "field": "name",
@@ -7683,6 +8190,7 @@
       "className": "ContentDocument",
       "qualifiedName": "@happyvertical/smrt-content:ContentDocument",
       "collection": "contents",
+      "description": "ContentDocument content type",
       "filePath": "packages/content/src/content-types.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
@@ -7711,7 +8219,11 @@
         },
         "type": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "What kind of piece this is, such as an article or a document.",
+          "_meta": {
+            "description": "What kind of piece this is, such as an article or a document."
+          }
         },
         "variant": {
           "type": "text",
@@ -7723,35 +8235,61 @@
         },
         "author": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Who wrote this piece.",
+          "_meta": {
+            "description": "Who wrote this piece."
+          }
         },
         "name": {
           "type": "text",
           "required": true,
           "default": "",
+          "description": "A short name used to find this piece in lists.",
           "_meta": {
-            "required": true
+            "required": true,
+            "description": "A short name used to find this piece in lists."
           }
         },
         "title": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The headline readers see.",
+          "_meta": {
+            "description": "The headline readers see."
+          }
         },
         "description": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A one or two sentence summary of the piece.",
+          "_meta": {
+            "description": "A one or two sentence summary of the piece."
+          }
         },
         "body": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The full text of the piece.",
+          "_meta": {
+            "description": "The full text of the piece."
+          }
         },
         "bodyFormat": {
           "type": "text",
-          "required": false
+          "required": false,
+          "enum": [
+            "markdown",
+            "html"
+          ]
         },
         "publish_date": {
           "type": "datetime",
-          "required": false
+          "required": false,
+          "description": "The date the piece went out, or is due to go out.",
+          "_meta": {
+            "description": "The date the piece went out, or is due to go out."
+          }
         },
         "url": {
           "type": "text",
@@ -7772,21 +8310,45 @@
         "tags": {
           "type": "json",
           "required": false,
-          "default": []
+          "default": [],
+          "description": "Words that group pieces by subject.",
+          "_meta": {
+            "description": "Words that group pieces by subject."
+          }
         },
         "category": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The one section the piece belongs to, such as news or local.",
+          "_meta": {
+            "description": "The one section the piece belongs to, such as news or local."
+          }
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "draft"
+          "default": "draft",
+          "description": "Where the piece stands: draft, in review, published or archived.",
+          "_meta": {
+            "description": "Where the piece stands: draft, in review, published or archived."
+          },
+          "enum": [
+            "published",
+            "draft",
+            "review",
+            "archived",
+            "deleted"
+          ]
         },
         "state": {
           "type": "text",
           "required": false,
-          "default": "active"
+          "default": "active",
+          "enum": [
+            "deprecated",
+            "active",
+            "highlighted"
+          ]
         },
         "metadata": {
           "type": "json",
@@ -8582,9 +9144,29 @@
               "name": "relationship",
               "type": "string",
               "optional": true
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "typeUnresolved": true
             }
           ],
           "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssetIds": {
+          "name": "getAssetIds",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<string[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8726,6 +9308,7 @@
       "extends": "Content",
       "exportName": "ContentDocument",
       "collectionExportName": "ContentDocumentCollection",
+      "displayLabelField": "name",
       "validationRules": [
         {
           "field": "name",
@@ -8951,6 +9534,7 @@
       "className": "Mirror",
       "qualifiedName": "@happyvertical/smrt-content:Mirror",
       "collection": "contents",
+      "description": "Mirror content type",
       "filePath": "packages/content/src/content-types.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
@@ -8979,7 +9563,11 @@
         },
         "type": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "What kind of piece this is, such as an article or a document.",
+          "_meta": {
+            "description": "What kind of piece this is, such as an article or a document."
+          }
         },
         "variant": {
           "type": "text",
@@ -8991,35 +9579,61 @@
         },
         "author": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Who wrote this piece.",
+          "_meta": {
+            "description": "Who wrote this piece."
+          }
         },
         "name": {
           "type": "text",
           "required": true,
           "default": "",
+          "description": "A short name used to find this piece in lists.",
           "_meta": {
-            "required": true
+            "required": true,
+            "description": "A short name used to find this piece in lists."
           }
         },
         "title": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The headline readers see.",
+          "_meta": {
+            "description": "The headline readers see."
+          }
         },
         "description": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A one or two sentence summary of the piece.",
+          "_meta": {
+            "description": "A one or two sentence summary of the piece."
+          }
         },
         "body": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The full text of the piece.",
+          "_meta": {
+            "description": "The full text of the piece."
+          }
         },
         "bodyFormat": {
           "type": "text",
-          "required": false
+          "required": false,
+          "enum": [
+            "markdown",
+            "html"
+          ]
         },
         "publish_date": {
           "type": "datetime",
-          "required": false
+          "required": false,
+          "description": "The date the piece went out, or is due to go out.",
+          "_meta": {
+            "description": "The date the piece went out, or is due to go out."
+          }
         },
         "url": {
           "type": "text",
@@ -9040,21 +9654,45 @@
         "tags": {
           "type": "json",
           "required": false,
-          "default": []
+          "default": [],
+          "description": "Words that group pieces by subject.",
+          "_meta": {
+            "description": "Words that group pieces by subject."
+          }
         },
         "category": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The one section the piece belongs to, such as news or local.",
+          "_meta": {
+            "description": "The one section the piece belongs to, such as news or local."
+          }
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "draft"
+          "default": "draft",
+          "description": "Where the piece stands: draft, in review, published or archived.",
+          "_meta": {
+            "description": "Where the piece stands: draft, in review, published or archived."
+          },
+          "enum": [
+            "published",
+            "draft",
+            "review",
+            "archived",
+            "deleted"
+          ]
         },
         "state": {
           "type": "text",
           "required": false,
-          "default": "active"
+          "default": "active",
+          "enum": [
+            "deprecated",
+            "active",
+            "highlighted"
+          ]
         },
         "metadata": {
           "type": "json",
@@ -9879,9 +10517,29 @@
               "name": "relationship",
               "type": "string",
               "optional": true
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "typeUnresolved": true
             }
           ],
           "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssetIds": {
+          "name": "getAssetIds",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<string[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10023,6 +10681,7 @@
       "extends": "Content",
       "exportName": "Mirror",
       "collectionExportName": "MirrorCollection",
+      "displayLabelField": "name",
       "validationRules": [
         {
           "field": "name",
@@ -10255,23 +10914,46 @@
           "type": "foreignKey",
           "required": true,
           "related": "Content",
+          "description": "The piece this version belongs to.",
           "_meta": {
-            "required": true
+            "description": "The piece this version belongs to.",
+            "required": true,
+            "onDelete": "CASCADE"
           }
         },
         "version": {
           "type": "integer",
           "required": true,
-          "default": 1
+          "default": 1,
+          "description": "The number of this version, counting up from one.",
+          "_meta": {
+            "description": "The number of this version, counting up from one."
+          }
         },
         "kind": {
           "type": "text",
           "required": false,
-          "default": "manual"
+          "default": "manual",
+          "description": "Why the version was saved: a draft, a review, a publication or a correction.",
+          "_meta": {
+            "description": "Why the version was saved: a draft, a review, a publication or a correction."
+          },
+          "enum": [
+            "manual",
+            "draft",
+            "review",
+            "publication",
+            "correction",
+            "auto-generated"
+          ]
         },
         "title": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The headline as it was in this version.",
+          "_meta": {
+            "description": "The headline as it was in this version."
+          }
         },
         "description": {
           "type": "text",
@@ -10283,11 +10965,19 @@
         },
         "status": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Where the piece stood when this version was saved.",
+          "_meta": {
+            "description": "Where the piece stood when this version was saved."
+          }
         },
         "summary": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A short note on what changed in this version.",
+          "_meta": {
+            "description": "A short note on what changed in this version."
+          }
         },
         "snapshot": {
           "type": "text",
@@ -10317,7 +11007,11 @@
         },
         "createdAt": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "When this version was saved.",
+          "_meta": {
+            "description": "When this version was saved."
+          }
         },
         "updatedAt": {
           "type": "text",
@@ -10393,6 +11087,7 @@
       "extends": "SmrtObject",
       "exportName": "ContentVersion",
       "collectionExportName": "ContentVersionCollection",
+      "displayLabelField": "title",
       "validationRules": [
         {
           "field": "contentId",
@@ -10652,7 +11347,21 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "content_versions"
+        "tableName": "content_versions",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "ContentVersion",
@@ -10786,6 +11495,7 @@
       "className": "Content",
       "qualifiedName": "@happyvertical/smrt-content:Content",
       "collection": "contents",
+      "description": "Structured content object with metadata and body text",
       "filePath": "packages/content/src/content.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
@@ -10817,7 +11527,11 @@
         },
         "type": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "What kind of piece this is, such as an article or a document.",
+          "_meta": {
+            "description": "What kind of piece this is, such as an article or a document."
+          }
         },
         "variant": {
           "type": "text",
@@ -10829,35 +11543,61 @@
         },
         "author": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "Who wrote this piece.",
+          "_meta": {
+            "description": "Who wrote this piece."
+          }
         },
         "name": {
           "type": "text",
           "required": true,
           "default": "",
+          "description": "A short name used to find this piece in lists.",
           "_meta": {
-            "required": true
+            "required": true,
+            "description": "A short name used to find this piece in lists."
           }
         },
         "title": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The headline readers see.",
+          "_meta": {
+            "description": "The headline readers see."
+          }
         },
         "description": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "A one or two sentence summary of the piece.",
+          "_meta": {
+            "description": "A one or two sentence summary of the piece."
+          }
         },
         "body": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The full text of the piece.",
+          "_meta": {
+            "description": "The full text of the piece."
+          }
         },
         "bodyFormat": {
           "type": "text",
-          "required": false
+          "required": false,
+          "enum": [
+            "markdown",
+            "html"
+          ]
         },
         "publish_date": {
           "type": "datetime",
-          "required": false
+          "required": false,
+          "description": "The date the piece went out, or is due to go out.",
+          "_meta": {
+            "description": "The date the piece went out, or is due to go out."
+          }
         },
         "url": {
           "type": "text",
@@ -10878,21 +11618,45 @@
         "tags": {
           "type": "json",
           "required": false,
-          "default": []
+          "default": [],
+          "description": "Words that group pieces by subject.",
+          "_meta": {
+            "description": "Words that group pieces by subject."
+          }
         },
         "category": {
           "type": "text",
-          "required": false
+          "required": false,
+          "description": "The one section the piece belongs to, such as news or local.",
+          "_meta": {
+            "description": "The one section the piece belongs to, such as news or local."
+          }
         },
         "status": {
           "type": "text",
           "required": false,
-          "default": "draft"
+          "default": "draft",
+          "description": "Where the piece stands: draft, in review, published or archived.",
+          "_meta": {
+            "description": "Where the piece stands: draft, in review, published or archived."
+          },
+          "enum": [
+            "published",
+            "draft",
+            "review",
+            "archived",
+            "deleted"
+          ]
         },
         "state": {
           "type": "text",
           "required": false,
-          "default": "active"
+          "default": "active",
+          "enum": [
+            "deprecated",
+            "active",
+            "highlighted"
+          ]
         },
         "metadata": {
           "type": "json",
@@ -11688,9 +12452,29 @@
               "name": "relationship",
               "type": "string",
               "optional": true
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true,
+              "typeUnresolved": true
             }
           ],
           "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssetIds": {
+          "name": "getAssetIds",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<string[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11962,6 +12746,7 @@
       "extends": "SmrtObject",
       "exportName": "Content",
       "collectionExportName": "ContentCollection",
+      "displayLabelField": "name",
       "validationRules": [
         {
           "field": "name",
@@ -12187,6 +12972,7 @@
       "className": "Contents",
       "qualifiedName": "@happyvertical/smrt-content:Contents",
       "collection": "contents",
+      "description": "Collection for managing Content objects",
       "filePath": "packages/content/src/contents.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
@@ -12675,6 +13461,466 @@
     }
   },
   "moduleType": "smrt",
+  "recipes": [
+    {
+      "id": "content.articles",
+      "className": "ArticlesRecipe",
+      "label": "Articles",
+      "summary": "Write articles, publish them, and keep a record of every change, review and correction.",
+      "synonyms": [
+        "articles",
+        "posts",
+        "blog",
+        "news",
+        "stories",
+        "drafts",
+        "publishing"
+      ],
+      "models": [
+        "@happyvertical/smrt-content:Content",
+        "@happyvertical/smrt-content:ContentVersion",
+        "@happyvertical/smrt-content:ContentCorrection",
+        "@happyvertical/smrt-content:ContentReview",
+        "@happyvertical/smrt-content:ContentContribution",
+        "@happyvertical/smrt-content:ContentContributor"
+      ],
+      "nav": [
+        {
+          "label": "Articles",
+          "model": "@happyvertical/smrt-content:Content",
+          "icon": "fileText",
+          "description": "Every article, from first draft to published.",
+          "key": "articles",
+          "noun": "article",
+          "filter": {
+            "field": "type",
+            "value": "article"
+          }
+        },
+        {
+          "label": "Versions",
+          "model": "@happyvertical/smrt-content:ContentVersion",
+          "icon": "layers",
+          "description": "Each saved state of an article, so nothing is lost.",
+          "noun": "version"
+        },
+        {
+          "label": "Corrections",
+          "model": "@happyvertical/smrt-content:ContentCorrection",
+          "icon": "wrench",
+          "description": "Fixes made to an article after it went out.",
+          "noun": "correction"
+        },
+        {
+          "label": "Reviews",
+          "model": "@happyvertical/smrt-content:ContentReview",
+          "icon": "book",
+          "description": "What the checks found before an article went out.",
+          "noun": "review"
+        },
+        {
+          "label": "Contributions",
+          "model": "@happyvertical/smrt-content:ContentContribution",
+          "icon": "users",
+          "description": "Pieces sent in by readers and outside writers.",
+          "noun": "contribution"
+        }
+      ],
+      "requires": [],
+      "section": {
+        "id": "publish",
+        "label": "Publish",
+        "icon": "fileText",
+        "description": "What you write, record and put out."
+      },
+      "options": {
+        "@happyvertical/smrt-content:Content": {
+          "fields": {
+            "title": {
+              "order": 1
+            },
+            "name": {
+              "label": "Short name",
+              "order": 2
+            },
+            "type": {
+              "label": "Kind",
+              "order": 3,
+              "default": "article"
+            },
+            "status": {
+              "order": 4
+            },
+            "description": {
+              "label": "Summary",
+              "order": 5
+            },
+            "body": {
+              "order": 6
+            },
+            "author": {
+              "order": 7
+            },
+            "publish_date": {
+              "label": "Published on",
+              "order": 8
+            },
+            "category": {
+              "label": "Section",
+              "order": 9
+            },
+            "tags": {
+              "order": 10
+            },
+            "language": {
+              "visibility": "advanced"
+            },
+            "state": {
+              "visibility": "advanced"
+            },
+            "url": {
+              "label": "Web address",
+              "visibility": "advanced"
+            },
+            "source": {
+              "visibility": "advanced"
+            },
+            "original_url": {
+              "label": "Original web address",
+              "visibility": "advanced"
+            },
+            "thumbnailAssetId": {
+              "label": "Picture",
+              "visibility": "advanced"
+            },
+            "tenantId": {
+              "visibility": "hidden"
+            },
+            "variant": {
+              "visibility": "hidden"
+            },
+            "fileKey": {
+              "visibility": "hidden"
+            },
+            "bodyFormat": {
+              "visibility": "hidden"
+            },
+            "metadata": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-content:ContentVersion": {
+          "fields": {
+            "contentId": {
+              "label": "Article",
+              "order": 1
+            },
+            "version": {
+              "label": "Version number",
+              "order": 2
+            },
+            "kind": {
+              "order": 3
+            },
+            "summary": {
+              "order": 4
+            },
+            "title": {
+              "order": 5
+            },
+            "status": {
+              "order": 6
+            },
+            "createdAt": {
+              "label": "Saved on",
+              "order": 7
+            },
+            "description": {
+              "label": "Summary at the time",
+              "visibility": "advanced"
+            },
+            "body": {
+              "label": "Text at the time",
+              "visibility": "advanced"
+            },
+            "tenantId": {
+              "visibility": "hidden"
+            },
+            "snapshot": {
+              "visibility": "hidden"
+            },
+            "metadata": {
+              "visibility": "hidden"
+            },
+            "updatedAt": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-content:ContentCorrection": {
+          "fields": {
+            "contentId": {
+              "label": "Article",
+              "order": 1
+            },
+            "correctionType": {
+              "label": "Kind",
+              "order": 2
+            },
+            "status": {
+              "order": 3
+            },
+            "summary": {
+              "order": 4
+            },
+            "incorrectText": {
+              "label": "What was wrong",
+              "order": 5
+            },
+            "correctedText": {
+              "label": "What it should say",
+              "order": 6
+            },
+            "publicNote": {
+              "label": "Note to readers",
+              "order": 7
+            },
+            "publishedAt": {
+              "label": "Published on",
+              "order": 8
+            },
+            "contentVersionId": {
+              "label": "Version",
+              "visibility": "advanced"
+            },
+            "factId": {
+              "visibility": "hidden"
+            },
+            "replacementFactId": {
+              "visibility": "hidden"
+            },
+            "tenantId": {
+              "visibility": "hidden"
+            },
+            "metadata": {
+              "visibility": "hidden"
+            },
+            "createdAt": {
+              "visibility": "hidden"
+            },
+            "updatedAt": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-content:ContentReview": {
+          "fields": {
+            "contentId": {
+              "label": "Article",
+              "order": 1
+            },
+            "kind": {
+              "order": 2
+            },
+            "policyKey": {
+              "label": "Policy",
+              "order": 3
+            },
+            "status": {
+              "label": "Outcome",
+              "order": 4
+            },
+            "summary": {
+              "order": 5
+            },
+            "reviewer": {
+              "order": 6
+            },
+            "createdAt": {
+              "label": "Reviewed on",
+              "order": 7
+            },
+            "contentVersionId": {
+              "label": "Version",
+              "visibility": "advanced"
+            },
+            "findings": {
+              "visibility": "hidden"
+            },
+            "tenantId": {
+              "visibility": "hidden"
+            },
+            "metadata": {
+              "visibility": "hidden"
+            },
+            "updatedAt": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-content:ContentContribution": {
+          "fields": {
+            "title": {
+              "order": 1
+            },
+            "contributorName": {
+              "label": "From",
+              "order": 2
+            },
+            "contributionTypeKey": {
+              "label": "Kind",
+              "order": 3
+            },
+            "status": {
+              "order": 4
+            },
+            "channel": {
+              "label": "Arrived by",
+              "order": 5
+            },
+            "description": {
+              "label": "Summary",
+              "order": 6
+            },
+            "body": {
+              "order": 7
+            },
+            "editorNotes": {
+              "label": "Your notes",
+              "order": 8
+            },
+            "contributorId": {
+              "label": "Contributor",
+              "order": 9
+            },
+            "contributorEmail": {
+              "label": "Email",
+              "visibility": "advanced"
+            },
+            "promotedContentId": {
+              "label": "Published as",
+              "visibility": "advanced"
+            },
+            "intakeDecision": {
+              "visibility": "advanced"
+            },
+            "revisionCount": {
+              "label": "Times revised",
+              "visibility": "advanced"
+            },
+            "threadKey": {
+              "visibility": "hidden"
+            },
+            "sourceMessageId": {
+              "visibility": "hidden"
+            },
+            "approvedAt": {
+              "visibility": "hidden"
+            },
+            "promotedAt": {
+              "visibility": "hidden"
+            },
+            "rejectedAt": {
+              "visibility": "hidden"
+            },
+            "withdrawnAt": {
+              "visibility": "hidden"
+            },
+            "requestedChangesAt": {
+              "visibility": "hidden"
+            },
+            "tenantId": {
+              "visibility": "hidden"
+            },
+            "metadata": {
+              "visibility": "hidden"
+            },
+            "createdAt": {
+              "visibility": "hidden"
+            },
+            "updatedAt": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-content:ContentContributor": {
+          "fields": {
+            "name": {
+              "order": 1
+            },
+            "email": {
+              "order": 2
+            },
+            "trustLevel": {
+              "label": "Trust",
+              "order": 3
+            },
+            "profileId": {
+              "label": "Person",
+              "visibility": "advanced"
+            },
+            "tenantId": {
+              "visibility": "hidden"
+            },
+            "metadata": {
+              "visibility": "hidden"
+            },
+            "createdAt": {
+              "visibility": "hidden"
+            },
+            "updatedAt": {
+              "visibility": "hidden"
+            }
+          }
+        }
+      },
+      "help": {
+        "markdown": "## Overview\n\nArticles is where you write and publish. Each article starts as a draft, can\nbe checked before it goes out, and is published when you are ready. Every time\nan article is published or corrected, a version is saved so nothing is lost.\nFixes made after publication are recorded as corrections readers can see, and\npieces sent in by readers or outside writers wait as contributions until your\nteam has looked at them.\n\n## Tasks\n\n### Write a draft\n\n1. Open the articles and choose **New**.\n2. Type the **{field:Content.title}** and a **{field:Content.name}** to find it by.\n3. Leave the **{field:Content.type}** as article.\n4. Write the **{field:Content.body}** and a short **{field:Content.description}**.\n5. Add the **{field:Content.author}**, a **{field:Content.category}** and any **{field:Content.tags}**.\n6. Save. The **{field:Content.status}** starts as draft, so nobody outside your team sees it yet.\n\n### Publish an article\n\n1. Open the article and set the **{field:Content.publish_date}**.\n2. Change the **{field:Content.status}** to published and save.\n3. If the article still has checks outstanding, the save is refused and tells you what is missing; look at its reviews, fix what they raise and try again.\n\n### See how an article was checked\n\nReviews are made by the checks your publication runs on an article, not by\nhand. Open the reviews to read them.\n\n1. Find the **{field:ContentReview.contentId}** you want and the **{field:ContentReview.kind}** of check.\n2. The **{field:ContentReview.status}** shows the outcome, and the **{field:ContentReview.summary}** says what was found.\n\n### Read an article's history\n\nVersions are saved for you each time an article is published or corrected,\nand when someone saves one on purpose. Open the versions to read them.\n\n1. Find the **{field:ContentVersion.contentId}** and look down the **{field:ContentVersion.version}** numbers.\n2. The **{field:ContentVersion.kind}** says why each one was saved and the **{field:ContentVersion.summary}** what changed.\n3. Open a version to see the **{field:ContentVersion.title}** and **{field:ContentVersion.status}** as they were when the version was saved.\n\n### Issue a correction\n\n1. Open the corrections and choose **New**.\n2. Pick the **{field:ContentCorrection.contentId}** and the **{field:ContentCorrection.correctionType}** of mistake.\n3. Put the old wording in **{field:ContentCorrection.incorrectText}** and the new wording in **{field:ContentCorrection.correctedText}**.\n4. Write a **{field:ContentCorrection.summary}** for your team and a **{field:ContentCorrection.publicNote}** for readers.\n5. Save. The **{field:ContentCorrection.status}** shows whether the correction is still a draft, has been published or was retracted.\n\n### Look at what readers sent in\n\nContributions arrive through your website or by email, not by hand in the\napp. Here you read them and leave notes for your team.\n\n1. Open the contributions and look at the **{field:ContentContribution.title}**, who it is **{field:ContentContribution.contributorName}** and the **{field:ContentContribution.channel}**.\n2. Open one to read the **{field:ContentContribution.body}**.\n3. Add your thoughts in **{field:ContentContribution.editorNotes}** and save.\n4. The **{field:ContentContribution.status}** shows where it stands, from submitted to approved, rejected or published.\n",
+        "fieldRefs": [
+          "Content.author",
+          "Content.body",
+          "Content.category",
+          "Content.description",
+          "Content.name",
+          "Content.publish_date",
+          "Content.status",
+          "Content.tags",
+          "Content.title",
+          "Content.type",
+          "ContentContribution.body",
+          "ContentContribution.channel",
+          "ContentContribution.contributorName",
+          "ContentContribution.editorNotes",
+          "ContentContribution.status",
+          "ContentContribution.title",
+          "ContentCorrection.contentId",
+          "ContentCorrection.correctedText",
+          "ContentCorrection.correctionType",
+          "ContentCorrection.incorrectText",
+          "ContentCorrection.publicNote",
+          "ContentCorrection.status",
+          "ContentCorrection.summary",
+          "ContentReview.contentId",
+          "ContentReview.kind",
+          "ContentReview.status",
+          "ContentReview.summary",
+          "ContentVersion.contentId",
+          "ContentVersion.kind",
+          "ContentVersion.status",
+          "ContentVersion.summary",
+          "ContentVersion.title",
+          "ContentVersion.version"
+        ]
+      },
+      "demo": {
+        "mode": "server",
+        "reasons": [
+          "Needs a server because its package does not build for a browser: node:crypto; documents/spider/files/images/ai SDK graph (crawlee, undici, googleapis, native addons); CJS parse error; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-chat, @happyvertical/smrt-images, @happyvertical/smrt-jobs, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3617, #3624, #3625, #3626, #3627, #3628)."
+        ]
+      }
+    }
+  ],
   "smrtDependencies": [
     "@happyvertical/smrt-agents",
     "@happyvertical/smrt-assets",
@@ -12687,5 +13933,29 @@
     "@happyvertical/smrt-prompts",
     "@happyvertical/smrt-tenancy",
     "@happyvertical/smrt-users"
-  ]
+  ],
+  "browser": {
+    "status": "server-only",
+    "issues": [
+      "#3615",
+      "#3617",
+      "#3624",
+      "#3625",
+      "#3626",
+      "#3627",
+      "#3628"
+    ],
+    "reason": "node:crypto; documents/spider/files/images/ai SDK graph (crawlee, undici, googleapis, native addons); CJS parse error",
+    "via": [
+      "@happyvertical/smrt-agents",
+      "@happyvertical/smrt-chat",
+      "@happyvertical/smrt-images",
+      "@happyvertical/smrt-jobs",
+      "@happyvertical/smrt-profiles",
+      "@happyvertical/smrt-reports",
+      "@happyvertical/smrt-secrets",
+      "@happyvertical/smrt-tenancy",
+      "@happyvertical/smrt-users"
+    ]
+  }
 }

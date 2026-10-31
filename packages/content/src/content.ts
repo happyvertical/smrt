@@ -1125,9 +1125,13 @@ export class Content
       const keys =
         exactKey === typeOnlyKey ? [exactKey] : [exactKey, typeOnlyKey];
       const placeholders = keys.map(() => '?').join(', ');
+      // Assignments are keyed per tenant (#3305 M1): only this content's
+      // tenant and the global layer govern it, as in resolveGovernance().
       const result = await this.db.query(
-        `SELECT 1 AS matched FROM content_governance_assignments WHERE key IN (${placeholders}) LIMIT 1`,
-        keys,
+        this.tenantId
+          ? `SELECT 1 AS matched FROM content_governance_assignments WHERE key IN (${placeholders}) AND (tenant_id = ? OR tenant_id IS NULL) LIMIT 1`
+          : `SELECT 1 AS matched FROM content_governance_assignments WHERE key IN (${placeholders}) AND tenant_id IS NULL LIMIT 1`,
+        this.tenantId ? [...keys, this.tenantId] : keys,
       );
       const rows = Array.isArray(result) ? result : (result?.rows ?? []);
       return rows.length > 0;
