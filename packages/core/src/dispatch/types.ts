@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import type { PostgresTimeoutConfig } from '../postgres-timeouts.js';
 import type { DispatchTenantScope } from './tenant-resolver.js';
 
 /**
@@ -163,6 +164,25 @@ export interface DispatchCleanupResult {
 /**
  * Options for creating a DispatchBus
  */
+/**
+ * Pool and connection options a {@link DispatchBusOptions} database config may
+ * carry. They are forwarded to `getDatabase()` exactly as given, so a bus
+ * built from a config honors the same pool cap and timeouts as the rest of the
+ * application instead of opening its own default-sized pool (#3046).
+ */
+export interface DispatchBusPoolOptions {
+  /** Caller-owned pool cache identity, forwarded as given. */
+  dbid?: string;
+  /** Maximum PostgreSQL pool clients. */
+  max?: number;
+  /** PostgreSQL pool acquisition timeout, in milliseconds. */
+  connectionTimeoutMillis?: number;
+  /** PostgreSQL idle-client timeout, in milliseconds. */
+  idleTimeoutMillis?: number;
+  /** Runtime PostgreSQL timeouts (#2377). */
+  timeouts?: PostgresTimeoutConfig;
+}
+
 export interface DispatchBusOptions {
   /**
    * Database configuration or existing interface.
@@ -182,15 +202,15 @@ export interface DispatchBusOptions {
    */
   db?:
     | DatabaseInterface
-    | {
+    | ({
         type: 'sqlite' | 'postgres' | 'json' | 'duckdb';
         url: string;
-      };
+      } & DispatchBusPoolOptions);
   /** Alias for db - persistence layer configuration */
   persistence?: {
     type: 'sql' | 'json' | 'duckdb';
     url: string;
-  };
+  } & DispatchBusPoolOptions;
   /**
    * Bounded retry of the startup bootstrap (opening the database and
    * `initialize()`) on a transient connection failure, such as PostgreSQL or

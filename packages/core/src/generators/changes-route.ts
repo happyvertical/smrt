@@ -37,7 +37,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { ensureChangeFeedTable } from '../change-feed.js';
 import { getAuthorizedTenantScopedChangesSince } from '../change-feed-authz.js';
-import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
+import {
+  applyPostgresRuntimeTimeouts,
+  resolveRuntimePoolDbid,
+} from '../postgres-timeouts.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -107,13 +110,13 @@ export function resolveChangesDb(
     let resolved = resolvedUrlDbs.get(dbOption);
     if (!resolved) {
       // Match SmrtClass's connection-sharing convention for file-backed URLs,
-      // including the runtime PostgreSQL timeout bounds and the dbid derived
-      // from the bounded URL (#2377).
+      // including the runtime PostgreSQL timeout bounds (#2377) and the shared
+      // pool-identity rule (#3046).
       const isMemoryDb = dbOption === ':memory:';
       const bounded = applyPostgresRuntimeTimeouts({ url: dbOption });
       resolved = getDatabase({
         ...bounded,
-        ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url}` }),
+        ...(isMemoryDb ? {} : { dbid: resolveRuntimePoolDbid(bounded) }),
       } as Parameters<typeof getDatabase>[0]) as Promise<DatabaseInterface>;
       resolvedUrlDbs.set(dbOption, resolved);
     }

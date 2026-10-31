@@ -12,6 +12,7 @@ import { getDatabase } from './host.js';
 import {
   applyPostgresRuntimeTimeouts,
   type PostgresTimeoutConfig,
+  resolveRuntimePoolDbid,
 } from './postgres-timeouts.js';
 
 /**
@@ -167,13 +168,14 @@ export async function resolveDatabase(
   // String URL shortcut
   if (typeof config === 'string') {
     const isMemoryDb = config === ':memory:';
-    // The dbid is derived from the *bounded* URL so two configurations that
-    // differ only in their PostgreSQL timeouts cannot share one pool (#2377).
+    // Pool identity follows the *bounded* configuration so configurations that
+    // differ in their PostgreSQL timeouts (#2377) or pool options (#3046)
+    // cannot share one pool.
     const bounded = applyPostgresRuntimeTimeouts({ url: config });
     return getDatabase({
       ...bounded,
       schemas,
-      ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${bounded.url}` }),
+      ...(isMemoryDb ? {} : { dbid: dbid ?? resolveRuntimePoolDbid(bounded) }),
     } as Parameters<typeof getDatabase>[0]);
   }
 
@@ -191,6 +193,9 @@ export async function resolveDatabase(
   return getDatabase({
     ...bounded,
     schemas,
-    ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${bounded.url}` }),
+    // An explicit `options.dbid` wins, then a `dbid` on the config itself,
+    // then the shared rule: none for PostgreSQL (the SDK keys the pool on its
+    // effective connection and pool options), `smrt:<url>` elsewhere (#3046).
+    ...(isMemoryDb ? {} : { dbid: dbid ?? resolveRuntimePoolDbid(bounded) }),
   } as Parameters<typeof getDatabase>[0]);
 }
