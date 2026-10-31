@@ -12,9 +12,10 @@
  * are built, each library that consumes another package's model scans that
  * model's source under its own package name (#3110), so the class appears once
  * under its declaring package and again under every consumer package. Those
- * listings name the same declaring source file and class, so they collapse to
- * a single declaration (#3296). Listings without an absolute source path cannot
- * be proven to be the same class and keep one declaration each.
+ * listings name the same declaring source file and class with the same fields,
+ * so they collapse to a single declaration (#3296). Listings without an
+ * absolute source path, or whose fields disagree, cannot be proven to be the
+ * same class and keep one declaration each.
  *
  * Pure and dependency-free: the scanner, the Vite plugin, the consumer plugin
  * and the prebuild CLI all import it.
@@ -30,8 +31,9 @@ export interface ObjectDeclaration {
   /** Interface name emitted for the class's row payload, e.g. `ProductData`. */
   interfaceName: string;
   /**
-   * The listing whose fields the declaration is rendered from: the first
-   * listing in deterministic qualified-identity order.
+   * The listing the declaration is rendered from: the first listing in
+   * deterministic qualified-identity order. Every collapsed listing has the
+   * same fields, so the choice never changes the rendered declaration.
    */
   obj: SmartObjectDefinition;
   /** Manifest key of {@link obj}. */
@@ -54,11 +56,31 @@ function isAbsoluteSourcePath(filePath: string): boolean {
   return filePath.startsWith('/') || /^[A-Za-z]:\//.test(filePath);
 }
 
+/** JSON with object keys sorted at every depth, for structural comparison. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort(compareText)
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 /**
  * The identity of the class a manifest listing describes.
  *
  * Two listings are the same class only when they name the same class in the
- * same absolute declaring source file. A relative `filePath` is relative to
+ * same absolute declaring source file AND describe the same fields. A path is
+ * only machine-local evidence (separately built packages can share a
+ * `/app/src/...` layout), so the field shape the declaration is rendered from
+ * must agree too: listings that collapse always render identical
+ * declarations, and a stale or unrelated listing stays separate instead of
+ * silently supplying (or losing) fields. A relative `filePath` is relative to
  * whichever root scanned it, so two equal relative paths from different
  * packages may be different files; such listings fall back to their qualified
  * name (or manifest key), which keeps them distinct.
@@ -70,7 +92,7 @@ export function objectDeclarationIdentity(
   const filePath =
     typeof obj.filePath === 'string' ? normalizeSourcePath(obj.filePath) : '';
   if (filePath && isAbsoluteSourcePath(filePath)) {
-    return `source\0${filePath}\0${obj.className}`;
+    return `source\0${filePath}\0${obj.className}\0${canonicalJson(obj.fields ?? {})}`;
   }
   return `listing\0${obj.qualifiedName || manifestKey}`;
 }

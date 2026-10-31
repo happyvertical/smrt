@@ -266,6 +266,36 @@ describe('objectDeclarationIdentity / selectObjectDeclarations (#3296)', () => {
     );
   });
 
+  it('keeps same-path listings apart when their fields disagree (separate builds sharing a path layout, or a stale listing)', () => {
+    expect(
+      selectObjectDeclarations(
+        manifestOf({
+          '@a/x:LicenseSale': licenseSaleListing('@a/x'),
+          '@b/y:LicenseSale': {
+            ...licenseSaleListing('@b/y'),
+            fields: { title: { type: 'text', required: true } },
+          },
+        }),
+      ),
+    ).toHaveLength(2);
+    // Field key order is not part of the shape.
+    const listing = licenseSaleListing('@b/y');
+    expect(
+      selectObjectDeclarations(
+        manifestOf({
+          '@a/x:LicenseSale': licenseSaleListing('@a/x'),
+          '@b/y:LicenseSale': {
+            ...listing,
+            fields: {
+              amount: listing.fields.amount,
+              title: listing.fields.title,
+            },
+          },
+        }),
+      ),
+    ).toHaveLength(1);
+  });
+
   it('keeps listings apart when the source path is relative, missing, or names a different class', () => {
     const relative = (packageName: string) => ({
       ...licenseSaleListing(packageName),
