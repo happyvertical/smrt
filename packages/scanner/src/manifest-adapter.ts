@@ -917,7 +917,10 @@ export class ManifestAdapter {
    *    and type alias resolution (up to depth 5).
    * 4. **Numeric literal without annotation** — `version = 1` → `integer`.
    * 5. **Boolean literal without annotation** — `isRead = false` → `boolean`.
-   * 6. **Default** — falls back to `text`.
+   * 6. **Boolean `@field({ default })` with no annotation or initializer** —
+   *    `@field({ default: false }) archived;` → `boolean`, matching runtime
+   *    decorator-only inference (#4295; code step 3.7).
+   * 7. **Default** — falls back to `text`.
    *
    * @param field - The raw field definition to analyse.
    * @returns A {@link FieldTypeInference} describing the inferred type,
