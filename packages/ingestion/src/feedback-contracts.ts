@@ -1,5 +1,9 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { RoutingRule } from './feedback-dto.js';
+import type {
+  FeedbackReceipt,
+  RecordFeedbackInput,
+  RoutingRule,
+} from './feedback-dto.js';
 import type { IngestionScope } from './server.js';
 /** Trusted server configuration, never a selector supplied by a feedback caller. */
 export interface RoutingProjection {
@@ -43,6 +47,22 @@ export interface FeedbackConfiguration {
     itemId: string;
     operation: FeedbackOperation;
   }): Promise<boolean>;
+  /**
+   * Optional host hook run inside the transaction that stores an explicit
+   * judgment from `recordFeedback` (and its supersession of an earlier one),
+   * on the same executor (`db`), after the row is written and before the
+   * final `capture` recheck (#4522). A host writes its own activity entry
+   * here so it commits or rolls back with the judgment; a throw rolls the
+   * judgment back and `recordFeedback` rejects with it. Not called for an
+   * idempotent replay (already committed) or for observed owner events.
+   * `receipt` and `input` are copies; no other ingestion row may be written.
+   */
+  onRecorded?(input: {
+    db: DatabaseInterface;
+    scope: Readonly<IngestionScope>;
+    receipt: FeedbackReceipt;
+    input: RecordFeedbackInput;
+  }): Promise<void> | void;
   policy?: {
     /** Return current version and a human-readable routing preview; no mutation. */
     preview(input: {

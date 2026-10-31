@@ -111,6 +111,11 @@ export class IntakeFeedbackService {
       if (!Number.isSafeInteger(value) || value < 1 || value > max)
         throw new Error('Invalid feedback limits');
     if (
+      this.config.onRecorded !== undefined &&
+      typeof this.config.onRecorded !== 'function'
+    )
+      throw new Error('Invalid feedback hook');
+    if (
       !Number.isFinite(this.config.minimumSimilarity) ||
       this.config.minimumSimilarity < 0.2 ||
       this.config.minimumSimilarity > 1
@@ -555,10 +560,19 @@ export class IntakeFeedbackService {
           )
             throw new Error('Feedback instruction exceeds retrieval budget');
         }
+        const receipt = this.receipt(row);
+        // Same transaction and executor: the host's entry commits or rolls
+        // back with the judgment (#4522).
+        await this.config.onRecorded?.({
+          db: ctx.db,
+          scope: this.scope(),
+          receipt: structuredClone(receipt),
+          input: structuredClone(frozen),
+        });
         await this.authorize(ctx, 'capture');
         if (digest(routing) !== digest(this.routing(ctx)))
           throw new Error('Routing projection changed');
-        return this.receipt(row);
+        return receipt;
       },
     );
   }

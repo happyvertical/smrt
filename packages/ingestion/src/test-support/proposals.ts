@@ -2625,6 +2625,82 @@ export function proposalSuite(
         ).rows,
       ).toHaveLength(0);
     });
+    it('feedback onRecorded runs inside the judgment transaction and a throw rolls the judgment back (#4522)', async () => {
+      enableFeedback();
+      const fixture = await feedbackCase();
+      const seen: Array<Record<string, unknown>> = [];
+      options.feedback!.onRecorded = async ({
+        db: executor,
+        scope,
+        receipt,
+        input,
+      }) => {
+        const stored = (
+          await executor.query(
+            'SELECT id, supersedes_id FROM intake_feedback WHERE id=?',
+            receipt.id,
+          )
+        ).rows;
+        seen.push({
+          visible: stored.length,
+          supersedes: stored[0]?.supersedes_id ?? null,
+          kind: receipt.kind,
+          requestId: input.requestId,
+          tenant: scope.tenantId,
+        });
+      };
+      const input = {
+        ...fixture.binding,
+        judgment: 'incorrect' as const,
+        requestId: 'hooked',
+      };
+      const first = await service.recordFeedback(input);
+      expect(seen).toEqual([
+        {
+          visible: 1,
+          supersedes: null,
+          kind: 'interpretation',
+          requestId: 'hooked',
+          tenant,
+        },
+      ]);
+      // An idempotent replay is already committed: no second entry.
+      expect(await service.recordFeedback(input)).toEqual(first);
+      expect(seen).toHaveLength(1);
+      const count = async () =>
+        (await db.query('SELECT id FROM intake_feedback')).rows.length;
+      const before = await count();
+      options.feedback!.onRecorded = async () => {
+        throw new Error('Host audit unavailable');
+      };
+      const superseding = {
+        ...fixture.binding,
+        judgment: 'correct' as const,
+        requestId: 'superseding',
+        supersedesId: first.id,
+      };
+      await expect(service.recordFeedback(superseding)).rejects.toThrow(
+        'Host audit unavailable',
+      );
+      expect(await count()).toBe(before);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_feedback WHERE supersedes_id=?',
+            first.id,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      // The supersession itself runs inside the hooked transaction too.
+      seen.length = 0;
+      options.feedback!.onRecorded = async (event) => {
+        seen.push({ supersedes: event.input.supersedesId });
+      };
+      const second = await service.recordFeedback(superseding);
+      expect(second.id).not.toBe(first.id);
+      expect(seen).toEqual([{ supersedes: first.id }]);
+      expect(await count()).toBe(before + 1);
+    });
     it('feedback invalid learned lineage hides terminal proposal payload but preserves current-authorized durable outcome', async () => {
       enableFeedback();
       const training = await feedbackCase();

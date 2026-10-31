@@ -18,6 +18,15 @@ judgment. A second successor conflicts. Revised actions make old bindings
 ineligible. Approval and successful execution never imply that extracted fields
 are correct.
 
+Optional `feedback.onRecorded({ db, scope, receipt, input })` (#4522) runs
+inside the transaction that stores an explicit judgment, on the same executor,
+after the judgment row (and its `supersedesId` link) is written and before the
+final `capture` recheck. Write the host's own activity entry there: it commits
+or rolls back with the judgment, and a throw rolls the judgment back and
+rejects `recordFeedback` with that error. `receipt` and `input` are copies. It
+is not called for an idempotent replay (already committed) or for
+`observeFeedback`; like `policy.adopt`, it must write only host-owned rows.
+
 Decision and downstream execution facts are captured inside their owning
 transaction, keyed by immutable event ID and signal, when the configured capture
 authority allows the optional memory projection and it fits the configured byte
