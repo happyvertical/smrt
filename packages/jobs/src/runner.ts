@@ -114,6 +114,12 @@ export interface TaskRunnerConfig {
   idlePollInterval?: number;
   /** Heartbeat interval in milliseconds */
   heartbeatInterval?: number;
+  /**
+   * How often a running job's row is checked for cancellation, in
+   * milliseconds, so `JobExecutionContext.signal` can abort. Default 1000.
+   * One read-only query per active job per interval; no writes.
+   */
+  cancelPollInterval?: number;
   /** Maximum time to wait for jobs to complete on shutdown */
   shutdownTimeout?: number;
   /**
@@ -204,6 +210,17 @@ export class JobTimeoutError extends Error {
 }
 
 /**
+ * Abort reason of `JobExecutionContext.signal` when the job row was cancelled
+ * while its handler was running.
+ */
+export class JobCancelledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JobCancelledError';
+  }
+}
+
+/**
  * Default configuration
  */
 const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
@@ -214,6 +231,7 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   pollInterval: 1000,
   idlePollInterval: 0,
   heartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
+  cancelPollInterval: 1000,
   shutdownTimeout: 30000,
   staleJobThresholdMs: 90000,
   leaseTtlMs: DEFAULT_LEASE_TTL_MS,
@@ -251,6 +269,8 @@ export class TaskRunner extends EventEmitter {
   private lastRecoverySweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
+  /** Per-job cooperative cancellation controllers, alive while the job runs. */
+  private jobAborts = new Map<string, AbortController>();
   /** Over-claimed job ids whose release back to `pending` has not landed. */
   private unreleasedSurplus = new Set<string>();
   private pollTimer: NodeJS.Timeout | null = null;
@@ -671,8 +691,12 @@ export class TaskRunner extends EventEmitter {
     // until it fired and was swallowed by the settled race — timer-heap
     // pressure plus a delayed clean process exit.
     let timeoutHandle: NodeJS.Timeout | null = null;
+    let cancelPollHandle: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
+    this.jobAborts.set(jobId, abortController);
 
     try {
+      cancelPollHandle = this.startCancelPoll(job, abortController);
       const result = await this.runWithTimeout(job, (handle) => {
         timeoutHandle = handle;
       });
@@ -724,6 +748,8 @@ export class TaskRunner extends EventEmitter {
       }
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (cancelPollHandle) clearInterval(cancelPollHandle);
+      this.jobAborts.delete(jobId);
       this.activeJobs.delete(jobId);
     }
   }
@@ -773,12 +799,56 @@ export class TaskRunner extends EventEmitter {
     // 'fail' (default) and 'kill' (treated as 'fail'; see doc comment).
     const timeoutPromise = new Promise<never>((_, reject) => {
       const handle = setTimeout(() => {
-        reject(new JobTimeoutError(`Job timeout after ${job.timeout}ms`));
+        const timeoutError = new JobTimeoutError(
+          `Job timeout after ${job.timeout}ms`,
+        );
+        // Let the orphaned handler stop; the row is failed by the rejection.
+        const controller = job.id ? this.jobAborts.get(job.id) : undefined;
+        controller?.abort(timeoutError);
+        reject(timeoutError);
       }, job.timeout);
       captureHandle(handle);
     });
 
     return Promise.race([this.executeJob(job), timeoutPromise]);
+  }
+
+  /**
+   * Poll the owned row while its handler runs and abort the job's signal when
+   * it is observed as cancelled. Read-only; failures are ignored (the next tick
+   * retries). Returns an unref'd interval the caller must clear.
+   */
+  private startCancelPoll(
+    job: SmrtJob,
+    controller: AbortController,
+  ): NodeJS.Timeout | null {
+    const jobId = job.id;
+    const db = this.db;
+    if (!jobId || !db) return null;
+    let inFlight = false;
+    const handle = setInterval(() => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      void Promise.resolve()
+        .then(() =>
+          db.query(`SELECT status FROM _smrt_jobs WHERE id = ?`, jobId),
+        )
+        .then((res) => {
+          const status = (res?.rows?.[0] as { status?: string } | undefined)
+            ?.status;
+          if (status === 'cancelled' && !controller.signal.aborted) {
+            controller.abort(
+              new JobCancelledError(`Job cancelled: ${job.getDescription()}`),
+            );
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+        });
+    }, this.config.cancelPollInterval);
+    handle.unref();
+    return handle;
   }
 
   /**
@@ -1126,6 +1196,9 @@ export class TaskRunner extends EventEmitter {
     const context: JobExecutionContext = {
       job: jobContext,
       logger: contextLogger,
+      signal:
+        (job.id ? this.jobAborts.get(job.id)?.signal : undefined) ??
+        new AbortController().signal,
       event: async (input: JobEventInput) => {
         await this.appendJobEvent(job, input);
       },

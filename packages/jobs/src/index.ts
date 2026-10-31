@@ -151,6 +151,7 @@ export {
   createTaskRunner,
   getActiveJobExecutionContext,
   isRunnerExecutionContext,
+  JobCancelledError,
   JobTimeoutError,
   TaskRunner,
   type TaskRunnerConfig,

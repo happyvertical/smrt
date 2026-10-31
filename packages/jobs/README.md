@@ -142,7 +142,8 @@ async generate(options: Record<string, never>, context: JobExecutionContext) {
 
 Run a `TaskRunner` for the `mcp-tasks` queue in application deployments. Task
 cancellation is cooperative: the job row becomes cancelled immediately and a
-running handler must observe its context before doing further side effects.
+running handler must observe `context.signal` (an `AbortSignal` that aborts on
+cancellation, or on a `'fail'`/`'kill'` timeout) before doing further side effects.
 
 ### Liveness-safe job execution
 
