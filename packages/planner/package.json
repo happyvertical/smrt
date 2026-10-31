@@ -44,7 +44,7 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "node scripts/write-smrt-version.ts && node scripts/generate-catalog.ts && node scripts/package-app.ts && node scripts/build-mcp.ts && svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node ../../scripts/prune-svelte-package-artifacts.js dist && node scripts/bundle-core.ts dist",
+    "build": "node scripts/write-smrt-version.ts && node scripts/generate-catalog.ts && node scripts/package-app.ts && node scripts/build-mcp.ts && svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/bundle-core.ts dist && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "catalog:generate": "node scripts/generate-catalog.ts",
     "clean": "rm -rf dist app build .svelte-kit",
     "preview": "vite preview",
