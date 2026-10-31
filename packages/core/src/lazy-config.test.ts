@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type ConfigResolver,
+  type ConfigResolverContext,
+  createConfigResolverContext,
   getClassConfigResolvers,
   getConfigResolver,
   isLazyConfigSentinel,
   listConfigResolvers,
+  preferPersisted,
   registerConfigResolver,
   resetConfigResolvers,
   resolveLazyConfig,
@@ -69,7 +72,7 @@ describe('lazy-config', () => {
       registerConfigResolver('foo', () => 2);
 
       const resolver = getConfigResolver('foo');
-      expect(resolver?.()).toBe(2);
+      expect(resolver?.(createConfigResolverContext('test'))).toBe(2);
     });
   });
 
@@ -316,7 +319,7 @@ describe('lazy-config', () => {
         static configResolvers = { a: () => 1 };
       }
       const resolvers = getClassConfigResolvers(Foo);
-      expect(resolvers?.a?.()).toBe(1);
+      expect(resolvers?.a?.(createConfigResolverContext('test'))).toBe(1);
     });
 
     it('walks the prototype chain so subclasses inherit parent resolvers', () => {
@@ -330,8 +333,12 @@ describe('lazy-config', () => {
       }
 
       const resolvers = getClassConfigResolvers(Child);
-      expect(resolvers?.a?.()).toBe('parent-a');
-      expect(resolvers?.b?.()).toBe('child-b');
+      expect(resolvers?.a?.(createConfigResolverContext('test'))).toBe(
+        'parent-a',
+      );
+      expect(resolvers?.b?.(createConfigResolverContext('test'))).toBe(
+        'child-b',
+      );
     });
 
     it('lets subclass override parent resolver of the same name', () => {
@@ -343,7 +350,7 @@ describe('lazy-config', () => {
       }
 
       const resolvers = getClassConfigResolvers(Child);
-      expect(resolvers?.a?.()).toBe('child');
+      expect(resolvers?.a?.(createConfigResolverContext('test'))).toBe('child');
     });
 
     it('returns undefined when no resolvers declared anywhere', () => {
@@ -356,5 +363,171 @@ describe('lazy-config', () => {
       expect(getClassConfigResolvers(null)).toBeUndefined();
       expect(getClassConfigResolvers(42)).toBeUndefined();
     });
+  });
+});
+
+describe('resolver context and precedence (#2806)', () => {
+  afterEach(() => {
+    resetConfigResolvers();
+  });
+
+  it('passes the resolving instance identity and its own persisted value to class resolvers', async () => {
+    const seen: ConfigResolverContext[] = [];
+    const result = await resolveLazyConfig(
+      { ai: { apiKey: 'agent-a-key' }, other: 1 },
+      {
+        context: {
+          agentId: 'agent-a',
+          agentClass: '@acme/agents:Praeco',
+          tenantId: 'tenant-1',
+          scheduleId: 'schedule-a',
+          jobId: 'job-a',
+        },
+        classResolvers: {
+          ai: (context) => {
+            seen.push(context);
+            return undefined;
+          },
+          missing: (context) => {
+            seen.push(context);
+            return undefined;
+          },
+        },
+      },
+    );
+
+    expect(result.ai).toEqual({ apiKey: 'agent-a-key' });
+    expect(seen[0]).toMatchObject({
+      agentId: 'agent-a',
+      agentClass: '@acme/agents:Praeco',
+      tenantId: 'tenant-1',
+      scheduleId: 'schedule-a',
+      jobId: 'job-a',
+      key: 'ai',
+      path: ['ai'],
+      source: 'class',
+      hasPersisted: true,
+      persisted: { apiKey: 'agent-a-key' },
+    });
+    expect(seen[1]).toMatchObject({
+      key: 'missing',
+      hasPersisted: false,
+      persisted: undefined,
+    });
+    expect(Object.isFrozen(seen[0])).toBe(true);
+    expect(seen[0]).not.toBe(seen[1]);
+  });
+
+  it('builds an explicit context for code that invokes a looked-up resolver', async () => {
+    class Owner {
+      static configResolvers: Record<string, ConfigResolver> = {
+        who: ({ agentId, key, hasPersisted }) =>
+          `${key}:${agentId ?? 'none'}:${hasPersisted}`,
+      };
+    }
+    const who = getClassConfigResolvers(Owner)?.who;
+    expect(who?.(createConfigResolverContext('who'))).toBe('who:none:false');
+    expect(
+      who?.(createConfigResolverContext('who', { agentId: 'a1' }, 'mine')),
+    ).toBe('who:a1:true');
+    expect(Object.isFrozen(createConfigResolverContext('who'))).toBe(true);
+  });
+
+  it('keeps zero-argument resolvers source-compatible', async () => {
+    const legacy: ConfigResolver = () => 'live';
+    const result = await resolveLazyConfig(
+      { key: 'persisted' },
+      { classResolvers: { key: legacy } },
+    );
+    expect(result.key).toBe('live');
+  });
+
+  it('lets a resolver defer to the persisted value instead of clobbering it', async () => {
+    const fallback = vi.fn(() => ({ apiKey: 'deployment-default' }));
+    const ai = preferPersisted(fallback);
+
+    const own = await resolveLazyConfig(
+      { ai: { apiKey: 'agent-own' } },
+      { classResolvers: { ai } },
+    );
+    expect(own.ai).toEqual({ apiKey: 'agent-own' });
+    expect(fallback).not.toHaveBeenCalled();
+
+    const none = await resolveLazyConfig<Record<string, unknown>>(
+      {},
+      { classResolvers: { ai } },
+    );
+    expect(none.ai).toEqual({ apiKey: 'deployment-default' });
+
+    // A null persisted value is "absent" for the fill-in contract.
+    const nulled = await resolveLazyConfig(
+      { ai: null },
+      { classResolvers: { ai } },
+    );
+    expect(nulled.ai).toEqual({ apiKey: 'deployment-default' });
+  });
+
+  it('keeps each agent instance on its own value when one class resolver serves several agents', async () => {
+    // The anytown.ai#1087 shape: two agents of one class in one tenant, one
+    // with its own credential, one without. The resolver is chosen per
+    // instance from the context, never from a tenant-wide lookup.
+    const credentials = new Map([['agent-a', 'agent-a-key']]);
+    const ai: ConfigResolver = ({ agentId, hasPersisted }) =>
+      hasPersisted ? undefined : { apiKey: credentials.get(agentId ?? '') };
+    const [a, b] = await Promise.all([
+      resolveLazyConfig(
+        { ai: { apiKey: 'agent-a-persisted' } },
+        {
+          context: { agentId: 'agent-a', tenantId: 't' },
+          classResolvers: { ai },
+        },
+      ),
+      resolveLazyConfig<Record<string, unknown>>(
+        {},
+        {
+          context: { agentId: 'agent-b', tenantId: 't' },
+          classResolvers: { ai },
+        },
+      ),
+    ]);
+    expect(a.ai).toEqual({ apiKey: 'agent-a-persisted' });
+    expect(b.ai).toEqual({ apiKey: undefined });
+  });
+
+  it('passes the context and location to named sentinel resolvers', async () => {
+    const seen: ConfigResolverContext[] = [];
+    registerConfigResolver('storage', (context) => {
+      seen.push(context);
+      return `bucket-for-${context.agentId}`;
+    });
+    const result = await resolveLazyConfig(
+      { nested: { primary: { $env: 'storage' } } },
+      { context: { agentId: 'agent-z' } },
+    );
+    expect(result.nested).toEqual({ primary: 'bucket-for-agent-z' });
+    expect(seen[0]).toMatchObject({
+      agentId: 'agent-z',
+      key: 'storage',
+      path: ['nested', 'primary'],
+      source: 'sentinel',
+      hasPersisted: false,
+    });
+  });
+
+  it('gives class resolvers the sentinel-resolved persisted value', async () => {
+    registerConfigResolver('live', () => 'resolved-live');
+    let persisted: unknown;
+    await resolveLazyConfig(
+      { key: { $env: 'live' } },
+      {
+        classResolvers: {
+          key: (context) => {
+            persisted = context.persisted;
+            return undefined;
+          },
+        },
+      },
+    );
+    expect(persisted).toBe('resolved-live');
   });
 });
