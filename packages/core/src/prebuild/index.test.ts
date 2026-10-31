@@ -171,8 +171,12 @@ describe('generateDeclarations', () => {
     const clientDecl = readFileSync(join(outDir, 'smrt-client.d.ts'), 'utf-8');
     expect(clientDecl).toContain("declare module '@smrt/client'");
     // Client interface derives CRUD operations keyed by unique collection name.
-    expect(clientDecl).toContain('"articles": CrudOperations<ArticleData>;');
-    expect(clientDecl).toContain('"authors": CrudOperations<AuthorData>;');
+    expect(clientDecl).toContain(
+      '"articles": CrudOperations<import(\'./smrt-objects\').ArticleData>;',
+    );
+    expect(clientDecl).toContain(
+      '"authors": CrudOperations<import(\'./smrt-objects\').AuthorData>;',
+    );
     expect(clientDecl).toContain('error?: string | SmrtClientFailure;');
     expect(clientDecl).toContain('code?: string;');
 
@@ -204,7 +208,7 @@ describe('generateDeclarations', () => {
     const clientDecl = readFileSync(join(outDir, 'smrt-client.d.ts'), 'utf-8');
     const webDecl = readFileSync(join(outDir, 'smrt-web.d.ts'), 'utf-8');
     expect(clientDecl).toContain(
-      '"audit-events": CrudOperations<AuditEventData>;',
+      '"audit-events": CrudOperations<import(\'./smrt-objects\').AuditEventData>;',
     );
     expect(webDecl).toContain('"audit-events": SmrtWebCollectionDefinition<');
     // #2046 widened field metadata — keep the physical d.ts aligned with the
@@ -320,13 +324,13 @@ describe('generateDeclarations', () => {
 
     expect(collectionFirstClient).toBe(modelFirstClient);
     expect(collectionFirstClient).toContain(
-      '"agreementExecutions": CrudOperations<AgreementExecutionData>;',
+      '"agreementExecutions": CrudOperations<import(\'./smrt-objects\').AgreementExecutionData>;',
     );
     expect(collectionFirstClient).toContain(
-      '"agreementExecutionCollection": CrudOperations<AgreementExecutionData>;',
+      '"agreementExecutionCollection": CrudOperations<import(\'./smrt-objects\').AgreementExecutionData>;',
     );
     expect(collectionFirstClient).not.toContain(
-      '"agreementExecutions": CrudOperations<AgreementExecutionCollectionData>;',
+      '"agreementExecutions": CrudOperations<import(\'./smrt-objects\').AgreementExecutionCollectionData>;',
     );
     expect(objectTypes).toMatch(
       /export interface AgreementExecutionData \{[\s\S]*status: string;[\s\S]*amount: number;[\s\S]*\}/,
@@ -448,10 +452,10 @@ describe('generateDeclarations', () => {
     // shared endpoint carries the union. Under the old insertion-order
     // last-writer-wins the reversed manifest dropped `update`.
     expect(forwardClient).toContain(
-      '"sharedRecords": Pick<CrudOperations<BaseRecordData>, "list" | "get" | "create" | "update">;',
+      '"sharedRecords": Pick<CrudOperations<import(\'./smrt-objects\').BaseRecordData>, "list" | "get" | "create" | "update">;',
     );
     expect(forwardClient).toContain(
-      '"childRevision": Pick<CrudOperations<ChildRevisionData>, "list" | "get" | "create" | "update">;',
+      '"childRevision": Pick<CrudOperations<import(\'./smrt-objects\').ChildRevisionData>, "list" | "get" | "create" | "update">;',
     );
   });
 
@@ -505,7 +509,7 @@ describe('generateDeclarations', () => {
       '"secrets": {\n      reveal(options: { token: string }): Promise<any>;\n    };',
     );
     expect(clientDeclaration).not.toContain(
-      '"secrets": CrudOperations<SecretData>',
+      '"secrets": CrudOperations<import(\'./smrt-objects\').SecretData>',
     );
   });
 

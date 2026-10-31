@@ -5,16 +5,18 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  createObjectDeclarationIndex,
+  type ObjectDeclarationIndex,
+  warnObjectDeclarationCollisions,
+} from '../manifest/object-declarations.js';
 import type { SmartObjectManifest } from '../scanner/types';
 import {
   renderApiClientCrudType,
   renderApiClientCustomMethodParameters,
   selectApiClientEntries,
 } from '../vite-plugin/api-client-entries.js';
-import {
-  orderedManifestObjectEntries,
-  selectWebCollectionEntries,
-} from '../vite-plugin/web-collections.js';
+import { selectWebCollectionEntries } from '../vite-plugin/web-collections.js';
 
 export interface PrebuildOptions {
   /** Path to manifest file or manifest object */
@@ -57,12 +59,17 @@ export async function generateDeclarations(
 
   console.log(`[smrt:prebuild] Generating declarations to ${fullOutDir}`);
 
+  // One declaration selection (and one set of names) for every file, so a
+  // reference in smrt-client/smrt-web always names a declared interface.
+  const declarations = createObjectDeclarationIndex(manifest);
+  warnObjectDeclarationCollisions(declarations, console.warn);
+
   if (includeObjectTypes) {
-    await generateObjectTypeDeclarations(manifest, fullOutDir);
+    await generateObjectTypeDeclarations(declarations, fullOutDir);
   }
 
   if (includeVirtualModules) {
-    await generateVirtualModuleDeclarations(manifest, fullOutDir);
+    await generateVirtualModuleDeclarations(manifest, declarations, fullOutDir);
   }
 
   console.log(
@@ -74,16 +81,17 @@ export async function generateDeclarations(
  * Generate TypeScript interfaces for SMRT objects
  */
 async function generateObjectTypeDeclarations(
-  manifest: SmartObjectManifest,
+  declarations: ObjectDeclarationIndex,
   outDir: string,
 ): Promise<void> {
   const interfaces: string[] = [];
 
-  // Generate interfaces for each discovered SMRT object. Manifest key order
+  // Generate one interface per discovered SMRT class. Manifest key order
   // follows scan/discovery order, which is not stable across runs (#2749),
-  // so sort deterministically before emitting.
-  const sortedObjectEntries = orderedManifestObjectEntries(manifest);
-  for (const [_objectName, objectMeta] of sortedObjectEntries) {
+  // and an aggregated manifest can list one class under several packages
+  // (#3296); the shared selection sorts deterministically and collapses those
+  // listings to one declaration.
+  for (const { interfaceName, obj: objectMeta } of declarations.declarations) {
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
 
@@ -99,7 +107,7 @@ async function generateObjectTypeDeclarations(
       propertyLines.push(`  ${fieldName}${optional}: ${type};`);
     }
 
-    const interfaceDef = `export interface ${objectMeta.className}Data {
+    const interfaceDef = `export interface ${interfaceName} {
 ${propertyLines.join('\n')}
 }`;
     interfaces.push(interfaceDef);
@@ -124,6 +132,7 @@ ${interfaces.join('\n\n')}
  */
 async function generateVirtualModuleDeclarations(
   manifest: SmartObjectManifest,
+  declarations: ObjectDeclarationIndex,
   outDir: string,
 ): Promise<void> {
   // Generate manifest module declaration
@@ -176,8 +185,10 @@ declare module '@smrt/manifest' {
   const apiClientInterface = selectApiClientEntries(manifest)
     .map(({ clientKey, dataInterfaceName, crudMethods, customMethods }) => {
       const overriddenMethods = customMethods.map(({ name }) => name);
+      // The row interfaces live in smrt-objects.d.ts; an ambient module must
+      // import them, a bare name does not resolve here.
       const crudType = renderApiClientCrudType(
-        dataInterfaceName,
+        `import('./smrt-objects').${dataInterfaceName}`,
         crudMethods,
         overriddenMethods,
       );
@@ -289,12 +300,12 @@ declare module '@smrt/mcp' {
   export default createMCPServer;
 }`;
 
-  // Generate types module declaration with object imports. Sorted for the
-  // same reason as generateObjectTypeDeclarations (#2749).
-  const objectImports = orderedManifestObjectEntries(manifest)
+  // Generate types module declaration with object imports. Same selection as
+  // generateObjectTypeDeclarations (#2749, #3296): one alias per class.
+  const objectImports = declarations.declarations
     .map(
-      ([, obj]) =>
-        `  export type ${obj.className}Data = import('./smrt-objects').${obj.className}Data;`,
+      ({ interfaceName }) =>
+        `  export type ${interfaceName} = import('./smrt-objects').${interfaceName};`,
     )
     .join('\n');
 
@@ -323,7 +334,7 @@ ${objectImports}
   const webCollectionEntries = selectWebCollectionEntries(manifest)
     .map(
       ({ collection, obj }) =>
-        `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('./smrt-objects').${obj.className}Data>;`,
+        `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('./smrt-objects').${declarations.interfaceNameFor(obj)}>;`,
     )
     .join('\n');
 
