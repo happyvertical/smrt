@@ -100,38 +100,42 @@ console.log('core ok');`,
     { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let output = '';
-  const url = await new Promise((accept, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`kitchen did not start:\n${output}`)),
-      90_000,
-    );
-    const onData = (chunk) => {
-      output += chunk;
-      const match = /Open (http:\/\/\S+)/.exec(output);
-      if (match) {
-        clearTimeout(timer);
-        accept(match[1]);
-      }
-    };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-    child.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`kitchen exited (${code}) before listening:\n${output}`));
-    });
-  });
   try {
-    const page = await fetch(new URL(url).origin + '/');
+    const url = await new Promise((accept, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`kitchen did not start:\n${output}`)),
+        90_000,
+      );
+      const onData = (chunk) => {
+        output += chunk;
+        const match = /Open (http:\/\/\S+)/.exec(output);
+        if (match) {
+          clearTimeout(timer);
+          accept(match[1]);
+        }
+      };
+      child.stdout.on('data', onData);
+      child.stderr.on('data', onData);
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(
+          new Error(`kitchen exited (${code}) before listening:\n${output}`),
+        );
+      });
+    });
+    const page = await fetch(`${new URL(url).origin}/`);
     const html = await page.text();
     if (page.status !== 200 || !html.includes('<html')) {
       fail(`kitchen served ${page.status} for the planner app`);
     }
   } finally {
-    child.kill('SIGTERM');
-    await new Promise((accept) => {
-      if (child.exitCode !== null) accept();
-      else child.on('exit', accept);
-    });
+    // Every path, a start timeout included, stops the server before the
+    // fixture it serves from is removed.
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((accept) => child.once('exit', accept));
+      child.kill('SIGTERM');
+      await exited;
+    }
   }
   console.log(`✓ smrt kitchen runs the packed planner ${tarball}`);
 } finally {
