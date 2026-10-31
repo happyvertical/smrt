@@ -1583,20 +1583,65 @@ describe('release gate and discard guard', () => {
     ).toBe(edited.revisionId);
   });
 
-  it('drops a carried finding when its material is removed', async () => {
+  it('never drops a finding on rename, copy or removal; only a guardian resolution clears it', async () => {
     const s = await setup();
     const c = await s.course();
     const lessonA = (await s.read(c.courseId, c.headRevisionId)).revision
       .sections[0].lessons[0].id;
-    await s.review(c.courseId, c.headRevisionId, [
+    const first = await s.review(c.courseId, c.headRevisionId, [
       s.finding(
         { kind: 'lesson-revision', id: lessonA, field: 'body' },
         { humanVerificationRequired: true },
       ),
     ]);
-    const removed = await s.save(
-      c.courseId,
+    const findingId = first.sections.generalLevel.findings[0].id;
+    const attempt = async (
+      sections: unknown,
+      expected: string,
+    ): Promise<string> => {
+      const saved = await s.save(
+        c.courseId,
+        expected,
+        sections as never,
+        s.agent,
+      );
+      await s.review(c.courseId, saved.revisionId, [], {}, s.agent);
+      await expect(
+        s.release(c.courseId, saved.revisionId, s.agent),
+      ).rejects.toMatchObject({ reason: 'unresolved-findings' });
+      return saved.revisionId;
+    };
+    // Rename the lessonKey with identical content.
+    const renamed = await attempt(
+      [
+        {
+          sectionKey: 'unit-1',
+          title: 'Unit 1',
+          lessons: [
+            {
+              lessonKey: 'a-renamed',
+              title: 'Lesson A',
+              body: 'Supplied body A',
+            },
+            { lessonKey: 'b', title: 'Lesson B' },
+          ],
+        },
+      ],
       c.headRevisionId,
+    );
+    // An omitted key is auto-derived.
+    const derived = await attempt(
+      [
+        {
+          sectionKey: 'unit-1',
+          title: 'Unit 1',
+          lessons: [{ title: 'Lesson A', body: 'Supplied body A' }],
+        },
+      ],
+      renamed,
+    );
+    // Removing the lesson entirely still does not clear it.
+    const removed = await attempt(
       [
         {
           sectionKey: 'unit-1',
@@ -1604,12 +1649,102 @@ describe('release gate and discard guard', () => {
           lessons: [{ lessonKey: 'b', title: 'Lesson B' }],
         },
       ],
+      derived,
+    );
+    // An agent cannot resolve it; a guardian can, though its target is gone.
+    await expect(
+      s.as(s.agent, () =>
+        s.service.resolveFinding({
+          ...s.agent,
+          courseId: c.courseId,
+          findingId,
+          resolution: 'dismissed',
+          requestKey: s.key('res'),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(HumanVerificationRequiredError);
+    await s.as(s.guardian, () =>
+      s.service.resolveFinding({
+        ...s.guardian,
+        courseId: c.courseId,
+        findingId,
+        resolution: 'dismissed',
+        note: 'Material removed',
+        requestKey: s.key('res'),
+      }),
+    );
+    expect((await s.release(c.courseId, removed, s.agent)).revisionId).toBe(
+      removed,
+    );
+  });
+
+  it('keeps a finding when a copied question is swapped in', async () => {
+    const s = await setup();
+    const content = {
+      prompt: 'What is 1/2 + 1/4?',
+      responseType: 'short-answer' as const,
+      answerKey: { acceptedAnswers: ['2/6'] },
+      provenance: 'supplied' as const,
+    };
+    const make = () =>
+      s.as(s.guardian, () =>
+        s.service.createQuestion({
+          ...s.guardian,
+          requestKey: s.key('q'),
+          content,
+        }),
+      );
+    const original = await make();
+    const copy = await make();
+    const head = await s.as(s.guardian, () =>
+      s.service.createCourse({
+        ...s.guardian,
+        requestKey: s.key('c'),
+        title: 'Q',
+        levelMin: 3,
+        levelMax: 4,
+      }),
+    );
+    const withQuestion = (questionRevisionId: string) =>
+      [
+        {
+          sectionKey: 'u',
+          title: 'U',
+          lessons: [
+            {
+              lessonKey: 'w',
+              title: 'Worksheet',
+              lessonType: 'worksheet',
+              questions: [{ questionRevisionId }],
+            },
+          ],
+        },
+      ] as never;
+    const one = await s.save(
+      head.courseId,
+      head.headRevisionId,
+      withQuestion(original.headRevisionId),
+    );
+    await s.review(head.courseId, one.revisionId, [
+      s.finding(
+        {
+          kind: 'question-revision',
+          id: original.headRevisionId,
+          field: 'answerKey',
+        },
+        { concern: 'answer-key', humanVerificationRequired: true },
+      ),
+    ]);
+    const swapped = await s.save(
+      head.courseId,
+      one.headRevisionId,
+      withQuestion(copy.headRevisionId),
       s.agent,
     );
-    await s.review(c.courseId, removed.revisionId, [], {}, s.agent);
-    expect(
-      (await s.release(c.courseId, removed.revisionId, s.agent)).revisionId,
-    ).toBe(removed.revisionId);
+    await s.review(head.courseId, swapped.revisionId, [], {}, s.agent);
+    await expect(
+      s.release(head.courseId, swapped.revisionId, s.agent),
+    ).rejects.toMatchObject({ reason: 'unresolved-findings' });
   });
 
   it('keeps withholding a personal-use lesson body after a re-save without a licence', async () => {
@@ -1642,7 +1777,12 @@ describe('release gate and discard guard', () => {
       head.headRevisionId,
       lesson('personal-use-copy') as never,
     );
-    const two = await s.save(head.courseId, one.revisionId, lesson() as never);
+    // A rename with no licence keeps the restriction too.
+    const renamed = lesson().map((section) => ({
+      ...section,
+      lessons: section.lessons.map((l) => ({ ...l, lessonKey: 'p-renamed' })),
+    }));
+    const two = await s.save(head.courseId, one.revisionId, renamed as never);
     const job = await s.request({
       courseId: head.courseId,
       headRevisionId: two.revisionId,

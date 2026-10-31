@@ -62,10 +62,11 @@ resolve a `humanVerificationRequired` finding.
 `createReviewBackedReleaseGate()` (the service default) makes a revision releasable
 only when its latest review is for that revision, is the draft head, has no marker,
 a matching digest, and no unresolved blocking or human-verification finding on
-any review of it (a newer or empty review never hides one) or carried from an
-ancestor revision's reviews by stable identity (lessonKey, question identity,
-course field) regardless of edits; removed material drops it, and only
-`resolveFinding` clears one; otherwise `ReviewNotCurrentError.reason` is `no-review`, `outdated`,
+any review of it or of any ancestor revision (a newer or empty review never hides
+one). Nothing drops a finding automatically: not an edit, rename, copied question
+or removal of its target. Only `resolveFinding` clears one (a guardian can, even
+when the target is gone; a delegated agent cannot resolve human-verification
+findings); otherwise `ReviewNotCurrentError.reason` is `no-review`, `outdated`,
 `context-mismatch` or `unresolved-findings`. A plain `CourseAuthoringService`
 without a gate still fails closed. `createCourseReferenceGuard(extra)` blocks
 discard for review and generation rows; pass variant guards through `extra`.

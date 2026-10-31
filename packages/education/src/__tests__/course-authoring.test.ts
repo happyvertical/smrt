@@ -1366,6 +1366,77 @@ describe('CourseAuthoringService', () => {
     });
   });
 
+  it('keeps a restricted lesson licence across rename, omitted key and remove-then-re-add', async () => {
+    const s = await setup();
+    const head = await s.create();
+    const body = 'Purchased workbook text';
+    const state = (courseId: string) =>
+      s.as(s.guardian, () => s.service.getCourse({ ...s.guardian, courseId }));
+    const one = await s.save(head.courseId, head.headRevisionId, [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [
+          {
+            lessonKey: 'a',
+            title: 'A',
+            body,
+            licenseKind: 'personal-use-copy',
+          },
+        ],
+      },
+    ] as never);
+    // Rename the key with identical content and no licence.
+    const renamed = await s.save(head.courseId, one.headRevisionId, [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [{ lessonKey: 'z', title: 'A', body }],
+      },
+    ] as never);
+    expect((await state(head.courseId)).licenseKind).toBe('personal-use-copy');
+    // An omitted (auto-derived) key.
+    const derived = await s.save(head.courseId, renamed.headRevisionId, [
+      { sectionKey: 'u', title: 'U', lessons: [{ title: 'A', body }] },
+    ] as never);
+    expect((await state(head.courseId)).licenseKind).toBe('personal-use-copy');
+    // Remove in one revision, then re-add under the same key later.
+    const removed = await s.save(
+      head.courseId,
+      derived.headRevisionId,
+      s.lessons(['b', 'B']),
+    );
+    expect(await state(head.courseId)).toMatchObject({
+      licenseKind: 'own-work',
+    });
+    await s.save(head.courseId, removed.headRevisionId, [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [
+          { lessonKey: 'a', title: 'A again' },
+          { lessonKey: 'z', title: 'Different title', body },
+        ],
+      },
+    ] as never);
+    expect(await state(head.courseId)).toMatchObject({
+      licenseKind: 'personal-use-copy',
+      groupShareable: false,
+    });
+    // A novel lesson with new content still defaults to own-work.
+    const fresh = await s.create();
+    await s.save(fresh.courseId, fresh.headRevisionId, [
+      {
+        sectionKey: 'u',
+        title: 'U',
+        lessons: [
+          { lessonKey: 'n', title: 'N', body: 'Entirely original text' },
+        ],
+      },
+    ] as never);
+    expect((await state(fresh.courseId)).licenseKind).toBe('own-work');
+  });
+
   it('folds a reused asset licence across every revision regardless of row order', async () => {
     const port: CourseMaterialCopyPort = {
       async copy(executor, request) {

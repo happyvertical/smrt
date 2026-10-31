@@ -837,17 +837,11 @@ export class CourseAuthoringService {
         request.tenantId,
         String(parent.sections_json),
       );
-      const previousOwn = new Map<string, CourseLicenseKind>();
-      for (const [key, id] of previousByKey) {
-        const row = await tx.get('lesson_revisions', {
-          id,
-          tenant_id: request.tenantId,
-        });
-        previousOwn.set(
-          key,
-          (row?.own_license_kind || 'own-work') as CourseLicenseKind,
-        );
-      }
+      const history = await this.ownLicenceHistory(
+        tx,
+        request.tenantId,
+        request.courseId,
+      );
       const lessonRevisions = await LessonRevisionCollection.create({ db: tx });
       const licences: CourseLicenseKind[] = [];
       const sections: Array<{
@@ -869,11 +863,12 @@ export class CourseAuthoringService {
                 known,
               ),
             );
-          // A lesson's own licence never loosens across revisions of the same
-          // lessonKey; only removing the lesson lifts it. Materials add to it.
+          // A lesson's own licence never loosens: it folds every restriction the
+          // course ever recorded for this lessonKey or this content, so rename,
+          // omitted keys and remove-then-re-add keep it. Materials add to it.
           const ownLicense = mostRestrictiveLicense([
             lesson.fields.licenseKind,
-            previousOwn.get(lesson.lessonKey) ?? 'own-work',
+            ...history.for(lesson.lessonKey, lesson.fields),
           ]);
           const licenseKind = mostRestrictiveLicense([
             ownLicense,
@@ -998,6 +993,54 @@ export class CourseAuthoringService {
       if (row) result.set(String(row.lesson_key), id);
     }
     return result;
+  }
+
+  /**
+   * Restricted own licences recorded anywhere in the course history, indexed by
+   * lessonKey and by normalized body / title-and-body digest.
+   */
+  private async ownLicenceHistory(tx: Tx, tenantId: string, courseId: string) {
+    const byKey = new Map<string, CourseLicenseKind[]>();
+    const byContent = new Map<string, CourseLicenseKind[]>();
+    const add = (
+      map: Map<string, CourseLicenseKind[]>,
+      key: string,
+      kind: CourseLicenseKind,
+    ) => map.set(key, [...(map.get(key) ?? []), kind]);
+    const normalize = (value: string) =>
+      value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+    const contentKeys = (title: string, body: string) => {
+      const keys = [
+        groupSharingDigest(
+          canonical(['tb', normalize(title), normalize(body)]),
+        ),
+      ];
+      if (normalize(body))
+        keys.push(groupSharingDigest(canonical(['b', normalize(body)])));
+      return keys;
+    };
+    const rows = await tx.list('lesson_revisions', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    for (const row of rows) {
+      const kind = (row.own_license_kind || 'own-work') as CourseLicenseKind;
+      if (kind === 'own-work') continue;
+      add(byKey, String(row.lesson_key), kind);
+      for (const key of contentKeys(String(row.title), String(row.body)))
+        add(byContent, key, kind);
+    }
+    return {
+      for: (
+        lessonKey: string,
+        fields: { title: string; body: string },
+      ): CourseLicenseKind[] => [
+        ...(byKey.get(lessonKey) ?? []),
+        ...contentKeys(fields.title, fields.body).flatMap(
+          (key) => byContent.get(key) ?? [],
+        ),
+      ],
+    };
   }
 
   /** Assets this course already owns through earlier lesson revisions. */
