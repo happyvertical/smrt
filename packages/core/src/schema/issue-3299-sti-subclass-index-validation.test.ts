@@ -36,7 +36,10 @@ function def(
   } as SmartObjectDefinition;
 }
 
-function generate(children: Array<Record<string, unknown>>) {
+function generate(
+  children: Array<Record<string, unknown>>,
+  grandchildren: Array<[name: string, parentIndex: number]> = [],
+) {
   const objects: Record<string, SmartObjectDefinition> = {
     [`${PKG}:Base3299`]: def('Base3299', {
       tableStrategy: 'sti',
@@ -47,6 +50,9 @@ function generate(children: Array<Record<string, unknown>>) {
     const name = `Child${i}3299`;
     objects[`${PKG}:${name}`] = def(name, config, 'Base3299');
   });
+  for (const [name, parent] of grandchildren) {
+    objects[`${PKG}:${name}`] = def(name, {}, `Child${parent}3299`);
+  }
   const manifest: SmartObjectManifest = {
     version: '1.0.0',
     timestamp: 0,
@@ -122,6 +128,34 @@ describe('#3299 STI subclass-declared index validation', () => {
     expect(() =>
       generate([{ indexes: [index] }, { indexes: [index] }]),
     ).toThrow(/collides with a different index/);
+  });
+
+  it("copies a subclass unique to each class of the declaring class's subtree, never to siblings", () => {
+    const schema = generate(
+      [
+        {
+          indexes: [
+            { name: 'v3299_items_code_uidx', columns: ['code'], unique: true },
+          ],
+        },
+        {},
+      ],
+      [
+        ['Grand3299', 0],
+        ['Cousin3299', 1],
+      ],
+    );
+    const uniques = (schema?.indexes ?? []).filter((i) =>
+      i.name.startsWith('v3299_items_code_uidx'),
+    );
+    expect(uniques.map((i) => i.where).sort()).toEqual([
+      `_meta_type = '${PKG}:Child03299'`,
+      `_meta_type = '${PKG}:Grand3299'`,
+    ]);
+    const copy = uniques.find((i) => i.name !== 'v3299_items_code_uidx');
+    expect(copy?.name).toMatch(/^v3299_items_code_uidx_[0-9a-f]{10}$/);
+    expect(copy?.columns).toEqual(['code']);
+    expect(copy?.unique).toBe(true);
   });
 
   it('emits the subtype-scoped unique on PostgreSQL/SQLite and never widens it on DuckDB', () => {

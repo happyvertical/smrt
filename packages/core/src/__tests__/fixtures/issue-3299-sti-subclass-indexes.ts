@@ -44,6 +44,12 @@ export class Game3299 extends Event3299 {
   rampEventId: string = '';
 }
 
+/** Inherits Game3299's declaration through its own partial copy. */
+@smrt()
+export class PlayoffGame3299 extends Game3299 {
+  round: string = '';
+}
+
 @smrt()
 export class Meetup3299 extends Event3299 {
   rampEventId: string = '';
@@ -51,6 +57,9 @@ export class Meetup3299 extends Event3299 {
 
 class Games3299 extends SmrtCollection<Game3299> {
   static readonly _itemClass = Game3299;
+}
+class PlayoffGames3299 extends SmrtCollection<PlayoffGame3299> {
+  static readonly _itemClass = PlayoffGame3299;
 }
 class Meetups3299 extends SmrtCollection<Meetup3299> {
   static readonly _itemClass = Meetup3299;
@@ -86,7 +95,9 @@ export function runSti3299SubclassIndexes(engine: 'sqlite' | 'postgres'): void {
       const schema = sharedTableSchema();
       const legacy: SchemaDefinition = {
         ...schema,
-        indexes: schema.indexes.filter((i) => i.name !== STI_3299_INDEX),
+        indexes: schema.indexes.filter(
+          (i) => !i.name.startsWith(STI_3299_INDEX),
+        ),
       };
       const strategy = getDDLStrategy(engine);
       await target.query(`DROP TABLE IF EXISTS "${STI_3299_TABLE}"`);
@@ -130,10 +141,13 @@ export function runSti3299SubclassIndexes(engine: 'sqlite' | 'postgres'): void {
 
     it('adds the missing index through the normal migration diff, then converges', async () => {
       const statements = await pendingSql(db);
+      // The declared index plus the PlayoffGame3299 subtree copy.
       const create = statements.filter((sql) => sql.includes(STI_3299_INDEX));
-      expect(create).toHaveLength(1);
-      expect(create[0]).toMatch(/CREATE UNIQUE INDEX/i);
-      expect(create[0]).toMatch(/_meta_type/);
+      expect(create).toHaveLength(2);
+      for (const sql of create) {
+        expect(sql).toMatch(/CREATE UNIQUE INDEX/i);
+        expect(sql).toMatch(/_meta_type/);
+      }
       for (const sql of statements) await db.query(sql);
       expect(await pendingSql(db)).toEqual([]);
     });
@@ -151,6 +165,26 @@ export function runSti3299SubclassIndexes(engine: 'sqlite' | 'postgres'): void {
           slug: 'game-1-dup',
           title: 'Final again',
           rampEventId: 'ramp-1',
+          tenantId: TENANT_A,
+        }),
+      ).rejects.toThrow(/unique|duplicate/i);
+    });
+
+    it("enforces the declared key for the declaring class's own subclass rows", async () => {
+      const playoffs = await PlayoffGames3299.create({ db });
+      await playoffs.create({
+        slug: 'playoff-1',
+        title: 'Semi',
+        round: 'semi',
+        rampEventId: 'ramp-3',
+        tenantId: TENANT_A,
+      });
+      await expect(
+        playoffs.create({
+          slug: 'playoff-1-dup',
+          title: 'Semi again',
+          round: 'semi',
+          rampEventId: 'ramp-3',
           tenantId: TENANT_A,
         }),
       ).rejects.toThrow(/unique|duplicate/i);
@@ -199,7 +233,7 @@ export function runSti3299SubclassIndexes(engine: 'sqlite' | 'postgres'): void {
           );
         }
         const create = (await pendingSql(legacyDb)).filter((sql) =>
-          sql.includes(STI_3299_INDEX),
+          sql.includes(`"${STI_3299_INDEX}"`),
         );
         expect(create).toHaveLength(1);
         await expect(legacyDb.query(create[0])).rejects.toThrow(

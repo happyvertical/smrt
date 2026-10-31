@@ -190,9 +190,11 @@ inherit it). It goes through the same validation as a base declaration: known
 columns, the 63-byte name limit, and errors on a collision. A UNIQUE
 declaration is scoped to the declaring subtype with
 `WHERE _meta_type = '<qualified class>'`, so siblings sharing the column are
-not constrained. As with `@field({ unique })` on a descendant, it covers that
-class's rows, not its own descendants', and DuckDB/JSON skip it rather than
-widen it. A subclass UNIQUE with its own `where` is refused; declare a
+not constrained. As with `@field({ unique })` on a descendant, each class in
+the declaring class's own subtree gets a partial copy
+(`<declared name, cut to 52>_<10-hex digest>`), so uniqueness holds per
+concrete class there too, not across the subtree. DuckDB/JSON skip these
+rather than widen them. A subclass UNIQUE with its own `where` is refused; declare a
 combined predicate on the base. A plain subclass index stays unqualified, so
 polymorphic reads can use it. Columns are emitted exactly as declared and are
 never tenant-prefixed, as with explicit `conflictColumns`: put `tenant_id`

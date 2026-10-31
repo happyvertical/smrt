@@ -656,8 +656,10 @@ export class SchemaGenerator {
    * - a UNIQUE declaration is scoped to the declaring subtype with
    *   `WHERE _meta_type = '<qualified class>'`, so sibling subtypes that
    *   share the column are not constrained. Like `@field({ unique })` on a
-   *   descendant, it covers the declaring class's rows only, not its own
-   *   descendants'. A UNIQUE declaration that also carries its own `where` is
+   *   descendant, every class in the declaring class's own subtree gets its
+   *   own partial copy (`<declared name, cut>_<digest>`), so uniqueness holds
+   *   per concrete class there too, not across the subtree. A UNIQUE
+   *   declaration that also carries its own `where` is
    *   refused: the combined predicate has no faithful shape on engines without
    *   partial indexes, and the migration differ could not match it reliably;
    * - a plain index stays unqualified (its own `where`, if any, is kept) so
@@ -670,6 +672,7 @@ export class SchemaGenerator {
    *
    * @param declarations - descendant class (qualified) → its own `indexes`
    *   config, in any order; processed sorted by class name for determinism.
+   * @param subtreeOf - the qualified descendants of a class in this table.
    */
   private appendStiSubclassDeclaredIndexes(
     indexes: Array<{
@@ -681,6 +684,7 @@ export class SchemaGenerator {
     declarations: Array<{ className: string; indexes: unknown }>,
     columns: Record<string, unknown>,
     tableName: string,
+    subtreeOf: (className: string) => string[],
   ): void {
     const sorted = [...declarations].sort((a, b) =>
       a.className < b.className ? -1 : a.className > b.className ? 1 : 0,
@@ -692,9 +696,12 @@ export class SchemaGenerator {
           `@smrt({ indexes }) on "${className}" (STI table "${tableName}") must be an array of index declarations.`,
         );
       }
-      const scoped = declared.map((entry) => {
+      const subtree = [...new Set(subtreeOf(className))]
+        .filter((name) => name !== className)
+        .sort();
+      const scoped = declared.flatMap((entry) => {
         const spec = this.validateDeclaredIndex(entry, tableName);
-        if (spec.unique !== true) return spec;
+        if (spec.unique !== true) return [spec];
         if (spec.where !== undefined) {
           throw new Error(
             `Declared unique index "${spec.name}" on STI subclass "${className}" (table "${tableName}") ` +
@@ -702,10 +709,20 @@ export class SchemaGenerator {
               `_meta_type = '${className}'. Declare the combined index on the STI base instead.`,
           );
         }
-        return {
-          ...spec,
-          where: `_meta_type = ${quoteStringLiteral(className)}`,
-        };
+        return [
+          {
+            ...spec,
+            where: `_meta_type = ${quoteStringLiteral(className)}`,
+          },
+          // The declaring class's own descendants store their own
+          // discriminator; without a copy their rows would silently escape
+          // the declared key.
+          ...subtree.map((descendant) => ({
+            ...spec,
+            name: `${spec.name.slice(0, 52)}_${sha256Hex(`${descendant}|${spec.name}`).slice(0, 10)}`,
+            where: `_meta_type = ${quoteStringLiteral(descendant)}`,
+          })),
+        ];
       });
       this.appendDeclaredIndexes(indexes, scoped, columns, tableName);
     }
@@ -1826,6 +1843,7 @@ export class SchemaGenerator {
       })),
       columns,
       tableName,
+      (className) => ObjectRegistry.getDescendants(className),
     );
 
     // The default list page orders by created_at (#2363) — after the declared
@@ -2098,6 +2116,7 @@ export class SchemaGenerator {
       })),
       columns,
       tableName,
+      (className) => this.findDescendantsInManifest(className, manifest),
     );
 
     // The default list page orders by created_at (#2363) — after the declared
