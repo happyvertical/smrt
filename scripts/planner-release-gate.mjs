@@ -337,8 +337,10 @@ function frameworkChecks(tarballs, options, scratch) {
   return [
     {
       owner: 'framework',
-      // #2975: no control run. The canary installs only release tarballs and
-      // pinned tools, so a failure is this release's.
+      // #2975: no control run. Every smrt package comes from the release
+      // tarballs; third-party and SDK dependencies resolve live (with the
+      // repository's overrides), so a failure is this release's or a
+      // dependency published since the last green run.
       name: 'release consumer canary: an app installed from the release tarballs builds, registers, resolves schemas, typechecks, tests and migrates',
       run: () => runReleaseConsumerCanary({ tarballs }),
     },

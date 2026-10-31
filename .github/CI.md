@@ -511,8 +511,11 @@ smrt-vitest and smrt-cli from the release tarballs (every release package
 overridden to its tarball) and must build, import its generated
 `.smrt/register.js` under plain Node and under smrt-vitest with every class
 under its declaring package and schemas resolved, typecheck, and run
-`smrt db:migrate` / `db:status`. It has no control run. It fails on
-0.51.8–0.51.10 (#2970) and passes on 0.51.11. Each check is retried once; the job summary and error
+`smrt db:migrate` / `db:status --json` (no drift, the expected tables
+created). Third-party and SDK dependencies resolve live with the repository's
+overrides and release-age exclusions, and there is no control run, so a
+failure is this release's or a newly published dependency's. It fails on
+0.51.8 and 0.51.10 (#2970) and passes on 0.51.11. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
 `publish-release` needs it to succeed. When the generated app fails, the gate
 repeats the apply as the published release generates it (the published CLI,

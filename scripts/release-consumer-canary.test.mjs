@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url';
 import {
   CANARY_PACKAGES,
   FIXTURE,
-  catalogVersion,
+  checkMigrationStatus,
   consumerManifests,
   parseArgs,
+  workspacePin,
   yamlBlock,
 } from './release-consumer-canary.mjs';
 
@@ -71,7 +72,7 @@ test('pins tools to the repository versions and approves the same install script
   }
   assert.equal(
     packageJson.devDependencies['@types/node'],
-    catalogVersion(workspaceYaml, '@types/node'),
+    workspacePin(workspaceYaml, '@types/node'),
   );
   assert.ok(packageJson.devDependencies['@types/node']);
   const approved = yamlBlock(workspaceYaml, 'allowBuilds');
@@ -89,11 +90,11 @@ test('refuses a release that lacks a package the canary installs', () => {
   );
 });
 
-test('reads catalog pins and top-level YAML blocks', () => {
+test('reads workspace pins and top-level YAML blocks', () => {
   const yaml = "catalog:\n  '@types/node': 24.1.0\n  vite: ^8.0.0\n\nallowBuilds:\n  esbuild: true\n  sharp: true\n\nother:\n  x: 1\n";
-  assert.equal(catalogVersion(yaml, '@types/node'), '24.1.0');
-  assert.equal(catalogVersion(yaml, 'vite'), '^8.0.0');
-  assert.equal(catalogVersion(yaml, 'missing'), undefined);
+  assert.equal(workspacePin(yaml, '@types/node'), '24.1.0');
+  assert.equal(workspacePin(yaml, 'vite'), '^8.0.0');
+  assert.equal(workspacePin(yaml, 'missing'), undefined);
   assert.deepEqual(yamlBlock(yaml, 'allowBuilds'), ['  esbuild: true', '  sharp: true']);
   assert.deepEqual(yamlBlock(yaml, 'absent'), []);
 });
@@ -129,5 +130,64 @@ test('the fixture is a consumer-shaped app: its own model, a consumed package, g
 test('the planner release gate runs the canary as a framework check', () => {
   const gate = readFileSync(join(root, 'scripts/planner-release-gate.mjs'), 'utf8');
   assert.match(gate, /import \{ runReleaseConsumerCanary \} from '\.\/release-consumer-canary\.mjs'/);
-  assert.match(gate, /owner: 'framework',[\s\S]{0,300}run: \(\) => runReleaseConsumerCanary\(\{ tarballs \}\)/);
+  assert.match(gate, /owner: 'framework',[\s\S]{0,800}run: \(\) => runReleaseConsumerCanary\(\{ tarballs \}\)/);
+});
+
+test('inherits the repository third-party overrides and release-age exclusions, never its workspace links', () => {
+  const { workspaceYaml: consumerYaml } = consumerManifests({
+    tarballs: releaseTarballs(),
+    rootPackageJson,
+    workspaceYaml,
+    template,
+  });
+  const overrides = yamlBlock(consumerYaml, 'overrides');
+  assert.ok(overrides.some((line) => line.startsWith("  '@types/node':")));
+  assert.ok(overrides.some((line) => /^ {2}'?follow-redirects@/.test(line)));
+  assert.ok(!overrides.some((line) => line.includes('workspace:')));
+  const smrt = overrides.filter((line) => line.includes('@happyvertical/smrt-'));
+  assert.ok(smrt.length > 0 && smrt.every((line) => line.includes("': 'file:")));
+  assert.deepEqual(
+    yamlBlock(consumerYaml, 'minimumReleaseAgeExclude'),
+    yamlBlock(workspaceYaml, 'minimumReleaseAgeExclude'),
+  );
+});
+
+function status(overrides = {}) {
+  return {
+    drift: [],
+    schemaContract: { ok: true },
+    migrations: {
+      failed: { total: 0 },
+      details: ['tag_aliases', 'tags', 'tree_nodes'].map((table) => ({
+        name: `create_table_${table}`,
+      })),
+    },
+    manifests: {
+      details: [
+        { objectNames: ['@happyvertical/smrt-tags:Tag'] },
+        { objectNames: ['TreeNode'] },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+test('db:status must show the expected tables migrated with no drift', () => {
+  assert.ok(checkMigrationStatus(`[smrt] log line\n${JSON.stringify(status())}`));
+  assert.throws(
+    () => checkMigrationStatus(JSON.stringify(status({ drift: [{ table: 'tags' }] }))),
+    /drift/,
+  );
+  assert.throws(
+    () =>
+      checkMigrationStatus(
+        JSON.stringify(status({ migrations: { failed: { total: 0 }, details: [] } })),
+      ),
+    /no applied create_table_tags migration/,
+  );
+  assert.throws(
+    () => checkMigrationStatus(JSON.stringify(status({ manifests: { details: [] } }))),
+    /manifests do not list Tag/,
+  );
+  assert.throws(() => checkMigrationStatus('no json'), /printed no JSON/);
 });
