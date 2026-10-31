@@ -87,6 +87,11 @@ export interface IntakeReviewHostOptions {
   onSplit?(itemId: string, revision: number): Promise<void>;
   /** Optional wakeup after a durable reviewer instruction has queued reinterpretation. */
   onInstruct?(itemId: string, revision: number): Promise<void>;
+  /**
+   * Optional wakeup after "Try again" has queued reinterpretation (#4504);
+   * `onInstruct` is called instead when this is omitted.
+   */
+  onRetry?(itemId: string, revision: number): Promise<void>;
 }
 
 /**
@@ -518,6 +523,21 @@ export function createIntakeReviewHost(
         throw error;
       }
       await options.onInstruct?.(input.itemId, result.revision);
+    },
+    async retry(input) {
+      let result: Awaited<ReturnType<typeof service.retryInterpretation>>;
+      try {
+        result = await service.retryInterpretation(input);
+      } catch (error) {
+        if (error instanceof ReviewerInstructionStaleError)
+          return { stale: true as const };
+        throw error;
+      }
+      await (options.onRetry ?? options.onInstruct)?.call(
+        options,
+        input.itemId,
+        result.revision,
+      );
     },
     ...(options.enableFeedback
       ? {

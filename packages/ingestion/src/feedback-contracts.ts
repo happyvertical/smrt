@@ -10,6 +10,13 @@ export interface RoutingProjection {
   /** Nonempty allowlist of top-level handler argsSchema properties. */
   fields: readonly string[];
 }
+/** Operations `FeedbackConfiguration.authorize` is asked about; `verify` since #4504. */
+export type FeedbackOperation =
+  | 'capture'
+  | 'retrieve'
+  | 'verify'
+  | 'suggest'
+  | 'adopt';
 export interface FeedbackConfiguration {
   version: string;
   maxExamples: number;
@@ -18,12 +25,23 @@ export interface FeedbackConfiguration {
   minimumSimilarity: number;
   /** Opt-in routing-only subsets. Omission retains exact full-argument matching. */
   routing?: readonly RoutingProjection[];
-  /** Live permission, same executor; host serializes grant changes at this boundary. */
+  /**
+   * Live permission, same executor; host serializes grant changes at this boundary.
+   *
+   * `retrieve` picks new examples (analysis time) and revalidates a selection
+   * at the provider boundary. `verify` re-checks stored lineage: the examples
+   * an existing generation was produced with, whenever its actions are read,
+   * reviewed or labelled (#4504). A host that switches learning off can refuse
+   * `retrieve` and still allow `verify`, so items analysed while learning was
+   * on stay loadable. Fail-safe for authorizers that predate `verify`: when
+   * `verify` returns `false` the same check is asked as `retrieve`, and only a
+   * refusal of both fails closed ("Feedback unavailable") as before.
+   */
   authorize(input: {
     db: DatabaseInterface;
     scope: Readonly<IngestionScope>;
     itemId: string;
-    operation: 'capture' | 'retrieve' | 'suggest' | 'adopt';
+    operation: FeedbackOperation;
   }): Promise<boolean>;
   policy?: {
     /** Return current version and a human-readable routing preview; no mutation. */

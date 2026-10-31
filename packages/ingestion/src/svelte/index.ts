@@ -6,6 +6,7 @@ export type {
   InboxEvidence,
   InboxState,
   IntakeReviewHost,
+  InterpretationRetryInput,
   ItemReviewView,
   LogicalSplitInput,
   PreviewRejection,

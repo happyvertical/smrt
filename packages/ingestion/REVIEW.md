@@ -363,6 +363,24 @@ streaming channel; status is read through the existing item/analysis APIs. The
 maintained fixture records the instruction durably and then runs the stages in
 the background so the browser proof exercises the in-place update.
 
+**Try again (#4504).** `retryInterpretation({itemId, attemptId,
+expectedRevision, requestId})` re-runs an item whose interpretation failed (the
+displayed generation is `provider_error`, or later work failed or never
+started) with no new instruction. It uses the same anchor, guards, `process`
+authority and fresh extraction plus interpretation as an instruction, carries
+the item's current configuration (an instruction or split already in effect
+included) unchanged, and records nothing in the instruction history. Superseded
+anchors, work in flight and items that did not fail throw
+`ReviewerInstructionStaleError`. A replay of the same intent (item, anchor,
+revision, `requestId`, actor) returns the first append under current `process`
+authority; the same `requestId` with another intent is a request conflict.
+`createIntakeReviewHost` exposes it as `IntakeReviewHost.retry` (stale resolves
+`{ stale: true }`) and wakes the worker through `onRetry`, else `onInstruct`.
+`ReviewView` draws a "Try again" button (`ingestion.tryAgain`) beside the
+instruction box when `host.retry` exists, the item is open, nothing is in
+flight and the interpretation failed; it binds like the instruction
+(`instruction.binding`, else the displayed generation).
+
 `feedback` is an optional explicit correctness callback, separate from approval
 choice and execution success. No learning, feedback storage or rule promotion is
 implemented by these components; #3676 owns those services. Do not pass feedback
@@ -585,6 +603,16 @@ model only, exactly as in `IntakeReview`.
   control is hidden in the workspace (`resolveInRow={false}`) so closing always
   goes through the item pane and advances.
 
+
+**List following and refresh (#4504).** Every listed row (other than the open
+item) whose entry shows a stage in flight is followed like an item left
+mid-stage, up to `WATCH_CAP` rows, `WATCH_LIMIT` reads per tick on the pane's
+backoff, so rows no longer keep "Interpreting…" until Refresh. Opt-in
+`listPollMs` on `IntakeWorkspace`/`IntakeInbox` also re-reads the listed page
+under its listed filter while any row is processing (skipped while a read or
+operation is pending or Load more appended pages). Both components export
+`refresh()` (`bind:this`), which re-reads the first page like the Refresh
+button and resolves `{ items, result: 'shown' | 'failed' | 'pending' }`.
 
 ## Maintained browser proof
 

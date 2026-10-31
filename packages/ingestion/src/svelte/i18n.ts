@@ -76,6 +76,7 @@ export const M = defineMessages({
   'ingestion.saveSplit': 'Save split and reprocess',
   'ingestion.instructions': 'Instructions for the assistant',
   'ingestion.reinterpret': 'Re-read with these instructions',
+  'ingestion.tryAgain': 'Try again',
   'ingestion.reinterpreting': 'Reinterpreting…',
   'ingestion.appliedInstruction':
     'Suggestions were produced under this instruction',

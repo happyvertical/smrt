@@ -10,7 +10,7 @@ import type {
 } from '../../review-dto.js';
 import { M } from '../i18n.js';
 import { uploadRefusalMessage } from '../upload-refusal.js';
-import { evidenceUrl } from '../view-utils.js';
+import { entryStatus, evidenceUrl } from '../view-utils.js';
 export interface Props {
   host: IntakeReviewHost;
   onselect?: (itemId: string) => void;
@@ -47,6 +47,13 @@ export interface Props {
    * only: the host's upload still enforces its own allowlist.
    */
   accept?: string;
+  /**
+   * Re-read the listed page on this interval (ms) while any displayed row is
+   * still processing, under the filter it was listed with. Off when absent
+   * (as before). Skipped while a read or operation is pending and while Load
+   * more has appended pages, which a re-read would drop.
+   */
+  listPollMs?: number;
 }
 let {
   host,
@@ -59,6 +66,7 @@ let {
   resolveInRow = true,
   stamp,
   accept,
+  listPollMs,
 }: Props = $props();
 const { t } = useI18n();
 const states: InboxState[] = [
@@ -83,7 +91,9 @@ let items = $state<InboxEntry[]>([]),
   // The host's reviewer-facing reason for refusing the last upload, if any.
   refusal = $state<string>();
 let alive = true,
-  epoch = 0;
+  epoch = 0,
+  // Load more appended a page to the displayed rows.
+  appended = false;
 let uploadRequestId: string | undefined;
 // The filter the displayed rows were listed under (the inputs may have been
 // edited since); `patch` keeps a row only while it still matches it.
@@ -132,6 +142,38 @@ export function patch(entry: InboxEntry, keep = false): InboxEntry[] {
   return $state.snapshot(items) as InboxEntry[];
 }
 /**
+ * Re-read the first page, like Refresh (the filter as the controls show it).
+ * Resolves with the displayed rows and `shown`, `failed` (the list failed
+ * closed), or `pending` when a read or operation was in flight (nothing was
+ * read) or a newer read superseded this one.
+ */
+export async function refresh(): Promise<{
+  items: InboxEntry[];
+  result: 'shown' | 'failed' | 'pending';
+}> {
+  const read = pending ? 'superseded' : await load();
+  return {
+    items: $state.snapshot(items) as InboxEntry[],
+    result: read === 'superseded' ? 'pending' : read,
+  };
+}
+// Follow processing rows by re-reading the listed page (opt-in, #4504).
+$effect(() => {
+  const every = listPollMs;
+  if (!every || !Number.isFinite(every) || every <= 0) return;
+  const timer = setInterval(() => {
+    if (
+      !alive ||
+      pending ||
+      appended ||
+      !items.some((entry) => entryStatus(entry).kind === 'pending')
+    )
+      return;
+    void load(false, true);
+  }, every);
+  return () => clearInterval(timer);
+});
+/**
  * Append the next page, if any. Resolves with the displayed rows and what
  * happened: `appended` (or `none` when there is no further page), `pending`
  * when another read was in flight or superseded this one (nothing was
@@ -163,7 +205,11 @@ onDestroy(() => {
  * failed (the rows were cleared), `superseded` when a newer read or the
  * component's end fenced it.
  */
-async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
+async function load(
+  more = false,
+  /** Re-read the first page under the listed filter (a poll), not the inputs. */
+  relist = false,
+): Promise<'shown' | 'failed' | 'superseded'> {
   const ticket = ++epoch;
   onreadstart?.();
   pending = true;
@@ -175,12 +221,13 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
   // The displayed rows stay (controls disabled while pending) until the new
   // page arrives, so a workspace can keep patching and navigating them; a
   // failed read still clears them.
-  const filter = more
-    ? listed
-    : {
-        state: selectedState ? (selectedState as InboxState) : undefined,
-        assigneeId: assignee || undefined,
-      };
+  const filter =
+    more || relist
+      ? listed
+      : {
+          state: selectedState ? (selectedState as InboxState) : undefined,
+          assigneeId: assignee || undefined,
+        };
   try {
     const issued = stamp?.();
     const read = await host.list({ ...filter, cursor: next });
@@ -197,6 +244,7 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
     };
     const kept = more ? { assignments, reasons } : undefined;
     items = more ? [...items, ...added] : read.items;
+    appended = more;
     cursor = read.nextCursor;
     assignments = Object.fromEntries(
       items.map((entry) => [

@@ -617,6 +617,101 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       return { ...input, output: await output(input.lease) };
     }
+    describe('generation retry policy (#4504)', () => {
+      const transient = () =>
+        Object.assign(new Error('overloaded'), { status: 529 });
+      it('keeps one call by default', async () => {
+        calls.mockRejectedValueOnce(transient());
+        const failed = await generate();
+        expect(calls).toHaveBeenCalledTimes(1);
+        expect(failed.output.outcome).toBe('provider_error');
+      });
+      it('retries a rejected call with backoff and records only the final result', async () => {
+        const backoffMs = vi.fn((attempt: number) => attempt);
+        configuration.retry = { attempts: 3, backoffMs };
+        service = new IngestionService(options);
+        calls.mockRejectedValueOnce(transient());
+        const generated = await generate();
+        expect(calls).toHaveBeenCalledTimes(2);
+        expect(backoffMs).toHaveBeenCalledWith(2);
+        expect(generated.output.outcome).toBe('proposals');
+        expect(generated.output.warnings).not.toContain('unavailable');
+      });
+      it('never retries a timeout, even when the generator rejects on the abort', async () => {
+        configuration.limits = { ...limits, timeoutMs: 100 };
+        configuration.retry = { attempts: 3 };
+        service = new IngestionService(options);
+        calls.mockImplementation(
+          (_input, { signal }) =>
+            new Promise((_resolve, reject) =>
+              signal.addEventListener('abort', () =>
+                reject(
+                  Object.assign(new Error('aborted'), { name: 'AbortError' }),
+                ),
+              ),
+            ),
+        );
+        const timed = await generate();
+        expect(calls).toHaveBeenCalledTimes(1);
+        expect(timed.output.outcome).toBe('provider_error');
+        expect(timed.output.warnings).toContain('timeout');
+        expect(timed.output.warnings).not.toContain('unavailable');
+      });
+      it('stops at the attempt bound and when the predicate refuses', async () => {
+        const retryable = vi.fn(
+          (error: unknown) => (error as { status?: number }).status === 529,
+        );
+        configuration.retry = { attempts: 2, retryable };
+        service = new IngestionService(options);
+        calls.mockRejectedValue(transient());
+        const exhausted = await generate();
+        expect(calls).toHaveBeenCalledTimes(2);
+        expect(retryable).toHaveBeenCalledTimes(1);
+        expect(exhausted.output.outcome).toBe('provider_error');
+        expect(exhausted.output.provenance.failure?.category).toBe(
+          'unavailable',
+        );
+        calls.mockReset();
+        calls.mockRejectedValue(new Error('bad request'));
+        const refused = await generate();
+        expect(calls).toHaveBeenCalledTimes(1);
+        expect(refused.output.outcome).toBe('provider_error');
+      });
+      it('bounds concurrent generate calls across services sharing the configuration', async () => {
+        configuration.concurrency = 1;
+        const first = await generation();
+        const second = await generation();
+        let active = 0,
+          peak = 0;
+        const answer = calls.getMockImplementation()!;
+        calls.mockImplementation(async (input, opts) => {
+          active++;
+          peak = Math.max(peak, active);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          active--;
+          return answer(input, opts);
+        });
+        await Promise.all([
+          new IngestionService(options).generateProposals(first.lease),
+          new IngestionService(options).generateProposals(second.lease),
+        ]);
+        expect(calls).toHaveBeenCalledTimes(2);
+        expect(peak).toBe(1);
+        expect((await output(first.lease)).outcome).toBe('proposals');
+        expect((await output(second.lease)).outcome).toBe('proposals');
+      });
+      it('refuses invalid retry and concurrency settings at construction', () => {
+        for (const proposals of [
+          { ...configuration, retry: { attempts: 0 } },
+          { ...configuration, retry: { attempts: 11 } },
+          { ...configuration, retry: { backoffMs: -1 } },
+          { ...configuration, concurrency: 0 },
+        ])
+          expect(() => new IngestionService({ ...options, proposals })).toThrow(
+            /Invalid generation/,
+          );
+      });
+    });
     describe('failed-attempt capture (#4285)', () => {
       const name = 'Jane Doe';
       const retained = 'RETAINED-4285-MARKER';
@@ -2568,6 +2663,78 @@ export function proposalSuite(
         service.applyAction(completed.review.actionId),
       ).rejects.toThrow();
     });
+    it('feedback lineage re-verification asks verify, so retrieval can be switched off (#4504)', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'training',
+      });
+      const learned = await feedbackCase();
+      expect(
+        learned.generated.output.provenance.feedback?.selection.examples,
+      ).toHaveLength(1);
+      const asked: string[] = [];
+      // Learning switched off: new retrieval refused, stored lineage verifiable.
+      options.feedback!.authorize = async ({ operation }) => {
+        asked.push(operation);
+        return operation !== 'retrieve';
+      };
+      expect(
+        (await service.getAction(learned.review.actionId)).display,
+      ).not.toEqual({});
+      const page = await service.listReviews(learned.generated.itemId);
+      expect(page.actions[0].args).toBeDefined();
+      // The stored-generation snapshot read (and so the review host's load,
+      // instructions, splits and Try again) re-verifies with `verify` too.
+      expect(
+        (await service.getCompletedAnalysis(learned.generated.itemId))
+          .attemptId,
+      ).toBe(learned.generated.lease.attemptId);
+      const view = await createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: learned.generated.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      }).load(learned.generated.itemId);
+      expect(view.availability).toBe('available');
+      expect(view.generation?.provenance.feedback).toBeDefined();
+      expect(asked).toContain('verify');
+      expect(asked).not.toContain('retrieve');
+      // New selection and the provider boundary still ask `retrieve`.
+      asked.length = 0;
+      options.feedback!.authorize = async ({ operation }) => {
+        asked.push(operation);
+        return true;
+      };
+      const fresh = await feedbackCase();
+      expect(
+        fresh.generated.output.provenance.feedback?.selection.examples.length,
+      ).toBeGreaterThan(0);
+      expect(asked).toContain('retrieve');
+      // An authorizer that predates `verify` refuses it: the same check is
+      // asked as `retrieve`, which keeps today's answer.
+      asked.length = 0;
+      options.feedback!.authorize = async ({ operation }) => {
+        asked.push(operation);
+        return operation !== 'verify';
+      };
+      expect(
+        (await service.getAction(learned.review.actionId)).display,
+      ).not.toEqual({});
+      expect(asked).toContain('verify');
+      expect(asked).toContain('retrieve');
+      // Refusing both fails closed, as before.
+      options.feedback!.authorize = async ({ operation }) =>
+        operation !== 'verify' && operation !== 'retrieve';
+      expect(
+        await service.getAction(learned.review.actionId).then(
+          (review) => review.display,
+          () => ({}),
+        ),
+      ).toEqual({});
+    });
     it('feedback final pre-send lineage revocation denies external dispatch after mutable callbacks', async () => {
       enableFeedback();
       const training = await feedbackCase();
@@ -4413,6 +4580,91 @@ export function proposalSuite(
       });
       return { frozen, lease: next.lease };
     }
+    it('retries a failed interpretation without recording an instruction (#4504)', async () => {
+      chooseCreate();
+      calls.mockRejectedValueOnce(new Error('provider down'));
+      const failed = await generate();
+      expect(failed.output.outcome).toBe('provider_error');
+      const base = {
+        itemId: failed.itemId,
+        attemptId: failed.lease.attemptId,
+        expectedRevision: failed.lease.revision,
+        requestId: 'retry-one',
+      };
+      await expect(
+        new IngestionService({
+          ...options,
+          scope: { ...options.scope, actorId: 'observer' },
+        }).retryInterpretation(base),
+      ).rejects.toThrow();
+      await expect(
+        service.retryInterpretation({
+          ...base,
+          expectedRevision: base.expectedRevision + 1,
+        }),
+      ).rejects.toThrow(ReviewerInstructionStaleError);
+      const onInstruct = vi.fn(async () => {});
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: failed.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+        onInstruct,
+      });
+      await host.retry!(base);
+      expect(onInstruct).toHaveBeenCalledWith(
+        failed.itemId,
+        failed.lease.revision + 1,
+      );
+      // A replay returns the first append; nothing is recorded as guidance.
+      const first = await service.retryInterpretation(base);
+      expect(first).toMatchObject({ revision: failed.lease.revision + 1 });
+      expect(await service.retryInterpretation(base)).toEqual(first);
+      // The same requestId with another intent (anchor, revision or actor)
+      // is a conflict, never an acknowledgement of the first.
+      for (const [changed, retrying] of [
+        [{ ...base, attemptId: randomUUID() }, service],
+        [{ ...base, expectedRevision: base.expectedRevision + 1 }, service],
+        [
+          base,
+          new IngestionService({
+            ...options,
+            scope: { ...options.scope, actorId: 'reviewer' },
+          }),
+        ],
+      ] as const)
+        await expect(retrying.retryInterpretation(changed)).rejects.toThrow(
+          'Interpretation retry request conflict',
+        );
+      // A replay is acknowledged only under current `process` authority.
+      allowed = false;
+      await expect(service.retryInterpretation(base)).rejects.toThrow();
+      allowed = true;
+      expect(await service.retryInterpretation(base)).toEqual(first);
+      expect(await service.listReviewerInstructions(failed.itemId)).toEqual([]);
+      // In flight: another retry is a refresh signal.
+      expect(
+        await host.retry!({
+          ...base,
+          expectedRevision: failed.lease.revision + 1,
+          requestId: 'retry-two',
+        }),
+      ).toEqual({ stale: true });
+      const next = await reextract(failed.itemId, failed.lease.revision + 1);
+      expect(next.frozen.configuration.stage).toBe('extract');
+      expect(next.frozen.configuration.reviewerInstruction).toBeUndefined();
+      await service.generateProposals(next.lease);
+      expect((await output(next.lease)).outcome).toBe('proposals');
+      // Nothing failed any more: Try again is refused as stale.
+      await expect(
+        service.retryInterpretation({
+          itemId: failed.itemId,
+          attemptId: next.lease.attemptId,
+          expectedRevision: next.lease.revision,
+          requestId: 'retry-three',
+        }),
+      ).rejects.toThrow(ReviewerInstructionStaleError);
+    });
     it('records a reviewer instruction as an immutable correction and reinterprets with it as trusted guidance inside the same boundary', async () => {
       chooseCreate();
       const input = await generate();

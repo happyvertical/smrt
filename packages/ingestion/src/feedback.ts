@@ -12,7 +12,10 @@ import {
   intakeBindingDigest as digest,
   IntakeExecutionService,
 } from './execution.js';
-import type { FeedbackConfiguration } from './feedback-contracts.js';
+import type {
+  FeedbackConfiguration,
+  FeedbackOperation,
+} from './feedback-contracts.js';
 import type {
   AdoptRuleInput,
   FeedbackBinding,
@@ -199,18 +202,34 @@ export class IntakeFeedbackService {
       )
     ).rows;
   }
+  /**
+   * Ask the host. `verify` (re-checking stored lineage) falls back to
+   * `retrieve` when refused, so an authorizer that predates `verify` keeps
+   * today's answer; only a refusal of both denies.
+   */
+  private async permits(
+    db: DatabaseInterface,
+    itemId: string,
+    operation: FeedbackOperation,
+  ): Promise<boolean> {
+    const scope = this.scope();
+    if (await this.config.authorize({ db, scope, itemId, operation }))
+      return true;
+    return (
+      operation === 'verify' &&
+      (await this.config.authorize({
+        db,
+        scope,
+        itemId,
+        operation: 'retrieve',
+      }))
+    );
+  }
   private async authorize(
     ctx: FeedbackActionContext,
-    operation: 'capture' | 'retrieve' | 'suggest' | 'adopt',
+    operation: FeedbackOperation,
   ) {
-    if (
-      !(await this.config.authorize({
-        db: ctx.db,
-        scope: this.scope(),
-        itemId: ctx.itemId,
-        operation,
-      }))
-    )
+    if (!(await this.permits(ctx.db, ctx.itemId, operation)))
       throw new Error('Feedback unavailable');
   }
   private checkBinding(input: FeedbackBinding, ctx: FeedbackActionContext) {
@@ -286,7 +305,8 @@ export class IntakeFeedbackService {
         throw new Error('Feedback lineage unavailable');
       this.lineage.add(key);
       try {
-        await this.assertSelection(
+        // Stored lineage is re-verified, never re-selected (#4504).
+        await this.checkSelection(
           {
             itemId: ctx.itemId,
             query: String(inherited.query),
@@ -303,6 +323,7 @@ export class IntakeFeedbackService {
           },
           inherited.selection as unknown as FeedbackReferences,
           ctx.db,
+          'verify',
         );
       } finally {
         this.lineage.delete(key);
@@ -618,6 +639,7 @@ export class IntakeFeedbackService {
     row: Row,
     input: RetrieveFeedbackInput,
     executor?: DatabaseInterface,
+    operation: 'retrieve' | 'verify' = 'retrieve',
   ): Promise<FeedbackExample | undefined> {
     if (++this.exampleChecks > this.config.maxScan) return undefined;
     try {
@@ -635,7 +657,7 @@ export class IntakeFeedbackService {
         candidate.actionId,
         false,
         async (ctx) => {
-          await this.authorize(ctx, 'retrieve');
+          await this.authorize(ctx, operation);
           await this.provenance(ctx);
           const guidance = this.instructionFor(ctx);
           const [current] = await this.rows(
@@ -713,6 +735,7 @@ export class IntakeFeedbackService {
     executor?: DatabaseInterface,
     /** Re-checking an earlier selection: only integrity and revocation count. */
     lineage = false,
+    operation: 'retrieve' | 'verify' = 'retrieve',
   ): Promise<FeedbackExample | undefined> {
     if (++this.exampleChecks > this.config.maxScan) return undefined;
     try {
@@ -756,14 +779,7 @@ export class IntakeFeedbackService {
       const providers = input.providers ?? [input.model.provider];
       const scope = this.scope();
       const current = async (db: DatabaseInterface) => {
-        if (
-          !(await this.config.authorize({
-            db,
-            scope,
-            itemId,
-            operation: 'retrieve',
-          }))
-        )
+        if (!(await this.permits(db, itemId, operation)))
           throw new Error('Feedback unavailable');
         const [attempt] = (
           await db.query(
@@ -1001,6 +1017,30 @@ export class IntakeFeedbackService {
     selection: FeedbackReferences,
     executor?: DatabaseInterface,
   ): Promise<void> {
+    await this.checkSelection(input, selection, executor, 'retrieve');
+  }
+  /**
+   * Re-verify the stored selection an existing generation was produced with
+   * (#4504): the same checks as `assertSelection`, asked as `verify` (which
+   * falls back to `retrieve` for authorizers that predate it).
+   */
+  async verifySelection(
+    input: RetrieveFeedbackInput,
+    selection: FeedbackReferences,
+    executor?: DatabaseInterface,
+  ): Promise<void> {
+    await this.checkSelection(input, selection, executor, 'verify');
+  }
+  /**
+   * `retrieve` revalidates a selection before provider disclosure; `verify`
+   * re-checks the stored lineage of an existing generation (#4504).
+   */
+  private async checkSelection(
+    input: RetrieveFeedbackInput,
+    selection: FeedbackReferences,
+    executor: DatabaseInterface | undefined,
+    operation: 'retrieve' | 'verify',
+  ): Promise<void> {
     if (
       selection.version !== this.config.version ||
       selection.configurationDigest !== this.configurationDigest() ||
@@ -1020,14 +1060,7 @@ export class IntakeFeedbackService {
     const work = async (
       context: import('./execution-contracts.js').HandlerContext,
     ) => {
-      if (
-        !(await this.config.authorize({
-          db: context.db,
-          scope: this.scope(),
-          itemId: input.itemId,
-          operation: 'retrieve',
-        }))
-      )
+      if (!(await this.permits(context.db, input.itemId, operation)))
         throw new Error('Feedback unavailable');
       const examples: FeedbackExample[] = [];
       for (const expected of selection.examples) {
@@ -1039,8 +1072,8 @@ export class IntakeFeedbackService {
         const current = !row
           ? undefined
           : row.kind === 'reviewer_routing'
-            ? await this.routingExample(row, input, context.db, true)
-            : await this.example(row, input, context.db);
+            ? await this.routingExample(row, input, context.db, true, operation)
+            : await this.example(row, input, context.db, operation);
         if (
           !current ||
           current.digest !== expected.digest ||
@@ -1050,14 +1083,7 @@ export class IntakeFeedbackService {
           throw new Error('Feedback eligibility changed');
         examples.push(current);
       }
-      if (
-        !(await this.config.authorize({
-          db: context.db,
-          scope: this.scope(),
-          itemId: input.itemId,
-          operation: 'retrieve',
-        }))
-      )
+      if (!(await this.permits(context.db, input.itemId, operation)))
         throw new Error('Feedback unavailable');
       return { ...selection, examples };
     };

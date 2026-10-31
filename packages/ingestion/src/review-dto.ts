@@ -162,6 +162,13 @@ export interface ReviewerInstructionView {
   /** Record/retry binding when no current generation is displayable: the latest completed generation attempt and the item's current revision. */
   binding?: { attemptId: string; expectedRevision: number };
 }
+/** Re-run a failed interpretation with no new instruction (#4504); bound like an instruction. */
+export interface InterpretationRetryInput {
+  itemId: string;
+  attemptId: string;
+  expectedRevision: number;
+  requestId: string;
+}
 export interface LogicalSplitInput {
   itemId: string;
   attemptId: string;
@@ -272,6 +279,15 @@ export interface IntakeReviewHost {
   instruct?: (
     input: ReviewerInstructionInput,
   ) => Promise<void | { stale: true } | { invalid: true }>;
+  /**
+   * "Try again" for an item whose interpretation failed (a provider error,
+   * timeout, or a reinterpretation that never started): queue the same fresh
+   * extraction plus interpretation as `instruct`, recording no instruction.
+   * Bound like `instruct` (`ReviewerInstructionView.binding`, else the
+   * displayed generation). Resolves `{ stale: true }` when the anchor is
+   * superseded, work is in flight or nothing failed: a refresh signal.
+   */
+  retry?: (input: InterpretationRetryInput) => Promise<void | { stale: true }>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,

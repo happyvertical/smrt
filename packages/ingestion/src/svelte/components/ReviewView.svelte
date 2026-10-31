@@ -736,6 +736,35 @@ function instruct() {
     instruction = '';
   });
 }
+/**
+ * "Try again" (#4504): the displayed interpretation failed (a provider error,
+ * or later work failed or never started) and nothing is in flight.
+ * Presentation only; the host rechecks the anchor and authority.
+ */
+function retryable(current: ItemReviewView | undefined) {
+  return (
+    !!host.retry &&
+    current?.availability === 'available' &&
+    !current.entry.item.disposition &&
+    !inFlight(current) &&
+    !!instructionBinding(current) &&
+    (current.generation?.outcome === 'provider_error' ||
+      !!current.instruction?.failure)
+  );
+}
+function retry() {
+  const binding = instructionBinding(view);
+  const operation = host.retry;
+  if (!binding || !operation || !retryable(view)) return;
+  instructionBusy = false;
+  const input = { itemId, ...binding, requestId: crypto.randomUUID() };
+  // Like an instruction, a stale result reloads the view; never a denial.
+  void run(async () => {
+    const result = await operation(input);
+    if (result && 'stale' in result && result.stale === true)
+      instructionBusy = true;
+  });
+}
 function locationLabel(location: EvidenceLocation) {
   switch (location.kind) {
     case 'page':
@@ -802,6 +831,7 @@ onMount(() => {
 {#if view.instruction.dropped}<p role="status" data-testid="dropped-instruction">{t(M['ingestion.droppedInstruction'])}: <q>{view.instruction.dropped.text}</q></p>{/if}
 {/if}
 {#if instructionBusy}<p role="status" data-testid="instruction-busy">{t(M['ingestion.instructionBusy'])}</p>{:else if unrecordedDraft !== undefined && unrecordedDraft === instruction}<p role="status" data-testid="instruction-not-recorded">{t(M['ingestion.instructionNotRecorded'])}</p>{/if}
+{#if retryable(view)}<Button data-testid="retry-interpretation" disabled={pending} onclick={retry}>{t(M['ingestion.tryAgain'])}</Button>{/if}
 {#if host.instruct && !view.entry.item.disposition && instructionBinding(view)}
 <div><Textarea aria-label={t(M['ingestion.instructions'])} aria-describedby="instruction-length" maxlength={INSTRUCTION_MAX_LENGTH} bind:value={instruction} /><p id="instruction-length" data-testid="instruction-length">{t(M['ingestion.instructionLength'], { count: instruction.length, max: INSTRUCTION_MAX_LENGTH })}</p>{#if invalidDraft !== undefined && invalidDraft === instruction}<p role="alert" data-testid="instruction-invalid">{t(M['ingestion.instructionInvalid'], { max: INSTRUCTION_MAX_LENGTH })}</p>{/if}<Button disabled={!instructionValid || inFlight(view)} onclick={instruct}>{t(M['ingestion.reinterpret'])}</Button></div>
 {/if}

@@ -299,6 +299,18 @@ production improvement. Real-provider evaluation belongs to #3677. There are no
 sampled automatic outcomes in this feature; reporting that stratum as unavailable
 avoids inventing correctness labels from successful jobs.
 
+`authorize` distinguishes two read operations (#4504). `retrieve` covers
+picking new examples and revalidating a selection at the provider boundary.
+`verify` covers re-checking the stored lineage of an existing generation (the
+examples it was produced with) whenever its actions are read, reviewed,
+labelled or applied, including `getAction`/`listReviews`, and whenever the
+stored generation snapshot is read (`getCompletedAnalysis`, the review host's
+`load`, instructions, splits and Try again). A host that switches
+learning off refuses `retrieve` and keeps allowing `verify`, so items analysed
+while learning was on still load. Fail-safe for authorizers that predate
+`verify`: when `verify` returns `false` the same check is asked as `retrieve`,
+and only a refusal of both fails closed ("Feedback unavailable") as before.
+
 When interpretation requests optional examples, an explicit denial of feedback
 retrieval degrades to generation without examples or feedback provenance. Direct
 `retrieveFeedback` calls still reject denied reads. Other authorization errors

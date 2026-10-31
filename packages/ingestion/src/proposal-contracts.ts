@@ -124,6 +124,21 @@ export interface ProposalConfiguration extends DecisionSettings {
     | HostSuggestionReviewResult
     | undefined
     | Promise<HostSuggestionReviewResult | undefined>;
+  /**
+   * Opt-in retry of a rejected `generator.generate` call (#4504). Absent (or
+   * `attempts: 1`) keeps one call. Each call gets its own `limits.timeoutMs`
+   * deadline; a timeout is final, and a retry is skipped when the analysis
+   * lease could not cover the backoff plus another full deadline. Only the
+   * final rejection becomes `provider_error`. Not public read configuration.
+   */
+  retry?: import('./generation-retry.js').GenerationRetryPolicy;
+  /**
+   * Most `generator.generate` calls in flight at once, shared by every
+   * service built from this configuration object (1..1000). Absent:
+   * unlimited, as before. A queued call waits before its deadline starts.
+   * Not public read configuration.
+   */
+  concurrency?: number;
 }
 /** A copy of what the host may inspect; mutating it changes nothing. */
 export interface SuggestionReviewInput {

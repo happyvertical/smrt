@@ -16,6 +16,11 @@ export interface Props {
   rowAside?: Snippet<[InboxEntry]>;
   /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
   accept?: string;
+  /**
+   * Re-read the list on this interval (ms) while a listed row is still
+   * processing. Off when absent; processing rows are followed either way.
+   */
+  listPollMs?: number;
 }
 let {
   host,
@@ -25,6 +30,20 @@ let {
   onselect,
   rowAside,
   accept,
+  listPollMs,
 }: Props = $props();
+let triage = $state<ReturnType<typeof TriageView>>();
+/**
+ * Re-read the list's first page, like its Refresh button; resolves `pending`
+ * without reading while a read or operation is in flight.
+ */
+export function refresh(): Promise<{
+  items: InboxEntry[];
+  result: 'shown' | 'failed' | 'pending';
+}> {
+  return triage
+    ? triage.refresh()
+    : Promise.resolve({ items: [], result: 'pending' as const });
+}
 </script>
-{#key host}{#key contextKey}<TriageView {host} {itemId} {pollMs} {onselect} {rowAside} {accept} />{/key}{/key}
+{#key host}{#key contextKey}<TriageView bind:this={triage} {host} {itemId} {pollMs} {onselect} {rowAside} {accept} {listPollMs} />{/key}{/key}
