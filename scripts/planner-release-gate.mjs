@@ -17,6 +17,10 @@
  *       the canonical template (https://github.com/happyvertical/smrt-start,
  *       as a user gets it), every @happyvertical package overridden to the release tarballs, then
  *       the project's install, build and typecheck
+ *     - the release consumer canary (`release-consumer-canary.mjs`, #2975): a
+ *       hermetic in-repo app installed from the release tarballs must build,
+ *       import its generated `.smrt/register.js` under plain Node and under
+ *       smrt-vitest, resolve schemas, typecheck, and `smrt db:migrate`
  *
  * Each check gets one retry; a check that passes only on retry is reported as
  * flaky but does not fail the gate. A failure names who broke: the planner
@@ -50,6 +54,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { runReleaseConsumerCanary } from './release-consumer-canary.mjs';
 import { OWN_REGISTRY, RELEASE_SCOPE, registryArgs } from './release-registry.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -330,6 +335,13 @@ function frameworkChecks(tarballs, options, scratch) {
     run('pnpm', ['run', 'typecheck'], { cwd: dir });
   };
   return [
+    {
+      owner: 'framework',
+      // #2975: no control run. The canary installs only release tarballs and
+      // pinned tools, so a failure is this release's.
+      name: 'release consumer canary: an app installed from the release tarballs builds, registers, resolves schemas, typechecks, tests and migrates',
+      run: () => runReleaseConsumerCanary({ tarballs }),
+    },
     {
       owner: 'framework',
       name: `smrt cookbook validate: ${cookbooks.length} library cookbooks against the workspace manifests`,
