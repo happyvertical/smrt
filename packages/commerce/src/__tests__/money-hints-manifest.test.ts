@@ -5,20 +5,18 @@
  * `role: 'items'`, which the generated web relationship edge emits.
  *
  * Reads the manifest the smrt-vitest plugin generates from source before the
- * run (`.smrt/manifest.json`), i.e. exactly what the scanner emits.
+ * run (`getTestManifestPath()`), i.e. exactly what the scanner emits.
  */
 
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 
 type ManifestField = {
   type: string;
   _meta?: { ui?: Record<string, unknown>; role?: unknown };
 };
-const manifest = JSON.parse(
-  readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
-) as {
+const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8')) as {
   objects: Record<
     string,
     { extends?: string; fields: Record<string, ManifestField> }

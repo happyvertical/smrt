@@ -241,9 +241,11 @@ Config precedence for knowledge is defaults → top-level `knowledge` in
 `smrt.config.ts` → `packages[packageName].knowledge` → plugin option →
 object-level `@smrt({ knowledge })`.
 
-Test generation uses that same effective configuration and publishes knowledge
-matching the manifest it generated. Disabling knowledge removes a previous local
-knowledge artifact, so consumers cannot mistake it for current enabled output.
+Core's own `generate:test` uses that same effective configuration and publishes
+knowledge matching the manifest it generated. Disabling knowledge removes a
+previous local knowledge artifact, so consumers cannot mistake it for current
+enabled output. `smrtVitestPlugin()` writes no knowledge: its test manifest is a
+per-run snapshot, so the production pair stays byte-identical across a run.
 `new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
 at that explicit root, including installed providers and external base classes;
 omitting the argument retains the current-working-directory
@@ -253,10 +255,17 @@ their local and consumed-object projections.
 Test manifests carry optional `artifactPurpose: 'test'`; dependency discovery
 skips those artifacts, including `.smrt` fallbacks. Unmarked runtime manifests,
 empty published providers, and source-only development providers remain eligible.
-`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build'`; omitted mode
-retains legacy filename inference. Vitest selects dev mode explicitly, so tests
-never replace a production `dist/manifest.json`. Relative output directories are
-resolved against the builder's project root.
+`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build' | 'explicit'`;
+omitted mode retains legacy filename inference. `'explicit'` writes only
+`outputDir/outputName`, never the unified `.smrt`/`dist` location. Vitest uses
+it for its per-run snapshot `.smrt/test-runs/<run>/manifest.json`, published
+per root in `__SMRT_TEST_MANIFEST_PATHS__` (`manifest/test-artifacts.ts`).
+`LocalManifestReader.loadLocal()` (and so the runtime loader and manifest test
+databases) reads that active snapshot before `.smrt/manifest.json`; external
+package loads never read it, and a process outside the run never sees it
+(#4128). Core's own Vitest config registers `src/manifest/test-manifest.json`
+the same way. Relative output directories are resolved against the builder's
+project root.
 
 With `svelteKit.enabled`, `smrtPlugin()`'s transform prepends
 `import './smrt-register.js';` to the configured config module
