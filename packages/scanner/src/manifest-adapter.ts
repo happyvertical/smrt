@@ -120,6 +120,10 @@ interface MethodDefinition {
     memberTypes?: string[];
     /** See `RawParameterDefinition.unionBranches` (#2686). */
     unionBranches?: ParameterTypeBranch[];
+    /** See `RawParameterDefinition.resolvedType` (#4327). */
+    resolvedType?: string;
+    /** See `RawParameterDefinition.aliasUnresolved` (#4327). */
+    aliasUnresolved?: boolean;
   }>;
   returnType: string;
   description?: string;
@@ -1698,6 +1702,8 @@ export class ManifestAdapter {
         ...(p.typeUnresolved ? { typeUnresolved: true } : {}),
         ...(p.memberTypes ? { memberTypes: p.memberTypes } : {}),
         ...(p.unionBranches ? { unionBranches: p.unionBranches } : {}),
+        ...(p.resolvedType ? { resolvedType: p.resolvedType } : {}),
+        ...(p.aliasUnresolved ? { aliasUnresolved: true } : {}),
       })),
       returnType: method.returnType || 'any',
       description: method.description || undefined,

@@ -270,6 +270,20 @@ export interface RawParameterDefinition {
    * before #2686.
    */
   unionBranches?: ParameterTypeBranch[];
+
+  /**
+   * Target of a same-module type alias when `type` is a bare alias name
+   * (`type ActionOptions = Record<string, unknown>` gives
+   * `'Record<string, unknown>'`), following alias chains (#4327). Absent for
+   * every other parameter, so manifests for ordinary parameters are unchanged.
+   */
+  resolvedType?: string;
+
+  /**
+   * `type` names a same-module alias whose chain is cyclic or too deep to
+   * follow. Schema consumers must not guess a type for it (#4327).
+   */
+  aliasUnresolved?: boolean;
 }
 
 /** One branch of a top-level union parameter type (#2686). */

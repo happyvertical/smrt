@@ -157,7 +157,8 @@ and repository rules.
   `expose: true` bypasses the heuristic ALONE, and an explicit `api.include` or
   `api.routes` entry keeps its pre-#2686 route. Fail closed on scanner
   uncertainty: read `parameters[].typeUnresolved`, never the `'any'` it
-  substitutes. Accepting `Date` as wire-able and hydrating it
+  substitutes. Custom-action schemas and decoders read
+  `declaredParameterType()`, not `parameter.type` (#4327). Accepting `Date` as wire-able and hydrating it
   (`toCustomActionDate`) are one decision — changing either breaks the other.
   The runtime `APIGenerator` transport stays declaration-gated: `rest.ts`
   dispatch and `preflight-route.ts` prediction both read

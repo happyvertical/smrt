@@ -22,6 +22,7 @@ import {
   type ApiMethodExposure,
   CRUD_OPERATIONS,
   createManifestClassNamePredicate,
+  declaredParameterType,
   declaredTypeAcceptsDate,
   isCrudOperation,
   isFrameworkLifecycleMethod,
@@ -1213,8 +1214,8 @@ function buildActionInvocationArgs(
     // hydrated on both because a JSON body cannot carry one either (#2686).
     const decoder =
       httpMethod === 'GET'
-        ? queryStringDecoderFor(parameter.type)
-        : declaredTypeAcceptsDate(parameter.type)
+        ? queryStringDecoderFor(declaredParameterType(parameter))
+        : declaredTypeAcceptsDate(declaredParameterType(parameter))
           ? 'toCustomActionDate'
           : undefined;
     return decoder ? `${decoder}(${access}) as ActionArgs[${index}]` : access;
@@ -3878,8 +3879,8 @@ function generateActionRouteTemplate(
     for (const parameter of spec.actionDef.parameters ?? []) {
       const decoder =
         spec.routeConfig?.method === 'GET'
-          ? queryStringDecoderFor(parameter.type)
-          : declaredTypeAcceptsDate(parameter.type)
+          ? queryStringDecoderFor(declaredParameterType(parameter))
+          : declaredTypeAcceptsDate(declaredParameterType(parameter))
             ? 'toCustomActionDate'
             : undefined;
       if (decoder) decoderImports.add(decoder);

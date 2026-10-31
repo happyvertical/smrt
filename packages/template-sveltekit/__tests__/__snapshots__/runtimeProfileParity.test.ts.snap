@@ -576,7 +576,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
           },
           "options": {
             "description": "Options for the custom action",
-            "type": "string"
+            "type": "object"
           }
         },
         "required": [
@@ -1823,7 +1823,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
           },
           "options": {
             "description": "Options for the custom action",
-            "type": "string"
+            "type": "object"
           }
         },
         "required": [

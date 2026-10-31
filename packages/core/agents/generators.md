@@ -328,6 +328,18 @@ namespaces. Typed CLI actions may use standard flag names such as `limit`,
 `offset`, `where`, and `format` without those values being stripped as CRUD
 flags.
 
+A parameter typed with a bare alias name declared in the method's own module
+(`type ActionOptions = Record<string, unknown>`) is resolved by the scanner
+(`resolveParameterAlias`, `packages/scanner/src/oxc-parser.ts`). Chains are
+followed, and the alias target is recorded as `resolvedType` beside the authored
+`type`, using only the declaring module's aliases, so neither a same-named alias
+elsewhere nor a subclass in another module can rebind an inherited parameter.
+Schema emitters and argument decoders read `declaredParameterType(parameter)`
+rather than `parameter.type`. A cyclic or over-long chain sets
+`aliasUnresolved` and is advertised with no type constraint. An imported or
+unknown name keeps the existing fallback, and the wire-ability gate still
+judges the authored name (#4327).
+
 MCP static dispatch resolves the exact qualified registry entry's model
 constructor first, then its registered `collectionConstructor`. Manifest-backed
 collection resources can retain a stub model constructor after generated
