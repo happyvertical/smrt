@@ -267,3 +267,59 @@ describe('generated client lists only operations the generated routes serve (#32
     expect(existsSync(routeFile('orders', '[id]', 'refund'))).toBe(true);
   });
 });
+
+describe('framework bases never own a shared endpoint CRUD set (#3295)', () => {
+  it('takes a consumer model and collection CRUD from the consumer, not a base on the same segment', () => {
+    const REPORTS = '@happyvertical/smrt-reports';
+    const manifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      objects: {
+        [`${REPORTS}:SmrtReport`]: {
+          qualifiedName: `${REPORTS}:SmrtReport`,
+          className: 'SmrtReport',
+          packageName: REPORTS,
+          name: 'smrtReport',
+          collection: 'smrtreports',
+          filePath: '/build/reports/src/report.ts',
+          fields: {},
+          methods: {},
+          decoratorConfig: {},
+        },
+        [`${SHOP}:SalesReport`]: {
+          qualifiedName: `${SHOP}:SalesReport`,
+          className: 'SalesReport',
+          packageName: SHOP,
+          name: 'salesReport',
+          collection: 'smrtreports',
+          filePath: '/build/shop/src/sales-report.ts',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: { include: ['list'] } },
+        },
+        [`${SHOP}:SalesReportArchive`]: {
+          qualifiedName: `${SHOP}:SalesReportArchive`,
+          className: 'SalesReportArchive',
+          packageName: SHOP,
+          name: 'salesReportArchive',
+          collection: 'smrtreports',
+          filePath: '/build/shop/src/sales-report-archive.ts',
+          extends: 'SmrtCollection',
+          fields: {},
+          methods: {},
+          decoratorConfig: {},
+        },
+      },
+    } as unknown as SmartObjectManifest;
+    const entries = selectApiClientEntries(manifest);
+    expect(entries.map((entry) => entry.obj.className).sort()).toEqual([
+      'SalesReport',
+      'SalesReportArchive',
+    ]);
+    // The base sorts after the consumer model and would otherwise replace the
+    // endpoint's list-only set with full CRUD that no route serves.
+    for (const entry of entries) {
+      expect(entry.crudMethods).toEqual(['list']);
+    }
+  });
+});
