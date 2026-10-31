@@ -2258,7 +2258,8 @@ describe('CourseAuthoringService', () => {
     const db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
-      classes: learnerClasses,
+      // GeneratedPrintable would pull lesson_revisions in as a dependency table.
+      classes: learnerClasses.filter((name) => name !== 'GeneratedPrintable'),
     });
     opened.push(db);
     const schemas = Object.fromEntries(
