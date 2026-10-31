@@ -10,6 +10,8 @@
  *     - the planner's live preview browser suite (`test:live-preview-browser`)
  *     - the packed planner installed as a consumer, its smrt dependencies
  *       resolved from the release tarballs (`test:package`)
+ *     - the real `smrt kitchen` against the extracted planner tarball with no
+ *       dependencies installed, as the kitchen's cache holds it (`test:kitchen`)
  *   framework checks
  *     - `smrt cookbook validate` of every library cookbook against the
  *       workspace manifests
@@ -260,6 +262,18 @@ function plannerChecks(tarballs) {
         run('pnpm', ['--filter', PLANNER_NAME, 'test:package', '--', tarball], {
           cwd: ROOT,
           env: { PLANNER_PACKED_DEPS_DIR: dirOf(tarball) },
+        });
+      },
+    },
+    {
+      owner: 'planner',
+      // `smrt kitchen` extracts the planner tarball without installing its
+      // dependencies (#4238); run the real command against this release's.
+      name: 'smrt kitchen against the packed planner, no dependencies installed',
+      run: () => {
+        if (!tarball) throw new Error(`no ${PLANNER_NAME} tarball among the release packs`);
+        run('pnpm', ['--filter', PLANNER_NAME, 'test:kitchen', '--', tarball], {
+          cwd: ROOT,
         });
       },
     },
