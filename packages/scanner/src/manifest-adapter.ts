@@ -974,6 +974,20 @@ export class ManifestAdapter {
       };
     }
 
+    // 3.7. Infer from a boolean `@field({ default })` when nothing else names
+    // a type (`@field({ default: false }) archived;`). Compiled-runtime
+    // registration without a manifest reads only the decorator options, and
+    // infers BOOLEAN from the same boolean default, so both paths agree (#4295).
+    const booleanDefault = this.decoratorBooleanDefault(field);
+    if (booleanDefault !== undefined) {
+      return {
+        type: 'boolean',
+        required: false,
+        defaultValue: booleanDefault,
+        source: 'decorator',
+      };
+    }
+
     // 4. Default to text
     // A field is only required if it has no default value AND is not optional (?)
     // Fields with initializers (default values) should NOT be required
@@ -995,6 +1009,22 @@ export class ManifestAdapter {
    */
   private inferFromHelper(_initializer: string): FieldTypeInference | null {
     return null;
+  }
+
+  /**
+   * The boolean `default` of a `@field()` decorator on `field`, if any.
+   */
+  private decoratorBooleanDefault(
+    field: RawFieldDefinition,
+  ): boolean | undefined {
+    for (const decorator of field.decorators) {
+      if (decorator.name !== 'field') continue;
+      const fieldDefault = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
+      )?.default;
+      if (typeof fieldDefault === 'boolean') return fieldDefault;
+    }
+    return undefined;
   }
 
   /**

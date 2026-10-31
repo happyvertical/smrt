@@ -208,6 +208,20 @@ constructor as `registerFieldDecorator`'s fourth argument. Omit it only for
 intentional legacy string-only metadata; that legacy metadata still composes
 with constructor-owned options, but mirrored public decorator fields do not.
 
+### Decorator-only field types agree on both paths (#4295)
+
+A compiled model registered without a manifest entry sees only `@field()`
+options, never the initializer or annotation the scanner reads. Without an
+explicit `type`, a boolean `default` infers `boolean` on both paths
+(`inferDecoratorOnlyFieldType` in `src/registry/class-registration.ts`, step
+3.7 of the scanner's `ManifestAdapter.inferFieldType`); anything else falls
+back to `text`. Numbers are never inferred at runtime (`0` and `0.0` are the
+same value), so a runtime-only numeric field must declare
+`type: 'integer' | 'decimal'`. Loading the manifest later still replaces the
+decorator-only type. A database whose column was built from the old TEXT
+expectation is not auto-cast; parity reports the drift for an explicit
+migration.
+
 ### A SQLite type change is a table rebuild (#2370)
 
 SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
