@@ -320,3 +320,85 @@ export class QuestionReferenceError extends CourseAuthoringError {
     );
   }
 }
+
+/** Audience of a generated printable: which artefact is produced, never authority. */
+export type GeneratedPrintableAudience = 'learner' | 'guardian';
+export const GENERATED_PRINTABLE_AUDIENCES: readonly GeneratedPrintableAudience[] =
+  ['learner', 'guardian'];
+/** `LessonAsset` relationship per audience: the learner copy is the only signable one. */
+export type GeneratedPrintableRelationship = 'printable' | 'answer-key';
+export const GENERATED_PRINTABLE_RELATIONSHIPS: Readonly<
+  Record<GeneratedPrintableAudience, GeneratedPrintableRelationship>
+> = { learner: 'printable', guardian: 'answer-key' };
+
+/** Most question items one generated printable may carry. */
+export const MAX_PRINTABLE_ITEMS = 200;
+/** Longest single text value (prompt, choice, key, ...) rendered, in characters. */
+export const MAX_PRINTABLE_TEXT_LENGTH = 10_000;
+/** Most characters of all rendered text in one generated printable. */
+export const MAX_PRINTABLE_TOTAL_TEXT = 400_000;
+/** Most pages one generated printable may span. */
+export const MAX_PRINTABLE_PAGES = 150;
+
+/** Attach the rendered worksheet of a released lesson to the durable print queue. */
+export type AttachGeneratedPrintableRequest = CourseAuthoringActor & {
+  /** The materialised `lessons` row id of a released lesson. */
+  lessonId: string;
+  /** Must equal the worksheet version id of the lesson revision's questions and layout. */
+  worksheetVersionId: string;
+  audience: GeneratedPrintableAudience;
+};
+/** Closed result: never carries keys, answers or storage locators. */
+export interface GeneratedPrintableResult {
+  lessonId: string;
+  worksheetVersionId: string;
+  audience: GeneratedPrintableAudience;
+  assetId: string;
+  relationship: GeneratedPrintableRelationship;
+  /** False when an earlier call already attached this printable. */
+  created: boolean;
+}
+
+/** The request's worksheet version is unknown or no longer the lesson's own. */
+export class WorksheetVersionMismatchError extends CourseAuthoringError {
+  constructor() {
+    super(
+      'worksheet-version-mismatch',
+      'The worksheet version is unknown or stale for this lesson.',
+    );
+  }
+}
+/** No asset runtime/storage was configured for generated printables. */
+export class PrintableStorageNotConfiguredError extends CourseAuthoringError {
+  constructor() {
+    super(
+      'printable-storage-not-configured',
+      'Generated printables require a configured private asset storage.',
+    );
+  }
+}
+/** The acting guardian (or delegating guardian) has no profile to own the asset. */
+export class PrintableOwnerError extends CourseAuthoringError {
+  constructor() {
+    super(
+      'printable-owner-unavailable',
+      'No owning profile is available for the generated printable.',
+    );
+  }
+}
+/**
+ * A rolled-back attach could not remove its fresh private PDF(s). Carries the
+ * fresh asset ids only, for operator reconciliation; the original cause is kept.
+ */
+export class PrintableStorageCleanupError extends CourseAuthoringError {
+  constructor(
+    readonly assetIds: readonly string[],
+    cause: unknown,
+  ) {
+    super(
+      'printable-storage-cleanup',
+      `Printable rollback could not remove fresh assets: ${assetIds.join(', ')}`,
+    );
+    this.cause = cause;
+  }
+}

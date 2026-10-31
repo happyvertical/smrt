@@ -7,7 +7,7 @@ schema and public contract. It reuses the course authorizer: writes need
 return answer keys need `education.course.read-draft`; every call receives the
 transaction executor and the operation (`create-question`, `save-question`,
 `link-objectives`, `create-objective`, `save-objective`, `read-question`,
-`read-worksheet`, `resolve-question-revisions`). Tenant is required; foreign ids are not-found.
+`read-worksheet`, `resolve-question-revisions`, `attach-printable`). Tenant is required; foreign ids are not-found.
 
 ## Models (closed, required tenant, no REST/CLI/MCP/AI, append-only)
 
@@ -93,8 +93,48 @@ learner bundle is built from an allowlist and has no key, rubric or provenance
 type members; only the guardian bundle carries them. Both service audiences need
 `read-draft`; learner delivery belongs to the host.
 
+## Generated printables (`attachGeneratedPrintable`)
+
+Hosts render worksheets from `QuestionRevision` records but cannot write `LessonAsset`
+rows. `attachGeneratedPrintable({ ...actor, lessonId, worksheetVersionId, audience })`
+(`audience`: `learner` or `guardian`) renders the released lesson's worksheet to a PDF
+upstream with `pdf-lib` (no host PDF dependency), stores it as a private education-owned
+asset and links it to the lesson, so the durable print queue can serve it. It returns the
+closed `{ lessonId, worksheetVersionId, audience, assetId, relationship, created }`; never keys,
+answers or source URIs.
+
+- `lessonId` is the materialised `lessons` row id of a released lesson (`released_lessons.lesson_id`),
+  resolved in the actor's tenant; unknown and foreign ids alike are `QuestionNotFoundError`.
+  `worksheetVersionId` must equal the digest of that lesson revision's refs and layout, else
+  `WorksheetVersionMismatchError` (`worksheet-version-mismatch`), so a later scan matches. A lesson with no
+  questions is a validation error.
+- Relationship rules: the learner copy is built from the keyless learner bundle only and linked
+  `printable`; the guardian copy is built from the keyed bundle (answer keys, explanations, rubric summaries)
+  and linked `answer-key`. `SubmissionService.signLessonPrintable` matches only `printable` joins
+  (explicit filter, test-pinned), so an answer-key copy is never signed for a learner.
+- Authorization: `education.course.author` for either audience, plus `education.course.read-draft`
+  for `guardian` (the audience only picks the artefact and never widens authority). A learner of the
+  tenant, or a delegation naming one as actor or delegating guardian, is refused with
+  `CourseAuthoringAuthorizationError` before the host authorizer is asked. Delegated agents use
+  `verifyDelegation` like every authoring call (refused without it).
+- Idempotent per (tenant, lesson, worksheet version, audience) via the append-only closed
+  `GeneratedPrintable` model (unique index). A repeat returns the same asset with `created: false` and
+  renders and stores nothing. The lesson row is locked before the check; a lost unique-index race is
+  compensated and replayed once, so concurrent first calls converge on one asset with no orphan file.
+- Storage: pass `printableAssets: { storage, storeOptions? }` (same shape as `SubmissionService`) to the
+  service. Without it the call throws `PrintableStorageNotConfiguredError`. The PDF is a `private` asset
+  (`typeSlug` `education-page`) owned by the acting guardian's profile, or for a delegated agent the delegating
+  guardian's; none available is `PrintableOwnerError`. Asset rows, the join and the model row commit in one
+  transaction; newly planned files are removed after rollback unless the asset row committed
+  (`PrintableStorageCleanupError` carries fresh asset ids if removal fails).
+- Renderer limits: standard Helvetica fonts only, Letter pages. Characters outside WinAnsi are replaced
+  with `?` (never an error); media refs print as a short placeholder line, never the media. Bounded:
+  200 items, 10,000 characters per text value, 400,000 in total, 150 pages (`CourseAuthoringValidationError`).
+  Output is deterministic: fixed creation/modification dates, footer on every page with the worksheet
+  version id and audience, PDF title/subject/keywords carrying the version id.
+
 ## Migration
 
-Schema ships through normal manifest migrations: five new tables (`question_responses` included) plus nullable
+Schema ships through normal manifest migrations: six new tables (`question_responses` and `generated_printables` included) plus nullable
 columns on `grades` (`question_revision_id`) and `lesson_revisions` (`questions_json`,
 `layout_params_json`); test-pinned as additive. The runtime never creates tables.

@@ -1,6 +1,15 @@
+import {
+  type Asset,
+  type AssetRuntime,
+  type AssetRuntimeOptions,
+  createAssetRuntime,
+  withPrivateAssetAccess,
+} from '@happyvertical/smrt-assets';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { LessonAssetCollection } from './collections.js';
 import {
   type CourseAuthoringActor,
+  CourseAuthoringAuthorizationError,
   type CourseAuthoringAuthorizer,
   type CourseAuthoringOperation,
   CourseAuthoringValidationError,
@@ -19,6 +28,10 @@ import {
   normalizeQuestionContent,
 } from './question-content.js';
 import {
+  type AttachGeneratedPrintableRequest,
+  GENERATED_PRINTABLE_AUDIENCES,
+  GENERATED_PRINTABLE_RELATIONSHIPS,
+  type GeneratedPrintableResult,
   type LearningObjectiveInput,
   LearningObjectiveKeyConflictError,
   LearningObjectiveNotFoundError,
@@ -26,6 +39,9 @@ import {
   type LessonLayoutParams,
   type LessonQuestionRefInput,
   MAX_RESOLVE_QUESTION_REVISIONS,
+  PrintableOwnerError,
+  PrintableStorageCleanupError,
+  PrintableStorageNotConfiguredError,
   QUESTION_PROMPT_SUMMARY_LENGTH,
   QUESTION_PROVENANCES,
   type QuestionContentInput,
@@ -40,16 +56,23 @@ import {
   type ReleasedLessonView,
   type ResolvedQuestionRevisions,
   type WorksheetBundle,
+  WorksheetVersionMismatchError,
 } from './question-contracts.js';
 import {
+  GeneratedPrintableCollection,
   LearningObjectiveCollection,
   LearningObjectiveRevisionCollection,
   QuestionCollection,
   QuestionRevisionCollection,
 } from './question-models.js';
 import {
+  renderGuardianWorksheetPdf,
+  renderLearnerWorksheetPdf,
+} from './question-printable.js';
+import {
   buildGuardianWorksheet,
   buildLearnerWorksheet,
+  worksheetVersionId,
 } from './question-render.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9._:@/-]{1,200}$/;
@@ -86,6 +109,24 @@ export interface QuestionAuthoringServiceOptions
   extends CourseAuthoringServiceOptions {
   /** Trusted concept ids; when supplied, question and objective concepts must belong. */
   conceptVocabulary?: ReadonlyArray<{ id: string }>;
+  /**
+   * Private asset storage for `attachGeneratedPrintable`, the same shape
+   * `SubmissionService` takes. Server configuration only. Without it the call
+   * fails closed with `PrintableStorageNotConfiguredError`.
+   */
+  printableAssets?: {
+    storage: AssetRuntimeOptions['storage'];
+    storeOptions?: AssetRuntimeOptions['storeOptions'];
+  };
+}
+
+/** A unique-index loss on insert, on SQLite or PostgreSQL. */
+function isUniqueViolation(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown } | null;
+  return (
+    e?.code === '23505' ||
+    /unique|duplicate key|constraint failed/i.test(String(e?.message ?? ''))
+  );
 }
 
 /** Plain-text, whitespace-collapsed, code-point-bounded excerpt of a prompt. */
@@ -123,6 +164,9 @@ interface NormalizedObjective {
  */
 export class QuestionAuthoringService extends CourseAuthoringService {
   private readonly vocabulary: ReadonlySet<string> | undefined;
+  /** The non-transactional database: compensation must read committed state. */
+  private readonly rootDatabase: DatabaseInterface;
+  private readonly printableAssets: QuestionAuthoringServiceOptions['printableAssets'];
 
   constructor(
     db: DatabaseInterface,
@@ -133,6 +177,8 @@ export class QuestionAuthoringService extends CourseAuthoringService {
     this.vocabulary = options.conceptVocabulary
       ? new Set(options.conceptVocabulary.map((c) => c.id))
       : undefined;
+    this.printableAssets = options.printableAssets;
+    this.rootDatabase = db;
   }
 
   private normalize(content: QuestionContentInput) {
@@ -1021,6 +1067,236 @@ export class QuestionAuthoringService extends CourseAuthoringService {
         revisions,
       },
     };
+  }
+
+  /**
+   * Renders the released lesson's worksheet as a PDF and attaches it to the
+   * lesson as a private education-owned asset, so the durable print queue can
+   * serve it. `worksheetVersionId` must be the digest of the lesson revision's
+   * pinned questions and layout. The learner copy is built from the keyless
+   * bundle and linked as `printable`; the guardian copy carries keys and is
+   * linked as `answer-key`, which `SubmissionService.signLessonPrintable` never
+   * signs. Idempotent per (tenant, lesson, worksheet version, audience).
+   * Needs `education.course.author`, plus `read-draft` for the guardian audience.
+   * A learner of the tenant, or a delegation naming one, is refused before the
+   * host is asked.
+   */
+  async attachGeneratedPrintable(
+    request: AttachGeneratedPrintableRequest,
+  ): Promise<GeneratedPrintableResult> {
+    if (
+      !GENERATED_PRINTABLE_AUDIENCES.includes(request?.audience) ||
+      typeof request.lessonId !== 'string' ||
+      !request.lessonId ||
+      request.lessonId.length > 200 ||
+      typeof request.worksheetVersionId !== 'string' ||
+      !request.worksheetVersionId ||
+      request.worksheetVersionId.length > 200
+    )
+      throw new CourseAuthoringValidationError('Invalid printable request');
+    if (!this.printableAssets) throw new PrintableStorageNotConfiguredError();
+    const attempt = async () => {
+      const planned: Array<{ runtime: AssetRuntime; asset: Asset }> = [];
+      try {
+        return await this.attachOnce(request, planned);
+      } catch (error) {
+        await this.compensatePrintables(planned, error);
+        throw error;
+      }
+    };
+    try {
+      return await attempt();
+    } catch (error) {
+      // Lost the unique-index race to a concurrent first call: the winner's row
+      // is committed now, so one fresh attempt replays it with created:false.
+      if (!isUniqueViolation(error)) throw error;
+      return attempt();
+    }
+  }
+
+  /** Removes files planned by a rolled-back attach, unless their asset committed. */
+  private async compensatePrintables(
+    planned: Array<{ runtime: AssetRuntime; asset: Asset }>,
+    cause: unknown,
+  ) {
+    const failures: string[] = [];
+    for (const { runtime, asset } of planned.reverse()) {
+      try {
+        // Never remove bytes whose owner committed, or when absence is unproven.
+        if (await this.rootDatabase.get('assets', { id: asset.id })) continue;
+        await runtime.store.removeFile(asset);
+      } catch {
+        failures.push(String(asset.id));
+      }
+    }
+    if (failures.length)
+      throw new PrintableStorageCleanupError(failures, cause);
+  }
+
+  private async attachOnce(
+    request: AttachGeneratedPrintableRequest,
+    planned: Array<{ runtime: AssetRuntime; asset: Asset }>,
+  ): Promise<GeneratedPrintableResult> {
+    const options = this.printableAssets;
+    if (!options) throw new PrintableStorageNotConfiguredError();
+    const { tenantId, audience, worksheetVersionId: requested } = request;
+    const relationship = GENERATED_PRINTABLE_RELATIONSHIPS[audience];
+    return this.run(async (tx) => {
+      // Learners can never attach, whatever the host would say, and a learner
+      // cannot be the delegating guardian either. Refused before the host is asked.
+      for (const userId of [
+        request.actorUserId,
+        request.delegatingGuardianUserId,
+      ])
+        if (
+          typeof userId === 'string' &&
+          userId &&
+          (await tx.get('learners', { tenant_id: tenantId, user_id: userId }))
+        )
+          throw new CourseAuthoringAuthorizationError();
+      const released = (
+        (await tx.list('released_lessons', {
+          tenant_id: tenantId,
+          lesson_id: request.lessonId,
+        })) as Row[]
+      )[0];
+      const extra = released ? { courseId: String(released.course_id) } : {};
+      await this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'attach-printable',
+        extra,
+      );
+      // The audience selects the artefact; it never widens authority.
+      if (audience === 'guardian')
+        await this.authorize(
+          tx,
+          request,
+          'education.course.read-draft',
+          'attach-printable',
+          extra,
+        );
+      if (!released) throw new QuestionNotFoundError();
+      const { lesson, input } = await this.releasedLessonInput(
+        tx,
+        tenantId,
+        String(released.release_id),
+        String(released.lesson_key),
+      );
+      if (requested !== worksheetVersionId(input.refs, input.layoutParams))
+        throw new WorksheetVersionMismatchError();
+      if (!input.refs.length)
+        throw new CourseAuthoringValidationError(
+          'The lesson has no worksheet questions',
+        );
+      // Serialises concurrent first calls on PostgreSQL so the loser sees the
+      // winner's row instead of creating an orphan asset.
+      await this.lock(tx, 'lessons', tenantId, request.lessonId);
+      const existing = await tx.get('generated_printables', {
+        tenant_id: tenantId,
+        lesson_id: request.lessonId,
+        worksheet_version_id: requested,
+        audience,
+      });
+      const result = (assetId: string, created: boolean) => ({
+        lessonId: request.lessonId,
+        worksheetVersionId: requested,
+        audience,
+        assetId,
+        relationship,
+        created,
+      });
+      if (existing) return result(String(existing.asset_id), false);
+      // Owner of the private asset: the acting guardian's profile, or for a
+      // delegated agent the delegating guardian's (the agent holds no family
+      // authority of its own), as family intake owns uploads by the actor's profile.
+      const ownerUser = await tx.get('users', {
+        id: request.delegatingGuardianUserId || request.actorUserId,
+      });
+      if (!ownerUser?.profile_id) throw new PrintableOwnerError();
+      const ownerProfileId = String(ownerUser.profile_id);
+      const title = String(lesson.title ?? '');
+      const pdf =
+        audience === 'guardian'
+          ? await renderGuardianWorksheetPdf(
+              buildGuardianWorksheet(input),
+              title,
+            )
+          : await renderLearnerWorksheetPdf(
+              buildLearnerWorksheet(input),
+              title,
+            );
+      const runtime = await createAssetRuntime({
+        db: tx,
+        storage: options.storage,
+        storeOptions: options.storeOptions,
+      });
+      const assetId = globalThis.crypto.randomUUID();
+      const capability = (id: string) => ({
+        tenantId,
+        actorUserId: request.actorUserId,
+        ownerProfileId,
+        assetIds: [id],
+      });
+      await withPrivateAssetAccess(capability(assetId), async () => {
+        const mimeType = 'application/pdf';
+        const storeOptions = { mimeType, typeSlug: 'education-page' };
+        const asset = await runtime.collection.create({
+          id: assetId,
+          accessMode: 'private',
+          name: `${requested}-${audience}.pdf`,
+          tenantId,
+          ownerProfileId,
+          mimeType,
+          typeSlug: 'education-page',
+          statusSlug: 'active',
+        });
+        asset.sourceUri = await runtime.store.planFile(asset, storeOptions);
+        if (
+          new URL(asset.sourceUri).pathname.split('/').at(-1) !==
+          `${asset.id}.pdf`
+        )
+          throw new Error(
+            'Storage resolver must preserve the fresh asset filename',
+          );
+        await asset.save();
+        // Ledger before write: a provider may write bytes and then reject.
+        planned.push({ runtime, asset });
+        await runtime.store.preserveFile(asset, Buffer.from(pdf), storeOptions);
+      });
+      await (await GeneratedPrintableCollection.create({ db: tx })).create({
+        _insertOnly: true,
+        tenantId,
+        lessonId: request.lessonId,
+        worksheetVersionId: requested,
+        audience,
+        assetId,
+        lessonRevisionId: String(lesson.id),
+        generatedByUserId: request.actorUserId,
+        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        delegationId: request.delegationId ?? '',
+        recordedAt: new Date(),
+      });
+      const siblings = (await tx.list('lesson_assets', {
+        tenant_id: tenantId,
+        lesson_id: request.lessonId,
+      })) as Row[];
+      await withPrivateAssetAccess(capability(assetId), async () =>
+        (await LessonAssetCollection.create({ db: tx })).create({
+          tenantId,
+          lessonId: request.lessonId,
+          assetId,
+          relationship,
+          sortOrder:
+            siblings.reduce(
+              (m, r) => Math.max(m, Number(r.sort_order ?? 0)),
+              -1,
+            ) + 1,
+        }),
+      );
+      return result(assetId, true);
+    });
   }
 
   /**
