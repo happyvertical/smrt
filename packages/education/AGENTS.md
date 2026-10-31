@@ -34,6 +34,18 @@ sharing separate from guardian Grade authority. Photo-first receipt/context
 capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
 never create learning evidence, and blank exercises need explicit work intent.
 
+Revisioned authored courses, release, archive, enrollment pins and licence use
+[CourseAuthoringService](agents/course-authoring-service.md). Keep history
+append-only, require request keys, and never weaken personal-use-copy rules.
+
+Generation proposals into new draft revisions and revision-bound educational
+review use [CourseGenerationReviewService](agents/course-generation-review.md).
+Keep supplied content unless a decision is recorded; reviews carry no score.
+
+Immutable questions, answer keys/rubrics, stable learning objectives, worksheet
+render ids and exact-revision references use [QuestionAuthoringService](agents/question-records.md).
+Keep keys out of learner bundles; a missing key stays null.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.

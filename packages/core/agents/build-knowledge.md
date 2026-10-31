@@ -413,3 +413,11 @@ unchanged (they stay generic).
 ## AGENTS.md discovery in a monorepo (#3476)
 
 `buildDomainKnowledgeManifest()` takes the agent doc from the project root, else from the nearest ancestor `AGENTS.md` up to the workspace root (the nearest directory with `pnpm-workspace.yaml`, else the git root, a directory containing `.git`). It never walks past that boundary, and with no boundary above the project root it checks only the root. `agentDocPath` stays relative to the project root (so an inherited doc reads `../../AGENTS.md`), and `agentDoc` and `sourceHashes.agents` are populated from it. Module docs linked from the doc (`moduleDocs`) are only followed when `AGENTS.md` sits at the project root, since their links resolve against that directory.
+
+## Host tool-name collisions (#4520)
+
+`smrtPlugin({ hostToolNames })` (or `smrt({ hostToolNames })` in `vite.config.ts`, which forwards it unchanged) takes `{ name, surface: 'workflow' | 'bespoke' | 'mcp', declaredBy }`
+declarations (`src/vite-plugin/host-tool-names.ts`). Host-vs-host duplicates fail at plugin
+construction; a host name shadowing a generated model tool fails after the scan. The same
+`declaredBy` on several surfaces is one operation and is allowed. Unlike the advisory
+intent-vs-generated check, these throw and fail the build.

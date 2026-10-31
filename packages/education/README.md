@@ -15,6 +15,11 @@ work and revision-bound comments remain retained after leaving a group.
 See the [group sharing contract](agents/group-sharing.md) for the required host
 authorizer, private media delivery, facet semantics and migration/test matrix.
 
+Guardians author courses with `CourseAuthoringService`: append-only course and
+lesson revisions, a reviewed release that materializes immutable lessons,
+reversible archive, and recorded enrollment pins and upgrades. See the
+[course authoring contract](agents/course-authoring-service.md).
+
 ## Install
 
 ```sh

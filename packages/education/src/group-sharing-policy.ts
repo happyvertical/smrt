@@ -34,6 +34,7 @@ export function evaluateGroupSharingPolicy(
     (!facts.subject || !policy.subjects.values.includes(facts.subject))
   )
     reasons.push('subject');
+  if (facts.courseShareable === false) reasons.push('course-private');
   if (policy.parentReviewedOnly && !facts.parentReviewed)
     reasons.push('parent-review');
   const eligible = reasons.length === 0;

@@ -126,6 +126,49 @@ export {
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
+export * from './course-authoring-contracts.js';
+export {
+  AUTHORED_IDENTITY_SOURCE_KEY,
+  AUTHORED_RELEASE_SOURCE_KEY,
+  isAuthoredReleaseGroupShareable,
+  isGroupShareableLicense,
+  mostRestrictiveLicense,
+} from './course-authoring-licence.js';
+export * from './course-authoring-models.js';
+export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
+export { CourseAuthoringService } from './course-authoring-service.js';
+export * from './course-generation-contracts.js';
+export * from './course-generation-models.js';
+export {
+  applyProposalFields,
+  draftFromRevision,
+  planProposal,
+  validateCourseGenerationOutput,
+} from './course-generation-output.js';
+export {
+  COURSE_PROPOSAL_ARGS_SCHEMA,
+  COURSE_PROPOSAL_HANDLER,
+  createProposalCourseGenerator,
+} from './course-generation-proposal-generator.js';
+export type { CourseGenerationReviewServiceOptions } from './course-generation-review-service.js';
+export { CourseGenerationReviewService } from './course-generation-review-service.js';
+export * from './course-review-contracts.js';
+export { courseReviewContextDigest } from './course-review-digest.js';
+export type {
+  FixtureReviewer,
+  ReviewEvaluationCaseResult,
+  ReviewEvaluationReport,
+  ReviewerFinding,
+  ReviewFixtureCase,
+  ReviewFixtureMaterial,
+  SeededFlaw,
+} from './course-review-evaluation.js';
+export { evaluateReviewer } from './course-review-evaluation.js';
+export {
+  createCourseReferenceGuard,
+  createReviewBackedReleaseGate,
+} from './course-review-gate.js';
+export * from './course-review-models.js';
 export type {
   CourseSourceConfig,
   CourseSourceKind,
@@ -216,6 +259,30 @@ export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
+export type { QuestionAuthoringServiceOptions } from './question-authoring-service.js';
+export { QuestionAuthoringService } from './question-authoring-service.js';
+export {
+  type NormalizedQuestionContent,
+  normalizeQuestionContent,
+} from './question-content.js';
+export * from './question-contracts.js';
+export * from './question-models.js';
+export {
+  buildGuardianWorksheet,
+  buildLearnerWorksheet,
+  type WorksheetRenderInput,
+  worksheetVersionId,
+} from './question-render.js';
+export * from './question-response-contracts.js';
+export type {
+  GuardianCorrectionRequest,
+  RecordQuestionResponseRequest,
+} from './question-response-service.js';
+export { QuestionResponseService } from './question-response-service.js';
+export {
+  parseQuestionRubric,
+  validateRubricResults,
+} from './question-rubric.js';
 export {
   EducationCatalogRecipe,
   EducationLearnerRecipe,

@@ -37,6 +37,11 @@ export interface GroupSharingWorkFacts {
   courseId: string | null;
   subject: string | null;
   parentReviewed: boolean;
+  /**
+   * False when the course is an authored release containing personal-use
+   * material. Absent means no authored-course restriction applies.
+   */
+  courseShareable?: boolean;
 }
 export interface GroupSharingDecision {
   eligible: boolean;
